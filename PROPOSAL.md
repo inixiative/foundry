@@ -1,12 +1,53 @@
-# The Foundry Recursion Harness
+# Foundry
 
 > **Gradient descent on documentation** — because you can't do gradient descent on the model.
 
 ---
 
-## The Problem
+## The Topology of Modern AI Work
 
-AI agents are only as good as their context: system prompts, docs, skills, and conventions. Today, improving that context is **vibes-based** — tweak something, run a task, eyeball the output, repeat. There's no systematic way to know if a change actually made things better.
+There are three layers to AI-assisted work. Two are getting massive investment. One is not.
+
+```mermaid
+graph TB
+    subgraph "THE THREE LAYERS"
+        direction TB
+        M["Model<br/><i>The frozen weights —<br/>Claude, GPT, Gemini</i>"]
+        H["Harness<br/><i>The tool that wields the model —<br/>Claude Code, Cursor, Windsurf</i>"]
+        C["Corpus<br/><i>The context that shapes output —<br/>system prompts, docs, skills, conventions</i>"]
+
+        M --> H --> C
+    end
+
+    subgraph "WHO'S IMPROVING EACH"
+        M_WHO["Labs (Anthropic, OpenAI, Google)<br/><i>Billions invested, gains plateauing —<br/>each generation brings less delta</i>"]
+        H_WHO["Tool companies<br/><i>Real progress — better agents,<br/>better orchestration, better UX</i>"]
+        C_WHO["???<br/><i>Tons of heat, not much light</i>"]
+    end
+
+    M --- M_WHO
+    H --- H_WHO
+    C --- C_WHO
+
+    style M fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style H fill:#2d5016,stroke:#4a8c28,color:#fff
+    style C fill:#5c1a3a,stroke:#a62e5c,color:#fff
+    style M_WHO fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style H_WHO fill:#2d5016,stroke:#4a8c28,color:#fff
+    style C_WHO fill:#5c1a3a,stroke:#a62e5c,color:#fff
+```
+
+**Model improvements are plateauing.** Labs are spending billions and each generation brings diminishing returns. The step change from GPT-3 to GPT-4 was transformative. The step change from GPT-4 to GPT-5 is incremental.
+
+**Harness improvements are real but generic.** Claude Code, Cursor, Windsurf — these tools are getting dramatically better at wielding models. But they're general-purpose. They don't know your org's conventions, your team's taste, or the lessons you learned last sprint.
+
+**Corpus is where the actual leverage is — and it's a mess.** People are seeing real gains from better prompts, better docs, better skills. But it's artisanal. No standardized skill libraries to start from. No infrastructure for capturing what happens during real work and feeding it back. No way to measure whether a corpus change actually made things better or just felt like it did. Everyone's hand-rolling their CLAUDE.md and hoping for the best.
+
+**Foundry is the infrastructure layer for corpus.** Three things that don't exist yet:
+
+1. **Standardized primitives** — a base set of skills, docs, and conventions that work out of the box, so you're not starting from zero
+2. **Event capture** — infrastructure for recording, tagging, and classifying everything that happens during normal work — every correction, every question, every redirect
+3. **The recursion loop** — a system that turns those captured signals into corpus improvements automatically, measures whether they worked, and rolls them back if they didn't
 
 With traditional ML, you'd fine-tune the weights. With API-based LLMs, the weights are frozen. Your only levers are the documents surrounding the model. **Foundry treats those documents as the parameters to optimize.**
 
