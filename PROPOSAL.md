@@ -43,13 +43,15 @@ graph TB
 
 **Corpus is where the actual leverage is — and it's a mess.** People are seeing real gains from better prompts, better docs, better skills. But it's artisanal. No standardized skill libraries to start from. No infrastructure for capturing what happens during real work and feeding it back. No way to measure whether a corpus change actually made things better or just felt like it did. Everyone's hand-rolling their CLAUDE.md and hoping for the best.
 
+**In fact, there's growing evidence that most corpus is doing more harm than good.** Research on LLM attention (Liu et al., 2023) shows 30%+ performance degradation when relevant information gets buried in long context. Bloated rules files create exactly this problem. Stale instructions written for older workflows don't fail loudly — they quietly degrade output. Teams pile on rules and see quality drop, not rise. One study found AI-assisted productivity gains averaging just 10–15%, far below the 50% touted — with time saved on boilerplate wiped out reviewing and fixing degraded output. Without measurement, you can't tell if your corpus is helping or hurting. Most people can't. And most people's isn't.
+
 **Foundry is the infrastructure layer for corpus.** Three things that don't exist yet:
 
 1. **Standardized primitives** — a base set of skills, docs, and conventions that work out of the box, so you're not starting from zero
 2. **Event capture** — infrastructure for recording, tagging, and classifying everything that happens during normal work — every correction, every question, every redirect
 3. **The recursion loop** — a system that turns those captured signals into corpus improvements automatically, measures whether they worked, and rolls them back if they didn't
 
-With traditional ML, you'd fine-tune the weights. With API-based LLMs, the weights are frozen. Your only levers are the documents surrounding the model. **Foundry treats those documents as the parameters to optimize.**
+**Foundry treats corpus as the parameters to optimize — and provides the infrastructure to do it systematically.**
 
 ---
 
@@ -180,6 +182,31 @@ graph TB
 Each layer contains: **system prompt + docs + rules + skills**
 
 Every run compiles these into an immutable snapshot with a content hash — so you can reproduce any run exactly and attribute score changes to specific corpus modifications.
+
+### Personal Agents
+
+The personal layer isn't just a config file — it's a **queryable agent** for each person and team.
+
+```mermaid
+graph LR
+    subgraph "BEFORE INTERRUPTING ARON"
+        Q["Agent needs<br/>a decision"] --> PA["Aron's Agent<br/><i>Public: role, expertise,<br/>conventions maintained</i><br/><i>Private: preferences,<br/>style, past decisions</i>"]
+        PA -->|"confident"| ANS["Answer on<br/>Aron's behalf"]
+        PA -->|"uncertain"| ESC["Escalate to<br/>the real Aron"]
+    end
+
+    style Q fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style PA fill:#5c4a1a,stroke:#a6862e,color:#fff
+    style ANS fill:#2d5016,stroke:#4a8c28,color:#fff
+    style ESC fill:#5c1a3a,stroke:#a62e5c,color:#fff
+```
+
+Each personal agent maintains two layers of context:
+
+- **Public** — role, expertise areas, conventions they maintain, decisions they've made that others can reference. Visible to the team.
+- **Private** — personal preferences, working style, shortcuts, opinions. Visible only to the individual. Gitignored.
+
+The system queries your agent before querying you. Over time, as it captures your corrections and redirects, it handles more decisions autonomously — reducing interruptions while preserving your taste and judgment. Eventually, your agent doesn't just answer questions on your behalf — it acts on your behalf, carrying your taste and context into autonomous work. Privacy is built in: you control what's public and what stays private.
 
 ---
 
