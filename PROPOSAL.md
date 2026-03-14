@@ -43,7 +43,7 @@ graph TB
 
 **Corpus is where the actual leverage is — and it's a mess.** People are seeing real gains from better prompts, better docs, better skills. But it's artisanal. No standardized skill libraries to start from. No infrastructure for capturing what happens during real work and feeding it back. No way to measure whether a corpus change actually made things better or just felt like it did. Everyone's hand-rolling their CLAUDE.md and hoping for the best.
 
-**In fact, there's growing evidence that most corpus is doing more harm than good.** Research on LLM attention (Liu et al., 2023) shows 30%+ performance degradation when relevant information gets buried in long context. Bloated rules files create exactly this problem. Stale instructions written for older workflows don't fail loudly — they quietly degrade output. Teams pile on rules and see quality drop, not rise. One study found AI-assisted productivity gains averaging just 10–15%, far below the 50% touted — with time saved on boilerplate wiped out reviewing and fixing degraded output. Without measurement, you can't tell if your corpus is helping or hurting. Most people can't. And most people's isn't.
+**In fact, there's growing evidence that most corpus is actively making things worse.** Instruction-following success decays exponentially with rule count — GPT-4o follows 10 simultaneous instructions just 15% of the time (ICLR 2025). Adding full conversation history drops accuracy by 30% compared to a focused 300-token context (Chroma 2025). Patrick Debois found that adding a single naming convention section to CLAUDE.md caused three previously passing eval scenarios to silently break — the agent changed its approach to error handling, test structure, and imports despite none of those being touched. Stale rules don't fail loudly. They quietly degrade everything around them. Without measurement, you can't tell if your corpus is helping or hurting. Most people can't. And most people's isn't.
 
 **Foundry is the infrastructure layer for corpus.** Three things that don't exist yet:
 
@@ -53,135 +53,9 @@ graph TB
 
 **Foundry treats corpus as the parameters to optimize — and provides the infrastructure to do it systematically.**
 
----
+Under the hood, Foundry uses three isolated agents — a subject who holds domain knowledge, an implementer who does the work using only the corpus being tested, and an oracle who scores the output against a golden reference. Physical isolation via git branches ensures honest evaluation. Five scoring rubrics (prompt efficiency, completion, demerits, craft, questioning) produce a composite score with attribution to specific corpus entries. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture.
 
-## The Vision: A Recursive Improvement Engine
-
-```mermaid
-graph TB
-    subgraph "THE RECURSION LOOP"
-        direction TB
-        A["🎯 Define What Good Looks Like<br/><i>Fixtures from real work</i>"] --> B["🤖 Run Agent Against Fixture<br/><i>Controlled simulation</i>"]
-        B --> C["⚖️ Oracle Scores the Output<br/><i>5 rubrics, composite score</i>"]
-        C --> D["📋 Diagnose What Went Wrong<br/><i>Attribution to specific docs</i>"]
-        D --> E["✏️ Update the Corpus<br/><i>System prompt, docs, skills</i>"]
-        E --> A
-    end
-
-    style A fill:#2d5016,stroke:#4a8c28,color:#fff
-    style B fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style C fill:#5c1a3a,stroke:#a62e5c,color:#fff
-    style D fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style E fill:#1a5c4a,stroke:#2ea686,color:#fff
-```
-
-**Each loop makes the system smarter.** Not just the current output — the entire corpus that every future agent session draws from.
-
----
-
-## How It Works: Three Agents, Three Perspectives
-
-```mermaid
-graph LR
-    subgraph "ORCHESTRATOR"
-        O["Orchestrator<br/><i>Coordinates the run</i>"]
-    end
-
-    subgraph "SUBJECT — The Vague PM"
-        S["Subject Agent"]
-        SC["subject-context.md<br/><i>Q&A pairs — only reveals<br/>answers when asked</i>"]
-        S --- SC
-    end
-
-    subgraph "IMPLEMENTER — Agent Under Test"
-        I["Implementer Agent"]
-        IC["System prompt + docs + skills<br/><i>The corpus being tested</i>"]
-        I --- IC
-    end
-
-    subgraph "ORACLE — The Judge"
-        OR["Oracle Agent"]
-        OC["Golden implementation<br/>+ assertions + task map"]
-        OR --- OC
-    end
-
-    O -->|"terse prompt"| I
-    I <-->|"asks questions"| S
-    I -->|"produces output"| OR
-    OR -->|"scores + diagnosis"| O
-
-    style S fill:#8b6914,stroke:#c49a1a,color:#fff
-    style I fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style OR fill:#5c1a3a,stroke:#a62e5c,color:#fff
-    style O fill:#333,stroke:#666,color:#fff
-```
-
-| Agent | Role | Sees | Key Signal |
-|-------|------|------|------------|
-| **Subject** | Vague PM | Domain knowledge (Q&A pairs) | Doesn't volunteer info — only answers when asked |
-| **Implementer** | Agent under test | Clean codebase + the corpus being evaluated | Produces the work output |
-| **Oracle** | Judge | Golden implementation + rubrics | Scores output, diagnoses root causes |
-
-**Physical isolation via git branches** — each agent sees only its branch. No credential tricks, no instruction-based scoping. The Implementer can't peek at the golden answer.
-
----
-
-## The Five Scoring Rubrics
-
-```mermaid
-graph TD
-    subgraph "COMPOSITE SCORE"
-        PE["Prompt Efficiency<br/><b>Meta: scores the docs</b><br/><i>quality ÷ tokens</i>"]
-        CO["Completion<br/><b>How far did it get?</b><br/><i>subtasks completed</i>"]
-        DE["Demerits<br/><b>What rules did it break?</b><br/><i>driving-test style</i>"]
-        CR["Craft<br/><b>How good is the code?</b><br/><i>pattern adherence</i>"]
-        QU["Questioning<br/><b>Did it ask the right things?</b><br/><i>requirements gathering</i>"]
-    end
-
-    PE --> SCORE["Ceiling-Reduction<br/>Composite Score"]
-    CO --> SCORE
-    DE --> SCORE
-    CR --> SCORE
-    QU --> SCORE
-
-    style PE fill:#2d5016,stroke:#4a8c28,color:#fff
-    style CO fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style DE fill:#5c1a1a,stroke:#a62e2e,color:#fff
-    style CR fill:#3a1a5c,stroke:#6e2ea6,color:#fff
-    style QU fill:#1a5c4a,stroke:#2ea686,color:#fff
-    style SCORE fill:#333,stroke:#666,color:#fff
-```
-
-**Prompt Efficiency is the meta-score** — it measures the docs, not the agent. If two doc variants produce the same quality output but one uses 3x fewer tokens, the shorter one scores 3x better. This creates constant pressure to make docs concise and modular.
-
----
-
-## The Corpus Architecture: Three Layers
-
-```mermaid
-graph TB
-    subgraph "EFFECTIVE CORPUS (per run)"
-        direction TB
-        G["Global Layer<br/><i>Foundry-managed baseline</i><br/><i>Shared across all projects</i>"]
-        P["Project Layer<br/><i>Repo-specific corpus</i><br/><i>Evolves per project</i>"]
-        L["Personal Layer<br/><i>Individual preferences</i><br/><i>Gitignored, local only</i>"]
-
-        G --> MERGE["Merge + Compile"]
-        P --> MERGE
-        L --> MERGE
-        MERGE --> SNAP["Immutable Snapshot<br/><i>Hash stored per run</i><br/><i>Full reproducibility</i>"]
-    end
-
-    style G fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style P fill:#2d5016,stroke:#4a8c28,color:#fff
-    style L fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style SNAP fill:#333,stroke:#666,color:#fff
-    style MERGE fill:#444,stroke:#777,color:#fff
-```
-
-Each layer contains: **system prompt + docs + rules + skills**
-
-Every run compiles these into an immutable snapshot with a content hash — so you can reproduce any run exactly and attribute score changes to specific corpus modifications.
+**Foundry is model-agnostic and infrastructure-agnostic.** Bring your own models, bring your own infrastructure. The recursion pattern works regardless of which LLM you're optimizing for or where your work lives — git, a CRM, a help desk. Foundry provides the harness; adapters connect it to your stack.
 
 ---
 
@@ -419,99 +293,16 @@ graph TB
 
 ---
 
-## What's Built Today
-
-```mermaid
-graph LR
-    subgraph "IMPLEMENTED ✓"
-        API["API + Dashboard<br/><i>Projects, fixtures,<br/>feedback, oracle</i>"]
-        DB["SQLite Schema<br/><i>Full data model</i>"]
-        CLI["CLI Commands<br/><i>init-project, start-round</i>"]
-        WORK["Run Worker<br/><i>Coordinated mode:<br/>Implementer + Subject + Oracle</i>"]
-        HIV["Per-Run Hivemind<br/><i>Role-scoped auth,<br/>channel ACLs</i>"]
-        GIT["Git Isolation<br/><i>Role-isolated workspaces,<br/>per-role branches</i>"]
-    end
-
-    subgraph "IN PROGRESS"
-        FIX["Canonical Smoke Fixture"]
-        INJ["System Prompt Injector"]
-        SKL["Internal Skill Stubs"]
-        FB["Auto Feedback Ingestion"]
-        CRP["Corpus Layering"]
-    end
-
-    subgraph "NEXT"
-        ECC["Effective Corpus Compiler"]
-        OBS["Compaction Metrics"]
-        PROM["Promotion Workflow"]
-        CLD["Cloud Deploy"]
-    end
-
-    API --> FIX
-    WORK --> FIX
-    FIX --> ECC
-    INJ --> ECC
-
-    style API fill:#2d5016,stroke:#4a8c28,color:#fff
-    style DB fill:#2d5016,stroke:#4a8c28,color:#fff
-    style CLI fill:#2d5016,stroke:#4a8c28,color:#fff
-    style WORK fill:#2d5016,stroke:#4a8c28,color:#fff
-    style HIV fill:#2d5016,stroke:#4a8c28,color:#fff
-    style GIT fill:#2d5016,stroke:#4a8c28,color:#fff
-    style FIX fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style INJ fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style SKL fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style FB fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style CRP fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style ECC fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style OBS fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style PROM fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style CLD fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-```
-
----
-
-## The Factory Director Metaphor
-
-```mermaid
-graph TB
-    subgraph "TRADITIONAL"
-        ENG1["Engineer"] -->|"writes code"| CODE1["Code"]
-        CODE1 -->|"manual review"| QUAL1["Quality?<br/><i>¯\\_(ツ)_/¯</i>"]
-    end
-
-    subgraph "WITH DELPHI"
-        DIR["Factory Director<br/><i>(Engineer)</i>"]
-        DIR -->|"defines what good<br/>looks like"| FIXTURE["Fixtures"]
-        DIR -->|"tunes the<br/>production line"| CORPUS["Corpus<br/><i>prompts, docs, skills</i>"]
-
-        FIXTURE --> ENGINE["Foundry Engine"]
-        CORPUS --> ENGINE
-        ENGINE -->|"runs agents,<br/>scores output"| METRICS["Measurable Quality<br/><i>Composite scores,<br/>attribution, trends</i>"]
-        METRICS -->|"diagnosis feeds<br/>back into corpus"| CORPUS
-    end
-
-    style DIR fill:#2d5016,stroke:#4a8c28,color:#fff
-    style ENGINE fill:#5c1a3a,stroke:#a62e5c,color:#fff
-    style METRICS fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style FIXTURE fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style CORPUS fill:#3a1a5c,stroke:#6e2ea6,color:#fff
-```
-
-**The engineer's job shifts** from writing code to defining quality standards and tuning the system that produces code. Each improvement compounds — one person's better skill or doc benefits every future agent session across the entire team.
-
----
-
 ## Summary
 
 | What | Why |
 |------|-----|
-| **Recursion harness** | Systematic improvement instead of vibes-based tweaking |
-| **Three-agent isolation** | Honest evaluation — no information leakage |
-| **Five scoring rubrics** | Multi-dimensional quality measurement with attribution |
-| **Corpus layering** | Global + project + personal, with immutable snapshots |
-| **Hivemind integration** | Every decision point logged for diagnosis |
+| **Corpus infrastructure** | Systematic improvement instead of vibes-based tweaking |
+| **Standardized primitives** | Don't start from zero — base skills, docs, and conventions out of the box |
+| **Event capture** | Every correction, question, and redirect recorded and classified |
+| **Recursion engine** | Captured signals become corpus improvements, measured and rolled back if they fail |
+| **Personal agents** | Queryable proxies that preserve taste and reduce interruptions |
 | **Beyond software** | The pattern works for any task + corpus + quality definition |
-| **Unified platform** | GitHub + ticketing + knowledge base + interaction log, with Foundry as the improvement engine |
+| **Unified platform** | One workspace where humans and AI are co-equal actors, with Foundry as the improvement engine |
 
 > **The thesis:** The teams that systematically improve their AI context — treating prompts and docs as optimizable parameters with measurable outcomes — will dramatically outperform teams that rely on intuition. Foundry is the engine that makes that systematic improvement possible.
