@@ -63,6 +63,25 @@ Under the hood, Foundry uses three isolated agents — a subject who holds domai
 
 ---
 
+## Business Model
+
+Foundry is a SaaS platform with tiered subscriptions gated on usage and feature complexity.
+
+| | **Starter** | **Growth** | **Scale** |
+|---|---|---|---|
+| **Seats** | Small teams | Mid-size teams | Unlimited |
+| **Repos** | Limited | Multiple | Unlimited |
+| **Fixtures & runs** | Capped | Higher limits | Custom |
+| **Personal agents** | — | Yes | Yes |
+| **Corpus layering** | Project only | Project + personal | Global + project + personal |
+| **SSO & audit logs** | — | — | Yes |
+| **Self-hosted / BYOI** | — | — | Yes |
+| **Support** | Community | Priority | Dedicated |
+
+**Starter** gets teams running with standardized primitives, basic recursion, and enough capacity to prove value. **Growth** unlocks personal agents, deeper corpus management, and the event capture pipeline. **Scale** adds enterprise controls, self-hosting, bring-your-own-infrastructure, and unlimited capacity for orgs that want to run Foundry across every team and function.
+
+---
+
 ## Where This Goes: The Unified Workspace
 
 ### The Fragmentation Problem
