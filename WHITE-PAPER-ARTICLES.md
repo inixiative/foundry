@@ -329,17 +329,17 @@ Eight long-form articles distilling the Inixiative whitepaper into standalone pi
 
 ## Publishing Strategy
 
-**Cadence:** One article per week, alternating with technical articles (so the Substack publishes twice weekly: Tuesday = tech, Thursday = white paper).
+**Cadence:** One white paper article per week, published Thursdays. Paired with one tech article on Tuesdays (see TECH-ARTICLES.md). Two articles per week total across 8 weeks.
 
-**Recommended order:**
-1. Cooperation Radius (week 1) — most accessible, grounded in everyday experience
-2. Clicktivism to Commitment (week 2) — practical, shows what Inixiative actually builds
-3. Institutions Calcify (week 3) — structural argument, politically neutral framing
-4. Governance Is Technology (week 4) — reframes the entire conversation
-5. Elite Overproduction (week 5) — Turchin's framework is having a moment, ride the wave
-6. Principal-Agent Problem (week 6) — builds on institutional critique from articles 3 & 4
-7. Metis and Subsidiarity (week 7) — deepest intellectual article, rewards loyal readers
-8. Energy Thesis (week 8) — bold conclusion, thorium + energy-backed currency as capstone
+**Recommended order (paired with tech articles by week):**
+1. Cooperation Radius (week 1, Thu) — paired with Transaction-Aware Hooks (Tue)
+2. Clicktivism to Commitment (week 2, Thu) — paired with Structured Error Pipeline (Tue)
+3. Institutions Calcify (week 3, Thu) — paired with Pseudo-GraphQL Over REST (Tue)
+4. Governance Is Technology (week 4, Thu) — paired with Transaction-Aware Everything (Tue)
+5. Elite Overproduction (week 5, Thu) — paired with Batch APIs (Tue)
+6. Principal-Agent Problem (week 6, Thu) — paired with Field-Level Encryption (Tue)
+7. Metis and Subsidiarity (week 7, Thu) — paired with Hierarchical Multi-Tenancy (Tue)
+8. Energy Thesis (week 8, Thu) — paired with Code Generation Pipeline (Tue)
 
 **Cross-promotion:** Each article links back to the full whitepaper. Articles 1, 3, and 5 form an "institutional failure" trilogy. Articles 2, 6, and 7 form a "coordination theory" trilogy. Article 8 is the practical capstone that connects everything to Inixiative.
 

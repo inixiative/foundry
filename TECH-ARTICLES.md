@@ -290,7 +290,7 @@ Eight deep-dive technical articles targeting senior/staff engineers. Each articl
 
 ## Publishing Strategy
 
-**Cadence:** One article per week, published Tuesday mornings (highest Substack engagement).
+**Cadence:** One tech article per week, published Tuesdays. Paired with one white paper article on Thursdays (see WHITE-PAPER-ARTICLES.md). Two articles per week total across 8 weeks.
 
 **Recommended order:**
 1. Transaction-Aware Hooks (week 1) — broadest appeal, universal pain point
