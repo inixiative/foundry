@@ -183,31 +183,6 @@ Each layer contains: **system prompt + docs + rules + skills**
 
 Every run compiles these into an immutable snapshot with a content hash — so you can reproduce any run exactly and attribute score changes to specific corpus modifications.
 
-### Personal Agents
-
-The personal layer isn't just a config file — it's a **queryable agent** for each person and team.
-
-```mermaid
-graph LR
-    subgraph "BEFORE INTERRUPTING ARON"
-        Q["Agent needs<br/>a decision"] --> PA["Aron's Agent<br/><i>Public: role, expertise,<br/>conventions maintained</i><br/><i>Private: preferences,<br/>style, past decisions</i>"]
-        PA -->|"confident"| ANS["Answer on<br/>Aron's behalf"]
-        PA -->|"uncertain"| ESC["Escalate to<br/>the real Aron"]
-    end
-
-    style Q fill:#1a3a5c,stroke:#2e6ba6,color:#fff
-    style PA fill:#5c4a1a,stroke:#a6862e,color:#fff
-    style ANS fill:#2d5016,stroke:#4a8c28,color:#fff
-    style ESC fill:#5c1a3a,stroke:#a62e5c,color:#fff
-```
-
-Each personal agent maintains two layers of context:
-
-- **Public** — role, expertise areas, conventions they maintain, decisions they've made that others can reference. Visible to the team.
-- **Private** — personal preferences, working style, shortcuts, opinions. Visible only to the individual. Gitignored.
-
-The system queries your agent before querying you. Over time, as it captures your corrections and redirects, it handles more decisions autonomously — reducing interruptions while preserving your taste and judgment. Eventually, your agent doesn't just answer questions on your behalf — it acts on your behalf, carrying your taste and context into autonomous work. Privacy is built in: you control what's public and what stays private.
-
 ---
 
 ## Where This Goes: The Unified Workspace
@@ -319,10 +294,10 @@ graph TB
     BOTH --> CORPUS
     BOTH --> ASSETS
 
-    DELPHI_ENGINE["Foundry Recursion Engine<br/><i>Watches outcomes,<br/>generates fixtures from<br/>real interactions,<br/>improves the corpus</i>"]
+    FOUNDRY_ENGINE["Foundry Recursion Engine<br/><i>Watches outcomes,<br/>generates fixtures from<br/>real interactions,<br/>improves the corpus</i>"]
 
-    CROSS --> DELPHI_ENGINE
-    DELPHI_ENGINE --> CORPUS
+    CROSS --> FOUNDRY_ENGINE
+    FOUNDRY_ENGINE --> CORPUS
 
     style TASKS fill:#2d5016,stroke:#4a8c28,color:#fff
     style CORPUS fill:#2d5016,stroke:#4a8c28,color:#fff
@@ -334,7 +309,7 @@ graph TB
     style TEAM fill:#444,stroke:#777,color:#fff
     style CROSS_TEAM fill:#444,stroke:#777,color:#fff
     style BOTH fill:#2d5016,stroke:#4a8c28,color:#fff
-    style DELPHI_ENGINE fill:#5c1a3a,stroke:#a62e5c,color:#fff
+    style FOUNDRY_ENGINE fill:#5c1a3a,stroke:#a62e5c,color:#fff
 ```
 
 ### What Makes This Different From "Just Another Platform"
@@ -347,7 +322,30 @@ The unified workspace isn't Notion + Linear + GitHub bolted together. The key di
 
 **3. Personal and shared spaces with promotion.** You can draft something in your personal space and promote it to team-visible when it's ready. The boundary between private exploration and shared knowledge is fluid, not a wall. This mirrors how real work happens — you noodle on something privately before sharing it.
 
-**4. The recursion engine sits underneath.** This is where Foundry comes in. The interaction log is a continuous stream of potential fixtures:
+**4. Personal agents as queryable proxies.** The personal layer isn't just a config file — it's a **queryable agent** for each person and team.
+
+```mermaid
+graph LR
+    subgraph "BEFORE INTERRUPTING ARON"
+        Q["Agent needs<br/>a decision"] --> PA["Aron's Agent<br/><i>Public: role, expertise,<br/>conventions maintained</i><br/><i>Private: preferences,<br/>style, past decisions</i>"]
+        PA -->|"confident"| ANS["Answer on<br/>Aron's behalf"]
+        PA -->|"uncertain"| ESC["Escalate to<br/>the real Aron"]
+    end
+
+    style Q fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style PA fill:#5c4a1a,stroke:#a6862e,color:#fff
+    style ANS fill:#2d5016,stroke:#4a8c28,color:#fff
+    style ESC fill:#5c1a3a,stroke:#a62e5c,color:#fff
+```
+
+Each personal agent maintains two layers of context:
+
+- **Public** — role, expertise areas, conventions they maintain, decisions they've made that others can reference. Visible to the team.
+- **Private** — personal preferences, working style, shortcuts, opinions. Visible only to the individual. Gitignored.
+
+The system queries your agent before querying you. Over time, as it captures your corrections and redirects, it handles more decisions autonomously — reducing interruptions while preserving your taste and judgment. Eventually, your agent doesn't just answer questions on your behalf — it acts on your behalf, carrying your taste and context into autonomous work. Privacy is built in: you control what's public and what stays private.
+
+**5. The recursion engine sits underneath.** This is where Foundry comes in. The interaction log is a continuous stream of potential fixtures:
 
 ```mermaid
 graph LR
