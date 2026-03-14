@@ -1,4 +1,4 @@
-# The Delphi Recursion Harness
+# The Foundry Recursion Harness
 
 > **Gradient descent on documentation** — because you can't do gradient descent on the model.
 
@@ -8,7 +8,7 @@
 
 AI agents are only as good as their context: system prompts, docs, skills, and conventions. Today, improving that context is **vibes-based** — tweak something, run a task, eyeball the output, repeat. There's no systematic way to know if a change actually made things better.
 
-With traditional ML, you'd fine-tune the weights. With API-based LLMs, the weights are frozen. Your only levers are the documents surrounding the model. **Delphi treats those documents as the parameters to optimize.**
+With traditional ML, you'd fine-tune the weights. With API-based LLMs, the weights are frozen. Your only levers are the documents surrounding the model. **Foundry treats those documents as the parameters to optimize.**
 
 ---
 
@@ -119,7 +119,7 @@ graph TD
 graph TB
     subgraph "EFFECTIVE CORPUS (per run)"
         direction TB
-        G["Global Layer<br/><i>Delphi-managed baseline</i><br/><i>Shared across all projects</i>"]
+        G["Global Layer<br/><i>Foundry-managed baseline</i><br/><i>Shared across all projects</i>"]
         P["Project Layer<br/><i>Repo-specific corpus</i><br/><i>Evolves per project</i>"]
         L["Personal Layer<br/><i>Individual preferences</i><br/><i>Gitignored, local only</i>"]
 
@@ -251,7 +251,7 @@ graph TB
     BOTH --> CORPUS
     BOTH --> ASSETS
 
-    DELPHI_ENGINE["Delphi Recursion Engine<br/><i>Watches outcomes,<br/>generates fixtures from<br/>real interactions,<br/>improves the corpus</i>"]
+    DELPHI_ENGINE["Foundry Recursion Engine<br/><i>Watches outcomes,<br/>generates fixtures from<br/>real interactions,<br/>improves the corpus</i>"]
 
     CROSS --> DELPHI_ENGINE
     DELPHI_ENGINE --> CORPUS
@@ -279,7 +279,7 @@ The unified workspace isn't Notion + Linear + GitHub bolted together. The key di
 
 **3. Personal and shared spaces with promotion.** You can draft something in your personal space and promote it to team-visible when it's ready. The boundary between private exploration and shared knowledge is fluid, not a wall. This mirrors how real work happens — you noodle on something privately before sharing it.
 
-**4. The recursion engine sits underneath.** This is where Delphi comes in. The interaction log is a continuous stream of potential fixtures:
+**4. The recursion engine sits underneath.** This is where Foundry comes in. The interaction log is a continuous stream of potential fixtures:
 
 ```mermaid
 graph LR
@@ -315,7 +315,7 @@ The core abstraction — **task + corpus + definition of good** — is domain-ag
 | **Content** | "Write launch blog post" | Brand guide, style docs, audience profiles | Published post that hit metrics |
 | **Research** | "Analyze competitor pricing" | Market data, frameworks, prior analyses | Analysis that drove a decision |
 
-In each case: the AI does the work, the human applies taste and judgment, the system records what happened, and the recursion engine asks "what would have made this better?" **The substrate doesn't matter** — git for code, a CRM for sales, a help desk for CX. Delphi provides the recursion pattern; adapters connect it to wherever the work actually lives.
+In each case: the AI does the work, the human applies taste and judgment, the system records what happened, and the recursion engine asks "what would have made this better?" **The substrate doesn't matter** — git for code, a CRM for sales, a help desk for CX. Foundry provides the recursion pattern; adapters connect it to wherever the work actually lives.
 
 ### The Convergence
 
@@ -323,8 +323,8 @@ In each case: the AI does the work, the human applies taste and judgment, the sy
 graph TB
     subgraph "THE CONVERGENCE"
         direction LR
-        TODAY["Today:<br/>Delphi for code"]
-        NEXT["Next:<br/>Delphi for any<br/>knowledge work"]
+        TODAY["Today:<br/>Foundry for code"]
+        NEXT["Next:<br/>Foundry for any<br/>knowledge work"]
         END["End state:<br/>Unified workspace<br/>with embedded recursion"]
 
         TODAY -->|"prove the pattern<br/>in software"| NEXT
@@ -349,7 +349,7 @@ graph TB
     style P3 fill:#5c1a3a,stroke:#a62e5c,color:#fff
 ```
 
-**Delphi starts as the recursion engine for code.** But the architecture is designed so that the same core — fixture-based evaluation, corpus optimization, interaction logging — can wrap around any AI-assisted workflow. The unified workspace is where it all converges: one place where humans guide taste and intent, AI does the work, both record their actions, and the system continuously improves from every interaction.
+**Foundry starts as the recursion engine for code.** But the architecture is designed so that the same core — fixture-based evaluation, corpus optimization, interaction logging — can wrap around any AI-assisted workflow. The unified workspace is where it all converges: one place where humans guide taste and intent, AI does the work, both record their actions, and the system continuously improves from every interaction.
 
 ---
 
@@ -419,7 +419,7 @@ graph TB
         DIR -->|"defines what good<br/>looks like"| FIXTURE["Fixtures"]
         DIR -->|"tunes the<br/>production line"| CORPUS["Corpus<br/><i>prompts, docs, skills</i>"]
 
-        FIXTURE --> ENGINE["Delphi Engine"]
+        FIXTURE --> ENGINE["Foundry Engine"]
         CORPUS --> ENGINE
         ENGINE -->|"runs agents,<br/>scores output"| METRICS["Measurable Quality<br/><i>Composite scores,<br/>attribution, trends</i>"]
         METRICS -->|"diagnosis feeds<br/>back into corpus"| CORPUS
@@ -446,6 +446,6 @@ graph TB
 | **Corpus layering** | Global + project + personal, with immutable snapshots |
 | **Hivemind integration** | Every decision point logged for diagnosis |
 | **Beyond software** | The pattern works for any task + corpus + quality definition |
-| **Unified platform** | GitHub + ticketing + knowledge base + interaction log, with Delphi as the improvement engine |
+| **Unified platform** | GitHub + ticketing + knowledge base + interaction log, with Foundry as the improvement engine |
 
-> **The thesis:** The teams that systematically improve their AI context — treating prompts and docs as optimizable parameters with measurable outcomes — will dramatically outperform teams that rely on intuition. Delphi is the engine that makes that systematic improvement possible.
+> **The thesis:** The teams that systematically improve their AI context — treating prompts and docs as optimizable parameters with measurable outcomes — will dramatically outperform teams that rely on intuition. Foundry is the engine that makes that systematic improvement possible.
