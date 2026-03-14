@@ -2,7 +2,7 @@
 
 ## Aron Greenspan — Founder
 
-Full-stack engineer with experience across fintech, consumer platforms, and infrastructure. Mechanical Engineering from Cal Poly SLO. Currently Senior Software Engineer at UserEvidence.
+Full-stack engineer with experience across fintech, consumer platforms, and infrastructure. Currently Senior Software Engineer at UserEvidence.
 
 Previously founded Carde.io (community engagement platform for gaming stores and publishers) and Dscnd. Worked across PrimeTrust, Spinwheel, Neat Capital (fintech), HelloTech (consumer), and Edgecast (CDN infrastructure).
 
