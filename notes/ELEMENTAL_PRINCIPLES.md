@@ -61,4 +61,36 @@ This is measurable with Foundry's fixture architecture: run the same task with p
 
 ---
 
+## First-Principles Constraint Derivation
+
+The deeper version of "principles over checklists" is this: agents should derive constraints from first principles — not inherit process as cargo cult.
+
+The questions that generate real constraints:
+
+- **What does "done" actually mean?** Not "did I run the tests" but "what evidence would convince someone this is correct?" An agent that understands this will invent verification appropriate to the context — sometimes that's tests, sometimes it's a proof, sometimes it's a demo.
+- **How does an agent know it served the intent?** Not "did I follow the instructions" but "did the outcome match what was actually needed?" This is the difference between compliance and fulfillment. A checklist-following agent can pass every item and still miss the point.
+- **What does integrity require?** Not "did I follow the style guide" but "would I ship this if I had to maintain it?" This produces craft without enumerating craft rules.
+
+### Why This Matters
+
+Standard agent discipline — code review checklists, PR templates, definition-of-done lists — is cargo cult when applied to agents. The agent follows the form without understanding the substance. It checks the boxes because the boxes are there, not because it understands what the boxes protect against.
+
+By deriving constraints from first principles, agents grasp the substance without inheriting the cargo cult. The goal is not agents that follow a process, but agents that **understand WHY the discipline exists** and can serve the underlying need even when no standard process applies.
+
+This is especially important for novel situations — the cases no checklist anticipated. A principle-reasoning agent handles the novel case by asking "what is this discipline trying to protect?" and deriving appropriate behavior. A checklist-following agent has no entry for the novel case and either skips it or halts.
+
+### The Derivation Test
+
+For any process rule in the corpus, ask: "Can an agent derive this from a more fundamental principle?" If yes, replace the rule with the principle. If no, the rule is genuinely atomic — keep it.
+
+Example derivations:
+- "Run tests before committing" derives from "verify with evidence before claiming done"
+- "Don't merge without review" derives from "no unobserved work enters the shared artifact"
+- "Write descriptive commit messages" derives from "leave enough signal for the next actor to understand your intent"
+- "Handle errors gracefully" derives from "the system must be honest about what it knows and doesn't know"
+
+The derived form is shorter, covers more cases, and survives tooling changes. When the test framework changes, "verify with evidence" still works. "Run `pytest`" doesn't.
+
+---
+
 *The corpus should be a small set of load-bearing principles, not an encyclopedia of procedures. Foundry's evaluation engine is how you prove which is which.*

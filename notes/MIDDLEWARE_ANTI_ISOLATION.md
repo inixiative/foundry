@@ -144,14 +144,75 @@ This makes the Herald:
 
 ---
 
+## Push Architecture: Event-Driven, Not Poll-Based
+
+Most agent architectures are request/response — pull-based. The agent asks for what it needs, or it doesn't get it. The Herald *can't* work that way. Its whole purpose is knowing things agents didn't think to ask about. It needs to be **notified**, not polled. That's push architecture.
+
+The primitives already exist. Hivemind v2 is event-based. The harness has hooks. WebSocket is just the transport for making events real-time instead of batched.
+
+### The Event Flow
+
+```
+Agent emits event → Hivemind → WebSocket → Herald receives
+                                          → Herald evaluates
+                                          → Herald pushes back (inject/block/enrich)
+```
+
+No polling. No "check every N seconds." The Herald's tickrate becomes **event-driven** — it fires when something happens, not on a timer. This is both cheaper and more responsive than periodic snapshots.
+
+### Herald as Hook Subscriber
+
+The hook system is the natural integration point. Hooks are already "when X happens, do Y" — the same pattern. The Herald is a hook subscriber that:
+
+1. **Subscribes** to cross-agent events on the Hivemind event bus
+2. **Evaluates** each event against the current cross-agent snapshot
+3. **Emits** its own events back (block, enrich, passthrough, redirect)
+
+The harness infrastructure already supports this shape. The Herald doesn't need a new communication paradigm — it plugs into the one that exists.
+
+### Why This Matters
+
+The reason agent architectures aren't designed this way is that most agents are single-shot or conversational. They don't have a coordination layer to hook into. Foundry does. Hivemind is already an event bus. Making the Herald a subscriber rather than a poller is the natural architecture.
+
+### The Event Contract
+
+The hard part isn't the transport. It's the **contract** — what the Herald subscribes to, the schema of events, and the response types. This is the API design work:
+
+| Event Type | Herald Response Options |
+|------------|------------------------|
+| Agent action (pre-commit) | **Block** — prevent the action, return reason |
+| Agent action (pre-commit) | **Enrich** — allow but inject additional context |
+| Agent action (pre-commit) | **Passthrough** — allow without modification |
+| Agent finding (post-action) | **Redirect** — route the finding to another agent |
+| Agent state change | **Rebalance** — suggest work redistribution |
+| Agent question | **Short-circuit** — answer from another agent's prior work |
+
+The WebSocket/hook plumbing is the easy part given what's already built. The event contract is where the design work lives.
+
+### Snapshot Frequency: Resolved
+
+Open question #1 from below is resolved: **event-driven, not periodic**. Snapshots are captured on every relevant event emission, not on a timer. The Herald evaluates when something happens. If nothing happens, the Herald is idle — zero cost. If three agents emit simultaneously, the Herald processes three events — proportional cost.
+
+Periodic polling is the wrong model because:
+- It wastes cycles when agents are idle
+- It misses events between polling intervals
+- It introduces latency equal to half the polling period on average
+- It doesn't scale — doubling agents doubles the work per poll regardless of actual activity
+
+Event-driven eliminates all four problems.
+
+---
+
 ## Open Questions
 
-1. **Snapshot frequency** — How often should snapshots be captured? Event-driven (on every agent emission) vs. periodic (every N seconds)?
+1. ~~**Snapshot frequency** — How often should snapshots be captured? Event-driven (on every agent emission) vs. periodic (every N seconds)?~~ **Resolved: event-driven. See Push Architecture section above.**
 2. **Decision authority** — Can the Herald block an agent's action, or only recommend? Who breaks ties?
 3. **Herald-to-agent communication** — Does the Herald inject into agent context directly, or go through Hivemind channels?
 4. **Multiple Heralds** — Should there be specialized Heralds (one for deduplication, one for contradiction detection) or one generalist?
 5. **Relationship to Cartographer** — The Cartographer maps knowledge, the Herald maps agent state. Do they share infrastructure? Is the Herald a Cartographer specialization?
 6. **Cost** — Running a cross-cutting observer adds overhead. When is it worth spinning up vs. letting agents run blind?
+7. **Event contract schema** — What is the full taxonomy of events the Herald subscribes to? What metadata must each event carry for the Herald to evaluate without needing to fetch additional state?
+8. **Backpressure** — When agents emit faster than the Herald can evaluate, what's the degradation strategy? Drop, queue, sample?
 
 ---
 
