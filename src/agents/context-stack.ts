@@ -6,6 +6,20 @@ export interface Compressor {
 
 export type LayerFilter = (layer: ContextLayer) => boolean;
 
+/** A single block in the assembled prompt output. */
+export interface PromptBlock {
+  readonly role: "system" | "layer" | "content";
+  readonly id?: string;
+  readonly text: string;
+}
+
+/** Structured prompt assembled from agent prompt + layer prompts + layer content. */
+export interface AssembledContext {
+  readonly blocks: PromptBlock[];
+  /** Convenience: all blocks joined into a single string. */
+  readonly text: string;
+}
+
 export interface ContextSnapshot {
   readonly hash: string;
   readonly content: string;
@@ -112,6 +126,34 @@ export class ContextStack {
   sliceByIds(...ids: string[]): string {
     const idSet = new Set(ids);
     return this.merge((l) => idSet.has(l.id));
+  }
+
+  /**
+   * Assemble structured prompt blocks from an optional agent system prompt,
+   * layer prompts, and layer content. Each layer with a prompt gets a
+   * prompt block followed by its content block. Layers without prompts
+   * get just a content block.
+   */
+  assemble(agentPrompt?: string, filter?: LayerFilter): AssembledContext {
+    const blocks: PromptBlock[] = [];
+
+    if (agentPrompt) {
+      blocks.push({ role: "system", text: agentPrompt });
+    }
+
+    const layers = filter ? this._layers.filter(filter) : this._layers;
+
+    for (const layer of layers) {
+      if (!layer.isWarm || layer.content.length === 0) continue;
+
+      if (layer.prompt) {
+        blocks.push({ role: "layer", id: layer.id, text: layer.prompt });
+      }
+      blocks.push({ role: "content", id: layer.id, text: layer.content });
+    }
+
+    const text = blocks.map((b) => b.text).join("\n\n");
+    return { blocks, text };
   }
 
   // -- Compression --

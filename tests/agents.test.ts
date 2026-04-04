@@ -146,6 +146,82 @@ describe("Classifier", () => {
   });
 });
 
+describe("Agent prompt-layer pairing", () => {
+  test("assembleContext includes agent prompt and layer prompts", () => {
+    const stack = new ContextStack(
+      [
+        ["conventions", 10, "Use TypeScript strict mode"],
+        ["taxonomy", 8, "bug | feature | chore"],
+      ].map(([id, trust, content]) => {
+        const l = new ContextLayer({
+          id: id as string,
+          trust: trust as number,
+          sources: [source(id as string, content as string)],
+          prompt:
+            id === "conventions"
+              ? "Follow these project conventions."
+              : "Classify using this taxonomy.",
+        });
+        l.set(content as string);
+        return l;
+      })
+    );
+
+    const executor = new Executor({
+      id: "classifier",
+      stack,
+      prompt: "You are a message classifier.",
+      handler: async (context, payload: string) => context,
+    });
+
+    const assembled = executor.assembleContext();
+    expect(assembled.blocks[0]).toEqual({
+      role: "system",
+      text: "You are a message classifier.",
+    });
+    expect(assembled.blocks.length).toBe(5);
+    expect(assembled.text).toContain("You are a message classifier.");
+    expect(assembled.text).toContain("Follow these project conventions.");
+    expect(assembled.text).toContain("Use TypeScript strict mode");
+  });
+
+  test("assembleContext respects filterOverride", () => {
+    const stack = makeStack(
+      ["docs", 10, "docs content"],
+      ["memory", 3, "memory content"]
+    );
+    // Add prompt to docs layer
+    stack.getLayer("docs")!.prompt = "Reference documentation.";
+
+    const executor = new Executor({
+      id: "writer",
+      stack,
+      prompt: "You are a writer.",
+      handler: async (ctx) => ctx,
+    });
+
+    const assembled = executor.assembleContext((l) => l.id === "docs");
+    expect(assembled.blocks.length).toBe(3); // system + layer prompt + content
+    expect(assembled.text).not.toContain("memory content");
+    expect(assembled.text).toContain("Reference documentation.");
+  });
+
+  test("assembleContext without agent prompt", () => {
+    const stack = makeStack(["docs", 10, "docs content"]);
+    stack.getLayer("docs")!.prompt = "Reference docs.";
+
+    const executor = new Executor({
+      id: "writer",
+      stack,
+      handler: async (ctx) => ctx,
+    });
+
+    const assembled = executor.assembleContext();
+    expect(assembled.blocks[0].role).toBe("layer");
+    expect(assembled.blocks.length).toBe(2);
+  });
+});
+
 describe("Router", () => {
   test("returns route decision", async () => {
     const stack = makeStack(["topology", 10, "Agents: fix, build, answer"]);

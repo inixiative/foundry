@@ -13,6 +13,8 @@ export interface ContextLayerConfig {
   staleness?: number;
   trust?: number;
   maxTokens?: number;
+  /** Instruction explaining how this layer's content should be used. */
+  prompt?: string;
 }
 
 export type LayerState = "cold" | "warming" | "warm" | "stale" | "compressing";
@@ -32,6 +34,7 @@ export class ContextLayer {
   private _staleness: number | undefined;
   private _trust: number;
   private _maxTokens: number | undefined;
+  private _prompt: string | undefined;
   private _warmingPromise: Promise<void> | null = null;
 
   private _listeners: Array<(state: LayerState, layer: ContextLayer) => void> =
@@ -43,6 +46,7 @@ export class ContextLayer {
     this._staleness = config.staleness;
     this._trust = config.trust ?? 0;
     this._maxTokens = config.maxTokens;
+    this._prompt = config.prompt;
   }
 
   // -- Accessors --
@@ -188,6 +192,14 @@ export class ContextLayer {
 
   set trust(value: number) {
     this._trust = value;
+  }
+
+  get prompt(): string | undefined {
+    return this._prompt;
+  }
+
+  set prompt(value: string | undefined) {
+    this._prompt = value;
   }
 
   // -- Internal --

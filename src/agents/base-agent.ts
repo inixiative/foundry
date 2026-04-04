@@ -1,5 +1,5 @@
 import { computeHash } from "./context-layer";
-import { ContextStack, type LayerFilter } from "./context-stack";
+import { ContextStack, type LayerFilter, type AssembledContext } from "./context-stack";
 
 export interface ExecutionResult<T = unknown> {
   readonly output: T;
@@ -12,6 +12,8 @@ export interface AgentConfig {
   readonly id: string;
   stack: ContextStack;
   layerFilter?: LayerFilter;
+  /** System prompt defining this agent's role. */
+  prompt?: string;
 }
 
 /**
@@ -26,11 +28,13 @@ export interface AgentConfig {
  */
 export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
   readonly id: string;
+  readonly prompt: string | undefined;
   protected _stack: ContextStack;
   protected _layerFilter: LayerFilter | undefined;
 
   constructor(config: AgentConfig) {
     this.id = config.id;
+    this.prompt = config.prompt;
     this._stack = config.stack;
     this._layerFilter = config.layerFilter;
   }
@@ -39,6 +43,15 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
     return this._layerFilter
       ? this._stack.slice(this._layerFilter)
       : this._stack.merge();
+  }
+
+  /**
+   * Assemble structured prompt blocks from agent prompt + layer prompts + content.
+   * Use this instead of getContext() when you want the full prompt-layer pairing.
+   */
+  assembleContext(filterOverride?: LayerFilter): AssembledContext {
+    const effective = filterOverride ?? this._layerFilter;
+    return this._stack.assemble(this.prompt, effective);
   }
 
   getContextHash(): string {

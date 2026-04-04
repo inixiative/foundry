@@ -12,6 +12,8 @@ export {
   type Compressor,
   type LayerFilter,
   type ContextSnapshot,
+  type PromptBlock,
+  type AssembledContext,
 } from "./context-stack";
 
 export {

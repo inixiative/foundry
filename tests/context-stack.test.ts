@@ -1,16 +1,17 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { ContextLayer, type ContextSource } from "../src/agents/context-layer";
-import { ContextStack, type Compressor } from "../src/agents/context-stack";
+import { ContextStack, type Compressor, type AssembledContext } from "../src/agents/context-stack";
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-function makeLayer(id: string, trust: number, content?: string): ContextLayer {
+function makeLayer(id: string, trust: number, content?: string, prompt?: string): ContextLayer {
   const layer = new ContextLayer({
     id,
     trust,
     sources: content ? [source(`${id}-src`, content)] : [],
+    prompt,
   });
   if (content) layer.set(content);
   return layer;
@@ -243,6 +244,93 @@ describe("ContextStack", () => {
       stack.invalidateAll();
       expect(stack.getLayer("a")!.state).toBe("stale");
       expect(stack.getLayer("b")!.state).toBe("stale");
+    });
+  });
+
+  describe("assemble", () => {
+    test("assembles with agent prompt and layer prompts", () => {
+      const stack = new ContextStack([
+        makeLayer("conventions", 10, "Use TypeScript strict mode", "These are project conventions. Follow them strictly."),
+        makeLayer("taxonomy", 8, "bug | feature | chore", "Use this taxonomy to classify incoming messages."),
+      ]);
+
+      const assembled = stack.assemble("You are a classifier agent.");
+
+      expect(assembled.blocks.length).toBe(5); // system + 2*(prompt + content)
+      expect(assembled.blocks[0]).toEqual({ role: "system", text: "You are a classifier agent." });
+      expect(assembled.blocks[1]).toEqual({ role: "layer", id: "conventions", text: "These are project conventions. Follow them strictly." });
+      expect(assembled.blocks[2]).toEqual({ role: "content", id: "conventions", text: "Use TypeScript strict mode" });
+      expect(assembled.blocks[3]).toEqual({ role: "layer", id: "taxonomy", text: "Use this taxonomy to classify incoming messages." });
+      expect(assembled.blocks[4]).toEqual({ role: "content", id: "taxonomy", text: "bug | feature | chore" });
+    });
+
+    test("assembles without agent prompt", () => {
+      const stack = new ContextStack([
+        makeLayer("docs", 5, "API docs here", "Reference documentation."),
+      ]);
+
+      const assembled = stack.assemble();
+      expect(assembled.blocks.length).toBe(2);
+      expect(assembled.blocks[0].role).toBe("layer");
+      expect(assembled.blocks[1].role).toBe("content");
+    });
+
+    test("assembles layers without prompts as content-only", () => {
+      const stack = new ContextStack([
+        makeLayer("with-prompt", 5, "content A", "instruction A"),
+        makeLayer("no-prompt", 5, "content B"),
+      ]);
+
+      const assembled = stack.assemble();
+      expect(assembled.blocks.length).toBe(3); // prompt+content for first, content-only for second
+      expect(assembled.blocks[0]).toEqual({ role: "layer", id: "with-prompt", text: "instruction A" });
+      expect(assembled.blocks[1]).toEqual({ role: "content", id: "with-prompt", text: "content A" });
+      expect(assembled.blocks[2]).toEqual({ role: "content", id: "no-prompt", text: "content B" });
+    });
+
+    test("assemble skips cold and empty layers", () => {
+      const cold = new ContextLayer({ id: "cold", prompt: "should not appear" });
+      const warm = makeLayer("warm", 5, "visible", "instruction");
+      const stack = new ContextStack([cold, warm]);
+
+      const assembled = stack.assemble();
+      expect(assembled.blocks.length).toBe(2);
+      expect(assembled.blocks[0].id).toBe("warm");
+    });
+
+    test("assemble respects filter", () => {
+      const stack = new ContextStack([
+        makeLayer("a", 5, "content A", "prompt A"),
+        makeLayer("b", 10, "content B", "prompt B"),
+      ]);
+
+      const assembled = stack.assemble("system", (l) => l.trust > 7);
+      expect(assembled.blocks.length).toBe(3); // system + prompt B + content B
+      expect(assembled.blocks[1].id).toBe("b");
+    });
+
+    test("assemble text joins all blocks", () => {
+      const stack = new ContextStack([
+        makeLayer("a", 5, "content A", "prompt A"),
+      ]);
+
+      const assembled = stack.assemble("system");
+      expect(assembled.text).toBe("system\n\nprompt A\n\ncontent A");
+    });
+
+    test("assemble with empty stack returns only system prompt", () => {
+      const stack = new ContextStack();
+      const assembled = stack.assemble("You are a router.");
+      expect(assembled.blocks.length).toBe(1);
+      expect(assembled.blocks[0].role).toBe("system");
+      expect(assembled.text).toBe("You are a router.");
+    });
+
+    test("assemble with no prompt and empty stack returns empty", () => {
+      const stack = new ContextStack();
+      const assembled = stack.assemble();
+      expect(assembled.blocks.length).toBe(0);
+      expect(assembled.text).toBe("");
     });
   });
 });
