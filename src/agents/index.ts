@@ -36,6 +36,7 @@ export {
   BaseAgent,
   type ExecutionResult,
   type AgentConfig,
+  type AgentLLMConfig,
 } from "./base-agent";
 
 export {
