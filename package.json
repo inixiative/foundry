@@ -10,7 +10,9 @@
     "demo": "bun run src/demo.ts"
   },
   "dependencies": {
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "prisma": "^6.6.0",
+    "@prisma/client": "^6.6.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

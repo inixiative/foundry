@@ -1,0 +1,159 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pg_trgm]
+}
+
+/// A memory entry — conventions, corrections, ADRs, taste, signals.
+/// The core unit of knowledge in the system.
+model Entry {
+  id        String   @id
+  kind      String   // "convention" | "correction" | "taste" | "adr" | "ci_rule" | "security" | etc.
+  content   String
+  source    String?  // agent id, "operator:name", system id
+  timestamp DateTime @default(now())
+  meta      Json?
+
+  /// pgvector embedding for semantic search
+  embedding Unsupported("vector(1536)")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+  @@index([timestamp])
+  @@index([source])
+  @@map("entries")
+}
+
+/// A trace — the full journey of a message through the system.
+model Trace {
+  id         String    @id
+  messageId  String
+  threadId   String?
+  startedAt  Float     // performance.now() relative
+  endedAt    Float?
+  durationMs Float?
+
+  /// The full span tree, stored as JSONB
+  root       Json
+  summary    Json?
+
+  createdAt  DateTime  @default(now())
+
+  spans      Span[]
+  interventions Intervention[]
+
+  @@index([messageId])
+  @@index([threadId])
+  @@index([createdAt])
+  @@map("traces")
+}
+
+/// A flattened span — for querying across traces.
+/// The tree structure lives in Trace.root; these are indexed copies.
+model Span {
+  id          String  @id
+  traceId     String
+  parentId    String?
+  name        String
+  kind        String  // "ingress" | "classify" | "route" | "dispatch" | etc.
+  agentId     String?
+  threadId    String?
+  status      String  // "running" | "ok" | "error"
+
+  layerIds    String[]
+  contextHash String?
+
+  input       Json?
+  output      Json?
+  error       Json?
+  annotations Json?
+
+  startedAt   Float
+  endedAt     Float?
+  durationMs  Float?
+
+  trace       Trace   @relation(fields: [traceId], references: [id], onDelete: Cascade)
+
+  @@index([traceId])
+  @@index([kind])
+  @@index([agentId])
+  @@index([status])
+  @@map("spans")
+}
+
+/// A signal — typed side-channel information from agent runs.
+model Signal {
+  id         String   @id
+  kind       String   // "correction" | "convention" | "taste" | etc.
+  source     String
+  content    Json
+  confidence Float?
+  timestamp  DateTime @default(now())
+  refs       Json?    // Array of { system, locator }
+
+  createdAt  DateTime @default(now())
+
+  @@index([kind])
+  @@index([source])
+  @@index([timestamp])
+  @@map("signals")
+}
+
+/// A manual intervention — operator override on a trace span.
+model Intervention {
+  id         String   @id
+  traceId    String
+  spanId     String
+  actual     Json?
+  correction Json
+  reason     String?
+  operator   String
+
+  createdAt  DateTime @default(now())
+
+  trace      Trace    @relation(fields: [traceId], references: [id], onDelete: Cascade)
+
+  @@index([traceId])
+  @@index([operator])
+  @@map("interventions")
+}
+
+/// Thread metadata — persisted snapshot of thread state.
+model ThreadState {
+  id          String   @id
+  description String   @default("")
+  tags        String[]
+  status      String   @default("idle") // "idle" | "active" | "waiting" | "archived"
+  parentId    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  archivedAt  DateTime?
+
+  @@index([status])
+  @@index([parentId])
+  @@map("thread_states")
+}
+
+/// Conversation message — the human/agent dialogue within a thread.
+model Message {
+  id        String   @id
+  threadId  String
+  role      String   // "user" | "agent" | "system"
+  content   String
+  traceId   String?  // Links to the trace if this message was processed
+  meta      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([threadId, createdAt])
+  @@index([traceId])
+  @@map("messages")
+}
