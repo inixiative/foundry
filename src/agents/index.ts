@@ -96,6 +96,16 @@ export {
   type PipelineStep,
 } from "./harness";
 
+// Tracing
+export {
+  Trace,
+  type Span,
+  type SpanKind,
+  type SpanStatus,
+  type TraceSummary,
+  type StageSummary,
+} from "./trace";
+
 // Sessions
 export {
   SessionManager,

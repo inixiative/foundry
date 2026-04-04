@@ -4,49 +4,35 @@ import type { Decision } from "./decider";
 import type { Classification } from "./classifier";
 import type { Route } from "./router";
 import type { LayerFilter } from "./context-stack";
+import { Trace } from "./trace";
 
-/**
- * An incoming message to the harness — the external entry point.
- */
 export interface Message<T = unknown> {
   readonly id: string;
   readonly payload: T;
   readonly meta?: Record<string, unknown>;
 }
 
-/**
- * The result after a message flows through the harness pipeline.
- */
 export interface HarnessResult<T = unknown> {
   readonly messageId: string;
   readonly classification?: Decision<Classification>;
   readonly route?: Decision<Route>;
   readonly result: ExecutionResult<T>;
+  readonly trace: Trace;
   readonly timestamp: number;
 }
 
-/**
- * Pipeline step — a named stage in the harness flow.
- * Each step can transform the payload, short-circuit, or continue.
- */
 export interface PipelineStep<TIn = unknown, TOut = unknown> {
   readonly id: string;
-  run(input: TIn, harness: Harness): Promise<TOut>;
+  run(input: TIn, harness: Harness, trace: Trace): Promise<TOut>;
 }
 
 /**
  * The Harness is the entry point for external callers.
  *
- * External systems (API, CLI, webhook, other agents) call harness.send(message).
- * The Harness owns a Thread and orchestrates the flow:
- *
- *   Message in → classify → route → dispatch → writeback → response out
- *
- * The pipeline is configurable — you can set a classifier agent,
- * a router agent, and a default executor, or wire up custom pipeline steps.
- *
- * The Harness also provides a simpler direct dispatch for cases where
- * the caller already knows which agent to target.
+ * Every message that flows through send() gets a Trace — a full record
+ * of its journey through classify → route → dispatch, with timing,
+ * layer visibility, inputs/outputs at each stage. The UI can render
+ * any message's trace as a drillable tree.
  */
 export class Harness {
   readonly thread: Thread;
@@ -55,29 +41,28 @@ export class Harness {
   private _routerId: string | null = null;
   private _defaultExecutorId: string | null = null;
   private _pipeline: PipelineStep[] = [];
+  private _traces: Trace[] = [];
+  private _maxTraces: number;
 
-  constructor(thread: Thread) {
+  constructor(thread: Thread, opts?: { maxTraces?: number }) {
     this.thread = thread;
+    this._maxTraces = opts?.maxTraces ?? 1000;
   }
 
   // -- Configuration --
 
-  /** Set the classifier agent used in the auto pipeline. */
   setClassifier(agentId: string): void {
     this._classifierId = agentId;
   }
 
-  /** Set the router agent used in the auto pipeline. */
   setRouter(agentId: string): void {
     this._routerId = agentId;
   }
 
-  /** Set the default executor for when the router has no opinion. */
   setDefaultExecutor(agentId: string): void {
     this._defaultExecutorId = agentId;
   }
 
-  /** Add a custom pipeline step. Steps run in order. */
   addStep(step: PipelineStep): void {
     this._pipeline.push(step);
   }
@@ -91,68 +76,99 @@ export class Harness {
 
   // -- Entry points --
 
-  /**
-   * Send a message through the full pipeline: classify → route → dispatch.
-   *
-   * If no classifier/router is configured, those steps are skipped.
-   * The pipeline adapts to what's wired up.
-   */
   async send<T>(message: Message<T>): Promise<HarnessResult> {
+    const trace = new Trace(message.id);
+
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
     let targetAgent: string | undefined;
     let filterOverride: LayerFilter | undefined;
 
-    // 1. Classify (if configured)
-    if (this._classifierId) {
-      const classifyResult = await this.thread.dispatch(
-        this._classifierId,
-        message.payload
-      );
-      classification = classifyResult.output as Decision<Classification>;
-    }
+    try {
+      // 1. Classify
+      if (this._classifierId) {
+        trace.start("classify", "classify", {
+          agentId: this._classifierId,
+          input: message.payload,
+        });
 
-    // 2. Route (if configured)
-    if (this._routerId) {
-      const routePayload = classification
-        ? { payload: message.payload, classification: classification.value }
-        : message.payload;
+        const classifyResult = await this.thread.dispatch(
+          this._classifierId,
+          message.payload
+        );
+        classification = classifyResult.output as Decision<Classification>;
 
-      const routeResult = await this.thread.dispatch(this._routerId, routePayload);
-      route = routeResult.output as Decision<Route>;
-      targetAgent = route.value.destination;
-
-      // Build a layer filter from the route's contextSlice hint
-      if (route.value.contextSlice) {
-        const sliceIds = new Set(route.value.contextSlice);
-        filterOverride = (layer) => sliceIds.has(layer.id);
+        trace.end(classification);
       }
-    }
 
-    // 3. Determine target
-    const agentId = targetAgent ?? this._defaultExecutorId;
-    if (!agentId) {
-      throw new Error(
-        "No target agent: router returned no destination and no default executor is configured"
+      // 2. Route
+      if (this._routerId) {
+        const routePayload = classification
+          ? { payload: message.payload, classification: classification.value }
+          : message.payload;
+
+        trace.start("route", "route", {
+          agentId: this._routerId,
+          input: routePayload,
+        });
+
+        const routeResult = await this.thread.dispatch(this._routerId, routePayload);
+        route = routeResult.output as Decision<Route>;
+        targetAgent = route.value.destination;
+
+        if (route.value.contextSlice) {
+          const sliceIds = new Set(route.value.contextSlice);
+          filterOverride = (layer) => sliceIds.has(layer.id);
+        }
+
+        trace.end(route);
+      }
+
+      // 3. Determine target
+      const agentId = targetAgent ?? this._defaultExecutorId;
+      if (!agentId) {
+        throw new Error(
+          "No target agent: router returned no destination and no default executor is configured"
+        );
+      }
+
+      // 4. Dispatch
+      trace.start("dispatch", "dispatch", {
+        agentId,
+        input: message.payload,
+        layerIds: route?.value.contextSlice,
+      });
+
+      const result = await this.thread.dispatch(
+        agentId,
+        message.payload,
+        filterOverride
       );
+
+      trace.end(result.output);
+
+      // 5. Close trace
+      trace.end(); // close ingress
+      trace.finish();
+
+      this._recordTrace(trace);
+
+      return {
+        messageId: message.id,
+        classification,
+        route,
+        result,
+        trace,
+        timestamp: Date.now(),
+      };
+    } catch (err) {
+      trace.end(undefined, err);
+      trace.finish();
+      this._recordTrace(trace);
+      throw err;
     }
-
-    // 4. Dispatch
-    const result = await this.thread.dispatch(agentId, message.payload, filterOverride);
-
-    return {
-      messageId: message.id,
-      classification,
-      route,
-      result,
-      timestamp: Date.now(),
-    };
   }
 
-  /**
-   * Direct dispatch — bypass classify/route, go straight to a specific agent.
-   * Still runs through Thread middleware.
-   */
   async dispatch<T>(
     agentId: string,
     payload: T,
@@ -161,9 +177,6 @@ export class Harness {
     return this.thread.dispatch(agentId, payload, filterOverride);
   }
 
-  /**
-   * Fan out a message to multiple agents.
-   */
   async fan<T>(
     agentIds: string[],
     payload: T,
@@ -172,15 +185,40 @@ export class Harness {
     return this.thread.fan(agentIds, payload, filterOverride);
   }
 
-  /**
-   * Run the custom pipeline on an input.
-   * Each step receives the output of the previous step.
-   */
-  async runPipeline<T>(input: T): Promise<unknown> {
+  async runPipeline<T>(input: T, trace?: Trace): Promise<unknown> {
     let current: unknown = input;
+    const t = trace ?? new Trace("pipeline");
+
     for (const step of this._pipeline) {
-      current = await step.run(current, this);
+      t.start(step.id, "middleware", { input: current });
+      current = await step.run(current, this, t);
+      t.end(current);
     }
+
+    if (!trace) t.finish();
     return current;
+  }
+
+  // -- Trace history --
+
+  get traces(): ReadonlyArray<Trace> {
+    return this._traces;
+  }
+
+  getTrace(traceId: string): Trace | undefined {
+    return this._traces.find((t) => t.id === traceId);
+  }
+
+  getTraceForMessage(messageId: string): Trace | undefined {
+    return this._traces.find((t) => t.messageId === messageId);
+  }
+
+  // -- Internal --
+
+  private _recordTrace(trace: Trace): void {
+    this._traces.push(trace);
+    if (this._traces.length > this._maxTraces) {
+      this._traces.shift();
+    }
   }
 }
