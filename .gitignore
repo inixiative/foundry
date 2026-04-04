@@ -3,3 +3,8 @@ dist
 *.tsbuildinfo
 bun.lock
 .foundry/
+
+# Environment files (keep .example files)
+.env
+.env.local
+.env.test
