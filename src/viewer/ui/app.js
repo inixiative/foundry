@@ -14,6 +14,7 @@ import { ThreadTree } from "./thread-tree.js";
 import { Conversation } from "./conversation.js";
 import { DetailDrawer } from "./detail-drawer.js";
 import { CommandPalette, HelpOverlay } from "./command-palette.js";
+import { Settings, settingsOpen } from "./settings.js";
 
 // ---------------------------------------------------------------------------
 // Status bar
@@ -54,6 +55,9 @@ function ActionBar() {
         snapshot
       </button>
       <span class="action-sep"></span>
+      <button class="action-btn" onClick=${() => { settingsOpen.value = true; }} title="Settings (s)">
+        settings
+      </button>
       <button class="action-btn subtle" onClick=${() => { loadTraces(); loadThreads(); }} title="Refresh (r)">
         refresh
       </button>
@@ -133,6 +137,7 @@ function App() {
       inspect: () => executeAction("thread:inspect"),
       override: () => { /* TODO: open override form */ },
       refresh: () => { loadTraces(); loadThreads(); },
+      openSettings: () => { settingsOpen.value = !settingsOpen.value; },
       toggleLayers: () => { /* handled by tree panel */ },
       toggleEvents: () => { /* handled by tree panel */ },
     });
@@ -174,6 +179,7 @@ function App() {
       <!-- Overlays -->
       <${CommandPalette} />
       <${HelpOverlay} />
+      <${Settings} />
       <${Toast} />
     </div>
   `;

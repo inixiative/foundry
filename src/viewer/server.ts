@@ -4,13 +4,22 @@ import type { EventStream, StreamEvent } from "../agents/event-stream";
 import type { Harness } from "../agents/harness";
 import type { InterventionLog } from "../agents/intervention";
 import type { Trace } from "../agents/trace";
+import type { LLMProvider } from "../providers/types";
 import { ActionHandler, type OperatorAction } from "./actions";
+import { ConfigStore, type FoundryConfig } from "./config";
+import { AIAssist, type AssistRequest } from "./ai-assist";
 
 export interface ViewerConfig {
   harness: Harness;
   eventStream: EventStream;
   interventions: InterventionLog;
   port?: number;
+  /** Directory for persisting settings. Defaults to .foundry/ */
+  configDir?: string;
+  /** LLM provider for AI assist (optional). */
+  assistProvider?: LLMProvider;
+  /** Model for AI assist (optional). */
+  assistModel?: string;
 }
 
 /**
@@ -29,6 +38,14 @@ export function createViewer(config: ViewerConfig) {
 
   // Action handler for operator commands
   const actions = new ActionHandler({ harness, eventStream, interventions });
+
+  // Config store for settings persistence
+  const configStore = new ConfigStore(config.configDir ?? ".foundry");
+
+  // AI assist (optional — only available if a provider is configured)
+  const aiAssist = config.assistProvider
+    ? new AIAssist(config.assistProvider, config.assistModel)
+    : null;
 
   // -- REST: Traces --
 
@@ -134,6 +151,90 @@ export function createViewer(config: ViewerConfig) {
     return c.json(actions.history.slice(-50));
   });
 
+  // -- REST: Settings --
+
+  app.get("/api/settings", async (c) => {
+    const cfg = await configStore.load();
+    // Sync runtime state into config on first read
+    configStore.syncFromHarness(harness);
+    return c.json(cfg);
+  });
+
+  app.put("/api/settings", async (c) => {
+    const body = await c.req.json();
+    await configStore.save(body as FoundryConfig);
+    return c.json({ ok: true });
+  });
+
+  app.patch("/api/settings/:section", async (c) => {
+    const section = c.req.param("section");
+    const body = await c.req.json();
+    const updated = await configStore.patch(section, body);
+    return c.json(updated);
+  });
+
+  app.delete("/api/settings/:section/:id", async (c) => {
+    const section = c.req.param("section");
+    const id = c.req.param("id");
+    const updated = await configStore.deleteItem(section, id);
+    return c.json(updated);
+  });
+
+  // -- REST: AI Assist --
+
+  app.post("/api/assist", async (c) => {
+    if (!aiAssist) {
+      return c.json({ error: "AI assist not configured. Pass assistProvider to ViewerConfig." }, 400);
+    }
+    const body = await c.req.json() as AssistRequest;
+    const cfg = await configStore.load();
+    configStore.syncFromHarness(harness);
+    try {
+      const result = await aiAssist.analyze(cfg, body);
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: `AI assist failed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  });
+
+  app.post("/api/assist/prompt", async (c) => {
+    if (!aiAssist) {
+      return c.json({ error: "AI assist not configured." }, 400);
+    }
+    const body = await c.req.json();
+    const cfg = await configStore.load();
+    try {
+      const result = await aiAssist.improvePrompt(
+        cfg,
+        { type: body.type, id: body.id },
+        body.currentPrompt ?? "",
+        body.instruction
+      );
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: `Prompt assist failed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  });
+
+  app.post("/api/assist/agent-config", async (c) => {
+    if (!aiAssist) {
+      return c.json({ error: "AI assist not configured." }, 400);
+    }
+    const body = await c.req.json();
+    const cfg = await configStore.load();
+    try {
+      const result = await aiAssist.suggestAgentConfig(
+        cfg,
+        body.agentId,
+        body.kind,
+        body.prompt ?? ""
+      );
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: `Config assist failed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  });
+
   // -- Static: UI files --
   // Serves the Preact-based UI from /ui/*
 
@@ -142,7 +243,7 @@ export function createViewer(config: ViewerConfig) {
   // Root serves the HTML shell
   app.get("/", serveStatic({ path: "./src/viewer/ui/index.html" }));
 
-  return { app, port, actions };
+  return { app, port, actions, configStore };
 }
 
 /** Start the viewer server. */

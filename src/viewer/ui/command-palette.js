@@ -5,6 +5,7 @@
 
 import { html, useState, useEffect, useRef } from "./lib.js";
 import { commandPaletteOpen, helpOpen, executeAction, showToast } from "./store.js";
+import { settingsOpen } from "./settings.js";
 import { allBindings } from "./hotkeys.js";
 
 const COMMANDS = [
@@ -13,6 +14,7 @@ const COMMANDS = [
   { id: "inspect", label: "Inspect thread state", icon: "🔍", action: () => executeAction("thread:inspect") },
   { id: "snapshot", label: "System snapshot", icon: "📸", action: () => executeAction("system:snapshot") },
   { id: "archive", label: "Archive thread", icon: "📦", action: () => executeAction("thread:archive") },
+  { id: "settings", label: "Open settings", icon: "⚙", action: () => { settingsOpen.value = true; } },
 ];
 
 export function CommandPalette() {

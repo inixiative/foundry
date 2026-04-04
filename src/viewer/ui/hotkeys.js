@@ -126,6 +126,7 @@ export function registerDefaults(actions) {
   bind("r", { description: "Refresh all data", category: "actions", action: actions.refresh });
 
   // Panels
+  bind("s", { description: "Open settings", category: "panels", action: actions.openSettings });
   bind("l", { description: "Toggle layers panel", category: "panels", action: actions.toggleLayers });
   bind("e", { description: "Toggle events panel", category: "panels", action: actions.toggleEvents });
 }
