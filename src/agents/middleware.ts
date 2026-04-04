@@ -1,58 +1,68 @@
 import type { ExecutionResult } from "./base-agent";
 
-/**
- * Context passed through the middleware chain for each dispatch.
- */
 export interface DispatchContext<TPayload = unknown> {
   readonly agentId: string;
   readonly payload: TPayload;
   readonly timestamp: number;
 
-  /** Mutable bag for middleware to annotate — downstream middleware and the final handler can read it. */
+  /** Mutable bag for middleware to annotate. */
   annotations: Record<string, unknown>;
 }
 
-/**
- * The result after a dispatch completes (passed to after-hooks).
- */
 export interface DispatchOutcome<TResult = unknown> {
   readonly context: DispatchContext;
   readonly result: ExecutionResult<TResult>;
   readonly durationMs: number;
 }
 
-/**
- * Next function — call to continue the chain.
- * The returned ExecutionResult flows back through after-hooks.
- */
 export type MiddlewareNext = () => Promise<ExecutionResult>;
 
-/**
- * A middleware function.
- *
- * - Before the dispatch: inspect/modify the context, short-circuit by returning early
- * - Call next() to continue to the agent
- * - After next() resolves: inspect/modify the result, trigger writeback, etc.
- *
- * This is where the Herald sits — it sees every dispatch, can cross-pollinate,
- * detect contradictions, deduplicate, or block.
- */
 export type Middleware = (
   ctx: DispatchContext,
   next: MiddlewareNext
 ) => Promise<ExecutionResult>;
 
 /**
- * A composable middleware chain.
+ * When a middleware should run.
  *
- * Middleware runs in registration order on the way in,
- * and reverse order on the way out (like Express/Koa).
+ * - "always": runs on every dispatch (logging, tracing, metrics)
+ * - "conditional": runs only when its `when` predicate returns true
+ *   (deep classification, expensive enrichment, guardrails)
+ */
+export type MiddlewareTier = "always" | "conditional";
+
+export interface MiddlewareEntry {
+  readonly id: string;
+  readonly tier: MiddlewareTier;
+  readonly fn: Middleware;
+  readonly when?: (ctx: DispatchContext) => boolean;
+}
+
+/**
+ * A composable middleware chain with tiered execution.
+ *
+ * "always" middleware runs on every request — lightweight, fast.
+ * "conditional" middleware runs only when its predicate matches —
+ * heavier, richer, only when needed.
+ *
+ * Both tiers compose in registration order on the way in,
+ * reverse order on the way out (Koa-style).
  */
 export class MiddlewareChain {
-  private _middleware: Array<{ id: string; fn: Middleware }> = [];
+  private _middleware: MiddlewareEntry[] = [];
 
+  /** Register always-on middleware. */
   use(id: string, fn: Middleware): void {
-    this._middleware.push({ id, fn });
+    this._middleware.push({ id, tier: "always", fn });
+  }
+
+  /** Register conditional middleware with a predicate. */
+  useWhen(
+    id: string,
+    when: (ctx: DispatchContext) => boolean,
+    fn: Middleware
+  ): void {
+    this._middleware.push({ id, tier: "conditional", fn, when });
   }
 
   remove(id: string): boolean {
@@ -62,21 +72,24 @@ export class MiddlewareChain {
     return true;
   }
 
-  /**
-   * Execute the chain with a final handler (the actual agent dispatch).
-   */
+  /** Execute the chain. Conditional middleware only runs when its predicate matches. */
   async execute(
     ctx: DispatchContext,
     handler: MiddlewareNext
   ): Promise<ExecutionResult> {
+    // Build the active stack for this request
+    const active = this._middleware.filter((m) => {
+      if (m.tier === "always") return true;
+      return m.when ? m.when(ctx) : false;
+    });
+
     let idx = 0;
-    const stack = this._middleware;
 
     const run = async (): Promise<ExecutionResult> => {
-      if (idx >= stack.length) {
+      if (idx >= active.length) {
         return handler();
       }
-      const current = stack[idx++];
+      const current = active[idx++];
       return current.fn(ctx, run);
     };
 
@@ -85,5 +98,10 @@ export class MiddlewareChain {
 
   get size(): number {
     return this._middleware.length;
+  }
+
+  /** Get entries by tier (for UI display). */
+  byTier(tier: MiddlewareTier): ReadonlyArray<MiddlewareEntry> {
+    return this._middleware.filter((m) => m.tier === tier);
   }
 }

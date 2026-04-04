@@ -67,6 +67,8 @@ export {
 export {
   MiddlewareChain,
   type Middleware,
+  type MiddlewareTier,
+  type MiddlewareEntry,
   type DispatchContext,
   type DispatchOutcome,
   type MiddlewareNext,
@@ -113,6 +115,12 @@ export {
   type LayerInheritance,
   type SessionEvent,
 } from "./session";
+
+// Interventions
+export {
+  InterventionLog,
+  type Intervention,
+} from "./intervention";
 
 // Observability
 export {
