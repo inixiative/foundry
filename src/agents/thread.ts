@@ -2,8 +2,30 @@ import { ContextStack } from "./context-stack";
 import type { LayerFilter } from "./context-stack";
 import { CacheLifecycle } from "./cache-lifecycle";
 import { BaseAgent, type ExecutionResult } from "./base-agent";
-import { MiddlewareChain, type Middleware, type DispatchContext } from "./middleware";
-import { SignalBus, type Signal } from "./signal";
+import { MiddlewareChain, type DispatchContext } from "./middleware";
+import { SignalBus } from "./signal";
+
+export type ThreadStatus = "idle" | "active" | "waiting" | "archived";
+
+export interface ThreadMeta {
+  /** Living description — what this thread is doing right now. */
+  description: string;
+
+  /** Classification tags — what kind of work this thread handles. */
+  tags: string[];
+
+  /** Current status. */
+  status: ThreadStatus;
+
+  /** When this thread was created. */
+  readonly createdAt: number;
+
+  /** Last time a dispatch happened on this thread. */
+  lastActiveAt: number;
+
+  /** When the thread was archived (if applicable). */
+  archivedAt?: number;
+}
 
 export interface Dispatch<T = unknown> {
   readonly agentId: string;
@@ -20,11 +42,21 @@ export interface FanResult {
   readonly error?: unknown;
 }
 
+export interface ThreadConfig {
+  maxDispatches?: number;
+  maxSignalHistory?: number;
+  description?: string;
+  tags?: string[];
+}
+
 /**
  * The Thread is the orchestrator.
  *
  * It owns the ContextStack, manages agents, runs dispatch through
  * a middleware chain, keeps a bounded dispatch log, and hosts the signal bus.
+ *
+ * Threads are self-describing — they carry a living description,
+ * classification tags, and a status that updates as work happens.
  */
 export class Thread {
   readonly id: string;
@@ -32,22 +64,28 @@ export class Thread {
   readonly lifecycle: CacheLifecycle;
   readonly middleware: MiddlewareChain;
   readonly signals: SignalBus;
+  readonly meta: ThreadMeta;
 
   private _agents: Map<string, BaseAgent<any, any>> = new Map();
   private _dispatches: Dispatch[] = [];
   private _maxDispatches: number;
 
-  constructor(
-    id: string,
-    stack: ContextStack,
-    opts?: { maxDispatches?: number; maxSignalHistory?: number }
-  ) {
+  constructor(id: string, stack: ContextStack, opts?: ThreadConfig) {
     this.id = id;
     this.stack = stack;
     this.lifecycle = new CacheLifecycle(stack);
     this.middleware = new MiddlewareChain();
     this.signals = new SignalBus(opts?.maxSignalHistory ?? 1000);
     this._maxDispatches = opts?.maxDispatches ?? 10000;
+
+    const now = Date.now();
+    this.meta = {
+      description: opts?.description ?? "",
+      tags: opts?.tags ?? [],
+      status: "idle",
+      createdAt: now,
+      lastActiveAt: now,
+    };
   }
 
   // -- Agent management --
@@ -68,6 +106,27 @@ export class Thread {
     return this._agents;
   }
 
+  // -- Metadata --
+
+  /** Update the living description. */
+  describe(description: string): void {
+    this.meta.description = description;
+  }
+
+  /** Update tags. */
+  tag(...tags: string[]): void {
+    for (const t of tags) {
+      if (!this.meta.tags.includes(t)) this.meta.tags.push(t);
+    }
+  }
+
+  /** Archive this thread. */
+  archive(): void {
+    this.meta.status = "archived";
+    this.meta.archivedAt = Date.now();
+    this.stop();
+  }
+
   // -- Dispatching (with middleware) --
 
   async dispatch<TPayload>(
@@ -78,6 +137,9 @@ export class Thread {
     const agent = this._agents.get(agentId);
     if (!agent) throw new Error(`Agent not found: ${agentId}`);
 
+    this.meta.status = "active";
+    this.meta.lastActiveAt = Date.now();
+
     const ctx: DispatchContext<TPayload> = {
       agentId,
       payload,
@@ -87,7 +149,6 @@ export class Thread {
 
     const start = performance.now();
 
-    // Run through middleware chain, with the actual agent.run as the final handler
     const result = await this.middleware.execute(ctx, () =>
       agent.run(payload, filterOverride)
     );
@@ -102,10 +163,11 @@ export class Thread {
       durationMs,
     });
 
-    // Bounded history
     if (this._dispatches.length > this._maxDispatches) {
       this._dispatches.shift();
     }
+
+    this.meta.status = "idle";
 
     return result;
   }

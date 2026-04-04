@@ -81,10 +81,31 @@ export {
 } from "./signal";
 
 // Orchestration
-export { Thread, type Dispatch, type FanResult } from "./thread";
+export {
+  Thread,
+  type ThreadStatus,
+  type ThreadMeta,
+  type ThreadConfig,
+  type Dispatch,
+  type FanResult,
+} from "./thread";
 export {
   Harness,
   type Message,
   type HarnessResult,
   type PipelineStep,
 } from "./harness";
+
+// Sessions
+export {
+  SessionManager,
+  type ThreadBlueprint,
+  type LayerInheritance,
+  type SessionEvent,
+} from "./session";
+
+// Observability
+export {
+  EventStream,
+  type StreamEvent,
+} from "./event-stream";
