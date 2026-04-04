@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "bun run --bun tsc --noEmit",
     "test": "bun test",
-    "viewer": "bun run src/viewer/server.ts"
+    "viewer": "bun run src/viewer/server.ts",
+    "demo": "bun run src/demo.ts"
   },
   "dependencies": {
     "hono": "^4.7.0"
