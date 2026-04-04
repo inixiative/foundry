@@ -180,3 +180,23 @@ export {
   type PlannerConfig,
   type PlanExecutionResult,
 } from "./planner";
+
+// Active Memory (Levin-inspired)
+export {
+  ActiveMemory,
+  type AccessRecord,
+  type CompetitionResult,
+  type ActiveMemoryConfig,
+  type LayerStats,
+} from "./active-memory";
+
+// Corpus Compiler
+export {
+  CorpusCompiler,
+  type FluidEntry,
+  type FormalDoc,
+  type DocState,
+  type CompiledCorpus,
+  type CorpusTier,
+  type CorpusCompilerConfig,
+} from "./corpus-compiler";
