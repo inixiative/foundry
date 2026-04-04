@@ -200,3 +200,18 @@ export {
   type CorpusTier,
   type CorpusCompilerConfig,
 } from "./corpus-compiler";
+
+// Herald — cross-agent observation & coordination
+export {
+  Herald,
+  DuplicationDetector,
+  ContradictionDetector,
+  ConvergenceDetector,
+  CrossPollinationDetector,
+  ResourceImbalanceDetector,
+  type ThreadSnapshot,
+  type HeraldPattern,
+  type HeraldRecommendation,
+  type PatternDetector,
+  type HeraldConfig,
+} from "./herald";
