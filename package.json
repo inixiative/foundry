@@ -5,7 +5,11 @@
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "bun run --bun tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test tests/*.test.ts",
+    "test:db": "bun test tests/db/ --max-concurrency=1",
+    "test:all": "bun test tests/*.test.ts && bun test tests/db/ --max-concurrency=1",
+    "db:push": "bunx prisma db push",
+    "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/foundry_test bunx prisma db push",
     "viewer": "bun run src/viewer/server.ts",
     "demo": "bun run src/demo.ts"
   },
