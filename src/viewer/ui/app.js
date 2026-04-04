@@ -15,6 +15,7 @@ import { Conversation } from "./conversation.js";
 import { DetailDrawer } from "./detail-drawer.js";
 import { CommandPalette, HelpOverlay } from "./command-palette.js";
 import { Settings, settingsOpen } from "./settings.js";
+import { Analytics, analyticsOpen } from "./analytics.js";
 
 // ---------------------------------------------------------------------------
 // Status bar
@@ -55,6 +56,9 @@ function ActionBar() {
         snapshot
       </button>
       <span class="action-sep"></span>
+      <button class="action-btn analytics-btn" onClick=${() => { analyticsOpen.value = true; }} title="Analytics (a)">
+        analytics
+      </button>
       <button class="action-btn" onClick=${() => { settingsOpen.value = true; }} title="Settings (s)">
         settings
       </button>
@@ -138,6 +142,7 @@ function App() {
       override: () => { /* TODO: open override form */ },
       refresh: () => { loadTraces(); loadThreads(); },
       openSettings: () => { settingsOpen.value = !settingsOpen.value; },
+      openAnalytics: () => { analyticsOpen.value = !analyticsOpen.value; },
       toggleLayers: () => { /* handled by tree panel */ },
       toggleEvents: () => { /* handled by tree panel */ },
     });
@@ -180,6 +185,7 @@ function App() {
       <${CommandPalette} />
       <${HelpOverlay} />
       <${Settings} />
+      <${Analytics} />
       <${Toast} />
     </div>
   `;

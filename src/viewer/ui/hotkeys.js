@@ -127,6 +127,7 @@ export function registerDefaults(actions) {
 
   // Panels
   bind("s", { description: "Open settings", category: "panels", action: actions.openSettings });
+  bind("a", { description: "Open analytics", category: "panels", action: actions.openAnalytics });
   bind("l", { description: "Toggle layers panel", category: "panels", action: actions.toggleLayers });
   bind("e", { description: "Toggle events panel", category: "panels", action: actions.toggleEvents });
 }

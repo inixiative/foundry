@@ -4,6 +4,7 @@ import { CacheLifecycle } from "./cache-lifecycle";
 import { BaseAgent, type ExecutionResult } from "./base-agent";
 import { MiddlewareChain, type DispatchContext } from "./middleware";
 import { SignalBus } from "./signal";
+import type { TokenTracker } from "./token-tracker";
 
 export type ThreadStatus = "idle" | "active" | "waiting" | "archived";
 
@@ -47,6 +48,8 @@ export interface ThreadConfig {
   maxSignalHistory?: number;
   description?: string;
   tags?: string[];
+  /** Optional token tracker — auto-records costs for every dispatch. */
+  tokenTracker?: TokenTracker;
 }
 
 /**
@@ -69,6 +72,7 @@ export class Thread {
   private _agents: Map<string, BaseAgent<any, any>> = new Map();
   private _dispatches: Dispatch[] = [];
   private _maxDispatches: number;
+  private _tokenTracker?: TokenTracker;
 
   constructor(id: string, stack: ContextStack, opts?: ThreadConfig) {
     this.id = id;
@@ -77,6 +81,7 @@ export class Thread {
     this.middleware = new MiddlewareChain();
     this.signals = new SignalBus(opts?.maxSignalHistory ?? 1000);
     this._maxDispatches = opts?.maxDispatches ?? 10000;
+    this._tokenTracker = opts?.tokenTracker;
 
     const now = Date.now();
     this.meta = {
@@ -155,6 +160,18 @@ export class Thread {
       );
 
       const durationMs = performance.now() - start;
+
+      // Auto-record token usage if tracker is configured
+      if (this._tokenTracker && result.tokens) {
+        const llm = agent.llm;
+        this._tokenTracker.record({
+          provider: llm?.provider ?? "unknown",
+          model: llm?.model ?? "unknown",
+          agentId,
+          threadId: this.id,
+          tokens: result.tokens,
+        });
+      }
 
       this._dispatches.push({
         agentId,

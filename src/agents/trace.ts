@@ -32,6 +32,12 @@ export interface Span {
   /** If errored, the error detail. */
   error?: unknown;
 
+  /** Token usage for this span's LLM call (if any). */
+  tokens?: { input: number; output: number };
+
+  /** Estimated cost in dollars for this span's LLM call. */
+  cost?: number;
+
   /** Arbitrary annotations from middleware or handlers. */
   annotations: Record<string, unknown>;
 
@@ -183,6 +189,8 @@ export class Trace {
         status: span.status,
         durationMs: span.durationMs,
         agentId: span.agentId,
+        tokens: span.tokens,
+        cost: span.cost,
         depth,
       });
       for (const child of span.children) {
@@ -245,5 +253,7 @@ export interface StageSummary {
   readonly status: SpanStatus;
   readonly durationMs?: number;
   readonly agentId?: string;
+  readonly tokens?: { input: number; output: number };
+  readonly cost?: number;
   readonly depth: number;
 }

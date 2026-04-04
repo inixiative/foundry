@@ -5,9 +5,11 @@ import type { Harness } from "../agents/harness";
 import type { InterventionLog } from "../agents/intervention";
 import type { Trace } from "../agents/trace";
 import type { LLMProvider } from "../providers/types";
+import type { TokenTracker } from "../agents/token-tracker";
 import { ActionHandler, type OperatorAction } from "./actions";
 import { ConfigStore, type FoundryConfig } from "./config";
 import { AIAssist, type AssistRequest } from "./ai-assist";
+import { AnalyticsStore, type RollupPeriod } from "./analytics";
 
 export interface ViewerConfig {
   harness: Harness;
@@ -20,6 +22,10 @@ export interface ViewerConfig {
   assistProvider?: LLMProvider;
   /** Model for AI assist (optional). */
   assistModel?: string;
+  /** Token tracker for analytics (optional but recommended). */
+  tokenTracker?: TokenTracker;
+  /** Directory for analytics data persistence. Defaults to .foundry/analytics/ */
+  analyticsDir?: string;
 }
 
 /**
@@ -46,6 +52,17 @@ export function createViewer(config: ViewerConfig) {
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)
     : null;
+
+  // Analytics store (optional — only available if a token tracker is configured)
+  const analyticsStore = config.tokenTracker
+    ? new AnalyticsStore(config.analyticsDir ?? ".foundry/analytics")
+    : null;
+
+  // Auto-wire tracker → analytics persistence
+  if (analyticsStore && config.tokenTracker) {
+    analyticsStore.load().catch(() => {});
+    analyticsStore.connectTracker(config.tokenTracker);
+  }
 
   // -- REST: Traces --
 
@@ -235,6 +252,42 @@ export function createViewer(config: ViewerConfig) {
     }
   });
 
+  // -- REST: Analytics --
+
+  app.get("/api/analytics", (c) => {
+    if (!analyticsStore || !config.tokenTracker) {
+      return c.json({ error: "Analytics not configured. Pass tokenTracker to ViewerConfig." }, 400);
+    }
+    return c.json(analyticsStore.snapshot(config.tokenTracker));
+  });
+
+  app.get("/api/analytics/timeseries", (c) => {
+    if (!analyticsStore) return c.json({ error: "Analytics not configured." }, 400);
+    const period = (c.req.query("period") ?? "hourly") as RollupPeriod;
+    const since = c.req.query("since") ? Number(c.req.query("since")) : undefined;
+    return c.json(analyticsStore.timeSeries(period, since));
+  });
+
+  app.get("/api/analytics/threads", (c) => {
+    if (!analyticsStore) return c.json({ error: "Analytics not configured." }, 400);
+    return c.json(analyticsStore.threadCosts());
+  });
+
+  app.get("/api/analytics/calls", (c) => {
+    if (!analyticsStore) return c.json({ error: "Analytics not configured." }, 400);
+    const field = c.req.query("field") as "provider" | "model" | "agentId" | "threadId" | undefined;
+    const value = c.req.query("value");
+    if (field && value) {
+      return c.json(analyticsStore.callsBy(field, value));
+    }
+    return c.json(analyticsStore.callsBy("provider", ""));
+  });
+
+  app.get("/api/analytics/budget", (c) => {
+    if (!config.tokenTracker) return c.json({ error: "No token tracker." }, 400);
+    return c.json(config.tokenTracker.budgetStatus);
+  });
+
   // -- Static: UI files --
   // Serves the Preact-based UI from /ui/*
 
@@ -243,7 +296,7 @@ export function createViewer(config: ViewerConfig) {
   // Root serves the HTML shell
   app.get("/", serveStatic({ path: "./src/viewer/ui/index.html" }));
 
-  return { app, port, actions, configStore };
+  return { app, port, actions, configStore, analyticsStore };
 }
 
 /** Start the viewer server. */
