@@ -127,13 +127,21 @@ export class Trace {
     return span;
   }
 
-  /** End the entire trace. */
+  /** End the entire trace. Closes any remaining open spans. */
   finish(): void {
-    // Close any unclosed spans
+    const now = performance.now();
+    // Close any unclosed spans — preserve their current status if already set
     while (this._stack.length > 0) {
-      this.end();
+      const span = this._stack.pop()!;
+      if (!span.endedAt) {
+        span.endedAt = now;
+        span.durationMs = span.endedAt - span.startedAt;
+      }
+      if (span.status === "running") {
+        span.status = "ok";
+      }
     }
-    this.endedAt = performance.now();
+    this.endedAt = now;
   }
 
   /** Get a span by id. */

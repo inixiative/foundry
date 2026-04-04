@@ -149,27 +149,29 @@ export class Thread {
 
     const start = performance.now();
 
-    const result = await this.middleware.execute(ctx, () =>
-      agent.run(payload, filterOverride)
-    );
+    try {
+      const result = await this.middleware.execute(ctx, () =>
+        agent.run(payload, filterOverride)
+      );
 
-    const durationMs = performance.now() - start;
+      const durationMs = performance.now() - start;
 
-    this._dispatches.push({
-      agentId,
-      timestamp: ctx.timestamp,
-      contextHash: result.contextHash,
-      result,
-      durationMs,
-    });
+      this._dispatches.push({
+        agentId,
+        timestamp: ctx.timestamp,
+        contextHash: result.contextHash,
+        result,
+        durationMs,
+      });
 
-    if (this._dispatches.length > this._maxDispatches) {
-      this._dispatches.shift();
+      if (this._dispatches.length > this._maxDispatches) {
+        this._dispatches.shift();
+      }
+
+      return result;
+    } finally {
+      this.meta.status = "idle";
     }
-
-    this.meta.status = "idle";
-
-    return result;
   }
 
   /**

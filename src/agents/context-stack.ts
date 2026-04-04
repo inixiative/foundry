@@ -13,9 +13,12 @@ export interface ContextSnapshot {
   readonly timestamp: number;
 }
 
+export type LayerAddedCallback = (layer: ContextLayer) => void;
+
 export class ContextStack {
   private _layers: ContextLayer[] = [];
   private _compressor: Compressor | null = null;
+  private _onLayerAdded: LayerAddedCallback[] = [];
 
   constructor(layers?: ContextLayer[], compressor?: Compressor) {
     if (layers) this._layers = [...layers];
@@ -28,12 +31,22 @@ export class ContextStack {
     return this._layers;
   }
 
+  /** Register a callback for when layers are added (used by CacheLifecycle). */
+  onLayerAdded(cb: LayerAddedCallback): () => void {
+    this._onLayerAdded.push(cb);
+    return () => {
+      const idx = this._onLayerAdded.indexOf(cb);
+      if (idx !== -1) this._onLayerAdded.splice(idx, 1);
+    };
+  }
+
   addLayer(layer: ContextLayer, position?: number): void {
     if (position !== undefined) {
       this._layers.splice(position, 0, layer);
     } else {
       this._layers.push(layer);
     }
+    for (const cb of this._onLayerAdded) cb(layer);
   }
 
   removeLayer(id: string): boolean {
@@ -48,13 +61,19 @@ export class ContextStack {
   }
 
   reorder(ids: string[]): void {
+    const layerMap = new Map(this._layers.map((l) => [l.id, l]));
     const ordered: ContextLayer[] = [];
+    const seen = new Set<string>();
+
     for (const id of ids) {
-      const layer = this._layers.find((l) => l.id === id);
-      if (layer) ordered.push(layer);
+      const layer = layerMap.get(id);
+      if (layer) {
+        ordered.push(layer);
+        seen.add(id);
+      }
     }
     for (const layer of this._layers) {
-      if (!ordered.includes(layer)) ordered.push(layer);
+      if (!seen.has(layer.id)) ordered.push(layer);
     }
     this._layers = ordered;
   }
@@ -110,14 +129,17 @@ export class ContextStack {
       .filter((l) => l.isWarm)
       .sort((a, b) => a.trust - b.trust);
 
+    // Track running total instead of re-merging every iteration
     let totalTokens = this.estimateTokens();
 
     for (const layer of byTrust) {
       if (totalTokens <= targetTokens) break;
 
+      const oldLen = layer.content.length;
       const compressed = await this._compressor.compress(layer.content, ratio);
       layer.set(compressed);
-      totalTokens = this.estimateTokens();
+      // Adjust running total by the delta
+      totalTokens -= Math.ceil((oldLen - compressed.length) / 4);
     }
   }
 

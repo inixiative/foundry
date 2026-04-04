@@ -94,6 +94,12 @@ export class CacheLifecycle {
     for (const layer of this._stack.layers) {
       this._observe(layer);
     }
+
+    // Auto-observe layers added after start
+    const unsub = this._stack.onLayerAdded((layer) => {
+      if (this._running) this._observe(layer);
+    });
+    this._unsubscribes.push(unsub);
   }
 
   stop(): void {
@@ -129,43 +135,53 @@ export class CacheLifecycle {
     // Use queueMicrotask so the drain runs after the current synchronous
     // state mutation completes, but before the next macrotask.
     queueMicrotask(async () => {
-      while (this._queue.length > 0) {
-        const { state, layer } = this._queue.shift()!;
+      try {
+        while (this._queue.length > 0) {
+          const { state, layer } = this._queue.shift()!;
 
-        try {
-          await this.emit({
-            type: `layer:${state}`,
-            layerId: layer.id,
-            timestamp: Date.now(),
-          });
+          try {
+            await this.emit({
+              type: `layer:${state}`,
+              layerId: layer.id,
+              timestamp: Date.now(),
+            });
 
-          for (const rule of this._rules) {
-            if (!rule.triggers.includes(state)) continue;
-            if (rule.layerIds && !rule.layerIds.includes(layer.id)) continue;
+            for (const rule of this._rules) {
+              if (!rule.triggers.includes(state)) continue;
+              if (rule.layerIds && !rule.layerIds.includes(layer.id)) continue;
 
+              try {
+                await rule.action(layer, state, this._stack);
+              } catch (err) {
+                // Best-effort error event — if this also throws, outer catch handles it
+                try {
+                  await this.emit({
+                    type: "rule:error",
+                    layerId: layer.id,
+                    timestamp: Date.now(),
+                    meta: { ruleId: rule.id, error: err },
+                  });
+                } catch {
+                  // Cannot emit error event — swallow to prevent unhandled rejection
+                }
+              }
+            }
+          } catch (err) {
             try {
-              await rule.action(layer, state, this._stack);
-            } catch (err) {
-              // Emit error event so callers can observe failures
               await this.emit({
-                type: "rule:error",
+                type: "lifecycle:error",
                 layerId: layer.id,
                 timestamp: Date.now(),
-                meta: { ruleId: rule.id, error: err },
+                meta: { error: err },
               });
+            } catch {
+              // Cannot emit error event — swallow to prevent unhandled rejection
             }
           }
-        } catch (err) {
-          await this.emit({
-            type: "lifecycle:error",
-            layerId: layer.id,
-            timestamp: Date.now(),
-            meta: { error: err },
-          });
         }
+      } finally {
+        this._processing = false;
       }
-
-      this._processing = false;
     });
   }
 }

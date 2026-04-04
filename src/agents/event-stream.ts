@@ -39,8 +39,14 @@ export class EventStream {
       this._history.shift();
     }
 
-    for (const listener of this._listeners) {
-      listener(event);
+    // Snapshot to avoid mutation during iteration (listener may unsubscribe)
+    const listeners = [...this._listeners];
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch {
+        // Don't let one bad listener break the stream
+      }
     }
   }
 

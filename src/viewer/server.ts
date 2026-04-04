@@ -52,6 +52,18 @@ export function createViewer(config: ViewerConfig) {
 
   app.post("/api/interventions", async (c) => {
     const body = await c.req.json();
+
+    // Validate required fields
+    if (!body.traceId || typeof body.traceId !== "string") {
+      return c.json({ error: "traceId is required and must be a string" }, 400);
+    }
+    if (!body.spanId || typeof body.spanId !== "string") {
+      return c.json({ error: "spanId is required and must be a string" }, 400);
+    }
+    if (body.correction === undefined || body.correction === null) {
+      return c.json({ error: "correction is required" }, 400);
+    }
+
     const result = await interventions.intervene(
       body.traceId,
       body.spanId,
@@ -245,6 +257,8 @@ const VIEWER_HTML = `<!DOCTYPE html>
 const $ = (s) => document.querySelector(s);
 let ws, eventCount = 0, traces = [], currentTrace = null;
 
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
 function connect() {
   ws = new WebSocket(\`ws://\${location.host}/ws\`);
   ws.onopen = () => { $('#ws-dot').className = 'dot connected'; $('#ws-status').textContent = 'connected'; };
@@ -255,7 +269,7 @@ function connect() {
 function addEvent(ev) {
   const el = document.createElement('div');
   el.className = 'event-item';
-  el.innerHTML = '<span class="kind">' + ev.kind + '</span><span class="time">' + new Date().toLocaleTimeString() + '</span><span>' + (ev.threadId || ev.event?.threadId || '') + '</span>';
+  el.innerHTML = '<span class="kind">' + esc(ev.kind) + '</span><span class="time">' + new Date().toLocaleTimeString() + '</span><span>' + esc(ev.threadId || ev.event?.threadId || '') + '</span>';
   const container = $('#events');
   container.prepend(el);
   if (container.children.length > 200) container.lastChild.remove();
@@ -273,10 +287,10 @@ function renderTraces() {
   for (const t of traces) {
     const el = document.createElement('div');
     el.className = 'trace-item';
-    el.innerHTML = '<span class="msg-id">' + t.messageId + '</span>'
+    el.innerHTML = '<span class="msg-id">' + esc(t.messageId) + '</span>'
       + '<span class="duration">' + (t.totalDurationMs ? t.totalDurationMs.toFixed(1) + 'ms' : '...') + '</span>'
       + '<div class="stages">' + t.stages.map(s =>
-        '<span class="stage-pill ' + s.status + '">' + s.name + (s.durationMs ? ' ' + s.durationMs.toFixed(0) + 'ms' : '') + '</span>'
+        '<span class="stage-pill ' + esc(s.status) + '">' + esc(s.name) + (s.durationMs ? ' ' + s.durationMs.toFixed(0) + 'ms' : '') + '</span>'
       ).join('') + '</div>';
     el.onclick = () => loadTraceDetail(t.traceId);
     container.appendChild(el);
@@ -293,7 +307,7 @@ async function loadTraceDetail(traceId) {
 function renderDetail() {
   if (!currentTrace) return;
   const t = currentTrace;
-  let html = '<div style="margin-bottom:12px"><strong>' + t.messageId + '</strong> <span style="color:var(--text-dim)">' + (t.durationMs ? t.durationMs.toFixed(1) + 'ms' : '') + '</span></div>';
+  let html = '<div style="margin-bottom:12px"><strong>' + esc(t.messageId) + '</strong> <span style="color:var(--text-dim)">' + (t.durationMs ? t.durationMs.toFixed(1) + 'ms' : '') + '</span></div>';
   html += '<div class="span-tree">' + renderSpan(t.root, 0) + '</div>';
   $('#detail').innerHTML = html;
 
@@ -316,9 +330,9 @@ function renderSpan(span, depth) {
 
   let html = '<div class="span-node depth-' + depth + '">';
   html += '<div class="span-header">';
-  html += '<span class="span-name">' + span.name + '</span>';
-  html += '<span class="span-kind">' + span.kind + '</span>';
-  html += '<span class="span-status ' + statusClass + '">' + statusClass + '</span>';
+  html += '<span class="span-name">' + esc(span.name) + '</span>';
+  html += '<span class="span-kind">' + esc(span.kind) + '</span>';
+  html += '<span class="span-status ' + esc(statusClass) + '">' + esc(statusClass) + '</span>';
   html += '<span class="span-duration">' + dur + '</span>';
   html += '</div>';
 
@@ -374,9 +388,9 @@ async function loadLayers() {
   for (const l of data.layers) {
     const el = document.createElement('div');
     el.className = 'layer-bar';
-    el.innerHTML = '<span class="state-dot ' + l.state + '"></span>'
-      + '<span class="layer-id">' + l.id + '</span>'
-      + '<span class="trust">trust:' + l.trust + '</span>'
+    el.innerHTML = '<span class="state-dot ' + esc(l.state) + '"></span>'
+      + '<span class="layer-id">' + esc(l.id) + '</span>'
+      + '<span class="trust">trust:' + esc(l.trust) + '</span>'
       + '<span style="color:var(--text-dim);font-size:11px">' + (l.contentLength / 4 | 0) + ' tok</span>';
     container.appendChild(el);
   }

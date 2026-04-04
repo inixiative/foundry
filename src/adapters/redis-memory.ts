@@ -20,6 +20,8 @@ export interface RedisClient {
   publish(channel: string, message: string): Promise<number>;
   subscribe(channel: string, callback?: any): Promise<any>;
   expire(key: string, seconds: number): Promise<number>;
+  ltrim(key: string, start: number, stop: number): Promise<any>;
+  lrem(key: string, count: number, value: string): Promise<number>;
 }
 
 /**
@@ -71,9 +73,12 @@ export class RedisMemory {
       await this._client.expire(key, entry.ttl);
     }
 
-    // Add to kind index and recent list
+    // Add to kind index and recent list, trim to prevent unbounded growth
+    const maxListLen = 10_000;
     await this._client.lpush(this._indexKey(entry.kind), entry.id);
+    await this._client.ltrim(this._indexKey(entry.kind), 0, maxListLen - 1);
     await this._client.lpush(this._recentKey(), entry.id);
+    await this._client.ltrim(this._recentKey(), 0, maxListLen - 1);
   }
 
   /** Read by id. */
@@ -96,10 +101,18 @@ export class RedisMemory {
     return entries;
   }
 
-  /** Delete by id. */
+  /** Delete by id. Also removes from index lists. */
   async delete(id: string): Promise<boolean> {
+    // Get the entry's kind so we can remove from the kind index
+    const kind = await this._client.hget(this._key(id), "kind");
     const result = await this._client.del(this._key(id));
-    return result > 0;
+    if (result > 0) {
+      // Best-effort removal from index lists
+      await this._client.lrem(this._recentKey(), 1, id);
+      if (kind) await this._client.lrem(this._indexKey(kind), 1, id);
+      return true;
+    }
+    return false;
   }
 
   /** Create a ContextSource. */

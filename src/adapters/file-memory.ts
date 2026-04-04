@@ -1,5 +1,5 @@
 import { mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, relative } from "node:path";
 import type { ContextSource } from "../agents/context-layer";
 import type { HydrationAdapter, ContextRef } from "../agents/hydrator";
 import type { Signal } from "../agents/signal";
@@ -19,10 +19,23 @@ export class FileMemory {
   private _loaded = false;
 
   constructor(dir: string) {
-    this.dir = dir;
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    this.dir = resolve(dir);
+    if (!existsSync(this.dir)) {
+      mkdirSync(this.dir, { recursive: true });
     }
+  }
+
+  /** Resolve an entry path safely — prevents path traversal. */
+  private _safePath(id: string): string {
+    // Strip any path separators and dangerous characters
+    const safe = id.replace(/[\/\\\.]+/g, "_");
+    const path = join(this.dir, `${safe}.json`);
+    // Double-check the resolved path is inside our directory
+    const rel = relative(this.dir, resolve(path));
+    if (rel.startsWith("..") || rel.includes("/..")) {
+      throw new Error(`Invalid entry id: ${id}`);
+    }
+    return path;
   }
 
   /** Load all entries from disk. */
@@ -39,7 +52,7 @@ export class FileMemory {
   /** Write an entry to memory. */
   async write(entry: MemoryEntry): Promise<void> {
     this._entries.set(entry.id, entry);
-    const path = join(this.dir, `${entry.id}.json`);
+    const path = this._safePath(entry.id);
     await Bun.write(path, JSON.stringify(entry, null, 2));
   }
 
@@ -62,15 +75,17 @@ export class FileMemory {
     );
   }
 
-  /** Delete an entry. */
+  /** Delete an entry. Removes from disk first to prevent desync. */
   async delete(id: string): Promise<boolean> {
     if (!this._entries.has(id)) return false;
-    this._entries.delete(id);
-    const path = join(this.dir, `${id}.json`);
+    const path = this._safePath(id);
     try {
       const { unlinkSync } = await import("node:fs");
       unlinkSync(path);
-    } catch {}
+    } catch {
+      // File may not exist on disk — still remove from memory
+    }
+    this._entries.delete(id);
     return true;
   }
 

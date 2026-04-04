@@ -147,8 +147,7 @@ export class Harness {
 
       trace.end(result.output);
 
-      // 5. Close trace
-      trace.end(); // close ingress
+      // 5. Close trace — finish() closes any remaining open spans (ingress)
       trace.finish();
 
       this._recordTrace(trace);
@@ -162,7 +161,11 @@ export class Harness {
         timestamp: Date.now(),
       };
     } catch (err) {
-      trace.end(undefined, err);
+      // Mark the current span (wherever we are) as errored, then finish
+      const current = trace.current;
+      if (current && current.status === "running") {
+        trace.end(undefined, err);
+      }
       trace.finish();
       this._recordTrace(trace);
       throw err;

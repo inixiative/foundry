@@ -72,7 +72,7 @@ export class SignalBus {
     };
   }
 
-  /** Emit a signal. Notifies kind-specific and global handlers. */
+  /** Emit a signal. Notifies kind-specific and global handlers. One handler failure doesn't kill the rest. */
   async emit(signal: Signal): Promise<void> {
     // Record history
     this._history.push(signal);
@@ -80,15 +80,26 @@ export class SignalBus {
       this._history.shift();
     }
 
-    // Kind-specific handlers
-    const kindHandlers = this._handlers.get(signal.kind) ?? [];
+    // Snapshot handler arrays to avoid mutation during iteration
+    const kindHandlers = [...(this._handlers.get(signal.kind) ?? [])];
+    const globalHandlers = [...this._globalHandlers];
+
+    // Run all handlers — one failure doesn't block the rest
     for (const handler of kindHandlers) {
-      await handler(signal);
+      try {
+        await handler(signal);
+      } catch {
+        // Handler errors are silently dropped — consumers should handle their own errors.
+        // A future version could emit these on a separate error channel.
+      }
     }
 
-    // Global handlers
-    for (const handler of this._globalHandlers) {
-      await handler(signal);
+    for (const handler of globalHandlers) {
+      try {
+        await handler(signal);
+      } catch {
+        // Same — don't let one bad handler kill the bus
+      }
     }
   }
 

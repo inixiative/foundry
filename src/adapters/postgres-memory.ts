@@ -70,10 +70,11 @@ export class PostgresMemory {
   }
 
   async searchEntries(query: string, limit: number = 20) {
-    // Use pg_trgm for fuzzy text search
+    // Escape ILIKE wildcards to prevent pattern injection
+    const escaped = query.replace(/[%_\\]/g, (c) => `\\${c}`);
     return this.prisma.$queryRaw`
       SELECT * FROM entries
-      WHERE content ILIKE ${"%" + query + "%"}
+      WHERE content ILIKE ${"%" + escaped + "%"}
       ORDER BY timestamp DESC
       LIMIT ${limit}
     ` as Promise<any[]>;
@@ -93,59 +94,62 @@ export class PostgresMemory {
   async writeTrace(trace: TraceObj): Promise<void> {
     const summary = trace.summary();
 
-    await this.prisma.trace.upsert({
-      where: { id: trace.id },
-      create: {
-        id: trace.id,
-        messageId: trace.messageId,
-        startedAt: trace.startedAt,
-        endedAt: trace.endedAt,
-        durationMs: trace.durationMs,
-        root: trace.root as any,
-        summary: summary as any,
-      },
-      update: {
-        endedAt: trace.endedAt,
-        durationMs: trace.durationMs,
-        root: trace.root as any,
-        summary: summary as any,
-      },
-    });
-
-    // Flatten spans for indexed querying
-    for (const span of trace.spans) {
-      await this.prisma.span.upsert({
-        where: { id: span.id },
+    // Batch trace + all spans in a single transaction to avoid N+1
+    await this.prisma.$transaction(async (tx) => {
+      await tx.trace.upsert({
+        where: { id: trace.id },
         create: {
-          id: span.id,
-          traceId: trace.id,
-          parentId: span.parentId,
-          name: span.name,
-          kind: span.kind,
-          agentId: span.agentId,
-          threadId: span.threadId,
-          status: span.status,
-          layerIds: span.layerIds ?? [],
-          contextHash: span.contextHash,
-          input: span.input as any,
-          output: span.output as any,
-          error: span.error as any,
-          annotations: Object.keys(span.annotations).length > 0
-            ? (span.annotations as any)
-            : undefined,
-          startedAt: span.startedAt,
-          endedAt: span.endedAt,
-          durationMs: span.durationMs,
+          id: trace.id,
+          messageId: trace.messageId,
+          startedAt: trace.startedAt,
+          endedAt: trace.endedAt,
+          durationMs: trace.durationMs,
+          root: trace.root as any,
+          summary: summary as any,
         },
         update: {
-          status: span.status,
-          output: span.output as any,
-          error: span.error as any,
-          endedAt: span.endedAt,
-          durationMs: span.durationMs,
+          endedAt: trace.endedAt,
+          durationMs: trace.durationMs,
+          root: trace.root as any,
+          summary: summary as any,
         },
       });
-    }
+
+      // Flatten spans for indexed querying — batched in same transaction
+      for (const span of trace.spans) {
+        await tx.span.upsert({
+          where: { id: span.id },
+          create: {
+            id: span.id,
+            traceId: trace.id,
+            parentId: span.parentId,
+            name: span.name,
+            kind: span.kind,
+            agentId: span.agentId,
+            threadId: span.threadId,
+            status: span.status,
+            layerIds: span.layerIds ?? [],
+            contextHash: span.contextHash,
+            input: span.input as any,
+            output: span.output as any,
+            error: span.error as any,
+            annotations: Object.keys(span.annotations).length > 0
+              ? (span.annotations as any)
+              : undefined,
+            startedAt: span.startedAt,
+            endedAt: span.endedAt,
+            durationMs: span.durationMs,
+          },
+          update: {
+            status: span.status,
+            output: span.output as any,
+            error: span.error as any,
+            endedAt: span.endedAt,
+            durationMs: span.durationMs,
+          },
+        });
+      }
+    });
   }
 
   async getTrace(id: string) {

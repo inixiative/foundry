@@ -212,6 +212,61 @@ export class SessionManager {
     };
   }
 
+  // -- Lifecycle / GC --
+
+  /**
+   * Evict idle threads that haven't been active for the given duration.
+   * Archives them first, then removes. Returns the ids of evicted threads.
+   * Skips threads that have active children.
+   */
+  evict(maxIdleMs: number): string[] {
+    const now = Date.now();
+    const evicted: string[] = [];
+
+    for (const [id, thread] of this._threads) {
+      if (thread.meta.status === "active" || thread.meta.status === "waiting") continue;
+      if (now - thread.meta.lastActiveAt < maxIdleMs) continue;
+
+      // Don't evict threads that have active children
+      const children = this.childrenOf(id);
+      if (children.some((c) => c.meta.status === "active" || c.meta.status === "waiting")) continue;
+
+      // Archive if not already, then stop and remove
+      if (thread.meta.status !== "archived") {
+        thread.archive();
+      }
+      thread.stop();
+
+      // Remove children first
+      for (const child of children) {
+        child.stop();
+        this._threads.delete(child.id);
+        this._parentOf.delete(child.id);
+      }
+
+      this._threads.delete(id);
+      this._parentOf.delete(id);
+      evicted.push(id, ...children.map((c) => c.id));
+
+      this._emit({ type: "thread:removed", threadId: id, timestamp: now });
+    }
+
+    return evicted;
+  }
+
+  /**
+   * Get counts for monitoring.
+   */
+  get stats(): { total: number; active: number; archived: number; idle: number } {
+    let active = 0, archived = 0, idle = 0;
+    for (const thread of this._threads.values()) {
+      if (thread.meta.status === "archived") archived++;
+      else if (thread.meta.status === "active" || thread.meta.status === "waiting") active++;
+      else idle++;
+    }
+    return { total: this._threads.size, active, archived, idle };
+  }
+
   // -- Helpers --
 
   /**
