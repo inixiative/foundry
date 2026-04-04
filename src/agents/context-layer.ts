@@ -8,26 +8,18 @@ export interface ContextSource {
 }
 
 export interface ContextLayerConfig {
-  /** Unique identifier for this layer */
   readonly id: string;
-
-  /** Ordered sources this layer loads from */
   sources?: ContextSource[];
-
-  /** How long (ms) before this layer is considered stale. undefined = never stale. */
   staleness?: number;
-
-  /**
-   * Trust level — higher means content is less likely to be compressed or evicted.
-   * The stack uses this to decide compression order. No fixed scale — relative ordering.
-   */
   trust?: number;
-
-  /** Maximum token budget for this layer. undefined = unbounded. */
   maxTokens?: number;
 }
 
 export type LayerState = "cold" | "warming" | "warm" | "stale" | "compressing";
+
+export function computeHash(content: string): string {
+  return Bun.hash(content).toString(16).slice(0, 16);
+}
 
 export class ContextLayer {
   readonly id: string;
@@ -40,6 +32,7 @@ export class ContextLayer {
   private _staleness: number | undefined;
   private _trust: number;
   private _maxTokens: number | undefined;
+  private _warmingPromise: Promise<void> | null = null;
 
   private _listeners: Array<(state: LayerState, layer: ContextLayer) => void> =
     [];
@@ -58,15 +51,20 @@ export class ContextLayer {
     return this._content;
   }
 
+  /** Returns current state. Call checkStaleness() explicitly to trigger stale transitions. */
   get state(): LayerState {
+    return this._state;
+  }
+
+  /** Check if this layer has become stale. Triggers state transition if so. */
+  checkStaleness(): LayerState {
     if (
       this._state === "warm" &&
       this._staleness !== undefined &&
-      this._lastWarmed !== null
+      this._lastWarmed !== null &&
+      Date.now() - this._lastWarmed > this._staleness
     ) {
-      if (Date.now() - this._lastWarmed > this._staleness) {
-        this._setState("stale");
-      }
+      this._setState("stale");
     }
     return this._state;
   }
@@ -84,32 +82,52 @@ export class ContextLayer {
   }
 
   get isWarm(): boolean {
-    return this.state === "warm";
+    return this._state === "warm";
   }
 
   get isStale(): boolean {
-    return this.state === "stale";
+    this.checkStaleness();
+    return this._state === "stale";
   }
 
   // -- Lifecycle --
 
+  /** Load content from all sources. Re-entrant safe — concurrent calls coalesce. */
   async warm(): Promise<void> {
+    if (this._warmingPromise) return this._warmingPromise;
+
+    this._warmingPromise = this._doWarm();
+    try {
+      await this._warmingPromise;
+    } finally {
+      this._warmingPromise = null;
+    }
+  }
+
+  private async _doWarm(): Promise<void> {
+    const previousState = this._state;
     this._setState("warming");
 
-    const parts: string[] = [];
-    for (const source of this._sources) {
-      parts.push(await source.load());
-    }
+    try {
+      const parts: string[] = [];
+      for (const source of this._sources) {
+        parts.push(await source.load());
+      }
 
-    this._content = parts.join("\n\n");
-    this._hash = ContextLayer.computeHash(this._content);
-    this._lastWarmed = Date.now();
-    this._setState("warm");
+      this._content = parts.join("\n\n");
+      this._hash = computeHash(this._content);
+      this._lastWarmed = Date.now();
+      this._setState("warm");
+    } catch (err) {
+      // Revert to previous state so the layer isn't stuck in "warming"
+      this._setState(previousState === "warming" ? "cold" : previousState);
+      throw err;
+    }
   }
 
   set(content: string): void {
     this._content = content;
-    this._hash = ContextLayer.computeHash(content);
+    this._hash = computeHash(content);
     this._lastWarmed = Date.now();
     this._setState("warm");
   }
@@ -177,13 +195,10 @@ export class ContextLayer {
   private _setState(state: LayerState): void {
     if (this._state === state) return;
     this._state = state;
-    for (const listener of this._listeners) {
+    // Snapshot listeners to avoid mutation during iteration
+    const snapshot = [...this._listeners];
+    for (const listener of snapshot) {
       listener(state, this);
     }
-  }
-
-  static computeHash(content: string): string {
-    const hash = Bun.hash(content);
-    return hash.toString(16).slice(0, 16);
   }
 }

@@ -1,4 +1,6 @@
+import { computeHash } from "./context-layer";
 import { BaseAgent, type AgentConfig, type ExecutionResult } from "./base-agent";
+import type { LayerFilter } from "./context-stack";
 
 export type ExecuteHandler<TPayload, TResult> = (
   context: string,
@@ -12,9 +14,6 @@ export interface ExecutorConfig<TPayload = unknown, TResult = unknown>
 
 /**
  * An Executor takes context + payload, goes and does work, returns full results.
- *
- * This is the "go do a thing" pattern. The caller gets everything back —
- * code written, research gathered, analysis completed.
  */
 export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
   TPayload,
@@ -27,9 +26,12 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
     this._handler = config.handler;
   }
 
-  async run(payload: TPayload): Promise<ExecutionResult<TResult>> {
-    const context = this.getContext();
-    const contextHash = this.getContextHash();
+  async run(
+    payload: TPayload,
+    filterOverride?: LayerFilter
+  ): Promise<ExecutionResult<TResult>> {
+    const context = this.getContextWith(filterOverride);
+    const contextHash = computeHash(context);
     const output = await this._handler(context, payload);
 
     return { output, contextHash };

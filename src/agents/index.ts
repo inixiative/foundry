@@ -1,5 +1,7 @@
+// Context primitives
 export {
   ContextLayer,
+  computeHash,
   type ContextSource,
   type ContextLayerConfig,
   type LayerState,
@@ -19,6 +21,15 @@ export {
   type LifecycleRule,
 } from "./cache-lifecycle";
 
+// Hydration
+export {
+  HydrationRegistry,
+  RefSource,
+  type ContextRef,
+  type HydrationAdapter,
+} from "./hydrator";
+
+// Agent primitives
 export {
   BaseAgent,
   type ExecutionResult,
@@ -52,4 +63,28 @@ export {
   type RouterConfig,
 } from "./router";
 
-export { Thread, type Dispatch } from "./thread";
+// Middleware
+export {
+  MiddlewareChain,
+  type Middleware,
+  type DispatchContext,
+  type DispatchOutcome,
+  type MiddlewareNext,
+} from "./middleware";
+
+// Signals
+export {
+  SignalBus,
+  type Signal,
+  type SignalKind,
+  type SignalHandler,
+} from "./signal";
+
+// Orchestration
+export { Thread, type Dispatch, type FanResult } from "./thread";
+export {
+  Harness,
+  type Message,
+  type HarnessResult,
+  type PipelineStep,
+} from "./harness";

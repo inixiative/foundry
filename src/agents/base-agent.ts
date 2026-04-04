@@ -1,3 +1,4 @@
+import { computeHash } from "./context-layer";
 import { ContextStack, type LayerFilter } from "./context-stack";
 
 export interface ExecutionResult<T = unknown> {
@@ -41,11 +42,18 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
   }
 
   getContextHash(): string {
-    const content = this.getContext();
-    return Bun.hash(content).toString(16).slice(0, 16);
+    return computeHash(this.getContext());
   }
 
-  abstract run(payload: TPayload): Promise<ExecutionResult<TResult>>;
+  /**
+   * Run this agent with a payload and optional per-dispatch layer filter override.
+   * If filterOverride is provided, it scopes context for this run only
+   * without mutating the agent's permanent filter.
+   */
+  abstract run(
+    payload: TPayload,
+    filterOverride?: LayerFilter
+  ): Promise<ExecutionResult<TResult>>;
 
   setLayerFilter(filter: LayerFilter): void {
     this._layerFilter = filter;
@@ -53,5 +61,11 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
 
   setStack(stack: ContextStack): void {
     this._stack = stack;
+  }
+
+  /** Get context with a temporary filter (doesn't mutate agent state). */
+  protected getContextWith(filter?: LayerFilter): string {
+    const effective = filter ?? this._layerFilter;
+    return effective ? this._stack.slice(effective) : this._stack.merge();
   }
 }

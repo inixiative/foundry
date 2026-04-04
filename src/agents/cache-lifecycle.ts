@@ -12,10 +12,6 @@ export type LifecycleHandler = (
   event: LifecycleEvent
 ) => void | false | Promise<void | false>;
 
-/**
- * A rule that triggers actions based on layer state.
- * Rules are the extension point — callers define what triggers what.
- */
 export interface LifecycleRule {
   readonly id: string;
   readonly triggers: LayerState[];
@@ -32,6 +28,9 @@ export interface LifecycleRule {
  *
  * This is the "when things happen" primitive. It doesn't decide
  * what triggers matter — you register rules that do.
+ *
+ * Events are queued and processed sequentially to prevent
+ * re-entrant recursion from state changes triggering more state changes.
  */
 export class CacheLifecycle {
   private _stack: ContextStack;
@@ -39,6 +38,10 @@ export class CacheLifecycle {
   private _handlers: Map<string, LifecycleHandler[]> = new Map();
   private _unsubscribes: Array<() => void> = [];
   private _running = false;
+
+  // Event queue to prevent re-entrant recursion
+  private _queue: Array<{ state: LayerState; layer: ContextLayer }> = [];
+  private _processing = false;
 
   constructor(stack: ContextStack) {
     this._stack = stack;
@@ -110,21 +113,59 @@ export class CacheLifecycle {
   // -- Internal --
 
   private _observe(layer: ContextLayer): void {
-    const unsub = layer.onStateChange(async (state, l) => {
-      await this.emit({
-        type: `layer:${state}`,
-        layerId: l.id,
-        timestamp: Date.now(),
-      });
-
-      for (const rule of this._rules) {
-        if (!rule.triggers.includes(state)) continue;
-        if (rule.layerIds && !rule.layerIds.includes(l.id)) continue;
-
-        await rule.action(l, state, this._stack);
-      }
+    const unsub = layer.onStateChange((state, l) => {
+      // Enqueue instead of processing inline — prevents re-entrant recursion
+      this._queue.push({ state, layer: l });
+      this._drain();
     });
 
     this._unsubscribes.push(unsub);
+  }
+
+  private _drain(): void {
+    if (this._processing) return;
+    this._processing = true;
+
+    // Use queueMicrotask so the drain runs after the current synchronous
+    // state mutation completes, but before the next macrotask.
+    queueMicrotask(async () => {
+      while (this._queue.length > 0) {
+        const { state, layer } = this._queue.shift()!;
+
+        try {
+          await this.emit({
+            type: `layer:${state}`,
+            layerId: layer.id,
+            timestamp: Date.now(),
+          });
+
+          for (const rule of this._rules) {
+            if (!rule.triggers.includes(state)) continue;
+            if (rule.layerIds && !rule.layerIds.includes(layer.id)) continue;
+
+            try {
+              await rule.action(layer, state, this._stack);
+            } catch (err) {
+              // Emit error event so callers can observe failures
+              await this.emit({
+                type: "rule:error",
+                layerId: layer.id,
+                timestamp: Date.now(),
+                meta: { ruleId: rule.id, error: err },
+              });
+            }
+          }
+        } catch (err) {
+          await this.emit({
+            type: "lifecycle:error",
+            layerId: layer.id,
+            timestamp: Date.now(),
+            meta: { error: err },
+          });
+        }
+      }
+
+      this._processing = false;
+    });
   }
 }

@@ -1,10 +1,7 @@
+import { computeHash } from "./context-layer";
 import { BaseAgent, type AgentConfig, type ExecutionResult } from "./base-agent";
+import type { LayerFilter } from "./context-stack";
 
-/**
- * A decision — the slim output of a Decider.
- * The decision is what comes back to the caller.
- * The context that informed it stays behind.
- */
 export interface Decision<T = unknown> {
   readonly value: T;
   readonly confidence?: number;
@@ -28,8 +25,6 @@ export interface DeciderConfig<TPayload = unknown, TDecision = unknown>
  * This is the "trusted authority" pattern. The Decider has rich context
  * (docs, memory, taxonomy, whatever) but the caller just gets back a
  * slim decision. The caller trusts the Decider because it had the context.
- *
- * Deciders are the base for Classifiers and Routers.
  */
 export class Decider<TPayload = unknown, TDecision = unknown> extends BaseAgent<
   TPayload,
@@ -42,9 +37,12 @@ export class Decider<TPayload = unknown, TDecision = unknown> extends BaseAgent<
     this._handler = config.handler;
   }
 
-  async run(payload: TPayload): Promise<ExecutionResult<Decision<TDecision>>> {
-    const context = this.getContext();
-    const contextHash = this.getContextHash();
+  async run(
+    payload: TPayload,
+    filterOverride?: LayerFilter
+  ): Promise<ExecutionResult<Decision<TDecision>>> {
+    const context = this.getContextWith(filterOverride);
+    const contextHash = computeHash(context);
     const decision = await this._handler(context, payload);
 
     return { output: decision, contextHash };

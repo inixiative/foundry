@@ -1,21 +1,11 @@
-import { ContextLayer } from "./context-layer";
+import { ContextLayer, computeHash } from "./context-layer";
 
-/**
- * A compressor takes content and returns compressed content.
- * The implementation decides the strategy (summarization, compaction, etc.)
- */
 export interface Compressor {
   compress(content: string, targetRatio: number): Promise<string>;
 }
 
-/**
- * Predicate for selecting which layers to include in a slice.
- */
 export type LayerFilter = (layer: ContextLayer) => boolean;
 
-/**
- * An immutable snapshot of the stack at a point in time.
- */
 export interface ContextSnapshot {
   readonly hash: string;
   readonly content: string;
@@ -23,12 +13,6 @@ export interface ContextSnapshot {
   readonly timestamp: number;
 }
 
-/**
- * Ordered composition of ContextLayers.
- * Layers are ordered — first layer is highest priority.
- * The stack merges them, can compress individual layers,
- * and produces slices for agents.
- */
 export class ContextStack {
   private _layers: ContextLayer[] = [];
   private _compressor: Compressor | null = null;
@@ -78,12 +62,15 @@ export class ContextStack {
   // -- Warming --
 
   async warmAll(): Promise<void> {
+    // Check staleness before deciding what to warm
+    for (const l of this._layers) l.checkStaleness();
     await Promise.all(
       this._layers.filter((l) => !l.isWarm).map((l) => l.warm())
     );
   }
 
   async refresh(): Promise<void> {
+    for (const l of this._layers) l.checkStaleness();
     await Promise.all(
       this._layers.filter((l) => l.isStale).map((l) => l.warm())
     );
@@ -159,7 +146,7 @@ export class ContextStack {
     }
 
     return {
-      hash: Bun.hash(content).toString(16).slice(0, 16),
+      hash: computeHash(content),
       content,
       layerHashes,
       timestamp: Date.now(),
