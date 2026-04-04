@@ -303,10 +303,12 @@ describe("GeminiProvider", () => {
   test("sends correct request format", async () => {
     let capturedBody: any;
     let capturedUrl: string = "";
+    let capturedHeaders: any;
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (url: any, init: any) => {
       capturedUrl = url;
+      capturedHeaders = init.headers;
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
@@ -338,9 +340,10 @@ describe("GeminiProvider", () => {
         { temperature: 0.7, maxTokens: 512 }
       );
 
-      // System goes to system_instruction for Gemini
+      // API key should be in header, not URL
       expect(capturedUrl).toContain("gemini-2.5-flash:generateContent");
-      expect(capturedUrl).toContain("key=gem-key");
+      expect(capturedUrl).not.toContain("key=");
+      expect(capturedHeaders["x-goog-api-key"]).toBe("gem-key");
       expect(capturedBody.system_instruction).toEqual({
         parts: [{ text: "Be helpful." }],
       });

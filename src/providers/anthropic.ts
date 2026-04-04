@@ -128,6 +128,8 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
   }
 
   private async _request(input: string[]): Promise<EmbeddingResult[]> {
+    if (input.length === 0) return [];
+
     const res = await fetch(`${this._baseUrl}/v1/embeddings`, {
       method: "POST",
       headers: {

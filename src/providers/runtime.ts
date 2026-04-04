@@ -1,5 +1,6 @@
 import type { AssembledContext } from "../agents/context-stack";
-import type { Signal, SignalKind } from "../agents/signal";
+import { join, resolve, relative } from "path";
+import { writeFile, unlink } from "fs/promises";
 
 // ---------------------------------------------------------------------------
 // Runtime hook types — for wrapping agent runtimes (Claude Code, Codex, etc.)
@@ -34,8 +35,6 @@ export type RuntimeEventHandler = (event: RuntimeEvent) => void | Promise<void>;
  * - Cursor: .cursorrules, context files
  */
 export interface ContextInjection {
-  /** Assembled system prompt + layer content. */
-  readonly assembled: AssembledContext;
   /** Formatted text ready for injection (runtime-specific format). */
   readonly formatted: string;
   /** Metadata about what's in the injection. */
@@ -79,6 +78,108 @@ export interface RuntimeAdapter {
 }
 
 // ---------------------------------------------------------------------------
+// Shared utilities
+// ---------------------------------------------------------------------------
+
+/** Extract unique layer IDs from assembled blocks. */
+function extractLayerIds(assembled: AssembledContext): string[] {
+  return [
+    ...new Set(
+      assembled.blocks.filter((b) => b.id).map((b) => b.id as string)
+    ),
+  ];
+}
+
+/** Validate that a file path stays within a root directory. */
+function safePath(root: string, filename: string): string {
+  // Strip directory separators — filename must be a simple name
+  const safe = filename.replace(/[\/\\]/g, "_");
+  const filePath = join(root, safe);
+  const rel = relative(resolve(root), resolve(filePath));
+  if (rel.startsWith("..") || rel.includes("/..")) {
+    throw new Error(`Invalid injection file path: ${filename}`);
+  }
+  return filePath;
+}
+
+// ---------------------------------------------------------------------------
+// Base runtime — shared event handling and inject/teardown logic
+// ---------------------------------------------------------------------------
+
+abstract class BaseRuntime implements RuntimeAdapter {
+  abstract readonly id: string;
+  abstract readonly runtime: string;
+
+  protected _projectRoot: string;
+  protected _filename: string;
+  private _handlers: RuntimeEventHandler[] = [];
+
+  constructor(projectRoot: string, filename: string) {
+    this._projectRoot = projectRoot;
+    this._filename = filename;
+  }
+
+  abstract prepareInjection(assembled: AssembledContext): ContextInjection;
+
+  async inject(injection: ContextInjection): Promise<() => Promise<void>> {
+    const filePath = safePath(this._projectRoot, this._filename);
+
+    await writeFile(filePath, injection.formatted, "utf-8");
+
+    this._emit({
+      kind: "context_inject",
+      timestamp: Date.now(),
+      data: {
+        file: filePath,
+        layerIds: injection.meta.layerIds,
+        tokens: injection.meta.tokenEstimate,
+      },
+    });
+
+    return async () => {
+      try {
+        await unlink(filePath);
+      } catch {
+        // File may already be gone
+      }
+    };
+  }
+
+  onEvent(handler: RuntimeEventHandler): () => void {
+    this._handlers.push(handler);
+    return () => {
+      const idx = this._handlers.indexOf(handler);
+      if (idx !== -1) this._handlers.splice(idx, 1);
+    };
+  }
+
+  protected _emit(event: RuntimeEvent): void {
+    const snapshot = [...this._handlers];
+    for (const handler of snapshot) {
+      try {
+        const result = handler(event);
+        if (result && typeof (result as Promise<void>).catch === "function") {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch {
+        // Don't let one handler break others
+      }
+    }
+  }
+
+  protected _buildMeta(
+    formatted: string,
+    assembled: AssembledContext
+  ): ContextInjection["meta"] {
+    return {
+      layerIds: extractLayerIds(assembled),
+      tokenEstimate: Math.ceil(formatted.length / 4),
+      hash: Bun.hash(formatted).toString(16).slice(0, 16),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Claude Code runtime adapter
 // ---------------------------------------------------------------------------
 
@@ -105,17 +206,12 @@ export interface ClaudeCodeConfig {
  * from CLAUDE.md. Observes the agent loop via Claude Code's hook system
  * (PreToolUse, PostToolUse, Notification hooks).
  */
-export class ClaudeCodeRuntime implements RuntimeAdapter {
+export class ClaudeCodeRuntime extends BaseRuntime {
   readonly id = "claude-code";
   readonly runtime = "claude-code";
 
-  private _config: ClaudeCodeConfig;
-  private _handlers: RuntimeEventHandler[] = [];
-  private _contextFile: string;
-
   constructor(config: ClaudeCodeConfig) {
-    this._config = config;
-    this._contextFile = config.contextFile ?? ".foundry-context.md";
+    super(config.projectRoot, config.contextFile ?? ".foundry-context.md");
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
@@ -139,58 +235,7 @@ export class ClaudeCodeRuntime implements RuntimeAdapter {
     }
 
     const formatted = lines.join("\n");
-    const layerIds = [
-      ...new Set(
-        assembled.blocks.filter((b) => b.id).map((b) => b.id as string)
-      ),
-    ];
-
-    return {
-      assembled,
-      formatted,
-      meta: {
-        layerIds,
-        tokenEstimate: Math.ceil(formatted.length / 4),
-        hash: Bun.hash(formatted).toString(16).slice(0, 16),
-      },
-    };
-  }
-
-  async inject(injection: ContextInjection): Promise<() => Promise<void>> {
-    const { join } = await import("path");
-    const { writeFile, unlink, readFile } = await import("fs/promises");
-
-    const filePath = join(this._config.projectRoot, this._contextFile);
-
-    // Write the context file
-    await writeFile(filePath, injection.formatted, "utf-8");
-
-    this._emit({
-      kind: "context_inject",
-      timestamp: Date.now(),
-      data: {
-        file: filePath,
-        layerIds: injection.meta.layerIds,
-        tokens: injection.meta.tokenEstimate,
-      },
-    });
-
-    // Teardown: remove the injected file
-    return async () => {
-      try {
-        await unlink(filePath);
-      } catch {
-        // File may already be gone
-      }
-    };
-  }
-
-  onEvent(handler: RuntimeEventHandler): () => void {
-    this._handlers.push(handler);
-    return () => {
-      const idx = this._handlers.indexOf(handler);
-      if (idx !== -1) this._handlers.splice(idx, 1);
-    };
+    return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 
   /**
@@ -229,20 +274,6 @@ export class ClaudeCodeRuntime implements RuntimeAdapter {
       "}).catch(() => {});",
     ].join("\n");
   }
-
-  private _emit(event: RuntimeEvent): void {
-    const snapshot = [...this._handlers];
-    for (const handler of snapshot) {
-      try {
-        const result = handler(event);
-        if (result && typeof (result as Promise<void>).catch === "function") {
-          (result as Promise<void>).catch(() => {});
-        }
-      } catch {
-        // Don't let one handler break others
-      }
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -263,18 +294,12 @@ export interface CodexConfig {
  * Foundry injects context by writing an instructions file and
  * observes via the Codex event stream / output parsing.
  */
-export class CodexRuntime implements RuntimeAdapter {
+export class CodexRuntime extends BaseRuntime {
   readonly id = "codex";
   readonly runtime = "codex";
 
-  private _config: CodexConfig;
-  private _handlers: RuntimeEventHandler[] = [];
-  private _instructionsFile: string;
-
   constructor(config: CodexConfig) {
-    this._config = config;
-    this._instructionsFile =
-      config.instructionsFile ?? ".foundry-instructions.md";
+    super(config.projectRoot, config.instructionsFile ?? ".foundry-instructions.md");
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
@@ -297,69 +322,7 @@ export class CodexRuntime implements RuntimeAdapter {
     }
 
     const formatted = lines.join("\n");
-    const layerIds = [
-      ...new Set(
-        assembled.blocks.filter((b) => b.id).map((b) => b.id as string)
-      ),
-    ];
-
-    return {
-      assembled,
-      formatted,
-      meta: {
-        layerIds,
-        tokenEstimate: Math.ceil(formatted.length / 4),
-        hash: Bun.hash(formatted).toString(16).slice(0, 16),
-      },
-    };
-  }
-
-  async inject(injection: ContextInjection): Promise<() => Promise<void>> {
-    const { join } = await import("path");
-    const { writeFile, unlink } = await import("fs/promises");
-
-    const filePath = join(this._config.projectRoot, this._instructionsFile);
-    await writeFile(filePath, injection.formatted, "utf-8");
-
-    this._emit({
-      kind: "context_inject",
-      timestamp: Date.now(),
-      data: {
-        file: filePath,
-        layerIds: injection.meta.layerIds,
-        tokens: injection.meta.tokenEstimate,
-      },
-    });
-
-    return async () => {
-      try {
-        await unlink(filePath);
-      } catch {
-        // File may already be gone
-      }
-    };
-  }
-
-  onEvent(handler: RuntimeEventHandler): () => void {
-    this._handlers.push(handler);
-    return () => {
-      const idx = this._handlers.indexOf(handler);
-      if (idx !== -1) this._handlers.splice(idx, 1);
-    };
-  }
-
-  private _emit(event: RuntimeEvent): void {
-    const snapshot = [...this._handlers];
-    for (const handler of snapshot) {
-      try {
-        const result = handler(event);
-        if (result && typeof (result as Promise<void>).catch === "function") {
-          (result as Promise<void>).catch(() => {});
-        }
-      } catch {
-        // Don't let one handler break others
-      }
-    }
+    return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 }
 
@@ -380,21 +343,15 @@ export interface CursorConfig {
  * Cursor reads project-level instructions from .cursorrules files.
  * Foundry injects context by writing rules files in the project root.
  */
-export class CursorRuntime implements RuntimeAdapter {
+export class CursorRuntime extends BaseRuntime {
   readonly id = "cursor";
   readonly runtime = "cursor";
 
-  private _config: CursorConfig;
-  private _handlers: RuntimeEventHandler[] = [];
-  private _rulesFile: string;
-
   constructor(config: CursorConfig) {
-    this._config = config;
-    this._rulesFile = config.rulesFile ?? ".foundry-cursorrules";
+    super(config.projectRoot, config.rulesFile ?? ".foundry-cursorrules");
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
-    // Cursor rules are plain text, no markdown headers
     const lines: string[] = [];
 
     for (const block of assembled.blocks) {
@@ -412,68 +369,6 @@ export class CursorRuntime implements RuntimeAdapter {
     }
 
     const formatted = lines.join("\n");
-    const layerIds = [
-      ...new Set(
-        assembled.blocks.filter((b) => b.id).map((b) => b.id as string)
-      ),
-    ];
-
-    return {
-      assembled,
-      formatted,
-      meta: {
-        layerIds,
-        tokenEstimate: Math.ceil(formatted.length / 4),
-        hash: Bun.hash(formatted).toString(16).slice(0, 16),
-      },
-    };
-  }
-
-  async inject(injection: ContextInjection): Promise<() => Promise<void>> {
-    const { join } = await import("path");
-    const { writeFile, unlink } = await import("fs/promises");
-
-    const filePath = join(this._config.projectRoot, this._rulesFile);
-    await writeFile(filePath, injection.formatted, "utf-8");
-
-    this._emit({
-      kind: "context_inject",
-      timestamp: Date.now(),
-      data: {
-        file: filePath,
-        layerIds: injection.meta.layerIds,
-        tokens: injection.meta.tokenEstimate,
-      },
-    });
-
-    return async () => {
-      try {
-        await unlink(filePath);
-      } catch {
-        // File may already be gone
-      }
-    };
-  }
-
-  onEvent(handler: RuntimeEventHandler): () => void {
-    this._handlers.push(handler);
-    return () => {
-      const idx = this._handlers.indexOf(handler);
-      if (idx !== -1) this._handlers.splice(idx, 1);
-    };
-  }
-
-  private _emit(event: RuntimeEvent): void {
-    const snapshot = [...this._handlers];
-    for (const handler of snapshot) {
-      try {
-        const result = handler(event);
-        if (result && typeof (result as Promise<void>).catch === "function") {
-          (result as Promise<void>).catch(() => {});
-        }
-      } catch {
-        // Don't let one handler break others
-      }
-    }
+    return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 }

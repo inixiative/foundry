@@ -66,11 +66,14 @@ export class GeminiProvider implements LLMProvider {
       body.generationConfig = generationConfig;
     }
 
-    const url = `${this._baseUrl}/v1beta/models/${model}:generateContent?key=${this._apiKey}`;
+    const url = `${this._baseUrl}/v1beta/models/${model}:generateContent`;
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": this._apiKey,
+      },
       body: JSON.stringify(body),
     });
 
@@ -131,11 +134,14 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    const url = `${this._baseUrl}/v1beta/models/${this._model}:embedContent?key=${this._apiKey}`;
+    const url = `${this._baseUrl}/v1beta/models/${this._model}:embedContent`;
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": this._apiKey,
+      },
       body: JSON.stringify({
         model: `models/${this._model}`,
         content: { parts: [{ text }] },
@@ -155,11 +161,14 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    const url = `${this._baseUrl}/v1beta/models/${this._model}:batchEmbedContents?key=${this._apiKey}`;
+    const url = `${this._baseUrl}/v1beta/models/${this._model}:batchEmbedContents`;
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": this._apiKey,
+      },
       body: JSON.stringify({
         requests: texts.map((text) => ({
           model: `models/${this._model}`,
