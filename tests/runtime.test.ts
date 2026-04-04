@@ -115,12 +115,15 @@ describe("ClaudeCodeRuntime", () => {
     expect(events).toHaveLength(0);
   });
 
-  test("generateHookScript produces valid script", () => {
+  test("generateHookScript produces valid script that reads callback from env", () => {
     const runtime = new ClaudeCodeRuntime({ projectRoot: tmpDir });
-    const script = runtime.generateHookScript("http://localhost:4400/hooks");
+    const script = runtime.generateHookScript();
 
     expect(script).toContain("#!/usr/bin/env node");
-    expect(script).toContain("http://localhost:4400/hooks");
+    // Security: callback URL must come from env, not be embedded in the script
+    expect(script).toContain("process.env.FOUNDRY_HOOK_CALLBACK");
+    expect(script).not.toMatch(/http:\/\/|https:\/\//); // No hardcoded URLs
+    expect(script).toContain("if (!CALLBACK) process.exit(0)");
     expect(script).toContain("CLAUDE_HOOK_INPUT");
     expect(script).toContain("tool_name");
   });

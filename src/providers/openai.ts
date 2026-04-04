@@ -3,6 +3,7 @@ import type {
   LLMMessage,
   CompletionOpts,
   CompletionResult,
+  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
 } from "./types";
@@ -100,6 +101,112 @@ export class OpenAIProvider implements LLMProvider {
       finishReason: choice?.finish_reason,
       raw: data,
     };
+  }
+
+  /**
+   * Stream a completion using OpenAI's SSE streaming API.
+   *
+   * Parses `data: {...}` lines, yields delta.content chunks,
+   * and handles the `[DONE]` sentinel. Usage comes in the final
+   * chunk if the API provides it.
+   */
+  async *stream(
+    messages: LLMMessage[],
+    opts?: CompletionOpts
+  ): AsyncGenerator<LLMStreamEvent> {
+    const model = opts?.model ?? this._defaultModel;
+
+    const body: Record<string, unknown> = {
+      model,
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    };
+
+    if (opts?.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
+    if (opts?.topP !== undefined) body.top_p = opts.topP;
+    if (opts?.stop) body.stop = opts.stop;
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      authorization: `Bearer ${this._apiKey}`,
+    };
+    if (this._organization) {
+      headers["openai-organization"] = this._organization;
+    }
+
+    const res = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      yield { type: "error", error: `OpenAI API ${res.status}: ${text}` };
+      return;
+    }
+
+    if (!res.body) {
+      yield { type: "error", error: "No response body for streaming" };
+      return;
+    }
+
+    let finishReason: string | undefined;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const choice = parsed.choices?.[0];
+
+            if (choice?.delta?.content) {
+              yield { type: "text", text: choice.delta.content };
+            }
+
+            if (choice?.finish_reason) {
+              finishReason = choice.finish_reason;
+            }
+
+            // Usage in the final chunk (when stream_options.include_usage is set)
+            if (parsed.usage) {
+              yield {
+                type: "usage",
+                tokens: {
+                  input: parsed.usage.prompt_tokens ?? 0,
+                  output: parsed.usage.completion_tokens ?? 0,
+                },
+              };
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    yield { type: "done", finishReason };
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   LLMMessage,
   CompletionOpts,
   CompletionResult,
+  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
 } from "./types";
@@ -93,6 +94,114 @@ export class AnthropicProvider implements LLMProvider {
       finishReason: data.stop_reason,
       raw: data,
     };
+  }
+
+  /**
+   * Stream a completion using Anthropic's SSE streaming API.
+   *
+   * Parses SSE events: message_start, content_block_delta,
+   * message_delta (for usage/stop_reason), and message_stop.
+   */
+  async *stream(
+    messages: LLMMessage[],
+    opts?: CompletionOpts
+  ): AsyncGenerator<LLMStreamEvent> {
+    const { system, turns } = splitSystemMessage(messages);
+    const model = opts?.model ?? this._defaultModel;
+    const maxTokens = opts?.maxTokens ?? this._defaultMaxTokens;
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: maxTokens,
+      stream: true,
+      messages: turns.map((m) => ({ role: m.role, content: m.content })),
+    };
+
+    if (system) body.system = system;
+    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
+    if (opts?.topP !== undefined) body.top_p = opts.topP;
+    if (opts?.stop) body.stop_sequences = opts.stop;
+
+    const res = await fetch(`${this._baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": this._apiKey,
+        "anthropic-version": API_VERSION,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      yield { type: "error", error: `Anthropic API ${res.status}: ${text}` };
+      return;
+    }
+
+    if (!res.body) {
+      yield { type: "error", error: "No response body for streaming" };
+      return;
+    }
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finishReason: string | undefined;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            try {
+              const parsed = JSON.parse(data);
+
+              if (eventType === "message_start" && parsed.message?.usage) {
+                inputTokens = parsed.message.usage.input_tokens ?? 0;
+              } else if (eventType === "content_block_delta") {
+                const text = parsed.delta?.text;
+                if (text) {
+                  yield { type: "text", text };
+                }
+              } else if (eventType === "message_delta") {
+                if (parsed.usage?.output_tokens) {
+                  outputTokens = parsed.usage.output_tokens;
+                }
+                if (parsed.delta?.stop_reason) {
+                  finishReason = parsed.delta.stop_reason;
+                }
+              } else if (eventType === "message_stop") {
+                // Final event — yield usage and done
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (inputTokens > 0 || outputTokens > 0) {
+      yield { type: "usage", tokens: { input: inputTokens, output: outputTokens } };
+    }
+
+    yield { type: "done", finishReason };
   }
 }
 

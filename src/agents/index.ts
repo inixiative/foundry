@@ -130,3 +130,53 @@ export {
   EventStream,
   type StreamEvent,
 } from "./event-stream";
+
+// Token & Cost Tracking
+export {
+  TokenTracker,
+  BudgetExceededError,
+  estimateTokens,
+  DEFAULT_COST_TABLE,
+  type TokenUsage,
+  type UsageEntry,
+  type ModelPricing,
+  type CostTable,
+  type BudgetConfig,
+  type BudgetStatus,
+  type UsageBreakdown,
+  type UsageSummary,
+} from "./token-tracker";
+
+// Compaction Strategies
+export {
+  TrustBasedStrategy,
+  LRUStrategy,
+  SummarizeStrategy,
+  HybridStrategy,
+  type CompactionStrategy,
+  type CompactionPlan,
+  type CompactionOpts,
+  type LayerSnapshot,
+  type LLMProvider as CompactionLLMProvider,
+  type HybridThresholds,
+} from "./compaction";
+
+// Lifecycle Hooks
+export {
+  HookRegistry,
+  type HookPoint,
+  type HookContext,
+  type HookResult,
+  type HookHandler,
+  type PlanModeConfig,
+  type PlanModeTrigger,
+} from "./hooks";
+
+// Planner Agent
+export {
+  Planner,
+  type Plan,
+  type PlanStep,
+  type PlannerConfig,
+  type PlanExecutionResult,
+} from "./planner";

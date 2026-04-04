@@ -3,6 +3,7 @@ import type {
   LLMMessage,
   CompletionOpts,
   CompletionResult,
+  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
 } from "./types";
@@ -109,6 +110,124 @@ export class GeminiProvider implements LLMProvider {
       finishReason: candidate?.finishReason,
       raw: data,
     };
+  }
+
+  /**
+   * Stream a completion using Gemini's streamGenerateContent endpoint.
+   *
+   * Uses the `alt=sse` parameter to get Server-Sent Events instead of
+   * the default JSON array streaming format.
+   */
+  async *stream(
+    messages: LLMMessage[],
+    opts?: CompletionOpts
+  ): AsyncGenerator<LLMStreamEvent> {
+    const model = opts?.model ?? this._defaultModel;
+    const { system, turns } = splitSystemMessage(messages);
+
+    const contents = turns.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+    const body: Record<string, unknown> = { contents };
+
+    if (system) {
+      body.system_instruction = { parts: [{ text: system }] };
+    }
+
+    const generationConfig: Record<string, unknown> = {};
+    if (opts?.maxTokens !== undefined)
+      generationConfig.maxOutputTokens = opts.maxTokens;
+    if (opts?.temperature !== undefined)
+      generationConfig.temperature = opts.temperature;
+    if (opts?.topP !== undefined) generationConfig.topP = opts.topP;
+    if (opts?.stop) generationConfig.stopSequences = opts.stop;
+
+    if (Object.keys(generationConfig).length > 0) {
+      body.generationConfig = generationConfig;
+    }
+
+    const url = `${this._baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": this._apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      yield { type: "error", error: `Gemini API ${res.status}: ${text}` };
+      return;
+    }
+
+    if (!res.body) {
+      yield { type: "error", error: "No response body for streaming" };
+      return;
+    }
+
+    let finishReason: string | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+
+            // Extract text parts from candidates
+            const candidate = parsed.candidates?.[0];
+            if (candidate?.content?.parts) {
+              for (const part of candidate.content.parts) {
+                if (part.text) {
+                  yield { type: "text", text: part.text };
+                }
+              }
+            }
+
+            if (candidate?.finishReason) {
+              finishReason = candidate.finishReason;
+            }
+
+            // Usage metadata
+            if (parsed.usageMetadata) {
+              inputTokens = parsed.usageMetadata.promptTokenCount ?? inputTokens;
+              outputTokens = parsed.usageMetadata.candidatesTokenCount ?? outputTokens;
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (inputTokens > 0 || outputTokens > 0) {
+      yield { type: "usage", tokens: { input: inputTokens, output: outputTokens } };
+    }
+
+    yield { type: "done", finishReason };
   }
 }
 

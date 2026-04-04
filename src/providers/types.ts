@@ -40,6 +40,22 @@ export interface EmbeddingResult {
 }
 
 // ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+export interface LLMStreamEvent {
+  type: "text" | "usage" | "done" | "error";
+  /** Text chunk for "text" events. */
+  text?: string;
+  /** Token usage for "usage" events. */
+  tokens?: { input: number; output: number };
+  /** Error message for "error" events. */
+  error?: string;
+  /** Why generation stopped, for "done" events. */
+  finishReason?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Provider interface
 // ---------------------------------------------------------------------------
 
@@ -49,6 +65,10 @@ export interface LLMProvider {
     messages: LLMMessage[],
     opts?: CompletionOpts
   ): Promise<CompletionResult>;
+  stream?(
+    messages: LLMMessage[],
+    opts?: CompletionOpts
+  ): AsyncGenerator<LLMStreamEvent>;
 }
 
 export interface EmbeddingProvider {

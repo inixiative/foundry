@@ -6,6 +6,7 @@ export {
   type CompletionResult,
   type EmbeddingProvider,
   type EmbeddingResult,
+  type LLMStreamEvent,
   assembledToMessages,
   splitSystemMessage,
 } from "./types";
