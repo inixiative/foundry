@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { serveStatic } from "hono/bun";
 import type { EventStream, StreamEvent } from "../agents/event-stream";
 import type { Harness } from "../agents/harness";
 import type { InterventionLog } from "../agents/intervention";
@@ -114,20 +113,23 @@ export function createViewer(config: ViewerConfig) {
 /** Start the viewer server. */
 export function startViewer(config: ViewerConfig) {
   const { app, port } = createViewer(config);
+  const wsCleanup = new Map<object, () => void>();
 
   const server = Bun.serve({
     port,
     fetch: app.fetch,
     websocket: {
       open(ws) {
-        (ws as any)._unsub = config.eventStream.subscribe((event) => {
+        const unsub = config.eventStream.subscribe((event) => {
           ws.send(JSON.stringify(event));
         });
+        wsCleanup.set(ws, unsub);
       },
       message() {},
       close(ws) {
-        const unsub = (ws as any)._unsub;
+        const unsub = wsCleanup.get(ws);
         if (unsub) unsub();
+        wsCleanup.delete(ws);
       },
     },
   });
@@ -256,14 +258,29 @@ const VIEWER_HTML = `<!DOCTYPE html>
 <script>
 const $ = (s) => document.querySelector(s);
 let ws, eventCount = 0, traces = [], currentTrace = null;
+let traceRefreshPending = false;
 
+// Escape all dynamic values to prevent XSS
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+// Escape for use in HTML attribute values
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 
 function connect() {
   ws = new WebSocket(\`ws://\${location.host}/ws\`);
   ws.onopen = () => { $('#ws-dot').className = 'dot connected'; $('#ws-status').textContent = 'connected'; };
   ws.onclose = () => { $('#ws-dot').className = 'dot disconnected'; $('#ws-status').textContent = 'reconnecting...'; setTimeout(connect, 2000); };
-  ws.onmessage = (e) => { eventCount++; $('#event-count').textContent = eventCount + ' events'; addEvent(JSON.parse(e.data)); };
+  ws.onmessage = (e) => {
+    eventCount++;
+    $('#event-count').textContent = eventCount + ' events';
+    const ev = JSON.parse(e.data);
+    addEvent(ev);
+    // Refresh traces when new events arrive (debounced)
+    if (!traceRefreshPending) {
+      traceRefreshPending = true;
+      setTimeout(() => { traceRefreshPending = false; loadTraces(); loadLayers(); }, 500);
+    }
+  };
 }
 
 function addEvent(ev) {
@@ -298,7 +315,7 @@ function renderTraces() {
 }
 
 async function loadTraceDetail(traceId) {
-  const res = await fetch('/api/traces/' + traceId);
+  const res = await fetch('/api/traces/' + encodeURIComponent(traceId));
   if (!res.ok) return;
   currentTrace = await res.json();
   renderDetail();
@@ -323,20 +340,18 @@ function renderDetail() {
 }
 
 function renderSpan(span, depth) {
-  const statusClass = span.status || 'ok';
-  const dur = span.durationMs ? span.durationMs.toFixed(1) + 'ms' : '';
-  const agent = span.agentId ? ' → ' + span.agentId : '';
-  const layers = span.layerIds ? ' [' + span.layerIds.join(', ') + ']' : '';
+  const statusClass = esc(span.status || 'ok');
+  const dur = span.durationMs ? esc(span.durationMs.toFixed(1)) + 'ms' : '';
 
-  let html = '<div class="span-node depth-' + depth + '">';
+  let html = '<div class="span-node ' + (depth === 0 ? 'depth-0' : '') + '">';
   html += '<div class="span-header">';
   html += '<span class="span-name">' + esc(span.name) + '</span>';
   html += '<span class="span-kind">' + esc(span.kind) + '</span>';
-  html += '<span class="span-status ' + esc(statusClass) + '">' + esc(statusClass) + '</span>';
+  html += '<span class="span-status ' + escAttr(statusClass) + '">' + esc(statusClass) + '</span>';
   html += '<span class="span-duration">' + dur + '</span>';
   html += '</div>';
 
-  // Detail (input/output, click to expand)
+  // Detail (input/output, click to expand) — all values escaped via JSON.stringify
   const detail = {
     agent: span.agentId,
     layers: span.layerIds,
@@ -346,7 +361,7 @@ function renderSpan(span, depth) {
     error: span.error,
     annotations: span.annotations && Object.keys(span.annotations).length ? span.annotations : undefined,
   };
-  html += '<div class="span-detail">' + JSON.stringify(detail, null, 2) + '</div>';
+  html += '<div class="span-detail">' + esc(JSON.stringify(detail, null, 2)) + '</div>';
 
   // Children
   if (span.children && span.children.length > 0) {
@@ -355,16 +370,23 @@ function renderSpan(span, depth) {
     }
   }
 
-  // Override button for route/classify spans
+  // Override button for route/classify spans — use data attributes instead of inline onclick
   if (span.kind === 'route' || span.kind === 'classify') {
-    html += '<button class="override-btn" onclick="showOverride(\\'' + currentTrace.id + '\\', \\'' + span.id + '\\', this)">override</button>';
+    html += '<button class="override-btn" data-trace="' + escAttr(currentTrace.id) + '" data-span="' + escAttr(span.id) + '">override</button>';
   }
 
   html += '</div>';
   return html;
 }
 
-window.showOverride = function(traceId, spanId, btn) {
+// Delegated event handler for override buttons (no inline onclick)
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.override-btn');
+  if (!btn) return;
+  const traceId = btn.dataset.trace;
+  const spanId = btn.dataset.span;
+  if (!traceId || !spanId) return;
+
   const correction = prompt('What should this have been? (JSON or text)');
   if (!correction) return;
   fetch('/api/interventions', {
@@ -378,7 +400,7 @@ window.showOverride = function(traceId, spanId, btn) {
       reason: 'manual override from viewer'
     })
   }).then(() => { btn.textContent = 'overridden ✓'; btn.disabled = true; });
-};
+});
 
 async function loadLayers() {
   const res = await fetch('/api/threads');
@@ -388,10 +410,10 @@ async function loadLayers() {
   for (const l of data.layers) {
     const el = document.createElement('div');
     el.className = 'layer-bar';
-    el.innerHTML = '<span class="state-dot ' + esc(l.state) + '"></span>'
+    el.innerHTML = '<span class="state-dot ' + escAttr(l.state) + '"></span>'
       + '<span class="layer-id">' + esc(l.id) + '</span>'
-      + '<span class="trust">trust:' + esc(l.trust) + '</span>'
-      + '<span style="color:var(--text-dim);font-size:11px">' + (l.contentLength / 4 | 0) + ' tok</span>';
+      + '<span class="trust">trust:' + esc(String(l.trust)) + '</span>'
+      + '<span style="color:var(--text-dim);font-size:11px">' + esc(String(l.contentLength / 4 | 0)) + ' tok</span>';
     container.appendChild(el);
   }
 }
@@ -399,8 +421,9 @@ async function loadLayers() {
 connect();
 loadTraces();
 loadLayers();
-setInterval(loadTraces, 3000);
-setInterval(loadLayers, 5000);
+// Fallback polling — primary refresh is event-driven via WebSocket
+setInterval(loadTraces, 10000);
+setInterval(loadLayers, 15000);
 </script>
 </body>
 </html>`;
