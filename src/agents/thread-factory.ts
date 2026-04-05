@@ -286,7 +286,7 @@ export class ThreadFactory {
           provider: provider.id,
           model: result.model,
           agentId,
-          tokens: { input: result.tokens.input, output: result.tokens.output },
+          tokens: result.tokens,
         });
       }
       return result;
