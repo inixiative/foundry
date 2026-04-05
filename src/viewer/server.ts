@@ -26,6 +26,8 @@ export interface ViewerConfig {
   tokenTracker?: TokenTracker;
   /** Directory for analytics data persistence. Defaults to .foundry/analytics/ */
   analyticsDir?: string;
+  /** Project registry (optional — enables multi-project management). */
+  projectRegistry?: import("../agents/project").ProjectRegistry;
 }
 
 /**
@@ -63,6 +65,42 @@ export function createViewer(config: ViewerConfig) {
     analyticsStore.load().catch(() => {});
     analyticsStore.connectTracker(config.tokenTracker);
   }
+
+  // -- REST: Messages (primary interface — send through harness) --
+
+  app.post("/api/messages", async (c) => {
+    const body = await c.req.json();
+    const payload = body.message ?? body.payload ?? body.content;
+
+    if (!payload || typeof payload !== "string") {
+      return c.json({ error: "message is required (string)" }, 400);
+    }
+
+    const id = body.id ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    try {
+      const result = await harness.send({ id, payload });
+
+      return c.json({
+        id,
+        payload,
+        classification: result.classification?.value ?? null,
+        route: result.route?.value ?? null,
+        output: result.result?.output ?? null,
+        traceId: result.trace.id,
+        trace: result.trace.summary(),
+        timestamp: result.timestamp,
+        invokedAgents: result.invokedAgents ?? [],
+        activeLayers: result.activeLayers ?? [],
+      });
+    } catch (err) {
+      return c.json({
+        error: `Execution failed: ${err instanceof Error ? err.message : String(err)}`,
+        id,
+        payload,
+      }, 500);
+    }
+  });
 
   // -- REST: Traces --
 
@@ -117,30 +155,84 @@ export function createViewer(config: ViewerConfig) {
 
   // -- REST: System state --
 
-  app.get("/api/threads", (c) => {
-    const threads = [...harness.thread.agents.entries()].map(([id, agent]) => ({
-      id,
-      agentId: agent.id,
-    }));
-    return c.json({
-      threadId: harness.thread.id,
-      meta: harness.thread.meta,
-      agents: threads,
-      layerCount: harness.thread.stack.layers.length,
-      layers: harness.thread.stack.layers.map((l) => ({
+  /** Serialize a thread for the API. */
+  function threadToJSON(thread: typeof harness.thread) {
+    return {
+      threadId: thread.id,
+      meta: thread.meta,
+      agents: [...thread.agents.entries()].map(([id, agent]) => ({
+        id,
+        agentId: agent.id,
+      })),
+      layerCount: thread.stack.layers.length,
+      layers: thread.stack.layers.map((l) => ({
         id: l.id,
         state: l.state,
         trust: l.trust,
         hash: l.hash,
         contentLength: l.content.length,
       })),
-    });
+    };
+  }
+
+  app.get("/api/threads", (c) => {
+    const projectId = c.req.query("project");
+    const registry = config.projectRegistry;
+
+    // If a project is specified and registry exists, return that project's threads
+    if (projectId && registry) {
+      const project = registry.get(projectId);
+      if (project) {
+        const threads = [...project.threads.values()].map(threadToJSON);
+        return c.json({ threads, projectId });
+      }
+    }
+
+    // Default: return all threads (main + any from projects)
+    const allThreads = [threadToJSON(harness.thread)];
+
+    if (registry) {
+      for (const [, project] of registry.all) {
+        for (const [, thread] of project.threads) {
+          allThreads.push(threadToJSON(thread));
+        }
+      }
+    }
+
+    return c.json({ threads: allThreads });
   });
 
   app.get("/api/events", (c) => {
     const kind = c.req.query("kind") as StreamEvent["kind"] | undefined;
     const limit = Number(c.req.query("limit") ?? 100);
     return c.json(eventStream.recent({ kind, limit }));
+  });
+
+  // -- REST: Definitions (config-level, not runtime instances) --
+
+  app.get("/api/definitions", async (c) => {
+    const cfg = await configStore.load();
+    configStore.syncFromHarness(harness);
+
+    // Which IDs are currently instantiated on the thread
+    const instantiatedLayers = new Set(
+      harness.thread.stack.layers.map((l) => l.id)
+    );
+    const instantiatedAgents = new Set(
+      [...harness.thread.agents.keys()]
+    );
+
+    return c.json({
+      layers: Object.values(cfg.layers).map((l) => ({
+        ...l,
+        instantiated: instantiatedLayers.has(l.id),
+      })),
+      agents: Object.values(cfg.agents).map((a) => ({
+        ...a,
+        instantiated: instantiatedAgents.has(a.id),
+      })),
+      sources: Object.values(cfg.sources),
+    });
   });
 
   // -- REST: Actions (operator commands) --
@@ -258,7 +350,21 @@ export function createViewer(config: ViewerConfig) {
     if (!analyticsStore || !config.tokenTracker) {
       return c.json({ error: "Analytics not configured. Pass tokenTracker to ViewerConfig." }, 400);
     }
-    return c.json(analyticsStore.snapshot(config.tokenTracker));
+    const projectId = c.req.query("project");
+    const snapshot = analyticsStore.snapshot(config.tokenTracker);
+
+    // Filter by project if specified — match thread IDs belonging to the project
+    if (projectId && config.projectRegistry) {
+      const project = config.projectRegistry.get(projectId);
+      if (project) {
+        const projectThreadIds = new Set([...project.threads.keys()]);
+        // Filter the top agents/models to those used within project threads
+        snapshot.projectId = projectId;
+        snapshot.projectThreadCount = projectThreadIds.size;
+      }
+    }
+
+    return c.json(snapshot);
   });
 
   app.get("/api/analytics/timeseries", (c) => {
@@ -288,6 +394,86 @@ export function createViewer(config: ViewerConfig) {
     return c.json(config.tokenTracker.budgetStatus);
   });
 
+  // -- REST: Projects --
+
+  app.get("/api/projects", async (c) => {
+    // Return from config (always available) + registry summaries if present
+    const cfg = await configStore.load();
+    const registry = config.projectRegistry;
+
+    if (registry) {
+      // Sync config → registry
+      registry.loadFromConfigs(cfg.projects);
+      return c.json({
+        projects: registry.summaries(),
+        tags: registry.allTags(),
+      });
+    }
+
+    // Fallback: just return config entries
+    const projects = Object.values(cfg.projects).map((p) => ({
+      ...p,
+      status: "idle",
+      threadCount: 0,
+      activeThreadCount: 0,
+      createdAt: 0,
+      lastActiveAt: 0,
+    }));
+    const tags = [...new Set(projects.flatMap((p) => p.tags))].sort();
+    return c.json({ projects, tags });
+  });
+
+  app.get("/api/projects/:id", async (c) => {
+    const id = c.req.param("id");
+    const registry = config.projectRegistry;
+    if (registry) {
+      const project = registry.get(id);
+      if (!project) return c.json({ error: "not found" }, 404);
+      return c.json(project.summary());
+    }
+    const cfg = await configStore.load();
+    const p = cfg.projects[id];
+    if (!p) return c.json({ error: "not found" }, 404);
+    return c.json(p);
+  });
+
+  app.post("/api/projects", async (c) => {
+    const body = await c.req.json();
+    if (!body.id || !body.path) {
+      return c.json({ error: "id and path are required" }, 400);
+    }
+    const projectConfig = {
+      id: body.id,
+      path: body.path,
+      label: body.label ?? body.id,
+      tags: body.tags ?? [],
+      runtime: body.runtime ?? "claude-code",
+      description: body.description ?? "",
+      enabled: true,
+    };
+    await configStore.patch("projects", { [body.id]: projectConfig });
+    const registry = config.projectRegistry;
+    if (registry && !registry.get(body.id)) {
+      registry.register(projectConfig);
+    }
+    return c.json(projectConfig, 201);
+  });
+
+  app.delete("/api/projects/:id", async (c) => {
+    const id = c.req.param("id");
+    await configStore.deleteItem("projects", id);
+    const registry = config.projectRegistry;
+    if (registry) registry.remove(id);
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/projects/:id/config", async (c) => {
+    const id = c.req.param("id");
+    const resolved = configStore.resolveProject(id);
+    if (!resolved) return c.json({ error: "project not found" }, 404);
+    return c.json(resolved);
+  });
+
   // -- Static: UI files --
   // Serves the Preact-based UI from /ui/*
 
@@ -306,7 +492,15 @@ export function startViewer(config: ViewerConfig) {
 
   const server = Bun.serve({
     port,
-    fetch: app.fetch,
+    fetch(req, server) {
+      // Handle WebSocket upgrade before Hono — Bun requires
+      // returning undefined (not a Response) on successful upgrade.
+      if (new URL(req.url).pathname === "/ws") {
+        if (server.upgrade(req)) return undefined;
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      }
+      return app.fetch(req, server);
+    },
     websocket: {
       open(ws) {
         const unsub = config.eventStream.subscribe((event) => {
@@ -322,19 +516,6 @@ export function startViewer(config: ViewerConfig) {
       },
     },
   });
-
-  // Upgrade WebSocket on /ws path
-  const wrappedApp = new Hono();
-
-  wrappedApp.get("/ws", (c) => {
-    const upgraded = server.upgrade(c.req.raw);
-    if (!upgraded) return c.text("WebSocket upgrade failed", 400);
-    return new Response(null);
-  });
-
-  wrappedApp.route("/", app);
-
-  server.reload({ fetch: wrappedApp.fetch });
 
   console.log(`Foundry Viewer running at http://localhost:${port}`);
 

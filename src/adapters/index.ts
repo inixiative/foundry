@@ -7,3 +7,6 @@ export { HttpMemory } from "./http-memory";
 // Optional peer deps
 export { RedisMemory, type RedisClient, type RedisEntry } from "./redis-memory";
 export { PostgresMemory } from "./postgres-memory";
+
+// Hosted / SaaS
+export { SupermemoryAdapter, type SupermemoryConfig } from "./supermemory";

@@ -16,7 +16,7 @@ import { beforeAll, afterAll } from "bun:test";
 
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL ??
-  "postgresql://postgres:postgres@localhost:5432/foundry_test";
+  "postgresql://postgres:postgres@localhost:5532/foundry_test";
 
 let _prisma: PrismaClient | null = null;
 

@@ -1,16 +1,17 @@
 /**
  * Foundry Viewer — main app shell.
- * Three-panel layout: thread tree | conversation | detail drawer.
- * Hotkeys, command palette, layer bands, action bar.
+ * Three-panel layout: sidebar | conversation | detail drawer.
  */
 
 import { html, render, useState, useEffect } from "./lib.js";
 import {
   init, connected, eventCount, toast, currentTrace,
-  selectedSpanId, loadTraces, loadThreads, executeAction, liveEvents,
+  selectedSpanId, loadTraces, loadThreads, executeAction,
+  projectSidebarOpen,
 } from "./store.js";
-import { initHotkeys, registerDefaults, setEnabled } from "./hotkeys.js";
-import { ThreadTree } from "./thread-tree.js";
+import { initHotkeys, registerDefaults } from "./hotkeys.js";
+import { ProjectSidebar } from "./project-sidebar.js";
+import { Sidebar } from "./thread-tree.js";
 import { Conversation } from "./conversation.js";
 import { DetailDrawer } from "./detail-drawer.js";
 import { CommandPalette, HelpOverlay } from "./command-palette.js";
@@ -18,53 +19,27 @@ import { Settings, settingsOpen } from "./settings.js";
 import { Analytics, analyticsOpen } from "./analytics.js";
 
 // ---------------------------------------------------------------------------
-// Status bar
+// Header — slim: logo + connection status + hints
 // ---------------------------------------------------------------------------
 
-function StatusBar() {
+function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
 
   return html`
-    <div class="status-bar">
-      <span class="status-dot ${isConnected ? "on" : "off"}"></span>
-      <span class="status-text">${isConnected ? "connected" : "reconnecting..."}</span>
-      <span class="status-sep">|</span>
-      <span class="status-text">${count} events</span>
-      <span class="status-right">
-        <kbd class="status-key">Ctrl+K</kbd> commands
-        <kbd class="status-key">?</kbd> help
-      </span>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// Action bar
-// ---------------------------------------------------------------------------
-
-function ActionBar() {
-  return html`
-    <div class="action-bar">
-      <button class="action-btn" onClick=${() => executeAction("thread:inspect")} title="Inspect (i)">
-        inspect
-      </button>
-      <button class="action-btn" onClick=${() => executeAction("thread:pause")} title="Pause (p)">
-        pause
-      </button>
-      <button class="action-btn" onClick=${() => executeAction("system:snapshot")} title="Snapshot">
-        snapshot
-      </button>
-      <span class="action-sep"></span>
-      <button class="action-btn analytics-btn" onClick=${() => { analyticsOpen.value = true; }} title="Analytics (a)">
-        analytics
-      </button>
-      <button class="action-btn" onClick=${() => { settingsOpen.value = true; }} title="Settings (s)">
-        settings
-      </button>
-      <button class="action-btn subtle" onClick=${() => { loadTraces(); loadThreads(); }} title="Refresh (r)">
-        refresh
-      </button>
+    <div class="header">
+      <span class="header-title">foundry</span>
+      <div class="header-right">
+        <span class="status-dot ${isConnected ? "on" : "off"}"></span>
+        <span class="status-text">${isConnected ? "connected" : "reconnecting..."}</span>
+        <span class="status-sep">|</span>
+        <span class="status-text">${count} events</span>
+        <span class="status-sep">|</span>
+        <kbd class="status-key">Ctrl+K</kbd>
+        <span class="status-text dim">commands</span>
+        <kbd class="status-key">?</kbd>
+        <span class="status-text dim">help</span>
+      </div>
     </div>
   `;
 }
@@ -82,51 +57,47 @@ function Toast() {
 }
 
 // ---------------------------------------------------------------------------
-// Live events panel (bottom of left panel)
-// ---------------------------------------------------------------------------
-
-function LiveEvents() {
-  const events = liveEvents.value;
-  return html`
-    <div class="live-events">
-      <div class="panel-header">
-        <span class="panel-title">LIVE EVENTS</span>
-        <span class="panel-badge">${events.length}</span>
-      </div>
-      <div class="live-events-list">
-        ${events.slice(0, 50).map((ev, i) => html`
-          <div key=${i} class="live-event-row">
-            <span class="le-kind">${ev.kind}</span>
-            <span class="le-time">${ev._time}</span>
-          </div>
-        `)}
-      </div>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
 function App() {
   const [selectedSpan, setSelectedSpan] = useState(null);
   const [selectedLayer, setSelectedLayer] = useState(null);
+  // "layer" | "agent" | null — when set, detail drawer shows creation form
+  const [creating, setCreating] = useState(null);
 
   const handleSpanSelect = (span) => {
     setSelectedSpan(span);
     setSelectedLayer(null);
+    setCreating(null);
   };
 
   const handleLayerClick = (layerId) => {
     setSelectedLayer(layerId);
     setSelectedSpan(null);
+    setCreating(null);
+  };
+
+  const handleCreateLayer = () => {
+    setCreating("layer");
+    setSelectedSpan(null);
+    setSelectedLayer(null);
+  };
+
+  const handleCreateAgent = () => {
+    setCreating("agent");
+    setSelectedSpan(null);
+    setSelectedLayer(null);
+  };
+
+  const handleCreated = () => {
+    setCreating(null);
   };
 
   // Register hotkey actions
   useEffect(() => {
     registerDefaults({
-      focusTree: () => document.querySelector(".thread-tree")?.focus(),
+      focusTree: () => document.querySelector(".sidebar")?.focus(),
       focusConversation: () => document.querySelector(".conversation")?.focus(),
       focusDetail: () => document.querySelector(".detail-drawer")?.focus(),
       nextItem: () => { /* TODO: span navigation */ },
@@ -135,6 +106,7 @@ function App() {
       escape: () => {
         setSelectedSpan(null);
         setSelectedLayer(null);
+        setCreating(null);
         selectedSpanId.value = null;
       },
       togglePause: () => executeAction("thread:pause"),
@@ -143,25 +115,31 @@ function App() {
       refresh: () => { loadTraces(); loadThreads(); },
       openSettings: () => { settingsOpen.value = !settingsOpen.value; },
       openAnalytics: () => { analyticsOpen.value = !analyticsOpen.value; },
-      toggleLayers: () => { /* handled by tree panel */ },
-      toggleEvents: () => { /* handled by tree panel */ },
+      toggleLayers: () => {},
+      toggleEvents: () => {},
     });
     initHotkeys();
   }, []);
 
+  const projOpen = projectSidebarOpen.value;
+
   return html`
     <div class="app">
-      <div class="header">
-        <span class="header-title">foundry</span>
-        <${ActionBar} />
-        <${StatusBar} />
-      </div>
+      <${Header} />
 
-      <div class="panels">
-        <!-- Left: Thread tree + layers + events -->
+      <div class="panels ${projOpen ? "panels--proj-open" : "panels--proj-closed"}">
+        <!-- Far left: Project sidebar (collapsible) -->
+        <div class="panel-projects" tabIndex="0">
+          <${ProjectSidebar} />
+        </div>
+
+        <!-- Left: Thread/Layer/Agent sidebar -->
         <div class="panel-left" tabIndex="0">
-          <${ThreadTree} onThreadSelect=${() => {}} />
-          <${LiveEvents} />
+          <${Sidebar}
+            onLayerClick=${handleLayerClick}
+            onCreateLayer=${handleCreateLayer}
+            onCreateAgent=${handleCreateAgent}
+          />
         </div>
 
         <!-- Center: Conversation / trace timeline -->
@@ -177,6 +155,8 @@ function App() {
           <${DetailDrawer}
             selectedSpan=${selectedSpan}
             selectedLayer=${selectedLayer}
+            creating=${creating}
+            onCreated=${handleCreated}
           />
         </div>
       </div>

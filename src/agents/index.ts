@@ -96,9 +96,13 @@ export {
 } from "./thread";
 export {
   Harness,
+  matchesCondition,
   type Message,
   type HarnessResult,
   type PipelineStep,
+  type FlowStage,
+  type FlowConfig,
+  type RequestContext,
 } from "./harness";
 
 // Tracing
@@ -200,6 +204,15 @@ export {
   type CorpusTier,
   type CorpusCompilerConfig,
 } from "./corpus-compiler";
+
+// Project — top-level container above threads
+export {
+  Project,
+  ProjectRegistry,
+  type ProjectConfig,
+  type ProjectStatus,
+  type ProjectSummary,
+} from "./project";
 
 // Herald — cross-agent observation & coordination
 export {

@@ -2,12 +2,12 @@
  * PostgresMemory integration tests.
  *
  * These tests require a running PostgreSQL instance with the Foundry schema.
- * Run with: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/foundry_test bun test tests/db/
+ * Run with: DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/
  *
  * Setup:
  *   docker compose up -d
- *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/foundry_test bunx prisma db push
- *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/foundry_test bun test tests/db/
+ *   DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push
+ *   DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { PostgresMemory } from "../../src/adapters/postgres-memory";

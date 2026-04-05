@@ -10,9 +10,13 @@ import type { LLMProvider } from "../providers/types";
 /**
  * The full settings config. Serialized to disk as JSON.
  * Everything the UI can configure lives here.
+ *
+ * Two-tier model:
+ * - Global level: defaults, providers, agents, layers, sources — shared baseline
+ * - Project level: each project can inherit global settings or override per-field
  */
 export interface FoundryConfig {
-  /** Global defaults. */
+  /** Global defaults — projects inherit these unless they override. */
   defaults: {
     provider: string;
     model: string;
@@ -23,19 +27,47 @@ export interface FoundryConfig {
   /** Provider configurations (keyed by provider ID). */
   providers: Record<string, ProviderConfig>;
 
-  /** Agent configurations (keyed by agent ID). */
+  /** Global agent configurations (keyed by agent ID). Projects inherit these. */
   agents: Record<string, AgentSettingsConfig>;
 
-  /** Layer configurations (keyed by layer ID). */
+  /** Global layer configurations (keyed by layer ID). Projects inherit these. */
   layers: Record<string, LayerSettingsConfig>;
 
-  /** Data source configurations (keyed by source ID). */
+  /** Global data source configurations (keyed by source ID). */
   sources: Record<string, DataSourceConfig>;
+
+  /** Registered projects (keyed by project ID). */
+  projects: Record<string, ProjectSettingsConfig>;
+}
+
+/** Project configuration — each project points to a directory and can override global settings. */
+export interface ProjectSettingsConfig {
+  id: string;
+  /** Absolute path to project root directory. */
+  path: string;
+  /** Display label. */
+  label: string;
+  /** Categorization tags (e.g. "frontend", "api", "production"). */
+  tags: string[];
+  /** Runtime adapter: how context gets injected into the agent runtime. */
+  runtime: "claude-code" | "codex" | "cursor";
+  /** Optional description. */
+  description?: string;
+  /** Override global defaults for this project. Omitted fields inherit from global. */
+  defaults?: Partial<FoundryConfig["defaults"]>;
+  /** Project-specific agent overrides (merged over global agents). */
+  agents?: Record<string, Partial<AgentSettingsConfig>>;
+  /** Project-specific layer overrides (merged over global layers). */
+  layers?: Record<string, Partial<LayerSettingsConfig>>;
+  /** Project-specific sources (merged over global sources). */
+  sources?: Record<string, DataSourceConfig>;
+  /** Whether this project is enabled. */
+  enabled: boolean;
 }
 
 export interface ProviderConfig {
   id: string;
-  type: "anthropic" | "openai" | "gemini" | "custom";
+  type: "anthropic" | "openai" | "gemini" | "claude-code" | "custom";
   /** Display label. */
   label: string;
   /** Available models for this provider. */
@@ -76,6 +108,15 @@ export interface AgentSettingsConfig {
   maxDepth: number;
   /** Whether this agent is active. */
   enabled: boolean;
+  /**
+   * When this agent runs in the pipeline:
+   * - "always": runs on every request (default for classifier, router)
+   * - "on-demand": available but only invoked when middleware/router explicitly requests it
+   * - "conditional": runs when its condition matches the current classification/route context
+   */
+  invocation?: "always" | "on-demand" | "conditional";
+  /** Condition for "conditional" invocation. Ignored for other modes. */
+  condition?: InvocationCondition;
 }
 
 export interface LayerSettingsConfig {
@@ -92,11 +133,33 @@ export interface LayerSettingsConfig {
   maxTokens: number;
   /** Whether this layer is enabled. */
   enabled: boolean;
+  /**
+   * When this layer is included in context assembly:
+   * - "always": included on every request (default for system, conventions)
+   * - "on-demand": only included when explicitly requested via route.contextSlice or middleware
+   * - "conditional": included when its condition matches classification/route context
+   */
+  activation?: "always" | "on-demand" | "conditional";
+  /** Condition for "conditional" activation. Ignored for other modes. */
+  condition?: InvocationCondition;
+}
+
+/**
+ * Condition for conditional invocation/activation.
+ * Matches when ANY specified field matches (OR across fields, OR within arrays).
+ */
+export interface InvocationCondition {
+  /** Match if classification.category is one of these. */
+  categories?: string[];
+  /** Match if any classification tag overlaps with these. */
+  tags?: string[];
+  /** Match if route.destination is one of these. */
+  routes?: string[];
 }
 
 export interface DataSourceConfig {
   id: string;
-  type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline";
+  type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline" | "supermemory";
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;
@@ -117,10 +180,21 @@ export function defaultConfig(): FoundryConfig {
       maxTokens: 4096,
     },
     providers: {
+      "claude-code": {
+        id: "claude-code",
+        type: "claude-code",
+        label: "Claude Code (CLI subscription)",
+        models: [
+          { id: "claude-opus-4-20250514", label: "Opus 4", tier: "powerful", costTier: "high", contextWindow: 200000 },
+          { id: "claude-sonnet-4-20250514", label: "Sonnet 4", tier: "standard", costTier: "medium", contextWindow: 200000 },
+          { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200000 },
+        ],
+        enabled: true,
+      },
       anthropic: {
         id: "anthropic",
         type: "anthropic",
-        label: "Anthropic",
+        label: "Anthropic (API key)",
         models: [
           { id: "claude-opus-4-20250514", label: "Opus 4", tier: "powerful", costTier: "high", contextWindow: 200000 },
           { id: "claude-sonnet-4-20250514", label: "Sonnet 4", tier: "standard", costTier: "medium", contextWindow: 200000 },
@@ -153,6 +227,7 @@ export function defaultConfig(): FoundryConfig {
     agents: {},
     layers: {},
     sources: {},
+    projects: {},
   };
 }
 
@@ -184,6 +259,7 @@ export class ConfigStore {
         ...defaultConfig(),
         ...saved,
         providers: { ...defaultConfig().providers, ...saved.providers },
+        projects: { ...saved.projects },
       };
     }
     this._loaded = true;
@@ -213,6 +289,8 @@ export class ConfigStore {
       this._config.layers = { ...this._config.layers, ...data } as FoundryConfig["layers"];
     } else if (section === "sources") {
       this._config.sources = { ...this._config.sources, ...data } as FoundryConfig["sources"];
+    } else if (section === "projects") {
+      this._config.projects = { ...this._config.projects, ...data } as FoundryConfig["projects"];
     }
     await this._write();
     return this._config;
@@ -268,6 +346,44 @@ export class ConfigStore {
         };
       }
     }
+  }
+
+  /**
+   * Resolve effective config for a project.
+   * Inherits global defaults, agents, layers, sources — then merges project overrides.
+   */
+  resolveProject(projectId: string): FoundryConfig | null {
+    const project = this._config.projects[projectId];
+    if (!project) return null;
+
+    const resolved: FoundryConfig = {
+      defaults: { ...this._config.defaults, ...project.defaults },
+      providers: this._config.providers,
+      agents: { ...this._config.agents },
+      layers: { ...this._config.layers },
+      sources: { ...this._config.sources, ...project.sources },
+      projects: this._config.projects,
+    };
+
+    // Merge project agent overrides
+    if (project.agents) {
+      for (const [id, overrides] of Object.entries(project.agents)) {
+        if (resolved.agents[id]) {
+          resolved.agents[id] = { ...resolved.agents[id], ...overrides } as AgentSettingsConfig;
+        }
+      }
+    }
+
+    // Merge project layer overrides
+    if (project.layers) {
+      for (const [id, overrides] of Object.entries(project.layers)) {
+        if (resolved.layers[id]) {
+          resolved.layers[id] = { ...resolved.layers[id], ...overrides } as LayerSettingsConfig;
+        }
+      }
+    }
+
+    return resolved;
   }
 
   private async _write(): Promise<void> {
