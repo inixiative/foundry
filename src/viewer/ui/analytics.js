@@ -27,11 +27,12 @@ async function loadAnalytics() {
     const res = await fetch("/api/analytics");
     if (!res.ok) {
       analyticsData.value = null;
+      showToast(`Analytics unavailable: ${res.status}`, "error");
       return;
     }
     analyticsData.value = await res.json();
-  } catch {
-    // offline
+  } catch (err) {
+    showToast(`Analytics failed to load: ${err.message}`, "error");
   }
 }
 

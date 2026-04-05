@@ -161,8 +161,8 @@ export class CacheLifecycle {
                     timestamp: Date.now(),
                     meta: { ruleId: rule.id, error: err },
                   });
-                } catch {
-                  // Cannot emit error event — swallow to prevent unhandled rejection
+                } catch (emitErr) {
+                  console.warn(`[CacheLifecycle] failed to emit rule:error for ${layer.id}:`, (emitErr as Error).message);
                 }
               }
             }
@@ -174,8 +174,8 @@ export class CacheLifecycle {
                 timestamp: Date.now(),
                 meta: { error: err },
               });
-            } catch {
-              // Cannot emit error event — swallow to prevent unhandled rejection
+            } catch (emitErr) {
+              console.warn(`[CacheLifecycle] failed to emit lifecycle:error for ${layer.id}:`, (emitErr as Error).message);
             }
           }
         }

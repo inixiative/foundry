@@ -219,12 +219,12 @@ export class AnalyticsStore {
           const call = JSON.parse(line) as PersistedCall;
           this._calls.push(call);
           this._callCounter++;
-        } catch {
-          // Skip malformed lines
+        } catch (err) {
+          console.warn("[Analytics] skipping malformed JSONL line:", (err as Error).message);
         }
       }
-    } catch {
-      // First load or corrupted — start fresh
+    } catch (err) {
+      console.warn("[Analytics] failed to load persisted data, starting fresh:", (err as Error).message);
     }
   }
 
@@ -233,8 +233,8 @@ export class AnalyticsStore {
       const path = `${this._dir}/calls.jsonl`;
       const line = JSON.stringify(call) + "\n";
       await Bun.write(path, (existsSync(path) ? await Bun.file(path).text() : "") + line);
-    } catch {
-      // Persistence failure — non-fatal, data lives in memory
+    } catch (err) {
+      console.warn("[Analytics] persistence failure (data lives in memory):", (err as Error).message);
     }
   }
 

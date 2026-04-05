@@ -214,8 +214,8 @@ export class GeminiProvider implements LLMProvider {
               inputTokens = parsed.usageMetadata.promptTokenCount ?? inputTokens;
               outputTokens = parsed.usageMetadata.candidatesTokenCount ?? outputTokens;
             }
-          } catch {
-            // Skip malformed JSON
+          } catch (err) {
+            console.warn("[Gemini] malformed stream chunk:", (err as Error).message);
           }
         }
       }

@@ -88,17 +88,16 @@ export class SignalBus {
     for (const handler of kindHandlers) {
       try {
         await handler(signal);
-      } catch {
-        // Handler errors are silently dropped — consumers should handle their own errors.
-        // A future version could emit these on a separate error channel.
+      } catch (err) {
+        console.warn(`[SignalBus] handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
       }
     }
 
     for (const handler of globalHandlers) {
       try {
         await handler(signal);
-      } catch {
-        // Same — don't let one bad handler kill the bus
+      } catch (err) {
+        console.warn(`[SignalBus] global handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
       }
     }
   }

@@ -96,7 +96,8 @@ export class HttpMemory {
       async load() {
         try {
           return await http.get(path, params);
-        } catch {
+        } catch (err) {
+          console.warn(`[HttpMemory] source load failed for "${id}":`, (err as Error).message);
           return "";
         }
       },
@@ -115,7 +116,8 @@ export class HttpMemory {
         try {
           const params = ref.meta as Record<string, string> | undefined;
           return await http.get(ref.locator, params);
-        } catch {
+        } catch (err) {
+          console.warn(`[HttpMemory] hydrate failed for "${ref.locator}":`, (err as Error).message);
           return "";
         }
       },
@@ -131,8 +133,8 @@ export class HttpMemory {
     return async (signal: Signal): Promise<void> => {
       try {
         await http.post(path, signal);
-      } catch {
-        // Silently fail — signal forwarding is best-effort
+      } catch (err) {
+        console.warn(`[HttpMemory] signal forwarding failed:`, (err as Error).message);
       }
     };
   }

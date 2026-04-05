@@ -197,8 +197,8 @@ export class OpenAIProvider implements LLMProvider {
                 },
               };
             }
-          } catch {
-            // Skip malformed JSON
+          } catch (err) {
+            console.warn("[OpenAI] malformed stream chunk:", (err as Error).message);
           }
         }
       }

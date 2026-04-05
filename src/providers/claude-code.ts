@@ -179,8 +179,8 @@ export class ClaudeCodeProvider implements LLMProvider {
           let msg: any;
           try {
             msg = JSON.parse(line);
-          } catch {
-            // Log malformed line for debugging, skip it
+          } catch (err) {
+            console.warn("[ClaudeCode] malformed stream line:", (err as Error).message);
             continue;
           }
 

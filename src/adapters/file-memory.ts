@@ -82,8 +82,9 @@ export class FileMemory {
     try {
       const { unlinkSync } = await import("node:fs");
       unlinkSync(path);
-    } catch {
+    } catch (err) {
       // File may not exist on disk — still remove from memory
+      console.warn(`[FileMemory] unlink failed for "${id}":`, (err as Error).message);
     }
     this._entries.delete(id);
     return true;

@@ -22,7 +22,7 @@ export const liveEvents = signal([]);
 export const activePanel = signal("conversation"); // "conversation" | "layers" | "events"
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
-export const toast = signal(null); // { message, type: "ok"|"error" }
+export const toast = signal(null); // { message, type: "ok"|"error"|"warn", persistent?: boolean }
 
 // Projects
 export const projects = signal([]);     // ProjectSummary[]
@@ -128,7 +128,12 @@ export function connect() {
     setTimeout(connect, 2000);
   };
   ws.onmessage = (e) => {
-    pendingEvents.push(JSON.parse(e.data));
+    const event = JSON.parse(e.data);
+    // Surface error events from the backend as toasts
+    if (event.kind === "error") {
+      showToast(`[${event.source}] ${event.message}`, event.severity === "warn" ? "warn" : "error");
+    }
+    pendingEvents.push(event);
     if (!frameScheduled) {
       frameScheduled = true;
       requestAnimationFrame(flushEvents);
@@ -143,8 +148,11 @@ export function connect() {
 export async function loadTraces() {
   try {
     const res = await fetch("/api/traces?limit=50");
+    if (!res.ok) { showToast(`Failed to load traces: ${res.status}`, "error"); return; }
     traces.value = await res.json();
-  } catch { /* offline */ }
+  } catch (err) {
+    if (connected.value) showToast(`Traces unavailable: ${err.message}`, "warn");
+  }
 }
 
 export async function loadTraceDetail(traceId) {
@@ -153,8 +161,12 @@ export async function loadTraceDetail(traceId) {
     if (res.ok) {
       currentTrace.value = await res.json();
       selectedSpanId.value = null;
+    } else {
+      showToast(`Failed to load trace: ${res.status}`, "error");
     }
-  } catch { /* offline */ }
+  } catch (err) {
+    if (connected.value) showToast(`Trace unavailable: ${err.message}`, "warn");
+  }
 }
 
 export async function loadThreads() {
@@ -164,6 +176,7 @@ export async function loadThreads() {
       ? `/api/threads?project=${encodeURIComponent(projectId)}`
       : "/api/threads";
     const res = await fetch(url);
+    if (!res.ok) { showToast(`Failed to load threads: ${res.status}`, "error"); return; }
     const data = await res.json();
 
     // New format: { threads: [...] } or legacy { threadId, meta, ... }
@@ -176,23 +189,31 @@ export async function loadThreads() {
       threadData.value = data;
       allThreads.value = [data];
     }
-  } catch { /* offline */ }
+  } catch (err) {
+    if (connected.value) showToast(`Threads unavailable: ${err.message}`, "warn");
+  }
 }
 
 export async function loadDefinitions() {
   try {
     const res = await fetch("/api/definitions");
+    if (!res.ok) { showToast(`Failed to load definitions: ${res.status}`, "error"); return; }
     definitions.value = await res.json();
-  } catch { /* offline */ }
+  } catch (err) {
+    if (connected.value) showToast(`Definitions unavailable: ${err.message}`, "warn");
+  }
 }
 
 export async function loadProjects() {
   try {
     const res = await fetch("/api/projects");
+    if (!res.ok) { showToast(`Failed to load projects: ${res.status}`, "error"); return; }
     const data = await res.json();
     projects.value = data.projects ?? [];
     projectTags.value = data.tags ?? [];
-  } catch { /* offline */ }
+  } catch (err) {
+    if (connected.value) showToast(`Projects unavailable: ${err.message}`, "warn");
+  }
 }
 
 export async function createProject(config) {
@@ -224,8 +245,13 @@ export async function deleteProject(id) {
       loadProjects();
       return true;
     }
+    const body = await res.json().catch(() => ({}));
+    showToast(`Failed to delete project: ${body.error || res.status}`, "error");
     return false;
-  } catch { return false; }
+  } catch (err) {
+    showToast(`Failed to delete project: ${err.message}`, "error");
+    return false;
+  }
 }
 
 export async function createDefinition(section, id, data) {
@@ -258,8 +284,13 @@ export async function deleteDefinition(section, id) {
       loadDefinitions();
       return true;
     }
+    const body = await res.json().catch(() => ({}));
+    showToast(`Failed to delete ${id}: ${body.error || res.status}`, "error");
     return false;
-  } catch { return false; }
+  } catch (err) {
+    showToast(`Failed to delete ${id}: ${err.message}`, "error");
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -360,10 +391,31 @@ export async function submitIntervention(traceId, spanId, correction, reason) {
 // ---------------------------------------------------------------------------
 
 let toastTimer = null;
+/**
+ * Show a toast notification.
+ *
+ * - "ok" toasts auto-dismiss after 3s
+ * - "warn" toasts auto-dismiss after 6s
+ * - "error" toasts are persistent — user must dismiss manually
+ *
+ * @param {string} message
+ * @param {"ok"|"error"|"warn"} type
+ */
 export function showToast(message, type = "ok") {
-  toast.value = { message, type };
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.value = null; }, 3000);
+  toastTimer = null;
+  const persistent = type === "error";
+  toast.value = { message, type, persistent };
+  if (!persistent) {
+    const delay = type === "warn" ? 6000 : 3000;
+    toastTimer = setTimeout(() => { toast.value = null; }, delay);
+  }
+}
+
+export function dismissToast() {
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = null;
+  toast.value = null;
 }
 
 // ---------------------------------------------------------------------------

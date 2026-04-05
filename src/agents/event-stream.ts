@@ -12,7 +12,8 @@ export type StreamEvent =
   | { kind: "dispatch"; threadId: string; dispatch: Dispatch }
   | { kind: "signal"; threadId: string; signal: Signal }
   | { kind: "session"; event: SessionEvent }
-  | { kind: "middleware"; threadId: string; phase: "before" | "after"; context: DispatchContext };
+  | { kind: "middleware"; threadId: string; phase: "before" | "after"; context: DispatchContext }
+  | { kind: "error"; source: string; message: string; severity: "error" | "warn"; timestamp: number };
 
 /**
  * Unified event stream across all threads and sessions.
@@ -44,8 +45,8 @@ export class EventStream {
     for (const listener of listeners) {
       try {
         listener(event);
-      } catch {
-        // Don't let one bad listener break the stream
+      } catch (err) {
+        console.warn("[EventStream] listener error:", (err as Error).message ?? err);
       }
     }
   }
@@ -80,6 +81,11 @@ export class EventStream {
 
     const limit = opts?.limit ?? 100;
     return events.slice(-limit);
+  }
+
+  /** Push an error event — surfaced as a toast in the viewer UI. */
+  pushError(source: string, message: string, severity: "error" | "warn" = "error"): void {
+    this.push({ kind: "error", source, message, severity, timestamp: Date.now() });
   }
 
   /** Clear history. */

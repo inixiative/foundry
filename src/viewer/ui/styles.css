@@ -1244,10 +1244,40 @@ body {
   font-size: 12px;
   z-index: 200;
   animation: toast-in 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
 }
 
 .toast.ok { background: var(--ok-dim); color: var(--ok); border: 1px solid var(--ok); }
+.toast.warn { background: rgba(250,204,21,0.12); color: var(--warn); border: 1px solid var(--warn); }
 .toast.error { background: var(--error-dim); color: var(--error); border: 1px solid var(--error); }
+
+.toast--persistent {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.toast-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.toast-dismiss:hover {
+  opacity: 1;
+}
 
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }

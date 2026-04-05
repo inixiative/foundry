@@ -187,8 +187,8 @@ export class AnthropicProvider implements LLMProvider {
               } else if (eventType === "message_stop") {
                 // Final event — yield usage and done
               }
-            } catch {
-              // Skip malformed JSON lines
+            } catch (err) {
+              console.warn("[Anthropic] malformed stream chunk:", (err as Error).message);
             }
           }
         }

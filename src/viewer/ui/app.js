@@ -7,7 +7,7 @@ import { html, render, useState, useEffect } from "./lib.js";
 import {
   init, connected, eventCount, toast, currentTrace,
   selectedSpanId, loadTraces, loadThreads, executeAction,
-  projectSidebarOpen,
+  projectSidebarOpen, dismissToast,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
 import { ProjectSidebar } from "./project-sidebar.js";
@@ -52,7 +52,12 @@ function Toast() {
   const t = toast.value;
   if (!t) return null;
   return html`
-    <div class="toast ${t.type}">${t.message}</div>
+    <div class="toast ${t.type} ${t.persistent ? "toast--persistent" : ""}">
+      <span class="toast-message">${t.message}</span>
+      ${t.persistent && html`
+        <button class="toast-dismiss" onClick=${dismissToast} aria-label="Dismiss">\u00d7</button>
+      `}
+    </div>
   `;
 }
 

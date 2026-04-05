@@ -235,8 +235,8 @@ export class SupermemoryAdapter {
             });
             parts.push("## Memories\n" + memLines.join("\n"));
           }
-        } catch {
-          // Supermemory unavailable — degrade gracefully
+        } catch (err) {
+          console.warn(`[Supermemory] source load failed for "${id}":`, (err as Error).message);
           return "";
         }
 
@@ -277,7 +277,8 @@ export class SupermemoryAdapter {
           // Direct document fetch
           const doc = await sm.getDocument(ref.locator);
           return doc?.content ?? doc?.summary ?? "";
-        } catch {
+        } catch (err) {
+          console.warn(`[Supermemory] hydrate failed for "${ref.locator}":`, (err as Error).message);
           return "";
         }
       },
@@ -327,8 +328,8 @@ export class SupermemoryAdapter {
             timestamp: signal.timestamp,
           },
         });
-      } catch {
-        // Best-effort — don't crash the signal bus
+      } catch (err) {
+        console.warn(`[Supermemory] signal write failed for "${signal.kind}":`, (err as Error).message);
       }
     };
   }

@@ -77,7 +77,7 @@ export function createViewer(config: ViewerConfig) {
 
   // Auto-wire tracker → analytics persistence
   if (analyticsStore && config.tokenTracker) {
-    analyticsStore.load().catch(() => {});
+    analyticsStore.load().catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
     analyticsStore.connectTracker(config.tokenTracker);
   }
 
@@ -130,7 +130,7 @@ export function createViewer(config: ViewerConfig) {
 
     // Persist user message
     if (db) {
-      db.writeMessage({ id: `${id}_user`, threadId, role: "user", content: payload }).catch(() => {});
+      db.writeMessage({ id: `${id}_user`, threadId, role: "user", content: payload }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
     }
 
     try {
@@ -144,8 +144,8 @@ export function createViewer(config: ViewerConfig) {
           role: "agent",
           content: typeof result.result?.output === "string" ? result.result.output : JSON.stringify(result.result?.output),
           traceId: result.trace.id,
-        }).catch(() => {});
-        db.writeTrace(result.trace).catch(() => {});
+        }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+        db.writeTrace(result.trace).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
       }
 
       return c.json({
@@ -161,8 +161,10 @@ export function createViewer(config: ViewerConfig) {
         activeLayers: result.activeLayers ?? [],
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      eventStream.pushError("harness", `Execution failed: ${msg}`);
       return c.json({
-        error: `Execution failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Execution failed: ${msg}`,
         id,
         payload,
       }, 500);
@@ -340,7 +342,7 @@ export function createViewer(config: ViewerConfig) {
     if (db) {
       db.prisma.threadState.create({
         data: { id, description, tags, status: "idle" },
-      }).catch(() => {});
+      }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
     }
 
     return c.json(threadToJSON(thread), 201);

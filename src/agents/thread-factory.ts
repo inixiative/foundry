@@ -207,7 +207,8 @@ export class ThreadFactory {
                 confidence: 0.9,
                 reasoning: (parsed.reasoning as string) || "LLM classification",
               };
-            } catch {
+            } catch (err) {
+              console.warn(`[ThreadFactory] LLM classify failed, falling back to keyword:`, (err as Error).message);
               return keywordClassify(payload);
             }
           },
@@ -240,7 +241,8 @@ export class ThreadFactory {
                 confidence: 0.9,
                 reasoning: (parsed.reasoning as string) || "LLM routing",
               };
-            } catch {
+            } catch (err) {
+              console.warn(`[ThreadFactory] LLM route failed, falling back to keyword:`, (err as Error).message);
               return keywordRoute(input.classification, config);
             }
           },
