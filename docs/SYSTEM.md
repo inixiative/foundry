@@ -9,40 +9,50 @@
 Foundry is a **context management and orchestration layer** for AI agents. It manages what agents know, how they're composed, how they're evaluated, and how the system improves over time.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FOUNDRY                                   │
-│                                                                   │
-│  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │ Agents  │  │ Providers│  │ Adapters │  │ Eval / Improve  │  │
-│  │         │  │          │  │          │  │                 │  │
-│  │ Context │  │ Anthropic│  │ File     │  │ PR Fixtures     │  │
-│  │ Stack   │  │ OpenAI   │  │ SQLite   │  │ Diff Scoring    │  │
-│  │ Thread  │  │ Gemini   │  │ Postgres │  │ LLM Scoring     │  │
-│  │ Harness │  │          │  │ Redis    │  │ Regression      │  │
-│  │ Trace   │  │ Runtime  │  │ HTTP     │  │ Trends          │  │
-│  │ Session │  │ Adapters │  │ Markdown │  │                 │  │
-│  └─────────┘  └──────────┘  └──────────┘  └─────────────────┘  │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │                    Viewer / Control Surface                  │  │
-│  │  Thread Tree │ Conversation + Layer Bands │ Detail Drawer   │  │
-│  │  Settings │ AI Assist │ Hotkeys │ Command Palette           │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                            FOUNDRY                                    │
+│                                                                       │
+│  ┌───────────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Agents        │  │ Providers│  │ Adapters │  │ Eval / Improve│  │
+│  │               │  │          │  │          │  │               │  │
+│  │ Context Stack │  │ Anthropic│  │ File     │  │ PR Fixtures   │  │
+│  │ Thread        │  │ OpenAI   │  │ SQLite   │  │ Diff Scoring  │  │
+│  │ Harness       │  │ Gemini   │  │ Postgres │  │ LLM Scoring   │  │
+│  │ Planner       │  │          │  │ Redis    │  │ Regression    │  │
+│  │ Herald        │  │ Runtime  │  │ HTTP     │  │ Trends        │  │
+│  │ ActiveMemory  │  │ Adapters │  │ Markdown │  │               │  │
+│  │ CorpusCompiler│  │          │  │          │  │               │  │
+│  │ TokenTracker  │  │ Streaming│  │          │  │               │  │
+│  │ Trace/Session │  │          │  │          │  │               │  │
+│  └───────────────┘  └──────────┘  └──────────┘  └───────────────┘  │
+│                                                                       │
+│  ┌───────────────────────────────────────────────────────────────┐    │
+│  │                    Viewer / Control Surface                    │    │
+│  │  Thread Tree │ Conversation + Layer Bands │ Detail Drawer     │    │
+│  │  Settings │ Analytics │ AI Assist │ Hotkeys │ Command Palette │    │
+│  └───────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Module Dependency Graph (Unidirectional)
+### Module Dependency Graph (Three-System Split)
 
 ```
-agents/ (core, zero deps)
-  ↓
-providers/ (LLM + runtime adapters)
-  ↓
-adapters/ (memory backends)
-  ↓
-eval/ (fixtures, scoring, improvement)
-  ↓
-viewer/ (control surface, settings, AI assist)
+┌── System 1: Core Agent Infrastructure ──┐
+│  agents/ (core, zero deps)               │
+│    ↓                                     │
+│  providers/ (LLM + runtime adapters)     │
+│    ↓                                     │
+│  adapters/ (memory backends)             │
+└──────────────────────────────────────────┘
+          ↓
+┌── System 2: Evaluation ─────────────────┐
+│  eval/ (fixtures, scoring, improvement)  │
+└──────────────────────────────────────────┘
+          ↓
+┌── System 3: Control Surface ────────────┐
+│  viewer/ (UI, analytics, settings,       │
+│           AI assist)                     │
+└──────────────────────────────────────────┘
 ```
 
 **No circular dependencies.** Each module only imports from modules above it.
@@ -177,6 +187,84 @@ thread.signals.on("correction", async (signal) => {
 thread.signals.emit({ kind: "correction", content: "Use try/catch", source: "reviewer" });
 ```
 
+### Planner
+
+A new agent type that generates structured execution plans with topological step execution.
+
+```ts
+const planner = new Planner("planner", {
+  provider: "anthropic",
+  model: "claude-haiku-4-5-20251001",
+});
+thread.register(planner);
+const plan = await thread.dispatch("planner", { goal: "implement auth" });
+// Returns a DAG of steps executed in topological order
+```
+
+Steps are executed respecting dependency order, enabling parallel execution of independent steps and sequential execution where dependencies exist.
+
+### Herald
+
+Cross-agent observation layer. Herald monitors agent interactions and detects emergent patterns across the system.
+
+**5 Pattern Detectors:**
+
+| Detector | What it catches |
+|----------|----------------|
+| Duplication | Multiple agents producing overlapping work |
+| Contradiction | Agents emitting conflicting outputs or recommendations |
+| Convergence | Independent agents arriving at the same conclusion |
+| Cross-pollination | Useful context from one agent applicable to another |
+| Resource imbalance | Uneven load or token usage across agents |
+
+### Active Memory
+
+Levin-inspired trust competition system for context management.
+
+- **Trust competition** — memory entries compete for attention based on trust scores; low-trust entries are displaced by high-trust ones
+- **Dissolution** — entries that remain unused or repeatedly fail to contribute are dissolved (removed)
+- **Access tracking** — every read/write is tracked to inform trust adjustments over time
+
+### Corpus Compiler
+
+Three-stage pipeline for converting raw context into optimized compiled form.
+
+```
+fluid → formal → compiled
+```
+
+- **Fluid** — raw, unstructured context (notes, signals, corrections)
+- **Formal** — validated and structured (typed entries with metadata)
+- **Compiled** — optimized for token efficiency (deduplicated, compressed, indexed)
+
+### Token Tracker
+
+Per-provider, per-model, per-agent cost accounting with budget enforcement.
+
+- Tracks token usage (input/output) for every LLM call
+- Aggregates costs by provider, model, and agent
+- Enforces budget limits — agents are blocked when budget is exhausted
+- Exposes data for the Analytics tab in the Viewer
+
+### Compaction Strategies
+
+4 strategies for reducing context size when token budgets are exceeded:
+
+| Strategy | Approach |
+|----------|----------|
+| Trust-based | Evict lowest-trust layers first |
+| LRU | Evict least-recently-used layers |
+| Summarize | Replace verbose layers with LLM-generated summaries |
+| Hybrid | Combines trust-based eviction with summarization for mid-trust layers |
+
+### Lifecycle Hooks
+
+16 hook points across the agent lifecycle, enabling fine-grained control over agent behavior.
+
+- Hooks fire at key points: pre/post dispatch, pre/post execution, layer warm/stale transitions, compaction, session events, etc.
+- **Plan-mode auto-shunt** — when a Planner is active, hooks automatically shunt dispatch into plan-mode execution
+- **Budget guards** — hooks that intercept dispatch when token budgets are near exhaustion
+
 ### Other Primitives
 
 - **CacheLifecycle** — rule-based lifecycle management with event queuing
@@ -204,6 +292,8 @@ interface LLMProvider {
 - `AnthropicProvider` — Anthropic Messages API (API key in header, system message extracted)
 - `OpenAIProvider` — OpenAI Chat Completions (configurable baseUrl for Cursor, Ollama, Azure)
 - `GeminiProvider` — Google Gemini (API key in `x-goog-api-key` header, not URL)
+
+**Streaming:** All three providers support streaming via `AsyncGenerator<LLMStreamEvent>`, enabling token-by-token output for real-time UIs and progressive rendering.
 
 **Embedding Providers:** `VoyageEmbeddingProvider`, `OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`
 
@@ -365,6 +455,7 @@ Thin colored strips between agent calls. Each layer gets a persistent color (has
 | `i` | Inspect thread state |
 | `s` | Open settings |
 | `r` | Refresh all data |
+| `a` | Open analytics tab |
 
 ### Settings Panel
 
@@ -377,6 +468,17 @@ Full configuration UI with five tabs:
 - **Defaults** — global provider, model, temperature, maxTokens
 
 **AI Assist:** Each section has an "AI Analyze" button. Each prompt editor has "AI improve." Suggestions appear as purple cards with one-click Apply.
+
+### Analytics Tab
+
+First-class cost tracking and usage analytics panel:
+
+- **Stat cards** — total cost, total tokens, average cost per call, active providers
+- **Budget gauge** — visual budget utilization with warning thresholds
+- **Ranked models** — models sorted by cost/usage with per-model breakdowns
+- **Ranked agents** — agents sorted by cost/usage with per-agent breakdowns
+- **Thread costs** — cost attribution per thread
+- **Call log** — full history of LLM calls with cost, tokens, latency, provider, model
 
 ### Server API
 
@@ -394,6 +496,9 @@ Full configuration UI with five tabs:
 | `/api/assist` | POST | AI config analysis |
 | `/api/assist/prompt` | POST | AI prompt improvement |
 | `/api/assist/agent-config` | POST | AI model suggestion |
+| `/api/analytics` | GET | Aggregated cost/usage analytics |
+| `/api/analytics/calls` | GET | Paginated LLM call log |
+| `/api/analytics/budget` | GET | Budget status and utilization |
 | `/ws` | WebSocket | Live event stream |
 
 ### ActionHandler
@@ -428,15 +533,18 @@ PostgreSQL with pgvector extension.
 
 | Metric | Value |
 |--------|-------|
-| Production code | ~9,500 lines |
-| Test code | ~4,700 lines |
-| Tests passing | 274 |
-| Agent primitives | 17 |
+| Production code | ~16,300 lines (69 source files) |
+| Test code | ~8,000+ lines (29 test files) |
+| Tests passing | 472+ |
+| Agent primitives | 25+ (including Planner, Herald, ActiveMemory, CorpusCompiler) |
+| Compaction strategies | 4 |
+| Lifecycle hooks | 16 hook points |
+| Pattern detectors | 5 |
 | Memory adapters | 6 |
 | LLM providers | 3 |
 | Runtime adapters | 3 |
 | Eval rubrics | 5 |
-| UI components | 10 |
+| UI components | 13 |
 | Circular dependencies | 0 |
 | External runtime deps | 2 (hono, prisma) |
 
@@ -449,7 +557,7 @@ PostgreSQL with pgvector extension.
 bun install
 
 # Tests
-bun test tests/*.test.ts          # Unit tests (274 tests)
+bun test tests/*.test.ts          # Unit tests (472+ tests)
 bun test tests/db/                 # Database integration tests
 
 # Demo
