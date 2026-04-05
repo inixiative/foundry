@@ -215,6 +215,28 @@ export {
   type ProjectSummary,
 } from "./project";
 
+// Thread Factory
+export {
+  ThreadFactory,
+  keywordClassify,
+  keywordRoute,
+  parseJSON,
+  type SourceResolver,
+  type ThreadFactoryDeps,
+} from "./thread-factory";
+
+// Reactive Middleware
+export {
+  ReactiveMiddleware,
+  lowConfidenceRule,
+  classificationOverrideRule,
+  rewarmOnAgentRule,
+  emitOnPatternRule,
+  type ReactionRule,
+  type ReactionContext,
+  type ReactiveMiddlewareConfig,
+} from "./reactive";
+
 // Herald — cross-agent observation & coordination
 export {
   Herald,

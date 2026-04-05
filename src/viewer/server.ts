@@ -31,6 +31,10 @@ export interface ViewerConfig {
   projectRegistry?: import("../agents/project").ProjectRegistry;
   /** PostgresMemory for persistence (optional — enables durable traces/messages/signals). */
   db?: import("../adapters/postgres-memory").PostgresMemory;
+  /** Thread factory for creating new threads with independent instances. */
+  threadFactory?: import("../agents/thread-factory").ThreadFactory;
+  /** Config store for resolving project configs. */
+  configStore?: import("./config").ConfigStore;
 }
 
 /**
@@ -290,16 +294,26 @@ export function createViewer(config: ViewerConfig) {
     const tags: string[] = body.tags ?? [];
     const projectId: string | undefined = body.projectId;
 
-    // Create thread with the same stack as the main thread
-    const thread = new Thread(id, harness.thread.stack, { description, tags });
+    const factory = config.threadFactory;
+    const cfgStore = config.configStore;
 
-    // Register all agents from the main thread onto the new thread
-    for (const [agentId, agent] of harness.thread.agents) {
-      thread.register(agent);
+    let thread: InstanceType<typeof Thread>;
+
+    if (factory && cfgStore) {
+      // Use factory — thread gets its own layer instances, agents, RunContext
+      const effectiveConfig = projectId
+        ? cfgStore.resolveProject(projectId) ?? cfgStore.config
+        : cfgStore.config;
+
+      const result = await factory.create(id, effectiveConfig, { description, tags });
+      thread = result.thread;
+    } else {
+      // Fallback — shared stack and agents (legacy behavior)
+      thread = new Thread(id, harness.thread.stack, { description, tags });
+      for (const [, agent] of harness.thread.agents) {
+        thread.register(agent);
+      }
     }
-
-    // Copy middleware from main thread
-    // (thread starts with its own empty middleware chain — that's fine for now)
 
     const registry = config.projectRegistry;
     if (projectId && registry) {

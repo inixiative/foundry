@@ -10,26 +10,21 @@
  */
 
 import {
-  ContextLayer,
-  ContextStack,
-  Classifier,
-  Router,
-  Executor,
-  Thread,
   Harness,
   EventStream,
   InterventionLog,
   TokenTracker,
   ProjectRegistry,
-  type Decision,
-  type Classification,
-  type Route,
+  ThreadFactory,
+  ReactiveMiddleware,
+  lowConfidenceRule,
+  type SourceResolver,
 } from "./agents";
 import { FileMemory, inlineSource, PostgresMemory } from "./adapters";
 import { AnthropicProvider, OpenAIProvider, GeminiProvider, ClaudeCodeProvider } from "./providers";
-import type { LLMProvider, LLMMessage, CompletionResult } from "./providers";
+import type { LLMProvider } from "./providers";
 import { startViewer } from "./viewer/server";
-import { ConfigStore, type FoundryConfig, type AgentSettingsConfig } from "./viewer/config";
+import { ConfigStore, type FoundryConfig } from "./viewer/config";
 import { existsSync } from "fs";
 
 // ---------------------------------------------------------------------------
@@ -57,7 +52,6 @@ function createProvider(config: FoundryConfig): LLMProvider {
 
   switch (providerId) {
     case "claude-code": {
-      // Uses the claude CLI — no API key needed (subscription auth)
       return new ClaudeCodeProvider({
         defaultModel: config.defaults.model,
         defaultMaxTokens: config.defaults.maxTokens,
@@ -113,25 +107,8 @@ const tokenTracker = new TokenTracker({
   budget: { maxCostUSD: 10.0 },
 });
 
-// Wrap provider to track usage
-function tracked(p: LLMProvider, agentId: string): typeof p.complete {
-  return async (messages: LLMMessage[], opts?: Parameters<typeof p.complete>[1]) => {
-    const result = await p.complete(messages, opts);
-    if (result.tokens) {
-      tokenTracker.record({
-        provider: p.id,
-        model: result.model || config.defaults.model,
-        agentId,
-        input: result.tokens.input,
-        output: result.tokens.output,
-      });
-    }
-    return result;
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Memory + sources
+// Memory + source resolver
 // ---------------------------------------------------------------------------
 
 const memory = new FileMemory(`${FOUNDRY_DIR}/memory`);
@@ -139,214 +116,75 @@ await memory.load();
 
 console.log(`Memory loaded: ${memory.all().length} entries`);
 
-// ---------------------------------------------------------------------------
-// Build context layers
-// ---------------------------------------------------------------------------
+/**
+ * Source resolver — turns config source IDs into ContextSources.
+ * This is the bridge between config (source IDs) and runtime (loadable sources).
+ */
+const sourceResolver: SourceResolver = (sourceId, cfg) => {
+  const srcCfg = cfg.sources[sourceId];
+  if (!srcCfg || !srcCfg.enabled) return null;
 
-function buildLayers(config: FoundryConfig): ContextLayer[] {
-  const layers: ContextLayer[] = [];
-
-  for (const [id, layerCfg] of Object.entries(config.layers)) {
-    if (!layerCfg.enabled) continue;
-
-    // Resolve sources for this layer
-    const sources = layerCfg.sourceIds
-      .map((srcId) => {
-        const srcCfg = config.sources[srcId];
-        if (!srcCfg || !srcCfg.enabled) return null;
-
-        switch (srcCfg.type) {
-          case "inline":
-            return inlineSource(srcCfg.id, srcCfg.uri);
-          case "file":
-            // Filter by kind based on source naming convention
-            if (srcCfg.id.includes("convention")) {
-              return memory.asSource(srcCfg.id, "convention");
-            }
-            return memory.asSource(srcCfg.id);
-          default:
-            return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
-        }
-      })
-      .filter(Boolean) as Array<{ id: string; load: () => Promise<string> }>;
-
-    layers.push(
-      new ContextLayer({
-        id,
-        trust: layerCfg.trust * 10, // Config uses 0-1, ContextLayer uses 0-10
-        staleness: layerCfg.staleness || undefined,
-        maxTokens: layerCfg.maxTokens || undefined,
-        sources,
-      }),
-    );
-  }
-
-  // Fallback: if no layers configured, create a basic system layer
-  if (layers.length === 0) {
-    layers.push(
-      new ContextLayer({
-        id: "system",
-        trust: 10,
-        sources: [
-          inlineSource("default", "You are a helpful engineering assistant."),
-        ],
-      }),
-    );
-  }
-
-  return layers;
-}
-
-const layers = buildLayers(config);
-const stack = new ContextStack(layers);
-await stack.warmAll();
-
-console.log(`Stack: ${stack.layers.length} layers, ~${stack.estimateTokens()} tokens`);
-
-// ---------------------------------------------------------------------------
-// Build agents (LLM-powered)
-// ---------------------------------------------------------------------------
-
-function llmComplete(agentId: string) {
-  return tracked(provider, agentId);
-}
-
-// -- Classifier --
-const classifierCfg = config.agents["classifier"];
-const classifier = new Classifier<string>({
-  id: "classifier",
-  stack,
-  handler: async (ctx, payload) => {
-    if (!classifierCfg?.enabled) {
-      // Fallback: keyword classification
-      return keywordClassify(payload);
-    }
-
-    try {
-      const complete = llmComplete("classifier");
-      const result = await complete(
-        [
-          { role: "system", content: `${ctx}\n\n${classifierCfg.prompt}` },
-          { role: "user", content: payload },
-        ],
-        { temperature: 0, maxTokens: classifierCfg.maxTokens || 256 },
-      );
-      const parsed = parseJSON(result.content);
-      return {
-        value: { category: parsed.category || "general", subcategory: parsed.subcategory },
-        confidence: 0.9,
-        reasoning: parsed.reasoning || "LLM classification",
-      } satisfies Decision<Classification>;
-    } catch (err) {
-      console.warn("  [classifier] LLM failed, falling back to keywords:", (err as Error).message);
-      return keywordClassify(payload);
-    }
-  },
-});
-
-// -- Router --
-const routerCfg = config.agents["router"];
-const router = new Router<{ payload: string; classification: Classification }>({
-  id: "router",
-  stack,
-  handler: async (ctx, input) => {
-    if (!routerCfg?.enabled) {
-      return keywordRoute(input.classification);
-    }
-
-    try {
-      const complete = llmComplete("router");
-      const result = await complete(
-        [
-          { role: "system", content: `${ctx}\n\n${routerCfg.prompt}` },
-          {
-            role: "user",
-            content: `Classification: ${JSON.stringify(input.classification)}\nMessage: ${input.payload}`,
-          },
-        ],
-        { temperature: 0, maxTokens: routerCfg.maxTokens || 256 },
-      );
-      const parsed = parseJSON(result.content);
-      return {
-        value: {
-          destination: parsed.destination || "executor-answer",
-          contextSlice: parsed.contextSlice || layers.map((l) => l.id),
-          priority: parsed.priority ?? 5,
-        },
-        confidence: 0.9,
-        reasoning: parsed.reasoning || "LLM routing",
-      } satisfies Decision<Route>;
-    } catch (err) {
-      console.warn("  [router] LLM failed, falling back to rules:", (err as Error).message);
-      return keywordRoute(input.classification);
-    }
-  },
-});
-
-// -- Executors --
-function createExecutor(id: string): Executor<string, string> {
-  const agentCfg = config.agents[id];
-  return new Executor<string, string>({
-    id,
-    stack,
-    handler: async (ctx, payload) => {
-      const prompt = agentCfg?.prompt || "You are a helpful assistant.";
-      try {
-        const complete = llmComplete(id);
-        const result = await complete(
-          [
-            { role: "system", content: `${ctx}\n\n${prompt}` },
-            { role: "user", content: payload },
-          ],
-          {
-            temperature: agentCfg?.temperature ?? 0,
-            maxTokens: agentCfg?.maxTokens ?? config.defaults.maxTokens,
-          },
-        );
-        return result.content;
-      } catch (err) {
-        return `[${id}] Error: ${(err as Error).message}`;
+  switch (srcCfg.type) {
+    case "inline":
+      return inlineSource(srcCfg.id, srcCfg.uri);
+    case "file":
+      if (srcCfg.id.includes("convention")) {
+        return memory.asSource(srcCfg.id, "convention");
       }
-    },
-  });
-}
-
-const executorFix = createExecutor("executor-fix");
-const executorBuild = createExecutor("executor-build");
-const executorAnswer = createExecutor("executor-answer");
+      return memory.asSource(srcCfg.id);
+    default:
+      return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
+  }
+};
 
 // ---------------------------------------------------------------------------
-// Thread + harness
+// Thread factory — stamps out threads with independent layer/agent instances
 // ---------------------------------------------------------------------------
 
-const thread = new Thread("main", stack, {
+const factory = new ThreadFactory({
+  provider,
+  tokenTracker,
+  sourceResolver,
+});
+
+// ---------------------------------------------------------------------------
+// Create main thread via factory
+// ---------------------------------------------------------------------------
+
+const { thread, stack } = await factory.create("main", config, {
   description: "Main conversation thread",
   tags: ["production"],
 });
 
-thread.register(classifier);
-thread.register(router);
-thread.register(executorFix);
-thread.register(executorBuild);
-thread.register(executorAnswer);
-
-// Middleware: log dispatches
-thread.middleware.use("logger", async (ctx, next) => {
-  const start = performance.now();
-  const result = await next();
-  const ms = (performance.now() - start).toFixed(1);
-  console.log(`  [dispatch] ${ctx.agentId} (${ms}ms)`);
-  return result;
-});
-
-// Signal bus: write to memory
+// Signal bus: write to file memory
 const signals = thread.signals;
 signals.onAny(memory.signalWriter());
 
+// Wire reactive middleware — dynamic behavior during runs
+const reactive = new ReactiveMiddleware({
+  stack,
+  signals,
+  threadId: "main",
+});
+
+// Built-in rule: flag low-confidence results in RunContext
+reactive.addRule(lowConfidenceRule(0.5));
+
+thread.middleware.use("reactive", reactive.asMiddleware());
+
+// Build harness
 const harness = new Harness(thread);
-harness.setClassifier("classifier");
-harness.setRouter("router");
-harness.setDefaultExecutor("executor-answer");
+
+// Auto-detect classifier/router/executor from config agent kinds
+for (const [id, agentCfg] of Object.entries(config.agents)) {
+  if (!agentCfg.enabled) continue;
+  if (agentCfg.kind === "classifier") harness.setClassifier(id);
+  else if (agentCfg.kind === "router") harness.setRouter(id);
+}
+harness.setDefaultExecutor(
+  Object.entries(config.agents).find(([_, a]) => a.kind === "executor" && a.enabled)?.[0]
+  ?? "executor-answer"
+);
 
 // Load invocation/activation modes from config
 harness.loadModes(config.agents, config.layers);
@@ -412,6 +250,8 @@ startViewer({
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,
   db: pgMemory,
+  threadFactory: factory,
+  configStore,
 });
 
 console.log(`Viewer: http://localhost:${port}`);
@@ -431,55 +271,3 @@ process.on("SIGINT", () => {
   thread.stop();
   process.exit(0);
 });
-
-// ---------------------------------------------------------------------------
-// Fallback handlers (no LLM needed)
-// ---------------------------------------------------------------------------
-
-function keywordClassify(payload: string): Decision<Classification> {
-  const lower = payload.toLowerCase();
-  let category = "general";
-  if (lower.includes("bug") || lower.includes("fix") || lower.includes("error")) category = "bug";
-  else if (lower.includes("feature") || lower.includes("add") || lower.includes("build")) category = "feature";
-  else if (lower.includes("refactor") || lower.includes("clean")) category = "refactor";
-  else if (lower.includes("question") || lower.includes("how") || lower.includes("why")) category = "question";
-  else if (lower.includes("convention") || lower.includes("style")) category = "convention";
-  return { value: { category }, confidence: 0.7, reasoning: `keyword: ${category}` };
-}
-
-function keywordRoute(classification: Classification): Decision<Route> {
-  const routeMap: Record<string, { dest: string; layers: string[] }> = {
-    bug: { dest: "executor-fix", layers: layers.map((l) => l.id) },
-    feature: { dest: "executor-build", layers: ["system", "conventions"] },
-    refactor: { dest: "executor-build", layers: ["system", "conventions"] },
-    question: { dest: "executor-answer", layers: ["system", "memory"] },
-    convention: { dest: "executor-answer", layers: ["conventions", "memory"] },
-    general: { dest: "executor-answer", layers: ["system"] },
-  };
-  const route = routeMap[classification.category] ?? routeMap.general;
-  return {
-    value: { destination: route.dest, contextSlice: route.layers, priority: 5 },
-    confidence: 0.8,
-    reasoning: `rule: ${classification.category} → ${route.dest}`,
-  };
-}
-
-function parseJSON(text: string): Record<string, unknown> {
-  // Try to extract JSON from LLM response (may have markdown fences)
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw = fenced ? fenced[1] : text;
-  try {
-    return JSON.parse(raw.trim());
-  } catch {
-    // Try to find first { ... } block
-    const braced = raw.match(/\{[\s\S]*\}/);
-    if (braced) {
-      try {
-        return JSON.parse(braced[0]);
-      } catch {
-        /* fall through */
-      }
-    }
-    return { category: "general", reasoning: "parse failure" };
-  }
-}
