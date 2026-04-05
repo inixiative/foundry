@@ -372,20 +372,27 @@ export class ConfigStore {
       projects: this._config.projects,
     };
 
-    // Merge project agent overrides
+    // Merge project agent overrides — can override globals, add project-only,
+    // or opt out of globals via enabled: false
     if (project.agents) {
       for (const [id, overrides] of Object.entries(project.agents)) {
         if (resolved.agents[id]) {
+          // Override existing global agent (including enabled: false to opt out)
           resolved.agents[id] = { ...resolved.agents[id], ...overrides } as AgentSettingsConfig;
+        } else {
+          // Project-only agent — add it with the project overrides as the full config
+          resolved.agents[id] = { id, ...overrides } as AgentSettingsConfig;
         }
       }
     }
 
-    // Merge project layer overrides
+    // Merge project layer overrides — same pattern: override, add, or opt out
     if (project.layers) {
       for (const [id, overrides] of Object.entries(project.layers)) {
         if (resolved.layers[id]) {
           resolved.layers[id] = { ...resolved.layers[id], ...overrides } as LayerSettingsConfig;
+        } else {
+          resolved.layers[id] = { id, ...overrides } as LayerSettingsConfig;
         }
       }
     }

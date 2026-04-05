@@ -77,6 +77,8 @@ export interface RequestContext {
   readonly requestedLayers: ReadonlySet<string>;
   /** Results from prior stages (keyed by agentId). */
   readonly stageResults: ReadonlyMap<string, unknown>;
+  /** Arbitrary data passed between stages — stages can read/write freely. */
+  readonly data: Map<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +327,7 @@ export class Harness {
     const requestedAgents = new Set<string>();
     const requestedLayers = new Set<string>();
     const stageResults = new Map<string, ExecutionResult>();
+    const data = new Map<string, unknown>();
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
@@ -339,6 +342,7 @@ export class Harness {
       get requestedAgents() { return requestedAgents; },
       get requestedLayers() { return requestedLayers; },
       get stageResults() { return stageResults; },
+      data,
     };
 
     try {

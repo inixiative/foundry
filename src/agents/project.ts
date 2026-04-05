@@ -1,6 +1,7 @@
 import { Thread, type ThreadConfig } from "./thread";
 import { ContextStack } from "./context-stack";
 import type { RuntimeAdapter } from "../providers/runtime";
+import type { ProjectSettingsConfig } from "../viewer/config";
 
 // ---------------------------------------------------------------------------
 // Project config — serializable, lives in the registry
@@ -19,6 +20,18 @@ export interface ProjectConfig {
   runtime: "claude-code" | "codex" | "cursor";
   /** Optional description of the project. */
   description?: string;
+}
+
+/** Convert a ProjectSettingsConfig (from config store) into a ProjectConfig. */
+export function fromSettingsConfig(cfg: ProjectSettingsConfig): ProjectConfig {
+  return {
+    id: cfg.id,
+    path: cfg.path,
+    label: cfg.label,
+    tags: cfg.tags,
+    runtime: cfg.runtime,
+    description: cfg.description,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -265,11 +278,16 @@ export class ProjectRegistry {
     return configs;
   }
 
-  /** Load projects from config. */
-  loadFromConfigs(configs: Record<string, ProjectConfig>): void {
+  /** Load projects from config (accepts either ProjectConfig or ProjectSettingsConfig). */
+  loadFromConfigs(configs: Record<string, ProjectConfig | ProjectSettingsConfig>): void {
     for (const config of Object.values(configs)) {
       if (!this._projects.has(config.id)) {
-        this.register(config);
+        // ProjectSettingsConfig has 'enabled' field; ProjectConfig doesn't
+        const pc: ProjectConfig = "enabled" in config
+          ? fromSettingsConfig(config as ProjectSettingsConfig)
+          : config as ProjectConfig;
+        if ("enabled" in config && !(config as ProjectSettingsConfig).enabled) continue;
+        this.register(pc);
       }
     }
   }

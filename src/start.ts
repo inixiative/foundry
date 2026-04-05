@@ -25,7 +25,7 @@ import {
   type Classification,
   type Route,
 } from "./agents";
-import { FileMemory, inlineSource } from "./adapters";
+import { FileMemory, inlineSource, PostgresMemory } from "./adapters";
 import { AnthropicProvider, OpenAIProvider, GeminiProvider, ClaudeCodeProvider } from "./providers";
 import type { LLMProvider, LLMMessage, CompletionResult } from "./providers";
 import { startViewer } from "./viewer/server";
@@ -352,6 +352,25 @@ harness.setDefaultExecutor("executor-answer");
 harness.loadModes(config.agents, config.layers);
 
 // ---------------------------------------------------------------------------
+// Postgres persistence (optional — requires DATABASE_URL)
+// ---------------------------------------------------------------------------
+
+let pgMemory: PostgresMemory | undefined;
+
+if (process.env.DATABASE_URL) {
+  try {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
+    pgMemory = new PostgresMemory(prisma);
+    // Wire signal persistence to postgres
+    signals.onAny(pgMemory.signalWriter());
+    console.log(`Postgres: connected (${process.env.DATABASE_URL.replace(/\/\/.*@/, "//***@")})`);
+  } catch (err) {
+    console.warn(`Postgres: unavailable (${(err as Error).message}). Running in-memory only.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Event stream + viewer
 // ---------------------------------------------------------------------------
 
@@ -392,12 +411,14 @@ startViewer({
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,
+  db: pgMemory,
 });
 
 console.log(`Viewer: http://localhost:${port}`);
 console.log(`Provider: ${provider.id} (${config.defaults.model})`);
 console.log(`Agents: ${[...thread.agents.keys()].join(", ")}`);
 console.log(`Layers: ${stack.layers.map((l) => l.id).join(", ")}`);
+console.log(`Persistence: ${pgMemory ? "postgres" : "in-memory only"}`);
 console.log();
 console.log("Ready. Send messages through the harness API or viewer.");
 

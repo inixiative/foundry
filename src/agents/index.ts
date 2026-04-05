@@ -209,6 +209,7 @@ export {
 export {
   Project,
   ProjectRegistry,
+  fromSettingsConfig,
   type ProjectConfig,
   type ProjectStatus,
   type ProjectSummary,

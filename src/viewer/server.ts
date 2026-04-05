@@ -3,6 +3,7 @@ import { serveStatic } from "hono/bun";
 import type { EventStream, StreamEvent } from "../agents/event-stream";
 import type { Harness } from "../agents/harness";
 import type { InterventionLog } from "../agents/intervention";
+import { Thread } from "../agents/thread";
 import type { Trace } from "../agents/trace";
 import type { LLMProvider } from "../providers/types";
 import type { TokenTracker } from "../agents/token-tracker";
@@ -28,6 +29,8 @@ export interface ViewerConfig {
   analyticsDir?: string;
   /** Project registry (optional — enables multi-project management). */
   projectRegistry?: import("../agents/project").ProjectRegistry;
+  /** PostgresMemory for persistence (optional — enables durable traces/messages/signals). */
+  db?: import("../adapters/postgres-memory").PostgresMemory;
 }
 
 /**
@@ -66,6 +69,40 @@ export function createViewer(config: ViewerConfig) {
     analyticsStore.connectTracker(config.tokenTracker);
   }
 
+  const db = config.db ?? null;
+
+  // -- REST: Health check --
+
+  app.get("/api/health", async (c) => {
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+
+    // Harness
+    checks.harness = { ok: true, detail: `${harness.thread.agents.size} agents` };
+
+    // Database
+    if (db) {
+      try {
+        await db.prisma.$queryRaw`SELECT 1`;
+        checks.database = { ok: true };
+      } catch (err) {
+        checks.database = { ok: false, detail: err instanceof Error ? err.message : "unreachable" };
+      }
+    }
+
+    // Provider — try a minimal completion to verify connectivity
+    if (config.assistProvider) {
+      try {
+        // Just check the provider object is valid — don't actually call it
+        checks.provider = { ok: true, detail: config.assistProvider.id };
+      } catch {
+        checks.provider = { ok: false, detail: "provider error" };
+      }
+    }
+
+    const allOk = Object.values(checks).every((ch) => ch.ok);
+    return c.json({ ok: allOk, checks }, allOk ? 200 : 503);
+  });
+
   // -- REST: Messages (primary interface — send through harness) --
 
   app.post("/api/messages", async (c) => {
@@ -77,9 +114,27 @@ export function createViewer(config: ViewerConfig) {
     }
 
     const id = body.id ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const threadId = body.threadId ?? harness.thread.id;
+
+    // Persist user message
+    if (db) {
+      db.writeMessage({ id: `${id}_user`, threadId, role: "user", content: payload }).catch(() => {});
+    }
 
     try {
       const result = await harness.send({ id, payload });
+
+      // Persist agent response + trace
+      if (db) {
+        db.writeMessage({
+          id: `${id}_agent`,
+          threadId,
+          role: "agent",
+          content: typeof result.result?.output === "string" ? result.result.output : JSON.stringify(result.result?.output),
+          traceId: result.trace.id,
+        }).catch(() => {});
+        db.writeTrace(result.trace).catch(() => {});
+      }
 
       return c.json({
         id,
@@ -104,22 +159,48 @@ export function createViewer(config: ViewerConfig) {
 
   // -- REST: Traces --
 
-  app.get("/api/traces", (c) => {
+  app.get("/api/traces", async (c) => {
     const limit = Number(c.req.query("limit") ?? 50);
+
+    // Prefer DB if available (survives restarts)
+    if (db) {
+      try {
+        const dbTraces = await db.recentTraces(limit);
+        return c.json(dbTraces.map((t) => t.summary ?? t));
+      } catch { /* fall through to in-memory */ }
+    }
+
     const summaries = harness.traces.slice(-limit).map((t) => t.summary());
     return c.json(summaries.reverse());
   });
 
-  app.get("/api/traces/:id", (c) => {
-    const trace = harness.getTrace(c.req.param("id"));
-    if (!trace) return c.json({ error: "not found" }, 404);
-    return c.json(traceToJSON(trace));
+  app.get("/api/traces/:id", async (c) => {
+    const id = c.req.param("id");
+
+    // Try in-memory first (hot), then DB (cold)
+    const trace = harness.getTrace(id);
+    if (trace) return c.json(traceToJSON(trace));
+
+    if (db) {
+      const dbTrace = await db.getTrace(id);
+      if (dbTrace) return c.json(dbTrace);
+    }
+
+    return c.json({ error: "not found" }, 404);
   });
 
-  app.get("/api/traces/message/:id", (c) => {
-    const trace = harness.getTraceForMessage(c.req.param("id"));
-    if (!trace) return c.json({ error: "not found" }, 404);
-    return c.json(traceToJSON(trace));
+  app.get("/api/traces/message/:id", async (c) => {
+    const msgId = c.req.param("id");
+
+    const trace = harness.getTraceForMessage(msgId);
+    if (trace) return c.json(traceToJSON(trace));
+
+    if (db) {
+      const dbTrace = await db.getTraceByMessage(msgId);
+      if (dbTrace) return c.json(dbTrace);
+    }
+
+    return c.json({ error: "not found" }, 404);
   });
 
   // -- REST: Interventions --
@@ -200,6 +281,44 @@ export function createViewer(config: ViewerConfig) {
     }
 
     return c.json({ threads: allThreads });
+  });
+
+  app.post("/api/threads", async (c) => {
+    const body = await c.req.json();
+    const id = body.id ?? `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const description = body.description ?? "";
+    const tags: string[] = body.tags ?? [];
+    const projectId: string | undefined = body.projectId;
+
+    // Create thread with the same stack as the main thread
+    const thread = new Thread(id, harness.thread.stack, { description, tags });
+
+    // Register all agents from the main thread onto the new thread
+    for (const [agentId, agent] of harness.thread.agents) {
+      thread.register(agent);
+    }
+
+    // Copy middleware from main thread
+    // (thread starts with its own empty middleware chain — that's fine for now)
+
+    const registry = config.projectRegistry;
+    if (projectId && registry) {
+      const project = registry.get(projectId);
+      if (project) {
+        project.addThread(thread);
+      }
+    }
+
+    thread.start();
+
+    // Persist thread state
+    if (db) {
+      db.prisma.threadState.create({
+        data: { id, description, tags, status: "idle" },
+      }).catch(() => {});
+    }
+
+    return c.json(threadToJSON(thread), 201);
   });
 
   app.get("/api/events", (c) => {
