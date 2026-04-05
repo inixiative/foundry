@@ -12,7 +12,7 @@ export {
 } from "./types";
 
 // LLM Providers (API-level)
-export { ClaudeCodeProvider, type ClaudeCodeConfig } from "./claude-code";
+export { ClaudeCodeProvider, type ClaudeCodeConfig as ClaudeCodeProviderConfig } from "./claude-code";
 export { AnthropicProvider, VoyageEmbeddingProvider, type AnthropicConfig } from "./anthropic";
 export {
   OpenAIProvider,

@@ -42,7 +42,13 @@ export class ClaudeCodeProvider implements LLMProvider {
   private _timeout: number;
 
   constructor(config?: ClaudeCodeConfig) {
-    this._bin = config?.bin ?? "claude";
+    const bin = config?.bin ?? "claude";
+    // Validate binary path — only allow simple names or absolute/relative paths
+    // with safe characters. Prevents injection via malicious binary names.
+    if (!/^[a-zA-Z0-9_.\/\\-]+$/.test(bin)) {
+      throw new Error(`Invalid claude CLI binary path: "${bin}". Only alphanumeric, dots, slashes, dashes, and underscores are allowed.`);
+    }
+    this._bin = bin;
     this._defaultModel = config?.defaultModel ?? "claude-sonnet-4-20250514";
     this._defaultMaxTokens = config?.defaultMaxTokens ?? 4096;
     this._cwd = config?.cwd ?? process.cwd();

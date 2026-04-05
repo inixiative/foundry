@@ -12,6 +12,14 @@ import { ConfigStore, type FoundryConfig } from "./config";
 import { AIAssist, type AssistRequest } from "./ai-assist";
 import { AnalyticsStore, type RollupPeriod } from "./analytics";
 
+/** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
+function validateId(id: string, label: string): string | null {
+  if (!id || typeof id !== "string") return `${label} is required`;
+  if (id.length > 128) return `${label} too long (max 128 chars)`;
+  if (!/^[a-zA-Z0-9_.-]+$/.test(id)) return `${label} contains invalid characters (use alphanumeric, dash, underscore, dot)`;
+  return null;
+}
+
 export interface ViewerConfig {
   harness: Harness;
   eventStream: EventStream;
@@ -290,8 +298,11 @@ export function createViewer(config: ViewerConfig) {
   app.post("/api/threads", async (c) => {
     const body = await c.req.json();
     const id = body.id ?? `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const description = body.description ?? "";
-    const tags: string[] = body.tags ?? [];
+    const idErr = validateId(id, "thread id");
+    if (idErr) return c.json({ error: idErr }, 400);
+
+    const description = typeof body.description === "string" ? body.description.slice(0, 500) : "";
+    const tags: string[] = Array.isArray(body.tags) ? body.tags.filter((t: unknown) => typeof t === "string").slice(0, 20) : [];
     const projectId: string | undefined = body.projectId;
 
     const factory = config.threadFactory;
@@ -486,14 +497,15 @@ export function createViewer(config: ViewerConfig) {
     const projectId = c.req.query("project");
     const snapshot = analyticsStore.snapshot(config.tokenTracker);
 
-    // Filter by project if specified — match thread IDs belonging to the project
+    // Optionally enrich with project info
     if (projectId && config.projectRegistry) {
       const project = config.projectRegistry.get(projectId);
       if (project) {
-        const projectThreadIds = new Set([...project.threads.keys()]);
-        // Filter the top agents/models to those used within project threads
-        snapshot.projectId = projectId;
-        snapshot.projectThreadCount = projectThreadIds.size;
+        return c.json({
+          ...snapshot,
+          projectId,
+          projectThreadCount: project.threads.size,
+        });
       }
     }
 
@@ -574,6 +586,11 @@ export function createViewer(config: ViewerConfig) {
     const body = await c.req.json();
     if (!body.id || !body.path) {
       return c.json({ error: "id and path are required" }, 400);
+    }
+    const projIdErr = validateId(body.id, "project id");
+    if (projIdErr) return c.json({ error: projIdErr }, 400);
+    if (typeof body.path !== "string" || body.path.length > 500) {
+      return c.json({ error: "path must be a string (max 500 chars)" }, 400);
     }
     const projectConfig = {
       id: body.id,

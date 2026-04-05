@@ -147,7 +147,7 @@ export class ReactiveMiddleware {
         emit: (signal) => {
           this._signals.emit({
             ...signal,
-            id: `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            id: `sig_${crypto.randomUUID()}`,
             timestamp: Date.now(),
           });
         },

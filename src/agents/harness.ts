@@ -3,7 +3,8 @@ import type { ExecutionResult } from "./base-agent";
 import type { Decision } from "./decider";
 import type { Classification } from "./classifier";
 import type { Route } from "./router";
-import type { LayerFilter, ContextLayer } from "./context-stack";
+import type { LayerFilter } from "./context-stack";
+import type { ContextLayer } from "./context-layer";
 import { Trace } from "./trace";
 import type {
   InvocationCondition,
@@ -382,7 +383,7 @@ export class Harness {
         trace.start(`${stage.role}:${agentId}`, stage.role as any, {
           agentId,
           input: message.payload,
-          invocation: stage.invocation,
+          annotations: { invocation: stage.invocation },
         });
 
         const result = await this.thread.dispatch(agentId, message.payload, layerFilter);
@@ -424,8 +425,8 @@ export class Harness {
       // Final result: from last execute-role agent, or last invoked agent
       const finalAgentId = lastExecuteAgentId
         ?? invokedAgents[invokedAgents.length - 1]?.id;
-      const finalResult = (finalAgentId && stageResults.get(finalAgentId))
-        ?? { output: null, contextHash: "" };
+      const finalResult = (finalAgentId ? stageResults.get(finalAgentId) : undefined)
+        ?? { output: null, contextHash: "" } as ExecutionResult;
 
       const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
       const activeLayers = this.thread.stack.layers.filter(layerFilter).map((l) => l.id);

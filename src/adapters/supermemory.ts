@@ -57,8 +57,13 @@ export class SupermemoryAdapter {
     });
 
     if (!res.ok) {
+      // Read body for status context but sanitize — never leak auth headers or tokens
       const body = await res.text().catch(() => "");
-      throw new Error(`supermemory ${res.status}: ${res.statusText} ${body}`);
+      const safeBody = body.length > 200 ? body.slice(0, 200) + "…" : body;
+      // Strip anything that looks like a Bearer token or API key from error output
+      const sanitized = safeBody.replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+        .replace(/[a-zA-Z0-9_-]{32,}/g, "[REDACTED]");
+      throw new Error(`supermemory ${res.status}: ${res.statusText} ${sanitized}`);
     }
 
     return res;
@@ -88,24 +93,26 @@ export class SupermemoryAdapter {
     return data.id;
   }
 
-  /** Get a document by ID. */
+  /** Get a document by ID. Returns null on 404 or network error. */
   async getDocument(id: string): Promise<SupermemoryDocument | null> {
     try {
       const res = await this._fetch(`/v3/documents/${encodeURIComponent(id)}`);
       return await res.json() as SupermemoryDocument;
-    } catch {
+    } catch (err) {
+      console.warn(`[supermemory] getDocument(${id}) failed:`, (err as Error).message);
       return null;
     }
   }
 
-  /** Delete a document by ID. */
+  /** Delete a document by ID. Returns false on error. */
   async deleteDocument(id: string): Promise<boolean> {
     try {
       await this._fetch(`/v3/documents/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       return true;
-    } catch {
+    } catch (err) {
+      console.warn(`[supermemory] deleteDocument(${id}) failed:`, (err as Error).message);
       return false;
     }
   }

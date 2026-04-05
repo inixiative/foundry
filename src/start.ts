@@ -104,7 +104,7 @@ const provider = createProvider(config);
 // ---------------------------------------------------------------------------
 
 const tokenTracker = new TokenTracker({
-  budget: { maxCostUSD: 10.0 },
+  budget: { maxCost: 10.0 },
 });
 
 // ---------------------------------------------------------------------------
