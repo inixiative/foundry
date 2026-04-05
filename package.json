@@ -6,8 +6,9 @@
   "scripts": {
     "typecheck": "bun run --bun tsc --noEmit",
     "test": "bun test tests/*.test.ts",
-    "test:db": "bun test tests/db/ --max-concurrency=1",
-    "test:all": "bun test tests/*.test.ts && bun test tests/db/ --max-concurrency=1",
+    "pretest:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push --skip-generate",
+    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/ --max-concurrency=1",
+    "test:all": "bun test tests/*.test.ts && bun run test:db",
     "db:push": "bunx prisma db push",
     "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push",
     "setup": "bun run src/setup.ts",

@@ -202,6 +202,11 @@ export class ContextLayer {
     this._prompt = value;
   }
 
+  /** Read-only view of the sources feeding this layer. */
+  get sources(): ReadonlyArray<ContextSource> {
+    return this._sources;
+  }
+
   // -- Internal --
 
   private _setState(state: LayerState): void {

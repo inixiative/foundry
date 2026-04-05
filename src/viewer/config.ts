@@ -298,8 +298,15 @@ export class ConfigStore {
 
   /** Delete an item from a section. */
   async deleteItem(section: string, id: string): Promise<FoundryConfig> {
-    const map = (this._config as any)[section];
-    if (map && typeof map === "object" && id in map) {
+    const sectionMap: Record<string, Record<string, unknown>> = {
+      providers: this._config.providers,
+      agents: this._config.agents,
+      layers: this._config.layers,
+      sources: this._config.sources,
+      projects: this._config.projects,
+    };
+    const map = sectionMap[section];
+    if (map && id in map) {
       delete map[id];
       await this._write();
     }
@@ -337,11 +344,11 @@ export class ConfigStore {
       if (!this._config.layers[layer.id]) {
         this._config.layers[layer.id] = {
           id: layer.id,
-          prompt: (layer as any)._prompt ?? "",
-          sourceIds: ((layer as any)._sources ?? []).map((s: any) => s.id),
+          prompt: layer.prompt ?? "",
+          sourceIds: layer.sources.map((s) => s.id),
           trust: layer.trust,
-          staleness: (layer as any)._staleness ?? 0,
-          maxTokens: (layer as any)._maxTokens ?? 0,
+          staleness: layer.staleness ?? 0,
+          maxTokens: layer.maxTokens ?? 0,
           enabled: true,
         };
       }

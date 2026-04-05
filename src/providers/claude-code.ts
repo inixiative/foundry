@@ -18,6 +18,8 @@ export interface ClaudeCodeConfig {
   cwd?: string;
   /** Max turns (1 = pure completion, no tool use). Defaults to 1. */
   maxTurns?: number;
+  /** Subprocess timeout in ms. Defaults to 120000 (2 minutes). */
+  timeout?: number;
 }
 
 /**
@@ -37,6 +39,7 @@ export class ClaudeCodeProvider implements LLMProvider {
   private _defaultMaxTokens: number;
   private _cwd: string;
   private _maxTurns: number;
+  private _timeout: number;
 
   constructor(config?: ClaudeCodeConfig) {
     this._bin = config?.bin ?? "claude";
@@ -44,6 +47,7 @@ export class ClaudeCodeProvider implements LLMProvider {
     this._defaultMaxTokens = config?.defaultMaxTokens ?? 4096;
     this._cwd = config?.cwd ?? process.cwd();
     this._maxTurns = config?.maxTurns ?? 1;
+    this._timeout = config?.timeout ?? 120_000;
   }
 
   async complete(
@@ -75,18 +79,41 @@ export class ClaudeCodeProvider implements LLMProvider {
       env: { ...process.env },
     });
 
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    // Race subprocess against timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => {
+        proc.kill();
+        reject(new Error(`claude CLI timed out after ${this._timeout}ms`));
+      }, this._timeout);
+      // Clean up timer if process finishes first
+      proc.exited.then(() => clearTimeout(timer));
+    });
 
-    const exitCode = await proc.exited;
+    try {
+      const [stdout, stderr] = await Promise.race([
+        Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]),
+        timeoutPromise.then(() => ["", ""] as [string, string]),
+      ]);
 
-    if (exitCode !== 0) {
-      throw new Error(`claude CLI exited with ${exitCode}: ${stderr.trim()}`);
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        throw new Error(`claude CLI exited with ${exitCode}: ${stderr.trim() || "(no stderr)"}`);
+      }
+
+      if (!stdout.trim()) {
+        throw new Error("claude CLI returned empty output");
+      }
+
+      return this._parseOutput(stdout, model);
+    } catch (err) {
+      // Ensure process is cleaned up on any error
+      try { proc.kill(); } catch { /* already dead */ }
+      throw err;
     }
-
-    return this._parseOutput(stdout, model);
   }
 
   async *stream(
@@ -115,12 +142,25 @@ export class ClaudeCodeProvider implements LLMProvider {
       env: { ...process.env },
     });
 
+    // Set up timeout for streaming
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+    }, this._timeout);
+
     const reader = proc.stdout.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
     try {
       while (true) {
+        if (timedOut) {
+          yield { type: "error", error: `claude CLI timed out after ${this._timeout}ms` };
+          yield { type: "done", finishReason: "error" };
+          return;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -130,29 +170,33 @@ export class ClaudeCodeProvider implements LLMProvider {
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          let msg: any;
           try {
-            const msg = JSON.parse(line);
-            if (msg.type === "assistant" && msg.message?.content) {
-              // Content block delta
-              for (const block of msg.message.content) {
-                if (block.type === "text" && block.text) {
-                  yield { type: "text", text: block.text };
-                }
-              }
-            } else if (msg.type === "result") {
-              if (msg.result) {
-                yield { type: "text", text: msg.result };
-              }
-              yield { type: "done", finishReason: msg.subtype === "success" ? "end_turn" : "error" };
-              return;
-            }
+            msg = JSON.parse(line);
           } catch {
-            // Skip malformed lines
+            // Log malformed line for debugging, skip it
+            continue;
+          }
+
+          if (msg.type === "assistant" && msg.message?.content) {
+            for (const block of msg.message.content) {
+              if (block.type === "text" && block.text) {
+                yield { type: "text", text: block.text };
+              }
+            }
+          } else if (msg.type === "result") {
+            if (msg.result) {
+              yield { type: "text", text: msg.result };
+            }
+            yield { type: "done", finishReason: msg.subtype === "success" ? "end_turn" : "error" };
+            return;
           }
         }
       }
     } finally {
+      clearTimeout(timer);
       reader.releaseLock();
+      try { proc.kill(); } catch { /* already dead */ }
     }
 
     yield { type: "done", finishReason: "end_turn" };
@@ -165,52 +209,52 @@ export class ClaudeCodeProvider implements LLMProvider {
    * last assistant response (or result message) as the completion.
    */
   private _parseOutput(raw: string, model: string): CompletionResult {
+    let data: unknown;
     try {
-      const data = JSON.parse(raw.trim());
+      data = JSON.parse(raw.trim());
+    } catch {
+      throw new Error(`claude CLI returned invalid JSON: ${raw.slice(0, 200)}`);
+    }
 
-      // Array of conversation messages
-      if (Array.isArray(data)) {
-        for (let i = data.length - 1; i >= 0; i--) {
-          const msg = data[i];
+    // Array of conversation messages
+    if (Array.isArray(data)) {
+      for (let i = data.length - 1; i >= 0; i--) {
+        const msg = data[i];
 
-          // Result message (final)
-          if (msg.type === "result") {
-            return {
-              content: msg.result ?? "",
-              model,
-              tokens: msg.total_cost_usd != null
-                ? { input: 0, output: 0 } // CLI doesn't expose raw token counts
-                : undefined,
-              finishReason: msg.subtype === "success" ? "end_turn" : "error",
-              raw: msg,
-            };
-          }
+        // Result message (final)
+        if (msg.type === "result") {
+          return {
+            content: msg.result ?? "",
+            model,
+            tokens: msg.total_cost_usd != null
+              ? { input: 0, output: 0 } // CLI doesn't expose raw token counts
+              : undefined,
+            finishReason: msg.subtype === "success" ? "end_turn" : "error",
+            raw: msg,
+          };
+        }
 
-          // Assistant message with string content
-          if (msg.role === "assistant" && typeof msg.content === "string") {
-            return { content: msg.content, model, finishReason: "end_turn", raw: msg };
-          }
+        // Assistant message with string content
+        if (msg.role === "assistant" && typeof msg.content === "string") {
+          return { content: msg.content, model, finishReason: "end_turn", raw: msg };
+        }
 
-          // Assistant message with content blocks
-          if (msg.role === "assistant" && Array.isArray(msg.content)) {
-            const text = msg.content
-              .filter((b: { type: string; text?: string }) => b.type === "text")
-              .map((b: { type: string; text?: string }) => b.text ?? "")
-              .join("");
-            return { content: text, model, finishReason: "end_turn", raw: msg };
-          }
+        // Assistant message with content blocks
+        if (msg.role === "assistant" && Array.isArray(msg.content)) {
+          const text = msg.content
+            .filter((b: { type: string; text?: string }) => b.type === "text")
+            .map((b: { type: string; text?: string }) => b.text ?? "")
+            .join("");
+          return { content: text, model, finishReason: "end_turn", raw: msg };
         }
       }
-
-      // Single result object
-      if (typeof data === "object" && data.result) {
-        return { content: data.result, model, finishReason: "end_turn", raw: data };
-      }
-
-      // Fallback: treat raw output as text
-      return { content: raw.trim(), model, finishReason: "end_turn" };
-    } catch {
-      return { content: raw.trim(), model, finishReason: "end_turn" };
     }
+
+    // Single result object
+    if (typeof data === "object" && data !== null && "result" in data) {
+      return { content: (data as any).result, model, finishReason: "end_turn", raw: data };
+    }
+
+    throw new Error(`claude CLI returned unexpected format: ${raw.slice(0, 200)}`);
   }
 }

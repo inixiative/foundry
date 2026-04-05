@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { beforeAll, afterAll } from "bun:test";
+import { beforeAll, beforeEach, afterAll } from "bun:test";
 
 /**
  * Test DB setup — follows inixiative/template pattern.
@@ -72,7 +72,7 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
 export function setupTestDb(): PrismaClient {
   const prisma = getTestClient();
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await truncateAll(prisma);
   });
 

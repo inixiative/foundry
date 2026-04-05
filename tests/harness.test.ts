@@ -108,7 +108,7 @@ describe("Harness", () => {
     expect(kinds).toContain("ingress");
     expect(kinds).toContain("classify");
     expect(kinds).toContain("route");
-    expect(kinds).toContain("dispatch");
+    expect(kinds).toContain("execute");
   });
 
   test("works without classifier", async () => {

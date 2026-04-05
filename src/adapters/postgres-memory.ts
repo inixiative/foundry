@@ -72,8 +72,10 @@ export class PostgresMemory {
   async searchEntries(query: string, limit: number = 20) {
     // Escape ILIKE wildcards to prevent pattern injection
     const escaped = query.replace(/[%_\\]/g, (c) => `\\${c}`);
+    // Exclude the embedding column (pgvector Unsupported type) to avoid deserialization errors
     return this.prisma.$queryRaw`
-      SELECT * FROM entries
+      SELECT id, kind, content, source, timestamp, meta, "createdAt", "updatedAt"
+      FROM entries
       WHERE content ILIKE ${"%" + escaped + "%"}
       ORDER BY timestamp DESC
       LIMIT ${limit}

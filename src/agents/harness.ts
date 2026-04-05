@@ -75,6 +75,8 @@ export interface RequestContext {
   /** Check which agents/layers have been requested so far. */
   readonly requestedAgents: ReadonlySet<string>;
   readonly requestedLayers: ReadonlySet<string>;
+  /** Results from prior stages (keyed by agentId). */
+  readonly stageResults: ReadonlyMap<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +96,7 @@ export function matchesCondition(
   }
 
   if (condition.tags?.length && classification?.value) {
-    const classTags = (classification.value as any).tags ?? [];
+    const classTags = classification.value.tags ?? [];
     if (condition.tags.some((t) => classTags.includes(t))) return true;
   }
 
@@ -112,14 +114,14 @@ export function matchesCondition(
 /**
  * The Harness is the entry point for external callers.
  *
- * Supports three execution modes:
+ * Supports two configuration styles that both execute through a single
+ * flow pipeline:
  *
- * 1. **Classic mode** (setClassifier/setRouter/setDefaultExecutor) —
- *    fixed classify → route → dispatch pipeline. Simple.
+ * 1. **Classic sugar** (setClassifier/setRouter/setDefaultExecutor) —
+ *    internally builds a FlowConfig with classify → route → execute stages.
  *
- * 2. **Flow mode** (setFlow) — configurable pipeline stages with
- *    invocation modes (always/on-demand/conditional). Each stage
- *    defines when it runs, and middleware can request on-demand stages.
+ * 2. **Explicit flow** (setFlow) — full control over pipeline stages with
+ *    invocation modes (always/on-demand/conditional).
  *
  * Every message gets a Trace — a full record of its journey
  * with timing, layer visibility, inputs/outputs at each stage.
@@ -127,13 +129,13 @@ export function matchesCondition(
 export class Harness {
   readonly thread: Thread;
 
-  // Classic mode config
+  // Classic mode fields — used to build a FlowConfig on demand
   private _classifierId: string | null = null;
   private _routerId: string | null = null;
   private _defaultExecutorId: string | null = null;
 
-  // Flow mode config
-  private _flow: FlowConfig | null = null;
+  // Explicit flow config (takes precedence over classic fields)
+  private _explicitFlow: FlowConfig | null = null;
 
   // Agent/layer invocation metadata (from config)
   private _agentModes: Map<string, { invocation: string; condition?: InvocationCondition }> = new Map();
@@ -148,7 +150,7 @@ export class Harness {
     this._maxTraces = opts?.maxTraces ?? 1000;
   }
 
-  // -- Classic configuration --
+  // -- Classic configuration (sugar for flow) --
 
   setClassifier(agentId: string): void {
     this._classifierId = agentId;
@@ -162,10 +164,10 @@ export class Harness {
     this._defaultExecutorId = agentId;
   }
 
-  // -- Flow configuration --
+  // -- Explicit flow configuration --
 
   setFlow(flow: FlowConfig): void {
-    this._flow = flow;
+    this._explicitFlow = flow;
   }
 
   /** Register invocation mode for an agent (from config). */
@@ -202,13 +204,11 @@ export class Harness {
     return true;
   }
 
-  // -- Entry points --
+  // -- Entry point --
 
   async send<T>(message: Message<T>): Promise<HarnessResult> {
-    if (this._flow) {
-      return this._sendFlow(message);
-    }
-    return this._sendClassic(message);
+    const flow = this._resolveFlow();
+    return this._runFlow(message, flow);
   }
 
   /**
@@ -250,148 +250,85 @@ export class Harness {
     };
   }
 
-  // -- Classic pipeline (backwards compatible) --
+  // -- Resolve effective flow --
 
-  private async _sendClassic<T>(message: Message<T>): Promise<HarnessResult> {
-    const trace = new Trace(message.id);
-    const invokedAgents: Array<{ id: string; mode: string }> = [];
+  /**
+   * If an explicit flow is set, use it. Otherwise build one from classic
+   * setClassifier/setRouter/setDefaultExecutor fields + conditional agents
+   * from _agentModes.
+   */
+  private _resolveFlow(): FlowConfig {
+    if (this._explicitFlow) return this._explicitFlow;
 
-    // Track on-demand requests from middleware
-    const requestedAgents = new Set<string>();
-    const requestedLayers = new Set<string>();
+    const stages: FlowStage[] = [];
 
-    let classification: Decision<Classification> | undefined;
-    let route: Decision<Route> | undefined;
-    let targetAgent: string | undefined;
-
-    try {
-      // 1. Classify
-      if (this._classifierId) {
-        trace.start("classify", "classify", {
-          agentId: this._classifierId,
-          input: message.payload,
-        });
-
-        const classifyResult = await this.thread.dispatch(
-          this._classifierId,
-          message.payload,
-        );
-        classification = classifyResult.output as Decision<Classification>;
-        invokedAgents.push({ id: this._classifierId, mode: "always" });
-
-        trace.end(classification);
-      }
-
-      // 2. Route
-      if (this._routerId) {
-        const routePayload = classification
-          ? { payload: message.payload, classification: classification.value }
-          : message.payload;
-
-        trace.start("route", "route", {
-          agentId: this._routerId,
-          input: routePayload,
-        });
-
-        const routeResult = await this.thread.dispatch(this._routerId, routePayload);
-        route = routeResult.output as Decision<Route>;
-        targetAgent = route.value.destination;
-        invokedAgents.push({ id: this._routerId, mode: "always" });
-
-        trace.end(route);
-      }
-
-      // 3. Run conditional agents that match current context
-      for (const [agentId, mode] of this._agentModes) {
-        if (mode.invocation !== "conditional") continue;
-        if (!matchesCondition(mode.condition, classification, route)) continue;
-        if (!this.thread.getAgent(agentId)) continue;
-
-        trace.start(`conditional:${agentId}`, "enrich", { agentId });
-        const result = await this.thread.dispatch(agentId, message.payload);
-        invokedAgents.push({ id: agentId, mode: "conditional" });
-        trace.end(result.output);
-      }
-
-      // 4. Run on-demand agents that were requested by middleware
-      for (const agentId of requestedAgents) {
-        if (!this.thread.getAgent(agentId)) continue;
-
-        trace.start(`on-demand:${agentId}`, "enrich", { agentId });
-        const result = await this.thread.dispatch(agentId, message.payload);
-        invokedAgents.push({ id: agentId, mode: "on-demand" });
-        trace.end(result.output);
-      }
-
-      // 5. Build layer filter respecting activation modes
-      const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
-
-      // 6. Determine target executor
-      const agentId = targetAgent ?? this._defaultExecutorId;
-      if (!agentId) {
-        throw new Error(
-          "No target agent: router returned no destination and no default executor is configured",
-        );
-      }
-
-      // 7. Dispatch to executor with activation-aware layer filter
-      trace.start("dispatch", "dispatch", {
-        agentId,
-        input: message.payload,
-        layerIds: route?.value.contextSlice,
+    // Classify stage
+    if (this._classifierId) {
+      stages.push({
+        agentId: this._classifierId,
+        role: "classify",
+        invocation: "always",
       });
-
-      const result = await this.thread.dispatch(
-        agentId,
-        message.payload,
-        layerFilter,
-      );
-      invokedAgents.push({ id: agentId, mode: "always" });
-
-      trace.end(result.output);
-
-      // 8. Close trace
-      trace.finish();
-      this._recordTrace(trace);
-
-      // Collect active layer IDs
-      const activeLayers = this.thread.stack.layers
-        .filter(layerFilter)
-        .map((l) => l.id);
-
-      return {
-        messageId: message.id,
-        classification,
-        route,
-        result,
-        trace,
-        timestamp: Date.now(),
-        invokedAgents,
-        activeLayers,
-      };
-    } catch (err) {
-      const current = trace.current;
-      if (current && current.status === "running") {
-        trace.end(undefined, err);
-      }
-      trace.finish();
-      this._recordTrace(trace);
-      throw err;
     }
+
+    // Route stage
+    if (this._routerId) {
+      stages.push({
+        agentId: this._routerId,
+        role: "route",
+        invocation: "always",
+      });
+    }
+
+    // Conditional agents from _agentModes (enrich role)
+    for (const [agentId, mode] of this._agentModes) {
+      // Skip classifier/router/executor — they have explicit stages
+      if (agentId === this._classifierId) continue;
+      if (agentId === this._routerId) continue;
+      if (agentId === this._defaultExecutorId) continue;
+
+      if (mode.invocation === "conditional") {
+        stages.push({
+          agentId,
+          role: "enrich",
+          invocation: "conditional",
+          condition: mode.condition,
+        });
+      } else if (mode.invocation === "on-demand") {
+        stages.push({
+          agentId,
+          role: "enrich",
+          invocation: "on-demand",
+        });
+      }
+    }
+
+    // Execute stage (uses routed destination or default)
+    stages.push({
+      agentId: "routed",
+      role: "execute",
+      invocation: "always",
+    });
+
+    return {
+      stages,
+      defaultExecutor: this._defaultExecutorId ?? undefined,
+    };
   }
 
-  // -- Flow pipeline (configurable stages) --
+  // -- Unified flow pipeline --
 
-  private async _sendFlow<T>(message: Message<T>): Promise<HarnessResult> {
-    const flow = this._flow!;
+  private async _runFlow<T>(message: Message<T>, flow: FlowConfig): Promise<HarnessResult> {
     const trace = new Trace(message.id);
     const invokedAgents: Array<{ id: string; mode: string }> = [];
 
     const requestedAgents = new Set<string>();
     const requestedLayers = new Set<string>();
+    const stageResults = new Map<string, ExecutionResult>();
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
+    let lastExecuteAgentId: string | undefined;
 
     // Build request context for middleware
     const reqCtx: RequestContext = {
@@ -401,6 +338,7 @@ export class Harness {
       requestLayer: (id) => requestedLayers.add(id),
       get requestedAgents() { return requestedAgents; },
       get requestedLayers() { return requestedLayers; },
+      get stageResults() { return stageResults; },
     };
 
     try {
@@ -423,7 +361,14 @@ export class Harness {
           ? (route?.value?.destination ?? flow.defaultExecutor)
           : stage.agentId;
 
-        if (!agentId) continue;
+        if (!agentId) {
+          if (stage.role === "execute") {
+            throw new Error(
+              "No target agent: router returned no destination and no default executor is configured",
+            );
+          }
+          continue;
+        }
         if (!this.thread.getAgent(agentId)) continue;
 
         // Build layer filter for this dispatch
@@ -438,6 +383,12 @@ export class Harness {
 
         const result = await this.thread.dispatch(agentId, message.payload, layerFilter);
         invokedAgents.push({ id: agentId, mode: stage.invocation });
+        stageResults.set(agentId, result);
+
+        // Track the last execute-role agent for final result extraction
+        if (stage.role === "execute") {
+          lastExecuteAgentId = agentId;
+        }
 
         // Capture classification/route from appropriate stages
         if (stage.role === "classify") {
@@ -459,26 +410,18 @@ export class Harness {
         trace.start(`on-demand:${agentId}`, "enrich", { agentId });
         const result = await this.thread.dispatch(agentId, message.payload, layerFilter);
         invokedAgents.push({ id: agentId, mode: "on-demand" });
+        stageResults.set(agentId, result);
         trace.end(result.output);
       }
 
       trace.finish();
       this._recordTrace(trace);
 
-      // The last execute-role stage's result is the final output
-      const lastExecute = invokedAgents.filter((a) =>
-        flow.stages.find((s) =>
-          (s.agentId === a.id || s.agentId === "routed") && s.role === "execute"
-        ),
-      );
-      const finalAgentId = lastExecute.length > 0
-        ? lastExecute[lastExecute.length - 1].id
-        : invokedAgents[invokedAgents.length - 1]?.id;
-
-      // Get the result from the last dispatch
-      const finalResult = this.thread.dispatches.length > 0
-        ? this.thread.dispatches[this.thread.dispatches.length - 1].result
-        : { output: null, contextHash: "" };
+      // Final result: from last execute-role agent, or last invoked agent
+      const finalAgentId = lastExecuteAgentId
+        ?? invokedAgents[invokedAgents.length - 1]?.id;
+      const finalResult = (finalAgentId && stageResults.get(finalAgentId))
+        ?? { output: null, contextHash: "" };
 
       const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
       const activeLayers = this.thread.stack.layers.filter(layerFilter).map((l) => l.id);
@@ -550,7 +493,12 @@ export class Harness {
   // -- Flow inspection --
 
   get flow(): FlowConfig | null {
-    return this._flow;
+    return this._explicitFlow;
+  }
+
+  /** Get the effective flow (explicit or built from classic settings). */
+  get effectiveFlow(): FlowConfig {
+    return this._resolveFlow();
   }
 
   get agentModes(): ReadonlyMap<string, { invocation: string; condition?: InvocationCondition }> {
