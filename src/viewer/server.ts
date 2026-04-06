@@ -674,7 +674,7 @@ export async function startViewer(config: ViewerConfig) {
           const cookies = req.headers.get("cookie") ?? "";
           const match = cookies.match(/foundry_session=([^;]+)/);
           const hasValidCookie = match && match[1] === validSession;
-          const hasValidToken = new URL(req.url).searchParams.get("token") === tunnel.token;
+          const hasValidToken = new URL(req.url).searchParams.get("authorization") === tunnel.token;
           if (!hasValidCookie && !hasValidToken) {
             return new Response("Unauthorized", { status: 401 });
           }
