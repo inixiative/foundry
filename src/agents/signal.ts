@@ -1,3 +1,5 @@
+import { log } from "../logger";
+
 /**
  * Signal kinds — the Librarian's taxonomy.
  * Extensible via string union, not a closed enum.
@@ -89,7 +91,7 @@ export class SignalBus {
       try {
         await handler(signal);
       } catch (err) {
-        console.warn(`[SignalBus] handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
+        log.warn(`[SignalBus] handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
       }
     }
 
@@ -97,7 +99,7 @@ export class SignalBus {
       try {
         await handler(signal);
       } catch (err) {
-        console.warn(`[SignalBus] global handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
+        log.warn(`[SignalBus] global handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
       }
     }
   }

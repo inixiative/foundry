@@ -84,7 +84,7 @@ export class FileMemory {
       unlinkSync(path);
     } catch (err) {
       // File may not exist on disk — still remove from memory
-      console.warn(`[FileMemory] unlink failed for "${id}":`, (err as Error).message);
+      import("../logger").then(({ log }) => log.warn(`[FileMemory] unlink failed for "${id}":`, (err as Error).message));
     }
     this._entries.delete(id);
     return true;

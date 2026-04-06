@@ -188,7 +188,7 @@ export class AnthropicProvider implements LLMProvider {
                 // Final event — yield usage and done
               }
             } catch (err) {
-              console.warn("[Anthropic] malformed stream chunk:", (err as Error).message);
+              (await import("../logger")).log.warn("[Anthropic] malformed stream chunk:", (err as Error).message);
             }
           }
         }

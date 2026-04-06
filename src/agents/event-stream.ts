@@ -1,3 +1,4 @@
+import { log } from "../logger";
 import type { LifecycleEvent } from "./cache-lifecycle";
 import type { Dispatch } from "./thread";
 import type { Signal } from "./signal";
@@ -46,7 +47,7 @@ export class EventStream {
       try {
         listener(event);
       } catch (err) {
-        console.warn("[EventStream] listener error:", (err as Error).message ?? err);
+        log.warn("[EventStream] listener error:", (err as Error).message ?? err);
       }
     }
   }

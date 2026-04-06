@@ -1,3 +1,4 @@
+import { log } from "../logger";
 import { ContextLayer, type ContextSource } from "./context-layer";
 import { ContextStack } from "./context-stack";
 import { Thread, type ThreadConfig } from "./thread";
@@ -101,7 +102,7 @@ export class ThreadFactory {
       const start = performance.now();
       const result = await next();
       const ms = (performance.now() - start).toFixed(1);
-      console.log(`  [${id}] ${ctx.agentId} (${ms}ms)`);
+      log.debug(`[${id}] ${ctx.agentId} (${ms}ms)`);
       return result;
     });
 
@@ -208,7 +209,7 @@ export class ThreadFactory {
                 reasoning: (parsed.reasoning as string) || "LLM classification",
               };
             } catch (err) {
-              console.warn(`[ThreadFactory] LLM classify failed, falling back to keyword:`, (err as Error).message);
+              log.warn(`[ThreadFactory] LLM classify failed, falling back to keyword:`, (err as Error).message);
               return keywordClassify(payload);
             }
           },
@@ -242,7 +243,7 @@ export class ThreadFactory {
                 reasoning: (parsed.reasoning as string) || "LLM routing",
               };
             } catch (err) {
-              console.warn(`[ThreadFactory] LLM route failed, falling back to keyword:`, (err as Error).message);
+              log.warn(`[ThreadFactory] LLM route failed, falling back to keyword:`, (err as Error).message);
               return keywordRoute(input.classification, config);
             }
           },

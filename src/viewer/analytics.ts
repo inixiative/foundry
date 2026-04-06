@@ -220,11 +220,11 @@ export class AnalyticsStore {
           this._calls.push(call);
           this._callCounter++;
         } catch (err) {
-          console.warn("[Analytics] skipping malformed JSONL line:", (err as Error).message);
+          import("../logger").then(({ log }) => log.warn("[Analytics] skipping malformed JSONL line:", (err as Error).message));
         }
       }
     } catch (err) {
-      console.warn("[Analytics] failed to load persisted data, starting fresh:", (err as Error).message);
+      import("../logger").then(({ log }) => log.warn("[Analytics] failed to load persisted data, starting fresh:", (err as Error).message));
     }
   }
 
@@ -234,7 +234,7 @@ export class AnalyticsStore {
       const line = JSON.stringify(call) + "\n";
       await Bun.write(path, (existsSync(path) ? await Bun.file(path).text() : "") + line);
     } catch (err) {
-      console.warn("[Analytics] persistence failure (data lives in memory):", (err as Error).message);
+      import("../logger").then(({ log }) => log.warn("[Analytics] persistence failure (data lives in memory):", (err as Error).message));
     }
   }
 

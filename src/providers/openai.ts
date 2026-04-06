@@ -198,7 +198,7 @@ export class OpenAIProvider implements LLMProvider {
               };
             }
           } catch (err) {
-            console.warn("[OpenAI] malformed stream chunk:", (err as Error).message);
+            (await import("../logger")).log.warn("[OpenAI] malformed stream chunk:", (err as Error).message);
           }
         }
       }

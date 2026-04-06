@@ -180,7 +180,7 @@ export class ClaudeCodeProvider implements LLMProvider {
           try {
             msg = JSON.parse(line);
           } catch (err) {
-            console.warn("[ClaudeCode] malformed stream line:", (err as Error).message);
+            (await import("../logger")).log.warn("[ClaudeCode] malformed stream line:", (err as Error).message);
             continue;
           }
 

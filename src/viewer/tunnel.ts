@@ -13,8 +13,8 @@
 //   await tunnel.stop();
 //
 // The bearer token is auto-generated on first run and persisted to
-// .foundry/tunnel-token so it survives restarts. Pass it in the
-// Authorization header or as ?token= query param.
+// .foundry/tunnel-token so it survives restarts. Authenticate via
+// the login page (cookie session) or Authorization: Bearer header.
 // ---------------------------------------------------------------------------
 
 import { randomBytes } from "crypto";
@@ -105,10 +105,10 @@ function loginPage(error?: string): string {
  * Hono middleware that enforces session auth for tunneled connections.
  *
  * Auth flow:
- *   1. Browser hits URL with ?token= → auto-login, set cookie, redirect to clean URL
- *   2. Browser without cookie → redirect to /auth login page
- *   3. POST /auth with token → validate, set cookie, redirect to /
- *   4. API clients can use Authorization: Bearer <token> header
+ *   1. Browser without cookie → redirect to /auth login page
+ *   2. POST /auth with token → validate, set cookie, redirect to /
+ *   3. API clients can use Authorization: Bearer <token> header
+ *   4. WebSocket uses ?authorization= query param (can't set headers on WS upgrade)
  *   5. /api/health is always open (uptime monitors)
  *
  * Session cookie is HttpOnly + SameSite=Strict. Value is HMAC of the
@@ -145,19 +145,6 @@ export function tunnelAuth(token: string) {
       return c.html(loginPage("Invalid token. Try again."), 401);
     }
 
-    // Auto-login via ?token= query param → set cookie + redirect to clean URL
-    const paramToken = url.searchParams.get("token");
-    if (paramToken === token) {
-      const secure = url.protocol === "https:";
-      const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? "; Secure" : ""}`;
-      // Strip token from URL before redirect
-      url.searchParams.delete("token");
-      return new Response(null, {
-        status: 302,
-        headers: { Location: url.pathname + url.search, "Set-Cookie": cookie },
-      });
-    }
-
     // Check Authorization header (API clients)
     const authHeader = c.req.header("authorization") ?? "";
     if (authHeader === `Bearer ${token}`) return next();
@@ -167,8 +154,9 @@ export function tunnelAuth(token: string) {
     const sessionMatch = cookies.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
     if (sessionMatch && sessionMatch[1] === validSession) return next();
 
-    // WebSocket: check token in query param (WS can't set cookies on upgrade)
-    if (path === "/ws" && paramToken === token) return next();
+    // WebSocket: check Authorization via query param (WS can't set custom headers)
+    const wsToken = url.searchParams.get("authorization");
+    if (path === "/ws" && wsToken === token) return next();
 
     // Not authenticated — redirect browsers to login, return 401 for API
     const accept = c.req.header("accept") ?? "";
@@ -207,7 +195,7 @@ function resolveToken(config: TunnelConfig): string {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(tokenPath, token, "utf-8");
   } catch (err) {
-    console.warn("[Tunnel] could not persist token:", (err as Error).message);
+    import("../logger").then(({ log }) => log.warn("[Tunnel] could not persist token:", (err as Error).message));
   }
 
   return token;
@@ -301,9 +289,9 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStdout(proc, /https?:\/\/\S+/);
     this._url = url;
 
-    console.log(`[Tunnel] localtunnel active: ${url}`);
-    console.log(`[Tunnel] Token: ${this._token}`);
-    console.log(`[Tunnel] Authenticated URL: ${url}?token=${this._token}`);
+    const { log } = await import("../logger");
+    log.info(`[Tunnel] localtunnel active: ${url}`);
+    log.info(`[Tunnel] Token: ${this._token}`);
 
     return url;
   }
@@ -330,9 +318,9 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStderr(proc, /https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     this._url = url;
 
-    console.log(`[Tunnel] cloudflared active: ${url}`);
-    console.log(`[Tunnel] Token: ${this._token}`);
-    console.log(`[Tunnel] Authenticated URL: ${url}?token=${this._token}`);
+    const { log } = await import("../logger");
+    log.info(`[Tunnel] cloudflared active: ${url}`);
+    log.info(`[Tunnel] Token: ${this._token}`);
 
     return url;
   }

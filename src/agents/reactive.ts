@@ -1,3 +1,4 @@
+import { log } from "../logger";
 import type { ContextLayer } from "./context-layer";
 import type { ContextStack } from "./context-stack";
 import type { ExecutionResult } from "./base-agent";
@@ -161,7 +162,7 @@ export class ReactiveMiddleware {
           }
         } catch (err) {
           // Rule errors don't break the pipeline — log and continue
-          console.warn(`[reactive] rule "${rule.id}" failed:`, (err as Error).message);
+          log.warn(`[reactive] rule "${rule.id}" failed:`, (err as Error).message);
         }
       }
 

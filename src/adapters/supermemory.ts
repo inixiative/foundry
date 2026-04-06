@@ -99,7 +99,7 @@ export class SupermemoryAdapter {
       const res = await this._fetch(`/v3/documents/${encodeURIComponent(id)}`);
       return await res.json() as SupermemoryDocument;
     } catch (err) {
-      console.warn(`[supermemory] getDocument(${id}) failed:`, (err as Error).message);
+      import("../logger").then(({ log }) => log.warn(`[supermemory] getDocument(${id}) failed:`, (err as Error).message));
       return null;
     }
   }
@@ -112,7 +112,7 @@ export class SupermemoryAdapter {
       });
       return true;
     } catch (err) {
-      console.warn(`[supermemory] deleteDocument(${id}) failed:`, (err as Error).message);
+      import("../logger").then(({ log }) => log.warn(`[supermemory] deleteDocument(${id}) failed:`, (err as Error).message));
       return false;
     }
   }
@@ -236,7 +236,7 @@ export class SupermemoryAdapter {
             parts.push("## Memories\n" + memLines.join("\n"));
           }
         } catch (err) {
-          console.warn(`[Supermemory] source load failed for "${id}":`, (err as Error).message);
+          import("../logger").then(({ log }) => log.warn(`[Supermemory] source load failed for "${id}":`, (err as Error).message));
           return "";
         }
 
@@ -278,7 +278,7 @@ export class SupermemoryAdapter {
           const doc = await sm.getDocument(ref.locator);
           return doc?.content ?? doc?.summary ?? "";
         } catch (err) {
-          console.warn(`[Supermemory] hydrate failed for "${ref.locator}":`, (err as Error).message);
+          import("../logger").then(({ log }) => log.warn(`[Supermemory] hydrate failed for "${ref.locator}":`, (err as Error).message));
           return "";
         }
       },
@@ -329,7 +329,7 @@ export class SupermemoryAdapter {
           },
         });
       } catch (err) {
-        console.warn(`[Supermemory] signal write failed for "${signal.kind}":`, (err as Error).message);
+        import("../logger").then(({ log }) => log.warn(`[Supermemory] signal write failed for "${signal.kind}":`, (err as Error).message));
       }
     };
   }

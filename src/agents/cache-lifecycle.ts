@@ -1,3 +1,4 @@
+import { log } from "../logger";
 import { ContextLayer, type LayerState } from "./context-layer";
 import { ContextStack } from "./context-stack";
 
@@ -162,7 +163,7 @@ export class CacheLifecycle {
                     meta: { ruleId: rule.id, error: err },
                   });
                 } catch (emitErr) {
-                  console.warn(`[CacheLifecycle] failed to emit rule:error for ${layer.id}:`, (emitErr as Error).message);
+                  log.warn(`[CacheLifecycle] failed to emit rule:error for ${layer.id}:`, (emitErr as Error).message);
                 }
               }
             }
@@ -175,7 +176,7 @@ export class CacheLifecycle {
                 meta: { error: err },
               });
             } catch (emitErr) {
-              console.warn(`[CacheLifecycle] failed to emit lifecycle:error for ${layer.id}:`, (emitErr as Error).message);
+              log.warn(`[CacheLifecycle] failed to emit lifecycle:error for ${layer.id}:`, (emitErr as Error).message);
             }
           }
         }

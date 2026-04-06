@@ -159,12 +159,12 @@ abstract class BaseRuntime implements RuntimeAdapter {
       try {
         const result = handler(event);
         if (result && typeof (result as Promise<void>).catch === "function") {
-          (result as Promise<void>).catch((err) => {
-            console.warn(`[Runtime] async handler error for "${event.kind}":`, (err as Error).message ?? err);
+          (result as Promise<void>).catch(async (err) => {
+            (await import("../logger")).log.warn(`[Runtime] async handler error for "${event.kind}":`, (err as Error).message ?? err);
           });
         }
       } catch (err) {
-        console.warn(`[Runtime] handler error for "${event.kind}":`, (err as Error).message ?? err);
+        import("../logger").then(({ log }) => log.warn(`[Runtime] handler error for "${event.kind}":`, (err as Error).message ?? err));
       }
     }
   }

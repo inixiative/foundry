@@ -12,6 +12,7 @@ import { ConfigStore, type FoundryConfig } from "./config";
 import { AIAssist, type AssistRequest } from "./ai-assist";
 import { AnalyticsStore, type RollupPeriod } from "./analytics";
 import { FoundryTunnel, tunnelAuth, type TunnelConfig, type TunnelInfo } from "./tunnel";
+import { log } from "../logger";
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
 function validateId(id: string, label: string): string | null {
@@ -87,7 +88,7 @@ export function createViewer(config: ViewerConfig) {
 
   // Auto-wire tracker → analytics persistence
   if (analyticsStore && config.tokenTracker) {
-    analyticsStore.load().catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+    analyticsStore.load().catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
     analyticsStore.connectTracker(config.tokenTracker);
   }
 
@@ -140,7 +141,7 @@ export function createViewer(config: ViewerConfig) {
 
     // Persist user message
     if (db) {
-      db.writeMessage({ id: `${id}_user`, threadId, role: "user", content: payload }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+      db.writeMessage({ id: `${id}_user`, threadId, role: "user", content: payload }).catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
     }
 
     try {
@@ -154,8 +155,8 @@ export function createViewer(config: ViewerConfig) {
           role: "agent",
           content: typeof result.result?.output === "string" ? result.result.output : JSON.stringify(result.result?.output),
           traceId: result.trace.id,
-        }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
-        db.writeTrace(result.trace).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+        }).catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
+        db.writeTrace(result.trace).catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
       }
 
       return c.json({
@@ -352,7 +353,7 @@ export function createViewer(config: ViewerConfig) {
     if (db) {
       db.prisma.threadState.create({
         data: { id, description, tags, status: "idle" },
-      }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+      }).catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
     }
 
     return c.json(threadToJSON(thread), 201);
@@ -699,7 +700,7 @@ export async function startViewer(config: ViewerConfig) {
     },
   });
 
-  console.log(`Foundry Viewer running at http://localhost:${port}`);
+  log.info(`Foundry Viewer running at http://localhost:${port}`);
 
   // Start tunnel if configured
   let tunnelInfo: TunnelInfo | null = null;
@@ -708,7 +709,7 @@ export async function startViewer(config: ViewerConfig) {
       await tunnel.start();
       tunnelInfo = tunnel.info;
     } catch (err) {
-      console.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
+      log.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
     }
   }
 
