@@ -1,0 +1,348 @@
+import { log } from "../logger";
+import { ContextLayer, type ContextSource } from "./context-layer";
+import { ContextStack } from "./context-stack";
+import { Thread, type ThreadConfig } from "./thread";
+import { Classifier, type Classification } from "./classifier";
+import { Router, type Route } from "./router";
+import { Executor } from "./executor";
+import type { Decision } from "./decider";
+import type { BaseAgent } from "./base-agent";
+import type { LLMProvider, LLMMessage, CompletionOpts, CompletionResult } from "../providers/types";
+import type { TokenTracker } from "./token-tracker";
+import type {
+  FoundryConfig,
+  AgentSettingsConfig,
+  LayerSettingsConfig,
+} from "../viewer/config";
+
+// ---------------------------------------------------------------------------
+// Source resolver — turns config source IDs into ContextSources
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a source ID from config into a ContextSource.
+ * The adapter parameter lets callers supply memory-backed or file-backed sources.
+ */
+export type SourceResolver = (sourceId: string, config: FoundryConfig) => ContextSource | null;
+
+// ---------------------------------------------------------------------------
+// ThreadFactory — stamps out threads with independent layer/agent instances
+// ---------------------------------------------------------------------------
+
+export interface ThreadFactoryDeps {
+  /** LLM provider for agent completions. */
+  provider: LLMProvider;
+  /** Optional token tracker for cost tracking. */
+  tokenTracker?: TokenTracker;
+  /** Resolves source IDs to ContextSources (memory, file, inline, etc). */
+  sourceResolver: SourceResolver;
+}
+
+/**
+ * Factory that creates fully-wired Thread instances from config.
+ *
+ * Each thread gets:
+ * - Its own ContextLayer instances (mutations are thread-local)
+ * - Its own agent instances (prompts/models can differ per-thread)
+ * - A RunContext layer (`run:<threadId>`) that starts empty and
+ *   accumulates mid-run learnings visible to all downstream stages
+ *
+ * This replaces the manual wiring in start.ts and powers
+ * POST /api/threads with real per-thread instantiation.
+ */
+export class ThreadFactory {
+  private _deps: ThreadFactoryDeps;
+
+  constructor(deps: ThreadFactoryDeps) {
+    this._deps = deps;
+  }
+
+  /**
+   * Create a fully-wired Thread from config.
+   *
+   * @param id        Thread ID
+   * @param config    Resolved FoundryConfig (global or per-project via resolveProject)
+   * @param opts      Thread options (description, tags, etc)
+   */
+  async create(
+    id: string,
+    config: FoundryConfig,
+    opts?: ThreadConfig & { warm?: boolean },
+  ): Promise<{ thread: Thread; stack: ContextStack; agents: Map<string, BaseAgent> }> {
+    // 1. Build layers from config
+    const layers = this._buildLayers(config);
+
+    // 2. Add RunContext layer — ephemeral, per-thread, accumulates mid-run learnings
+    const runContext = new ContextLayer({
+      id: `run:${id}`,
+      trust: 8,
+      prompt: "Context accumulated during this thread's run. Treat as recent, high-relevance observations.",
+    });
+    layers.push(runContext);
+
+    // 3. Build stack
+    const stack = new ContextStack(layers);
+
+    // 4. Warm all layers if requested (default: yes)
+    if (opts?.warm !== false) {
+      await stack.warmAll();
+    }
+
+    // 5. Create thread
+    const thread = new Thread(id, stack, opts);
+
+    // 6. Build and register agents
+    const agents = this._buildAgents(config, stack);
+    for (const agent of agents.values()) {
+      thread.register(agent);
+    }
+
+    // 7. Add logger middleware
+    thread.middleware.use("logger", async (ctx, next) => {
+      const start = performance.now();
+      const result = await next();
+      const ms = (performance.now() - start).toFixed(1);
+      log.debug(`[${id}] ${ctx.agentId} (${ms}ms)`);
+      return result;
+    });
+
+    return { thread, stack, agents };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Layer building
+  // ---------------------------------------------------------------------------
+
+  private _buildLayers(config: FoundryConfig): ContextLayer[] {
+    const layers: ContextLayer[] = [];
+
+    for (const [id, layerCfg] of Object.entries(config.layers)) {
+      if (!layerCfg.enabled) continue;
+
+      const sources = this._resolveSources(layerCfg, config);
+
+      layers.push(
+        new ContextLayer({
+          id,
+          trust: layerCfg.trust * 10, // Config uses 0-1, ContextLayer uses 0-10
+          staleness: layerCfg.staleness || undefined,
+          maxTokens: layerCfg.maxTokens || undefined,
+          prompt: layerCfg.prompt || undefined,
+          sources,
+        }),
+      );
+    }
+
+    // Fallback: if no layers configured, create a basic system layer
+    if (layers.length === 0) {
+      layers.push(
+        new ContextLayer({
+          id: "system",
+          trust: 10,
+          sources: [{
+            id: "default",
+            load: async () => "You are a helpful engineering assistant.",
+          }],
+        }),
+      );
+    }
+
+    return layers;
+  }
+
+  private _resolveSources(
+    layerCfg: LayerSettingsConfig,
+    config: FoundryConfig,
+  ): ContextSource[] {
+    return (layerCfg.sourceIds ?? [])
+      .map((srcId) => this._deps.sourceResolver(srcId, config))
+      .filter(Boolean) as ContextSource[];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent building
+  // ---------------------------------------------------------------------------
+
+  private _buildAgents(
+    config: FoundryConfig,
+    stack: ContextStack,
+  ): Map<string, BaseAgent> {
+    const agents = new Map<string, BaseAgent>();
+
+    for (const [id, agentCfg] of Object.entries(config.agents)) {
+      if (!agentCfg.enabled) continue;
+
+      const agent = this._buildAgent(id, agentCfg, config, stack);
+      if (agent) agents.set(id, agent);
+    }
+
+    return agents;
+  }
+
+  private _buildAgent(
+    id: string,
+    agentCfg: AgentSettingsConfig,
+    config: FoundryConfig,
+    stack: ContextStack,
+  ): BaseAgent | null {
+    const complete = this._trackedComplete(id);
+
+    switch (agentCfg.kind) {
+      case "classifier":
+        return new Classifier<string>({
+          id,
+          stack,
+          handler: async (ctx, payload) => {
+            if (!agentCfg.prompt) return keywordClassify(payload);
+            try {
+              const result = await complete(
+                [
+                  { role: "system", content: `${ctx}\n\n${agentCfg.prompt}` },
+                  { role: "user", content: payload },
+                ],
+                { temperature: agentCfg.temperature ?? 0, maxTokens: agentCfg.maxTokens || 256 },
+              );
+              const parsed = parseJSON(result.content);
+              return {
+                value: { category: parsed.category as string || "general", subcategory: parsed.subcategory as string },
+                confidence: 0.9,
+                reasoning: (parsed.reasoning as string) || "LLM classification",
+              };
+            } catch (err) {
+              log.warn(`[ThreadFactory] LLM classify failed, falling back to keyword:`, (err as Error).message);
+              return keywordClassify(payload);
+            }
+          },
+        });
+
+      case "router":
+        return new Router<{ payload: string; classification: Classification }>({
+          id,
+          stack,
+          handler: async (ctx, input) => {
+            if (!agentCfg.prompt) return keywordRoute(input.classification, config);
+            try {
+              const result = await complete(
+                [
+                  { role: "system", content: `${ctx}\n\n${agentCfg.prompt}` },
+                  {
+                    role: "user",
+                    content: `Classification: ${JSON.stringify(input.classification)}\nMessage: ${input.payload}`,
+                  },
+                ],
+                { temperature: agentCfg.temperature ?? 0, maxTokens: agentCfg.maxTokens || 256 },
+              );
+              const parsed = parseJSON(result.content);
+              return {
+                value: {
+                  destination: (parsed.destination as string) || "executor-answer",
+                  contextSlice: (parsed.contextSlice as string[]) || Object.keys(config.layers),
+                  priority: (parsed.priority as number) ?? 5,
+                },
+                confidence: 0.9,
+                reasoning: (parsed.reasoning as string) || "LLM routing",
+              };
+            } catch (err) {
+              log.warn(`[ThreadFactory] LLM route failed, falling back to keyword:`, (err as Error).message);
+              return keywordRoute(input.classification, config);
+            }
+          },
+        });
+
+      case "executor":
+      default:
+        return new Executor<string, string>({
+          id,
+          stack,
+          handler: async (ctx, payload) => {
+            const prompt = agentCfg.prompt || "You are a helpful assistant.";
+            try {
+              const result = await complete(
+                [
+                  { role: "system", content: `${ctx}\n\n${prompt}` },
+                  { role: "user", content: payload },
+                ],
+                {
+                  temperature: agentCfg.temperature ?? config.defaults.temperature,
+                  maxTokens: agentCfg.maxTokens ?? config.defaults.maxTokens,
+                },
+              );
+              return result.content;
+            } catch (err) {
+              return `[${id}] Error: ${(err as Error).message}`;
+            }
+          },
+        });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Provider helpers
+  // ---------------------------------------------------------------------------
+
+  private _trackedComplete(agentId: string) {
+    const { provider, tokenTracker } = this._deps;
+    return async (messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> => {
+      const result = await provider.complete(messages, opts);
+      if (tokenTracker && result.tokens) {
+        tokenTracker.record({
+          provider: provider.id,
+          model: result.model,
+          agentId,
+          tokens: result.tokens,
+        });
+      }
+      return result;
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared fallback handlers (no LLM needed)
+// ---------------------------------------------------------------------------
+
+export function keywordClassify(payload: string): Decision<Classification> {
+  const lower = payload.toLowerCase();
+  let category = "general";
+  if (lower.includes("bug") || lower.includes("fix") || lower.includes("error")) category = "bug";
+  else if (lower.includes("feature") || lower.includes("add") || lower.includes("build")) category = "feature";
+  else if (lower.includes("refactor") || lower.includes("clean")) category = "refactor";
+  else if (lower.includes("question") || lower.includes("how") || lower.includes("why")) category = "question";
+  else if (lower.includes("convention") || lower.includes("style")) category = "convention";
+  return { value: { category }, confidence: 0.7, reasoning: `keyword: ${category}` };
+}
+
+export function keywordRoute(
+  classification: Classification,
+  config: FoundryConfig,
+): Decision<Route> {
+  const layerIds = Object.keys(config.layers);
+  const routeMap: Record<string, { dest: string; layers: string[] }> = {
+    bug: { dest: "executor-fix", layers: layerIds },
+    feature: { dest: "executor-build", layers: ["system", "conventions"] },
+    refactor: { dest: "executor-build", layers: ["system", "conventions"] },
+    question: { dest: "executor-answer", layers: ["system", "memory"] },
+    convention: { dest: "executor-answer", layers: ["conventions", "memory"] },
+    general: { dest: "executor-answer", layers: ["system"] },
+  };
+  const route = routeMap[classification.category] ?? routeMap.general;
+  return {
+    value: { destination: route.dest, contextSlice: route.layers, priority: 5 },
+    confidence: 0.8,
+    reasoning: `rule: ${classification.category} → ${route.dest}`,
+  };
+}
+
+export function parseJSON(text: string): Record<string, unknown> {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const raw = fenced ? fenced[1] : text;
+  try {
+    return JSON.parse(raw.trim());
+  } catch {
+    const braced = raw.match(/\{[\s\S]*\}/);
+    if (braced) {
+      try { return JSON.parse(braced[0]); } catch { /* fall through */ }
+    }
+    return { category: "general", reasoning: "parse failure" };
+  }
+}

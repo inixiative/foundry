@@ -190,3 +190,41 @@ graph LR
     style PROM fill:#1a3a5c,stroke:#2e6ba6,color:#fff
     style CLD fill:#1a3a5c,stroke:#2e6ba6,color:#fff
 ```
+
+---
+
+## Primitive Coverage for Agent Roles
+
+| Defined Role | Primitive | Status |
+|-------------|-----------|--------|
+| Subject Agent (vague PM) | Decider — answers questions from Q&A layer | Ready |
+| Implementer (agent under test) | Executor — takes context + payload, produces output | Ready |
+| Oracle (judge) | LLMScorer + HeuristicDiagnoser + LLMDiagnoser | Ready |
+| The Cartographer | Router with full context visibility + contextSlice | Ready |
+| The Librarian | Classifier → Router pipeline (Harness classify→route) | Ready |
+| Guardian Skills | Decider<boolean> per concern (conventions, security) | Primitive ready, no implementations |
+| Herald (cross-agent observation) | Herald class with 5 PatternDetectors | Ready |
+| Domain Executors | Executor with LayerFilter per context slice | Ready |
+| Planner (plan mode) | Planner agent + planModeHook auto-shunt | Ready |
+
+---
+
+## New Primitives (Since Initial Architecture)
+
+- **Herald** — cross-agent observation with snapshot-based coordination. 5 detectors: duplication, contradiction, convergence, cross-pollination, resource imbalance. Operates on frozen ThreadSnapshots, stateless, read-many write-none.
+- **Active Memory** — Levin-inspired trust competition. Layers gain trust when used, lose trust when overridden. Layers below dissolution threshold are removed. Conventions compete for influence.
+- **Corpus Compiler** — Three-stage pipeline: fluid entries (raw signals) → formal docs (conventions, ADRs, skills with lifecycle states) → compiled corpus (immutable, hashed, token-optimized). Supports tier promotion: personal → team → org.
+- **Token Tracker** — Per-provider/model/agent cost accounting with budget enforcement and analytics.
+- **Compaction Strategies** — 4 strategies for managing context budget: trust-based, LRU, LLM summarize, hybrid.
+- **Lifecycle Hooks** — 16 hook points (pre/post dispatch, classify, route, compact, session events, budget events, plan mode). Built-in hooks: planModeHook, budgetGuardHook, autoCompactHook.
+- **Streaming** — AsyncGenerator<LLMStreamEvent> for Anthropic, OpenAI, Gemini providers.
+- **Analytics** — First-class cost tracking with time-series rollups, thread costs, model rankings.
+- **Planner Agent** — Generates execution plans with dependency-ordered steps, dispatches to agents, tracks results.
+
+---
+
+## Three-System Split
+
+- The codebase is designed for eventual split into: @foundry/primitives (open), Foundry (opinionated), Foundry Oracle (service)
+- See docs/THREE_SYSTEMS.md for full details
+- Dependencies are already unidirectional: primitives ← foundry ← oracle

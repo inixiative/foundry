@@ -316,6 +316,49 @@ graph TB
 
 ---
 
+## The Service Model: Oracle
+
+The Oracle is not software you download — it's calibrated judgment delivered as PRs. You point it at your repo, it runs evals against your corpus, and it opens a pull request with specific improvements: tighter conventions, new fixtures for gaps it found, rewrites of entries that are hurting more than helping.
+
+**What's defensible:**
+- **Scoring calibration** — Cross-customer data means the Oracle knows what "good" looks like across hundreds of codebases, not just yours. Individual scores mean nothing; relative scores across a population mean everything.
+- **Diagnosis-to-proposal mappings** — When a fixture fails, the Oracle doesn't just report it. It proposes a corpus change. These mappings improve with every cycle as we track which proposals actually moved scores.
+- **Fixture cross-pollination** — A fixture that catches a common failure in one repo gets offered to every repo with similar patterns. The fixture library compounds across the customer base.
+- **Proposal effectiveness tracking** — We measure whether each proposed change actually improved scores on the next run. Over time, this is a dataset nobody else has.
+
+**What's NOT defensible:** The code itself. The Oracle is roughly 2,100 lines. Anyone with the architecture doc could rebuild it in a week. The code is not the moat.
+
+**The moat timeline:**
+- **Month 0-6:** The code is enough. Nobody else has built the eval loop. First-mover advantage on the pattern.
+- **Month 6-12:** Calibration data becomes the differentiator. Cross-customer scoring baselines, proposal effectiveness rates, fixture coverage patterns.
+- **Month 12+:** Network effects. Every customer's eval data makes every other customer's Oracle smarter. Fixture cross-pollination creates a shared immune system against common corpus failures.
+
+**Pricing model:**
+| Tier | Price | What You Get |
+|------|-------|-------------|
+| **Free** | $0 | Open source primitives (@foundry/primitives). Run evals locally, manage your own corpus. |
+| **Starter** | $49/mo | 100 Oracle runs/month. PR-based corpus improvements for a single repo. |
+| **Growth** | $149/mo | 1,000 Oracle runs/month. Multi-repo support, trend dashboard, fixture cross-pollination. |
+| **Team** | $499/mo | Multi-repo Herald (continuous monitoring), priority scheduling, team-wide calibration. |
+
+---
+
+## Feedback Channels
+
+Running agents emit escalation signals when they hit missing context — a convention they can't find, a decision with no recorded rationale, an ambiguous instruction that forced a guess. These signals are the raw material for corpus improvement.
+
+**User-initiated feedback:** Users can flag pain directly via the viewer. A "this sucks" button on any corpus entry creates a high-priority fluid entry that the Oracle picks up on its next cycle. No ticket system, no feedback form — one click, straight into the pipeline.
+
+**The capture system IS the feedback channel:**
+- `CorpusCompiler.ingest()` captures all signals — agent escalations, user flags, fixture failures, score regressions
+- Signals land in `.foundry/corpus/fluid/` as structured entries
+- The Oracle reads `.foundry/corpus/fluid/` on every eval cycle
+- No separate feedback infrastructure needed. The same pipeline that captures interaction signals captures feedback signals. One system, one format, one ingestion path.
+
+**Why this matters:** Most products build feedback as a separate system — a database table, an API endpoint, a dashboard. Then they build a pipeline to connect feedback to action. We skip all of that. The signal capture infrastructure that already exists for the core eval loop is the same infrastructure that handles feedback. Escalation signals from running agents feed directly into the Oracle's next eval cycle as prioritized inputs.
+
+---
+
 ## Summary
 
 | What | Why |
