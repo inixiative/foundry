@@ -1,5 +1,5 @@
 {
-  "name": "@foundry/agent-primitives",
+  "name": "@foundry/primitives",
   "version": "0.1.0",
   "license": "MIT",
   "type": "module",
