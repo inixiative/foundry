@@ -5,7 +5,7 @@
 
 import { html, useState, useEffect, useRef } from "./lib.js";
 import { signal } from "./lib.js";
-import { showToast } from "./store.js";
+import { showToast, authFetch } from "./store.js";
 
 // Settings state
 export const settingsOpen = signal(false);
@@ -20,7 +20,7 @@ const aiSuggestions = signal([]);
 
 async function loadSettings() {
   try {
-    const res = await fetch("/api/settings");
+    const res = await authFetch("/api/settings");
     settingsConfig.value = await res.json();
   } catch {
     showToast("Failed to load settings", "error");
@@ -29,7 +29,7 @@ async function loadSettings() {
 
 async function saveSection(section, data) {
   try {
-    const res = await fetch(`/api/settings/${section}`, {
+    const res = await authFetch(`/api/settings/${section}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -43,7 +43,7 @@ async function saveSection(section, data) {
 
 async function deleteItem(section, id) {
   try {
-    const res = await fetch(`/api/settings/${section}/${id}`, { method: "DELETE" });
+    const res = await authFetch(`/api/settings/${section}/${id}`, { method: "DELETE" });
     settingsConfig.value = await res.json();
     showToast(`Removed ${id}`, "ok");
   } catch {
@@ -54,7 +54,7 @@ async function deleteItem(section, id) {
 async function requestAIAssist(section, target, question) {
   aiLoading.value = true;
   try {
-    const res = await fetch("/api/assist", {
+    const res = await authFetch("/api/assist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ section, target, question }),
@@ -75,7 +75,7 @@ async function requestAIAssist(section, target, question) {
 async function requestPromptImprove(type, id, currentPrompt, instruction) {
   aiLoading.value = true;
   try {
-    const res = await fetch("/api/assist/prompt", {
+    const res = await authFetch("/api/assist/prompt", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, id, currentPrompt, instruction }),

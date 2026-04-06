@@ -8,6 +8,23 @@
 import { signal, computed, batch } from "./lib.js";
 
 // ---------------------------------------------------------------------------
+// Auth — forward tunnel token on all API calls
+// ---------------------------------------------------------------------------
+
+function getToken() {
+  return new URLSearchParams(location.search).get("token");
+}
+
+/** Wrapper around fetch that auto-injects auth header when tunneling. */
+export function authFetch(url, opts = {}) {
+  const token = getToken();
+  if (token) {
+    opts.headers = { ...opts.headers, Authorization: `Bearer ${token}` };
+  }
+  return fetch(url, opts);
+}
+
+// ---------------------------------------------------------------------------
 // State signals
 // ---------------------------------------------------------------------------
 
@@ -121,7 +138,14 @@ function scheduleRefresh() {
 }
 
 export function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  // Forward auth token to WebSocket if present (tunnel mode)
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = token
+    ? `${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)}`
+    : `${wsProto}//${location.host}/ws`;
+  ws = new WebSocket(wsUrl);
   ws.onopen = () => { connected.value = true; };
   ws.onclose = () => {
     connected.value = false;
@@ -147,7 +171,7 @@ export function connect() {
 
 export async function loadTraces() {
   try {
-    const res = await fetch("/api/traces?limit=50");
+    const res = await authFetch("/api/traces?limit=50");
     if (!res.ok) { showToast(`Failed to load traces: ${res.status}`, "error"); return; }
     traces.value = await res.json();
   } catch (err) {
@@ -157,7 +181,7 @@ export async function loadTraces() {
 
 export async function loadTraceDetail(traceId) {
   try {
-    const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}`);
+    const res = await authFetch(`/api/traces/${encodeURIComponent(traceId)}`);
     if (res.ok) {
       currentTrace.value = await res.json();
       selectedSpanId.value = null;
@@ -175,7 +199,7 @@ export async function loadThreads() {
     const url = projectId
       ? `/api/threads?project=${encodeURIComponent(projectId)}`
       : "/api/threads";
-    const res = await fetch(url);
+    const res = await authFetch(url);
     if (!res.ok) { showToast(`Failed to load threads: ${res.status}`, "error"); return; }
     const data = await res.json();
 
@@ -196,7 +220,7 @@ export async function loadThreads() {
 
 export async function loadDefinitions() {
   try {
-    const res = await fetch("/api/definitions");
+    const res = await authFetch("/api/definitions");
     if (!res.ok) { showToast(`Failed to load definitions: ${res.status}`, "error"); return; }
     definitions.value = await res.json();
   } catch (err) {
@@ -206,7 +230,7 @@ export async function loadDefinitions() {
 
 export async function loadProjects() {
   try {
-    const res = await fetch("/api/projects");
+    const res = await authFetch("/api/projects");
     if (!res.ok) { showToast(`Failed to load projects: ${res.status}`, "error"); return; }
     const data = await res.json();
     projects.value = data.projects ?? [];
@@ -218,7 +242,7 @@ export async function loadProjects() {
 
 export async function createProject(config) {
   try {
-    const res = await fetch("/api/projects", {
+    const res = await authFetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
@@ -238,7 +262,7 @@ export async function createProject(config) {
 
 export async function deleteProject(id) {
   try {
-    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await authFetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.ok) {
       showToast(`Removed: ${id}`, "ok");
       if (activeProjectId.value === id) activeProjectId.value = null;
@@ -256,7 +280,7 @@ export async function deleteProject(id) {
 
 export async function createDefinition(section, id, data) {
   try {
-    const res = await fetch(`/api/settings/${section}`, {
+    const res = await authFetch(`/api/settings/${section}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [id]: data }),
@@ -276,7 +300,7 @@ export async function createDefinition(section, id, data) {
 
 export async function deleteDefinition(section, id) {
   try {
-    const res = await fetch(`/api/settings/${section}/${encodeURIComponent(id)}`, {
+    const res = await authFetch(`/api/settings/${section}/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
     if (res.ok) {
@@ -306,7 +330,7 @@ export async function sendMessage(text) {
   sending.value = true;
 
   try {
-    const res = await fetch("/api/messages", {
+    const res = await authFetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text }),
@@ -349,7 +373,7 @@ export async function sendMessage(text) {
 
 export async function executeAction(kind, target, payload) {
   try {
-    const res = await fetch("/api/actions", {
+    const res = await authFetch("/api/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, target, payload, timestamp: Date.now() }),
@@ -367,7 +391,7 @@ export async function executeAction(kind, target, payload) {
 
 export async function submitIntervention(traceId, spanId, correction, reason) {
   try {
-    const res = await fetch("/api/interventions", {
+    const res = await authFetch("/api/interventions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

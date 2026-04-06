@@ -38,3 +38,11 @@ export {
   type RollupSet,
   type RollupPeriod,
 } from "./analytics";
+
+export {
+  FoundryTunnel,
+  tunnelAuth,
+  type TunnelConfig,
+  type TunnelProvider,
+  type TunnelInfo,
+} from "./tunnel";

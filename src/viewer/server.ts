@@ -11,6 +11,7 @@ import { ActionHandler, type OperatorAction } from "./actions";
 import { ConfigStore, type FoundryConfig } from "./config";
 import { AIAssist, type AssistRequest } from "./ai-assist";
 import { AnalyticsStore, type RollupPeriod } from "./analytics";
+import { FoundryTunnel, tunnelAuth, type TunnelConfig, type TunnelInfo } from "./tunnel";
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
 function validateId(id: string, label: string): string | null {
@@ -43,6 +44,8 @@ export interface ViewerConfig {
   threadFactory?: import("../agents/thread-factory").ThreadFactory;
   /** Config store for resolving project configs. */
   configStore?: import("./config").ConfigStore;
+  /** Tunnel config — expose the viewer over a public URL with auth. */
+  tunnel?: TunnelConfig;
 }
 
 /**
@@ -58,6 +61,13 @@ export interface ViewerConfig {
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4400 } = config;
   const app = new Hono();
+
+  // Tunnel auth — if tunnel is configured, require bearer token for all requests
+  let tunnel: FoundryTunnel | null = null;
+  if (config.tunnel) {
+    tunnel = new FoundryTunnel({ ...config.tunnel, port });
+    app.use("*", tunnelAuth(tunnel.token));
+  }
 
   // Action handler for operator commands
   const actions = new ActionHandler({ harness, eventStream, interventions });
@@ -626,6 +636,14 @@ export function createViewer(config: ViewerConfig) {
     return c.json(resolved);
   });
 
+  // -- REST: Tunnel info --
+
+  app.get("/api/tunnel", (c) => {
+    if (!tunnel) return c.json({ active: false });
+    const info = tunnel.info;
+    return c.json({ active: !!info, ...info });
+  });
+
   // -- Static: UI files --
   // Serves the Preact-based UI from /ui/*
 
@@ -634,20 +652,25 @@ export function createViewer(config: ViewerConfig) {
   // Root serves the HTML shell
   app.get("/", serveStatic({ path: "./src/viewer/ui/index.html" }));
 
-  return { app, port, actions, configStore, analyticsStore };
+  return { app, port, actions, configStore, analyticsStore, tunnel };
 }
 
 /** Start the viewer server. */
-export function startViewer(config: ViewerConfig) {
-  const { app, port, actions } = createViewer(config);
+export async function startViewer(config: ViewerConfig) {
+  const { app, port, actions, tunnel } = createViewer(config);
   const wsCleanup = new Map<object, () => void>();
 
   const server = Bun.serve({
     port,
     fetch(req, server) {
-      // Handle WebSocket upgrade before Hono — Bun requires
-      // returning undefined (not a Response) on successful upgrade.
+      // WebSocket upgrade — check token in query param for tunneled connections
       if (new URL(req.url).pathname === "/ws") {
+        if (tunnel) {
+          const token = new URL(req.url).searchParams.get("token");
+          if (token !== tunnel.token) {
+            return new Response("Unauthorized", { status: 401 });
+          }
+        }
         if (server.upgrade(req)) return undefined;
         return new Response("WebSocket upgrade failed", { status: 400 });
       }
@@ -671,7 +694,18 @@ export function startViewer(config: ViewerConfig) {
 
   console.log(`Foundry Viewer running at http://localhost:${port}`);
 
-  return { server, actions };
+  // Start tunnel if configured
+  let tunnelInfo: TunnelInfo | null = null;
+  if (tunnel) {
+    try {
+      await tunnel.start();
+      tunnelInfo = tunnel.info;
+    } catch (err) {
+      console.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
+    }
+  }
+
+  return { server, actions, tunnel: tunnelInfo };
 }
 
 function traceToJSON(trace: Trace) {

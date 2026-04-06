@@ -7,7 +7,7 @@
 
 import { html, useState, useEffect, useCallback } from "./lib.js";
 import { signal } from "./lib.js";
-import { showToast } from "./store.js";
+import { showToast, authFetch } from "./store.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -24,7 +24,7 @@ const analyticsTab = signal("overview"); // overview | threads | calls | models
 
 async function loadAnalytics() {
   try {
-    const res = await fetch("/api/analytics");
+    const res = await authFetch("/api/analytics");
     if (!res.ok) {
       analyticsData.value = null;
       showToast(`Analytics unavailable: ${res.status}`, "error");
