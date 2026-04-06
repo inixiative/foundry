@@ -52,34 +52,130 @@ export interface TunnelInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Auth middleware (Hono)
+// Auth middleware (Hono) — cookie-based for browsers, bearer for API clients
 // ---------------------------------------------------------------------------
 
+const SESSION_COOKIE = "foundry_session";
+
+/** Generate a signed session value from the token. */
+function sessionValue(token: string): string {
+  // HMAC the token so the cookie value isn't the raw secret
+  const { createHmac } = require("crypto") as typeof import("crypto");
+  return createHmac("sha256", token).update("foundry-session").digest("hex");
+}
+
 /**
- * Hono middleware that enforces bearer token auth.
+ * Minimal HTML login page served when auth is required.
+ */
+function loginPage(error?: string): string {
+  return `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Foundry — Login</title>
+<style>
+  body { background: #0a0a0c; color: #e0e0e0; font-family: system-ui; display: flex;
+         align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+  .card { background: #141418; border: 1px solid #2a2a30; border-radius: 12px;
+          padding: 32px; width: 320px; text-align: center; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { font-size: 13px; color: #888; margin: 0 0 20px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #2a2a30; border-radius: 6px;
+          background: #0a0a0c; color: #e0e0e0; font-size: 14px; box-sizing: border-box;
+          font-family: monospace; margin-bottom: 12px; }
+  input:focus { outline: none; border-color: #6c9eff; }
+  button { width: 100%; padding: 10px; border: none; border-radius: 6px; background: #6c9eff;
+           color: #0a0a0c; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #8ab4ff; }
+  .error { color: #f87171; font-size: 12px; margin-bottom: 12px; }
+</style>
+</head><body>
+<div class="card">
+  <h1>foundry</h1>
+  <p>Enter your access token to continue.</p>
+  ${error ? `<div class="error">${error}</div>` : ""}
+  <form method="POST" action="/auth">
+    <input type="password" name="token" placeholder="Access token" autofocus required />
+    <button type="submit">Continue</button>
+  </form>
+</div>
+</body></html>`;
+}
+
+/**
+ * Hono middleware that enforces session auth for tunneled connections.
  *
- * Checks (in order):
- *   1. Authorization: Bearer <token>
- *   2. ?token=<token> query param (for WebSocket clients)
+ * Auth flow:
+ *   1. Browser hits URL with ?token= → auto-login, set cookie, redirect to clean URL
+ *   2. Browser without cookie → redirect to /auth login page
+ *   3. POST /auth with token → validate, set cookie, redirect to /
+ *   4. API clients can use Authorization: Bearer <token> header
+ *   5. /api/health is always open (uptime monitors)
  *
- * Skips auth for the health check endpoint so uptime monitors work.
+ * Session cookie is HttpOnly + SameSite=Strict. Value is HMAC of the
+ * token, not the token itself.
  */
 export function tunnelAuth(token: string) {
-  return async (c: any, next: () => Promise<void>) => {
-    const path = new URL(c.req.url).pathname;
+  const validSession = sessionValue(token);
 
-    // Allow health check without auth
+  return async (c: any, next: () => Promise<void>) => {
+    const url = new URL(c.req.url);
+    const path = url.pathname;
+
+    // Always allow health check
     if (path === "/api/health") return next();
 
-    // Check Authorization header
+    // Serve login page (GET /auth)
+    if (path === "/auth" && c.req.method === "GET") {
+      return c.html(loginPage());
+    }
+
+    // Handle login submission (POST /auth)
+    if (path === "/auth" && c.req.method === "POST") {
+      const body = await c.req.parseBody();
+      const submitted = (body.token ?? "").trim();
+      if (submitted === token) {
+        // Set session cookie and redirect to root
+        const secure = url.protocol === "https:";
+        const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? "; Secure" : ""}`;
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/", "Set-Cookie": cookie },
+        });
+      }
+      return c.html(loginPage("Invalid token. Try again."), 401);
+    }
+
+    // Auto-login via ?token= query param → set cookie + redirect to clean URL
+    const paramToken = url.searchParams.get("token");
+    if (paramToken === token) {
+      const secure = url.protocol === "https:";
+      const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? "; Secure" : ""}`;
+      // Strip token from URL before redirect
+      url.searchParams.delete("token");
+      return new Response(null, {
+        status: 302,
+        headers: { Location: url.pathname + url.search, "Set-Cookie": cookie },
+      });
+    }
+
+    // Check Authorization header (API clients)
     const authHeader = c.req.header("authorization") ?? "";
     if (authHeader === `Bearer ${token}`) return next();
 
-    // Check query param (for WebSocket and browser access)
-    const paramToken = new URL(c.req.url).searchParams.get("token");
-    if (paramToken === token) return next();
+    // Check session cookie
+    const cookies = c.req.header("cookie") ?? "";
+    const sessionMatch = cookies.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
+    if (sessionMatch && sessionMatch[1] === validSession) return next();
 
-    return c.json({ error: "Unauthorized. Provide a valid bearer token." }, 401);
+    // WebSocket: check token in query param (WS can't set cookies on upgrade)
+    if (path === "/ws" && paramToken === token) return next();
+
+    // Not authenticated — redirect browsers to login, return 401 for API
+    const accept = c.req.header("accept") ?? "";
+    if (accept.includes("text/html")) {
+      return new Response(null, { status: 302, headers: { Location: "/auth" } });
+    }
+    return c.json({ error: "Unauthorized" }, 401);
   };
 }
 

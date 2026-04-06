@@ -8,19 +8,14 @@
 import { signal, computed, batch } from "./lib.js";
 
 // ---------------------------------------------------------------------------
-// Auth — forward tunnel token on all API calls
+// Auth — cookie-based auth handles most cases. authFetch is a fallback
+// for programmatic/API access where a bearer token is passed in the URL.
 // ---------------------------------------------------------------------------
 
-function getToken() {
-  return new URLSearchParams(location.search).get("token");
-}
-
-/** Wrapper around fetch that auto-injects auth header when tunneling. */
+/** Wrapper around fetch that includes credentials (cookies) automatically. */
 export function authFetch(url, opts = {}) {
-  const token = getToken();
-  if (token) {
-    opts.headers = { ...opts.headers, Authorization: `Bearer ${token}` };
-  }
+  // Always send cookies (needed for tunnel session cookie)
+  opts.credentials = "same-origin";
   return fetch(url, opts);
 }
 
@@ -138,14 +133,10 @@ function scheduleRefresh() {
 }
 
 export function connect() {
-  // Forward auth token to WebSocket if present (tunnel mode)
-  const params = new URLSearchParams(location.search);
-  const token = params.get("token");
+  // Browser sends cookies on WS upgrade automatically (same-origin).
+  // For tunnel mode, the session cookie set by /auth handles auth.
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = token
-    ? `${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)}`
-    : `${wsProto}//${location.host}/ws`;
-  ws = new WebSocket(wsUrl);
+  ws = new WebSocket(`${wsProto}//${location.host}/ws`);
   ws.onopen = () => { connected.value = true; };
   ws.onclose = () => {
     connected.value = false;

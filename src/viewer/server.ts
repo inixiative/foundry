@@ -663,11 +663,18 @@ export async function startViewer(config: ViewerConfig) {
   const server = Bun.serve({
     port,
     fetch(req, server) {
-      // WebSocket upgrade — check token in query param for tunneled connections
+      // WebSocket upgrade — let Hono middleware handle auth (cookie or bearer).
+      // Bun sends cookies on upgrade, so the tunnelAuth middleware validates them.
       if (new URL(req.url).pathname === "/ws") {
         if (tunnel) {
-          const token = new URL(req.url).searchParams.get("token");
-          if (token !== tunnel.token) {
+          // Quick cookie check — WS upgrade doesn't go through Hono middleware
+          const { createHmac } = require("crypto") as typeof import("crypto");
+          const validSession = createHmac("sha256", tunnel.token).update("foundry-session").digest("hex");
+          const cookies = req.headers.get("cookie") ?? "";
+          const match = cookies.match(/foundry_session=([^;]+)/);
+          const hasValidCookie = match && match[1] === validSession;
+          const hasValidToken = new URL(req.url).searchParams.get("token") === tunnel.token;
+          if (!hasValidCookie && !hasValidToken) {
             return new Response("Unauthorized", { status: 401 });
           }
         }
