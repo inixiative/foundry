@@ -1,32 +1,25 @@
 {
-  "name": "@foundry/primitives",
+  "name": "@inixiative/foundry-monorepo",
+  "private": true,
   "version": "0.1.0",
-  "license": "MIT",
-  "type": "module",
-  "main": "src/index.ts",
+  "license": "SEE LICENSE IN LICENSE",
+  "workspaces": ["packages/*"],
   "scripts": {
-    "typecheck": "bun run --bun tsc --noEmit",
-    "test": "bun test tests/*.test.ts",
-    "pretest:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push --skip-generate",
-    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/ --max-concurrency=1",
-    "test:all": "bun test tests/*.test.ts && bun run test:db",
+    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts",
+    "test:core": "bun test ./packages/core/tests/",
+    "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
+    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test ./packages/foundry/tests/db/ --max-concurrency=1",
+    "test:all": "bun run test && bun run test:db",
+    "setup": "bun run packages/foundry/src/setup.ts",
+    "start": "bun run packages/foundry/src/start.ts",
+    "viewer": "bun run packages/foundry/src/viewer/server.ts",
+    "demo": "bun run packages/foundry/src/demo.ts",
+    "research": "bun run packages/foundry/src/research/cli.ts",
     "db:push": "bunx prisma db push",
-    "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push",
-    "setup": "bun run src/setup.ts",
-    "start": "bun run src/start.ts",
-    "viewer": "bun run src/viewer/server.ts",
-    "demo": "bun run src/demo.ts"
-  },
-  "dependencies": {
-    "@prisma/client": "^6.6.0",
-    "consola": "^3.4.2",
-    "hono": "^4.7.0",
-    "prisma": "^6.6.0"
+    "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^25.5.2",
-    "pino": "^10.3.1",
     "typescript": "^5.7.0"
   }
 }
