@@ -43,6 +43,11 @@ export interface FanResult {
   readonly error?: unknown;
 }
 
+export interface BackgroundHandle {
+  readonly agentId: string;
+  readonly promise: Promise<ExecutionResult>;
+}
+
 export interface ThreadConfig {
   maxDispatches?: number;
   maxSignalHistory?: number;
@@ -189,6 +194,25 @@ export class Thread {
     } finally {
       this.meta.status = "idle";
     }
+  }
+
+  /**
+   * Fire-and-forget dispatch. Returns a handle with the promise
+   * but does not block the caller. Errors are logged, not thrown.
+   */
+  dispatchBackground<TPayload>(
+    agentId: string,
+    payload: TPayload,
+    filterOverride?: LayerFilter
+  ): BackgroundHandle {
+    const promise = this.dispatch(agentId, payload, filterOverride).catch(
+      async (err) => {
+        const { log } = await import("../logger");
+        log.warn(`[Thread] background dispatch "${agentId}" failed:`, (err as Error).message);
+        return { output: null, contextHash: "" } as ExecutionResult;
+      }
+    );
+    return { agentId, promise };
   }
 
   /**

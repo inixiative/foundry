@@ -1,4 +1,4 @@
-import { Thread, type FanResult } from "./thread";
+import { Thread, type FanResult, type BackgroundHandle } from "./thread";
 import type { ExecutionResult } from "./base-agent";
 import type { Decision } from "./decider";
 import type { Classification } from "./classifier";
@@ -31,6 +31,17 @@ export interface HarnessResult<T = unknown> {
   readonly activeLayers?: string[];
 }
 
+export interface BackgroundResult {
+  readonly messageId: string;
+  readonly agentId: string;
+  readonly stage: FlowStage;
+  readonly result: ExecutionResult;
+  readonly durationMs: number;
+  readonly error?: Error;
+}
+
+export type BackgroundResultHandler = (result: BackgroundResult) => void;
+
 export interface PipelineStep<TIn = unknown, TOut = unknown> {
   readonly id: string;
   run(input: TIn, harness: Harness, trace: Trace): Promise<TOut>;
@@ -54,6 +65,12 @@ export interface FlowStage {
   invocation: "always" | "on-demand" | "conditional";
   /** Condition for conditional invocation. */
   condition?: InvocationCondition;
+  /**
+   * Run this stage in the background (fire-and-forget).
+   * The stage dispatches but doesn't block the pipeline response.
+   * Useful for post-dispatch observers, reviewers, distillers.
+   */
+  background?: boolean;
 }
 
 export interface FlowConfig {
@@ -147,6 +164,7 @@ export class Harness {
   private _pipeline: PipelineStep[] = [];
   private _traces: Trace[] = [];
   private _maxTraces: number;
+  private _backgroundHandlers: BackgroundResultHandler[] = [];
 
   constructor(thread: Thread, opts?: { maxTraces?: number }) {
     this.thread = thread;
@@ -205,6 +223,34 @@ export class Harness {
     if (idx === -1) return false;
     this._pipeline.splice(idx, 1);
     return true;
+  }
+
+  // -- Background stage callbacks --
+
+  /**
+   * Subscribe to background stage completions.
+   * Returns an unsubscribe function.
+   *
+   * Background stages (FlowStage.background=true) fire-and-forget —
+   * they don't block the pipeline response. Use this to observe their
+   * results for logging, signal emission, UI updates, etc.
+   */
+  onBackground(handler: BackgroundResultHandler): () => void {
+    this._backgroundHandlers.push(handler);
+    return () => {
+      const idx = this._backgroundHandlers.indexOf(handler);
+      if (idx !== -1) this._backgroundHandlers.splice(idx, 1);
+    };
+  }
+
+  private _emitBackground(result: BackgroundResult): void {
+    for (const handler of [...this._backgroundHandlers]) {
+      try {
+        handler(result);
+      } catch {
+        // handler errors shouldn't break the background pipeline
+      }
+    }
   }
 
   // -- Entry point --
@@ -379,7 +425,29 @@ export class Harness {
         // Build layer filter for this dispatch
         const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
 
-        // Trace and dispatch
+        // Background stages — fire-and-forget, report via onBackground callback
+        if (stage.background) {
+          const bgStart = performance.now();
+          const msgId = message.id;
+          const bgStage = stage;
+          const { promise } = this.thread.dispatchBackground(agentId, message.payload, layerFilter);
+          invokedAgents.push({ id: agentId, mode: "background" });
+
+          // Wire callback — runs when the background dispatch completes
+          promise.then((result) => {
+            this._emitBackground({
+              messageId: msgId,
+              agentId: agentId!,
+              stage: bgStage,
+              result,
+              durationMs: performance.now() - bgStart,
+            });
+          });
+
+          continue; // don't block the pipeline
+        }
+
+        // Trace and dispatch (foreground — blocks pipeline)
         trace.start(`${stage.role}:${agentId}`, stage.role as any, {
           agentId,
           input: message.payload,
