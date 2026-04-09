@@ -234,3 +234,10 @@ export {
   type PatternDetector,
   type HeraldConfig,
 } from "./herald";
+
+// Librarian — sole writer to thread-state layer
+export {
+  Librarian,
+  type ThreadState,
+  type LibrarianConfig,
+} from "./librarian";
