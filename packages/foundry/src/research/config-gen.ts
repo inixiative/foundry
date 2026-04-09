@@ -15,8 +15,8 @@ import type { ConfigVariation } from "./types";
  */
 export function oneAtATime(
   agentId: string,
-  paramName: keyof Pick<AgentSettingsConfig, "model" | "temperature" | "maxTokens">,
-  values: Array<string | number>,
+  paramName: keyof Pick<AgentSettingsConfig, "model" | "temperature" | "maxTokens" | "tools">,
+  values: Array<string | number | boolean>,
 ): ConfigVariation[] {
   return values.map((value) => ({
     id: `${agentId}-${paramName}-${value}`,
@@ -129,6 +129,157 @@ export function temperatureSweep(
             Object.entries(winners).map(([id, ov]) => [id, { ...ov }]),
           ),
           [agentId]: { ...winnerOverrides, temperature: temp },
+        },
+      });
+    }
+  }
+
+  return variations;
+}
+
+// ---------------------------------------------------------------------------
+// Tools sweep — test tools on/off per agent role
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate tools sweep variations.
+ * Tests each agent with tools enabled vs disabled.
+ * Classifier/router default to tools=false; executors default to tools=true.
+ * This sweep tests the opposite of each default.
+ */
+export function toolsSweep(config: FoundryConfig): ConfigVariation[] {
+  const variations: ConfigVariation[] = [];
+
+  for (const [id, agent] of Object.entries(config.agents)) {
+    if (!agent.enabled) continue;
+
+    const currentDefault = agent.kind === "classifier" || agent.kind === "router" ? false : true;
+
+    // Test with tools toggled from default
+    variations.push({
+      id: `${id}-tools-${!currentDefault}`,
+      description: `${id}: tools=${!currentDefault} (flipped from default)`,
+      agentOverrides: {
+        [id]: { tools: !currentDefault },
+      },
+    });
+
+    // Also test with explicit default (for measurement baseline)
+    variations.push({
+      id: `${id}-tools-${currentDefault}`,
+      description: `${id}: tools=${currentDefault} (explicit default)`,
+      agentOverrides: {
+        [id]: { tools: currentDefault },
+      },
+    });
+  }
+
+  return variations;
+}
+
+// ---------------------------------------------------------------------------
+// Full dimension sweep — all knobs for one agent
+// ---------------------------------------------------------------------------
+
+export interface DimensionSweepOpts {
+  models?: Array<{ provider: string; model: string; label: string }>;
+  temperatures?: number[];
+  toolsValues?: boolean[];
+  maxTokenValues?: number[];
+  thinkingValues?: Array<"none" | "low" | "medium" | "high" | number>;
+  timeoutValues?: number[];
+  permissionsValues?: Array<"bypass" | "supervised" | "restricted">;
+}
+
+/**
+ * Generate all dimension variations for a single agent.
+ * Each dimension is swept independently (one-at-a-time), not as a grid.
+ */
+export function dimensionSweep(
+  agentId: string,
+  opts: DimensionSweepOpts,
+): ConfigVariation[] {
+  const variations: ConfigVariation[] = [];
+
+  if (opts.models) {
+    for (const m of opts.models) {
+      variations.push({
+        id: `${agentId}-model-${m.label}`,
+        description: `${agentId}: model=${m.label} (${m.provider})`,
+        agentOverrides: {
+          [agentId]: { model: m.model, provider: m.provider },
+        },
+      });
+    }
+  }
+
+  if (opts.temperatures) {
+    for (const temp of opts.temperatures) {
+      variations.push({
+        id: `${agentId}-temp-${temp}`,
+        description: `${agentId}: temp=${temp}`,
+        agentOverrides: {
+          [agentId]: { temperature: temp },
+        },
+      });
+    }
+  }
+
+  if (opts.toolsValues) {
+    for (const tools of opts.toolsValues) {
+      variations.push({
+        id: `${agentId}-tools-${tools}`,
+        description: `${agentId}: tools=${tools}`,
+        agentOverrides: {
+          [agentId]: { tools },
+        },
+      });
+    }
+  }
+
+  if (opts.maxTokenValues) {
+    for (const maxTokens of opts.maxTokenValues) {
+      variations.push({
+        id: `${agentId}-maxTokens-${maxTokens}`,
+        description: `${agentId}: maxTokens=${maxTokens}`,
+        agentOverrides: {
+          [agentId]: { maxTokens },
+        },
+      });
+    }
+  }
+
+  if (opts.thinkingValues) {
+    for (const thinking of opts.thinkingValues) {
+      variations.push({
+        id: `${agentId}-thinking-${thinking}`,
+        description: `${agentId}: thinking=${thinking}`,
+        agentOverrides: {
+          [agentId]: { thinking },
+        },
+      });
+    }
+  }
+
+  if (opts.timeoutValues) {
+    for (const timeout of opts.timeoutValues) {
+      variations.push({
+        id: `${agentId}-timeout-${timeout}`,
+        description: `${agentId}: timeout=${timeout}ms`,
+        agentOverrides: {
+          [agentId]: { timeout },
+        },
+      });
+    }
+  }
+
+  if (opts.permissionsValues) {
+    for (const permissions of opts.permissionsValues) {
+      variations.push({
+        id: `${agentId}-permissions-${permissions}`,
+        description: `${agentId}: permissions=${permissions}`,
+        agentOverrides: {
+          [agentId]: { permissions },
         },
       });
     }

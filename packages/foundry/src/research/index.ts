@@ -15,7 +15,7 @@ export type {
 export { DEFAULT_EXPERIMENT_CONFIG } from "./types";
 
 export { BUILTIN_FIXTURES, loadFixtures, getAllFixtures } from "./fixtures";
-export { oneAtATime, modelSweep, temperatureSweep, manual, applyVariation } from "./config-gen";
+export { oneAtATime, modelSweep, temperatureSweep, toolsSweep, dimensionSweep, manual, applyVariation, type DimensionSweepOpts } from "./config-gen";
 export { Judge, type JudgeResult, type JudgeConfig } from "./judge";
 export { ExperimentRunner, type ProviderFactory, type RunnerDeps } from "./runner";
 export { writeReport, generateMarkdown } from "./report";

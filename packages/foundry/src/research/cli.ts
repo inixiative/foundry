@@ -10,7 +10,7 @@ import { AnthropicProvider, OpenAIProvider, GeminiProvider, ClaudeCodeProvider }
 import { FileMemory, inlineSource } from "../adapters";
 import type { SourceResolver } from "../agents/thread-factory";
 import { ExperimentRunner, type ProviderFactory } from "./runner";
-import { modelSweep, temperatureSweep, manual } from "./config-gen";
+import { modelSweep, temperatureSweep, toolsSweep, dimensionSweep, manual } from "./config-gen";
 import { getAllFixtures } from "./fixtures";
 import { writeReport } from "./report";
 import type { ConfigVariation, ExperimentConfig } from "./types";
@@ -32,7 +32,7 @@ function hasFlag(name: string): boolean {
   return args.includes(`--${name}`);
 }
 
-const phase = parseInt(getArg("phase") || "1");
+const phaseArg = getArg("phase") || "1";
 const reps = parseInt(getArg("reps") || "3");
 const maxCost = parseFloat(getArg("max-cost") || "10.0");
 const concurrency = parseInt(getArg("concurrency") || "1");
@@ -47,10 +47,11 @@ Foundry Research — find optimal agent configurations
 Usage:
   bun run research                     Run Phase 1 model sweep
   bun run research --phase=2           Run Phase 2 temperature sweep (uses Phase 1 results)
+  bun run research --phase=tools       Run tools on/off sweep per agent
   bun run research --phase=3           Run Phase 3 best composite (uses Phase 1+2 results)
 
 Options:
-  --phase=N          Sweep phase: 1 (models), 2 (temperature), 3 (composite)
+  --phase=N          Sweep phase: 1 (models), 2 (temperature), tools, 3 (composite)
   --reps=N           Repetitions per fixture per config (default: 3)
   --max-cost=N       Budget cap in dollars (default: 10.00)
   --concurrency=N    Max parallel API calls (default: 1)
@@ -159,10 +160,10 @@ if (variationsFile) {
   const raw = await Bun.file(variationsFile).json();
   variations = manual(Array.isArray(raw) ? raw : [raw]);
   console.log(`Custom variations: ${variations.length}`);
-} else if (phase === 1) {
+} else if (phaseArg === "1") {
   variations = modelSweep(config);
   console.log(`Phase 1 (model sweep): ${variations.length} variations`);
-} else if (phase === 2) {
+} else if (phaseArg === "2") {
   // Load Phase 1 results to get winners
   const resultsDir = `${FOUNDRY_DIR}/research/results`;
   const winners = await loadPhase1Winners(resultsDir);
@@ -172,11 +173,14 @@ if (variationsFile) {
   }
   variations = temperatureSweep(config, winners);
   console.log(`Phase 2 (temperature sweep): ${variations.length} variations`);
-} else if (phase === 3) {
+} else if (phaseArg === "tools") {
+  variations = toolsSweep(config);
+  console.log(`Tools sweep: ${variations.length} variations`);
+} else if (phaseArg === "3") {
   console.error("Phase 3 (composite) requires manual config. Use --config=file.json");
   process.exit(1);
 } else {
-  console.error(`Unknown phase: ${phase}`);
+  console.error(`Unknown phase: ${phaseArg}`);
   process.exit(1);
 }
 

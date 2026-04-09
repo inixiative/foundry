@@ -195,6 +195,9 @@ export class ThreadFactory {
   ): BaseAgent | null {
     const complete = this._trackedComplete(id);
 
+    // Resolve all completion opts from agent config
+    const opts = resolveAgentOpts(agentCfg, config);
+
     switch (agentCfg.kind) {
       case "classifier":
         return new Classifier<string>({
@@ -208,7 +211,7 @@ export class ThreadFactory {
                   { role: "system", content: `${ctx}\n\n${agentCfg.prompt}` },
                   { role: "user", content: payload },
                 ],
-                { temperature: agentCfg.temperature ?? 0, maxTokens: agentCfg.maxTokens || 256, maxTurns: 2, model: agentCfg.model || "haiku" },
+                { ...opts, maxTokens: agentCfg.maxTokens || 256, maxTurns: 1 },
               );
               const parsed = parseJSON(result.content);
               return {
@@ -247,7 +250,7 @@ export class ThreadFactory {
                     content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
                   },
                 ],
-                { temperature: agentCfg.temperature ?? 0, maxTokens: agentCfg.maxTokens || 256, maxTurns: 2, model: agentCfg.model || "haiku" },
+                { ...opts, maxTokens: agentCfg.maxTokens || 256, maxTurns: 1 },
               );
               const parsed = parseJSON(result.content);
               return {
@@ -279,10 +282,7 @@ export class ThreadFactory {
                   { role: "system", content: `${ctx}\n\n${prompt}` },
                   { role: "user", content: payload },
                 ],
-                {
-                  temperature: agentCfg.temperature ?? config.defaults.temperature,
-                  maxTokens: agentCfg.maxTokens ?? config.defaults.maxTokens,
-                },
+                opts,
               );
               return result.content;
             } catch (err) {
@@ -347,6 +347,39 @@ export function keywordRoute(
     value: { destination: route.dest, contextSlice: route.layers, priority: 5 },
     confidence: 0.8,
     reasoning: `rule: ${classification.category} → ${route.dest}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Config → CompletionOpts resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve canonical agent config into CompletionOpts.
+ *
+ * This is the adapter layer: AgentSettingsConfig holds the canonical knobs,
+ * this function maps them into the provider-agnostic CompletionOpts that
+ * each provider then translates into its native API.
+ *
+ * Per-kind defaults:
+ * - classifier/router: tools=false, low maxTokens, no thinking
+ * - executor: tools=true, higher maxTokens, thinking from config
+ */
+export function resolveAgentOpts(
+  agentCfg: AgentSettingsConfig,
+  config: FoundryConfig,
+): CompletionOpts {
+  const isLightweight = agentCfg.kind === "classifier" || agentCfg.kind === "router";
+
+  return {
+    model: agentCfg.model || (isLightweight ? "haiku" : config.defaults.model),
+    temperature: agentCfg.temperature ?? (isLightweight ? 0 : config.defaults.temperature),
+    maxTokens: agentCfg.maxTokens ?? (isLightweight ? 256 : config.defaults.maxTokens),
+    tools: agentCfg.tools ?? !isLightweight,
+    thinking: agentCfg.thinking ?? "none",
+    permissions: agentCfg.permissions,
+    timeout: agentCfg.timeout,
+    cacheControl: agentCfg.cacheControl,
   };
 }
 

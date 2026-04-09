@@ -1,0 +1,42 @@
+{
+  "name": "@inixiative/foundry",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./adapters": "./src/adapters/index.ts",
+    "./viewer": "./src/viewer/index.ts",
+    "./jobs": "./src/jobs/index.ts"
+  },
+  "scripts": {
+    "test": "bun test tests/*.test.ts",
+    "pretest:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push --skip-generate",
+    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/ --max-concurrency=1",
+    "test:all": "bun run test && bun run test:db",
+    "typecheck": "bun run --bun tsc --noEmit",
+    "setup": "bun run src/setup.ts",
+    "start": "bun run src/start.ts",
+    "demo": "bun run src/demo.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.92",
+    "@bull-board/api": "^6.20.7",
+    "@bull-board/hono": "^6.20.7",
+    "@inixiative/foundry-core": "workspace:*",
+    "@prisma/client": "^6.6.0",
+    "bullmq": "^5.73.0",
+    "consola": "^3.4.2",
+    "hono": "^4.7.0",
+    "ioredis": "^5.10.1",
+    "prisma": "^6.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.5.2",
+    "pino": "^10.3.1",
+    "typescript": "^5.7.0"
+  }
+}

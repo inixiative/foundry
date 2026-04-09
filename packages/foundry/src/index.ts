@@ -81,6 +81,24 @@ export {
   type HeraldConfig,
 } from "./agents";
 
+// Tools — execution environment adapters
+export {
+  PlaywrightBrowser,
+  type PlaywrightBrowserConfig,
+} from "./tools/playwright-browser";
+export {
+  HttpApi,
+  type HttpApiConfig,
+} from "./tools/http-api";
+export {
+  BunScript,
+  type BunScriptConfig,
+} from "./tools/bun-script";
+export {
+  JustBashShell,
+  type JustBashShellConfig,
+} from "./tools/just-bash-shell";
+
 // Heavy-infra adapters
 export {
   RedisMemory,
@@ -149,6 +167,8 @@ export {
   type LayerSettingsConfig,
   type SourceSettingsConfig,
   type ProjectSettingsConfig,
+  type ExecutionEnv,
+  type BrowserConfig,
 } from "./viewer/config";
 export {
   AIAssist,
@@ -168,6 +188,23 @@ export {
   type TunnelInfo,
 } from "./viewer/tunnel";
 
+// Jobs — BullMQ background job system
+export {
+  createQueue,
+  enqueueJob,
+  setQueue,
+  initializeWorker,
+  shutdownWorker,
+  JobHandlerName,
+  makeJob,
+  makeSingletonJob,
+  type JobsQueue,
+  type WorkerContext,
+  type JobHandler,
+  type JobOptions,
+  type JobPayloads,
+} from "./jobs";
+
 // Logger
 export { log, initLogger, type LogLevel, type Logger } from "./logger";
 
@@ -180,6 +217,8 @@ export {
   loadFixtures,
   modelSweep,
   temperatureSweep,
+  toolsSweep,
+  dimensionSweep,
   oneAtATime,
   applyVariation,
   writeReport,
@@ -197,4 +236,5 @@ export {
   type RunnerDeps,
   type JudgeResult,
   type JudgeConfig,
+  type DimensionSweepOpts,
 } from "./research";

@@ -54,16 +54,18 @@ and active memory figure out what matters. Your job is to seed the right
 
 Use **tiered models** — don't burn Opus tokens on classification:
 
-| Agent | Model | Temperature | Max Tokens | Reasoning |
-|---|---|---|---|---|
-| `classifier` | haiku | 0 | 256 | Fast, cheap. Classification is pattern matching. |
-| `router` | haiku | 0 | 256 | Routing is a lookup, not reasoning. |
-| `planner` | sonnet | 0.2 | 2,048 | Needs to reason about decomposition. |
-| `executor-fix` | sonnet | 0 | 8,192 | Bug fixing needs precision. |
-| `executor-build` | sonnet | 0.3 | 8,192 | Feature work benefits from slight creativity. |
-| `executor-answer` | sonnet | 0.1 | 4,096 | Explanations should be clear, not creative. |
-| `reviewer` | sonnet | 0 | 4,096 | Self-review needs to be strict. |
-| `distiller` | haiku | 0 | 1,024 | Extracting signals from traces is mechanical. |
+| Agent | Model | Temp | Max Tokens | Exec Env | Reasoning |
+|---|---|---|---|---|---|
+| `classifier` | haiku | 0 | 256 | — | Fast, cheap. Classification is pattern matching. |
+| `router` | haiku | 0 | 256 | — | Routing is a lookup, not reasoning. |
+| `planner` | sonnet | 0.2 | 2,048 | — | Needs to reason about decomposition. |
+| `executor-fix` | sonnet | 0 | 8,192 | bash | Bug fixing needs precision + shell access. |
+| `executor-build` | sonnet | 0.3 | 8,192 | bash | Feature work benefits from slight creativity. |
+| `executor-answer` | sonnet | 0.1 | 4,096 | — | Explanations should be clear, not creative. |
+| `executor-verify` | sonnet | 0 | 4,096 | browser | Visual verification of changes in running app. |
+| `executor-sandbox` | haiku | 0 | 4,096 | just-bash | Read-only code analysis. Safe to bypass perms. |
+| `reviewer` | sonnet | 0 | 4,096 | — | Self-review needs to be strict. |
+| `distiller` | haiku | 0 | 1,024 | — | Extracting signals from traces is mechanical. |
 
 **Thinking levels:** For providers that support extended thinking (Claude), use it
 on the planner and executor-fix agents. These are the agents where step-by-step
@@ -144,6 +146,39 @@ executor-answer
   visibleLayers: []
   invocation: conditional
   condition: { categories: ["question", "general"], routes: ["executor-answer"] }
+
+executor-verify
+  kind: executor
+  executionEnv: browser
+  browser:
+    mode: hybrid
+    screenshots: true
+    maxNavigations: 10
+    allowedUrls: ["http://localhost:*/*"]
+  prompt: |
+    You verify implementations by checking the running app in the browser.
+    1. Navigate to the relevant page
+    2. Snapshot the page to understand structure
+    3. Verify the expected behavior (element exists, form works, data displays)
+    4. Take a screenshot for evidence
+    5. Report: pass/fail with specific observations
+    Use JS execution for data extraction. Use click-based for interaction testing.
+    Keep navigation minimal — each page load costs tokens.
+  visibleLayers: [system, project-context]
+  invocation: on-demand
+  permissions: supervised
+
+executor-sandbox
+  kind: executor
+  executionEnv: just-bash
+  prompt: |
+    You are a read-only code analyst. You have shell access to explore the
+    codebase but cannot modify anything (your filesystem is virtualized).
+    Use grep, find, cat, and other read commands to understand the code.
+    Summarize findings concisely — your output feeds other agents.
+  visibleLayers: [system, project-context, conventions]
+  invocation: on-demand
+  permissions: bypass
 
 reviewer
   kind: executor

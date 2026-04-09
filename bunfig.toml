@@ -1,4 +1,4 @@
 [test]
 # Default test command excludes DB tests (require running postgres)
 # Run DB tests with: bun test tests/db/
-root = "tests"
+root = "packages"
