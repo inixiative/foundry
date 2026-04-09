@@ -33,17 +33,18 @@ export function oneAtATime(
 
 /** Cross-provider model options organized by tier. */
 const FAST_MODELS: Array<{ provider: string; model: string; label: string }> = [
+  { provider: "gemini", model: "gemini-3.1-flash-lite-preview", label: "gemini-flash-lite" },
+  { provider: "gemini", model: "gemini-3-flash-preview", label: "gemini-flash" },
   { provider: "anthropic", model: "claude-haiku-4-5-20251001", label: "haiku" },
-  { provider: "anthropic", model: "claude-sonnet-4-6-20250627", label: "sonnet" },
-  { provider: "openai", model: "gpt-4o-mini", label: "gpt-4o-mini" },
-  { provider: "gemini", model: "gemini-2.5-flash", label: "gemini-flash" },
+  { provider: "openai", model: "gpt-5.4-mini", label: "gpt-5.4-mini" },
 ];
 
 const STANDARD_MODELS: Array<{ provider: string; model: string; label: string }> = [
-  { provider: "anthropic", model: "claude-sonnet-4-6-20250627", label: "sonnet" },
-  { provider: "anthropic", model: "claude-opus-4-6-20250627", label: "opus" },
-  { provider: "openai", model: "gpt-4o", label: "gpt-4o" },
-  { provider: "gemini", model: "gemini-3.1-pro", label: "gemini-pro" },
+  { provider: "anthropic", model: "claude-sonnet-4-6", label: "sonnet" },
+  { provider: "anthropic", model: "claude-opus-4-6", label: "opus" },
+  { provider: "openai", model: "gpt-5.4", label: "gpt-5.4" },
+  { provider: "openai", model: "gpt-5.3-codex", label: "gpt-5.3-codex" },
+  { provider: "gemini", model: "gemini-3.1-pro-preview", label: "gemini-pro" },
 ];
 
 /**

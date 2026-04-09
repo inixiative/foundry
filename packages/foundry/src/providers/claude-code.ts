@@ -10,26 +10,37 @@ import { splitSystemMessage } from "@inixiative/foundry-core";
 export interface ClaudeCodeConfig {
   /** Path to claude CLI binary. Defaults to "claude". */
   bin?: string;
-  /** Default model. Defaults to "claude-sonnet-4-20250514". */
+  /** Default model. Defaults to "sonnet". */
   defaultModel?: string;
   /** Default max tokens. */
   defaultMaxTokens?: number;
   /** Working directory for claude CLI invocations. */
   cwd?: string;
-  /** Max agentic turns. Defaults to 10. */
+  /** Max agentic turns. Defaults to 25. */
   maxTurns?: number;
-  /** Subprocess timeout in ms. Defaults to 120000 (2 minutes). */
+  /** Subprocess timeout in ms. Defaults to 600000 (10 minutes). */
   timeout?: number;
+  /**
+   * Session persistence mode:
+   * - "auto": sessions are persisted and can be resumed (default)
+   * - "none": no session persistence (--no-session-persistence)
+   */
+  sessionMode?: "auto" | "none";
 }
 
 /**
- * Claude Code CLI provider.
+ * Claude Code CLI provider — runs real agentic sessions.
  *
- * Uses `claude -p` (print mode) to get completions through the user's
- * Claude Code subscription — no API key required.
+ * Each invocation spawns a `claude` session that has full access to
+ * Claude Code's built-in tools (Read, Write, Bash, Grep, etc.).
  *
- * This is a completion-only provider by default (maxTurns=1, no tool use).
- * For full agentic Claude Code with tools, use ClaudeCodeRuntime instead.
+ * Session persistence:
+ * - First call uses `-p` and captures the session ID from output.
+ * - Subsequent calls use `--resume <sessionId> -p` to continue the session.
+ * - Call `resetSession()` to start fresh.
+ *
+ * For lightweight completion-only tasks (classifiers, routers), use
+ * GeminiProvider or AnthropicProvider instead.
  */
 export class ClaudeCodeProvider implements LLMProvider {
   readonly id = "claude-code";
@@ -40,11 +51,16 @@ export class ClaudeCodeProvider implements LLMProvider {
   private _cwd: string;
   private _maxTurns: number;
   private _timeout: number;
+  private _sessionMode: "auto" | "none";
+
+  /**
+   * Active session IDs keyed by thread/context.
+   * Default key is "__default" for single-thread usage.
+   */
+  private _sessions: Map<string, string> = new Map();
 
   constructor(config?: ClaudeCodeConfig) {
     const bin = config?.bin ?? "claude";
-    // Validate binary path — only allow simple names or absolute/relative paths
-    // with safe characters. Prevents injection via malicious binary names.
     if (!/^[a-zA-Z0-9_.\/\\-]+$/.test(bin)) {
       throw new Error(`Invalid claude CLI binary path: "${bin}". Only alphanumeric, dots, slashes, dashes, and underscores are allowed.`);
     }
@@ -52,9 +68,38 @@ export class ClaudeCodeProvider implements LLMProvider {
     this._defaultModel = config?.defaultModel ?? "sonnet";
     this._defaultMaxTokens = config?.defaultMaxTokens ?? 4096;
     this._cwd = config?.cwd ?? process.cwd();
-    this._maxTurns = config?.maxTurns ?? 10;
-    this._timeout = config?.timeout ?? 120_000;
+    this._maxTurns = config?.maxTurns ?? 25;
+    this._timeout = config?.timeout ?? 600_000; // 10 minutes
+    this._sessionMode = config?.sessionMode ?? "auto";
   }
+
+  // ---------------------------------------------------------------------------
+  // Session management
+  // ---------------------------------------------------------------------------
+
+  /** Get the active session ID for a thread (or the default session). */
+  getSession(threadId?: string): string | undefined {
+    return this._sessions.get(threadId ?? "__default");
+  }
+
+  /** Explicitly set a session ID (e.g. to resume a known session). */
+  setSession(sessionId: string, threadId?: string): void {
+    this._sessions.set(threadId ?? "__default", sessionId);
+  }
+
+  /** Clear the session for a thread, forcing a new session on next call. */
+  resetSession(threadId?: string): void {
+    this._sessions.delete(threadId ?? "__default");
+  }
+
+  /** Clear all tracked sessions. */
+  resetAllSessions(): void {
+    this._sessions.clear();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Completion
+  // ---------------------------------------------------------------------------
 
   async complete(
     messages: LLMMessage[],
@@ -62,15 +107,12 @@ export class ClaudeCodeProvider implements LLMProvider {
   ): Promise<CompletionResult> {
     const { system, turns } = splitSystemMessage(messages);
     const model = opts?.model ?? this._defaultModel;
-
-    // Build the user prompt from non-system messages
     const prompt = turns.map((m) => m.content).join("\n\n");
-
-    // Per-call overrides for agentic vs completion mode
     const maxTurns = opts?.maxTurns ?? this._maxTurns;
-    const useTools = opts?.tools !== false; // default: true
+    const timeout = opts?.timeout ?? this._timeout;
+    const threadId = opts?.threadId as string | undefined;
 
-    // Permission mode: config override > default bypass
+    // Permission mode
     const permissionMap: Record<string, string> = {
       bypass: "bypassPermissions",
       supervised: "default",
@@ -78,30 +120,16 @@ export class ClaudeCodeProvider implements LLMProvider {
     };
     const permMode = permissionMap[opts?.permissions ?? "bypass"] ?? "bypassPermissions";
 
-    // Timeout: per-call override > provider default
-    const timeout = opts?.timeout ?? this._timeout;
+    const args = this._buildArgs({
+      prompt,
+      model,
+      maxTurns,
+      permMode,
+      system,
+      threadId,
+    });
 
-    const args: string[] = [
-      "-p", prompt,
-      "--output-format", "json",
-      "--model", model,
-      "--max-turns", String(maxTurns),
-      "--permission-mode", permMode,
-      "--no-session-persistence",
-    ];
-
-    // Disable tools for pure completion (classifier, router)
-    if (!useTools) {
-      args.push("--allowedTools", "");
-    }
-
-    if (system) {
-      args.push("--system-prompt", system);
-    }
-
-    // Strip API key env vars so the CLI uses subscription auth,
-    // not API key auth (which has separate credits).
-    // This matches how Delphi's run-worker handles it.
+    // Strip API key env vars so the CLI uses subscription auth
     const env: Record<string, string | undefined> = {
       ...process.env,
       DISABLE_AUTOUPDATER: "1",
@@ -116,13 +144,11 @@ export class ClaudeCodeProvider implements LLMProvider {
       env,
     });
 
-    // Race subprocess against timeout (per-call override or provider default)
     const timeoutPromise = new Promise<never>((_, reject) => {
       const timer = setTimeout(() => {
         proc.kill();
         reject(new Error(`claude CLI timed out after ${timeout}ms`));
       }, timeout);
-      // Clean up timer if process finishes first
       proc.exited.then(() => clearTimeout(timer));
     });
 
@@ -138,7 +164,6 @@ export class ClaudeCodeProvider implements LLMProvider {
       const exitCode = await proc.exited;
 
       if (exitCode !== 0) {
-        // CLI puts error details in stdout JSON, not stderr
         const errMsg = this._extractError(stdout)
           || stderr.trim()
           || stdout.trim().slice(0, 200)
@@ -150,9 +175,13 @@ export class ClaudeCodeProvider implements LLMProvider {
         throw new Error("claude CLI returned empty output");
       }
 
-      return this._parseOutput(stdout, model);
+      const result = this._parseOutput(stdout, model);
+
+      // Capture session ID for future resumption
+      this._captureSessionId(stdout, threadId);
+
+      return result;
     } catch (err) {
-      // Ensure process is cleaned up on any error
       try { proc.kill(); } catch { /* already dead */ }
       throw err;
     }
@@ -165,19 +194,19 @@ export class ClaudeCodeProvider implements LLMProvider {
     const { system, turns } = splitSystemMessage(messages);
     const model = opts?.model ?? this._defaultModel;
     const prompt = turns.map((m) => m.content).join("\n\n");
+    const maxTurns = opts?.maxTurns ?? this._maxTurns;
+    const timeout = opts?.timeout ?? this._timeout;
+    const threadId = opts?.threadId as string | undefined;
 
-    const args: string[] = [
-      "-p", prompt,
-      "--output-format", "stream-json",
-      "--model", model,
-      "--max-turns", String(this._maxTurns),
-      "--permission-mode", "bypassPermissions",
-      "--no-session-persistence",
-    ];
-
-    if (system) {
-      args.push("--system-prompt", system);
-    }
+    const args = this._buildArgs({
+      prompt,
+      model,
+      maxTurns,
+      permMode: "bypassPermissions",
+      system,
+      threadId,
+      streaming: true,
+    });
 
     const env: Record<string, string | undefined> = {
       ...process.env,
@@ -193,21 +222,21 @@ export class ClaudeCodeProvider implements LLMProvider {
       env,
     });
 
-    // Set up timeout for streaming
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       proc.kill();
-    }, this._timeout);
+    }, timeout);
 
     const reader = proc.stdout.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let capturedSessionId: string | undefined;
 
     try {
       while (true) {
         if (timedOut) {
-          yield { type: "error", error: `claude CLI timed out after ${this._timeout}ms` };
+          yield { type: "error", error: `claude CLI timed out after ${timeout}ms` };
           yield { type: "done", finishReason: "error" };
           return;
         }
@@ -229,6 +258,12 @@ export class ClaudeCodeProvider implements LLMProvider {
             continue;
           }
 
+          // Capture session ID from stream events
+          if (msg.session_id && !capturedSessionId) {
+            capturedSessionId = msg.session_id as string;
+            this._sessions.set(threadId ?? "__default", capturedSessionId);
+          }
+
           if (msg.type === "assistant" && msg.message?.content) {
             for (const block of msg.message.content) {
               if (block.type === "text" && block.text) {
@@ -236,6 +271,11 @@ export class ClaudeCodeProvider implements LLMProvider {
               }
             }
           } else if (msg.type === "result") {
+            // Capture session ID from result message
+            if (msg.session_id && !capturedSessionId) {
+              capturedSessionId = msg.session_id as string;
+              this._sessions.set(threadId ?? "__default", capturedSessionId);
+            }
             if (msg.result) {
               yield { type: "text", text: msg.result };
             }
@@ -253,10 +293,75 @@ export class ClaudeCodeProvider implements LLMProvider {
     yield { type: "done", finishReason: "end_turn" };
   }
 
-  /**
-   * Try to extract an error message from CLI JSON stdout.
-   * The CLI returns `{ "is_error": true, "result": "..." }` on failures.
-   */
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  private _buildArgs(opts: {
+    prompt: string;
+    model: string;
+    maxTurns: number;
+    permMode: string;
+    system?: string;
+    threadId?: string;
+    streaming?: boolean;
+  }): string[] {
+    const sessionId = this._sessions.get(opts.threadId ?? "__default");
+
+    const args: string[] = [];
+
+    // Resume existing session or start new
+    if (sessionId && this._sessionMode === "auto") {
+      args.push("--resume", sessionId);
+    }
+
+    args.push(
+      "-p", opts.prompt,
+      "--output-format", opts.streaming ? "stream-json" : "json",
+      "--model", opts.model,
+      "--max-turns", String(opts.maxTurns),
+      "--permission-mode", opts.permMode,
+    );
+
+    if (opts.system && !sessionId) {
+      // Only set system prompt on first call — resumed sessions keep their system prompt
+      args.push("--system-prompt", opts.system);
+    }
+
+    if (this._sessionMode === "none") {
+      args.push("--no-session-persistence");
+    }
+
+    return args;
+  }
+
+  /** Extract session_id from CLI JSON output and store it for resumption. */
+  private _captureSessionId(stdout: string, threadId?: string): void {
+    if (this._sessionMode !== "auto") return;
+
+    try {
+      const data = JSON.parse(stdout.trim());
+
+      // Single result object
+      if (data?.session_id) {
+        this._sessions.set(threadId ?? "__default", data.session_id);
+        return;
+      }
+
+      // Array of messages — check the result message
+      if (Array.isArray(data)) {
+        for (let i = data.length - 1; i >= 0; i--) {
+          if (data[i]?.session_id) {
+            this._sessions.set(threadId ?? "__default", data[i].session_id);
+            return;
+          }
+        }
+      }
+    } catch {
+      // Not valid JSON or no session_id — that's fine
+    }
+  }
+
   private _extractError(stdout: string): string | null {
     if (!stdout.trim()) return null;
     try {
@@ -270,12 +375,6 @@ export class ClaudeCodeProvider implements LLMProvider {
     return null;
   }
 
-  /**
-   * Parse the JSON output from `claude -p --output-format json`.
-   *
-   * The CLI returns an array of conversation messages. We extract the
-   * last assistant response (or result message) as the completion.
-   */
   private _parseOutput(raw: string, model: string): CompletionResult {
     let data: unknown;
     try {
@@ -284,30 +383,26 @@ export class ClaudeCodeProvider implements LLMProvider {
       throw new Error(`claude CLI returned invalid JSON: ${raw.slice(0, 200)}`);
     }
 
-    // Array of conversation messages
     if (Array.isArray(data)) {
       for (let i = data.length - 1; i >= 0; i--) {
         const msg = data[i];
 
-        // Result message (final)
         if (msg.type === "result") {
           return {
             content: msg.result ?? "",
             model,
-            tokens: msg.total_cost_usd != null
-              ? { input: 0, output: 0 } // CLI doesn't expose raw token counts
+            tokens: msg.usage
+              ? { input: msg.usage.input_tokens ?? 0, output: msg.usage.output_tokens ?? 0 }
               : undefined,
             finishReason: msg.subtype === "success" ? "end_turn" : "error",
             raw: msg,
           };
         }
 
-        // Assistant message with string content
         if (msg.role === "assistant" && typeof msg.content === "string") {
           return { content: msg.content, model, finishReason: "end_turn", raw: msg };
         }
 
-        // Assistant message with content blocks
         if (msg.role === "assistant" && Array.isArray(msg.content)) {
           const text = msg.content
             .filter((b: { type: string; text?: string }) => b.type === "text")
@@ -318,7 +413,6 @@ export class ClaudeCodeProvider implements LLMProvider {
       }
     }
 
-    // Single result object
     if (typeof data === "object" && data !== null && "result" in data) {
       return { content: (data as any).result, model, finishReason: "end_turn", raw: data };
     }

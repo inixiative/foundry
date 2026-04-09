@@ -74,11 +74,36 @@ export {
   ConvergenceDetector,
   CrossPollinationDetector,
   ResourceImbalanceDetector,
+  type VisibilityTier,
+  type LayerVisibility,
   type ThreadSnapshot,
   type HeraldPattern,
   type HeraldRecommendation,
   type PatternDetector,
   type HeraldConfig,
+  // Librarian (signal reconciliation)
+  Librarian,
+  type ThreadState,
+  type LibrarianConfig,
+  // Domain Librarian (advise + guard pattern)
+  DomainLibrarian,
+  type DomainLibrarianConfig,
+  type AdviseResult,
+  type GuardFinding,
+  type GuardResult,
+  type ToolObservation,
+  // Cartographer (context routing)
+  Cartographer,
+  type CartographerConfig,
+  type MapEntry,
+  type TopologyMap,
+  type RouteResult,
+  // Flow Orchestrator (wires the five FLOW.md roles)
+  FlowOrchestrator,
+  type FlowOrchestratorConfig,
+  type InjectionPlan,
+  type GuardReport,
+  type InvalidationEvent,
 } from "./agents";
 
 // Tools — execution environment adapters
@@ -91,6 +116,10 @@ export {
   type HttpApiConfig,
 } from "./tools/http-api";
 export {
+  BashShell,
+  type BashShellConfig,
+} from "./tools/bash-shell";
+export {
   BunScript,
   type BunScriptConfig,
 } from "./tools/bun-script";
@@ -98,6 +127,17 @@ export {
   JustBashShell,
   type JustBashShellConfig,
 } from "./tools/just-bash-shell";
+export {
+  MemoryToolAdapter,
+  type MemoryBackend,
+  type RichMemoryBackend,
+  type MemoryToolAdapterConfig,
+} from "./tools/memory-adapter";
+export {
+  builtinFilters,
+  compose as composeFilters,
+  rtk as rtkFilter,
+} from "./tools/output-filters";
 
 // Heavy-infra adapters
 export {
@@ -110,6 +150,10 @@ export {
   SupermemoryAdapter,
   type SupermemoryConfig,
 } from "./adapters/supermemory";
+export {
+  MuninnMemory,
+  type MuninnConfig,
+} from "./adapters/muninn-memory";
 
 // Gated Provider (capability-checked LLM wrapper)
 export {
@@ -162,14 +206,29 @@ export {
 export {
   ConfigStore,
   defaultConfig,
+  starterConfig,
+  defaultProjectAgents,
+  defaultProjectLayers,
+  defaultProjectSources,
+  createProject,
   type FoundryConfig,
+  type ListPatch,
   type AgentSettingsConfig,
+  type AgentSettingsOverride,
   type LayerSettingsConfig,
-  type SourceSettingsConfig,
+  type LayerSettingsOverride,
+  type DataSourceConfig,
   type ProjectSettingsConfig,
   type ExecutionEnv,
   type BrowserConfig,
+  type BrowserConfigOverride,
+  type InvocationConditionOverride,
 } from "./viewer/config";
+export {
+  type FieldProvenance,
+  type ResolvedLayerDefinition,
+  type ResolvedProjectView,
+} from "./viewer/config-resolve";
 export {
   AIAssist,
   type AISuggestion,

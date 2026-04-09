@@ -100,25 +100,28 @@ export interface UsageSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Default cost table (approximate pricing as of early 2025)
+// Default cost table (approximate pricing as of early 2026)
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_COST_TABLE: CostTable = {
   anthropic: {
-    "claude-opus-4-20250514": { inputPer1M: 15, outputPer1M: 75 },
-    "claude-sonnet-4-20250514": { inputPer1M: 3, outputPer1M: 15 },
-    "claude-haiku-4-5-20251001": { inputPer1M: 0.8, outputPer1M: 4 },
+    "claude-opus-4-6": { inputPer1M: 5, outputPer1M: 25 },
+    "claude-sonnet-4-6": { inputPer1M: 3, outputPer1M: 15 },
+    "claude-haiku-4-5-20251001": { inputPer1M: 1, outputPer1M: 5 },
   },
   openai: {
-    "gpt-4o": { inputPer1M: 2.5, outputPer1M: 10 },
-    "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6 },
-    "o3": { inputPer1M: 10, outputPer1M: 40 },
-    "o3-mini": { inputPer1M: 1.1, outputPer1M: 4.4 },
+    "gpt-5.4": { inputPer1M: 2.5, outputPer1M: 15 },
+    "gpt-5.4-mini": { inputPer1M: 0.75, outputPer1M: 4.5 },
+    "gpt-5.3-codex": { inputPer1M: 1.75, outputPer1M: 14 },
+    "o4-mini": { inputPer1M: 1.1, outputPer1M: 4.4 }, // retired Feb 2026 — kept for historical cost tracking
   },
   gemini: {
-    "gemini-2.5-pro": { inputPer1M: 1.25, outputPer1M: 10 },
-    "gemini-2.5-flash": { inputPer1M: 0.15, outputPer1M: 0.6 },
+    "gemini-3.1-pro-preview": { inputPer1M: 2, outputPer1M: 12 },
+    "gemini-3-flash-preview": { inputPer1M: 0.5, outputPer1M: 3 },
+    "gemini-3.1-flash-lite-preview": { inputPer1M: 0.25, outputPer1M: 1.5 },
   },
+  // Claude Code provider tracks usage via session output, not cost table
+  "claude-code": {},
 };
 
 // ---------------------------------------------------------------------------

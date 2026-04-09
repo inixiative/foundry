@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Capability } from "./capability";
+import type { ToolDefinition } from "./types";
 
 // ---------------------------------------------------------------------------
 // Tool result — every tool returns this wrapper
@@ -180,6 +181,13 @@ export interface ShellResult {
   durationMs: number;
 }
 
+/**
+ * Output filter function — transforms command output before returning.
+ * Use this for RTK-style token reduction: strip noise, compress
+ * repetitive output, remove ANSI codes, etc.
+ */
+export type OutputFilter = (stdout: string, command: string) => string;
+
 export interface ShellOpts {
   /** Working directory. */
   cwd?: string;
@@ -191,6 +199,12 @@ export interface ShellOpts {
   maxOutput?: number;
   /** Run in sandboxed mode (just-bash). */
   sandbox?: boolean;
+  /**
+   * Output filter applied before returning results.
+   * Use for RTK-style token savings — strip ANSI, compress whitespace,
+   * remove noise lines, etc. Applied after execution, before truncation.
+   */
+  outputFilter?: OutputFilter;
 }
 
 export interface ShellTool {
@@ -243,11 +257,71 @@ export interface ScriptTool {
 }
 
 // ---------------------------------------------------------------------------
+// MemoryTool — query and store across any memory backend
+// ---------------------------------------------------------------------------
+//
+// Wraps the common contract that all Foundry memory adapters follow:
+// write/get/search/delete + asSource + signalWriter.
+//
+// Why this matters as a tool (vs just a layer source):
+// - Layers inject context passively at warm time
+// - MemoryTool lets agents query on demand during execution
+// - Agent decides what to search for based on the task, not upfront config
+// - Results go through ToolResult (structured, token-estimated, truncated)
+
+export interface MemoryEntry {
+  id: string;
+  kind: string;
+  content: string;
+  source?: string;
+  timestamp: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface MemorySearchOpts {
+  /** Filter by entry kind. */
+  kind?: string;
+  /** Max results. Default: 20. */
+  limit?: number;
+  /** Minimum relevance score (0-1) if backend supports scoring. */
+  minScore?: number;
+}
+
+export interface MemoryTool {
+  readonly id: string;
+  readonly kind: "memory";
+  /** The underlying system name (e.g., "file", "sqlite", "redis", "supermemory"). */
+  readonly system: string;
+
+  /** Required capabilities. */
+  readonly capabilities: {
+    read: Capability;
+    write: Capability;
+    delete: Capability;
+  };
+
+  /** Search memory by query string. */
+  search(query: string, opts?: MemorySearchOpts): Promise<ToolResult<MemoryEntry[]>>;
+
+  /** Get a specific entry by ID. */
+  get(id: string): Promise<ToolResult<MemoryEntry | null>>;
+
+  /** List recent entries. */
+  recent(limit?: number, kind?: string): Promise<ToolResult<MemoryEntry[]>>;
+
+  /** Write an entry to memory. */
+  write(entry: MemoryEntry): Promise<ToolResult<{ id: string }>>;
+
+  /** Delete an entry. */
+  delete(id: string): Promise<ToolResult<{ deleted: boolean }>>;
+}
+
+// ---------------------------------------------------------------------------
 // Tool union type + registry
 // ---------------------------------------------------------------------------
 
 /** Any tool that can be registered. */
-export type Tool = BrowserTool | ApiTool | ShellTool | ScriptTool;
+export type Tool = BrowserTool | ApiTool | ShellTool | ScriptTool | MemoryTool;
 
 /** Tool kind discriminator. */
 export type ToolKind = Tool["kind"];
@@ -287,6 +361,12 @@ export class ToolRegistry {
         tool.capabilities.interact,
         tool.capabilities.execute,
         tool.capabilities.screenshot,
+      );
+    } else if (tool.kind === "memory") {
+      capabilities.push(
+        tool.capabilities.read,
+        tool.capabilities.write,
+        tool.capabilities.delete,
       );
     } else {
       capabilities.push(tool.capability);
@@ -345,6 +425,208 @@ export class ToolRegistry {
     return tools
       .map((t) => `- ${t.id} (${t.kind}): ${t.description}`)
       .join("\n");
+  }
+
+  /**
+   * Generate LLM-compatible tool definitions from all registered tools.
+   * Each tool method becomes a separate function the LLM can call.
+   */
+  toToolDefinitions(): ToolDefinition[] {
+    const defs: ToolDefinition[] = [];
+
+    for (const [id, tool] of this._tools) {
+      const desc = this._info.get(id)?.description ?? id;
+
+      switch (tool.kind) {
+        case "shell":
+          defs.push({
+            name: `${id}_exec`,
+            description: `[${id}] ${desc} — execute a shell command`,
+            inputSchema: {
+              type: "object",
+              properties: {
+                command: { type: "string", description: "Shell command to execute" },
+              },
+              required: ["command"],
+            },
+          });
+          break;
+
+        case "memory":
+          defs.push(
+            {
+              name: `${id}_search`,
+              description: `[${id}] Search ${desc}`,
+              inputSchema: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: "Search query" },
+                  kind: { type: "string", description: "Filter by entry kind (optional)" },
+                  limit: { type: "number", description: "Max results (default: 20)" },
+                },
+                required: ["query"],
+              },
+            },
+            {
+              name: `${id}_get`,
+              description: `[${id}] Get entry by ID from ${desc}`,
+              inputSchema: {
+                type: "object",
+                properties: { id: { type: "string" } },
+                required: ["id"],
+              },
+            },
+            {
+              name: `${id}_write`,
+              description: `[${id}] Write an entry to ${desc}`,
+              inputSchema: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  kind: { type: "string" },
+                  content: { type: "string" },
+                },
+                required: ["id", "kind", "content"],
+              },
+            },
+          );
+          break;
+
+        case "script":
+          defs.push({
+            name: `${id}_evaluate`,
+            description: `[${id}] ${desc} — execute code and return result`,
+            inputSchema: {
+              type: "object",
+              properties: {
+                code: { type: "string", description: "TypeScript/JS code to execute. Use 'return' to return a value." },
+              },
+              required: ["code"],
+            },
+          });
+          break;
+
+        case "api":
+          defs.push({
+            name: `${id}_request`,
+            description: `[${id}] ${desc} — make an HTTP request`,
+            inputSchema: {
+              type: "object",
+              properties: {
+                url: { type: "string" },
+                method: { type: "string", enum: ["GET", "POST", "PUT", "DELETE"] },
+                body: { description: "Request body (JSON)" },
+                headers: { type: "object", description: "Additional headers" },
+              },
+              required: ["url"],
+            },
+          });
+          break;
+
+        case "browser":
+          defs.push(
+            {
+              name: `${id}_navigate`,
+              description: `[${id}] Navigate to a URL`,
+              inputSchema: {
+                type: "object",
+                properties: { url: { type: "string" } },
+                required: ["url"],
+              },
+            },
+            {
+              name: `${id}_snapshot`,
+              description: `[${id}] Get page accessibility snapshot`,
+              inputSchema: { type: "object", properties: {} },
+            },
+            {
+              name: `${id}_click`,
+              description: `[${id}] Click an element`,
+              inputSchema: {
+                type: "object",
+                properties: { ref: { type: "string", description: "CSS selector or ref" } },
+                required: ["ref"],
+              },
+            },
+            {
+              name: `${id}_evaluate`,
+              description: `[${id}] Execute JavaScript in page`,
+              inputSchema: {
+                type: "object",
+                properties: { script: { type: "string" } },
+                required: ["script"],
+              },
+            },
+          );
+          break;
+      }
+    }
+
+    return defs;
+  }
+
+  /**
+   * Dispatch a tool call by name. Routes "toolId_method" to the right tool.
+   * Returns the serialized result string.
+   */
+  async dispatch(toolName: string, input: Record<string, unknown>): Promise<ToolResult> {
+    // Parse "toolId_method" format
+    const lastUnderscore = toolName.lastIndexOf("_");
+    if (lastUnderscore === -1) {
+      return { ok: false, summary: `Unknown tool: ${toolName}`, error: "Invalid tool name format" };
+    }
+
+    // Try progressively shorter prefixes (tool IDs can contain underscores)
+    let tool: Tool | undefined;
+    let method = "";
+    for (let i = toolName.length - 1; i >= 0; i--) {
+      if (toolName[i] === "_") {
+        const candidateId = toolName.slice(0, i);
+        const candidateMethod = toolName.slice(i + 1);
+        if (this._tools.has(candidateId)) {
+          tool = this._tools.get(candidateId);
+          method = candidateMethod;
+          break;
+        }
+      }
+    }
+
+    if (!tool) {
+      return { ok: false, summary: `Unknown tool: ${toolName}`, error: `No registered tool matches "${toolName}"` };
+    }
+
+    try {
+      switch (tool.kind) {
+        case "shell":
+          if (method === "exec") return await tool.exec(input.command as string);
+          break;
+
+        case "memory":
+          if (method === "search") return await tool.search(input.query as string, { kind: input.kind as string, limit: input.limit as number });
+          if (method === "get") return await tool.get(input.id as string);
+          if (method === "write") return await tool.write({ id: input.id as string, kind: input.kind as string, content: input.content as string, timestamp: Date.now() });
+          break;
+
+        case "script":
+          if (method === "evaluate") return await tool.evaluate(input.code as string);
+          break;
+
+        case "api":
+          if (method === "request") return await tool.request({ url: input.url as string, method: (input.method as any) ?? "GET", body: input.body, headers: input.headers as Record<string, string> });
+          break;
+
+        case "browser":
+          if (method === "navigate") return await tool.navigate(input.url as string);
+          if (method === "snapshot") return await tool.snapshot();
+          if (method === "click") return await tool.click(input.ref as string);
+          if (method === "evaluate") return await tool.evaluate(input.script as string);
+          break;
+      }
+
+      return { ok: false, summary: `Unknown method "${method}" for tool kind "${tool.kind}"`, error: "Method not found" };
+    } catch (err) {
+      return { ok: false, summary: `Tool error: ${(err as Error).message}`, error: (err as Error).message };
+    }
   }
 
   /** Number of registered tools. */

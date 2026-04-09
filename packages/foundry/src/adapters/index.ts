@@ -15,3 +15,6 @@ export { PostgresMemory } from "./postgres-memory";
 
 // Hosted / SaaS
 export { SupermemoryAdapter, type SupermemoryConfig } from "./supermemory";
+
+// Neural memory (self-hosted)
+export { MuninnMemory, type MuninnConfig } from "./muninn-memory";

@@ -10,7 +10,9 @@
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
     "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test ./packages/foundry/tests/db/ --max-concurrency=1",
     "test:all": "bun run test && bun run test:db",
-    "setup": "bun run packages/foundry/src/setup.ts",
+    "typecheck": "bun run typecheck:core && bun run typecheck:foundry",
+    "typecheck:core": "bun run --cwd packages/core typecheck",
+    "typecheck:foundry": "bun run --cwd packages/foundry typecheck",
     "start": "bun run packages/foundry/src/start.ts",
     "viewer": "bun run packages/foundry/src/viewer/server.ts",
     "demo": "bun run packages/foundry/src/demo.ts",
@@ -19,7 +21,9 @@
     "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push"
   },
   "devDependencies": {
+    "@prisma/client": "6",
     "@types/bun": "latest",
+    "prisma": "6",
     "typescript": "^5.7.0"
   }
 }

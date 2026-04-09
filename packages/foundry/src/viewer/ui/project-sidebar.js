@@ -5,21 +5,11 @@
  * Collapsed: thin strip with project icons. Expanded: full list.
  */
 
-import { html, useState } from "./lib.js";
+import { html, useState, useEffect } from "./lib.js";
 import {
   projects, projectTags, activeProjectId, projectSidebarOpen,
-  createProject, deleteProject, showToast,
+  createProject, deleteProject, showToast, authFetch,
 } from "./store.js";
-
-// ---------------------------------------------------------------------------
-// Runtime icons
-// ---------------------------------------------------------------------------
-
-const RUNTIME_ICONS = {
-  "claude-code": "C",
-  codex: "X",
-  cursor: "→",
-};
 
 const STATUS_COLORS = {
   active: "#4ade80",
@@ -32,44 +22,92 @@ const STATUS_COLORS = {
 // ---------------------------------------------------------------------------
 
 function AddProjectForm({ onDone }) {
-  const [id, setId] = useState("");
   const [path, setPath] = useState("");
   const [label, setLabel] = useState("");
-  const [tags, setTags] = useState("");
-  const [runtime, setRuntime] = useState("claude-code");
+  const [browsing, setBrowsing] = useState(false);
+  const [browseDir, setBrowseDir] = useState(null);
+  const [browseDirs, setBrowseDirs] = useState([]);
+  const [browseParent, setBrowseParent] = useState(null);
+  const [browseIsRepo, setBrowseIsRepo] = useState(false);
+  const [browseName, setBrowseName] = useState("");
+
+  const browse = async (dir) => {
+    try {
+      const url = dir ? `/api/browse?path=${encodeURIComponent(dir)}` : "/api/browse";
+      const res = await authFetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setBrowseDir(data.current);
+      setBrowseDirs(data.dirs || []);
+      setBrowseParent(data.parent);
+      setBrowseIsRepo(data.isRepo || false);
+      setBrowseName(data.name || "");
+    } catch {
+      showToast("Failed to browse directory", "error");
+    }
+  };
+
+  const openBrowser = () => {
+    setBrowsing(true);
+    browse(path || null);
+  };
+
+  const selectDir = () => {
+    setPath(browseDir);
+    if (!label) setLabel(browseName);
+    setBrowsing(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!id.trim() || !path.trim()) {
-      showToast("ID and path are required", "error");
+    if (!path.trim()) {
+      showToast("Path is required", "error");
       return;
     }
     const ok = await createProject({
-      id: id.trim(),
       path: path.trim(),
-      label: label.trim() || id.trim(),
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      runtime,
+      label: label.trim() || undefined,
     });
     if (ok) onDone();
   };
 
   return html`
     <form class="proj-add-form" onSubmit=${handleSubmit}>
-      <input class="proj-input" placeholder="id" value=${id}
-        onInput=${(e) => setId(e.target.value)} />
-      <input class="proj-input" placeholder="/path/to/repo" value=${path}
-        onInput=${(e) => setPath(e.target.value)} />
-      <input class="proj-input" placeholder="label" value=${label}
+      <div class="proj-path-row">
+        <input class="proj-input proj-path-input" placeholder="/path/to/repo" value=${path}
+          onInput=${(e) => setPath(e.target.value)} />
+        <button type="button" class="proj-btn proj-browse-btn" onClick=${openBrowser}
+          title="Browse folders">...</button>
+      </div>
+
+      ${browsing ? html`
+        <div class="proj-browser">
+          <div class="proj-browser-path" title=${browseDir}>${browseDir}</div>
+          <div class="proj-browser-list">
+            ${browseParent ? html`
+              <div class="proj-browser-item proj-browser-parent" onClick=${() => browse(browseParent)}>
+                ${".."}
+              </div>
+            ` : null}
+            ${browseDirs.map((d) => html`
+              <div key=${d} class="proj-browser-item" onClick=${() => browse(browseDir + "/" + d)}>
+                ${d}${"/"}
+              </div>
+            `)}
+            ${browseDirs.length === 0 ? html`
+              <div class="proj-browser-empty">No subdirectories</div>
+            ` : null}
+          </div>
+          <div class="proj-browser-actions">
+            ${browseIsRepo ? html`<span class="proj-browser-repo">repo detected</span>` : null}
+            <button type="button" class="proj-btn proj-btn-ok" onClick=${selectDir}>Select</button>
+            <button type="button" class="proj-btn" onClick=${() => setBrowsing(false)}>Cancel</button>
+          </div>
+        </div>
+      ` : null}
+
+      <input class="proj-input" placeholder="label (optional)" value=${label}
         onInput=${(e) => setLabel(e.target.value)} />
-      <input class="proj-input" placeholder="tags (comma sep)" value=${tags}
-        onInput=${(e) => setTags(e.target.value)} />
-      <select class="proj-input" value=${runtime}
-        onChange=${(e) => setRuntime(e.target.value)}>
-        <option value="claude-code">Claude Code</option>
-        <option value="codex">Codex</option>
-        <option value="cursor">Cursor</option>
-      </select>
       <div class="proj-form-actions">
         <button type="submit" class="proj-btn proj-btn-ok">add</button>
         <button type="button" class="proj-btn" onClick=${onDone}>cancel</button>
@@ -84,7 +122,6 @@ function AddProjectForm({ onDone }) {
 
 function ProjectItem({ project, isActive, onSelect }) {
   const statusColor = STATUS_COLORS[project.status] || "#555";
-  const runtimeIcon = RUNTIME_ICONS[project.runtime] || "?";
 
   return html`
     <div
@@ -92,7 +129,6 @@ function ProjectItem({ project, isActive, onSelect }) {
       onClick=${() => onSelect(project.id)}
       title=${project.path}
     >
-      <span class="proj-runtime-icon" title=${project.runtime}>${runtimeIcon}</span>
       <div class="proj-item-body">
         <div class="proj-item-label">${project.label}</div>
         <div class="proj-item-meta">

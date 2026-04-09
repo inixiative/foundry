@@ -9,7 +9,7 @@
 import { html, useState } from "./lib.js";
 import {
   threadData, allThreads, layerColor, liveEvents, mergedLayers, mergedAgents,
-  definitions, showToast, activeProjectId, promptCounts,
+  definitions, showToast, activeProjectId, promptCounts, createThread, projects,
 } from "./store.js";
 import { settingsOpen } from "./settings.js";
 import { analyticsOpen } from "./analytics.js";
@@ -153,13 +153,50 @@ function SidebarSection({ title, count, defaultOpen = true, onAdd, children }) {
 // Sidebar (exported)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Inline thread creation form
+// ---------------------------------------------------------------------------
+
+function AddThreadForm({ onDone }) {
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const result = await createThread({
+      description: description.trim() || undefined,
+      tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+    });
+    setSaving(false);
+    if (result) onDone();
+  };
+
+  return html`
+    <form class="thread-add-form" onSubmit=${handleSubmit}>
+      <input class="proj-input" placeholder="description (optional)" value=${description}
+        onInput=${(e) => setDescription(e.target.value)} />
+      <input class="proj-input" placeholder="tags (comma sep)" value=${tags}
+        onInput=${(e) => setTags(e.target.value)} />
+      <div class="proj-form-actions">
+        <button type="submit" class="proj-btn proj-btn-ok" disabled=${saving}>
+          ${saving ? "..." : "create"}
+        </button>
+        <button type="button" class="proj-btn" onClick=${onDone}>cancel</button>
+      </div>
+    </form>
+  `;
+}
+
 // Signals for creation mode (consumed by detail-drawer)
 export const creatingType = { value: null }; // "layer" | "agent" | null
 
-export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
+export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAgent }) {
   const data = threadData.value;
   const events = liveEvents.value;
   const [selectedThread, setSelectedThread] = useState(null);
+  const [addingThread, setAddingThread] = useState(false);
 
   const { instances: layerInstances, uninstantiated: uninstantiatedLayers } = mergedLayers.value;
   const { instances: agentInstances, uninstantiated: uninstantiatedAgents } = mergedAgents.value;
@@ -175,6 +212,11 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
   const threads = allThreads.value;
   const activeProject = activeProjectId.value;
 
+  // Resolve project label for display
+  const activeProjectLabel = activeProject
+    ? (projects.value.find(p => p.id === activeProject)?.label || activeProject)
+    : null;
+
   const threadNodes = threads.map(t => ({
     id: t.threadId,
     status: t.meta?.status || "idle",
@@ -188,7 +230,6 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
   }));
 
   const handleSelect = (id) => { setSelectedThread(id); };
-  const handleNewThread = () => { showToast("Thread creation coming soon", "ok"); };
 
   const totalLayers = activeLayers.length + inactiveLayers.length + uninstantiatedLayers.length;
   const totalAgents = activeAgents.length + inactiveAgents.length + uninstantiatedAgents.length;
@@ -199,8 +240,19 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
       <div class="sidebar-threads">
         <div class="sidebar-header">
           <span class="sidebar-section-title">THREADS</span>
-          <button class="sidebar-add-btn" onClick=${handleNewThread} title="New thread">+</button>
+          ${activeProject ? html`
+            <span class="sidebar-scope-chip scope-project" title=${activeProject}>
+              ${activeProjectLabel}
+            </span>
+          ` : html`
+            <span class="sidebar-scope-chip scope-global">global</span>
+          `}
+          <button class="sidebar-add-btn" onClick=${() => setAddingThread(true)} title="New thread">+</button>
         </div>
+
+        ${addingThread ? html`
+          <${AddThreadForm} onDone=${() => setAddingThread(false)} />
+        ` : null}
 
         <div class="sidebar-threads-list">
           ${threadNodes.length > 0 ? threadNodes.map(t => html`
@@ -210,10 +262,9 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
               selectedId=${selectedThread}
               onSelect=${handleSelect}
             />
-          `) : html`<div class="sidebar-empty">No threads</div>`}
-          ${activeProject ? html`
-            <div class="sidebar-scope-badge">scoped to: ${activeProject}</div>
-          ` : null}
+          `) : html`<div class="sidebar-empty">${
+            activeProject ? "No threads in this project" : "No threads"
+          }</div>`}
         </div>
       </div>
 
@@ -224,7 +275,7 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
           count=${totalLayers || null}
           onAdd=${onCreateLayer}
         >
-          <div class="layer-list">
+          <div class="layer-list scrollable-list">
             <!-- Active instances -->
             ${activeLayers.map(l => html`
               <div class="layer-item" key=${l.id}
@@ -237,29 +288,25 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
             `)}
 
             <!-- Inactive instances -->
-            <${InactiveFold} count=${inactiveLayers.length} label="inactive">
-              ${inactiveLayers.map(l => html`
-                <div class="layer-item dimmed" key=${l.id}
-                  onClick=${() => onLayerClick && onLayerClick(l.id)}>
-                  <span class="layer-dot" style="background: ${layerColor(l.id)}; opacity: 0.4"></span>
-                  <span class="layer-name">${l.id}</span>
-                  <span class="layer-state ${l.state}">${l.state}</span>
-                  <span class="layer-trust">${l.trust}</span>
-                </div>
-              `)}
-            </${InactiveFold}>
+            ${inactiveLayers.map(l => html`
+              <div class="layer-item dimmed" key=${l.id}
+                onClick=${() => onLayerClick && onLayerClick(l.id)}>
+                <span class="layer-dot" style="background: ${layerColor(l.id)}; opacity: 0.4"></span>
+                <span class="layer-name">${l.id}</span>
+                <span class="layer-state ${l.state}">${l.state}</span>
+                <span class="layer-trust">${l.trust}</span>
+              </div>
+            `)}
 
             <!-- Uninstantiated definitions -->
-            <${InactiveFold} count=${uninstantiatedLayers.length} label="defined">
-              ${uninstantiatedLayers.map(l => html`
-                <div class="layer-item dimmed" key=${l.id}
-                  onClick=${() => onLayerClick && onLayerClick(l.id)}>
-                  <span class="layer-dot-empty" style="border-color: ${layerColor(l.id)}"></span>
-                  <span class="layer-name">${l.id}</span>
-                  <span class="layer-state-def">defined</span>
-                </div>
-              `)}
-            </${InactiveFold}>
+            ${uninstantiatedLayers.map(l => html`
+              <div class="layer-item dimmed" key=${l.id}
+                onClick=${() => onLayerClick && onLayerClick(l.id)}>
+                <span class="layer-dot-empty" style="border-color: ${layerColor(l.id)}"></span>
+                <span class="layer-name">${l.id}</span>
+                <span class="layer-state-def">defined</span>
+              </div>
+            `)}
 
             ${totalLayers === 0 ? html`<div class="sidebar-empty-sm">No layers</div>` : null}
           </div>
@@ -271,35 +318,34 @@ export function Sidebar({ onLayerClick, onCreateLayer, onCreateAgent }) {
           count=${totalAgents || null}
           onAdd=${onCreateAgent}
         >
-          <div class="agent-list">
+          <div class="agent-list scrollable-list">
             <!-- Active instances -->
             ${activeAgents.map(a => html`
-              <div class="agent-item" key=${a.id}>
+              <div class="agent-item" key=${a.id}
+                onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
                 <span class="agent-icon">◆</span>
                 <span class="agent-name">${a.agentId}</span>
               </div>
             `)}
 
             <!-- Inactive instances -->
-            <${InactiveFold} count=${inactiveAgents.length} label="inactive">
-              ${inactiveAgents.map(a => html`
-                <div class="agent-item dimmed" key=${a.id}>
-                  <span class="agent-icon">◇</span>
-                  <span class="agent-name">${a.agentId}</span>
-                </div>
-              `)}
-            </${InactiveFold}>
+            ${inactiveAgents.map(a => html`
+              <div class="agent-item dimmed" key=${a.id}
+                onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
+                <span class="agent-icon">◇</span>
+                <span class="agent-name">${a.agentId}</span>
+              </div>
+            `)}
 
             <!-- Uninstantiated definitions -->
-            <${InactiveFold} count=${uninstantiatedAgents.length} label="defined">
-              ${uninstantiatedAgents.map(a => html`
-                <div class="agent-item dimmed" key=${a.id}>
-                  <span class="agent-icon">○</span>
-                  <span class="agent-name">${a.id}</span>
-                  <span class="agent-kind">${a.kind}</span>
-                </div>
-              `)}
-            </${InactiveFold}>
+            ${uninstantiatedAgents.map(a => html`
+              <div class="agent-item dimmed" key=${a.id}
+                onClick=${() => onAgentClick && onAgentClick(a.id)}>
+                <span class="agent-icon">○</span>
+                <span class="agent-name">${a.id}</span>
+                <span class="agent-kind">${a.kind}</span>
+              </div>
+            `)}
 
             ${totalAgents === 0 ? html`<div class="sidebar-empty-sm">No agents</div>` : null}
           </div>

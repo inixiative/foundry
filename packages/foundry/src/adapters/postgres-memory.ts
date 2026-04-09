@@ -7,6 +7,19 @@ import type {
   Trace as TraceObj,
   Intervention,
 } from "@inixiative/foundry-core";
+import { toOptionalPrismaJson, toPrismaJson } from "../persistence/prisma-json";
+import { serializeTrace, upsertTraceRecord } from "../persistence/trace-record";
+
+interface SearchEntryRow {
+  id: string;
+  kind: string;
+  content: string;
+  source: string | null;
+  timestamp: Date;
+  meta: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 /**
  * PostgreSQL-backed memory system via Prisma.
@@ -42,12 +55,12 @@ export class PostgresMemory {
         kind: entry.kind,
         content: entry.content,
         source: entry.source,
-        meta: (entry.meta as any) ?? undefined,
+        meta: toOptionalPrismaJson(entry.meta),
       },
       update: {
         content: entry.content,
         source: entry.source,
-        meta: (entry.meta as any) ?? undefined,
+        meta: toOptionalPrismaJson(entry.meta),
       },
     });
   }
@@ -82,7 +95,7 @@ export class PostgresMemory {
       WHERE content ILIKE ${"%" + escaped + "%"}
       ORDER BY timestamp DESC
       LIMIT ${limit}
-    ` as Promise<any[]>;
+    ` as Promise<SearchEntryRow[]>;
   }
 
   async deleteEntry(id: string): Promise<boolean> {
@@ -97,64 +110,8 @@ export class PostgresMemory {
   // -- Traces --
 
   async writeTrace(trace: TraceObj): Promise<void> {
-    const summary = trace.summary();
-
-    // Batch trace + all spans in a single transaction to avoid N+1
-    await this.prisma.$transaction(async (tx) => {
-      await tx.trace.upsert({
-        where: { id: trace.id },
-        create: {
-          id: trace.id,
-          messageId: trace.messageId,
-          startedAt: trace.startedAt,
-          endedAt: trace.endedAt,
-          durationMs: trace.durationMs,
-          root: trace.root as any,
-          summary: summary as any,
-        },
-        update: {
-          endedAt: trace.endedAt,
-          durationMs: trace.durationMs,
-          root: trace.root as any,
-          summary: summary as any,
-        },
-      });
-
-      // Flatten spans for indexed querying — batched in same transaction
-      for (const span of trace.spans) {
-        await tx.span.upsert({
-          where: { id: span.id },
-          create: {
-            id: span.id,
-            traceId: trace.id,
-            parentId: span.parentId,
-            name: span.name,
-            kind: span.kind,
-            agentId: span.agentId,
-            threadId: span.threadId,
-            status: span.status,
-            layerIds: span.layerIds ?? [],
-            contextHash: span.contextHash,
-            input: span.input as any,
-            output: span.output as any,
-            error: span.error as any,
-            annotations: Object.keys(span.annotations).length > 0
-              ? (span.annotations as any)
-              : undefined,
-            startedAt: span.startedAt,
-            endedAt: span.endedAt,
-            durationMs: span.durationMs,
-          },
-          update: {
-            status: span.status,
-            output: span.output as any,
-            error: span.error as any,
-            endedAt: span.endedAt,
-            durationMs: span.durationMs,
-          },
-        });
-      }
-    });
+    const serialized = serializeTrace(trace);
+    await this.prisma.$transaction((tx) => upsertTraceRecord(tx, serialized));
   }
 
   async getTrace(id: string) {
@@ -205,9 +162,9 @@ export class PostgresMemory {
         id: signal.id,
         kind: signal.kind,
         source: signal.source,
-        content: signal.content as any,
+        content: toPrismaJson(signal.content),
         confidence: signal.confidence,
-        refs: signal.refs as any,
+        refs: toOptionalPrismaJson(signal.refs),
       },
     });
   }
@@ -228,8 +185,8 @@ export class PostgresMemory {
         id: intervention.id,
         traceId: intervention.traceId,
         spanId: intervention.spanId,
-        actual: intervention.actual as any,
-        correction: intervention.correction as any,
+        actual: toOptionalPrismaJson(intervention.actual),
+        correction: toPrismaJson(intervention.correction),
         reason: intervention.reason,
         operator: intervention.operator,
       },
@@ -246,7 +203,16 @@ export class PostgresMemory {
     traceId?: string;
     meta?: Record<string, unknown>;
   }): Promise<void> {
-    await this.prisma.message.create({ data: msg as any });
+    await this.prisma.message.create({
+      data: {
+        id: msg.id,
+        threadId: msg.threadId,
+        role: msg.role,
+        content: msg.content,
+        traceId: msg.traceId,
+        meta: toOptionalPrismaJson(msg.meta),
+      },
+    });
   }
 
   async threadMessages(threadId: string, limit: number = 100) {

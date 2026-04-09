@@ -10,7 +10,7 @@ import type {
 
 export interface OpenAIConfig {
   apiKey: string;
-  /** Defaults to "gpt-4o". */
+  /** Defaults to "gpt-5.4-mini". */
   defaultModel?: string;
   /** Override base URL for Cursor, Azure, local proxies, etc. */
   baseUrl?: string;
@@ -41,7 +41,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? "openai";
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gpt-4o";
+    this._defaultModel = config.defaultModel ?? "gpt-5.4-mini";
     this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
     this._organization = config.organization;
   }

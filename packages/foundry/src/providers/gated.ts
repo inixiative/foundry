@@ -47,9 +47,12 @@ export class GatedProvider implements LLMProvider {
     this.id = `gated:${config.provider.id}`;
 
     this._estimateCost = config.costEstimator ?? ((model, inputTokens) => {
-      const pricing = DEFAULT_COST_TABLE[model];
-      if (!pricing) return 0;
-      return (inputTokens / 1_000_000) * pricing.inputPer1M;
+      // Cost table is provider→model→pricing, search all providers
+      for (const models of Object.values(DEFAULT_COST_TABLE)) {
+        const pricing = models[model];
+        if (pricing) return (inputTokens / 1_000_000) * pricing.inputPer1M;
+      }
+      return 0;
     });
   }
 
@@ -86,7 +89,7 @@ export class GatedProvider implements LLMProvider {
   async *stream(
     messages: LLMMessage[],
     opts?: CompletionOpts
-  ): AsyncIterable<LLMStreamEvent> {
+  ): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? "unknown";
     const inputText = messages.map((m) => m.content).join("\n");
     const inputTokens = estimateTokens(inputText);

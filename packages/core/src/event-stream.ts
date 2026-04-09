@@ -2,6 +2,7 @@ import type { LifecycleEvent } from "./cache-lifecycle";
 import type { Dispatch } from "./thread";
 import type { Signal } from "./signal";
 import type { DispatchContext } from "./middleware";
+import type { ActionPrompt } from "./action-prompt";
 
 /** Session lifecycle events (minimal type for event stream). */
 export interface SessionEvent {
@@ -18,6 +19,7 @@ export type StreamEvent =
   | { kind: "layer"; threadId: string; event: LifecycleEvent }
   | { kind: "dispatch"; threadId: string; dispatch: Dispatch }
   | { kind: "signal"; threadId: string; signal: Signal }
+  | { kind: "prompt"; threadId: string; prompt: ActionPrompt }
   | { kind: "session"; event: SessionEvent }
   | { kind: "middleware"; threadId: string; phase: "before" | "after"; context: DispatchContext }
   | { kind: "error"; source: string; message: string; severity: "error" | "warn"; timestamp: number };

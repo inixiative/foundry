@@ -88,7 +88,6 @@ function createProvider(providerId: string, cfg: FoundryConfig): LLMProvider {
     case "claude-code":
       return new ClaudeCodeProvider({
         defaultModel: cfg.defaults.model,
-        defaultMaxTokens: cfg.defaults.maxTokens,
       });
     case "anthropic": {
       const key = process.env.ANTHROPIC_API_KEY;

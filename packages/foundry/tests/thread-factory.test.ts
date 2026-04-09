@@ -466,22 +466,22 @@ describe("keywordRoute", () => {
 
   test("routes bugs to executor-fix", () => {
     const route = keywordRoute({ category: "bug" }, config);
-    expect(route.value.destination).toBe("executor-fix");
+    expect(route.value.destination).toBe("artificer");
   });
 
   test("routes features to executor-build", () => {
     const route = keywordRoute({ category: "feature" }, config);
-    expect(route.value.destination).toBe("executor-build");
+    expect(route.value.destination).toBe("artificer");
   });
 
   test("routes questions to executor-answer", () => {
     const route = keywordRoute({ category: "question" }, config);
-    expect(route.value.destination).toBe("executor-answer");
+    expect(route.value.destination).toBe("artificer");
   });
 
   test("unknown category falls back to general", () => {
     const route = keywordRoute({ category: "unknown" }, config);
-    expect(route.value.destination).toBe("executor-answer");
+    expect(route.value.destination).toBe("artificer");
   });
 });
 

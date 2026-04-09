@@ -21,14 +21,23 @@ export interface ProjectConfig {
   description?: string;
 }
 
+/** Map a provider ID to the runtime adapter it implies. */
+function inferRuntime(provider?: string): ProjectConfig["runtime"] {
+  switch (provider) {
+    case "cursor": return "cursor";
+    case "codex": return "codex";
+    default: return "claude-code";
+  }
+}
+
 /** Convert a ProjectSettingsConfig (from config store) into a ProjectConfig. */
 export function fromSettingsConfig(cfg: ProjectSettingsConfig): ProjectConfig {
   return {
     id: cfg.id,
     path: cfg.path,
-    label: cfg.label,
-    tags: cfg.tags,
-    runtime: cfg.runtime,
+    label: cfg.label ?? cfg.id,
+    tags: cfg.tags ?? [],
+    runtime: inferRuntime(cfg.defaults?.provider),
     description: cfg.description,
   };
 }

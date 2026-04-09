@@ -671,3 +671,225 @@ the same isolation benefits as just-bash but for TypeScript execution:
 This is the convergence point: typed code execution + sandbox isolation +
 browser-like APIs. When it's ready, it becomes the default `ScriptTool`
 implementation.
+
+---
+
+## MemoryTool — On-Demand Memory Queries
+
+Context layers inject memory passively at warm time — the agent gets whatever
+was pre-configured. `MemoryTool` lets agents query memory *during execution*,
+searching for what the task actually needs.
+
+### The Difference
+
+| | Layer (passive) | MemoryTool (active) |
+|---|---|---|
+| When | Warm time (before dispatch) | During execution (on demand) |
+| What | Pre-configured entries by kind | Agent-chosen search queries |
+| Scope | Fixed at layer config | Dynamic per-task |
+| Cost | Paid upfront in context budget | Paid only when queried |
+
+### Wrapping Any Backend
+
+`MemoryToolAdapter` wraps any Foundry memory adapter:
+
+```typescript
+import { MemoryToolAdapter } from "@inixiative/foundry";
+import { FileMemory, SqliteMemory } from "@inixiative/foundry-core";
+
+// FileMemory
+const fileMemory = new FileMemory(".foundry/memory");
+await fileMemory.load();
+const fileTool = MemoryToolAdapter.fromFileMemory(fileMemory);
+registry.register(fileTool, "Project memory (conventions, signals)");
+
+// SqliteMemory (with FTS5 search)
+const sqliteMemory = new SqliteMemory(".foundry/memory.db");
+const sqliteTool = MemoryToolAdapter.fromSqliteMemory(sqliteMemory);
+registry.register(sqliteTool, "Indexed memory with full-text search");
+
+// Supermemory (hosted, scored results)
+const supermemory = new SupermemoryAdapter({ apiKey: "..." });
+const superTool = MemoryToolAdapter.fromSupermemory(supermemory);
+registry.register(superTool, "Hosted memory with semantic search");
+
+// Any custom backend
+const custom = MemoryToolAdapter.from("muninndb", myMuninnAdapter);
+registry.register(custom, "MuninnDB knowledge graph");
+```
+
+### Agent Usage
+
+```typescript
+const memory = registry.byKind("memory")!;
+
+// Search for relevant conventions
+const conventions = await memory.search("error handling pattern", { kind: "convention", limit: 5 });
+// conventions.data: [{ id: "...", kind: "convention", content: "Always use Result<T>..." }, ...]
+
+// Store a new learning
+await memory.write({
+  id: `learning-${Date.now()}`,
+  kind: "learning",
+  content: "The auth module uses JWT with 15-minute expiry",
+  source: "executor-fix",
+  timestamp: Date.now(),
+});
+
+// Get recent signals
+const recent = await memory.recent(10, "correction");
+```
+
+### Multiple Memory Backends
+
+Register multiple memory tools for different purposes:
+
+```typescript
+registry.register(MemoryToolAdapter.fromFileMemory(localMemory, "memory-local"),
+  "Local project memory");
+registry.register(MemoryToolAdapter.fromRedisMemory(redisMemory, "memory-shared"),
+  "Shared team memory");
+registry.register(MemoryToolAdapter.fromSupermemory(superMemory, "memory-semantic"),
+  "Semantic search across all knowledge");
+
+// Agent discovers what's available:
+registry.allByKind("memory");
+// → [memory-local, memory-shared, memory-semantic]
+```
+
+---
+
+## Output Filters — RTK-Style Token Reduction
+
+Shell output is noisy. ANSI codes, progress bars, repeated warnings, verbose
+test output — all of it wastes tokens. Output filters strip noise before
+results enter agent context.
+
+### Built-in Filters
+
+```typescript
+import { builtinFilters, JustBashShell } from "@inixiative/foundry";
+
+// Use the full RTK-style filter stack (~60-80% token savings)
+const shell = new JustBashShell({
+  outputFilter: builtinFilters.rtk,
+});
+
+// Or compose specific filters
+const shell = new JustBashShell({
+  outputFilter: builtinFilters.compose(
+    builtinFilters.stripAnsi,        // Remove color codes
+    builtinFilters.stripProgress,     // Remove spinners, progress bars
+    builtinFilters.collapseWhitespace, // Compress runs of spaces
+    builtinFilters.dedup,             // Collapse repeated lines
+    builtinFilters.gitStatus,         // Compress git file lists to counts
+    builtinFilters.testOutput,        // Collapse passing tests, keep failures
+  ),
+});
+```
+
+### Available Filters
+
+| Filter | What it strips | Typical savings |
+|--------|---------------|-----------------|
+| `stripAnsi` | Color codes, cursor movement | 5-15% |
+| `collapseBlankLines` | Repeated empty lines | 5-10% |
+| `collapseWhitespace` | Runs of spaces/tabs | 10-20% |
+| `stripProgress` | Spinners, progress bars, download status | 10-30% |
+| `dedup` | Consecutive identical lines (repeated warnings) | 10-40% |
+| `gitStatus` | Long file lists → status counts | 30-60% |
+| `testOutput` | Passing test details → count summary | 40-70% |
+| `rtk` | All of the above composed | 60-80% |
+
+### Per-Command Filters
+
+Override the default filter for specific commands:
+
+```typescript
+const result = await shell.exec("git log --oneline -20");  // uses default filter
+const raw = await shell.exec("cat src/index.ts", {
+  outputFilter: (stdout) => stdout,  // no filtering — want exact content
+});
+```
+
+### Custom Filters
+
+```typescript
+import type { OutputFilter } from "@inixiative/foundry-core";
+import { builtinFilters } from "@inixiative/foundry";
+
+// Strip lines matching a pattern
+const stripTimestamps: OutputFilter = (stdout) =>
+  stdout.split("\n")
+    .filter(line => !/^\d{4}-\d{2}-\d{2}T/.test(line.trim()))
+    .join("\n");
+
+const shell = new JustBashShell({
+  outputFilter: builtinFilters.compose(
+    builtinFilters.rtk,
+    stripTimestamps,
+  ),
+});
+```
+
+---
+
+## Complete Wiring Example
+
+All tools registered, all adapters connected, agents wired to everything:
+
+```typescript
+import {
+  ToolRegistry, CapabilityGate, BROWSER_POLICY,
+} from "@inixiative/foundry-core";
+import {
+  PlaywrightBrowser, HttpApi, BunScript, JustBashShell,
+  MemoryToolAdapter, builtinFilters, FileMemory,
+} from "@inixiative/foundry";
+
+// 1. Registry
+const registry = new ToolRegistry();
+
+// 2. Browser
+const browser = new PlaywrightBrowser({
+  allowedUrls: ["http://localhost:3000/*"],
+});
+await browser.launch();
+registry.register(browser, "Local dev app browser");
+
+// 3. API
+const api = new HttpApi({
+  baseUrl: "http://localhost:3000/api",
+  bearerToken: process.env.DEV_TOKEN,
+});
+registry.register(api, "Local dev API");
+
+// 4. Shell (sandboxed, with RTK filters)
+const shell = new JustBashShell({
+  files: await loadProjectFiles("."),
+  outputFilter: builtinFilters.rtk,
+});
+registry.register(shell, "Sandboxed shell with token-efficient output");
+
+// 5. Script (isolated TypeScript)
+const script = new BunScript({ timeout: 10_000 });
+registry.register(script, "TypeScript execution for data transformation");
+
+// 6. Memory (multiple backends)
+const memory = new FileMemory(".foundry/memory");
+await memory.load();
+registry.register(
+  MemoryToolAdapter.fromFileMemory(memory),
+  "Project conventions and learnings",
+);
+
+// What agents see:
+console.log(registry.summary());
+// - browser (browser): Local dev app browser
+// - api (api): Local dev API
+// - shell (shell): Sandboxed shell with token-efficient output
+// - script (script): TypeScript execution for data transformation
+// - memory-file (memory): Project conventions and learnings
+
+// 6 tools, ~6 lines of agent context. Not 72K tokens of MCP schemas.
+```

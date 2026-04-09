@@ -10,6 +10,9 @@ export type {
   LLMMessage,
   CompletionOpts,
   CompletionResult,
+  ToolDefinition,
+  ToolCall,
+  ToolCallResult,
   EmbeddingResult,
   LLMStreamEvent,
   LLMProvider,
@@ -25,7 +28,12 @@ export {
   computeHash,
   type ContextSource,
   type ContextLayerConfig,
+  type LayerDefinition,
+  type LayerInstanceState,
+  type LayerMutationEvent,
   type LayerState,
+  type VersionEntry,
+  type VersionLog,
 } from "./context-layer";
 
 export {
@@ -204,9 +212,13 @@ export {
   type ShellTool,
   type ShellResult,
   type ShellOpts,
+  type OutputFilter,
   type ScriptTool,
   type ScriptResult,
   type ScriptOpts,
+  type MemoryTool,
+  type MemoryEntry as ToolMemoryEntry,
+  type MemorySearchOpts,
 } from "./tools";
 
 // Bounded data structures

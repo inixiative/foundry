@@ -7,15 +7,16 @@ import { makeSingletonJob } from "../makeSingletonJob";
 export const cleanStaleTraces = makeSingletonJob(async (ctx) => {
   const { db, log } = ctx;
 
-  const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
   // Delete spans first (foreign key to traces)
+  // Span.startedAt is a Float (unix ms), Trace.createdAt is a DateTime
   const spanResult = await db.prisma.span.deleteMany({
-    where: { startedAt: { lt: cutoffDate } },
+    where: { startedAt: { lt: cutoffMs } },
   });
 
   const traceResult = await db.prisma.trace.deleteMany({
-    where: { createdAt: { lt: cutoffDate } },
+    where: { createdAt: { lt: new Date(cutoffMs) } },
   });
 
   log(`Cleaned ${traceResult.count} traces and ${spanResult.count} spans older than 30 days`);

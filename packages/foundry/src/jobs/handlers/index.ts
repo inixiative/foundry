@@ -2,7 +2,7 @@ import { cleanStaleTraces } from "./cleanStaleTraces";
 import { type PersistMessagePayload, persistMessage } from "./persistMessage";
 import { type PersistSignalPayload, persistSignal } from "./persistSignal";
 import { type PersistTracePayload, persistTrace } from "./persistTrace";
-import { warmLayers } from "./warmLayers";
+import { warmLayers, type WarmLayersPayload } from "./warmLayers";
 import type { JobHandler } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -19,11 +19,13 @@ export const JobHandlerName = {
 
 export type JobHandlerName = (typeof JobHandlerName)[keyof typeof JobHandlerName];
 
+export type { WarmLayersPayload };
+
 export type JobPayloads = {
   persistTrace: PersistTracePayload;
   persistMessage: PersistMessagePayload;
   persistSignal: PersistSignalPayload;
-  warmLayers: undefined;
+  warmLayers: WarmLayersPayload;
   cleanStaleTraces: undefined;
 };
 

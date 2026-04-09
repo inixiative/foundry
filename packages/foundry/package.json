@@ -17,7 +17,6 @@
     "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test tests/db/ --max-concurrency=1",
     "test:all": "bun run test && bun run test:db",
     "typecheck": "bun run --bun tsc --noEmit",
-    "setup": "bun run src/setup.ts",
     "start": "bun run src/start.ts",
     "demo": "bun run src/demo.ts"
   },

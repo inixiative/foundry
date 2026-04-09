@@ -8,3 +8,6 @@ bun.lock
 .env
 .env.local
 .env.test
+
+# Generated / tool artifacts
+.playwright-mcp/

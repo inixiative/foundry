@@ -208,6 +208,9 @@ export {
   type ThreadFactoryDeps,
 } from "./thread-factory";
 
+// Tool-use loop
+export { toolUseLoop, type ToolLoopOpts } from "./tool-loop";
+
 // Reactive Middleware
 export {
   ReactiveMiddleware,
@@ -228,6 +231,8 @@ export {
   ConvergenceDetector,
   CrossPollinationDetector,
   ResourceImbalanceDetector,
+  type VisibilityTier,
+  type LayerVisibility,
   type ThreadSnapshot,
   type HeraldPattern,
   type HeraldRecommendation,
@@ -241,3 +246,31 @@ export {
   type ThreadState,
   type LibrarianConfig,
 } from "./librarian";
+
+// Domain Librarian — shared advise + guard pattern
+export {
+  DomainLibrarian,
+  type DomainLibrarianConfig,
+  type AdviseResult,
+  type GuardFinding,
+  type GuardResult,
+  type ToolObservation,
+} from "./domain-librarian";
+
+// Cartographer — context routing (reads map, routes slices)
+export {
+  Cartographer,
+  type CartographerConfig,
+  type MapEntry,
+  type TopologyMap,
+  type RouteResult,
+} from "./cartographer";
+
+// Flow Orchestrator — wires the five FLOW.md roles together
+export {
+  FlowOrchestrator,
+  type FlowOrchestratorConfig,
+  type InjectionPlan,
+  type GuardReport,
+  type InvalidationEvent,
+} from "./flow-orchestrator";

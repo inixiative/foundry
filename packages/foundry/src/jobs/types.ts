@@ -1,6 +1,7 @@
 import type { Job, Queue } from "bullmq";
 import type Redis from "ioredis";
 import type { PostgresMemory } from "../adapters/postgres-memory";
+import type { ContextStack } from "@inixiative/foundry-core";
 
 export type JobsQueue = Queue & { redis: Redis };
 
@@ -9,6 +10,8 @@ export type WorkerContext = {
   queue: JobsQueue;
   job: Job;
   signal?: AbortSignal;
+  /** Live thread stacks — keyed by thread ID. Available for in-process jobs. */
+  stacks?: Map<string, ContextStack>;
   /** Log to both stdout AND BullBoard job logs */
   log: (message: string) => void;
 };

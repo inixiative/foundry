@@ -16,7 +16,9 @@ import {
   type CompletionOpts,
   type CompletionResult,
   type TokenTracker,
+  type ToolRegistry,
 } from "@inixiative/foundry-core";
+import { toolUseLoop } from "./tool-loop";
 import type {
   FoundryConfig,
   AgentSettingsConfig,
@@ -44,6 +46,8 @@ export interface ThreadFactoryDeps {
   tokenTracker?: TokenTracker;
   /** Resolves source IDs to ContextSources (memory, file, inline, etc). */
   sourceResolver: SourceResolver;
+  /** Optional tool registry — agents can discover and use registered tools. */
+  tools?: ToolRegistry;
 }
 
 /**
@@ -208,7 +212,10 @@ export class ThreadFactory {
             try {
               const result = await complete(
                 [
-                  { role: "system", content: `${ctx}\n\n${agentCfg.prompt}` },
+                  {
+                    role: "system",
+                    content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a classifier. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
+                  },
                   { role: "user", content: payload },
                 ],
                 { ...opts, maxTokens: agentCfg.maxTokens || 256, maxTurns: 1 },
@@ -244,7 +251,10 @@ export class ThreadFactory {
             try {
               const result = await complete(
                 [
-                  { role: "system", content: `${ctx}\n\n${agentCfg.prompt}` },
+                  {
+                    role: "system",
+                    content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a router. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
+                  },
                   {
                     role: "user",
                     content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
@@ -270,26 +280,68 @@ export class ThreadFactory {
         });
 
       case "executor":
-      default:
+      default: {
+        if (!agentCfg.prompt) {
+          console.warn(`[ThreadFactory] Agent "${id}" has no prompt configured — skipping.`);
+          return null;
+        }
+
+        const tools = this._deps.tools;
+        const useToolLoop = tools && tools.size > 0 && opts.tools !== false;
+
         return new Executor<string, string>({
           id,
           stack,
           handler: async (ctx, payload) => {
-            const prompt = agentCfg.prompt || "You are a helpful assistant.";
+            const systemParts = [ctx, agentCfg.prompt];
+
+            if (tools && tools.size > 0) {
+              systemParts.push(`\n## Available Tools\n${tools.summary()}`);
+            }
+
+            const messages: LLMMessage[] = [
+              { role: "system", content: systemParts.join("\n\n") },
+              { role: "user", content: payload },
+            ];
+
             try {
-              const result = await complete(
-                [
-                  { role: "system", content: `${ctx}\n\n${prompt}` },
-                  { role: "user", content: payload },
-                ],
-                opts,
-              );
-              return result.content;
+              if (useToolLoop) {
+                // Tool-use loop — agent can call tools and iterate
+                const result = await toolUseLoop(
+                  this._deps.provider,
+                  messages,
+                  tools,
+                  {
+                    ...opts,
+                    maxIterations: agentCfg.maxTokens ? undefined : 10,
+                    onToolCall: (name, input, resultStr) => {
+                      console.log(`    [${id}] tool: ${name}(${Object.values(input).map((v) => String(v).slice(0, 40)).join(", ")})`);
+                    },
+                  },
+                );
+
+                // Track tokens
+                if (this._deps.tokenTracker && result.tokens) {
+                  this._deps.tokenTracker.record({
+                    provider: this._deps.provider.id,
+                    model: result.model,
+                    agentId: id,
+                    tokens: result.tokens,
+                  });
+                }
+
+                return result.content;
+              } else {
+                // Simple one-shot completion (no tools)
+                const result = await complete(messages, opts);
+                return result.content;
+              }
             } catch (err) {
               return `[${id}] Error: ${(err as Error).message}`;
             }
           },
         });
+      }
     }
   }
 
@@ -335,12 +387,12 @@ export function keywordRoute(
 ): Decision<Route> {
   const layerIds = Object.keys(config.layers);
   const routeMap: Record<string, { dest: string; layers: string[] }> = {
-    bug: { dest: "executor-fix", layers: layerIds },
-    feature: { dest: "executor-build", layers: ["system", "conventions"] },
-    refactor: { dest: "executor-build", layers: ["system", "conventions"] },
-    question: { dest: "executor-answer", layers: ["system", "memory"] },
-    convention: { dest: "executor-answer", layers: ["conventions", "memory"] },
-    general: { dest: "executor-answer", layers: ["system"] },
+    bug: { dest: "artificer", layers: layerIds },
+    feature: { dest: "artificer", layers: ["system", "conventions"] },
+    refactor: { dest: "artificer", layers: ["system", "conventions"] },
+    question: { dest: "artificer", layers: ["system", "memory"] },
+    convention: { dest: "artificer", layers: ["conventions", "memory"] },
+    general: { dest: "artificer", layers: ["system"] },
   };
   const route = routeMap[classification.category] ?? routeMap.general;
   return {
@@ -372,9 +424,9 @@ export function resolveAgentOpts(
   const isLightweight = agentCfg.kind === "classifier" || agentCfg.kind === "router";
 
   return {
-    model: agentCfg.model || (isLightweight ? "haiku" : config.defaults.model),
-    temperature: agentCfg.temperature ?? (isLightweight ? 0 : config.defaults.temperature),
-    maxTokens: agentCfg.maxTokens ?? (isLightweight ? 256 : config.defaults.maxTokens),
+    model: agentCfg.model || (isLightweight ? "gemini-3.1-flash-lite-preview" : config.defaults.model),
+    temperature: agentCfg.temperature ?? 0,
+    maxTokens: agentCfg.maxTokens ?? (isLightweight ? 256 : 4096),
     tools: agentCfg.tools ?? !isLightweight,
     thinking: agentCfg.thinking ?? "none",
     permissions: agentCfg.permissions,

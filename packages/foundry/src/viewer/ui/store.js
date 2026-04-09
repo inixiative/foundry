@@ -5,7 +5,7 @@
  * WebSocket updates are batched per animation frame for performance.
  */
 
-import { signal, computed, batch } from "./lib.js";
+import { signal, computed, batch, effect } from "./lib.js";
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -46,6 +46,9 @@ export const detailDrawerOpen = signal(true);   // right panel collapsed state
 // Action prompts — pending agent→human interactions
 export const prompts = signal([]);       // ActionPrompt[]
 export const promptCounts = signal({});  // { threadId: count }
+
+// Token usage — session totals + budget
+export const tokenUsage = signal(null); // { usedTokens, usedCost, percentage, warning, exceeded, totalInput, totalOutput, totalCalls }
 
 // Conversation — chat messages (user + agent responses)
 // Each entry: { role: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
@@ -252,6 +255,53 @@ export async function resolvePrompt(promptId, action, input) {
   }
 }
 
+/** Rough token estimate — ~4 chars per token for code-mixed content. */
+function estimateContextTokens(msgs) {
+  let chars = 0;
+  for (const m of msgs) {
+    chars += (m.content || "").length;
+  }
+  return Math.ceil(chars / 4);
+}
+
+export async function loadTokenUsage() {
+  try {
+    const [budgetRes, analyticsRes, settingsRes] = await Promise.all([
+      authFetch("/api/analytics/budget"),
+      authFetch("/api/analytics"),
+      authFetch("/api/settings"),
+    ]);
+    const budget = budgetRes.ok ? await budgetRes.json() : {};
+    const analytics = analyticsRes.ok ? await analyticsRes.json() : {};
+    const settings = settingsRes.ok ? await settingsRes.json() : {};
+    const session = analytics.session ?? {};
+
+    // Resolve active model's context window from provider config
+    const provider = settings.providers?.[settings.defaults?.provider];
+    const model = provider?.models?.find(m => m.id === settings.defaults?.model);
+    const contextWindow = model?.contextWindow ?? null;
+
+    // Estimate current context fill from messages
+    const contextTokens = estimateContextTokens(messages.value);
+
+    tokenUsage.value = {
+      usedTokens: budget.usedTokens ?? session.totalTokens ?? 0,
+      usedCost: budget.usedCost ?? session.totalCost ?? 0,
+      limitTokens: budget.limitTokens,
+      limitCost: budget.limitCost,
+      percentage: budget.percentage ?? 0,
+      warning: budget.warning ?? false,
+      exceeded: budget.exceeded ?? false,
+      totalInput: session.totalInput ?? 0,
+      totalOutput: session.totalOutput ?? 0,
+      totalCalls: session.totalCalls ?? 0,
+      contextWindow,
+      contextTokens,
+      contextPct: contextWindow ? contextTokens / contextWindow : null,
+    };
+  } catch { /* silent — analytics may not be configured */ }
+}
+
 export async function loadDefinitions() {
   try {
     const res = await authFetch("/api/definitions");
@@ -276,17 +326,19 @@ export async function loadProjects() {
 
 export async function createProject(config) {
   try {
-    const res = await fetch("/api/projects", {
+    const res = await authFetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
     if (res.ok) {
-      showToast(`Project added: ${config.label || config.id}`, "ok");
+      const created = await res.json();
+      showToast(`Project added: ${created.label || created.id}`, "ok");
       loadProjects();
       return true;
     }
-    showToast("Failed to create project", "error");
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || "Failed to create project", "error");
     return false;
   } catch (err) {
     showToast(`Failed: ${err.message}`, "error");
@@ -296,7 +348,7 @@ export async function createProject(config) {
 
 export async function deleteProject(id) {
   try {
-    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await authFetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.ok) {
       showToast(`Removed: ${id}`, "ok");
       if (activeProjectId.value === id) activeProjectId.value = null;
@@ -309,6 +361,29 @@ export async function deleteProject(id) {
   } catch (err) {
     showToast(`Failed to delete project: ${err.message}`, "error");
     return false;
+  }
+}
+
+export async function createThread({ description, tags } = {}) {
+  try {
+    const projectId = activeProjectId.value || undefined;
+    const res = await authFetch("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, description, tags }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      showToast(`Thread created: ${created.threadId}`, "ok");
+      loadThreads();
+      return created;
+    }
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || "Failed to create thread", "error");
+    return null;
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, "error");
+    return null;
   }
 }
 
@@ -390,9 +465,10 @@ export async function sendMessage(text) {
       }];
     }
 
-    // Refresh traces so the new trace appears
+    // Refresh traces and token usage after each message
     loadTraces();
     loadThreads();
+    loadTokenUsage();
   } catch (err) {
     messages.value = [...messages.value, {
       role: "agent",
@@ -487,10 +563,22 @@ export function init() {
   loadDefinitions();
   loadProjects();
   loadPrompts();
+  loadTokenUsage();
   // Fallback polling
   setInterval(loadTraces, 15000);
   setInterval(loadThreads, 20000);
   setInterval(loadDefinitions, 30000);
   setInterval(loadProjects, 30000);
   setInterval(loadPrompts, 5000); // prompts poll faster — they're time-sensitive
+  setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
+
+  // Reload threads when active project changes
+  let prevProject = activeProjectId.value;
+  effect(() => {
+    const cur = activeProjectId.value;
+    if (cur !== prevProject) {
+      prevProject = cur;
+      loadThreads();
+    }
+  });
 }

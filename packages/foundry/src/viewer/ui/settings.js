@@ -1,16 +1,22 @@
 /**
- * Settings — configuration panel for models, agents, layers, sources, prompts.
- * Accessible via gear icon or hotkey 's'. Has AI assist for suggestions.
+ * Settings — configuration panel.
+ *
+ * Two scopes with clear visual separation:
+ * - Global: providers, default models, viewer prefs
+ * - Project: sources (docs, conventions, memory paths)
+ *
+ * Agents and layers are NOT settings — they're first-class sidebar items.
  */
 
 import { html, useState, useEffect, useRef } from "./lib.js";
 import { signal } from "./lib.js";
-import { showToast } from "./store.js";
+import { showToast, activeProjectId, projects } from "./store.js";
 
 // Settings state
 export const settingsOpen = signal(false);
 export const settingsConfig = signal(null);
-const activeTab = signal("agents");
+const settingsScope = signal("global"); // "global" | "project"
+const activeTab = signal("defaults");
 const aiLoading = signal(false);
 const aiSuggestions = signal([]);
 
@@ -18,7 +24,7 @@ const aiSuggestions = signal([]);
 // Data fetching
 // ---------------------------------------------------------------------------
 
-async function loadSettings() {
+export async function loadSettings() {
   try {
     const res = await fetch("/api/settings");
     settingsConfig.value = await res.json();
@@ -36,6 +42,25 @@ async function saveSection(section, data) {
     });
     settingsConfig.value = await res.json();
     showToast("Settings saved", "ok");
+  } catch {
+    showToast("Failed to save", "error");
+  }
+}
+
+async function saveProjectSection(projectId, section, data) {
+  try {
+    const res = await fetch(`/api/projects/${projectId}/settings/${section}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (res.ok) {
+      // Reload full settings to get updated project config
+      await loadSettings();
+      showToast("Project settings saved", "ok");
+    } else {
+      showToast("Failed to save project settings", "error");
+    }
   } catch {
     showToast("Failed to save", "error");
   }
@@ -95,29 +120,8 @@ async function requestPromptImprove(type, id, currentPrompt, instruction) {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Shared components
 // ---------------------------------------------------------------------------
-
-function TabBar() {
-  const tabs = [
-    { id: "agents", label: "Agents" },
-    { id: "layers", label: "Layers" },
-    { id: "providers", label: "Providers" },
-    { id: "sources", label: "Sources" },
-    { id: "defaults", label: "Defaults" },
-  ];
-  return html`
-    <div class="settings-tabs">
-      ${tabs.map(t => html`
-        <button
-          key=${t.id}
-          class="settings-tab ${activeTab.value === t.id ? "active" : ""}"
-          onClick=${() => { activeTab.value = t.id; }}
-        >${t.label}</button>
-      `)}
-    </div>
-  `;
-}
 
 function Field({ label, value, onChange, type = "text", placeholder, mono, small, disabled }) {
   return html`
@@ -155,165 +159,109 @@ function Field({ label, value, onChange, type = "text", placeholder, mono, small
   `;
 }
 
-function PromptEditor({ type, id, value, onChange }) {
-  const [improving, setImproving] = useState(false);
-  const [instruction, setInstruction] = useState("");
+// ---------------------------------------------------------------------------
+// Scope bar — Global vs Project toggle
+// ---------------------------------------------------------------------------
 
-  const handleImprove = async () => {
-    setImproving(true);
-    const result = await requestPromptImprove(type, id, value, instruction || undefined);
-    if (result) {
-      onChange(result.improved);
-      showToast(result.explanation, "ok");
-    }
-    setImproving(false);
-    setInstruction("");
-  };
-
+function ScopeBar({ scope, onScopeChange, projectName }) {
   return html`
-    <div class="prompt-editor">
-      <div class="settings-field">
-        <label class="settings-label">
-          Prompt
-          <button
-            class="ai-assist-btn inline"
-            onClick=${handleImprove}
-            disabled=${improving}
-            title="AI: improve this prompt"
-          >${improving ? "thinking..." : "AI improve"}</button>
-        </label>
-        <textarea
-          class="settings-input mono"
-          value=${value ?? ""}
-          onInput=${(e) => onChange(e.target.value)}
-          rows="6"
-          placeholder="System prompt for this ${type}..."
-        ></textarea>
-      </div>
-      <div class="prompt-assist-row">
-        <input
-          class="settings-input small"
-          placeholder="Optional: tell AI what to change..."
-          value=${instruction}
-          onInput=${(e) => setInstruction(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === "Enter") handleImprove(); }}
-        />
-      </div>
+    <div class="settings-scope-bar">
+      <button
+        class="settings-scope-tab ${scope === "global" ? "active scope-global" : ""}"
+        onClick=${() => onScopeChange("global")}
+      >Global</button>
+      <button
+        class="settings-scope-tab ${scope === "project" ? "active scope-project" : ""}"
+        onClick=${() => onScopeChange("project")}
+        disabled=${!projectName}
+        title=${projectName ? `Project: ${projectName}` : "Select a project first"}
+      >${projectName ? `Project: ${projectName}` : "No project selected"}</button>
     </div>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// Agent editor
+// Global scope: Defaults
 // ---------------------------------------------------------------------------
 
-function AgentEditor({ agent, providers, onSave, onDelete }) {
-  const [draft, setDraft] = useState({ ...agent });
+function DefaultsEditor({ defaults, providers, onSave }) {
+  const [draft, setDraft] = useState({ ...defaults });
   const update = (k, v) => setDraft({ ...draft, [k]: v });
 
-  // Build model options from providers
-  const providerConfig = providers[draft.provider];
-  const models = providerConfig?.models || [];
+  const enabledProviders = Object.values(providers).filter(p => p.enabled);
 
   return html`
     <div class="settings-card">
       <div class="settings-card-header">
-        <span class="settings-card-title">${draft.id}</span>
-        <span class="settings-card-kind">${draft.kind}</span>
-        <label class="settings-toggle">
-          <input type="checkbox" checked=${draft.enabled} onChange=${(e) => update("enabled", e.target.checked)} />
-          ${draft.enabled ? "active" : "disabled"}
-        </label>
+        <span class="settings-card-title">Default Models</span>
+        <span class="scope-label scope-global">GLOBAL</span>
       </div>
 
-      <${PromptEditor}
-        type="agent"
-        id=${draft.id}
-        value=${draft.prompt}
-        onChange=${(v) => update("prompt", v)}
-      />
-
+      <div class="settings-section-label">Executor (tool use, code gen)</div>
       <div class="settings-row">
-        <${Field} label="Provider" value=${draft.provider} small onChange=${(v) => update("provider", v)} />
-        <${Field} label="Model" value=${draft.model} small mono onChange=${(v) => update("model", v)} />
+        <div class="settings-field">
+          <label class="settings-label">Provider</label>
+          <select
+            class="settings-input small"
+            value=${draft.provider}
+            onChange=${(e) => update("provider", e.target.value)}
+          >
+            ${enabledProviders.map(p => html`
+              <option key=${p.id} value=${p.id}>${p.label}</option>
+            `)}
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Model</label>
+          <select
+            class="settings-input small mono"
+            value=${draft.model}
+            onChange=${(e) => update("model", e.target.value)}
+          >
+            ${(providers[draft.provider]?.models || []).map(m => html`
+              <option key=${m.id} value=${m.id}>${m.label} (${m.tier})</option>
+            `)}
+          </select>
+        </div>
       </div>
 
+      <div class="settings-section-label">Classifier / Router (runs on every message)</div>
       <div class="settings-row">
-        <${Field} label="Temperature" type="number" value=${draft.temperature} small onChange=${(v) => update("temperature", v)} />
-        <${Field} label="Max Tokens" type="number" value=${draft.maxTokens} small onChange=${(v) => update("maxTokens", v)} />
-        <${Field} label="Max Depth" type="number" value=${draft.maxDepth} small onChange=${(v) => update("maxDepth", v)} />
+        <div class="settings-field">
+          <label class="settings-label">Provider</label>
+          <select
+            class="settings-input small"
+            value=${draft.classifierProvider || draft.provider}
+            onChange=${(e) => update("classifierProvider", e.target.value)}
+          >
+            ${enabledProviders.map(p => html`
+              <option key=${p.id} value=${p.id}>${p.label}</option>
+            `)}
+          </select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Model</label>
+          <select
+            class="settings-input small mono"
+            value=${draft.classifierModel || draft.model}
+            onChange=${(e) => update("classifierModel", e.target.value)}
+          >
+            ${(providers[draft.classifierProvider || draft.provider]?.models || []).map(m => html`
+              <option key=${m.id} value=${m.id}>${m.label} (${m.tier})</option>
+            `)}
+          </select>
+        </div>
       </div>
-
-      <${Field}
-        label="Visible Layers (comma-separated)"
-        value=${(draft.visibleLayers || []).join(", ")}
-        onChange=${(v) => update("visibleLayers", v.split(",").map(s => s.trim()).filter(Boolean))}
-        placeholder="all layers"
-      />
-
-      <${Field}
-        label="Peers (comma-separated)"
-        value=${(draft.peers || []).join(", ")}
-        onChange=${(v) => update("peers", v.split(",").map(s => s.trim()).filter(Boolean))}
-        placeholder="agent IDs for delegation"
-      />
 
       <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save</button>
-        <button class="action-btn danger" onClick=${() => onDelete(draft.id)}>Remove</button>
+        <button class="action-btn" onClick=${() => onSave(draft)}>Save Defaults</button>
       </div>
     </div>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// Layer editor
-// ---------------------------------------------------------------------------
-
-function LayerEditor({ layer, onSave, onDelete }) {
-  const [draft, setDraft] = useState({ ...layer });
-  const update = (k, v) => setDraft({ ...draft, [k]: v });
-
-  return html`
-    <div class="settings-card">
-      <div class="settings-card-header">
-        <span class="settings-card-title">${draft.id}</span>
-        <label class="settings-toggle">
-          <input type="checkbox" checked=${draft.enabled} onChange=${(e) => update("enabled", e.target.checked)} />
-          ${draft.enabled ? "active" : "disabled"}
-        </label>
-      </div>
-
-      <${PromptEditor}
-        type="layer"
-        id=${draft.id}
-        value=${draft.prompt}
-        onChange=${(v) => update("prompt", v)}
-      />
-
-      <div class="settings-row">
-        <${Field} label="Trust (0-1)" type="number" value=${draft.trust} small onChange=${(v) => update("trust", v)} />
-        <${Field} label="Staleness (ms)" type="number" value=${draft.staleness} small onChange=${(v) => update("staleness", v)} />
-        <${Field} label="Max Tokens" type="number" value=${draft.maxTokens} small onChange=${(v) => update("maxTokens", v)} />
-      </div>
-
-      <${Field}
-        label="Source IDs (comma-separated)"
-        value=${(draft.sourceIds || []).join(", ")}
-        onChange=${(v) => update("sourceIds", v.split(",").map(s => s.trim()).filter(Boolean))}
-        placeholder="data source IDs"
-      />
-
-      <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save</button>
-        <button class="action-btn danger" onClick=${() => onDelete(draft.id)}>Remove</button>
-      </div>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// Provider editor
+// Global scope: Providers
 // ---------------------------------------------------------------------------
 
 function ProviderEditor({ provider, onSave }) {
@@ -353,7 +301,7 @@ function ProviderEditor({ provider, onSave }) {
 }
 
 // ---------------------------------------------------------------------------
-// Source editor
+// Project scope: Sources
 // ---------------------------------------------------------------------------
 
 function SourceEditor({ source, onSave, onDelete }) {
@@ -383,32 +331,174 @@ function SourceEditor({ source, onSave, onDelete }) {
 }
 
 // ---------------------------------------------------------------------------
-// Defaults editor
+// Global tab bar
 // ---------------------------------------------------------------------------
 
-function DefaultsEditor({ defaults, providers, onSave }) {
-  const [draft, setDraft] = useState({ ...defaults });
-  const update = (k, v) => setDraft({ ...draft, [k]: v });
+// ---------------------------------------------------------------------------
+// Global scope: Tunnel
+// ---------------------------------------------------------------------------
+
+function TunnelEditor() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState("");
+  const [subdomain, setSubdomain] = useState("");
+  const [provider, setProvider] = useState("localtunnel");
+
+  const refresh = async () => {
+    try {
+      const res = await fetch("/api/tunnel");
+      const data = await res.json();
+      setStatus(data);
+      setProvider(data.provider || "localtunnel");
+      setSubdomain(data.subdomain || "");
+      if (data.hasPassword) setPassword("••••••••");
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const toggle = async () => {
+    setLoading(true);
+    try {
+      const endpoint = status?.active ? "/api/tunnel/stop" : "/api/tunnel/start";
+      const res = await fetch(endpoint, { method: "POST" });
+      const data = await res.json();
+      if (data.error) {
+        showToast(data.error, "error");
+      } else {
+        showToast(status?.active ? "Tunnel stopped" : `Tunnel started: ${data.url}`, "ok");
+      }
+      await refresh();
+    } catch {
+      showToast("Tunnel operation failed", "error");
+    }
+    setLoading(false);
+  };
+
+  const saveConfig = async () => {
+    try {
+      const body = { provider, subdomain: subdomain || undefined };
+      // Only send password if user changed it (not the masked placeholder)
+      if (password && password !== "••••••••") body.password = password;
+      const res = await fetch("/api/tunnel", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast("Tunnel config saved", "ok");
+        if (password && password !== "••••••••") setPassword("••••••••");
+      } else {
+        showToast(data.error || "Save failed", "error");
+      }
+    } catch {
+      showToast("Failed to save tunnel config", "error");
+    }
+  };
 
   return html`
     <div class="settings-card">
       <div class="settings-card-header">
-        <span class="settings-card-title">Global Defaults</span>
+        <span class="settings-card-title">Tunnel</span>
+        <span class="scope-label scope-global">GLOBAL</span>
       </div>
 
-      <div class="settings-row">
-        <${Field} label="Default Provider" value=${draft.provider} small onChange=${(v) => update("provider", v)} />
-        <${Field} label="Default Model" value=${draft.model} small mono onChange=${(v) => update("model", v)} />
+      <p class="settings-desc">
+        Expose the viewer over a public URL. Local/private network requests bypass auth automatically.
+      </p>
+
+      <div class="tunnel-status">
+        <div class="tunnel-status-row">
+          <span class="tunnel-indicator ${status?.active ? "active" : "inactive"}"></span>
+          <span>${status?.active ? "Active" : "Inactive"}</span>
+          ${status?.active && status?.url ? html`
+            <a class="tunnel-url" href=${status.url} target="_blank" rel="noopener">${status.url}</a>
+          ` : null}
+        </div>
+        <button
+          class="action-btn ${status?.active ? "danger" : ""}"
+          onClick=${toggle}
+          disabled=${loading}
+        >${loading ? "..." : status?.active ? "Stop Tunnel" : "Start Tunnel"}</button>
       </div>
 
-      <div class="settings-row">
-        <${Field} label="Temperature" type="number" value=${draft.temperature} small onChange=${(v) => update("temperature", v)} />
-        <${Field} label="Max Tokens" type="number" value=${draft.maxTokens} small onChange=${(v) => update("maxTokens", v)} />
+      <div class="settings-section-label">Configuration</div>
+
+      <div class="settings-field">
+        <label class="settings-label">Provider</label>
+        <select
+          class="settings-input small"
+          value=${provider}
+          onChange=${(e) => setProvider(e.target.value)}
+        >
+          <option value="localtunnel">localtunnel (zero-config)</option>
+          <option value="cloudflared">cloudflared (production)</option>
+        </select>
       </div>
+
+      <${Field}
+        label="Subdomain hint"
+        value=${subdomain}
+        onChange=${setSubdomain}
+        placeholder="my-foundry (localtunnel only, not guaranteed)"
+        small
+      />
+
+      <${Field}
+        label="Access password"
+        value=${password}
+        onChange=${setPassword}
+        type="password"
+        placeholder="Leave empty for auto-generated token"
+        small
+      />
 
       <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save Defaults</button>
+        <button class="action-btn" onClick=${saveConfig}>Save Config</button>
       </div>
+    </div>
+  `;
+}
+
+function GlobalTabBar() {
+  const tabs = [
+    { id: "defaults", label: "Defaults" },
+    { id: "providers", label: "Providers" },
+    { id: "tunnel", label: "Tunnel" },
+  ];
+  return html`
+    <div class="settings-tabs">
+      ${tabs.map(t => html`
+        <button
+          key=${t.id}
+          class="settings-tab ${activeTab.value === t.id ? "active" : ""}"
+          onClick=${() => { activeTab.value = t.id; }}
+        >${t.label}</button>
+      `)}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Project tab bar
+// ---------------------------------------------------------------------------
+
+function ProjectTabBar() {
+  const tabs = [
+    { id: "sources", label: "Sources" },
+    { id: "overrides", label: "Overrides" },
+  ];
+  return html`
+    <div class="settings-tabs">
+      ${tabs.map(t => html`
+        <button
+          key=${t.id}
+          class="settings-tab ${activeTab.value === t.id ? "active" : ""}"
+          onClick=${() => { activeTab.value = t.id; }}
+        >${t.label}</button>
+      `)}
     </div>
   `;
 }
@@ -451,27 +541,92 @@ async function applyPatch(suggestion) {
 }
 
 // ---------------------------------------------------------------------------
+// Project overrides — show what the project overrides from global
+// ---------------------------------------------------------------------------
+
+function ProjectOverrides({ project }) {
+  if (!project) return null;
+
+  const hasDefaults = project.defaults && Object.keys(project.defaults).length > 0;
+  const hasAgents = project.agents && Object.keys(project.agents).length > 0;
+  const hasLayers = project.layers && Object.keys(project.layers).length > 0;
+
+  if (!hasDefaults && !hasAgents && !hasLayers) {
+    return html`
+      <div class="settings-empty">
+        No overrides — this project inherits all global defaults.
+        <p class="wizard-desc dim" style="margin-top: 8px">
+          Override defaults per-project by setting custom providers, models, or agent configs here.
+        </p>
+      </div>
+    `;
+  }
+
+  return html`
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <span class="settings-card-title">Project Overrides</span>
+        <span class="scope-label scope-project">PROJECT</span>
+      </div>
+      ${hasDefaults ? html`
+        <div class="settings-section-label">Default overrides</div>
+        <pre class="settings-override-preview">${JSON.stringify(project.defaults, null, 2)}</pre>
+      ` : null}
+      ${hasAgents ? html`
+        <div class="settings-section-label">Agent overrides (${Object.keys(project.agents).length})</div>
+        <pre class="settings-override-preview">${JSON.stringify(project.agents, null, 2)}</pre>
+      ` : null}
+      ${hasLayers ? html`
+        <div class="settings-section-label">Layer overrides (${Object.keys(project.layers).length})</div>
+        <pre class="settings-override-preview">${JSON.stringify(project.layers, null, 2)}</pre>
+      ` : null}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
 // Main Settings panel
 // ---------------------------------------------------------------------------
 
 export function Settings() {
   const isOpen = settingsOpen.value;
   const config = settingsConfig.value;
+  const scope = settingsScope.value;
 
   useEffect(() => {
     if (isOpen && !config) loadSettings();
   }, [isOpen]);
 
+  // When a project is selected in the sidebar, default to project scope
+  useEffect(() => {
+    if (activeProjectId.value) {
+      settingsScope.value = "project";
+      activeTab.value = "sources";
+    }
+  }, [activeProjectId.value]);
+
   if (!isOpen) return null;
   if (!config) return html`<div class="overlay-backdrop"><div class="settings-panel">Loading...</div></div>`;
 
   const tab = activeTab.value;
+  const projectId = activeProjectId.value;
+  const project = projectId ? config.projects?.[projectId] : null;
+  const projectName = project?.label || projectId;
 
-  const handleAgentSave = (agent) => saveSection("agents", { [agent.id]: agent });
-  const handleLayerSave = (layer) => saveSection("layers", { [layer.id]: layer });
+  const handleScopeChange = (newScope) => {
+    settingsScope.value = newScope;
+    activeTab.value = newScope === "global" ? "defaults" : "sources";
+  };
+
   const handleProviderSave = (provider) => saveSection("providers", { [provider.id]: provider });
-  const handleSourceSave = (source) => saveSection("sources", { [source.id]: source });
   const handleDefaultsSave = (defaults) => saveSection("defaults", defaults);
+  const handleSourceSave = (source) => {
+    if (projectId) {
+      saveProjectSection(projectId, "sources", { [source.id]: source });
+    } else {
+      saveSection("sources", { [source.id]: source });
+    }
+  };
 
   return html`
     <div class="overlay-backdrop" onClick=${() => { settingsOpen.value = false; }}>
@@ -486,63 +641,65 @@ export function Settings() {
           <button class="settings-close" onClick=${() => { settingsOpen.value = false; }}>Esc</button>
         </div>
 
-        <${TabBar} />
+        <${ScopeBar}
+          scope=${scope}
+          onScopeChange=${handleScopeChange}
+          projectName=${projectName}
+        />
+
         <${AISuggestions} />
 
-        <div class="settings-body">
-          ${tab === "agents" ? html`
-            ${Object.values(config.agents).map(a => html`
-              <${AgentEditor}
-                key=${a.id}
-                agent=${a}
+        ${scope === "global" ? html`
+          <${GlobalTabBar} />
+          <div class="settings-body">
+            ${tab === "defaults" ? html`
+              <${DefaultsEditor}
+                defaults=${config.defaults}
                 providers=${config.providers}
-                onSave=${handleAgentSave}
-                onDelete=${(id) => deleteItem("agents", id)}
+                onSave=${handleDefaultsSave}
               />
-            `)}
-            ${Object.keys(config.agents).length === 0 ? html`
-              <div class="settings-empty">No agents configured. Agents registered in code will appear here.</div>
+            ` : tab === "providers" ? html`
+              ${Object.values(config.providers).map(p => html`
+                <${ProviderEditor}
+                  key=${p.id}
+                  provider=${p}
+                  onSave=${handleProviderSave}
+                />
+              `)}
+            ` : tab === "tunnel" ? html`
+              <${TunnelEditor} />
             ` : null}
-          ` : tab === "layers" ? html`
-            ${Object.values(config.layers).map(l => html`
-              <${LayerEditor}
-                key=${l.id}
-                layer=${l}
-                onSave=${handleLayerSave}
-                onDelete=${(id) => deleteItem("layers", id)}
-              />
-            `)}
-            ${Object.keys(config.layers).length === 0 ? html`
-              <div class="settings-empty">No layers configured. Layers from the context stack will appear here.</div>
+          </div>
+        ` : html`
+          <${ProjectTabBar} />
+          <div class="settings-body">
+            ${!project ? html`
+              <div class="settings-empty">
+                Select a project from the sidebar to configure its settings.
+              </div>
+            ` : tab === "sources" ? html`
+              ${Object.values(project.sources || {}).map(s => html`
+                <${SourceEditor}
+                  key=${s.id}
+                  source=${s}
+                  onSave=${handleSourceSave}
+                  onDelete=${(id) => deleteItem("sources", id)}
+                />
+              `)}
+              ${!project.sources || Object.keys(project.sources).length === 0 ? html`
+                <div class="settings-empty">
+                  No sources configured for this project.
+                  <p class="wizard-desc dim" style="margin-top: 8px">
+                    Sources point to docs, conventions, and memory that feed into context layers.
+                    Add a project directory first.
+                  </p>
+                </div>
+              ` : null}
+            ` : tab === "overrides" ? html`
+              <${ProjectOverrides} project=${project} />
             ` : null}
-          ` : tab === "providers" ? html`
-            ${Object.values(config.providers).map(p => html`
-              <${ProviderEditor}
-                key=${p.id}
-                provider=${p}
-                onSave=${handleProviderSave}
-              />
-            `)}
-          ` : tab === "sources" ? html`
-            ${Object.values(config.sources).map(s => html`
-              <${SourceEditor}
-                key=${s.id}
-                source=${s}
-                onSave=${handleSourceSave}
-                onDelete=${(id) => deleteItem("sources", id)}
-              />
-            `)}
-            ${Object.keys(config.sources).length === 0 ? html`
-              <div class="settings-empty">No data sources configured.</div>
-            ` : null}
-          ` : tab === "defaults" ? html`
-            <${DefaultsEditor}
-              defaults=${config.defaults}
-              providers=${config.providers}
-              onSave=${handleDefaultsSave}
-            />
-          ` : null}
-        </div>
+          </div>
+        `}
       </div>
     </div>
   `;

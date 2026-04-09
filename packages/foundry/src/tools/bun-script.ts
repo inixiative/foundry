@@ -24,6 +24,7 @@
 //   `, { modules: { input: JSON.stringify(userData) } });
 // ---------------------------------------------------------------------------
 
+import { unlinkSync } from "node:fs";
 import type {
   ScriptTool,
   ScriptResult,
@@ -95,7 +96,12 @@ try {
 
     const start = performance.now();
 
-    const proc = Bun.spawn(["bun", "eval", wrapper], {
+    // Write wrapper to a temp file — more portable than `bun eval` which
+    // isn't available in all Bun versions.
+    const tmpFile = `/tmp/foundry-script-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`;
+    await Bun.write(tmpFile, wrapper);
+
+    const proc = Bun.spawn(["bun", "run", tmpFile], {
       cwd: this._cwd,
       stdout: "pipe",
       stderr: "pipe",
@@ -117,6 +123,8 @@ try {
       proc.exited.then(() => clearTimeout(timer));
     });
 
+    const cleanup = () => { try { unlinkSync(tmpFile); } catch {} };
+
     try {
       const [stdout, stderr] = await Promise.race([
         Promise.all([
@@ -128,6 +136,7 @@ try {
 
       const durationMs = Math.round(performance.now() - start);
       const exitCode = await proc.exited;
+      cleanup();
 
       // Truncate if needed
       const truncatedStdout = stdout.length > this._maxOutput
@@ -185,6 +194,7 @@ try {
         estimatedTokens: Math.ceil(resultStr.length / 4),
       };
     } catch (err) {
+      cleanup();
       try { proc.kill(); } catch { /* already dead */ }
       const durationMs = Math.round(performance.now() - start);
       return {

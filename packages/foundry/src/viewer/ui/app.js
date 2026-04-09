@@ -15,8 +15,9 @@ import { Sidebar } from "./thread-tree.js";
 import { Conversation } from "./conversation.js";
 import { DetailDrawer } from "./detail-drawer.js";
 import { CommandPalette, HelpOverlay } from "./command-palette.js";
-import { Settings, settingsOpen } from "./settings.js";
+import { Settings, settingsOpen, settingsConfig, loadSettings } from "./settings.js";
 import { Analytics, analyticsOpen } from "./analytics.js";
+import { Wizard, wizardOpen, checkSetupNeeded } from "./wizard.js";
 
 // ---------------------------------------------------------------------------
 // Header — slim: logo + connection status + hints
@@ -28,6 +29,7 @@ function Header() {
 
   return html`
     <div class="header">
+      <span class="header-logo"><span class="logo-bracket">${"<"}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${">"}</span></span>
       <span class="header-title">foundry</span>
       <div class="header-right">
         <span class="status-dot ${isConnected ? "on" : "off"}"></span>
@@ -68,31 +70,40 @@ function Toast() {
 function App() {
   const [selectedSpan, setSelectedSpan] = useState(null);
   const [selectedLayer, setSelectedLayer] = useState(null);
+  const [selectedAgent, setSelectedAgent] = useState(null);
   // "layer" | "agent" | null — when set, detail drawer shows creation form
   const [creating, setCreating] = useState(null);
 
-  const handleSpanSelect = (span) => {
-    setSelectedSpan(span);
+  const clearSelection = () => {
+    setSelectedSpan(null);
     setSelectedLayer(null);
+    setSelectedAgent(null);
     setCreating(null);
+  };
+
+  const handleSpanSelect = (span) => {
+    clearSelection();
+    setSelectedSpan(span);
   };
 
   const handleLayerClick = (layerId) => {
+    clearSelection();
     setSelectedLayer(layerId);
-    setSelectedSpan(null);
-    setCreating(null);
+  };
+
+  const handleAgentClick = (agentId) => {
+    clearSelection();
+    setSelectedAgent(agentId);
   };
 
   const handleCreateLayer = () => {
+    clearSelection();
     setCreating("layer");
-    setSelectedSpan(null);
-    setSelectedLayer(null);
   };
 
   const handleCreateAgent = () => {
+    clearSelection();
     setCreating("agent");
-    setSelectedSpan(null);
-    setSelectedLayer(null);
   };
 
   const handleCreated = () => {
@@ -109,9 +120,7 @@ function App() {
       prevItem: () => { /* TODO: span navigation */ },
       expandItem: () => { /* TODO: expand selected */ },
       escape: () => {
-        setSelectedSpan(null);
-        setSelectedLayer(null);
-        setCreating(null);
+        clearSelection();
         selectedSpanId.value = null;
       },
       togglePause: () => executeAction("thread:pause"),
@@ -124,6 +133,13 @@ function App() {
       toggleEvents: () => {},
     });
     initHotkeys();
+  }, []);
+
+  // Check if first-run wizard is needed
+  useEffect(() => {
+    fetch("/api/settings").then(r => r.json()).then(config => {
+      checkSetupNeeded(config);
+    }).catch(() => {});
   }, []);
 
   const projOpen = projectSidebarOpen.value;
@@ -145,6 +161,7 @@ function App() {
         <div class="panel-left" tabIndex="0">
           <${Sidebar}
             onLayerClick=${handleLayerClick}
+            onAgentClick=${handleAgentClick}
             onCreateLayer=${handleCreateLayer}
             onCreateAgent=${handleCreateAgent}
           />
@@ -163,6 +180,7 @@ function App() {
           <${DetailDrawer}
             selectedSpan=${selectedSpan}
             selectedLayer=${selectedLayer}
+            selectedAgent=${selectedAgent}
             creating=${creating}
             onCreated=${handleCreated}
           />
@@ -174,6 +192,7 @@ function App() {
       <${HelpOverlay} />
       <${Settings} />
       <${Analytics} />
+      <${Wizard} />
       <${Toast} />
     </div>
   `;
@@ -184,4 +203,5 @@ function App() {
 // ---------------------------------------------------------------------------
 
 init();
+loadSettings();
 render(html`<${App} />`, document.getElementById("root"));

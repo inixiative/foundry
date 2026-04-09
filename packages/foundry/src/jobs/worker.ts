@@ -1,6 +1,7 @@
 import Redis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import type { PostgresMemory } from "../adapters/postgres-memory";
+import type { ContextStack } from "@inixiative/foundry-core";
 import { isValidHandlerName, jobHandlers } from "./handlers";
 import type { JobsQueue, WorkerContext } from "./types";
 
@@ -12,6 +13,8 @@ export interface WorkerInitOpts {
   redisUrl: string;
   db: PostgresMemory;
   concurrency?: number;
+  /** Live thread stacks for in-process jobs like warmLayers. */
+  stacks?: Map<string, ContextStack>;
 }
 
 /**
@@ -19,7 +22,7 @@ export interface WorkerInitOpts {
  * Processes jobs from the "foundry-jobs" queue.
  */
 export async function initializeWorker(opts: WorkerInitOpts): Promise<Worker> {
-  const { queue, redisUrl, db, concurrency = 10 } = opts;
+  const { queue, redisUrl, db, concurrency = 10, stacks } = opts;
 
   // BullMQ Worker needs its own Redis connection (separate from Queue)
   workerRedis = new Redis(redisUrl, { maxRetriesPerRequest: null });
@@ -43,6 +46,7 @@ export async function initializeWorker(opts: WorkerInitOpts): Promise<Worker> {
         db,
         queue,
         job,
+        stacks,
         log: jobLog,
       };
 

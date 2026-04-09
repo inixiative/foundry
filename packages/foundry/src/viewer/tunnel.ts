@@ -17,8 +17,9 @@
 // the login page (cookie session) or Authorization: Bearer header.
 // ---------------------------------------------------------------------------
 
-import { randomBytes } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { createHmac, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { Context, Next } from "hono";
 import type { Subprocess } from "bun";
 
 // ---------------------------------------------------------------------------
@@ -52,15 +53,42 @@ export interface TunnelInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Network detection — skip auth for private/local IPs
+// ---------------------------------------------------------------------------
+
+const PRIVATE_IP_PREFIXES = [
+  "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.",
+  "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+  "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+  "::1", "fc", "fd", "fe80:",
+];
+
+/** Check if an IP address is on a private/local network. */
+export function isPrivateIP(ip: string): boolean {
+  if (!ip) return false;
+  return PRIVATE_IP_PREFIXES.some((prefix) => ip.startsWith(prefix)) || ip === "localhost";
+}
+
+/**
+ * Extract the client IP from a request — check forwarding headers first
+ * (tunnel proxies set these), then fall back to the socket address.
+ */
+export function clientIP(c: Context): string {
+  // X-Forwarded-For is set by tunnel proxies — first entry is the real client
+  const forwarded = c.req.header("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  // Fallback to direct connection (Bun sets this)
+  return c.req.header("x-real-ip") ?? "";
+}
+
+// ---------------------------------------------------------------------------
 // Auth middleware (Hono) — cookie-based for browsers, bearer for API clients
 // ---------------------------------------------------------------------------
 
-const SESSION_COOKIE = "foundry_session";
+export const SESSION_COOKIE = "foundry_session";
 
 /** Generate a signed session value from the token. */
-function sessionValue(token: string): string {
-  // HMAC the token so the cookie value isn't the raw secret
-  const { createHmac } = require("crypto") as typeof import("crypto");
+export function sessionValue(token: string): string {
   return createHmac("sha256", token).update("foundry-session").digest("hex");
 }
 
@@ -117,12 +145,16 @@ function loginPage(error?: string): string {
 export function tunnelAuth(token: string) {
   const validSession = sessionValue(token);
 
-  return async (c: any, next: () => Promise<void>) => {
+  return async (c: Context, next: Next) => {
     const url = new URL(c.req.url);
     const path = url.pathname;
 
     // Always allow health check
     if (path === "/api/health") return next();
+
+    // Skip auth for private/local network requests
+    const ip = clientIP(c);
+    if (isPrivateIP(ip)) return next();
 
     // Serve login page (GET /auth)
     if (path === "/auth" && c.req.method === "GET") {
@@ -132,7 +164,7 @@ export function tunnelAuth(token: string) {
     // Handle login submission (POST /auth)
     if (path === "/auth" && c.req.method === "POST") {
       const body = await c.req.parseBody();
-      const submitted = (body.token ?? "").trim();
+      const submitted = typeof body.token === "string" ? body.token.trim() : "";
       if (submitted === token) {
         // Set session cookie and redirect to root
         const secure = url.protocol === "https:";

@@ -35,7 +35,7 @@ import { createFoundryMcpServer, startStdioTransport } from "./server";
 const projectDir = process.cwd();
 const configDir = resolve(projectDir, ".foundry");
 const configStore = new ConfigStore(configDir);
-const config = configStore.load();
+const config = await configStore.load();
 
 // ---------------------------------------------------------------------------
 // Build layers from config
@@ -49,55 +49,58 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
 
     const sources: ContextSource[] = [];
 
-    // Inline content
-    if (layerCfg.source.type === "inline" && layerCfg.source.content) {
-      sources.push({
-        id: `${id}-inline`,
-        load: async () => layerCfg.source.content!,
-      });
-    }
+    // Resolve each sourceId to a DataSourceConfig and build a ContextSource
+    for (const sourceId of layerCfg.sourceIds) {
+      const srcCfg = config.sources[sourceId];
+      if (!srcCfg || !srcCfg.enabled) continue;
 
-    // File-based content
-    if (layerCfg.source.type === "file" && layerCfg.source.path) {
-      const filePath = resolve(projectDir, layerCfg.source.path);
-      sources.push({
-        id: `${id}-file`,
-        load: async () => {
-          try {
-            return await Bun.file(filePath).text();
-          } catch {
-            return `[Failed to load ${filePath}]`;
-          }
-        },
-      });
-    }
-
-    // Markdown directory
-    if (layerCfg.source.type === "markdown" && layerCfg.source.path) {
-      const dirPath = resolve(projectDir, layerCfg.source.path);
-      sources.push({
-        id: `${id}-markdown`,
-        load: async () => {
-          try {
-            const glob = new Bun.Glob("**/*.md");
-            const files: string[] = [];
-            for await (const file of glob.scan({ cwd: dirPath })) {
-              const content = await Bun.file(resolve(dirPath, file)).text();
-              files.push(`# ${file}\n\n${content}`);
+      if (srcCfg.type === "inline") {
+        sources.push({
+          id: sourceId,
+          load: async () => srcCfg.uri,
+        });
+      } else if (srcCfg.type === "file") {
+        const filePath = resolve(projectDir, srcCfg.uri);
+        sources.push({
+          id: sourceId,
+          load: async () => {
+            try {
+              return await Bun.file(filePath).text();
+            } catch {
+              return `[Failed to load ${filePath}]`;
             }
-            return files.join("\n\n---\n\n");
-          } catch {
-            return `[Failed to scan ${dirPath}]`;
-          }
-        },
-      });
+          },
+        });
+      } else if (srcCfg.type === "markdown") {
+        const dirPath = resolve(projectDir, srcCfg.uri);
+        sources.push({
+          id: sourceId,
+          load: async () => {
+            try {
+              const glob = new Bun.Glob("**/*.md");
+              const files: string[] = [];
+              for await (const file of glob.scan({ cwd: dirPath })) {
+                const content = await Bun.file(resolve(dirPath, file)).text();
+                files.push(`# ${file}\n\n${content}`);
+              }
+              return files.join("\n\n---\n\n");
+            } catch {
+              return `[Failed to scan ${dirPath}]`;
+            }
+          },
+        });
+      } else {
+        sources.push({
+          id: sourceId,
+          load: async () => `[Source ${sourceId}: type "${srcCfg.type}" not yet supported in MCP CLI]`,
+        });
+      }
     }
 
     if (sources.length === 0) {
-      // Placeholder for other source types (sqlite, postgres, etc.)
       sources.push({
-        id: `${id}-placeholder`,
-        load: async () => `[Layer ${id}: source type "${layerCfg.source.type}" not yet supported in MCP CLI]`,
+        id: `${id}-empty`,
+        load: async () => `[Layer ${id}: no enabled sources]`,
       });
     }
 

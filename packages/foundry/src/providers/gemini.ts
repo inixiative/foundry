@@ -11,7 +11,7 @@ import { splitSystemMessage } from "@inixiative/foundry-core";
 
 export interface GeminiConfig {
   apiKey: string;
-  /** Defaults to "gemini-2.5-flash". */
+  /** Defaults to "gemini-3.1-flash-lite-preview". */
   defaultModel?: string;
   /** Override base URL. */
   baseUrl?: string;
@@ -32,7 +32,7 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gemini-2.5-flash";
+    this._defaultModel = config.defaultModel ?? "gemini-3.1-flash-lite-preview";
     this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
   }
 

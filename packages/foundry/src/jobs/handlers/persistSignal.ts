@@ -15,6 +15,6 @@ export type PersistSignalPayload = {
 export const persistSignal = makeJob<PersistSignalPayload>(async (ctx, payload) => {
   const { db, log } = ctx;
 
-  await db.writeSignal(payload as any);
+  await db.writeSignal({ ...payload, timestamp: Date.now() });
   log(`Persisted signal ${payload.id} (${payload.kind})`);
 });

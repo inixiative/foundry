@@ -14,6 +14,7 @@ import {
   ConvergenceDetector,
   CrossPollinationDetector,
   ResourceImbalanceDetector,
+  type VisibilityTier,
   type ThreadSnapshot,
   type HeraldPattern,
   type PatternDetector,
@@ -369,47 +370,35 @@ describe("Herald", () => {
   test("start/stop lifecycle", async () => {
     const t1 = makeThread("t1");
     const session = makeSession(t1);
-    herald = new Herald(session, {
-      snapshotInterval: 50,
-      canInject: false,
-    });
-
-    const patterns: HeraldPattern[] = [];
-    herald.onPattern((p) => patterns.push(p));
-
-    // Use a custom detector that always fires unique patterns
-    let callCount = 0;
-    herald.addDetector({
-      id: "counter",
-      kind: "convergence",
-      detect: () => {
-        callCount++;
-        return [
-          {
-            id: `lifecycle_${callCount}_${Date.now()}`,
-            kind: "convergence",
-            severity: "warning",
-            threads: [`unique_${callCount}`],
-            description: `call ${callCount}`,
-            recommendation: "test",
-            evidence: {},
-            timestamp: Date.now(),
-          },
-        ];
-      },
-    });
+    herald = new Herald(session, { canInject: false });
 
     herald.start();
-    // Wait for at least 2 intervals
-    await new Promise((r) => setTimeout(r, 150));
+
+    // Emit a trigger signal — should set dirty
+    await t1.signals.emit({
+      id: "lifecycle-sig",
+      kind: "classification",
+      source: "test",
+      content: null,
+      timestamp: Date.now(),
+    });
+    expect(herald.isDirty).toBe(true);
+
+    // Explicit observe clears dirty
+    await herald.observe();
+    expect(herald.isDirty).toBe(false);
+
     herald.stop();
 
-    const countAfterStop = callCount;
-    expect(countAfterStop).toBeGreaterThanOrEqual(2);
-
-    // After stop, no more calls
-    await new Promise((r) => setTimeout(r, 100));
-    expect(callCount).toBe(countAfterStop);
+    // After stop, signals should not set dirty
+    await t1.signals.emit({
+      id: "lifecycle-sig-2",
+      kind: "classification",
+      source: "test",
+      content: null,
+      timestamp: Date.now(),
+    });
+    expect(herald.isDirty).toBe(false);
   });
 
   // -- 13. canInject=false prevents injection --
@@ -540,5 +529,325 @@ describe("Herald", () => {
     expect(recs.length).toBeGreaterThanOrEqual(1);
 
     unsub();
+  });
+
+  // =========================================================================
+  // Information Visibility Tiers
+  // =========================================================================
+
+  describe("visibility tiers", () => {
+    // -- 18. setVisibility and getVisibility --
+    test("setVisibility and getVisibility round-trip", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session);
+
+      herald.setVisibility("my-prefs", "personal-private", "user-1");
+      herald.setVisibility("my-role", "personal-public", "user-1");
+      herald.setVisibility("team-conventions", "team");
+      herald.setVisibility("org-security", "org");
+
+      expect(herald.getVisibility("my-prefs").tier).toBe("personal-private");
+      expect(herald.getVisibility("my-prefs").ownerId).toBe("user-1");
+      expect(herald.getVisibility("my-role").tier).toBe("personal-public");
+      expect(herald.getVisibility("team-conventions").tier).toBe("team");
+      expect(herald.getVisibility("org-security").tier).toBe("org");
+    });
+
+    // -- 19. unregistered layers default to "team" --
+    test("unregistered layers default to team tier", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session);
+
+      expect(herald.getVisibility("unknown-layer").tier).toBe("team");
+    });
+
+    // -- 20. personal-private requester sees everything --
+    test("personal-private requester sees own private + all higher tiers", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, {
+        visibility: [
+          { layerId: "my-prefs", tier: "personal-private", ownerId: "user-1" },
+          { layerId: "other-prefs", tier: "personal-private", ownerId: "user-2" },
+          { layerId: "my-role", tier: "personal-public", ownerId: "user-1" },
+          { layerId: "team-conv", tier: "team" },
+          { layerId: "org-sec", tier: "org" },
+        ],
+      });
+
+      const all = ["my-prefs", "other-prefs", "my-role", "team-conv", "org-sec"];
+      const visible = herald.filterByVisibility(all, "personal-private", "user-1");
+
+      expect(visible).toContain("my-prefs");       // own private
+      expect(visible).not.toContain("other-prefs"); // someone else's private
+      expect(visible).toContain("my-role");          // personal-public
+      expect(visible).toContain("team-conv");        // team
+      expect(visible).toContain("org-sec");          // org
+    });
+
+    // -- 21. personal-public requester cannot see personal-private --
+    test("personal-public requester cannot see personal-private", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, {
+        visibility: [
+          { layerId: "prefs", tier: "personal-private", ownerId: "user-1" },
+          { layerId: "role", tier: "personal-public", ownerId: "user-1" },
+          { layerId: "team", tier: "team" },
+          { layerId: "org", tier: "org" },
+        ],
+      });
+
+      const all = ["prefs", "role", "team", "org"];
+      const visible = herald.filterByVisibility(all, "personal-public", "user-1");
+
+      expect(visible).not.toContain("prefs");
+      expect(visible).toContain("role");
+      expect(visible).toContain("team");
+      expect(visible).toContain("org");
+    });
+
+    // -- 22. team requester sees public + team + org --
+    test("team requester sees personal-public + team + org but not private", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, {
+        visibility: [
+          { layerId: "priv", tier: "personal-private", ownerId: "user-1" },
+          { layerId: "pub", tier: "personal-public", ownerId: "user-1" },
+          { layerId: "team", tier: "team" },
+          { layerId: "org", tier: "org" },
+        ],
+      });
+
+      const all = ["priv", "pub", "team", "org"];
+      const visible = herald.filterByVisibility(all, "team");
+
+      expect(visible).not.toContain("priv");
+      expect(visible).toContain("pub");
+      expect(visible).toContain("team");
+      expect(visible).toContain("org");
+    });
+
+    // -- 23. org requester sees only org --
+    test("org requester sees only org-level layers", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, {
+        visibility: [
+          { layerId: "priv", tier: "personal-private", ownerId: "user-1" },
+          { layerId: "pub", tier: "personal-public", ownerId: "user-1" },
+          { layerId: "team", tier: "team" },
+          { layerId: "org", tier: "org" },
+        ],
+      });
+
+      const all = ["priv", "pub", "team", "org"];
+      const visible = herald.filterByVisibility(all, "org");
+
+      expect(visible).toEqual(["org"]);
+    });
+
+    // -- 24. constructor accepts initial visibility config --
+    test("constructor accepts initial visibility via config", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, {
+        visibility: [
+          { layerId: "layer-a", tier: "team" },
+          { layerId: "layer-b", tier: "org" },
+        ],
+      });
+
+      expect(herald.getVisibility("layer-a").tier).toBe("team");
+      expect(herald.getVisibility("layer-b").tier).toBe("org");
+    });
+  });
+
+  // =========================================================================
+  // Event-Driven Mode
+  // =========================================================================
+
+  describe("event-driven mode", () => {
+    // -- 25. isDirty starts false --
+    test("isDirty starts false", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session, { canInject: false });
+      expect(herald.isDirty).toBe(false);
+    });
+
+    // -- 26. signal on a subscribed thread sets isDirty --
+    test("signal on subscribed thread sets isDirty", async () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session, { canInject: false });
+      herald.start();
+
+      expect(herald.isDirty).toBe(false);
+
+      // Emit a trigger signal on the thread
+      await t1.signals.emit({
+        id: "test-sig-1",
+        kind: "classification",
+        source: "test",
+        content: { result: "auth" },
+        timestamp: Date.now(),
+      });
+
+      expect(herald.isDirty).toBe(true);
+    });
+
+    // -- 27. non-trigger signal does NOT set isDirty --
+    test("non-trigger signal does not set isDirty", async () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session, { canInject: false });
+      herald.start();
+
+      // Emit a signal kind NOT in the default triggerSignals set
+      await t1.signals.emit({
+        id: "test-sig-2",
+        kind: "custom_irrelevant" as any,
+        source: "test",
+        content: null,
+        timestamp: Date.now(),
+      });
+
+      expect(herald.isDirty).toBe(false);
+    });
+
+    // -- 28. custom triggerSignals config is respected --
+    test("custom triggerSignals config is respected", async () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session, {
+        canInject: false,
+        triggerSignals: ["my_custom_signal"],
+      });
+      herald.start();
+
+      // Default trigger should NOT fire
+      await t1.signals.emit({
+        id: "test-sig-3",
+        kind: "classification",
+        source: "test",
+        content: null,
+        timestamp: Date.now(),
+      });
+      expect(herald.isDirty).toBe(false);
+
+      // Custom trigger SHOULD fire
+      await t1.signals.emit({
+        id: "test-sig-4",
+        kind: "my_custom_signal" as any,
+        source: "test",
+        content: null,
+        timestamp: Date.now(),
+      });
+      expect(herald.isDirty).toBe(true);
+    });
+
+    // -- 29. stop() unsubscribes from signals --
+    test("stop unsubscribes from thread signals", async () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session, { canInject: false });
+      herald.start();
+      herald.stop();
+
+      await t1.signals.emit({
+        id: "test-sig-5",
+        kind: "classification",
+        source: "test",
+        content: null,
+        timestamp: Date.now(),
+      });
+
+      // Should still be clean since we stopped
+      expect(herald.isDirty).toBe(false);
+    });
+
+    // -- 30. new threads added after start() get subscribed --
+    test("new threads added after start get subscribed", async () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session, { canInject: false });
+      herald.start();
+
+      // Add a new thread after start
+      const t2 = makeThread("t2");
+      session.add(t2);
+
+      // Signal on the new thread should trigger dirty
+      await t2.signals.emit({
+        id: "test-sig-6",
+        kind: "dispatch",
+        source: "test",
+        content: null,
+        timestamp: Date.now(),
+      });
+
+      expect(herald.isDirty).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // Summary Layer
+  // =========================================================================
+
+  describe("summary layer", () => {
+    // -- 31. summaryLayer exists and has content --
+    test("summaryLayer exists and has initial content", () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session);
+
+      expect(herald.summaryLayer).toBeDefined();
+      expect(herald.summaryLayer.id).toBe("__herald-summary");
+      expect(herald.summaryLayer.content).toBeTruthy();
+    });
+
+    // -- 32. single thread shows "Single thread active" --
+    test("single thread shows single-thread message", () => {
+      const t1 = makeThread("t1");
+      const session = makeSession(t1);
+      herald = new Herald(session);
+
+      expect(herald.summaryLayer.content).toContain("Single thread active");
+    });
+
+    // -- 33. multiple threads shows thread list --
+    test("multiple threads shows thread list in summary", () => {
+      const t1 = makeThread("t1", { description: "fix auth bug" });
+      const t2 = makeThread("t2", { description: "write tests" });
+      const session = makeSession(t1, t2);
+      herald = new Herald(session);
+
+      const content = herald.summaryLayer.content;
+      expect(content).toContain("Active threads: 2");
+      expect(content).toContain("t1");
+      expect(content).toContain("fix auth bug");
+      expect(content).toContain("t2");
+      expect(content).toContain("write tests");
+    });
+
+    // -- 34. summary updates after observe() detects patterns --
+    test("summary updates after observe detects patterns", async () => {
+      const t1 = makeThread("t1");
+      const t2 = makeThread("t2");
+      const session = makeSession(t1, t2);
+      herald = new Herald(session, { canInject: false });
+
+      // Trigger a duplication pattern
+      await t1.dispatch("worker", "task");
+      await t2.dispatch("worker", "task");
+      await herald.observe();
+
+      const content = herald.summaryLayer.content;
+      expect(content).toContain("Recent cross-thread patterns:");
+    });
+
+    // -- 35. summary layer has correct trust --
+    test("summary layer has trust 0.8", () => {
+      const session = makeSession(makeThread("t1"));
+      herald = new Herald(session);
+
+      expect(herald.summaryLayer.trust).toBe(0.8);
+    });
   });
 });

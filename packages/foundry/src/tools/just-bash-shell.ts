@@ -25,6 +25,7 @@ import type {
   ShellTool,
   ShellResult,
   ShellOpts,
+  OutputFilter,
   ToolResult,
 } from "@inixiative/foundry-core";
 
@@ -36,6 +37,12 @@ export interface JustBashShellConfig {
   timeout?: number;
   /** Max stdout size in bytes before truncation. Default: 100KB. */
   maxOutput?: number;
+  /**
+   * Default output filter applied to every command.
+   * Use builtinFilters.rtk() for RTK-style token reduction.
+   * Per-command filters in ShellOpts override this.
+   */
+  outputFilter?: OutputFilter;
 }
 
 // just-bash types — declared loosely for peer dep pattern
@@ -50,12 +57,14 @@ export class JustBashShell implements ShellTool {
   readonly kind = "shell" as const;
   readonly capability = "exec:shell" as const;
 
-  private _config: Required<Omit<JustBashShellConfig, "id">>;
+  private _config: Required<Omit<JustBashShellConfig, "id" | "outputFilter">>;
+  private _defaultFilter: OutputFilter | undefined;
   private _instance: JustBashInstance | null = null;
   private _factory: JustBashFactory | null = null;
 
   constructor(config?: JustBashShellConfig) {
     this.id = config?.id ?? "shell";
+    this._defaultFilter = config?.outputFilter;
     this._config = {
       files: config?.files ?? {},
       timeout: config?.timeout ?? 30_000,
@@ -112,10 +121,15 @@ export class JustBashShell implements ShellTool {
       ]);
 
       const durationMs = Math.round(performance.now() - start);
-      const truncated = result.stdout.length > maxOutput;
+
+      // Apply output filter (RTK-style token reduction)
+      const filter = opts?.outputFilter ?? this._defaultFilter;
+      const filtered = filter ? filter(result.stdout, command) : result.stdout;
+
+      const truncated = filtered.length > maxOutput;
       const stdout = truncated
-        ? result.stdout.slice(0, maxOutput) + `\n... (truncated at ${maxOutput} bytes)`
-        : result.stdout;
+        ? filtered.slice(0, maxOutput) + `\n... (truncated at ${maxOutput} bytes)`
+        : filtered;
 
       const ok = result.exitCode === 0;
       const summary = ok

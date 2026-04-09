@@ -42,6 +42,36 @@ export interface LLMMessage {
   readonly content: string;
 }
 
+/** Tool definition sent to the LLM so it can call tools. */
+export interface ToolDefinition {
+  /** Tool name (e.g., "shell_exec", "memory_search"). */
+  name: string;
+  /** Short description for the LLM. */
+  description: string;
+  /** JSON Schema for the tool's input parameters. */
+  inputSchema: Record<string, unknown>;
+}
+
+/** A tool call returned by the LLM. */
+export interface ToolCall {
+  /** Provider-assigned call ID (for matching results). */
+  id: string;
+  /** Tool name to invoke. */
+  name: string;
+  /** Parsed input arguments. */
+  input: Record<string, unknown>;
+}
+
+/** Result of executing a tool call, fed back to the LLM. */
+export interface ToolCallResult {
+  /** Matches the ToolCall.id. */
+  toolCallId: string;
+  /** Serialized result content. */
+  content: string;
+  /** Whether the tool call succeeded. */
+  isError?: boolean;
+}
+
 export interface CompletionOpts {
   model?: string;
   maxTokens?: number;
@@ -52,6 +82,8 @@ export interface CompletionOpts {
   maxTurns?: number;
   /** Enable/disable tool use. False = pure text completion. */
   tools?: boolean;
+  /** Tool definitions for the LLM to call. Providers map to native format. */
+  toolDefinitions?: ToolDefinition[];
 
   // -- Extended knobs (providers map these to their native APIs) --
 
@@ -67,6 +99,8 @@ export interface CompletionOpts {
   timeout?: number;
   /** Enable prompt caching where supported. */
   cacheControl?: boolean;
+  /** Thread ID — used by session-aware providers (e.g. ClaudeCode) to resume sessions. */
+  threadId?: string;
 }
 
 export interface CompletionResult {
@@ -74,6 +108,8 @@ export interface CompletionResult {
   readonly model: string;
   readonly tokens?: { input: number; output: number };
   readonly finishReason?: string;
+  /** Tool calls requested by the LLM (present when finishReason is "tool_use"). */
+  readonly toolCalls?: ToolCall[];
   readonly raw?: unknown;
 }
 

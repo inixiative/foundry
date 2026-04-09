@@ -210,7 +210,7 @@ export function createFoundryMcpServer(config: FoundryMcpConfig): McpServer {
       const summaries = siblings.map((t) => {
         const meta = t.meta;
         const tags = meta.tags.length > 0 ? ` [${meta.tags.join(", ")}]` : "";
-        return `- **${t.id}**${tags}: ${meta.description} (status: ${meta.status}, messages: ${meta.messageCount})`;
+        return `- **${t.id}**${tags}: ${meta.description} (status: ${meta.status})`;
       });
 
       return {
@@ -242,10 +242,12 @@ export function createFoundryMcpServer(config: FoundryMcpConfig): McpServer {
     },
     async ({ kind, content: signalContent, confidence }) => {
       signals.emit({
+        id: crypto.randomUUID(),
         kind: kind as SignalKind,
         source: "session-mcp",
         content: signalContent,
         confidence,
+        timestamp: Date.now(),
       });
 
       return {
@@ -274,8 +276,8 @@ export async function startStdioTransport(server: McpServer): Promise<void> {
  * Create an SSE transport handler for embedding in an HTTP server.
  * Used when the MCP server runs alongside the viewer.
  */
-export function createSseTransport(): SSEServerTransport {
-  return new SSEServerTransport("/mcp/messages");
+export function createSseTransport(res: import("http").ServerResponse): SSEServerTransport {
+  return new SSEServerTransport("/mcp/messages", res);
 }
 
 // ---------------------------------------------------------------------------

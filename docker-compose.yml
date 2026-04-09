@@ -29,5 +29,21 @@ services:
       timeout: 5s
       retries: 5
 
+  muninndb:
+    image: ghcr.io/scrypster/muninndb:latest
+    container_name: foundry_muninndb
+    restart: unless-stopped
+    ports:
+      - "8475:8475"  # REST API
+      - "8476:8476"  # Web UI
+    volumes:
+      - muninndb_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8475/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  muninndb_data:

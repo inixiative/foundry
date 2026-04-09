@@ -13,8 +13,10 @@ import { html, useState } from "./lib.js";
 import {
   selectedSpanId, currentTrace, layerColor, threadData,
   submitIntervention, executeAction, createDefinition, definitions,
-  detailDrawerOpen,
+  detailDrawerOpen, activeProjectId, authFetch, showToast,
+  loadDefinitions,
 } from "./store.js";
+import { settingsConfig } from "./settings.js";
 import { LayerBand } from "./layer-band.js";
 
 // ---------------------------------------------------------------------------
@@ -252,6 +254,7 @@ function LayerDetail({ layerId }) {
           <span class="detail-name">${layer.id}</span>
           <span class="detail-status ${layer.state}">${layer.state}</span>
         </div>
+        <${ScopeBar} section="layers" itemId=${layer.id} />
         <div class="detail-meta-row">
           <div class="detail-meta"><label>Trust</label><span>${layer.trust}</span></div>
           <div class="detail-meta"><label>Content</label><span>${layer.contentLength} chars</span></div>
@@ -283,11 +286,147 @@ function LayerDetail({ layerId }) {
         <span class="detail-name">${layerDef.id}</span>
         <span class="detail-status cold">not instantiated</span>
       </div>
+      <${ScopeBar} section="layers" itemId=${layerDef.id} />
       <div class="detail-def-fields">
         ${layerDef.prompt ? html`<div class="def-field"><label>Prompt</label><pre class="detail-json">${layerDef.prompt}</pre></div>` : null}
         <div class="def-field"><label>Trust</label><span>${layerDef.trust}</span></div>
         <div class="def-field"><label>Sources</label><span>${(layerDef.sourceIds || []).join(", ") || "none"}</span></div>
       </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Scope bar — global vs project with fork/unfork controls
+// ---------------------------------------------------------------------------
+
+function ScopeBar({ section, itemId }) {
+  const projectId = activeProjectId.value;
+  const config = settingsConfig.value;
+
+  // No project selected → always global
+  if (!projectId || !config) {
+    return html`<div class="scope-bar"><span class="scope-label scope-global">global</span></div>`;
+  }
+
+  const projectConfig = config.projects?.[projectId];
+  const hasOverride = projectConfig?.[section]?.[itemId] != null;
+
+  const handleFork = async () => {
+    // Copy global config into project overrides
+    const globalItem = config[section]?.[itemId];
+    if (!globalItem) return;
+    try {
+      const patch = { [section]: { ...projectConfig?.[section], [itemId]: { ...globalItem } } };
+      const res = await authFetch(`/api/settings/projects`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [projectId]: { ...projectConfig, ...patch } }),
+      });
+      if (res.ok) {
+        settingsConfig.value = await res.json();
+        showToast(`Created project override for ${itemId}`, "ok");
+      }
+    } catch { showToast("Failed to create project copy", "error"); }
+  };
+
+  const handleUnfork = async () => {
+    // Remove the project override — fall back to global
+    try {
+      const overrides = { ...projectConfig?.[section] };
+      delete overrides[itemId];
+      const patch = { [section]: overrides };
+      const res = await authFetch(`/api/settings/projects`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [projectId]: { ...projectConfig, ...patch } }),
+      });
+      if (res.ok) {
+        settingsConfig.value = await res.json();
+        showToast(`Removed project override — using global ${itemId}`, "ok");
+      }
+    } catch { showToast("Failed to remove project copy", "error"); }
+  };
+
+  return html`
+    <div class="scope-bar">
+      ${hasOverride ? html`
+        <span class="scope-label scope-project">${projectId} override</span>
+        <button class="scope-btn" onClick=${handleUnfork} title="Remove project override, use global">use global</button>
+      ` : html`
+        <span class="scope-label scope-global">global</span>
+        <button class="scope-btn" onClick=${handleFork} title="Create project-specific copy">fork for ${projectId}</button>
+      `}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Agent detail
+// ---------------------------------------------------------------------------
+
+function AgentDetail({ agentId }) {
+  const data = threadData.value;
+  const instance = (data?.agents || []).find(a => a.agentId === agentId);
+  const agentDef = (definitions.value?.agents || []).find(a => a.id === agentId);
+
+  if (!instance && !agentDef) return html`<div class="detail-empty">Agent not found</div>`;
+
+  const def = agentDef || {};
+
+  return html`
+    <div class="detail-content">
+      <div class="detail-header">
+        <span class="agent-icon">${instance ? "◆" : "○"}</span>
+        <span class="detail-name">${agentId}</span>
+        ${def.kind ? html`<span class="detail-kind-badge">${def.kind}</span>` : null}
+        <span class="detail-status ${instance ? "ok" : "cold"}">${instance ? "active" : "defined"}</span>
+      </div>
+
+      <${ScopeBar} section="agents" itemId=${agentId} />
+
+      <div class="detail-meta-row">
+        ${def.provider ? html`<div class="detail-meta"><label>Provider</label><span>${def.provider}</span></div>` : null}
+        ${def.model ? html`<div class="detail-meta"><label>Model</label><span class="mono">${def.model}</span></div>` : null}
+        ${def.temperature != null ? html`<div class="detail-meta"><label>Temp</label><span>${def.temperature}</span></div>` : null}
+        ${def.maxTokens != null ? html`<div class="detail-meta"><label>Max Tokens</label><span>${def.maxTokens}</span></div>` : null}
+        ${def.maxDepth != null ? html`<div class="detail-meta"><label>Max Depth</label><span>${def.maxDepth}</span></div>` : null}
+      </div>
+
+      ${def.prompt ? html`
+        <${Section} title="Prompt">
+          <pre class="detail-json">${def.prompt}</pre>
+        </${Section}>
+      ` : null}
+
+      ${def.visibleLayers?.length > 0 ? html`
+        <${Section} title="Visible Layers" open=${false}>
+          <div class="detail-layers">
+            ${def.visibleLayers.map(id => html`
+              <span key=${id} class="detail-layer-chip" style="border-color: ${layerColor(id)}">
+                <span class="detail-layer-dot" style="background: ${layerColor(id)}"></span>
+                ${id}
+              </span>
+            `)}
+          </div>
+        </${Section}>
+      ` : null}
+
+      ${def.peers?.length > 0 ? html`
+        <${Section} title="Peers" open=${false}>
+          <div class="detail-peers">
+            ${def.peers.map(p => html`<span key=${p} class="detail-peer-chip">${p}</span>`)}
+          </div>
+        </${Section}>
+      ` : null}
+
+      ${def.enabled != null ? html`
+        <div class="detail-meta-row" style="margin-top: 8px">
+          <div class="detail-meta"><label>Status</label><span>${def.enabled ? "enabled" : "disabled"}</span></div>
+          ${def.invocation ? html`<div class="detail-meta"><label>Invocation</label><span>${def.invocation}</span></div>` : null}
+          ${def.flowRole ? html`<div class="detail-meta"><label>Flow Role</label><span>${def.flowRole}</span></div>` : null}
+        </div>
+      ` : null}
     </div>
   `;
 }
@@ -354,20 +493,20 @@ function CreateAgentForm({ onCreated }) {
   const [id, setId] = useState("");
   const [kind, setKind] = useState("executor");
   const [prompt, setPrompt] = useState("");
-  const [temperature, setTemperature] = useState("0");
-  const [maxTokens, setMaxTokens] = useState("4096");
+  const [temperature, setTemperature] = useState("");
+  const [maxTokens, setMaxTokens] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     if (!id.trim()) return;
     setSaving(true);
-    const ok = await createDefinition("agents", id.trim(), {
-      id: id.trim(), kind, prompt, provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
-      temperature: parseFloat(temperature) || 0,
-      maxTokens: parseInt(maxTokens) || 4096,
+    const data = {
+      id: id.trim(), kind, prompt,
       visibleLayers: [], peers: [], maxDepth: 3, enabled: true,
-    });
+    };
+    if (temperature !== "") data.temperature = parseFloat(temperature);
+    if (maxTokens !== "") data.maxTokens = parseInt(maxTokens);
+    const ok = await createDefinition("agents", id.trim(), data);
     setSaving(false);
     if (ok && onCreated) onCreated();
   };
@@ -416,7 +555,7 @@ function CreateAgentForm({ onCreated }) {
 // Detail drawer (main export)
 // ---------------------------------------------------------------------------
 
-export function DetailDrawer({ selectedSpan, selectedLayer, creating, onCreated, onSpanSelect }) {
+export function DetailDrawer({ selectedSpan, selectedLayer, selectedAgent, creating, onCreated, onSpanSelect }) {
   const trace = currentTrace.value;
   const spanId = selectedSpanId.value;
 
@@ -426,14 +565,13 @@ export function DetailDrawer({ selectedSpan, selectedLayer, creating, onCreated,
     span = findSpan(trace.root, spanId);
   }
 
-  // Priority: creation form > selected span > trace > selected layer > empty
+  // Priority: creation form > selected span > trace > selected agent > selected layer > empty
   let content;
   if (creating === "layer") {
     content = html`<${CreateLayerForm} onCreated=${onCreated} />`;
   } else if (creating === "agent") {
     content = html`<${CreateAgentForm} onCreated=${onCreated} />`;
   } else if (span && trace) {
-    // Span selected within a trace — show span detail with back-to-trace
     content = html`
       <div>
         <button class="back-btn" style="margin: 8px 8px 0"
@@ -442,14 +580,15 @@ export function DetailDrawer({ selectedSpan, selectedLayer, creating, onCreated,
       </div>
     `;
   } else if (trace) {
-    // Trace loaded (from clicking trace button on a message)
     content = html`<${TraceDetail} trace=${trace} onSpanSelect=${onSpanSelect} />`;
+  } else if (selectedAgent) {
+    content = html`<${AgentDetail} agentId=${selectedAgent} />`;
   } else if (selectedLayer) {
     content = html`<${LayerDetail} layerId=${selectedLayer} />`;
   } else {
     content = html`
       <div class="detail-empty">
-        <p>Select a trace, span, or layer to inspect</p>
+        <p>Select a trace, span, agent, or layer to inspect</p>
         <div class="detail-hint">
           Click <kbd>trace</kbd> on a message to see pipeline details
         </div>

@@ -1,10 +1,52 @@
 // ---------------------------------------------------------------------------
-// Herald — cross-agent observation & coordination middleware
+// Herald — cross-thread awareness, information boundaries, multi-user bridge
+//
+// The Herald owns three concerns:
+//
+// 1. Cross-thread awareness — what other threads are doing, conflicts,
+//    convergence, duplication. Event-driven (listens to signals), not polling.
+//
+// 2. Information visibility tiers (VISION.md §6):
+//    - personal-private: individual preferences, shortcuts (gitignored)
+//    - personal-public: role, expertise, decisions (queryable by team)
+//    - team: shared conventions, architecture, priorities
+//    - org: cross-team policies, brand, security standards
+//    Each context layer has a visibility tier. The Herald enforces boundaries.
+//
+// 3. Multi-user bridge (future) — querying another user's public layer
+//    before interrupting them. The "queryable proxy" pattern from VISION.md.
+//
+// The Herald maintains a compact summary layer that the FlowOrchestrator
+// reads during the advise phase. Updated asynchronously via signal bus —
+// always current, never blocking the critical path.
 // ---------------------------------------------------------------------------
 
 import type { SessionManager } from "./session";
 import type { Thread, ThreadStatus, Dispatch } from "@inixiative/foundry-core";
 import type { Signal, SignalKind } from "@inixiative/foundry-core";
+import { ContextLayer } from "@inixiative/foundry-core";
+
+// ---------------------------------------------------------------------------
+// Information Visibility Tiers (VISION.md §6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Visibility tier for context layers and signals.
+ * Promotion flow: personal-private → personal-public → team → org.
+ * Each promotion is explicit (human decision, not automatic).
+ */
+export type VisibilityTier =
+  | "personal-private"  // individual preferences, shortcuts, taste (gitignored)
+  | "personal-public"   // role, expertise, decisions (queryable by others)
+  | "team"              // shared conventions, architecture, priorities
+  | "org";              // cross-team policies, brand, security standards
+
+/** Metadata about a context layer's visibility. */
+export interface LayerVisibility {
+  layerId: string;
+  tier: VisibilityTier;
+  ownerId?: string;  // user ID for personal layers
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,8 +114,6 @@ export interface PatternDetector {
 
 /** Herald configuration. */
 export interface HeraldConfig {
-  /** How often to snapshot (ms). Default 5000. */
-  snapshotInterval?: number;
   /** Max snapshots retained per thread. Default 20. */
   maxSnapshots?: number;
   /** Max patterns in history. Default 500. */
@@ -82,6 +122,18 @@ export interface HeraldConfig {
   canInject?: boolean;
   /** Custom pattern detectors to add. */
   detectors?: PatternDetector[];
+  /**
+   * Layer visibility registry — maps layer IDs to their visibility tier.
+   * The Herald enforces boundaries: personal-private layers never appear
+   * in team-scoped queries.
+   */
+  visibility?: LayerVisibility[];
+  /**
+   * Signal kinds that trigger the Herald to re-evaluate cross-thread state.
+   * Default: classification, dispatch, context_loaded, context_evicted,
+   * correction, security_concern, architecture_observation.
+   */
+  triggerSignals?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -475,21 +527,30 @@ export class ResourceImbalanceDetector implements PatternDetector {
 export class Herald {
   private _session: SessionManager;
   private _config: Required<
-    Omit<HeraldConfig, "detectors">
+    Omit<HeraldConfig, "detectors" | "visibility" | "triggerSignals">
   >;
   private _detectors: PatternDetector[] = [];
   private _patterns: HeraldPattern[] = [];
   private _recommendations: HeraldRecommendation[] = [];
   private _snapshots: Map<string, ThreadSnapshot[]> = new Map();
-  private _interval: ReturnType<typeof setInterval> | null = null;
 
   private _patternHandlers: Array<(pattern: HeraldPattern) => void> = [];
   private _recHandlers: Array<(rec: HeraldRecommendation) => void> = [];
 
+  // -- Information boundaries --
+  private _visibility: Map<string, LayerVisibility> = new Map();
+
+  // -- Event-driven mode --
+  private _triggerSignals: Set<string>;
+  private _unsubscribes: Array<() => void> = [];
+  private _dirty = false; // true when signals arrived since last observe()
+
+  // -- Summary layer (compact cross-thread state for the FlowOrchestrator) --
+  private _summaryLayer: ContextLayer;
+
   constructor(session: SessionManager, config?: HeraldConfig) {
     this._session = session;
     this._config = {
-      snapshotInterval: config?.snapshotInterval ?? 5000,
       maxSnapshots: config?.maxSnapshots ?? 20,
       maxHistory: config?.maxHistory ?? 500,
       canInject: config?.canInject ?? true,
@@ -510,24 +571,181 @@ export class Herald {
         this._detectors.push(d);
       }
     }
+
+    // Layer visibility registry
+    if (config?.visibility) {
+      for (const v of config.visibility) {
+        this._visibility.set(v.layerId, v);
+      }
+    }
+
+    // Signal kinds that trigger re-evaluation
+    this._triggerSignals = new Set(config?.triggerSignals ?? [
+      "classification",
+      "dispatch",
+      "context_loaded",
+      "context_evicted",
+      "correction",
+      "security_concern",
+      "architecture_observation",
+    ]);
+
+    // Summary layer — compact cross-thread state
+    this._summaryLayer = new ContextLayer({
+      id: "__herald-summary",
+      trust: 0.8,
+      prompt: "Cross-thread awareness summary. Active threads, recent patterns, and relevant warnings from the Herald.",
+    });
+    this._writeSummary();
+  }
+
+  // -- Summary layer (read by FlowOrchestrator during advise phase) --
+
+  /** The Herald's compact summary layer. Add to the stack for advise-phase reads. */
+  get summaryLayer(): ContextLayer {
+    return this._summaryLayer;
   }
 
   // -- Lifecycle --
 
-  /** Begin periodic snapshotting and pattern detection. */
+  /**
+   * Begin event-driven mode: subscribe to signals from all active threads.
+   * The Herald listens for trigger signals and marks itself dirty.
+   * Call observe() explicitly when you want to run the full detector sweep.
+   */
   start(): void {
-    if (this._interval) return; // already running
-    this._interval = setInterval(() => {
-      this.observe();
-    }, this._config.snapshotInterval);
+    // Subscribe to session events to track new/removed threads
+    const unsub = this._session.onSession((event) => {
+      if (event.type === "thread:added" || event.type === "thread:spawned") {
+        this._subscribeToThread(event.threadId);
+      }
+    });
+    this._unsubscribes.push(unsub);
+
+    // Subscribe to all currently active threads
+    for (const thread of this._session.active) {
+      this._subscribeToThread(thread.id);
+    }
   }
 
-  /** Stop periodic snapshotting. */
+  /** Stop listening. */
   stop(): void {
-    if (this._interval) {
-      clearInterval(this._interval);
-      this._interval = null;
+    for (const unsub of this._unsubscribes) unsub();
+    this._unsubscribes = [];
+  }
+
+  // -- Event-driven signal handling --
+
+  /** Subscribe to a thread's signal bus for trigger signals. */
+  private _subscribeToThread(threadId: string): void {
+    const thread = this._session.get(threadId);
+    if (!thread) return;
+
+    const unsub = thread.signals.onAny((signal) => {
+      if (this._triggerSignals.has(signal.kind)) {
+        this._dirty = true;
+        // Fast programmatic evaluation — no LLM, no blocking
+        this._onSignal(signal, threadId);
+      }
+    });
+    this._unsubscribes.push(unsub);
+  }
+
+  /**
+   * Fast programmatic handler for trigger signals.
+   * Updates the summary layer immediately. Full detector sweep
+   * happens on next observe() call (or can be triggered manually).
+   */
+  private _onSignal(signal: Signal, threadId: string): void {
+    // Update summary layer with latest signal info
+    this._writeSummary();
+  }
+
+  /** Whether new signals have arrived since last observe(). */
+  get isDirty(): boolean {
+    return this._dirty;
+  }
+
+  // -- Information boundary enforcement --
+
+  /** Register or update a layer's visibility tier. */
+  setVisibility(layerId: string, tier: VisibilityTier, ownerId?: string): void {
+    this._visibility.set(layerId, { layerId, tier, ownerId });
+  }
+
+  /** Get a layer's visibility tier. Returns "team" as default if unregistered. */
+  getVisibility(layerId: string): LayerVisibility {
+    return this._visibility.get(layerId) ?? { layerId, tier: "team" };
+  }
+
+  /**
+   * Filter layer IDs by visibility — returns only layers visible at the given tier.
+   * personal-private: only that user's private layers
+   * personal-public: that user's private + public, plus team + org
+   * team: all public + team + org (no personal-private from other users)
+   * org: only org layers
+   */
+  filterByVisibility(
+    layerIds: string[],
+    requestTier: VisibilityTier,
+    requesterId?: string,
+  ): string[] {
+    return layerIds.filter((id) => {
+      const vis = this.getVisibility(id);
+      return this._isVisible(vis, requestTier, requesterId);
+    });
+  }
+
+  private _isVisible(
+    layerVis: LayerVisibility,
+    requestTier: VisibilityTier,
+    requesterId?: string,
+  ): boolean {
+    const tier = layerVis.tier;
+
+    switch (requestTier) {
+      case "personal-private":
+        // Can see everything at your own tier + below
+        if (tier === "personal-private") return layerVis.ownerId === requesterId;
+        return true; // personal-public, team, org all visible
+      case "personal-public":
+        if (tier === "personal-private") return false; // can't see others' private
+        return true;
+      case "team":
+        if (tier === "personal-private") return false;
+        return true; // personal-public, team, org all visible
+      case "org":
+        return tier === "org"; // only org-level
     }
+  }
+
+  // -- Summary layer management --
+
+  /** Write a compact summary of cross-thread state. */
+  private _writeSummary(): void {
+    const threads = this._session.active;
+    if (threads.length <= 1) {
+      this._summaryLayer.set("Single thread active. No cross-thread concerns.");
+      return;
+    }
+
+    const lines: string[] = [`Active threads: ${threads.length}`];
+    for (const t of threads) {
+      const desc = t.meta.description || "(no description)";
+      const status = t.meta.status;
+      lines.push(`  - ${t.id} [${status}]: ${desc}`);
+    }
+
+    // Recent patterns
+    const recentPatterns = this._patterns.slice(-5);
+    if (recentPatterns.length > 0) {
+      lines.push("", "Recent cross-thread patterns:");
+      for (const p of recentPatterns) {
+        lines.push(`  - [${p.severity}] ${p.description}`);
+      }
+    }
+
+    this._summaryLayer.set(lines.join("\n"));
   }
 
   // -- Manual trigger --
@@ -593,6 +811,10 @@ export class Herald {
         this.inject(rec);
       }
     }
+
+    // Update summary layer with new patterns
+    this._writeSummary();
+    this._dirty = false;
 
     return newPatterns;
   }

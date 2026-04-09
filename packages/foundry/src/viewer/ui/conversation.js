@@ -9,8 +9,85 @@
 import { html, useState, useRef, useEffect } from "./lib.js";
 import {
   messages, sending, sendMessage, selectedSpanId, loadTraceDetail,
-  prompts, resolvePrompt, allThreads,
+  prompts, resolvePrompt, allThreads, tokenUsage,
 } from "./store.js";
+
+// ---------------------------------------------------------------------------
+// Token bar — session usage + budget at top of conversation
+// ---------------------------------------------------------------------------
+
+function fmtNum(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+  return String(n);
+}
+
+function TokenBar() {
+  const usage = tokenUsage.value;
+  if (!usage) return null;
+
+  const { usedTokens, totalInput, totalOutput, usedCost, totalCalls, percentage, warning, exceeded, limitCost, contextWindow, contextTokens, contextPct } = usage;
+  if (usedTokens === 0 && totalCalls === 0) return null;
+
+  const budgetPct = Math.min(percentage * 100, 100);
+  const budgetColor = exceeded ? "#f87171" : warning ? "#facc15" : "#4ade80";
+  const barClass = exceeded ? "token-bar--exceeded" : warning ? "token-bar--warning" : "";
+
+  // Context window fill
+  const ctxPct = contextPct != null ? Math.min(contextPct * 100, 100) : null;
+  const ctxColor = ctxPct > 90 ? "#f87171" : ctxPct > 70 ? "#facc15" : "#6c9eff";
+
+  return html`
+    <div class="token-bar ${barClass}">
+      <div class="token-bar-stats">
+        <span class="token-stat">
+          <span class="token-stat-value">${fmtNum(totalInput)}</span>
+          <span class="token-stat-label">in</span>
+        </span>
+        <span class="token-stat-sep">/</span>
+        <span class="token-stat">
+          <span class="token-stat-value">${fmtNum(totalOutput)}</span>
+          <span class="token-stat-label">out</span>
+        </span>
+        <span class="token-stat-divider"></span>
+        <span class="token-stat">
+          <span class="token-stat-value">${fmtNum(usedTokens)}</span>
+          <span class="token-stat-label">tokens</span>
+        </span>
+        <span class="token-stat-divider"></span>
+        <span class="token-stat">
+          <span class="token-stat-value">$${usedCost.toFixed(4)}</span>
+          <span class="token-stat-label">cost</span>
+        </span>
+        <span class="token-stat-divider"></span>
+        <span class="token-stat">
+          <span class="token-stat-value">${totalCalls}</span>
+          <span class="token-stat-label">calls</span>
+        </span>
+      </div>
+      <div class="token-bar-meters">
+        ${ctxPct != null ? html`
+          <div class="token-bar-meter" title="${fmtNum(contextTokens)} / ${fmtNum(contextWindow)} context window">
+            <span class="token-bar-meter-label" style="color: ${ctxColor}">ctx</span>
+            <div class="token-bar-track">
+              <div class="token-bar-fill" style="width: ${ctxPct}%; background: ${ctxColor}"></div>
+            </div>
+            <span class="token-bar-pct" style="color: ${ctxColor}">${ctxPct.toFixed(0)}%</span>
+          </div>
+        ` : null}
+        ${limitCost ? html`
+          <div class="token-bar-meter" title="$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget">
+            <span class="token-bar-meter-label" style="color: ${budgetColor}">$$$</span>
+            <div class="token-bar-track">
+              <div class="token-bar-fill" style="width: ${budgetPct}%; background: ${budgetColor}"></div>
+            </div>
+            <span class="token-bar-pct" style="color: ${budgetColor}">${budgetPct.toFixed(0)}%</span>
+          </div>
+        ` : null}
+      </div>
+    </div>
+  `;
+}
 
 // ---------------------------------------------------------------------------
 // Chat input bar
@@ -259,6 +336,7 @@ export function Conversation({ onTraceSelect }) {
 
   return html`
     <div class="conversation">
+      <${TokenBar} />
       <div class="chat-messages" ref=${scrollRef}>
         ${msgList.length === 0 ? html`
           <div class="conv-empty">
