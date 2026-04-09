@@ -238,3 +238,11 @@ export {
   type JudgeConfig,
   type DimensionSweepOpts,
 } from "./research";
+
+// MCP — mid-session bridge (FLOW.md Loop 2)
+export {
+  createFoundryMcpServer,
+  startStdioTransport,
+  createSseTransport,
+  type FoundryMcpConfig,
+} from "./mcp";
