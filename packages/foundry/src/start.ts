@@ -226,10 +226,9 @@ signals.onAny(memory.signalWriter());
 const reactive = new ReactiveMiddleware({
   stack,
   signals,
-  threadId: "main",
 });
 
-// Built-in rule: flag low-confidence results in RunContext
+// Built-in rule: emit signal on low-confidence results (Librarian reconciles)
 reactive.addRule(lowConfidenceRule(0.5));
 
 thread.middleware.use("reactive", reactive.asMiddleware());

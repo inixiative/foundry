@@ -50,7 +50,7 @@ describe("Librarian", () => {
   });
 
   it("creates thread-state layer at position 0 in stack", () => {
-    expect(stack.layers[0].id).toBe("__thread-state");
+    expect(stack.layers[0].id).toBe("thread-state");
     expect(stack.layers[0].trust).toBe(1.0);
     expect(stack.layers[0].isWarm).toBe(true);
   });

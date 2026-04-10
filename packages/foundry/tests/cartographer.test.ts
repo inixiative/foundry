@@ -103,9 +103,9 @@ describe("Cartographer", () => {
       expect(secEntry!.layers).toContain("auth-conventions");
     });
 
-    it("skips internal layers (prefixed with __)", () => {
-      // Add a thread-state layer (internal)
-      const internal = new ContextLayer({ id: "__thread-state", trust: 1.0 });
+    it("skips thread-state layer", () => {
+      // Add the Librarian's thread-state layer
+      const internal = new ContextLayer({ id: "thread-state", trust: 1.0 });
       internal.set("internal state");
       stack.addLayer(internal, 0);
 

@@ -56,8 +56,9 @@ export interface ThreadFactoryDeps {
  * Each thread gets:
  * - Its own ContextLayer instances (mutations are thread-local)
  * - Its own agent instances (prompts/models can differ per-thread)
- * - A RunContext layer (`run:<threadId>`) that starts empty and
- *   accumulates mid-run learnings visible to all downstream stages
+ *
+ * Thread-state is managed by the Librarian (adds a `thread-state` layer
+ * that reconciles all signals into a coherent snapshot).
  *
  * This replaces the manual wiring in start.ts and powers
  * POST /api/threads with real per-thread instantiation.
@@ -84,32 +85,24 @@ export class ThreadFactory {
     // 1. Build layers from config
     const layers = this._buildLayers(config);
 
-    // 2. Add RunContext layer — ephemeral, per-thread, accumulates mid-run learnings
-    const runContext = new ContextLayer({
-      id: `run:${id}`,
-      trust: 8,
-      prompt: "Context accumulated during this thread's run. Treat as recent, high-relevance observations.",
-    });
-    layers.push(runContext);
-
-    // 3. Build stack
+    // 2. Build stack (Librarian adds thread-state layer separately)
     const stack = new ContextStack(layers);
 
-    // 4. Warm all layers if requested (default: yes)
+    // 3. Warm all layers if requested (default: yes)
     if (opts?.warm !== false) {
       await stack.warmAll();
     }
 
-    // 5. Create thread
+    // 4. Create thread
     const thread = new Thread(id, stack, opts);
 
-    // 6. Build and register agents
+    // 5. Build and register agents
     const agents = this._buildAgents(config, stack);
     for (const agent of agents.values()) {
       thread.register(agent);
     }
 
-    // 7. Add logger middleware
+    // 6. Add logger middleware
     thread.middleware.use("logger", async (ctx, next) => {
       const start = performance.now();
       const result = await next();

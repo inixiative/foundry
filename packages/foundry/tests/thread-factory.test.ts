@@ -118,19 +118,10 @@ describe("ThreadFactory", () => {
     const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
     const { stack } = await factory.create("t1", config);
 
-    // 2 config layers + 1 RunContext layer
-    expect(stack.layers.length).toBe(3);
+    // 2 config layers (Librarian adds thread-state separately)
+    expect(stack.layers.length).toBe(2);
     expect(stack.layers.map((l) => l.id)).toContain("system");
     expect(stack.layers.map((l) => l.id)).toContain("conventions");
-  });
-
-  test("adds RunContext layer named run:<threadId>", async () => {
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { stack } = await factory.create("mythread", minimalConfig());
-
-    const runLayer = stack.getLayer("run:mythread");
-    expect(runLayer).toBeDefined();
-    expect(runLayer!.trust).toBe(8);
   });
 
   test("skips disabled layers", async () => {
@@ -206,8 +197,8 @@ describe("ThreadFactory", () => {
     const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
     const { stack } = await factory.create("t1", config);
 
-    // fallback system + RunContext
-    expect(stack.layers.length).toBe(2);
+    // fallback system layer only (Librarian adds thread-state separately)
+    expect(stack.layers.length).toBe(1);
     expect(stack.getLayer("system")).toBeDefined();
   });
 
@@ -404,13 +395,13 @@ describe("ThreadFactory", () => {
     expect(t2.id).toBe("t2");
 
     // Independent stacks — mutating one doesn't affect the other
-    const rc1 = s1.getLayer("run:t1");
-    const rc2 = s2.getLayer("run:t2");
-    expect(rc1).toBeDefined();
-    expect(rc2).toBeDefined();
+    const sys1 = s1.getLayer("system");
+    const sys2 = s2.getLayer("system");
+    expect(sys1).toBeDefined();
+    expect(sys2).toBeDefined();
 
-    rc1!.set("t1 only");
-    expect(rc2!.content).not.toBe("t1 only");
+    sys1!.set("t1 only");
+    expect(sys2!.content).not.toBe("t1 only");
   });
 
   test("adds logger middleware", async () => {

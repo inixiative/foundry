@@ -25,7 +25,7 @@ function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-function makeEnv(threadId: string = "test") {
+function makeEnv() {
   const sysLayer = new ContextLayer({
     id: "system",
     trust: 10,
@@ -33,16 +33,11 @@ function makeEnv(threadId: string = "test") {
   });
   sysLayer.set("system context");
 
-  const runLayer = new ContextLayer({
-    id: `run:${threadId}`,
-    trust: 8,
-  });
-
-  const stack = new ContextStack([sysLayer, runLayer]);
+  const stack = new ContextStack([sysLayer]);
   const signals = new SignalBus();
-  const thread = new Thread(threadId, stack);
+  const thread = new Thread("test", stack);
 
-  return { stack, signals, thread, runLayer };
+  return { stack, signals, thread };
 }
 
 function registerExecutor(
@@ -67,7 +62,7 @@ function registerExecutor(
 describe("ReactiveMiddleware", () => {
   test("addRule and removeRule", () => {
     const { stack, signals } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const rule: ReactionRule = {
       id: "test-rule",
@@ -86,7 +81,7 @@ describe("ReactiveMiddleware", () => {
 
   test("fires matching rules after dispatch", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const fired: string[] = [];
     reactive.addRule({
@@ -104,7 +99,7 @@ describe("ReactiveMiddleware", () => {
 
   test("does not fire rules that return false", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const fired: string[] = [];
     reactive.addRule({
@@ -122,7 +117,7 @@ describe("ReactiveMiddleware", () => {
 
   test("fires multiple rules in order", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const order: string[] = [];
     reactive.addRule({ id: "first", when: () => true, act: () => { order.push("first"); } });
@@ -137,7 +132,7 @@ describe("ReactiveMiddleware", () => {
 
   test("rule errors do not break the pipeline", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const fired: string[] = [];
     reactive.addRule({
@@ -162,7 +157,7 @@ describe("ReactiveMiddleware", () => {
 
   test("passes correct dispatch context to when/act", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     let capturedAgentId: string | undefined;
     let capturedOutput: unknown;
@@ -186,64 +181,9 @@ describe("ReactiveMiddleware", () => {
     expect(capturedOutput).toBe("my-output");
   });
 
-  test("appendRunContext writes to the RunContext layer", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
-
-    reactive.addRule({
-      id: "writer",
-      when: () => true,
-      act: (ctx) => { ctx.appendRunContext("observation: something happened"); },
-    });
-
-    thread.middleware.use("reactive", reactive.asMiddleware());
-    registerExecutor(thread, stack, "worker");
-
-    await thread.dispatch("worker", "hello");
-    expect(runLayer.content).toContain("observation: something happened");
-  });
-
-  test("appendRunContext accumulates across dispatches", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
-
-    let callCount = 0;
-    reactive.addRule({
-      id: "counter",
-      when: () => true,
-      act: (ctx) => { ctx.appendRunContext(`call-${++callCount}`); },
-    });
-
-    thread.middleware.use("reactive", reactive.asMiddleware());
-    registerExecutor(thread, stack, "worker");
-
-    await thread.dispatch("worker", "a");
-    await thread.dispatch("worker", "b");
-
-    expect(runLayer.content).toContain("call-1");
-    expect(runLayer.content).toContain("call-2");
-  });
-
-  test("setLayer updates a layer's content directly", async () => {
-    const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
-
-    reactive.addRule({
-      id: "setter",
-      when: () => true,
-      act: (ctx) => { ctx.setLayer("system", "overridden content"); },
-    });
-
-    thread.middleware.use("reactive", reactive.asMiddleware());
-    registerExecutor(thread, stack, "worker");
-
-    await thread.dispatch("worker", "hello");
-    expect(stack.getLayer("system")!.content).toBe("overridden content");
-  });
-
   test("emit sends signals through the bus", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const received: Signal[] = [];
     signals.onAny((signal) => { received.push(signal); });
@@ -266,8 +206,25 @@ describe("ReactiveMiddleware", () => {
     expect(received[0].timestamp).toBeGreaterThan(0);
   });
 
-  test("rewarmLayer invalidates and re-warms a layer", async () => {
+  test("setLayer updates a layer's content directly", async () => {
     const { stack, signals, thread } = makeEnv();
+    const reactive = new ReactiveMiddleware({ stack, signals });
+
+    reactive.addRule({
+      id: "setter",
+      when: () => true,
+      act: (ctx) => { ctx.setLayer("system", "overridden content"); },
+    });
+
+    thread.middleware.use("reactive", reactive.asMiddleware());
+    registerExecutor(thread, stack, "worker");
+
+    await thread.dispatch("worker", "hello");
+    expect(stack.getLayer("system")!.content).toBe("overridden content");
+  });
+
+  test("rewarmLayer invalidates and re-warms a layer", async () => {
+    const { signals } = makeEnv();
 
     let loadCount = 0;
     const refreshable = new ContextLayer({
@@ -282,15 +239,17 @@ describe("ReactiveMiddleware", () => {
     await refreshable.warm();
     expect(refreshable.content).toBe("loaded-1");
 
-    // Replace the stack's layers by building a new env
-    const fullStack = new ContextStack([
-      stack.getLayer("system")!,
-      stack.getLayer("run:test")!,
-      refreshable,
-    ]);
+    const sysLayer = new ContextLayer({
+      id: "system",
+      trust: 10,
+      sources: [{ id: "system", load: async () => "ctx" }],
+    });
+    sysLayer.set("ctx");
+
+    const fullStack = new ContextStack([sysLayer, refreshable]);
 
     const thread2 = new Thread("test", fullStack);
-    const reactive = new ReactiveMiddleware({ stack: fullStack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack: fullStack, signals });
 
     reactive.addRule({
       id: "rewarmer",
@@ -307,13 +266,16 @@ describe("ReactiveMiddleware", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Built-in rules
+// Built-in rules — now emit signals instead of writing to RunContext
 // ---------------------------------------------------------------------------
 
 describe("lowConfidenceRule", () => {
-  test("fires when confidence below threshold", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+  test("emits signal when confidence below threshold", async () => {
+    const { stack, signals, thread } = makeEnv();
+    const reactive = new ReactiveMiddleware({ stack, signals });
+
+    const received: Signal[] = [];
+    signals.onAny((s) => { received.push(s); });
 
     reactive.addRule(lowConfidenceRule(0.5));
 
@@ -327,14 +289,18 @@ describe("lowConfidenceRule", () => {
     );
 
     await thread.dispatch("uncertain", "test");
-    expect(runLayer.content).toContain("[low-confidence]");
-    expect(runLayer.content).toContain("uncertain");
-    expect(runLayer.content).toContain("0.3");
+    expect(received.length).toBe(1);
+    expect(received[0].kind).toBe("info");
+    expect(received[0].content).toContain("0.3");
+    expect(received[0].confidence).toBe(0.3);
   });
 
   test("does not fire when confidence above threshold", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const { stack, signals, thread } = makeEnv();
+    const reactive = new ReactiveMiddleware({ stack, signals });
+
+    const received: Signal[] = [];
+    signals.onAny((s) => { received.push(s); });
 
     reactive.addRule(lowConfidenceRule(0.5));
 
@@ -348,12 +314,15 @@ describe("lowConfidenceRule", () => {
     );
 
     await thread.dispatch("confident", "test");
-    expect(runLayer.content).toBeFalsy();
+    expect(received.length).toBe(0);
   });
 
   test("does not fire when output has no confidence field", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const { stack, signals, thread } = makeEnv();
+    const reactive = new ReactiveMiddleware({ stack, signals });
+
+    const received: Signal[] = [];
+    signals.onAny((s) => { received.push(s); });
 
     reactive.addRule(lowConfidenceRule(0.5));
 
@@ -361,14 +330,17 @@ describe("lowConfidenceRule", () => {
     registerExecutor(thread, stack, "worker", "plain string output");
 
     await thread.dispatch("worker", "test");
-    expect(runLayer.content).toBeFalsy();
+    expect(received.length).toBe(0);
   });
 });
 
 describe("classificationOverrideRule", () => {
-  test("fires when router has classifierCategory annotation", async () => {
-    const { stack, signals, thread, runLayer } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+  test("emits correction signal when router overrides classifier", async () => {
+    const { stack, signals, thread } = makeEnv();
+    const reactive = new ReactiveMiddleware({ stack, signals });
+
+    const received: Signal[] = [];
+    signals.onAny((s) => { received.push(s); });
 
     reactive.addRule(classificationOverrideRule());
 
@@ -383,21 +355,21 @@ describe("classificationOverrideRule", () => {
       new Executor({
         id: "smart-router",
         stack,
-        // Return shape matching Router's Decision<Route> output
         handler: async () => ({ value: { destination: "executor-build", priority: 5 }, confidence: 0.9 }),
       }),
     );
 
     await thread.dispatch("smart-router", "test");
 
-    expect(runLayer.content).toContain("[override]");
-    expect(runLayer.content).toContain("bug");
-    expect(runLayer.content).toContain("executor-build");
+    expect(received.length).toBe(1);
+    expect(received[0].kind).toBe("correction");
+    expect(received[0].content).toContain("bug");
+    expect(received[0].content).toContain("executor-build");
   });
 });
 
 describe("rewarmOnAgentRule", () => {
-  test("rearms layer when specific agent runs", async () => {
+  test("rewarms layer when specific agent runs", async () => {
     const { signals } = makeEnv();
 
     let loadCount = 0;
@@ -412,15 +384,14 @@ describe("rewarmOnAgentRule", () => {
     const sysLayer = new ContextLayer({
       id: "system",
       trust: 10,
-      sources: [source("system", "ctx")],
+      sources: [{ id: "system", load: async () => "ctx" }],
     });
     sysLayer.set("ctx");
 
-    const runLayer = new ContextLayer({ id: "run:test", trust: 8 });
-    const stack = new ContextStack([sysLayer, runLayer, dynamic]);
+    const stack = new ContextStack([sysLayer, dynamic]);
     const thread = new Thread("test", stack);
 
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
     reactive.addRule(rewarmOnAgentRule("trigger-agent", "dynamic"));
 
     thread.middleware.use("reactive", reactive.asMiddleware());
@@ -440,7 +411,7 @@ describe("rewarmOnAgentRule", () => {
 describe("emitOnPatternRule", () => {
   test("emits signal when agent output matches pattern", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const received: Signal[] = [];
     signals.onAny((s) => { received.push(s); });
@@ -464,7 +435,7 @@ describe("emitOnPatternRule", () => {
 
   test("does not emit when pattern does not match", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const received: Signal[] = [];
     signals.onAny((s) => { received.push(s); });
@@ -486,7 +457,7 @@ describe("emitOnPatternRule", () => {
 
   test("ignores dispatches from other agents", async () => {
     const { stack, signals, thread } = makeEnv();
-    const reactive = new ReactiveMiddleware({ stack, signals, threadId: "test" });
+    const reactive = new ReactiveMiddleware({ stack, signals });
 
     const received: Signal[] = [];
     signals.onAny((s) => { received.push(s); });

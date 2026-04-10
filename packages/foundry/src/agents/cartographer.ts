@@ -146,8 +146,8 @@ export class Cartographer {
     const domainGroups = new Map<string, { layers: string[]; totalTokens: number; oldestWarm: number | null }>();
 
     for (const layer of layers) {
-      // Skip internal layers
-      if (layer.id.startsWith("__")) continue;
+      // Skip the Librarian's thread-state layer (not routable context)
+      if (layer.id === "thread-state") continue;
 
       const domain = this._inferDomain(layer.id);
       if (!domainGroups.has(domain)) {

@@ -1,5 +1,4 @@
 import type {
-  ContextLayer,
   ContextStack,
   ExecutionResult,
   DispatchContext,
@@ -23,17 +22,13 @@ export interface ReactionContext {
   readonly result: ExecutionResult;
   /** The thread's full context stack (can warm/set layers). */
   readonly stack: ContextStack;
-  /** The thread's RunContext layer (ephemeral, per-thread). */
-  readonly runContext: ContextLayer | null;
   /** The thread's signal bus (for emitting new signals). */
   readonly signals: SignalBus;
-  /** Append text to the RunContext layer. */
-  appendRunContext(text: string): void;
   /** Re-warm a specific layer (reload from sources). */
   rewarmLayer(layerId: string): Promise<void>;
   /** Set a layer's content directly. */
   setLayer(layerId: string, content: string): void;
-  /** Emit a signal. */
+  /** Emit a signal — the Librarian reconciles it into thread-state. */
   emit(signal: Omit<Signal, "id" | "timestamp">): void;
 }
 
@@ -51,8 +46,8 @@ export interface ReactionRule {
    */
   when: (dispatch: DispatchContext, result: ExecutionResult) => boolean;
   /**
-   * What to do. Can mutate the RunContext layer, re-warm layers,
-   * emit signals, or write to memory.
+   * What to do. Can re-warm layers, emit signals (the Librarian
+   * reconciles them into thread-state), or write to memory.
    */
   act: (ctx: ReactionContext) => Promise<void> | void;
 }
@@ -66,16 +61,14 @@ export interface ReactiveMiddlewareConfig {
   stack: ContextStack;
   /** The thread's signal bus. */
   signals: SignalBus;
-  /** Thread ID (used to find the RunContext layer). */
-  threadId: string;
 }
 
 /**
  * Middleware that fires reaction rules after each dispatch.
  *
  * Wraps `next()`, gets the result, then checks each rule.
- * Rules can mutate the RunContext layer, re-warm other layers,
- * emit signals, or write to persistent memory.
+ * Rules emit signals (reconciled by the Librarian into thread-state),
+ * re-warm layers, or write to persistent memory.
  *
  * This is what makes agents and layers dynamic during a run.
  *
@@ -88,12 +81,10 @@ export class ReactiveMiddleware {
   private _rules: ReactionRule[] = [];
   private _stack: ContextStack;
   private _signals: SignalBus;
-  private _threadId: string;
 
   constructor(config: ReactiveMiddlewareConfig) {
     this._stack = config.stack;
     this._signals = config.signals;
-    this._threadId = config.threadId;
   }
 
   addRule(rule: ReactionRule): void {
@@ -118,22 +109,11 @@ export class ReactiveMiddleware {
     return async (ctx, next) => {
       const result = await next();
 
-      // Build reaction context
-      const runContext = this._stack.getLayer(`run:${this._threadId}`) ?? null;
-
       const reactionCtx: ReactionContext = {
         dispatch: ctx,
         result,
         stack: this._stack,
-        runContext,
         signals: this._signals,
-
-        appendRunContext: (text: string) => {
-          if (!runContext) return;
-          const current = runContext.content;
-          const updated = current ? `${current}\n\n${text}` : text;
-          runContext.set(updated);
-        },
 
         rewarmLayer: async (layerId: string) => {
           const layer = this._stack.getLayer(layerId);
@@ -179,7 +159,8 @@ export class ReactiveMiddleware {
 // ---------------------------------------------------------------------------
 
 /**
- * Logs low-confidence results to the RunContext so downstream stages
+ * Emits a signal when an agent returns a low-confidence result.
+ * The Librarian reconciles this into thread-state so downstream stages
  * can see that upstream was uncertain.
  */
 export function lowConfidenceRule(threshold: number = 0.5): ReactionRule {
@@ -192,16 +173,19 @@ export function lowConfidenceRule(threshold: number = 0.5): ReactionRule {
     },
     act: (ctx) => {
       const output = ctx.result.output as any;
-      ctx.appendRunContext(
-        `[low-confidence] ${ctx.dispatch.agentId} returned confidence=${output.confidence}: ${output.reasoning ?? "no reason"}`
-      );
+      ctx.emit({
+        kind: "info",
+        source: `agent:${ctx.dispatch.agentId}`,
+        content: `Low confidence (${output.confidence}): ${output.reasoning ?? "no reason"}`,
+        confidence: output.confidence,
+      });
     },
   };
 }
 
 /**
- * When a classification override happens (router disagrees with classifier),
- * record it in RunContext so the executor sees the correction.
+ * Emits a signal when the router overrides the classifier's category.
+ * The Librarian reconciles this into thread-state.
  */
 export function classificationOverrideRule(): ReactionRule {
   return {
@@ -215,9 +199,12 @@ export function classificationOverrideRule(): ReactionRule {
       const original = ctx.dispatch.annotations["classifierCategory"];
       const routed = (ctx.result.output as any)?.value?.destination;
       if (original && routed) {
-        ctx.appendRunContext(
-          `[override] Classifier said "${original}" but router chose "${routed}"`
-        );
+        ctx.emit({
+          kind: "correction",
+          source: `agent:${ctx.dispatch.agentId}`,
+          content: `Classifier said "${original}" but router chose "${routed}"`,
+          confidence: 0.9,
+        });
       }
     },
   };

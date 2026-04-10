@@ -71,7 +71,7 @@ export interface LibrarianConfig {
   signals: SignalBus;
   /** The thread's context stack (to read layer IDs). */
   stack: ContextStack;
-  /** ID for the thread-state layer. Defaults to "__thread-state". */
+  /** ID for the thread-state layer. Defaults to "thread-state". */
   layerId?: string;
   /** Trust level for the thread-state layer. Defaults to 1.0 (highest). */
   trust?: number;
@@ -88,7 +88,7 @@ export class Librarian {
     this._stack = config.stack;
 
     // Create the thread-state layer — always warm, highest trust
-    const layerId = config.layerId ?? "__thread-state";
+    const layerId = config.layerId ?? "thread-state";
     this._layer = new ContextLayer({
       id: layerId,
       trust: config.trust ?? 1.0,
