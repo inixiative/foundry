@@ -24,13 +24,34 @@ import {
 // Thread State shape — the materialized view (~200-500 tokens)
 // ---------------------------------------------------------------------------
 
+/**
+ * Record of a layer injection — what the session has already seen.
+ * Used by the FlowOrchestrator to compute deltas (only send what changed).
+ */
+export interface InjectedLayerRecord {
+  /** Layer ID. */
+  id: string;
+  /** Content hash at injection time. If the layer's hash differs now, re-inject. */
+  hash: string;
+  /** Message number when this was last injected. */
+  messageNum: number;
+  /** Timestamp of injection. */
+  injectedAt: number;
+}
+
 export interface ThreadState {
   /** Current primary domain (e.g., "auth", "payments", "testing") */
   domain: string;
   /** Recent activity descriptions (ring buffer, max 10) */
   recentActivity: string[];
-  /** Layer IDs currently in context */
+  /** Layer IDs currently in context (convenience — derived from injectedLayers). */
   inContext: string[];
+  /**
+   * Full injection ledger — tracks what the session has seen, with hashes.
+   * Pre-message hooks diff against this to compute deltas.
+   * Post-action hooks read this to understand the session's context window.
+   */
+  injectedLayers: InjectedLayerRecord[];
   /** Last classification result */
   lastClassification: {
     category: string;
@@ -40,8 +61,6 @@ export interface ThreadState {
   messageCount: number;
   /** Active flags (e.g., "security-concern-active", "cross-module") */
   flags: string[];
-  /** Compaction state */
-  compactionState: "none" | "pending" | "in-progress";
   /** Timestamp of last update */
   lastUpdated: number;
 }
@@ -52,10 +71,10 @@ function emptyState(): ThreadState {
     domain: "",
     recentActivity: [],
     inContext: [],
+    injectedLayers: [],
     lastClassification: null,
     messageCount: 0,
     flags: [],
-    compactionState: "none",
     lastUpdated: 0,
   };
 }
@@ -175,14 +194,6 @@ export class Librarian {
         this._pushActivity(`Architecture: ${String(content).slice(0, 80)}`);
         break;
 
-      case "compaction_start":
-        this._state.compactionState = "in-progress";
-        break;
-
-      case "compaction_done":
-        this._state.compactionState = "none";
-        break;
-
       default:
         // Unknown signal kinds just get logged as activity
         this._pushActivity(`[${kind}] ${String(content).slice(0, 80)}`);
@@ -239,16 +250,32 @@ export class Librarian {
     this._pushActivity(`${tool}${target}`);
   }
 
-  private _handleContextLoaded(data: { layerId?: string }): void {
+  private _handleContextLoaded(data: { layerId?: string; hash?: string }): void {
     if (!data?.layerId) return;
-    if (!this._state.inContext.includes(data.layerId)) {
-      this._state.inContext.push(data.layerId);
+
+    const record: InjectedLayerRecord = {
+      id: data.layerId,
+      hash: data.hash ?? "",
+      messageNum: this._state.messageCount,
+      injectedAt: Date.now(),
+    };
+
+    // Upsert — replace existing record for this layer (re-injection with new hash)
+    const idx = this._state.injectedLayers.findIndex((r) => r.id === data.layerId);
+    if (idx !== -1) {
+      this._state.injectedLayers[idx] = record;
+    } else {
+      this._state.injectedLayers.push(record);
     }
+
+    // Keep convenience array in sync
+    this._state.inContext = this._state.injectedLayers.map((r) => r.id);
   }
 
   private _handleContextEvicted(data: { layerId?: string }): void {
     if (!data?.layerId) return;
-    this._state.inContext = this._state.inContext.filter((id) => id !== data.layerId);
+    this._state.injectedLayers = this._state.injectedLayers.filter((r) => r.id !== data.layerId);
+    this._state.inContext = this._state.injectedLayers.map((r) => r.id);
   }
 
   // -----------------------------------------------------------------------

@@ -20,6 +20,8 @@ import {
   UNATTENDED_POLICY,
   ProjectRegistry,
   ThreadFactory,
+  buildLayers,
+  buildAgents,
   ReactiveMiddleware,
   lowConfidenceRule,
   Librarian,
@@ -28,7 +30,7 @@ import {
   FlowOrchestrator,
   type SourceResolver,
 } from "./agents";
-import { ToolRegistry } from "@inixiative/foundry-core";
+import { ContextStack, ToolRegistry } from "@inixiative/foundry-core";
 import { FileMemory, inlineSource, PostgresMemory } from "./adapters";
 import { MemoryToolAdapter } from "./tools/memory-adapter";
 import { BashShell } from "./tools/bash-shell";
@@ -66,6 +68,25 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
 }
 
 console.log(`Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`);
+
+// ---------------------------------------------------------------------------
+// Compose project identity files (CLAUDE.md, .cursorrules, etc.)
+// ---------------------------------------------------------------------------
+
+import { writeComposed, RUNTIME_OUTPUT_FILES } from "./prompts/composer";
+
+for (const project of Object.values(config.projects)) {
+  if (!project.prompts || !project.path) continue;
+  try {
+    const written = await writeComposed(project.path, project.prompts);
+    if (written.size > 0) {
+      const files = [...written.keys()].map(rt => RUNTIME_OUTPUT_FILES[rt]).join(", ");
+      console.log(`Composed identity files for ${project.label || project.id}: ${files}`);
+    }
+  } catch (err) {
+    console.warn(`Failed to compose prompts for ${project.label || project.id}:`, err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Create LLM provider
@@ -199,23 +220,23 @@ tools.register(scriptTool, "Execute TypeScript/JS in isolated Bun subprocess");
 // Tools log deferred until after optional Postgres/Redis registration
 
 // ---------------------------------------------------------------------------
-// Thread factory — stamps out threads with independent layer/agent instances
+// Build project-scoped layers and agents (shared across all threads)
 // ---------------------------------------------------------------------------
 
-const factory = new ThreadFactory({
-  provider,
-  tokenTracker,
-  sourceResolver,
-  tools,
-});
+const layers = buildLayers(config, { sourceResolver });
+const stack = new ContextStack(layers);
+await stack.warmAll();
+
+const agents = buildAgents(config, stack, { provider, tokenTracker, tools });
+
+const factory = new ThreadFactory({ stack, agents });
 
 // ---------------------------------------------------------------------------
-// Create main thread via factory
+// Create main thread (lightweight handle over shared project state)
 // ---------------------------------------------------------------------------
 
-const { thread, stack } = await factory.create("main", config, {
+const thread = factory.create("main", {
   description: "Main conversation thread",
-  tags: ["production"],
 });
 
 // Signal bus: write to file memory
@@ -520,6 +541,11 @@ const projectRegistry = new ProjectRegistry();
 // Load projects from config and register them
 if (config.projects) {
   projectRegistry.loadFromConfigs(config.projects);
+  // Associate the main thread with the first project so it shows up in the viewer
+  const firstProject = projectRegistry.all.values().next().value;
+  if (firstProject) {
+    firstProject.addThread(thread);
+  }
   console.log(`Projects: ${[...projectRegistry.all.keys()].join(", ") || "(none)"}`);
 }
 

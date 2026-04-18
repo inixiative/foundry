@@ -105,6 +105,7 @@ export interface UsageSummary {
 
 export const DEFAULT_COST_TABLE: CostTable = {
   anthropic: {
+    "claude-opus-4-7": { inputPer1M: 5, outputPer1M: 25 },
     "claude-opus-4-6": { inputPer1M: 5, outputPer1M: 25 },
     "claude-sonnet-4-6": { inputPer1M: 3, outputPer1M: 15 },
     "claude-haiku-4-5-20251001": { inputPer1M: 1, outputPer1M: 5 },

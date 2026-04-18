@@ -106,6 +106,7 @@ export function createViewer(config: ViewerConfig) {
     threadFactory: config.threadFactory,
     configStore,
     projectRegistry: config.projectRegistry,
+    namingProvider: config.assistProvider,
   });
 
   registerControlRoutes(app, {

@@ -1,9 +1,5 @@
 import { ContextLayer, computeHash, type LayerState } from "./context-layer";
 
-export interface Compressor {
-  compress(content: string, targetRatio: number): Promise<string>;
-}
-
 export type LayerFilter = (layer: ContextLayer) => boolean;
 
 /**
@@ -51,12 +47,10 @@ export type LayerAddedCallback = (layer: ContextLayer) => void;
 
 export class ContextStack {
   private _layers: ContextLayer[] = [];
-  private _compressor: Compressor | null = null;
   private _onLayerAdded: LayerAddedCallback[] = [];
 
-  constructor(layers?: ContextLayer[], compressor?: Compressor) {
+  constructor(layers?: ContextLayer[]) {
     if (layers) this._layers = [...layers];
-    if (compressor) this._compressor = compressor;
   }
 
   // -- Layer management --
@@ -174,48 +168,6 @@ export class ContextStack {
 
     const text = blocks.map((b) => b.text).join("\n\n");
     return { blocks, text };
-  }
-
-  // -- Compression --
-
-  setCompressor(compressor: Compressor): void {
-    this._compressor = compressor;
-  }
-
-  async compress(targetTokens: number, ratio: number = 0.5): Promise<void> {
-    if (!this._compressor) {
-      throw new Error("No compressor set on this stack");
-    }
-
-    const byTrust = [...this._layers]
-      .filter((l) => l.isWarm)
-      .sort((a, b) => a.trust - b.trust);
-
-    // Track running total instead of re-merging every iteration
-    let totalTokens = this.estimateTokens();
-
-    for (const layer of byTrust) {
-      if (totalTokens <= targetTokens) break;
-
-      const oldLen = layer.content.length;
-      const compressed = await this._compressor.compress(layer.content, ratio);
-      layer.set(compressed);
-      // Adjust running total by the delta
-      totalTokens -= Math.ceil((oldLen - compressed.length) / 4);
-    }
-  }
-
-  async compressLayer(id: string, ratio: number = 0.5): Promise<void> {
-    if (!this._compressor) {
-      throw new Error("No compressor set on this stack");
-    }
-
-    const layer = this.getLayer(id);
-    if (!layer) throw new Error(`Layer not found: ${id}`);
-    if (!layer.isWarm) throw new Error(`Layer not warm: ${id}`);
-
-    const compressed = await this._compressor.compress(layer.content, ratio);
-    layer.set(compressed);
   }
 
   // -- Snapshots --

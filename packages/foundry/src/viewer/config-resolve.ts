@@ -333,7 +333,6 @@ function resolveAgentDefinition(
   resolved.provider = scalarField(base?.provider, override.provider, scope).value;
   resolved.model = scalarField(base?.model, override.model, scope).value;
   resolved.temperature = scalarField(base?.temperature, override.temperature, scope).value;
-  resolved.maxTokens = scalarField(base?.maxTokens, override.maxTokens, scope).value;
   resolved.visibleLayers = listField(base?.visibleLayers, override.visibleLayers, scope, `project.agents.${id}.visibleLayers`).value ?? [];
   resolved.ownedLayers = listField(base?.ownedLayers, override.ownedLayers, scope, `project.agents.${id}.ownedLayers`).value;
   resolved.peers = listField(base?.peers, override.peers, scope, `project.agents.${id}.peers`).value ?? [];
@@ -384,10 +383,6 @@ function resolveLayerDefinition(
   const staleness = scalarField(base?.staleness, project.staleness, scope);
   resolved.staleness = staleness.value;
   fields.staleness = staleness.provenance;
-
-  const maxTokens = scalarField(base?.maxTokens, project.maxTokens, scope);
-  resolved.maxTokens = maxTokens.value;
-  fields.maxTokens = maxTokens.provenance;
 
   const writers = listField(base?.writers, project.writers, scope, `project.layers.${id}.writers`);
   resolved.writers = writers.value;

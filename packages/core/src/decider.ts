@@ -39,7 +39,8 @@ export class Decider<TPayload = unknown, TDecision = unknown> extends BaseAgent<
 
   async run(
     payload: TPayload,
-    filterOverride?: LayerFilter
+    filterOverride?: LayerFilter,
+    _meta?: Record<string, unknown>
   ): Promise<ExecutionResult<Decision<TDecision>>> {
     const context = this.getContextWith(filterOverride);
     const contextHash = computeHash(context);

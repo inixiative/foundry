@@ -93,10 +93,12 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
    * Run this agent with a payload and optional per-dispatch layer filter override.
    * If filterOverride is provided, it scopes context for this run only
    * without mutating the agent's permanent filter.
+   * Meta carries runtime context (cwd, threadId) from the dispatching thread.
    */
   abstract run(
     payload: TPayload,
-    filterOverride?: LayerFilter
+    filterOverride?: LayerFilter,
+    meta?: Record<string, unknown>
   ): Promise<ExecutionResult<TResult>>;
 
   setLayerFilter(filter: LayerFilter): void {

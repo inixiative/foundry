@@ -30,6 +30,7 @@ export const currentTrace = signal(null);
 export const selectedSpanId = signal(null);
 export const threadData = signal(null);
 export const allThreads = signal([]);   // all threads (multi-thread support)
+export const activeThreadId = signal(null); // selected thread ID (null = first/default)
 export const liveEvents = signal([]);
 export const activePanel = signal("conversation"); // "conversation" | "layers" | "events"
 export const commandPaletteOpen = signal(false);
@@ -47,13 +48,17 @@ export const detailDrawerOpen = signal(true);   // right panel collapsed state
 export const prompts = signal([]);       // ActionPrompt[]
 export const promptCounts = signal({});  // { threadId: count }
 
+// Worktrees — detected git worktrees for thread assignment
+export const worktrees = signal([]);   // GitWorktree[] from GET /api/worktrees
+
 // Token usage — session totals + budget
 export const tokenUsage = signal(null); // { usedTokens, usedCost, percentage, warning, exceeded, totalInput, totalOutput, totalCalls }
 
 // Conversation — chat messages (user + agent responses)
 // Each entry: { role: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
 export const messages = signal([]);
-export const sending = signal(false);
+export const inflight = signal(0); // count of in-flight API requests
+export const sending = computed(() => inflight.value > 0); // backwards compat
 
 // Definitions (config-level, not runtime instances)
 export const definitions = signal({ layers: [], agents: [], sources: [] });
@@ -106,6 +111,7 @@ export function layerColor(layerId) {
 let ws = null;
 let pendingEvents = [];
 let frameScheduled = false;
+let wasConnected = false; // track for live reload on server restart
 
 function flushEvents() {
   frameScheduled = false;
@@ -146,7 +152,15 @@ export function connect() {
   // For tunnel mode, the session cookie set by /auth handles auth.
   const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${wsProto}//${location.host}/ws`);
-  ws.onopen = () => { connected.value = true; };
+  ws.onopen = () => {
+    if (wasConnected) {
+      // Server restarted (bun --watch) — reload to pick up fresh assets
+      location.reload();
+      return;
+    }
+    wasConnected = true;
+    connected.value = true;
+  };
   ws.onclose = () => {
     connected.value = false;
     setTimeout(connect, 2000);
@@ -205,13 +219,29 @@ export async function loadThreads() {
 
     // New format: { threads: [...] } or legacy { threadId, meta, ... }
     if (data.threads) {
-      // Multi-thread format — store first thread as primary for backwards compat
-      threadData.value = data.threads[0] ?? null;
       allThreads.value = data.threads;
+      // Auto-set activeThreadId if not already set (e.g. first load without hash)
+      if (!activeThreadId.value && data.threads.length > 0) {
+        activeThreadId.value = data.threads[0].threadId;
+      }
+      const active = activeThreadId.value;
+      const match = active ? data.threads.find(t => t.threadId === active) : null;
+      threadData.value = match ?? data.threads[0] ?? null;
+      // Always load messages for active thread if we don't have them yet
+      if (active && messages.value.length === 0 && !_threadMessages[active]) {
+        _loadThreadMessages(active);
+      }
     } else {
       // Legacy single-thread format
       threadData.value = data;
       allThreads.value = [data];
+      if (!activeThreadId.value && data.threadId) {
+        activeThreadId.value = data.threadId;
+      }
+      const active = activeThreadId.value;
+      if (active && messages.value.length === 0 && !_threadMessages[active]) {
+        _loadThreadMessages(active);
+      }
     }
   } catch (err) {
     if (connected.value) showToast(`Threads unavailable: ${err.message}`, "warn");
@@ -312,6 +342,15 @@ export async function loadDefinitions() {
   }
 }
 
+export async function loadWorktrees() {
+  try {
+    const res = await authFetch("/api/worktrees");
+    if (!res.ok) return;
+    const data = await res.json();
+    worktrees.value = data.worktrees ?? [];
+  } catch { /* silent — git may not be available */ }
+}
+
 export async function loadProjects() {
   try {
     const res = await authFetch("/api/projects");
@@ -364,13 +403,13 @@ export async function deleteProject(id) {
   }
 }
 
-export async function createThread({ description, tags } = {}) {
+export async function createThread({ description, tags, worktreePath, branch } = {}) {
   try {
     const projectId = activeProjectId.value || undefined;
     const res = await authFetch("/api/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, description, tags }),
+      body: JSON.stringify({ projectId, description, tags, worktreePath, branch }),
     });
     if (res.ok) {
       const created = await res.json();
@@ -384,6 +423,91 @@ export async function createThread({ description, tags } = {}) {
   } catch (err) {
     showToast(`Failed: ${err.message}`, "error");
     return null;
+  }
+}
+
+export async function revertThread(messageIndex) {
+  const tid = activeThreadId.value;
+  if (!tid) return;
+
+  const msgs = messages.value;
+  if (messageIndex < 0 || messageIndex >= msgs.length) return;
+
+  // Truncate locally first (optimistic)
+  const kept = msgs.slice(0, messageIndex + 1);
+  messages.value = kept;
+  _threadMessages[tid] = kept;
+  _persistLocal(tid, kept);
+
+  // Tell server to clean up DB
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(tid)}/revert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keepCount: messageIndex + 1 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || "Revert failed", "error");
+      return;
+    }
+    showToast("Reverted", "ok");
+  } catch (err) {
+    showToast(`Revert failed: ${err.message}`, "error");
+  }
+}
+
+export async function forkThread(messageIndex) {
+  const tid = activeThreadId.value;
+  if (!tid) return;
+
+  const msgs = messages.value;
+  if (messageIndex < 0 || messageIndex >= msgs.length) return;
+
+  const forkedMessages = msgs.slice(0, messageIndex + 1);
+
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(tid)}/fork`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ copyCount: messageIndex + 1 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || "Fork failed", "error");
+      return;
+    }
+    const newThread = await res.json();
+    showToast(`Forked → ${newThread.meta?.description || newThread.threadId}`, "ok");
+
+    // Pre-populate new thread's messages so switching is instant
+    _threadMessages[newThread.threadId] = forkedMessages;
+
+    await loadThreads();
+    selectThread(newThread.threadId);
+  } catch (err) {
+    showToast(`Fork failed: ${err.message}`, "error");
+  }
+}
+
+export async function updateThreadWorktree(threadId, worktreePath, branch) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worktreePath, branch }),
+    });
+    if (res.ok) {
+      showToast("Worktree updated", "ok");
+      loadThreads();
+      return true;
+    }
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || "Failed to update worktree", "error");
+    return false;
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, "error");
+    return false;
   }
 }
 
@@ -430,19 +554,93 @@ export async function deleteDefinition(section, id) {
 // Chat — send messages through harness
 // ---------------------------------------------------------------------------
 
-export async function sendMessage(text) {
-  if (!text.trim() || sending.value) return;
+// Per-thread message store — keeps messages when switching threads
+const _threadMessages = {};
 
-  // Add user message immediately
+/** Select a thread by ID — switches active thread, restores its messages. */
+export function selectThread(threadId) {
+  const prev = activeThreadId.value;
+  if (prev === threadId) return;
+
+  // Always save current messages (even if prev is the initial default)
+  const saveKey = prev ?? "_default";
+  _threadMessages[saveKey] = messages.value;
+
+  // Switch
+  activeThreadId.value = threadId;
+
+  // Restore from cache or load from server
+  if (_threadMessages[threadId]) {
+    messages.value = _threadMessages[threadId];
+  } else {
+    messages.value = [];
+    // Load history from server (fire-and-forget, updates when ready)
+    _loadThreadMessages(threadId);
+  }
+
+  // Update threadData from allThreads
+  const match = allThreads.value.find(t => t.threadId === threadId);
+  if (match) threadData.value = match;
+}
+
+/** Save messages to localStorage as fallback (no-DB setups). */
+function _persistLocal(threadId, msgs) {
+  try {
+    localStorage.setItem(`foundry:msgs:${threadId}`, JSON.stringify(msgs));
+  } catch { /* quota exceeded or private browsing — skip */ }
+}
+
+/** Read messages from localStorage fallback. */
+function _loadLocal(threadId) {
+  try {
+    const raw = localStorage.getItem(`foundry:msgs:${threadId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+/** Load persisted messages for a thread — server first, localStorage fallback. */
+async function _loadThreadMessages(threadId) {
+  try {
+    const res = await authFetch(`/api/messages?threadId=${encodeURIComponent(threadId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const msgs = data.messages ?? [];
+      if (msgs.length > 0) {
+        _threadMessages[threadId] = msgs;
+        if (activeThreadId.value === threadId) messages.value = msgs;
+        return;
+      }
+    }
+  } catch { /* fall through to localStorage */ }
+
+  // Fallback: localStorage
+  const local = _loadLocal(threadId);
+  if (local.length > 0) {
+    _threadMessages[threadId] = local;
+    if (activeThreadId.value === threadId) messages.value = local;
+  }
+}
+
+export async function sendMessage(text) {
+  if (!text.trim()) return;
+
+  // Add user message immediately — input stays interactive
   const userMsg = { role: "user", content: text, timestamp: Date.now() };
   messages.value = [...messages.value, userMsg];
-  sending.value = true;
 
+  // Track in-flight (non-blocking — user can keep typing)
+  inflight.value++;
+
+  // Fire API call in background — don't await in caller
+  _processMessageInBackground(text);
+}
+
+async function _processMessageInBackground(text) {
   try {
     const res = await fetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, threadId: activeThreadId.value || undefined }),
     });
     const result = await res.json();
 
@@ -465,10 +663,8 @@ export async function sendMessage(text) {
       }];
     }
 
-    // Refresh traces and token usage after each message
-    loadTraces();
-    loadThreads();
-    loadTokenUsage();
+    // Refresh in parallel after response
+    Promise.all([loadTraces(), loadThreads(), loadTokenUsage()]);
   } catch (err) {
     messages.value = [...messages.value, {
       role: "agent",
@@ -477,7 +673,7 @@ export async function sendMessage(text) {
       error: true,
     }];
   } finally {
-    sending.value = false;
+    inflight.value = Math.max(0, inflight.value - 1);
   }
 }
 
@@ -553,15 +749,51 @@ export function dismissToast() {
 }
 
 // ---------------------------------------------------------------------------
+// View state — persist to URL hash so refresh restores position
+// ---------------------------------------------------------------------------
+
+const VIEW_KEYS = ["project", "thread", "panel", "sidebar", "detail"];
+
+function readHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return Object.fromEntries(VIEW_KEYS.map(k => [k, params.get(k)]));
+}
+
+function writeHash() {
+  const params = new URLSearchParams();
+  if (activeProjectId.value) params.set("project", activeProjectId.value);
+  if (activeThreadId.value) params.set("thread", activeThreadId.value);
+  if (activePanel.value !== "conversation") params.set("panel", activePanel.value);
+  if (!projectSidebarOpen.value) params.set("sidebar", "0");
+  if (!detailDrawerOpen.value) params.set("detail", "0");
+  const hash = params.toString();
+  // Replace silently — no history entry per state change
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname);
+}
+
+function restoreFromHash() {
+  const h = readHash();
+  if (h.project) activeProjectId.value = h.project;
+  if (h.thread) activeThreadId.value = h.thread;
+  if (h.panel) activePanel.value = h.panel;
+  if (h.sidebar === "0") projectSidebarOpen.value = false;
+  if (h.detail === "0") detailDrawerOpen.value = false;
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
 export function init() {
+  // Restore view state from URL hash before loading data
+  restoreFromHash();
+
   connect();
   loadTraces();
   loadThreads();
   loadDefinitions();
   loadProjects();
+  loadWorktrees();
   loadPrompts();
   loadTokenUsage();
   // Fallback polling
@@ -569,8 +801,29 @@ export function init() {
   setInterval(loadThreads, 20000);
   setInterval(loadDefinitions, 30000);
   setInterval(loadProjects, 30000);
+  setInterval(loadWorktrees, 30000);
   setInterval(loadPrompts, 5000); // prompts poll faster — they're time-sensitive
   setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
+
+  // Sync view state → URL hash on any change
+  effect(() => {
+    // Touch all signals to subscribe
+    activeProjectId.value;
+    activeThreadId.value;
+    activePanel.value;
+    projectSidebarOpen.value;
+    detailDrawerOpen.value;
+    writeHash();
+  });
+
+  // Persist messages to localStorage on every change (fallback for no-DB setups)
+  effect(() => {
+    const tid = activeThreadId.value;
+    const msgs = messages.value;
+    if (tid && msgs.length > 0) {
+      _persistLocal(tid, msgs);
+    }
+  });
 
   // Reload threads when active project changes
   let prevProject = activeProjectId.value;
@@ -580,5 +833,10 @@ export function init() {
       prevProject = cur;
       loadThreads();
     }
+  });
+
+  // Handle back/forward navigation
+  window.addEventListener("hashchange", () => {
+    restoreFromHash();
   });
 }

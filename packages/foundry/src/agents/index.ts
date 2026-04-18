@@ -7,7 +7,6 @@ export {
   type ContextLayerConfig,
   type LayerState,
   ContextStack,
-  type Compressor,
   type LayerFilter,
   type ContextSnapshot,
   type PromptBlock,
@@ -28,6 +27,7 @@ export {
   type AgentLLMConfig,
   Executor,
   type ExecuteHandler,
+  type ExecuteMeta,
   type ExecutorConfig,
   Decider,
   type Decision,
@@ -96,12 +96,6 @@ export {
   type BudgetStatus,
   type UsageBreakdown,
   type UsageSummary,
-  // Compaction interfaces
-  type CompactionStrategy,
-  type CompactionPlan,
-  type CompactionOpts,
-  type LayerSnapshot,
-  type CompactionLLMProvider,
   // Hooks
   HookRegistry,
   type HookPoint,
@@ -134,20 +128,10 @@ export {
   type GateContext,
 } from "@inixiative/foundry-core";
 
-// Foundry-specific: compaction strategies
-export {
-  TrustBasedStrategy,
-  LRUStrategy,
-  SummarizeStrategy,
-  HybridStrategy,
-  type HybridThresholds,
-} from "./compaction-strategies";
-
 // Foundry-specific: built-in hooks
 export {
   planModeHook,
   budgetGuardHook,
-  autoCompactHook,
   type HookTokenTracker,
 } from "./builtin-hooks";
 
@@ -200,11 +184,15 @@ export {
 // Thread Factory
 export {
   ThreadFactory,
+  buildLayers,
+  buildAgents,
   keywordClassify,
   keywordRoute,
   parseJSON,
   resolveAgentOpts,
   type SourceResolver,
+  type BuildLayersDeps,
+  type BuildAgentsDeps,
   type ThreadFactoryDeps,
 } from "./thread-factory";
 
@@ -244,6 +232,7 @@ export {
 export {
   Librarian,
   type ThreadState,
+  type InjectedLayerRecord,
   type LibrarianConfig,
 } from "./librarian";
 
@@ -251,6 +240,8 @@ export {
 export {
   DomainLibrarian,
   type DomainLibrarianConfig,
+  type ProcessingStrategy,
+  type RuleCompiler,
   type AdviseResult,
   type GuardFinding,
   type GuardResult,
@@ -271,6 +262,7 @@ export {
   FlowOrchestrator,
   type FlowOrchestratorConfig,
   type InjectionPlan,
+  type HydrationResult,
   type GuardReport,
   type InvalidationEvent,
 } from "./flow-orchestrator";

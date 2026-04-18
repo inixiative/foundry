@@ -9,16 +9,9 @@ export * from "@inixiative/foundry-core";
 
 // Foundry agents (re-exports core + adds foundry-specific agents)
 export {
-  // Compaction strategies
-  TrustBasedStrategy,
-  LRUStrategy,
-  SummarizeStrategy,
-  HybridStrategy,
-  type HybridThresholds,
   // Built-in hooks
   planModeHook,
   budgetGuardHook,
-  autoCompactHook,
   type HookTokenTracker,
   // Sessions
   SessionManager,
@@ -53,10 +46,15 @@ export {
   type ProjectSummary,
   // Thread Factory
   ThreadFactory,
+  buildLayers,
+  buildAgents,
   keywordClassify,
   keywordRoute,
   parseJSON,
+  resolveAgentOpts,
   type SourceResolver,
+  type BuildLayersDeps,
+  type BuildAgentsDeps,
   type ThreadFactoryDeps,
   // Reactive Middleware
   ReactiveMiddleware,
@@ -166,6 +164,19 @@ export {
   ClaudeCodeProvider,
   type ClaudeCodeConfig as ClaudeCodeProviderConfig,
 } from "./providers/claude-code";
+// HarnessSession — long-lived agent subprocess interface
+export {
+  type HarnessSession,
+  type SessionEvent,
+  type SessionEventKind,
+  type SessionEventHandler,
+  type SessionResult,
+  type SessionArtifact,
+} from "./providers/harness-session";
+export {
+  ClaudeCodeSession,
+  type ClaudeCodeSessionConfig,
+} from "./providers/claude-code-session";
 export {
   AnthropicProvider,
   VoyageEmbeddingProvider,
@@ -184,11 +195,16 @@ export {
   type GeminiConfig,
 } from "./providers/gemini";
 
-// Runtime Adapters
+// Runtime Adapters (context injection)
 export {
   type RuntimeAdapter,
   type RuntimeEvent,
   type RuntimeEventKind,
+  type RuntimeEventHandler,
+  type ContextInjection,
+  ClaudeCodeRuntime,
+  CodexRuntime,
+  CursorRuntime,
 } from "./providers/runtime";
 
 // Viewer
@@ -219,6 +235,7 @@ export {
   type LayerSettingsOverride,
   type DataSourceConfig,
   type ProjectSettingsConfig,
+  type ProjectPrompts,
   type ExecutionEnv,
   type BrowserConfig,
   type BrowserConfigOverride,
@@ -297,6 +314,28 @@ export {
   type JudgeConfig,
   type DimensionSweepOpts,
 } from "./research";
+
+// Git — worktree detection for thread→branch assignment
+export {
+  listWorktrees,
+  findByBranch,
+  findByPath,
+  getCurrentBranch,
+  diffStat,
+  type GitWorktree,
+} from "./git";
+
+// Prompts — project identity composition
+export {
+  compose as composePrompts,
+  decompose as decomposePrompts,
+  writeComposed as writeComposedPrompts,
+  decomposeBack,
+  readFileRef,
+  writeFileRef,
+  RUNTIME_OUTPUT_FILES,
+  type DecomposedSections,
+} from "./prompts";
 
 // MCP — mid-session bridge (FLOW.md Loop 2)
 export {

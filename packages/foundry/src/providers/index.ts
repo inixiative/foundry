@@ -26,7 +26,23 @@ export { GeminiProvider, GeminiEmbeddingProvider, type GeminiConfig } from "./ge
 // Gated provider (capability-checked wrapper)
 export { GatedProvider, type GatedProviderConfig } from "./gated";
 
-// Runtime Adapters (harness-level hooks for agent runtimes)
+// HarnessSession — long-lived agent subprocess interface
+export {
+  type HarnessSession,
+  type SessionEvent,
+  type SessionEventKind,
+  type SessionEventHandler,
+  type SessionResult,
+  type SessionArtifact,
+} from "./harness-session";
+
+// ClaudeCodeSession — HarnessSession implementation for Claude Code CLI
+export {
+  ClaudeCodeSession,
+  type ClaudeCodeSessionConfig,
+} from "./claude-code-session";
+
+// Runtime Adapters (context injection into agent runtimes)
 export {
   type RuntimeAdapter,
   type RuntimeEvent,

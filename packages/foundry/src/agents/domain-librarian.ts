@@ -69,6 +69,69 @@ export interface GuardResult {
   ran: boolean;
 }
 
+/**
+ * How a compiled rule was produced and when to recompile it.
+ *
+ * Every "programmatic" and "cached" strategy has a compiler behind it —
+ * an LLM action that generates the deterministic artifact. The convention
+ * regex, the tag alias map, the doc summary — all LLM outputs that then
+ * run without LLM calls at request time.
+ *
+ * The compiler metadata lets the system know:
+ *   - When to recompile (signal-driven, not time-driven)
+ *   - What prompt produced the current rules (reproducibility)
+ *   - How stale the compiled output is
+ */
+export interface RuleCompiler {
+  /** Signal kinds that trigger recompilation (e.g., "correction", "convention"). */
+  recompileOn: string[];
+  /** Prompt template used to generate the rule. The warm cache is injected as context. */
+  compilePrompt: string;
+  /** When the current rule was last compiled. */
+  lastCompiled: number;
+  /**
+   * How many triggering signals accumulate before recompilation fires.
+   * Default: 1 (recompile on every trigger). Higher values batch.
+   * Example: convention guard recompiles after 3 corrections, not every one.
+   */
+  threshold?: number;
+  /** Counter of accumulated triggers since last compile. */
+  pendingTriggers?: number;
+}
+
+/**
+ * Processing strategy — how a domain librarian resolves its advise/guard calls.
+ *
+ * Two dimensions:
+ *   1. EXECUTION — how it runs at request time (programmatic / cached / live)
+ *   2. COMPILATION — how the rules get written (LLM action, expressed by RuleCompiler)
+ *
+ * The lifecycle:
+ *   live → system accumulates signals → LLM compiles rules → cached/programmatic
+ *   → more signals → LLM recompiles → updated rules
+ *
+ * "Programmatic" doesn't mean "no LLM" — it means the LLM ran at compile time,
+ * not at request time. The compile step IS the LLM action.
+ */
+export type ProcessingStrategy =
+  | {
+      kind: "programmatic";
+      fn: (input: string, cache: string) => string;
+      /** How the function was compiled. Null = hand-written, never recompiled. */
+      compiler: RuleCompiler | null;
+    }
+  | {
+      kind: "cached";
+      ttl: number;
+      invalidateOn: string[];
+      /** How the cache content was compiled. */
+      compiler: RuleCompiler | null;
+    }
+  | {
+      kind: "live";
+      budget: number;
+    };
+
 /** Configuration for a domain librarian instance. */
 export interface DomainLibrarianConfig {
   /** Domain identifier (e.g., "docs", "convention", "security"). */
@@ -87,6 +150,10 @@ export interface DomainLibrarianConfig {
   advisePrompt?: string;
   /** System prompt for guard mode. */
   guardPrompt?: string;
+  /** Processing strategy for advise calls. Default: live (LLM every time). */
+  adviseStrategy?: ProcessingStrategy;
+  /** Processing strategy for guard calls. Default: live (LLM every time). */
+  guardStrategy?: ProcessingStrategy;
   /** If true, guard uses programmatic matching instead of LLM (like Memory domain). */
   programmaticGuard?: boolean;
   /**
@@ -111,6 +178,8 @@ export class DomainLibrarian {
   private _guardPrompt: string;
   private _programmaticGuard: boolean;
   private _guardFn?: (obs: ToolObservation, cache: string) => GuardFinding[];
+  private _adviseStrategy: ProcessingStrategy;
+  private _guardStrategy: ProcessingStrategy;
 
   constructor(config: DomainLibrarianConfig) {
     this.domain = config.domain;
@@ -122,6 +191,13 @@ export class DomainLibrarian {
     this._programmaticGuard = config.programmaticGuard ?? false;
     this._guardFn = config.guardFn;
 
+    // Default strategies: live LLM unless programmatic guard is set
+    this._adviseStrategy = config.adviseStrategy ?? { kind: "live", budget: 512 };
+    this._guardStrategy = config.guardStrategy ??
+      (config.programmaticGuard
+        ? { kind: "programmatic", fn: () => "", compiler: null }
+        : { kind: "live", budget: 512 });
+
     this._advisePrompt = config.advisePrompt ??
       `You are a ${config.domain} domain advisor. Given a user message and your domain's warm cache, decide what context from your domain the message needs. Respond with JSON: { "layers": string[], "snippets": string[], "confidence": number }`;
 
@@ -132,6 +208,16 @@ export class DomainLibrarian {
   /** The underlying warm cache layer. */
   get cache(): ContextLayer {
     return this._cache;
+  }
+
+  /** Processing strategy for advise calls. */
+  get adviseStrategy(): ProcessingStrategy {
+    return this._adviseStrategy;
+  }
+
+  /** Processing strategy for guard calls. */
+  get guardStrategy(): ProcessingStrategy {
+    return this._guardStrategy;
   }
 
   /** Whether this domain's guard should fire for a given tool type. */

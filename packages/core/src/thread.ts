@@ -18,6 +18,12 @@ export interface ThreadMeta {
   /** Current status. */
   status: ThreadStatus;
 
+  /** Working directory for this thread's tool execution (worktree path). */
+  cwd?: string;
+
+  /** Git branch this thread is assigned to. */
+  branch?: string;
+
   /** When this thread was created. */
   readonly createdAt: number;
 
@@ -53,6 +59,10 @@ export interface ThreadConfig {
   maxSignalHistory?: number;
   description?: string;
   tags?: string[];
+  /** Working directory for this thread's tool execution (worktree path). */
+  cwd?: string;
+  /** Git branch this thread is assigned to. */
+  branch?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
   tokenTracker?: TokenTracker;
 }
@@ -93,6 +103,8 @@ export class Thread {
       description: opts?.description ?? "",
       tags: opts?.tags ?? [],
       status: "idle",
+      cwd: opts?.cwd,
+      branch: opts?.branch,
       createdAt: now,
       lastActiveAt: now,
     };
@@ -161,9 +173,15 @@ export class Thread {
 
     const start = performance.now();
 
+    const meta = {
+      cwd: this.meta.cwd,
+      threadId: this.id,
+      annotations: ctx.annotations,
+    };
+
     try {
       const result = await this.middleware.execute(ctx, () =>
-        agent.run(payload, filterOverride)
+        agent.run(payload, filterOverride, meta)
       );
 
       const durationMs = performance.now() - start;
@@ -209,8 +227,7 @@ export class Thread {
   ): BackgroundHandle {
     const promise = this.dispatch(agentId, payload, filterOverride).catch(
       async (err) => {
-        const { log } = await import("../logger");
-        log.warn(`[Thread] background dispatch "${agentId}" failed:`, (err as Error).message);
+        console.warn(`[Thread] background dispatch "${agentId}" failed:`, (err as Error).message);
         return { output: null, contextHash: "" } as ExecutionResult;
       }
     );

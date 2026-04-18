@@ -36,327 +36,296 @@ import type {
 export type SourceResolver = (sourceId: string, config: FoundryConfig) => ContextSource | null;
 
 // ---------------------------------------------------------------------------
-// ThreadFactory — stamps out threads with independent layer/agent instances
+// Project-level builders — create shared layers and agents from config
 // ---------------------------------------------------------------------------
 
-export interface ThreadFactoryDeps {
-  /** LLM provider for agent completions. */
-  provider: LLMProvider;
-  /** Optional token tracker for cost tracking. */
-  tokenTracker?: TokenTracker;
-  /** Resolves source IDs to ContextSources (memory, file, inline, etc). */
+export interface BuildLayersDeps {
   sourceResolver: SourceResolver;
-  /** Optional tool registry — agents can discover and use registered tools. */
+}
+
+/**
+ * Build ContextLayer instances from project config.
+ * Called once at project startup — layers are shared across all threads.
+ */
+export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): ContextLayer[] {
+  const layers: ContextLayer[] = [];
+
+  for (const [id, layerCfg] of Object.entries(config.layers)) {
+    if (!layerCfg.enabled) continue;
+
+    const sources = (layerCfg.sourceIds ?? [])
+      .map((srcId) => deps.sourceResolver(srcId, config))
+      .filter(Boolean) as ContextSource[];
+
+    layers.push(
+      new ContextLayer({
+        id,
+        trust: layerCfg.trust * 10, // Config uses 0-1, ContextLayer uses 0-10
+        staleness: layerCfg.staleness || undefined,
+        prompt: layerCfg.prompt || undefined,
+        sources,
+      }),
+    );
+  }
+
+  // Fallback: if no layers configured, create a basic system layer
+  if (layers.length === 0) {
+    layers.push(
+      new ContextLayer({
+        id: "system",
+        trust: 10,
+        sources: [{
+          id: "default",
+          load: async () => "You are a helpful engineering assistant.",
+        }],
+      }),
+    );
+  }
+
+  return layers;
+}
+
+export interface BuildAgentsDeps {
+  provider: LLMProvider;
+  tokenTracker?: TokenTracker;
   tools?: ToolRegistry;
 }
 
 /**
- * Factory that creates fully-wired Thread instances from config.
+ * Build agent instances from project config.
+ * Called once at project startup — agents are shared across all threads.
+ */
+export function buildAgents(
+  config: FoundryConfig,
+  stack: ContextStack,
+  deps: BuildAgentsDeps,
+): Map<string, BaseAgent> {
+  const agents = new Map<string, BaseAgent>();
+
+  for (const [id, agentCfg] of Object.entries(config.agents)) {
+    if (!agentCfg.enabled) continue;
+    const agent = buildAgent(id, agentCfg, config, stack, deps);
+    if (agent) agents.set(id, agent);
+  }
+
+  return agents;
+}
+
+// ---------------------------------------------------------------------------
+// ThreadFactory — lightweight thread creation from shared project state
+// ---------------------------------------------------------------------------
+
+export interface ThreadFactoryDeps {
+  /** Shared project stack (layers built once, shared across threads). */
+  stack: ContextStack;
+  /** Shared project agents (built once, registered on each thread). */
+  agents: Map<string, BaseAgent>;
+}
+
+/**
+ * Factory that creates Thread instances from shared project state.
  *
- * Each thread gets:
- * - Its own ContextLayer instances (mutations are thread-local)
- * - Its own agent instances (prompts/models can differ per-thread)
- *
- * Thread-state is managed by the Librarian (adds a `thread-state` layer
- * that reconciles all signals into a coherent snapshot).
- *
- * This replaces the manual wiring in start.ts and powers
- * POST /api/threads with real per-thread instantiation.
+ * Layers and agents are project-scoped — built once, shared across threads.
+ * ThreadFactory just wraps them in a new Thread handle. The only per-thread
+ * state is the Librarian's `thread-state` layer, created separately.
  */
 export class ThreadFactory {
-  private _deps: ThreadFactoryDeps;
+  private _stack: ContextStack;
+  private _agents: Map<string, BaseAgent>;
 
   constructor(deps: ThreadFactoryDeps) {
-    this._deps = deps;
+    this._stack = deps.stack;
+    this._agents = deps.agents;
   }
 
   /**
-   * Create a fully-wired Thread from config.
-   *
-   * @param id        Thread ID
-   * @param config    Resolved FoundryConfig (global or per-project via resolveProject)
-   * @param opts      Thread options (description, tags, etc)
+   * Create a Thread that shares the project's stack and agents.
    */
-  async create(
+  create(
     id: string,
-    config: FoundryConfig,
-    opts?: ThreadConfig & { warm?: boolean },
-  ): Promise<{ thread: Thread; stack: ContextStack; agents: Map<string, BaseAgent> }> {
-    // 1. Build layers from config
-    const layers = this._buildLayers(config);
+    opts?: ThreadConfig,
+  ): Thread {
+    const thread = new Thread(id, this._stack, opts);
 
-    // 2. Build stack (Librarian adds thread-state layer separately)
-    const stack = new ContextStack(layers);
-
-    // 3. Warm all layers if requested (default: yes)
-    if (opts?.warm !== false) {
-      await stack.warmAll();
-    }
-
-    // 4. Create thread
-    const thread = new Thread(id, stack, opts);
-
-    // 5. Build and register agents
-    const agents = this._buildAgents(config, stack);
-    for (const agent of agents.values()) {
+    for (const agent of this._agents.values()) {
       thread.register(agent);
     }
 
-    // 6. Add logger middleware
-    thread.middleware.use("logger", async (ctx, next) => {
-      const start = performance.now();
-      const result = await next();
-      const ms = (performance.now() - start).toFixed(1);
-      console.log(`  [${id}] ${ctx.agentId} (${ms}ms)`);
-      return result;
-    });
-
-    return { thread, stack, agents };
+    return thread;
   }
+}
 
-  // ---------------------------------------------------------------------------
-  // Layer building
-  // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Single-agent builder (used by buildAgents and research runner)
+// ---------------------------------------------------------------------------
 
-  private _buildLayers(config: FoundryConfig): ContextLayer[] {
-    const layers: ContextLayer[] = [];
+function buildAgent(
+  id: string,
+  agentCfg: AgentSettingsConfig,
+  config: FoundryConfig,
+  stack: ContextStack,
+  deps: BuildAgentsDeps,
+): BaseAgent | null {
+  const complete = trackedComplete(id, deps);
+  const opts = resolveAgentOpts(agentCfg, config);
 
-    for (const [id, layerCfg] of Object.entries(config.layers)) {
-      if (!layerCfg.enabled) continue;
-
-      const sources = this._resolveSources(layerCfg, config);
-
-      layers.push(
-        new ContextLayer({
-          id,
-          trust: layerCfg.trust * 10, // Config uses 0-1, ContextLayer uses 0-10
-          staleness: layerCfg.staleness || undefined,
-          maxTokens: layerCfg.maxTokens || undefined,
-          prompt: layerCfg.prompt || undefined,
-          sources,
-        }),
-      );
-    }
-
-    // Fallback: if no layers configured, create a basic system layer
-    if (layers.length === 0) {
-      layers.push(
-        new ContextLayer({
-          id: "system",
-          trust: 10,
-          sources: [{
-            id: "default",
-            load: async () => "You are a helpful engineering assistant.",
-          }],
-        }),
-      );
-    }
-
-    return layers;
-  }
-
-  private _resolveSources(
-    layerCfg: LayerSettingsConfig,
-    config: FoundryConfig,
-  ): ContextSource[] {
-    return (layerCfg.sourceIds ?? [])
-      .map((srcId) => this._deps.sourceResolver(srcId, config))
-      .filter(Boolean) as ContextSource[];
-  }
-
-  // ---------------------------------------------------------------------------
-  // Agent building
-  // ---------------------------------------------------------------------------
-
-  private _buildAgents(
-    config: FoundryConfig,
-    stack: ContextStack,
-  ): Map<string, BaseAgent> {
-    const agents = new Map<string, BaseAgent>();
-
-    for (const [id, agentCfg] of Object.entries(config.agents)) {
-      if (!agentCfg.enabled) continue;
-
-      const agent = this._buildAgent(id, agentCfg, config, stack);
-      if (agent) agents.set(id, agent);
-    }
-
-    return agents;
-  }
-
-  private _buildAgent(
-    id: string,
-    agentCfg: AgentSettingsConfig,
-    config: FoundryConfig,
-    stack: ContextStack,
-  ): BaseAgent | null {
-    const complete = this._trackedComplete(id);
-
-    // Resolve all completion opts from agent config
-    const opts = resolveAgentOpts(agentCfg, config);
-
-    switch (agentCfg.kind) {
-      case "classifier":
-        return new Classifier<string>({
-          id,
-          stack,
-          handler: async (ctx, payload) => {
-            if (!agentCfg.prompt) return keywordClassify(payload);
-            try {
-              const result = await complete(
-                [
-                  {
-                    role: "system",
-                    content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a classifier. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
-                  },
-                  { role: "user", content: payload },
-                ],
-                { ...opts, maxTokens: agentCfg.maxTokens || 256, maxTurns: 1 },
-              );
-              const parsed = parseJSON(result.content);
-              return {
-                value: { category: parsed.category as string || "general", subcategory: parsed.subcategory as string },
-                confidence: 0.9,
-                reasoning: (parsed.reasoning as string) || "LLM classification",
-              };
-            } catch (err) {
-              console.warn(`[ThreadFactory] LLM classify failed, falling back to keyword:`, (err as Error).message);
-              return keywordClassify(payload);
-            }
-          },
-        });
-
-      case "router":
-        return new Router<{ payload: string; classification: Classification } | string>({
-          id,
-          stack,
-          handler: async (ctx, input) => {
-            // input may be a string (raw payload) or { payload, classification } from harness
-            const payload = typeof input === "string" ? input : input.payload;
-            const classification = typeof input === "string" ? null : input.classification;
-
-            if (!classification) {
-              // No classification available — use keyword fallback on the raw payload
-              return keywordRoute(keywordClassify(payload).value, config);
-            }
-
-            if (!agentCfg.prompt) return keywordRoute(classification, config);
-            try {
-              const result = await complete(
-                [
-                  {
-                    role: "system",
-                    content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a router. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
-                  },
-                  {
-                    role: "user",
-                    content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
-                  },
-                ],
-                { ...opts, maxTokens: agentCfg.maxTokens || 256, maxTurns: 1 },
-              );
-              const parsed = parseJSON(result.content);
-              return {
-                value: {
-                  destination: (parsed.destination as string) || "executor-answer",
-                  contextSlice: (parsed.contextSlice as string[]) || Object.keys(config.layers),
-                  priority: (parsed.priority as number) ?? 5,
+  switch (agentCfg.kind) {
+    case "classifier":
+      return new Classifier<string>({
+        id,
+        stack,
+        handler: async (ctx, payload) => {
+          if (!agentCfg.prompt) return keywordClassify(payload);
+          try {
+            const result = await complete(
+              [
+                {
+                  role: "system",
+                  content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a classifier. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
                 },
-                confidence: 0.9,
-                reasoning: (parsed.reasoning as string) || "LLM routing",
-              };
-            } catch (err) {
-              console.warn(`[ThreadFactory] LLM route failed, falling back to keyword:`, (err as Error).message);
-              return keywordRoute(classification, config);
-            }
-          },
-        });
+                { role: "user", content: payload },
+              ],
+              { ...opts, maxTokens: 256, maxTurns: 1 },
+            );
+            const parsed = parseJSON(result.content);
+            return {
+              value: { category: parsed.category as string || "general", subcategory: parsed.subcategory as string },
+              confidence: 0.9,
+              reasoning: (parsed.reasoning as string) || "LLM classification",
+            };
+          } catch (err) {
+            console.warn(`[buildAgent] LLM classify failed, falling back to keyword:`, (err as Error).message);
+            return keywordClassify(payload);
+          }
+        },
+      });
 
-      case "executor":
-      default: {
-        if (!agentCfg.prompt) {
-          console.warn(`[ThreadFactory] Agent "${id}" has no prompt configured — skipping.`);
-          return null;
-        }
+    case "router":
+      return new Router<{ payload: string; classification: Classification } | string>({
+        id,
+        stack,
+        handler: async (ctx, input) => {
+          const payload = typeof input === "string" ? input : input.payload;
+          const classification = typeof input === "string" ? null : input.classification;
 
-        const tools = this._deps.tools;
-        const useToolLoop = tools && tools.size > 0 && opts.tools !== false;
+          if (!classification) {
+            return keywordRoute(keywordClassify(payload).value, config);
+          }
 
-        return new Executor<string, string>({
-          id,
-          stack,
-          handler: async (ctx, payload) => {
-            const systemParts = [ctx, agentCfg.prompt];
+          if (!agentCfg.prompt) return keywordRoute(classification, config);
+          try {
+            const result = await complete(
+              [
+                {
+                  role: "system",
+                  content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a router. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
+                },
+                {
+                  role: "user",
+                  content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
+                },
+              ],
+              { ...opts, maxTokens: 256, maxTurns: 1 },
+            );
+            const parsed = parseJSON(result.content);
+            return {
+              value: {
+                destination: (parsed.destination as string) || "executor-answer",
+                contextSlice: (parsed.contextSlice as string[]) || Object.keys(config.layers),
+                priority: (parsed.priority as number) ?? 5,
+              },
+              confidence: 0.9,
+              reasoning: (parsed.reasoning as string) || "LLM routing",
+            };
+          } catch (err) {
+            console.warn(`[buildAgent] LLM route failed, falling back to keyword:`, (err as Error).message);
+            return keywordRoute(classification, config);
+          }
+        },
+      });
 
-            if (tools && tools.size > 0) {
-              systemParts.push(`\n## Available Tools\n${tools.summary()}`);
-            }
-
-            const messages: LLMMessage[] = [
-              { role: "system", content: systemParts.join("\n\n") },
-              { role: "user", content: payload },
-            ];
-
-            try {
-              if (useToolLoop) {
-                // Tool-use loop — agent can call tools and iterate
-                const result = await toolUseLoop(
-                  this._deps.provider,
-                  messages,
-                  tools,
-                  {
-                    ...opts,
-                    maxIterations: agentCfg.maxTokens ? undefined : 10,
-                    onToolCall: (name, input, resultStr) => {
-                      console.log(`    [${id}] tool: ${name}(${Object.values(input).map((v) => String(v).slice(0, 40)).join(", ")})`);
-                    },
-                  },
-                );
-
-                // Track tokens
-                if (this._deps.tokenTracker && result.tokens) {
-                  this._deps.tokenTracker.record({
-                    provider: this._deps.provider.id,
-                    model: result.model,
-                    agentId: id,
-                    tokens: result.tokens,
-                  });
-                }
-
-                return result.content;
-              } else {
-                // Simple one-shot completion (no tools)
-                const result = await complete(messages, opts);
-                return result.content;
-              }
-            } catch (err) {
-              return `[${id}] Error: ${(err as Error).message}`;
-            }
-          },
-        });
+    case "executor":
+    default: {
+      if (!agentCfg.prompt) {
+        console.warn(`[buildAgent] Agent "${id}" has no prompt configured — skipping.`);
+        return null;
       }
+
+      const tools = deps.tools;
+      const useToolLoop = tools && tools.size > 0 && opts.tools !== false;
+
+      return new Executor<string, string>({
+        id,
+        stack,
+        handler: async (ctx, payload, meta) => {
+          const systemParts = [ctx, agentCfg.prompt];
+
+          if (tools && tools.size > 0) {
+            systemParts.push(`\n## Available Tools\n${tools.summary()}`);
+          }
+
+          const messages: LLMMessage[] = [
+            { role: "system", content: systemParts.join("\n\n") },
+            { role: "user", content: payload },
+          ];
+
+          try {
+            if (useToolLoop) {
+              const result = await toolUseLoop(
+                deps.provider,
+                messages,
+                tools,
+                {
+                  ...opts,
+                  toolCwd: meta?.cwd,
+                  maxIterations: 10,
+                  onToolCall: (name, input, resultStr) => {
+                    console.log(`    [${id}] tool: ${name}(${Object.values(input).map((v) => String(v).slice(0, 40)).join(", ")})`);
+                  },
+                },
+              );
+
+              if (deps.tokenTracker && result.tokens) {
+                deps.tokenTracker.record({
+                  provider: deps.provider.id,
+                  model: result.model,
+                  agentId: id,
+                  tokens: result.tokens,
+                });
+              }
+
+              return result.content;
+            } else {
+              const result = await complete(messages, { ...opts, cwd: meta?.cwd });
+              return result.content;
+            }
+          } catch (err) {
+            return `[${id}] Error: ${(err as Error).message}`;
+          }
+        },
+      });
     }
   }
+}
 
-  // ---------------------------------------------------------------------------
-  // Provider helpers
-  // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Provider helpers
+// ---------------------------------------------------------------------------
 
-  private _trackedComplete(agentId: string) {
-    const { provider, tokenTracker } = this._deps;
-    return async (messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> => {
-      const result = await provider.complete(messages, opts);
-      if (tokenTracker && result.tokens) {
-        tokenTracker.record({
-          provider: provider.id,
-          model: result.model,
-          agentId,
-          tokens: result.tokens,
-        });
-      }
-      return result;
-    };
-  }
+function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
+  const { provider, tokenTracker } = deps;
+  return async (messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> => {
+    const result = await provider.complete(messages, opts);
+    if (tokenTracker && result.tokens) {
+      tokenTracker.record({
+        provider: provider.id,
+        model: result.model,
+        agentId,
+        tokens: result.tokens,
+      });
+    }
+    return result;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -402,13 +371,9 @@ export function keywordRoute(
 /**
  * Resolve canonical agent config into CompletionOpts.
  *
- * This is the adapter layer: AgentSettingsConfig holds the canonical knobs,
- * this function maps them into the provider-agnostic CompletionOpts that
- * each provider then translates into its native API.
- *
- * Per-kind defaults:
- * - classifier/router: tools=false, low maxTokens, no thinking
- * - executor: tools=true, higher maxTokens, thinking from config
+ * Per-kind defaults (maxTokens chosen automatically):
+ * - classifier/router: tools=false, 256 max output tokens, no thinking
+ * - executor: tools=true, 16384 max output tokens, thinking from config
  */
 export function resolveAgentOpts(
   agentCfg: AgentSettingsConfig,
@@ -419,7 +384,7 @@ export function resolveAgentOpts(
   return {
     model: agentCfg.model || (isLightweight ? "gemini-3.1-flash-lite-preview" : config.defaults.model),
     temperature: agentCfg.temperature ?? 0,
-    maxTokens: agentCfg.maxTokens ?? (isLightweight ? 256 : 4096),
+    maxTokens: isLightweight ? 256 : 16384,
     tools: agentCfg.tools ?? !isLightweight,
     thinking: agentCfg.thinking ?? "none",
     permissions: agentCfg.permissions,

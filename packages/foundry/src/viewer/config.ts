@@ -74,6 +74,17 @@ export interface FoundryConfig {
  * Provider/runtime is NOT a project concern — threads and agents choose that.
  * Projects just say "here's a directory" and optionally override agents/layers.
  */
+/**
+ * Base identity prompts — composed into runtime-specific files (CLAUDE.md, .cursorrules, etc.).
+ * All values are file paths relative to the project root.
+ */
+export interface ProjectPrompts {
+  /** Shared base identity — all models/runtimes see this. File ref relative to project root. */
+  common: string;
+  /** Per-runtime additions (keyed by runtime ID: "claude", "cursor", "codex", "gemini"). */
+  overrides?: Record<string, string>;
+}
+
 export interface ProjectSettingsConfig {
   /** Auto-generated UUID. Never manually specified. */
   id: string;
@@ -87,6 +98,12 @@ export interface ProjectSettingsConfig {
   description?: string;
   /** Override global defaults for this project. Omitted fields inherit from global. */
   defaults?: Partial<FoundryConfig["defaults"]>;
+  /**
+   * Base identity prompts — composed into CLAUDE.md, .cursorrules, etc.
+   * This is the project's "front door" — the first thing any model reads.
+   * All values are file paths relative to project root.
+   */
+  prompts?: ProjectPrompts;
   /**
    * Project-specific agent overrides (merged over global agents).
    * Scalar fields override directly.
@@ -186,6 +203,12 @@ export interface AgentSettingsConfig {
   flowRole?: string;
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
   domain?: string;
+  /**
+   * Human-readable description of this agent's role and responsibilities.
+   * File path relative to project root (e.g., ".foundry/agents/security-librarian.md").
+   * Explains: what this agent does, which layers it reads/writes, who it delegates to, why.
+   */
+  description?: string;
   /** System prompt for this agent. */
   prompt: string;
   /** LLM settings — provider/model default to global if omitted. */
@@ -193,8 +216,6 @@ export interface AgentSettingsConfig {
   model?: string;
   /** Temperature — set per agent. Classifiers/routers want 0, creative agents want higher. */
   temperature?: number;
-  /** Max output tokens — set per agent. Classifiers need few, executors need many. */
-  maxTokens?: number;
   /**
    * Which layers this agent can READ (empty = all).
    * These are the layers whose content appears in this agent's assembled context.
@@ -242,7 +263,9 @@ export interface AgentSettingsConfig {
 }
 
 export interface AgentSettingsOverride
-  extends Omit<Partial<AgentSettingsConfig>, "visibleLayers" | "ownedLayers" | "peers" | "browser" | "condition"> {
+  extends Omit<Partial<AgentSettingsConfig>, "visibleLayers" | "ownedLayers" | "peers" | "browser" | "condition" | "description"> {
+  /** Override description file path for this project. */
+  description?: string;
   visibleLayers?: ListPatch<string>;
   ownedLayers?: ListPatch<string>;
   peers?: ListPatch<string>;
@@ -272,6 +295,18 @@ export interface LayerSettingsConfig {
   id: string;
   /** Which domain this layer belongs to. Domain librarians find their layers by this. */
   domain?: string;
+  /**
+   * Human-readable description of this layer's job in the system.
+   * File path relative to project root (e.g., ".foundry/layers/conventions.md").
+   * Explains: what knowledge domain it covers, when it's relevant, who writes to it,
+   * what the warmed content looks like.
+   */
+  description?: string;
+  /**
+   * What shape the warmed content takes — helps humans and agents understand what's inside.
+   * E.g., "JSON array of convention objects", "Markdown documentation index", "Compact thread-state JSON".
+   */
+  contentShape?: string;
   /** Instruction prompt for this layer. */
   prompt: string;
   /** Data source IDs that feed this layer. */
@@ -280,8 +315,6 @@ export interface LayerSettingsConfig {
   trust: number;
   /** Staleness threshold in ms (0 = never stale). */
   staleness: number;
-  /** Max token budget for this layer. */
-  maxTokens: number;
   /** Agent IDs that can write to this layer. Undefined = any agent. */
   writers?: string[];
   /** Whether this layer definition is enabled. */
@@ -400,7 +433,7 @@ export function defaultConfig(): FoundryConfig {
         label: "Claude Code (CLI subscription)",
         models: [
           { id: "sonnet", label: "Sonnet 4.6", tier: "standard", costTier: "medium", contextWindow: 200000 },
-          { id: "opus", label: "Opus 4.6", tier: "powerful", costTier: "high", contextWindow: 200000 },
+          { id: "opus", label: "Opus 4.7", tier: "powerful", costTier: "high", contextWindow: 200000 },
           { id: "haiku", label: "Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200000 },
         ],
         enabled: true,
@@ -410,6 +443,7 @@ export function defaultConfig(): FoundryConfig {
         type: "anthropic",
         label: "Anthropic (API key)",
         models: [
+          { id: "claude-opus-4-7", label: "Opus 4.7", tier: "powerful", costTier: "high", contextWindow: 1000000 },
           { id: "claude-opus-4-6", label: "Opus 4.6", tier: "powerful", costTier: "high", contextWindow: 1000000 },
           { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tier: "standard", costTier: "medium", contextWindow: 1000000 },
           { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200000 },
@@ -485,7 +519,6 @@ export function defaultProjectAgents(
       provider: cp,
       model: cm,
       temperature: 0,
-      maxTokens: 256,
       tools: false,
       visibleLayers: ["system"],
       ownedLayers: [],
@@ -502,7 +535,6 @@ export function defaultProjectAgents(
       provider: cp,
       model: cm,
       temperature: 0,
-      maxTokens: 256,
       tools: false,
       visibleLayers: ["system"],
       ownedLayers: [],
@@ -519,7 +551,6 @@ export function defaultProjectAgents(
       provider: providerId,
       model: executorModel,
       temperature: 0,
-      maxTokens: 16384,
       tools: true,
       permissions: "bypass" as const,
       visibleLayers: [],
@@ -541,7 +572,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       sourceIds: ["system-prompt"],
       trust: 1.0,
       staleness: 0,
-      maxTokens: 2000,
       enabled: true,
     },
     conventions: {
@@ -550,7 +580,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       sourceIds: ["conventions-src"],
       trust: 0.8,
       staleness: 60_000,
-      maxTokens: 4000,
       enabled: true,
     },
     memory: {
@@ -559,7 +588,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       sourceIds: ["memory-src"],
       trust: 0.3,
       staleness: 30_000,
-      maxTokens: 8000,
       enabled: true,
     },
   };
@@ -693,7 +721,6 @@ export class ConfigStore {
           provider: agent.llm?.provider ?? this._config.defaults.provider,
           model: agent.llm?.model ?? this._config.defaults.model,
           temperature: agent.llm?.temperature,
-          maxTokens: agent.llm?.maxTokens,
           visibleLayers: agent.llm?.sources ?? [],
           peers: agent.peers,
           maxDepth: agent.llm?.maxDepth ?? 3,
@@ -711,7 +738,6 @@ export class ConfigStore {
           sourceIds: layer.sources.map((s) => s.id),
           trust: layer.trust,
           staleness: layer.staleness ?? 0,
-          maxTokens: layer.maxTokens ?? 0,
           enabled: true,
         };
       }

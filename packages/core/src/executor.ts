@@ -2,9 +2,20 @@ import { computeHash } from "./context-layer";
 import { BaseAgent, type AgentConfig, type ExecutionResult } from "./base-agent";
 import type { LayerFilter } from "./context-stack";
 
+/** Runtime metadata passed to executor handlers at dispatch time. */
+export interface ExecuteMeta {
+  /** Working directory for this dispatch (from the thread's worktree). */
+  cwd?: string;
+  /** Thread ID that dispatched this execution. */
+  threadId?: string;
+  /** Arbitrary annotations from middleware. */
+  annotations?: Record<string, unknown>;
+}
+
 export type ExecuteHandler<TPayload, TResult> = (
   context: string,
-  payload: TPayload
+  payload: TPayload,
+  meta?: ExecuteMeta
 ) => Promise<TResult>;
 
 export interface ExecutorConfig<TPayload = unknown, TResult = unknown>
@@ -28,11 +39,12 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
 
   async run(
     payload: TPayload,
-    filterOverride?: LayerFilter
+    filterOverride?: LayerFilter,
+    meta?: ExecuteMeta
   ): Promise<ExecutionResult<TResult>> {
     const context = this.getContextWith(filterOverride);
     const contextHash = computeHash(context);
-    const output = await this._handler(context, payload);
+    const output = await this._handler(context, payload, meta);
 
     return { output, contextHash };
   }

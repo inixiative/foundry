@@ -14,6 +14,7 @@
     "typecheck:core": "bun run --cwd packages/core typecheck",
     "typecheck:foundry": "bun run --cwd packages/foundry typecheck",
     "start": "bun run packages/foundry/src/start.ts",
+    "dev": "bun --watch run packages/foundry/src/start.ts",
     "viewer": "bun run packages/foundry/src/viewer/server.ts",
     "demo": "bun run packages/foundry/src/demo.ts",
     "research": "bun run packages/foundry/src/research/cli.ts",

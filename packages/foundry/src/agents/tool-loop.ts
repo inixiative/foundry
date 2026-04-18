@@ -34,6 +34,8 @@ export interface ToolLoopOpts extends CompletionOpts {
   maxIterations?: number;
   /** Callback fired after each tool execution. */
   onToolCall?: (toolName: string, input: Record<string, unknown>, result: string) => void;
+  /** Working directory for tool execution (passed to each tool dispatch). */
+  toolCwd?: string;
 }
 
 /**
@@ -96,7 +98,7 @@ export async function toolUseLoop(
     const toolResults: ToolCallResult[] = [];
 
     for (const call of result.toolCalls) {
-      const toolResult = await tools.dispatch(call.name, call.input);
+      const toolResult = await tools.dispatch(call.name, call.input, { cwd: opts?.toolCwd });
 
       const resultContent = toolResult.ok
         ? toolResult.data

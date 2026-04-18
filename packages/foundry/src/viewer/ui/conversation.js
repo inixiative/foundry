@@ -8,8 +8,8 @@
 
 import { html, useState, useRef, useEffect } from "./lib.js";
 import {
-  messages, sending, sendMessage, selectedSpanId, loadTraceDetail,
-  prompts, resolvePrompt, allThreads, tokenUsage,
+  messages, sending, inflight, sendMessage, selectedSpanId, loadTraceDetail,
+  prompts, resolvePrompt, allThreads, tokenUsage, revertThread, forkThread,
 } from "./store.js";
 
 // ---------------------------------------------------------------------------
@@ -99,10 +99,9 @@ let historyIdx = -1;
 function ChatInput() {
   const [text, setText] = useState("");
   const inputRef = useRef(null);
-  const isSending = sending.value;
 
   const handleSubmit = () => {
-    if (!text.trim() || isSending) return;
+    if (!text.trim()) return;
     inputHistory.push(text.trim());
     historyIdx = -1;
     sendMessage(text.trim());
@@ -139,18 +138,17 @@ function ChatInput() {
       <textarea
         ref=${inputRef}
         class="chat-input"
-        placeholder=${isSending ? "Processing..." : "Send a message..."}
+        placeholder="Send a message..."
         value=${text}
         onInput=${(e) => setText(e.target.value)}
         onKeyDown=${handleKeyDown}
-        disabled=${isSending}
         rows="1"
       ></textarea>
       <button
         class="chat-send-btn"
         onClick=${handleSubmit}
-        disabled=${!text.trim() || isSending}
-      >${isSending ? "..." : "Send"}</button>
+        disabled=${!text.trim()}
+      >Send</button>
     </div>
   `;
 }
@@ -159,22 +157,87 @@ function ChatInput() {
 // Chat messages
 // ---------------------------------------------------------------------------
 
-function UserMessage({ msg }) {
+function MessageActions({ index }) {
+  return html`
+    <div class="msg-actions">
+      <button class="msg-action-btn" onClick=${(e) => { e.stopPropagation(); revertThread(index); }}
+        title="Revert to this point">revert</button>
+      <button class="msg-action-btn" onClick=${(e) => { e.stopPropagation(); forkThread(index); }}
+        title="Fork thread from here">fork</button>
+    </div>
+  `;
+}
+
+function UserMessage({ msg, index }) {
   return html`
     <div class="chat-msg chat-user">
+      <${MessageActions} index=${index} />
       <div class="chat-msg-content">${msg.content}</div>
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
     </div>
   `;
 }
 
-function AgentMessage({ msg, onTraceClick }) {
+/** Thin expandable bar showing pipeline stage details. */
+function PipelineBar({ stages, label, className, onTraceClick, traceId }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!stages || stages.length === 0) return null;
+
+  const totalMs = stages.reduce((sum, s) => sum + (s.durationMs || 0), 0);
+  const summary = stages.map(s => s.name).join(" → ");
+
+  return html`
+    <div class="pipeline-bar ${className}" onClick=${() => setExpanded(!expanded)}>
+      <span class="pipeline-bar-label">${label}</span>
+      <span class="pipeline-bar-summary">${summary}</span>
+      <span class="pipeline-bar-time">${totalMs > 0 ? `${totalMs.toFixed(0)}ms` : ""}</span>
+      <span class="pipeline-bar-caret">${expanded ? "▼" : "▶"}</span>
+    </div>
+    ${expanded ? html`
+      <div class="pipeline-bar-detail">
+        ${stages.map((s, i) => html`
+          <div key=${i} class="pipeline-stage ${s.status || ""}">
+            <span class="pipeline-stage-name">${s.name}</span>
+            ${s.agentId ? html`<span class="pipeline-stage-agent">${s.agentId}</span>` : null}
+            ${s.durationMs ? html`<span class="pipeline-stage-ms">${s.durationMs.toFixed(0)}ms</span>` : null}
+            ${s.tokens ? html`<span class="pipeline-stage-tokens">${s.tokens.input}→${s.tokens.output}t</span>` : null}
+            ${s.cost ? html`<span class="pipeline-stage-cost">$${s.cost.toFixed(4)}</span>` : null}
+          </div>
+        `)}
+        ${traceId ? html`
+          <button class="pipeline-trace-btn" onClick=${(e) => { e.stopPropagation(); onTraceClick(traceId); }}>
+            full trace
+          </button>
+        ` : null}
+      </div>
+    ` : null}
+  `;
+}
+
+function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = msg.traceId && msg.trace;
+  const stages = msg.trace?.stages || [];
+
+  // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback)
+  const execIdx = stages.findIndex(s => s.kind === "execute" || s.name?.includes("execut"));
+  const preStages = execIdx > 0 ? stages.slice(0, execIdx) : [];
+  const postStages = execIdx >= 0 && execIdx < stages.length - 1 ? stages.slice(execIdx + 1) : [];
+  const execStage = execIdx >= 0 ? stages[execIdx] : null;
 
   return html`
     <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""}">
-      <!-- Pipeline badges -->
-      ${msg.classification || msg.route ? html`
+      <${MessageActions} index=${index} />
+      <!-- Pre-execution bar: classify → route → context loading -->
+      <${PipelineBar}
+        stages=${preStages}
+        label="pre"
+        className="pipeline-pre"
+        onTraceClick=${onTraceClick}
+        traceId=${msg.traceId}
+      />
+
+      <!-- Classification + route badges (inline) -->
+      ${msg.classification || msg.route || execStage ? html`
         <div class="chat-pipeline">
           ${msg.classification ? html`
             <span class="chat-badge classify">${msg.classification.category}</span>
@@ -182,16 +245,29 @@ function AgentMessage({ msg, onTraceClick }) {
           ${msg.route ? html`
             <span class="chat-badge route">${msg.route.destination}</span>
           ` : null}
+          ${execStage ? html`
+            <span class="chat-badge exec">${execStage.agentId || "executor"}${execStage.durationMs ? ` ${(execStage.durationMs / 1000).toFixed(1)}s` : ""}</span>
+          ` : null}
           ${hasTrace ? html`
             <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
               title="Inspect trace in detail panel">
-              trace ${msg.trace.totalDurationMs ? `(${msg.trace.totalDurationMs.toFixed(0)}ms)` : ""}
+              trace ${msg.trace.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ""}
             </button>
           ` : null}
         </div>
       ` : null}
 
       <div class="chat-msg-content">${msg.content}</div>
+
+      <!-- Post-execution bar: guards, writeback -->
+      <${PipelineBar}
+        stages=${postStages}
+        label="post"
+        className="pipeline-post"
+        onTraceClick=${onTraceClick}
+        traceId=${msg.traceId}
+      />
+
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
     </div>
   `;
@@ -346,13 +422,13 @@ export function Conversation({ onTraceSelect }) {
         ` : null}
         ${msgList.map((msg, i) =>
           msg.role === "user"
-            ? html`<${UserMessage} key=${i} msg=${msg} />`
-            : html`<${AgentMessage} key=${i} msg=${msg}
+            ? html`<${UserMessage} key=${i} msg=${msg} index=${i} />`
+            : html`<${AgentMessage} key=${i} msg=${msg} index=${i}
                 onTraceClick=${handleTraceClick} />`
         )}
         ${sending.value ? html`
           <div class="chat-msg chat-agent chat-thinking">
-            <div class="chat-msg-content">Processing...</div>
+            <div class="chat-msg-content">Processing${inflight.value > 1 ? ` (${inflight.value} in flight)` : ""}...</div>
           </div>
         ` : null}
       </div>

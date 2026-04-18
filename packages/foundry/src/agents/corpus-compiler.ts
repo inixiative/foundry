@@ -5,7 +5,6 @@ import {
   type SignalBus,
   type Signal,
   type SignalKind,
-  type CompactionStrategy,
 } from "@inixiative/foundry-core";
 import { writeFile, readFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -78,8 +77,6 @@ export type CorpusTier =
 export interface CorpusCompilerConfig {
   /** Max tokens for compiled output. Default 50000. */
   maxTokens?: number;
-  /** Compaction strategy for over-budget compilation. */
-  compactionStrategy?: CompactionStrategy;
   /** Minimum trust for a doc to be included in compilation. Default 20. */
   minTrust?: number;
   /** Minimum confidence for fluid entries to be promoted. Default 0.5. */
@@ -118,14 +115,12 @@ export class CorpusCompiler {
   private _fluid: FluidEntry[] = [];
   private _docs: Map<string, FormalDoc> = new Map();
   private _maxTokens: number;
-  private _compactionStrategy: CompactionStrategy | undefined;
   private _minTrust: number;
   private _minConfidence: number;
   private _compilationCount = 0;
 
   constructor(config?: CorpusCompilerConfig) {
     this._maxTokens = config?.maxTokens ?? 50_000;
-    this._compactionStrategy = config?.compactionStrategy;
     this._minTrust = config?.minTrust ?? 20;
     this._minConfidence = config?.minConfidence ?? 0.5;
   }
@@ -304,24 +299,20 @@ export class CorpusCompiler {
       const tokens = estimateTokens(doc.content);
 
       if (totalTokens + tokens > this._maxTokens) {
-        // If we have a compaction strategy, compact the content to fit
-        if (this._compactionStrategy) {
-          const remaining = this._maxTokens - totalTokens;
-          if (remaining > 0) {
-            // Truncate to fit remaining budget
-            const truncated = doc.content.slice(0, remaining * 4);
-            const truncTokens = estimateTokens(truncated);
-            layers.push({
-              id: `layer_${doc.id}`,
-              content: truncated,
-              tokens: truncTokens,
-              trust: doc.trust,
-              sources: [doc.id],
-            });
-            totalTokens += truncTokens;
-          }
+        // Truncate to fit remaining budget
+        const remaining = this._maxTokens - totalTokens;
+        if (remaining > 0) {
+          const truncated = doc.content.slice(0, remaining * 4);
+          const truncTokens = estimateTokens(truncated);
+          layers.push({
+            id: `layer_${doc.id}`,
+            content: truncated,
+            tokens: truncTokens,
+            trust: doc.trust,
+            sources: [doc.id],
+          });
+          totalTokens += truncTokens;
         }
-        // Stop adding more layers — over budget
         break;
       }
 

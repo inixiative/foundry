@@ -7,7 +7,7 @@ import {
   type HookPoint,
   type TokenTracker,
 } from "@inixiative/foundry-core";
-import { planModeHook, budgetGuardHook, autoCompactHook } from "../src/agents/builtin-hooks";
+import { planModeHook, budgetGuardHook } from "../src/agents/builtin-hooks";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -716,93 +716,6 @@ describe("HookRegistry", () => {
       const tracker: TokenTracker = { used: 0, limit: 1000 };
       const hook = budgetGuardHook(tracker);
       expect(hook.priority).toBe(10);
-    });
-  });
-
-  // 12. autoCompactHook
-  describe("autoCompactHook", () => {
-    test("annotates with compaction plan when stackTokens exceeds threshold", async () => {
-      const mockStrategy = {
-        id: "test-strategy",
-        select: (layers: any[], budget: number) => ({
-          layerIds: ["layer-1"],
-          reason: "over budget",
-        }),
-        compact: async (content: string) => content.slice(0, 100),
-      };
-
-      const hook = autoCompactHook(mockStrategy as any, 5000);
-      const registry = new HookRegistry();
-      registry.register(hook);
-
-      const result = await registry.execute(
-        "pre:dispatch",
-        makeContext({
-          meta: {
-            stackTokens: 8000,
-            layerSnapshots: [
-              { id: "layer-1", content: "test", tokens: 8000, trust: 1.0, lastAccessed: Date.now() },
-            ],
-          },
-        })
-      );
-
-      expect(result.action).toBe("continue");
-      expect(result.meta.autoCompact).toBe(true);
-      expect(result.meta.compactionStrategy).toBe("test-strategy");
-      expect(result.meta.stackTokens).toBe(8000);
-      expect(result.meta.threshold).toBe(5000);
-    });
-
-    test("continues without annotation when under threshold", async () => {
-      const mockStrategy = {
-        id: "test-strategy",
-        select: () => ({ layerIds: [], reason: "ok" }),
-        compact: async (content: string) => content,
-      };
-
-      const hook = autoCompactHook(mockStrategy as any, 10000);
-      const registry = new HookRegistry();
-      registry.register(hook);
-
-      const result = await registry.execute(
-        "pre:dispatch",
-        makeContext({ meta: { stackTokens: 3000 } })
-      );
-
-      expect(result.action).toBe("continue");
-      expect(result.meta.autoCompact).toBeUndefined();
-    });
-
-    test("treats missing stackTokens as zero", async () => {
-      const mockStrategy = {
-        id: "test-strategy",
-        select: () => ({ layerIds: [], reason: "ok" }),
-        compact: async (content: string) => content,
-      };
-
-      const hook = autoCompactHook(mockStrategy as any, 5000);
-      const registry = new HookRegistry();
-      registry.register(hook);
-
-      const result = await registry.execute(
-        "pre:dispatch",
-        makeContext({ meta: {} })
-      );
-
-      expect(result.action).toBe("continue");
-      expect(result.meta.autoCompact).toBeUndefined();
-    });
-
-    test("hook has priority 20", () => {
-      const mockStrategy = {
-        id: "test-strategy",
-        select: () => ({ layerIds: [], reason: "ok" }),
-        compact: async (content: string) => content,
-      };
-
-      const hook = autoCompactHook(mockStrategy as any, 5000);
-      expect(hook.priority).toBe(20);
     });
   });
 

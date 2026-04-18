@@ -15,7 +15,7 @@ import type { ConfigVariation } from "./types";
  */
 export function oneAtATime(
   agentId: string,
-  paramName: keyof Pick<AgentSettingsConfig, "model" | "temperature" | "maxTokens" | "tools">,
+  paramName: keyof Pick<AgentSettingsConfig, "model" | "temperature" | "tools">,
   values: Array<string | number | boolean>,
 ): ConfigVariation[] {
   return values.map((value) => ({
@@ -41,7 +41,8 @@ const FAST_MODELS: Array<{ provider: string; model: string; label: string }> = [
 
 const STANDARD_MODELS: Array<{ provider: string; model: string; label: string }> = [
   { provider: "anthropic", model: "claude-sonnet-4-6", label: "sonnet" },
-  { provider: "anthropic", model: "claude-opus-4-6", label: "opus" },
+  { provider: "anthropic", model: "claude-opus-4-7", label: "opus-4.7" },
+  { provider: "anthropic", model: "claude-opus-4-6", label: "opus-4.6" },
   { provider: "openai", model: "gpt-5.4", label: "gpt-5.4" },
   { provider: "openai", model: "gpt-5.3-codex", label: "gpt-5.3-codex" },
   { provider: "gemini", model: "gemini-3.1-pro-preview", label: "gemini-pro" },
@@ -186,7 +187,6 @@ export interface DimensionSweepOpts {
   models?: Array<{ provider: string; model: string; label: string }>;
   temperatures?: number[];
   toolsValues?: boolean[];
-  maxTokenValues?: number[];
   thinkingValues?: Array<"none" | "low" | "medium" | "high" | number>;
   timeoutValues?: number[];
   permissionsValues?: Array<"bypass" | "supervised" | "restricted">;
@@ -233,18 +233,6 @@ export function dimensionSweep(
         description: `${agentId}: tools=${tools}`,
         agentOverrides: {
           [agentId]: { tools },
-        },
-      });
-    }
-  }
-
-  if (opts.maxTokenValues) {
-    for (const maxTokens of opts.maxTokenValues) {
-      variations.push({
-        id: `${agentId}-maxTokens-${maxTokens}`,
-        description: `${agentId}: maxTokens=${maxTokens}`,
-        agentOverrides: {
-          [agentId]: { maxTokens },
         },
       });
     }

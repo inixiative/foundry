@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { ContextLayer, type ContextSource } from "../src/context-layer";
-import { ContextStack, type Compressor, type AssembledContext } from "../src/context-stack";
+import { ContextStack, type AssembledContext } from "../src/context-stack";
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
@@ -164,52 +164,6 @@ describe("ContextStack", () => {
         makeLayer("c", 3, "foo"),
       ]);
       expect(stack.sliceByIds("a", "c")).toBe("hello\n\nfoo");
-    });
-  });
-
-  describe("compression", () => {
-    test("compress throws without compressor", async () => {
-      const stack = new ContextStack([makeLayer("a", 5, "hello")]);
-      expect(stack.compress(100)).rejects.toThrow("No compressor");
-    });
-
-    test("compress compresses lowest trust first", async () => {
-      const compressor: Compressor = {
-        async compress(content, ratio) {
-          return content.slice(0, Math.ceil(content.length * ratio));
-        },
-      };
-
-      const stack = new ContextStack(
-        [
-          makeLayer("low", 1, "a".repeat(100)),
-          makeLayer("high", 10, "b".repeat(100)),
-        ],
-        compressor
-      );
-
-      // Target 40 tokens = 160 chars total. Both layers = 200 chars = 50 tokens.
-      // Compressing low (trust 1) first at 0.5 ratio → 50 chars → 37.5 tokens total, done.
-      await stack.compress(40);
-      // Low trust should be compressed
-      expect(stack.getLayer("low")!.content.length).toBeLessThan(100);
-      // High trust should be untouched (we reached target after compressing low)
-      expect(stack.getLayer("high")!.content.length).toBe(100);
-    });
-
-    test("compressLayer compresses specific layer", async () => {
-      const compressor: Compressor = {
-        async compress(content, ratio) {
-          return content.slice(0, Math.ceil(content.length * ratio));
-        },
-      };
-
-      const stack = new ContextStack(
-        [makeLayer("a", 5, "x".repeat(100))],
-        compressor
-      );
-      await stack.compressLayer("a", 0.3);
-      expect(stack.getLayer("a")!.content.length).toBe(30);
     });
   });
 

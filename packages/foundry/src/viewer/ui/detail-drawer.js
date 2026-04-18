@@ -13,8 +13,8 @@ import { html, useState } from "./lib.js";
 import {
   selectedSpanId, currentTrace, layerColor, threadData,
   submitIntervention, executeAction, createDefinition, definitions,
-  detailDrawerOpen, activeProjectId, authFetch, showToast,
-  loadDefinitions,
+  detailDrawerOpen, activeProjectId, activeThreadId, authFetch, showToast,
+  loadDefinitions, worktrees, updateThreadWorktree,
 } from "./store.js";
 import { settingsConfig } from "./settings.js";
 import { LayerBand } from "./layer-band.js";
@@ -389,7 +389,6 @@ function AgentDetail({ agentId }) {
         ${def.provider ? html`<div class="detail-meta"><label>Provider</label><span>${def.provider}</span></div>` : null}
         ${def.model ? html`<div class="detail-meta"><label>Model</label><span class="mono">${def.model}</span></div>` : null}
         ${def.temperature != null ? html`<div class="detail-meta"><label>Temp</label><span>${def.temperature}</span></div>` : null}
-        ${def.maxTokens != null ? html`<div class="detail-meta"><label>Max Tokens</label><span>${def.maxTokens}</span></div>` : null}
         ${def.maxDepth != null ? html`<div class="detail-meta"><label>Max Depth</label><span>${def.maxDepth}</span></div>` : null}
       </div>
 
@@ -440,7 +439,6 @@ function CreateLayerForm({ onCreated }) {
   const [prompt, setPrompt] = useState("");
   const [trust, setTrust] = useState("0.5");
   const [staleness, setStaleness] = useState("0");
-  const [maxTokens, setMaxTokens] = useState("4000");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -449,7 +447,7 @@ function CreateLayerForm({ onCreated }) {
     const ok = await createDefinition("layers", id.trim(), {
       id: id.trim(), prompt, sourceIds: [],
       trust: parseFloat(trust) || 0.5, staleness: parseInt(staleness) || 0,
-      maxTokens: parseInt(maxTokens) || 4000, enabled: true,
+      enabled: true,
     });
     setSaving(false);
     if (ok && onCreated) onCreated();
@@ -476,9 +474,6 @@ function CreateLayerForm({ onCreated }) {
           <div class="settings-field"><label class="settings-label">Staleness (ms)</label>
             <input class="settings-input small" type="number" min="0"
               value=${staleness} onInput=${(e) => setStaleness(e.target.value)} /></div>
-          <div class="settings-field"><label class="settings-label">Max Tokens</label>
-            <input class="settings-input small" type="number" min="0"
-              value=${maxTokens} onInput=${(e) => setMaxTokens(e.target.value)} /></div>
         </div>
         <div class="detail-actions" style="margin-top: 12px">
           <button class="action-btn" disabled=${!id.trim() || saving}
@@ -494,7 +489,6 @@ function CreateAgentForm({ onCreated }) {
   const [kind, setKind] = useState("executor");
   const [prompt, setPrompt] = useState("");
   const [temperature, setTemperature] = useState("");
-  const [maxTokens, setMaxTokens] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -505,7 +499,6 @@ function CreateAgentForm({ onCreated }) {
       visibleLayers: [], peers: [], maxDepth: 3, enabled: true,
     };
     if (temperature !== "") data.temperature = parseFloat(temperature);
-    if (maxTokens !== "") data.maxTokens = parseInt(maxTokens);
     const ok = await createDefinition("agents", id.trim(), data);
     setSaving(false);
     if (ok && onCreated) onCreated();
@@ -538,15 +531,81 @@ function CreateAgentForm({ onCreated }) {
           <div class="settings-field"><label class="settings-label">Temperature</label>
             <input class="settings-input small" type="number" step="0.1" min="0" max="2"
               value=${temperature} onInput=${(e) => setTemperature(e.target.value)} /></div>
-          <div class="settings-field"><label class="settings-label">Max Tokens</label>
-            <input class="settings-input small" type="number" min="0"
-              value=${maxTokens} onInput=${(e) => setMaxTokens(e.target.value)} /></div>
         </div>
         <div class="detail-actions" style="margin-top: 12px">
           <button class="action-btn" disabled=${!id.trim() || saving}
             onClick=${handleSave}>${saving ? "Saving..." : "Create Agent"}</button>
         </div>
       </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Thread detail — shows metadata + worktree assignment
+// ---------------------------------------------------------------------------
+
+function ThreadDetail() {
+  const data = threadData.value;
+  const wts = worktrees.value;
+  const tid = activeThreadId.value;
+
+  if (!data) return null;
+
+  const meta = data.meta || {};
+
+  const handleWorktreeChange = async (e) => {
+    const path = e.target.value;
+    const wt = wts.find(w => w.path === path);
+    await updateThreadWorktree(tid, path || undefined, wt?.branch || undefined);
+  };
+
+  return html`
+    <div class="detail-content">
+      <div class="detail-header">
+        <span class="detail-name">${meta.description || data.threadId}</span>
+        <span class="detail-status ${meta.status || "idle"}">${meta.status || "idle"}</span>
+      </div>
+
+      <div class="detail-meta-row">
+        <div class="detail-meta"><label>ID</label><span class="mono">${data.threadId}</span></div>
+        ${meta.branch ? html`
+          <div class="detail-meta"><label>Branch</label><span class="mono">${meta.branch}</span></div>
+        ` : null}
+      </div>
+
+      ${meta.cwd ? html`
+        <div class="detail-meta-row">
+          <div class="detail-meta"><label>Worktree</label><span class="mono">${meta.cwd}</span></div>
+        </div>
+      ` : null}
+
+      ${wts.length > 1 ? html`
+        <${Section} title="Worktree">
+          <select class="settings-input" value=${meta.cwd || ""}
+            onChange=${handleWorktreeChange}>
+            <option value="">main worktree</option>
+            ${wts.filter(w => !w.isMain).map(w => html`
+              <option key=${w.path} value=${w.path}>
+                ${w.branch || w.path.split("/").pop()}
+              </option>
+            `)}
+          </select>
+        </${Section}>
+      ` : null}
+
+      ${data.agents?.length ? html`
+        <${Section} title="Agents (${data.agents.length})" open=${false}>
+          <div class="agent-list">
+            ${data.agents.map(a => html`
+              <div class="agent-item" key=${a.id}>
+                <span class="agent-icon">◆</span>
+                <span class="agent-name">${a.agentId}</span>
+              </div>
+            `)}
+          </div>
+        </${Section}>
+      ` : null}
     </div>
   `;
 }
@@ -585,6 +644,8 @@ export function DetailDrawer({ selectedSpan, selectedLayer, selectedAgent, creat
     content = html`<${AgentDetail} agentId=${selectedAgent} />`;
   } else if (selectedLayer) {
     content = html`<${LayerDetail} layerId=${selectedLayer} />`;
+  } else if (threadData.value) {
+    content = html`<${ThreadDetail} />`;
   } else {
     content = html`
       <div class="detail-empty">

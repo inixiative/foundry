@@ -50,10 +50,22 @@ export interface InjectionPlan {
   fresh: boolean;
 }
 
+/** Result of delta-aware hydration — only the content the thread doesn't already have. */
+export interface HydrationResult {
+  /** Assembled context string for injection. */
+  content: string;
+  /** Layers that were actually injected (new or changed). */
+  injected: string[];
+  /** Layers that were skipped (already in session with same hash). */
+  skipped: string[];
+  /** Layers whose content changed since last injection (re-injected). */
+  reinjected: string[];
+}
+
 /** Event emitted when the orchestrator detects a state change that invalidates the current plan. */
 export interface InvalidationEvent {
   /** What triggered the invalidation. */
-  reason: "compaction" | "eviction" | "rehydration" | "map_rebuild";
+  reason: "eviction" | "rehydration" | "map_rebuild";
   /** Layer IDs affected. */
   affectedLayers: string[];
   /** Timestamp of the invalidation. */
@@ -109,7 +121,7 @@ export class FlowOrchestrator {
   private _lastPlan: InjectionPlan | null = null;
   /** The last message that was routed (for re-firing after invalidation). */
   private _lastMessage: string | null = null;
-  /** Whether the current plan has been invalidated by compaction/rehydration. */
+  /** Whether the current plan has been invalidated by eviction/rehydration. */
   private _invalidated = false;
   /** Accumulated invalidation events since last preMessage(). */
   private _pendingInvalidations: InvalidationEvent[] = [];
@@ -164,12 +176,17 @@ export class FlowOrchestrator {
   /**
    * Run the pre-message flow: route the message, advise from relevant
    * domains, and produce an injection plan with minimum viable context.
+   *
+   * The full message is passed to routing and advising — no compression,
+   * no digestion. Flash-tier models handle large inputs (repos, transcripts)
+   * cheaply with their large context windows. Layers are decorators and
+   * routers around the message, not summaries of it.
    */
   async preMessage(message: string): Promise<InjectionPlan> {
     const plan = await this._runPreMessage(message);
     plan.fresh = true;
 
-    // Track for re-firing after compaction/rehydration
+    // Track for re-firing after invalidation
     this._lastPlan = plan;
     this._lastMessage = message;
     this._invalidated = false;
@@ -180,7 +197,7 @@ export class FlowOrchestrator {
 
   /**
    * Re-fire the pre-message flow for the last message.
-   * Call this after compaction or rehydration invalidates the current plan.
+   * Call this after eviction or rehydration invalidates the current plan.
    * Returns null if there's no previous message to re-fire for.
    */
   async refire(): Promise<InjectionPlan | null> {
@@ -198,9 +215,9 @@ export class FlowOrchestrator {
 
   private async _runPreMessage(message: string): Promise<InjectionPlan> {
     const start = Date.now();
+    const threadState = this._librarian.layer.content;
 
     // Step 1: Context routing — Cartographer decides which domains/layers
-    const threadState = this._librarian.layer.content;
     const route = await this._cartographer.route(message, threadState);
 
     // Step 2: Domain advising — only consult the domains the router selected
@@ -214,16 +231,9 @@ export class FlowOrchestrator {
     // Step 3: Merge — combine routing + advise into minimal injection
     const plan = this._mergeIntoInjectionPlan(route, adviseResults, start);
 
-    // Emit signal so the Librarian can track what we injected
-    for (const layerId of plan.layers) {
-      await this._signals.emit({
-        id: `flow-inject-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        kind: "context_loaded",
-        source: "flow-orchestrator",
-        content: { layerId },
-        timestamp: Date.now(),
-      });
-    }
+    // Note: context_loaded signals are emitted during hydrateDelta(),
+    // not here — the plan lists what's WANTED, hydration determines
+    // what's actually SENT (after diffing against the ledger).
 
     return plan;
   }
@@ -231,11 +241,31 @@ export class FlowOrchestrator {
   /**
    * Hydrate the layers from an injection plan and return the assembled context.
    * This is the content that goes into .foundry-context.md.
+   *
+   * @deprecated Use hydrateDelta() for delta-aware injection.
    */
   async hydrate(plan: InjectionPlan): Promise<string> {
-    const layerIds = new Set(plan.layers);
+    const result = await this.hydrateDelta(plan);
+    return result.content;
+  }
 
-    // Warm only the layers we need
+  /**
+   * Delta-aware hydration — only injects what the thread doesn't already have.
+   *
+   * Reads the Librarian's injection ledger (injectedLayers) and compares hashes.
+   * Three cases per layer:
+   *   1. Not in ledger → new, inject it
+   *   2. In ledger, same hash → skip (session already has this content)
+   *   3. In ledger, different hash → re-inject (content changed since last injection)
+   *
+   * Emits context_loaded signals with hashes so the Librarian tracks what was sent.
+   */
+  async hydrateDelta(plan: InjectionPlan): Promise<HydrationResult> {
+    const layerIds = new Set(plan.layers);
+    const ledger = this._librarian.state.injectedLayers;
+    const ledgerMap = new Map(ledger.map((r) => [r.id, r]));
+
+    // Warm only layers we need that aren't warm yet
     const toWarm = this._stack.layers.filter(
       (l) => layerIds.has(l.id) && !l.isWarm,
     );
@@ -243,21 +273,53 @@ export class FlowOrchestrator {
       await Promise.all(toWarm.map((l) => l.warm()));
     }
 
-    // Assemble: layer content + snippets
+    // Diff against ledger
+    const injected: string[] = [];
+    const skipped: string[] = [];
+    const reinjected: string[] = [];
     const parts: string[] = [];
 
     for (const id of plan.layers) {
       const layer = this._stack.getLayer(id);
-      if (layer?.isWarm && layer.content) {
-        parts.push(layer.content);
+      if (!layer?.isWarm || !layer.content) continue;
+
+      const prev = ledgerMap.get(id);
+
+      if (prev && prev.hash === layer.hash) {
+        // Same content — session already has this, skip
+        skipped.push(id);
+        continue;
       }
+
+      // New or changed — include in injection
+      parts.push(layer.content);
+
+      if (prev) {
+        reinjected.push(id);
+      } else {
+        injected.push(id);
+      }
+
+      // Emit signal with hash so Librarian's ledger stays current
+      await this._signals.emit({
+        id: `flow-inject-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: "context_loaded",
+        source: "flow-orchestrator",
+        content: { layerId: id, hash: layer.hash },
+        timestamp: Date.now(),
+      });
     }
 
     if (plan.snippets.length > 0) {
       parts.push(plan.snippets.join("\n"));
     }
 
-    return parts.join("\n\n---\n\n");
+    return {
+      content: parts.join("\n\n---\n\n"),
+      injected,
+      skipped,
+      reinjected,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -415,7 +477,7 @@ export class FlowOrchestrator {
   }
 
   // -----------------------------------------------------------------------
-  // Invalidation — compaction/rehydration awareness
+  // Invalidation — eviction/rehydration awareness
   // -----------------------------------------------------------------------
 
   private _handleInvalidation(signal: Signal): void {
@@ -424,25 +486,6 @@ export class FlowOrchestrator {
     let event: InvalidationEvent | null = null;
 
     switch (signal.kind) {
-      case "compaction_start": {
-        // Compaction is starting — the plan's layers may get compressed
-        event = {
-          reason: "compaction",
-          affectedLayers: this._lastPlan.layers,
-          timestamp: Date.now(),
-        };
-        break;
-      }
-      case "compaction_done": {
-        // After compaction: Cartographer map is stale, domain caches may have changed
-        this._cartographer.buildMap();
-        event = {
-          reason: "compaction",
-          affectedLayers: this._lastPlan.layers,
-          timestamp: Date.now(),
-        };
-        break;
-      }
       case "context_evicted": {
         const layerId = (signal.content as any)?.layerId;
         if (layerId && this._lastPlan.layers.includes(layerId)) {

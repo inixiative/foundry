@@ -243,6 +243,8 @@ export interface ScriptOpts {
   modules?: Record<string, unknown>;
   /** Whether to capture console.log output. Default: true. */
   captureLogs?: boolean;
+  /** Working directory for the subprocess. */
+  cwd?: string;
 }
 
 export interface ScriptTool {
@@ -569,7 +571,7 @@ export class ToolRegistry {
    * Dispatch a tool call by name. Routes "toolId_method" to the right tool.
    * Returns the serialized result string.
    */
-  async dispatch(toolName: string, input: Record<string, unknown>): Promise<ToolResult> {
+  async dispatch(toolName: string, input: Record<string, unknown>, opts?: { cwd?: string }): Promise<ToolResult> {
     // Parse "toolId_method" format
     const lastUnderscore = toolName.lastIndexOf("_");
     if (lastUnderscore === -1) {
@@ -598,7 +600,7 @@ export class ToolRegistry {
     try {
       switch (tool.kind) {
         case "shell":
-          if (method === "exec") return await tool.exec(input.command as string);
+          if (method === "exec") return await tool.exec(input.command as string, { cwd: opts?.cwd });
           break;
 
         case "memory":
@@ -608,7 +610,7 @@ export class ToolRegistry {
           break;
 
         case "script":
-          if (method === "evaluate") return await tool.evaluate(input.code as string);
+          if (method === "evaluate") return await tool.evaluate(input.code as string, { cwd: opts?.cwd });
           break;
 
         case "api":

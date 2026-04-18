@@ -167,15 +167,20 @@ describe("FlowOrchestrator", () => {
       expect(plan.layers).toContain("testing-patterns");
     });
 
-    it("emits context_loaded signals for injected layers", async () => {
+    it("emits context_loaded signals during hydration (not preMessage)", async () => {
       const { orchestrator, signals } = setup();
       const emitted: any[] = [];
       signals.on("context_loaded", (s) => emitted.push(s));
 
-      await orchestrator.preMessage("Fix auth middleware");
+      const plan = await orchestrator.preMessage("Fix auth middleware");
+      // Signals are deferred to hydrateDelta — plan is what's WANTED, hydration is what's SENT
+      expect(emitted.length).toBe(0);
 
+      await orchestrator.hydrateDelta(plan);
       expect(emitted.length).toBeGreaterThan(0);
       expect(emitted.some((s) => s.content.layerId === "auth-conventions")).toBe(true);
+      // Delta hydration includes hashes for ledger tracking
+      expect(emitted.every((s) => typeof s.content.hash === "string")).toBe(true);
     });
 
     it("includes elapsed time", async () => {
@@ -185,12 +190,16 @@ describe("FlowOrchestrator", () => {
       expect(plan.elapsed).toBeGreaterThanOrEqual(0);
     });
 
-    it("updates Librarian thread-state via signals", async () => {
+    it("updates Librarian thread-state via signals after hydration", async () => {
       const { orchestrator, librarian } = setup();
-      await orchestrator.preMessage("Fix auth middleware");
+      const plan = await orchestrator.preMessage("Fix auth middleware");
+      await orchestrator.hydrateDelta(plan);
 
-      // The context_loaded signals should have updated the Librarian's inContext
+      // hydrateDelta emits context_loaded → Librarian updates inContext + injectedLayers
       expect(librarian.state.inContext.length).toBeGreaterThan(0);
+      expect(librarian.state.injectedLayers.length).toBeGreaterThan(0);
+      // Ledger records include hashes
+      expect(librarian.state.injectedLayers[0].hash).toBeTruthy();
     });
   });
 
@@ -320,7 +329,7 @@ describe("FlowOrchestrator", () => {
     });
   });
 
-  describe("compaction + rehydration invalidation", () => {
+  describe("eviction + rehydration invalidation", () => {
     it("marks plan as invalidated when a loaded layer gets evicted", async () => {
       const { orchestrator, signals } = setup();
       await orchestrator.preMessage("Fix the JWT validation in auth middleware");
@@ -330,7 +339,7 @@ describe("FlowOrchestrator", () => {
       await signals.emit({
         id: "evict-1",
         kind: "context_evicted",
-        source: "compaction",
+        source: "lifecycle",
         content: { layerId: "auth-conventions" },
         timestamp: Date.now(),
       });
@@ -339,22 +348,6 @@ describe("FlowOrchestrator", () => {
       expect(orchestrator.pendingInvalidations).toHaveLength(1);
       expect(orchestrator.pendingInvalidations[0].reason).toBe("eviction");
       expect(orchestrator.pendingInvalidations[0].affectedLayers).toContain("auth-conventions");
-    });
-
-    it("marks plan as invalidated on compaction_done", async () => {
-      const { orchestrator, signals } = setup();
-      await orchestrator.preMessage("Fix the JWT validation in auth middleware");
-
-      await signals.emit({
-        id: "compact-1",
-        kind: "compaction_done",
-        source: "compaction-strategy",
-        content: null,
-        timestamp: Date.now(),
-      });
-
-      expect(orchestrator.isInvalidated).toBe(true);
-      expect(orchestrator.pendingInvalidations[0].reason).toBe("compaction");
     });
 
     it("fires invalidation listener", async () => {
@@ -367,7 +360,7 @@ describe("FlowOrchestrator", () => {
       await signals.emit({
         id: "evict-2",
         kind: "context_evicted",
-        source: "compaction",
+        source: "lifecycle",
         content: { layerId: "security-patterns" },
         timestamp: Date.now(),
       });
@@ -381,12 +374,12 @@ describe("FlowOrchestrator", () => {
       const original = await orchestrator.preMessage("Fix the JWT validation in auth middleware");
       expect(original.fresh).toBe(true);
 
-      // Invalidate via compaction
+      // Invalidate via eviction
       await signals.emit({
-        id: "compact-2",
-        kind: "compaction_done",
-        source: "compaction-strategy",
-        content: null,
+        id: "evict-2b",
+        kind: "context_evicted",
+        source: "lifecycle",
+        content: { layerId: "auth-conventions" },
         timestamp: Date.now(),
       });
       expect(orchestrator.isInvalidated).toBe(true);
@@ -407,8 +400,9 @@ describe("FlowOrchestrator", () => {
 
     it("does NOT invalidate on its own context_loaded emissions", async () => {
       const { orchestrator } = setup();
-      // preMessage emits context_loaded signals from "flow-orchestrator" source
-      await orchestrator.preMessage("Fix the JWT validation in auth middleware");
+      const plan = await orchestrator.preMessage("Fix the JWT validation in auth middleware");
+      // hydrateDelta emits context_loaded signals from "flow-orchestrator" source
+      await orchestrator.hydrateDelta(plan);
 
       // Those self-emitted signals should not have invalidated the plan
       expect(orchestrator.isInvalidated).toBe(false);
@@ -422,7 +416,7 @@ describe("FlowOrchestrator", () => {
       await signals.emit({
         id: "evict-3",
         kind: "context_evicted",
-        source: "compaction",
+        source: "lifecycle",
         content: { layerId: "auth-conventions" },
         timestamp: Date.now(),
       });
@@ -443,7 +437,7 @@ describe("FlowOrchestrator", () => {
       await signals.emit({
         id: "evict-4",
         kind: "context_evicted",
-        source: "compaction",
+        source: "lifecycle",
         content: { layerId: "auth-conventions" },
         timestamp: Date.now(),
       });

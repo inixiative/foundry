@@ -101,6 +101,8 @@ export interface CompletionOpts {
   cacheControl?: boolean;
   /** Thread ID — used by session-aware providers (e.g. ClaudeCode) to resume sessions. */
   threadId?: string;
+  /** Working directory for this completion (worktree path). Provider uses its own default if omitted. */
+  cwd?: string;
 }
 
 export interface CompletionResult {

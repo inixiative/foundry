@@ -1,11 +1,14 @@
 import { describe, test, expect } from "bun:test";
 import {
   ThreadFactory,
+  buildLayers,
+  buildAgents,
   keywordClassify,
   keywordRoute,
   parseJSON,
   type SourceResolver,
 } from "../src/agents/thread-factory";
+import { ContextStack } from "@inixiative/foundry-core";
 import type { LLMProvider, CompletionResult, LLMMessage, CompletionOpts } from "@inixiative/foundry-core";
 import { TokenTracker } from "@inixiative/foundry-core";
 import type { FoundryConfig } from "../src/viewer/config";
@@ -31,13 +34,6 @@ function mockProvider(response: string = '{"category":"general"}'): LLMProvider 
 }
 
 const noopResolver: SourceResolver = () => null;
-
-function inlineResolver(content: string): SourceResolver {
-  return (sourceId) => ({
-    id: sourceId,
-    load: async () => content,
-  });
-}
 
 function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
   return {
@@ -81,17 +77,11 @@ function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
 }
 
 // ---------------------------------------------------------------------------
-// ThreadFactory.create()
+// buildLayers()
 // ---------------------------------------------------------------------------
 
-describe("ThreadFactory", () => {
-  test("creates thread with correct ID", async () => {
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { thread } = await factory.create("t1", minimalConfig());
-    expect(thread.id).toBe("t1");
-  });
-
-  test("builds layers from config", async () => {
+describe("buildLayers", () => {
+  test("builds layers from config", () => {
     const config = minimalConfig({
       layers: {
         system: {
@@ -115,16 +105,15 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { stack } = await factory.create("t1", config);
+    const layers = buildLayers(config, { sourceResolver: noopResolver });
+    expect(layers.length).toBe(2);
 
-    // 2 config layers (Librarian adds thread-state separately)
-    expect(stack.layers.length).toBe(2);
-    expect(stack.layers.map((l) => l.id)).toContain("system");
-    expect(stack.layers.map((l) => l.id)).toContain("conventions");
+    const ids = layers.map((l) => l.id);
+    expect(ids).toContain("system");
+    expect(ids).toContain("conventions");
   });
 
-  test("skips disabled layers", async () => {
+  test("skips disabled layers", () => {
     const config = minimalConfig({
       layers: {
         system: {
@@ -148,10 +137,8 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { stack } = await factory.create("t1", config);
-
-    expect(stack.getLayer("disabled")).toBeUndefined();
+    const layers = buildLayers(config, { sourceResolver: noopResolver });
+    expect(layers.map((l) => l.id)).not.toContain("disabled");
   });
 
   test("resolves sources via sourceResolver", async () => {
@@ -184,25 +171,28 @@ describe("ThreadFactory", () => {
       return { id: src.id, load: async () => src.uri };
     };
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: resolver });
-    const { stack } = await factory.create("t1", config, { warm: true });
+    const layers = buildLayers(config, { sourceResolver: resolver });
+    const stack = new ContextStack(layers);
+    await stack.warmAll();
 
     const docsLayer = stack.getLayer("docs");
     expect(docsLayer).toBeDefined();
     expect(docsLayer!.content).toBe("test docs content");
   });
 
-  test("creates fallback system layer when no layers configured", async () => {
-    const config = minimalConfig({ layers: {} });
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { stack } = await factory.create("t1", config);
-
-    // fallback system layer only (Librarian adds thread-state separately)
-    expect(stack.layers.length).toBe(1);
-    expect(stack.getLayer("system")).toBeDefined();
+  test("creates fallback system layer when no layers configured", () => {
+    const layers = buildLayers(minimalConfig({ layers: {} }), { sourceResolver: noopResolver });
+    expect(layers.length).toBe(1);
+    expect(layers[0].id).toBe("system");
   });
+});
 
-  test("builds agents from config", async () => {
+// ---------------------------------------------------------------------------
+// buildAgents()
+// ---------------------------------------------------------------------------
+
+describe("buildAgents", () => {
+  test("builds agents from config", () => {
     const config = minimalConfig({
       agents: {
         "my-executor": {
@@ -221,15 +211,14 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { agents, thread } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
 
     expect(agents.size).toBe(1);
     expect(agents.has("my-executor")).toBe(true);
-    expect(thread.getAgent("my-executor")).toBeDefined();
   });
 
-  test("skips disabled agents", async () => {
+  test("skips disabled agents", () => {
     const config = minimalConfig({
       agents: {
         active: {
@@ -261,15 +250,15 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { agents } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
 
     expect(agents.size).toBe(1);
     expect(agents.has("active")).toBe(true);
     expect(agents.has("inactive")).toBe(false);
   });
 
-  test("builds classifier agent kind", async () => {
+  test("builds classifier agent kind", () => {
     const config = minimalConfig({
       agents: {
         classifier: {
@@ -288,12 +277,12 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { agents } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
     expect(agents.has("classifier")).toBe(true);
   });
 
-  test("builds router agent kind", async () => {
+  test("builds router agent kind", () => {
     const config = minimalConfig({
       agents: {
         router: {
@@ -312,9 +301,60 @@ describe("ThreadFactory", () => {
       },
     });
 
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { agents } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
     expect(agents.has("router")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ThreadFactory
+// ---------------------------------------------------------------------------
+
+describe("ThreadFactory", () => {
+  test("creates thread with correct ID", () => {
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const thread = factory.create("t1");
+    expect(thread.id).toBe("t1");
+  });
+
+  test("registers agents on created thread", () => {
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const thread = factory.create("t1");
+    expect(thread.getAgent("executor-answer")).toBeDefined();
+  });
+
+  test("threads share the same stack (project-scoped)", () => {
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const t1 = factory.create("t1");
+    const t2 = factory.create("t2");
+
+    expect(t1.id).toBe("t1");
+    expect(t2.id).toBe("t2");
+    // Both threads share the same underlying stack
+    expect(t1.stack).toBe(t2.stack);
+  });
+
+  test("passes thread config (description, tags)", () => {
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const thread = factory.create("t1", { description: "Test thread", tags: ["test"] });
+    expect(thread.id).toBe("t1");
   });
 
   test("token tracker records usage from agent completions", async () => {
@@ -322,10 +362,11 @@ describe("ThreadFactory", () => {
     const tracker = new TokenTracker();
     const config = minimalConfig();
 
-    const factory = new ThreadFactory({ provider, tokenTracker: tracker, sourceResolver: noopResolver });
-    const { thread } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider, tokenTracker: tracker });
+    const factory = new ThreadFactory({ stack, agents });
 
-    // Dispatch to trigger a completion
+    const thread = factory.create("t1");
     await thread.dispatch("executor-answer", "test input");
 
     const summary = tracker.summary();
@@ -338,78 +379,19 @@ describe("ThreadFactory", () => {
     const provider = mockProvider("response text");
     const config = minimalConfig();
 
-    const factory = new ThreadFactory({ provider, sourceResolver: noopResolver });
-    const { thread } = await factory.create("t1", config);
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const agents = buildAgents(config, stack, { provider });
+    const factory = new ThreadFactory({ stack, agents });
 
+    const thread = factory.create("t1");
     await thread.dispatch("executor-answer", "user question");
 
     expect(provider.calls.length).toBe(1);
     const messages = provider.calls[0];
-    // System message includes context + agent prompt
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toContain("You are a helpful assistant.");
-    // User message is the payload
     expect(messages[1].role).toBe("user");
     expect(messages[1].content).toBe("user question");
-  });
-
-  test("warm: false skips layer warming", async () => {
-    let loadCalled = false;
-    const resolver: SourceResolver = () => ({
-      id: "lazy",
-      load: async () => { loadCalled = true; return "data"; },
-    });
-
-    const config = minimalConfig({
-      layers: {
-        lazy: {
-          id: "lazy",
-          prompt: "Lazy layer",
-          sourceIds: ["lazy-src"],
-          trust: 0.5,
-          staleness: 0,
-          maxTokens: 0,
-          enabled: true,
-        },
-      },
-      sources: {
-        "lazy-src": { id: "lazy-src", type: "inline", label: "Lazy", uri: "", enabled: true },
-      },
-    });
-
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: resolver });
-    await factory.create("t1", config, { warm: false });
-
-    expect(loadCalled).toBe(false);
-  });
-
-  test("creates independent instances for different threads", async () => {
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const config = minimalConfig();
-
-    const { thread: t1, stack: s1 } = await factory.create("t1", config);
-    const { thread: t2, stack: s2 } = await factory.create("t2", config);
-
-    // Different thread IDs
-    expect(t1.id).toBe("t1");
-    expect(t2.id).toBe("t2");
-
-    // Independent stacks — mutating one doesn't affect the other
-    const sys1 = s1.getLayer("system");
-    const sys2 = s2.getLayer("system");
-    expect(sys1).toBeDefined();
-    expect(sys2).toBeDefined();
-
-    sys1!.set("t1 only");
-    expect(sys2!.content).not.toBe("t1 only");
-  });
-
-  test("adds logger middleware", async () => {
-    const factory = new ThreadFactory({ provider: mockProvider(), sourceResolver: noopResolver });
-    const { thread } = await factory.create("t1", minimalConfig());
-
-    // Logger should be registered
-    expect(thread.middleware.size).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -455,17 +437,17 @@ describe("keywordClassify", () => {
 describe("keywordRoute", () => {
   const config = minimalConfig();
 
-  test("routes bugs to executor-fix", () => {
+  test("routes bugs to artificer", () => {
     const route = keywordRoute({ category: "bug" }, config);
     expect(route.value.destination).toBe("artificer");
   });
 
-  test("routes features to executor-build", () => {
+  test("routes features to artificer", () => {
     const route = keywordRoute({ category: "feature" }, config);
     expect(route.value.destination).toBe("artificer");
   });
 
-  test("routes questions to executor-answer", () => {
+  test("routes questions to artificer", () => {
     const route = keywordRoute({ category: "question" }, config);
     expect(route.value.destination).toBe("artificer");
   });

@@ -102,7 +102,7 @@ try {
     await Bun.write(tmpFile, wrapper);
 
     const proc = Bun.spawn(["bun", "run", tmpFile], {
-      cwd: this._cwd,
+      cwd: opts?.cwd ?? this._cwd,
       stdout: "pipe",
       stderr: "pipe",
       env: {

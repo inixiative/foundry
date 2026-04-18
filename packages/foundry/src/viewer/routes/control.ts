@@ -18,6 +18,7 @@ import {
   type McpSettingsConfig,
 } from "../config";
 import { validateId } from "../http-helpers";
+import { readFileRef, writeFileRef, writeComposed, decomposeBack, RUNTIME_OUTPUT_FILES } from "../../prompts/composer";
 import { FoundryTunnel, type TunnelInfo } from "../tunnel";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

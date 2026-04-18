@@ -6,6 +6,8 @@ import type {
   LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
+  ToolDefinition,
+  ToolCall,
 } from "@inixiative/foundry-core";
 import { splitSystemMessage } from "@inixiative/foundry-core";
 
@@ -18,6 +20,42 @@ export interface GeminiConfig {
 }
 
 const DEFAULT_BASE = "https://generativelanguage.googleapis.com";
+
+// ---------------------------------------------------------------------------
+// Gemini function calling helpers
+// ---------------------------------------------------------------------------
+
+/** Gemini response shape (with function call support). */
+interface GeminiResponse {
+  candidates: Array<{
+    content: {
+      parts: Array<{
+        text?: string;
+        functionCall?: { name: string; args?: Record<string, unknown> };
+      }>;
+    };
+    finishReason: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount: number;
+    candidatesTokenCount: number;
+  };
+}
+
+/** Map our ToolDefinition to Gemini's functionDeclaration format. */
+function toGeminiFunctionDecl(tool: ToolDefinition): Record<string, unknown> {
+  const decl: Record<string, unknown> = {
+    name: tool.name,
+    description: tool.description,
+  };
+
+  // Gemini expects OpenAPI-style parameters schema
+  if (tool.inputSchema && Object.keys(tool.inputSchema).length > 0) {
+    decl.parameters = tool.inputSchema;
+  }
+
+  return decl;
+}
 
 /**
  * Google Gemini generateContent adapter.
@@ -67,6 +105,11 @@ export class GeminiProvider implements LLMProvider {
       body.generationConfig = generationConfig;
     }
 
+    // Function calling — map ToolDefinition[] to Gemini's format
+    if (opts?.tools !== false && opts?.toolDefinitions?.length) {
+      body.tools = [{ functionDeclarations: opts.toolDefinitions.map(toGeminiFunctionDecl) }];
+    }
+
     const url = `${this._baseUrl}/v1beta/models/${model}:generateContent`;
 
     const res = await fetch(url, {
@@ -83,23 +126,30 @@ export class GeminiProvider implements LLMProvider {
       throw new Error(`Gemini API ${res.status}: ${text}`);
     }
 
-    const data = (await res.json()) as {
-      candidates: Array<{
-        content: { parts: Array<{ text: string }> };
-        finishReason: string;
-      }>;
-      usageMetadata?: {
-        promptTokenCount: number;
-        candidatesTokenCount: number;
-      };
-    };
+    const data = (await res.json()) as GeminiResponse;
 
     const candidate = data.candidates?.[0];
-    const content =
-      candidate?.content?.parts?.map((p) => p.text).join("") ?? "";
+    const parts = candidate?.content?.parts ?? [];
+
+    // Extract text and function calls from parts
+    const textParts: string[] = [];
+    const toolCalls: ToolCall[] = [];
+
+    for (const part of parts) {
+      if (part.text) {
+        textParts.push(part.text);
+      }
+      if (part.functionCall) {
+        toolCalls.push({
+          id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: part.functionCall.name,
+          input: part.functionCall.args ?? {},
+        });
+      }
+    }
 
     return {
-      content,
+      content: textParts.join(""),
       model,
       tokens: data.usageMetadata
         ? {
@@ -107,6 +157,7 @@ export class GeminiProvider implements LLMProvider {
             output: data.usageMetadata.candidatesTokenCount,
           }
         : undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       finishReason: candidate?.finishReason,
       raw: data,
     };
@@ -146,6 +197,11 @@ export class GeminiProvider implements LLMProvider {
 
     if (Object.keys(generationConfig).length > 0) {
       body.generationConfig = generationConfig;
+    }
+
+    // Function calling in stream mode
+    if (opts?.tools !== false && opts?.toolDefinitions?.length) {
+      body.tools = [{ functionDeclarations: opts.toolDefinitions.map(toGeminiFunctionDecl) }];
     }
 
     const url = `${this._baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`;

@@ -174,14 +174,6 @@ describe("Librarian", () => {
     expect(librarian.layer.content).toBeTruthy();
   });
 
-  it("handles compaction state signals", async () => {
-    await signals.emit(makeSignal("compaction_start", null));
-    expect(librarian.state.compactionState).toBe("in-progress");
-
-    await signals.emit(makeSignal("compaction_done", null));
-    expect(librarian.state.compactionState).toBe("none");
-  });
-
   it("dispose stops listening to signals", async () => {
     await signals.emit(makeSignal("classification", { category: "auth", tags: [] }));
     expect(librarian.state.messageCount).toBe(1);

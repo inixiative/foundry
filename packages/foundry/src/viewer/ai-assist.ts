@@ -141,7 +141,7 @@ export class AIAssist {
       JSON.stringify(availableModels, null, 2),
       "",
       "Respond in JSON format:",
-      '{ "provider": "...", "model": "...", "temperature": 0.0, "maxTokens": 1000, "reasoning": "..." }',
+      '{ "provider": "...", "model": "...", "temperature": 0.0, "reasoning": "..." }',
       "",
       "Consider: classifiers/routers need fast cheap models. Executors need powerful ones. Temperature 0 for deterministic, 0.3-0.7 for creative.",
     ].join("\n");
@@ -164,7 +164,6 @@ export class AIAssist {
         provider: json.provider,
         model: json.model,
         temperature: typeof json.temperature === "number" ? json.temperature : 0,
-        maxTokens: typeof json.maxTokens === "number" ? json.maxTokens : 4096,
       };
     } catch {
       return {};

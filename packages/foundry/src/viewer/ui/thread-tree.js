@@ -10,6 +10,7 @@ import { html, useState } from "./lib.js";
 import {
   threadData, allThreads, layerColor, liveEvents, mergedLayers, mergedAgents,
   definitions, showToast, activeProjectId, promptCounts, createThread, projects,
+  activeThreadId, selectThread, worktrees, loadWorktrees,
 } from "./store.js";
 import { settingsOpen } from "./settings.js";
 import { analyticsOpen } from "./analytics.js";
@@ -85,8 +86,10 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
           >${expanded ? "▼" : "▶"}</span>
         ` : html`<span class="tree-caret-spacer"></span>`}
         <${StatusDot} status=${thread.status} />
-        <span class="tree-label">${thread.id}</span>
-        <span class="tree-meta">${thread.status}</span>
+        <span class="tree-label" title=${thread.id}>${thread.description || thread.id}</span>
+        ${thread.branch ? html`
+          <span class="thread-branch-badge" title=${thread.branch}>${thread.branch}</span>
+        ` : null}
         ${(() => {
           const count = (promptCounts.value || {})[thread.id] || 0;
           return count > 0
@@ -94,17 +97,6 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
             : null;
         })()}
       </div>
-
-      <!-- Thread metadata row (model, temp, agents, layers) -->
-      ${isSelected && !inactive ? html`
-        <div class="thread-meta-row" style="padding-left: ${(depth * 16) + 28}px">
-          ${thread.model ? html`<span class="thread-meta-chip">${thread.model}</span>` : null}
-          ${thread.temperature != null ? html`<span class="thread-meta-chip">temp ${thread.temperature}</span>` : null}
-          ${thread.agentCount ? html`<span class="thread-meta-chip">${thread.agentCount} agents</span>` : null}
-          ${thread.layerCount ? html`<span class="thread-meta-chip">${thread.layerCount} layers</span>` : null}
-          ${(thread.tags || []).map(t => html`<span class="thread-meta-tag" key=${t}>${t}</span>`)}
-        </div>
-      ` : null}
 
       ${expanded && hasChildren ? html`
         ${activeChildren.map(child =>
@@ -158,16 +150,20 @@ function SidebarSection({ title, count, defaultOpen = true, onAdd, children }) {
 // ---------------------------------------------------------------------------
 
 function AddThreadForm({ onDone }) {
-  const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
+  const [name, setName] = useState("");
+  const [selectedWorktree, setSelectedWorktree] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const wts = worktrees.value;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
+    const wt = wts.find(w => w.path === selectedWorktree);
     const result = await createThread({
-      description: description.trim() || undefined,
-      tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+      description: name.trim() || undefined,
+      worktreePath: selectedWorktree || undefined,
+      branch: wt?.branch || undefined,
     });
     setSaving(false);
     if (result) onDone();
@@ -175,10 +171,19 @@ function AddThreadForm({ onDone }) {
 
   return html`
     <form class="thread-add-form" onSubmit=${handleSubmit}>
-      <input class="proj-input" placeholder="description (optional)" value=${description}
-        onInput=${(e) => setDescription(e.target.value)} />
-      <input class="proj-input" placeholder="tags (comma sep)" value=${tags}
-        onInput=${(e) => setTags(e.target.value)} />
+      <input class="proj-input" placeholder="name (optional)" value=${name}
+        onInput=${(e) => setName(e.target.value)} />
+      ${wts.length > 1 ? html`
+        <select class="proj-input" value=${selectedWorktree}
+          onChange=${(e) => setSelectedWorktree(e.target.value)}>
+          <option value="">main worktree</option>
+          ${wts.filter(w => !w.isMain).map(w => html`
+            <option key=${w.path} value=${w.path}>
+              ${w.branch || w.path.split("/").pop()}
+            </option>
+          `)}
+        </select>
+      ` : null}
       <div class="proj-form-actions">
         <button type="submit" class="proj-btn proj-btn-ok" disabled=${saving}>
           ${saving ? "..." : "create"}
@@ -195,7 +200,7 @@ export const creatingType = { value: null }; // "layer" | "agent" | null
 export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAgent }) {
   const data = threadData.value;
   const events = liveEvents.value;
-  const [selectedThread, setSelectedThread] = useState(null);
+  const selectedThread = activeThreadId.value;
   const [addingThread, setAddingThread] = useState(false);
 
   const { instances: layerInstances, uninstantiated: uninstantiatedLayers } = mergedLayers.value;
@@ -221,15 +226,12 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
     id: t.threadId,
     status: t.meta?.status || "idle",
     description: t.meta?.description || "",
-    tags: t.meta?.tags || [],
-    agentCount: t.agents?.length || 0,
-    layerCount: t.layers?.length || 0,
-    model: null,
-    temperature: null,
+    branch: t.meta?.branch || null,
+    cwd: t.meta?.cwd || null,
     children: [],
   }));
 
-  const handleSelect = (id) => { setSelectedThread(id); };
+  const handleSelect = (id) => { selectThread(id); };
 
   const totalLayers = activeLayers.length + inactiveLayers.length + uninstantiatedLayers.length;
   const totalAgents = activeAgents.length + inactiveAgents.length + uninstantiatedAgents.length;

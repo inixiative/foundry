@@ -38,7 +38,6 @@ export {
 
 export {
   ContextStack,
-  type Compressor,
   type LayerFilter,
   type ContextSnapshot,
   type ContextStackView,
@@ -68,7 +67,7 @@ export {
   type AgentLLMConfig,
 } from "./base-agent";
 
-export { Executor, type ExecuteHandler, type ExecutorConfig } from "./executor";
+export { Executor, type ExecuteHandler, type ExecuteMeta, type ExecutorConfig } from "./executor";
 export { Decider, type Decision, type DecideHandler, type DeciderConfig } from "./decider";
 export { Classifier, type Classification, type ClassifyHandler, type ClassifierConfig } from "./classifier";
 export { Router, type Route, type RouteHandler, type RouterConfig } from "./router";
@@ -132,15 +131,6 @@ export {
   type UsageBreakdown,
   type UsageSummary,
 } from "./token-tracker";
-
-// Compaction interfaces (strategies in @inixiative/foundry)
-export type {
-  CompactionStrategy,
-  CompactionPlan,
-  CompactionOpts,
-  LayerSnapshot,
-  CompactionLLMProvider,
-} from "./compaction";
 
 // Lifecycle Hooks (registry only — built-in hooks in @inixiative/foundry)
 export {

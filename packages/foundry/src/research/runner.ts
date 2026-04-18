@@ -3,12 +3,13 @@
 // ---------------------------------------------------------------------------
 
 import {
+  ContextStack,
   Harness,
   TokenTracker,
   BudgetExceededError,
   type LLMProvider,
 } from "@inixiative/foundry-core";
-import { ThreadFactory, type SourceResolver } from "../agents/thread-factory";
+import { ThreadFactory, buildLayers, buildAgents, type SourceResolver } from "../agents/thread-factory";
 import { inlineSource } from "../adapters";
 import type { FoundryConfig } from "../viewer/config";
 import { applyVariation } from "./config-gen";
@@ -162,19 +163,12 @@ export class ExperimentRunner {
     // Create a per-variation token tracker
     const varTracker = new TokenTracker();
 
-    // Build a ThreadFactory for this variation
-    const factory = new ThreadFactory({
-      provider,
-      tokenTracker: varTracker,
-      sourceResolver: this._deps.sourceResolver,
-    });
-
-    // Create thread + harness
-    const { thread } = await factory.create(
-      `research-${variation.id}`,
-      varConfig,
-      { warm: false }, // Skip warming for speed
-    );
+    // Build project state for this variation (skip warming for speed)
+    const layers = buildLayers(varConfig, { sourceResolver: this._deps.sourceResolver });
+    const stack = new ContextStack(layers);
+    const agents = buildAgents(varConfig, stack, { provider, tokenTracker: varTracker });
+    const factory = new ThreadFactory({ stack, agents });
+    const thread = factory.create(`research-${variation.id}`);
 
     const harness = new Harness(thread);
 

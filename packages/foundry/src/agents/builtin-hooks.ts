@@ -3,8 +3,6 @@ import type {
   HookContext,
   HookResult,
   PlanModeConfig,
-  CompactionStrategy,
-  LayerSnapshot,
 } from "@inixiative/foundry-core";
 
 export interface HookTokenTracker {
@@ -71,26 +69,6 @@ export function budgetGuardHook(tracker: HookTokenTracker): HookHandler {
         return { action: "continue", annotations: { budgetWarning: true, budgetUsed: tracker.used, budgetLimit: tracker.limit, budgetRatio: ratio } };
       }
       return { action: "continue" };
-    },
-  };
-}
-
-export function autoCompactHook(strategy: CompactionStrategy, threshold: number): HookHandler {
-  return {
-    id: "builtin:auto-compact",
-    points: ["pre:dispatch"],
-    priority: 20,
-    handler: async (ctx: HookContext): Promise<HookResult> => {
-      const stackTokens = typeof ctx.meta.stackTokens === "number" ? ctx.meta.stackTokens : 0;
-      if (stackTokens <= threshold) return { action: "continue" };
-
-      const snapshots = Array.isArray(ctx.meta.layerSnapshots) ? (ctx.meta.layerSnapshots as LayerSnapshot[]) : [];
-      const plan = strategy.select(snapshots, threshold);
-
-      return {
-        action: "continue",
-        annotations: { autoCompact: true, compactionStrategy: strategy.id, compactionPlan: plan, stackTokens, threshold },
-      };
     },
   };
 }

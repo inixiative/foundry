@@ -138,7 +138,7 @@ export class ClaudeCodeProvider implements LLMProvider {
     delete env.ANTHROPIC_AUTH_TOKEN;
 
     const proc = Bun.spawn([this._bin, ...args], {
-      cwd: this._cwd,
+      cwd: opts?.cwd ?? this._cwd,
       stdout: "pipe",
       stderr: "pipe",
       env,
@@ -216,7 +216,7 @@ export class ClaudeCodeProvider implements LLMProvider {
     delete env.ANTHROPIC_AUTH_TOKEN;
 
     const proc = Bun.spawn([this._bin, ...args], {
-      cwd: this._cwd,
+      cwd: opts?.cwd ?? this._cwd,
       stdout: "pipe",
       stderr: "pipe",
       env,
