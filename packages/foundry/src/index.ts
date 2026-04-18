@@ -177,6 +177,17 @@ export {
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
 } from "./providers/claude-code-session";
+
+// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
+export {
+  type SessionAdapter,
+  type CreateSessionOpts,
+  type ExternalSessionStore,
+  InMemoryExternalSessionStore,
+  FileExternalSessionStore,
+  ClaudeCodeSessionAdapter,
+  type ClaudeCodeSessionAdapterConfig,
+} from "./providers/session-adapter";
 export {
   AnthropicProvider,
   VoyageEmbeddingProvider,

@@ -42,6 +42,17 @@ export {
   type ClaudeCodeSessionConfig,
 } from "./claude-code-session";
 
+// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
+export {
+  type SessionAdapter,
+  type CreateSessionOpts,
+  type ExternalSessionStore,
+  InMemoryExternalSessionStore,
+  FileExternalSessionStore,
+  ClaudeCodeSessionAdapter,
+  type ClaudeCodeSessionAdapterConfig,
+} from "./session-adapter";
+
 // Runtime Adapters (context injection into agent runtimes)
 export {
   type RuntimeAdapter,

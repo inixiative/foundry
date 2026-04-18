@@ -74,8 +74,13 @@ export interface ClaudeCodeSessionConfig {
    * conventions, memory, architecture) so per-message delta is minimal.
    */
   baseContext?: string;
-  /** Resume an existing session by ID (used internally by fork / crash recovery). */
-  resumeSessionId?: string;
+  /**
+   * Native Claude Code session ID (the UUID under ~/.claude/projects/).
+   * When set, the process is spawned with `--resume <id>` — used for fork
+   * and crash recovery. Also set by a SessionAdapter when resuming a
+   * Foundry thread that was previously mapped to this external ID.
+   */
+  externalSessionId?: string;
   /**
    * Override for the process spawner. Defaults to Bun.spawn. Tests inject a
    * fake subprocess that emulates the claude CLI's stream-json protocol.
@@ -122,7 +127,6 @@ export class ClaudeCodeSession implements HarnessSession {
   private _permissionMode: string;
   private _defaultTimeout: number;
   private _baseContext?: string;
-  private _resumeSessionId?: string;
   private _forking = false;
   private _spawn?: ClaudeCodeSessionConfig["spawn"];
 
@@ -133,7 +137,13 @@ export class ClaudeCodeSession implements HarnessSession {
   private _stderr = "";
 
   // -- Session state --
-  private _sessionId?: string;
+  /**
+   * The Claude Code runtime's native session ID. Set from config (for fork /
+   * crash recovery) or learned from the stream's system_init event. When
+   * set, _buildSpawnArgs() includes --resume <id>, so subsequent start()
+   * calls resume rather than create a new native session.
+   */
+  private _externalSessionId?: string;
   private _alive = false;
   private _eventLog: SessionEvent[] = [];
   private _handlers: SessionEventHandler[] = [];
@@ -161,7 +171,7 @@ export class ClaudeCodeSession implements HarnessSession {
     this._permissionMode = config?.permissionMode ?? "bypassPermissions";
     this._defaultTimeout = config?.timeout ?? 600_000;
     this._baseContext = config?.baseContext;
-    this._resumeSessionId = config?.resumeSessionId;
+    this._externalSessionId = config?.externalSessionId;
     this._spawn = config?.spawn;
     this._startedAt = Date.now();
   }
@@ -171,7 +181,7 @@ export class ClaudeCodeSession implements HarnessSession {
   // ---------------------------------------------------------------------------
 
   get alive(): boolean { return this._alive; }
-  get sessionId(): string | undefined { return this._sessionId; }
+  get externalSessionId(): string | undefined { return this._externalSessionId; }
   get events(): readonly SessionEvent[] { return this._eventLog; }
   get turns(): number { return this._turns; }
   get totalTokens(): Readonly<{ input: number; output: number }> {
@@ -273,9 +283,10 @@ export class ClaudeCodeSession implements HarnessSession {
     message: string,
     opts?: { timeout?: number },
   ): Promise<SessionResult> {
-    // Auto-restart after interrupt (crash recovery via --resume)
-    if (!this._proc && this._sessionId) {
-      this._resumeSessionId = this._sessionId;
+    // Auto-restart after interrupt / process death (crash recovery via --resume).
+    // _externalSessionId persists across process lifetimes, so start() will
+    // include --resume <id> in spawn args.
+    if (!this._proc && this._externalSessionId) {
       await this.start();
     }
 
@@ -308,9 +319,9 @@ export class ClaudeCodeSession implements HarnessSession {
   // ---------------------------------------------------------------------------
 
   fork(opts?: { cwd?: string; baseContext?: string }): ClaudeCodeSession {
-    if (!this._sessionId) {
+    if (!this._externalSessionId) {
       throw new Error(
-        "Cannot fork — no session ID yet (send at least one message first)",
+        "Cannot fork — no external session ID yet (send at least one message first)",
       );
     }
 
@@ -322,7 +333,7 @@ export class ClaudeCodeSession implements HarnessSession {
       permissionMode: this._permissionMode,
       timeout: this._defaultTimeout,
       baseContext: opts?.baseContext ?? this._baseContext,
-      resumeSessionId: this._sessionId,
+      externalSessionId: this._externalSessionId,
       spawn: this._spawn,
     });
     forked._forking = true;
@@ -371,7 +382,7 @@ export class ClaudeCodeSession implements HarnessSession {
 
   artifact(): SessionArtifact {
     return {
-      sessionId: this._sessionId,
+      externalSessionId: this._externalSessionId,
       events: [...this._eventLog],
       startedAt: this._startedAt,
       endedAt: this._alive ? undefined : Date.now(),
@@ -429,7 +440,7 @@ export class ClaudeCodeSession implements HarnessSession {
       content: this._resultText,
       events: [...this._turnEvents],
       tokens: this._turnEvents.find((e) => e.tokens)?.tokens,
-      sessionId: this._sessionId,
+      externalSessionId: this._externalSessionId,
     };
     this._inflight.resolve(result);
     this._inflight = null;
@@ -526,9 +537,11 @@ export class ClaudeCodeSession implements HarnessSession {
 
     const raw = msg as Record<string, unknown>;
 
-    // Capture session ID from any message
-    if (typeof raw.session_id === "string" && !this._sessionId) {
-      this._sessionId = raw.session_id;
+    // Capture the runtime's native session ID the first time we see it.
+    // Subsequent messages echo the same ID; we keep our initial capture
+    // (for resumed sessions, the config-supplied ID should match).
+    if (typeof raw.session_id === "string" && !this._externalSessionId) {
+      this._externalSessionId = raw.session_id;
     }
 
     const classified = this._classify(raw);
@@ -574,9 +587,11 @@ export class ClaudeCodeSession implements HarnessSession {
       "--include-hook-events",
     ];
 
-    // Resume for fork or crash recovery
-    if (this._resumeSessionId) {
-      args.push("--resume", this._resumeSessionId);
+    // Resume for fork or crash recovery. _externalSessionId is set from
+    // config (crash recovery / fork) or from the stream. Either way, if
+    // it's present at spawn time, we --resume.
+    if (this._externalSessionId) {
+      args.push("--resume", this._externalSessionId);
       if (this._forking) {
         args.push("--fork-session");
         this._forking = false;
@@ -673,7 +688,7 @@ export class ClaudeCodeSession implements HarnessSession {
         kind: "result",
         timestamp: ts,
         text: (msg.result as string) ?? "",
-        sessionId: msg.session_id as string | undefined,
+        externalSessionId: msg.session_id as string | undefined,
         tokens: usage
           ? {
               input: usage.input_tokens ?? 0,

@@ -40,8 +40,12 @@ export interface SessionEvent {
   readonly toolOutput?: string;
   /** Whether the tool call failed (for tool_result). */
   readonly toolError?: boolean;
-  /** Session ID from the agent runtime. */
-  readonly sessionId?: string;
+  /**
+   * The agent runtime's native session ID (e.g. the UUID Claude Code uses
+   * as the filename in ~/.claude/projects/<id>.jsonl). External to Foundry —
+   * this is NOT the Foundry thread ID. A SessionAdapter maps between the two.
+   */
+  readonly externalSessionId?: string;
   /** Token usage (for result). */
   readonly tokens?: { input: number; output: number };
   /** Raw message from the stream (for Oracle introspection). */
@@ -53,12 +57,14 @@ export interface SessionResult {
   readonly content: string;
   readonly events: readonly SessionEvent[];
   readonly tokens?: { input: number; output: number };
-  readonly sessionId?: string;
+  /** The runtime's native session ID. See SessionEvent.externalSessionId. */
+  readonly externalSessionId?: string;
 }
 
 /** Full session record for Oracle evaluation. */
 export interface SessionArtifact {
-  readonly sessionId?: string;
+  /** The runtime's native session ID. See SessionEvent.externalSessionId. */
+  readonly externalSessionId?: string;
   readonly events: readonly SessionEvent[];
   readonly startedAt: number;
   readonly endedAt?: number;
@@ -91,7 +97,13 @@ export type BeforeSendHook = (
 
 export interface HarnessSession {
   readonly alive: boolean;
-  readonly sessionId: string | undefined;
+  /**
+   * The agent runtime's native session ID — external to Foundry.
+   * `undefined` until the runtime emits it (typically on the first turn's
+   * system init event). Use a SessionAdapter to map between a Foundry
+   * thread ID and this external ID.
+   */
+  readonly externalSessionId: string | undefined;
   readonly events: readonly SessionEvent[];
   readonly turns: number;
   readonly totalTokens: Readonly<{ input: number; output: number }>;

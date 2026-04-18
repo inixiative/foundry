@@ -134,7 +134,7 @@ describe("ClaudeCodeSession", () => {
 
     expect(result.content).toBe("ok");
     expect(result.tokens).toEqual({ input: 10, output: 2 });
-    expect(result.sessionId).toBe("test-session-1");
+    expect(result.externalSessionId).toBe("test-session-1");
 
     const kinds = result.events.map((e) => e.kind);
     expect(kinds).toContain("text");
@@ -153,19 +153,19 @@ describe("ClaudeCodeSession", () => {
     expect(sent.message.content).toEqual([{ type: "text", text: "the message" }]);
   });
 
-  test("sessionId is captured from system init, not just result", async () => {
+  test("externalSessionId is captured from system init, not just result", async () => {
     const fake = makeFakeProc({ autoReply: false, sessionId: "xyz-123" } as never);
     // Custom script: emit init first, then let send() drive the rest
     const session = makeSession(fake);
     await session.start();
-    expect(session.sessionId).toBeUndefined();
+    expect(session.externalSessionId).toBeUndefined();
 
     const sendPromise = session.send("hi");
     // Manual script the turn
     fake.emit({ type: "system", subtype: "init", session_id: "xyz-123" });
     // Session captures it even before result arrives
     await new Promise((r) => setTimeout(r, 5));
-    expect(session.sessionId).toBe("xyz-123");
+    expect(session.externalSessionId).toBe("xyz-123");
 
     // Finish the turn so the promise resolves
     fake.emit({
@@ -284,11 +284,11 @@ describe("ClaudeCodeSession", () => {
   test("fork() requires an established session id", () => {
     const fake = makeFakeProc();
     const session = makeSession(fake);
-    // No start() / send() yet → no sessionId
-    expect(() => session.fork()).toThrow(/no session ID/);
+    // No start() / send() yet → no externalSessionId
+    expect(() => session.fork()).toThrow(/no external session ID/);
   });
 
-  test("fork() produces a new unstarted session with resumeSessionId set", async () => {
+  test("fork() produces a new unstarted session that resumes from parent's external ID", async () => {
     const fake = makeFakeProc();
     const session = makeSession(fake);
     await session.start();
