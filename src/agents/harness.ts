@@ -3,6 +3,7 @@ import type { ExecutionResult } from "./base-agent";
 import type { Decision } from "./decider";
 import type { Classification } from "./classifier";
 import type { Route } from "./router";
+import type { ClarificationResult, ClarifyPayload } from "./clarifier";
 import type { LayerFilter } from "./context-stack";
 import type { ContextLayer } from "./context-layer";
 import { Trace } from "./trace";
@@ -22,6 +23,8 @@ export interface HarnessResult<T = unknown> {
   readonly messageId: string;
   readonly classification?: Decision<Classification>;
   readonly route?: Decision<Route>;
+  /** Set when a clarify stage determined the request needs more information. */
+  readonly clarification?: ClarificationResult;
   readonly result: ExecutionResult<T>;
   readonly trace: Trace;
   readonly timestamp: number;
@@ -44,7 +47,7 @@ export interface FlowStage {
   /** Agent ID for this stage. Use "routed" to use route.destination. */
   agentId: string | "routed";
   /** Pipeline role (for tracing and UI). */
-  role: "classify" | "route" | "execute" | "enrich" | "guard" | "observe";
+  role: "classify" | "route" | "clarify" | "execute" | "enrich" | "guard" | "observe";
   /**
    * When this stage runs:
    * - "always": every request
@@ -332,6 +335,7 @@ export class Harness {
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
+    let clarification: ClarificationResult | undefined;
     let lastExecuteAgentId: string | undefined;
 
     // Build request context for middleware
@@ -379,14 +383,24 @@ export class Harness {
         // Build layer filter for this dispatch
         const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
 
+        // Build payload — clarify stage receives classification + message, others get raw payload
+        const stagePayload: unknown = stage.role === "clarify"
+          ? ({
+              message: typeof message.payload === "string"
+                ? message.payload
+                : JSON.stringify(message.payload),
+              classification: classification?.value ?? { category: "unknown" },
+            } satisfies ClarifyPayload)
+          : message.payload;
+
         // Trace and dispatch
         trace.start(`${stage.role}:${agentId}`, stage.role as any, {
           agentId,
-          input: message.payload,
+          input: stagePayload,
           annotations: { invocation: stage.invocation },
         });
 
-        const result = await this.thread.dispatch(agentId, message.payload, layerFilter);
+        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter);
         invokedAgents.push({ id: agentId, mode: stage.invocation });
         stageResults.set(agentId, result);
 
@@ -395,11 +409,33 @@ export class Harness {
           lastExecuteAgentId = agentId;
         }
 
-        // Capture classification/route from appropriate stages
+        // Capture classification/route/clarification from appropriate stages
         if (stage.role === "classify") {
           classification = result.output as Decision<Classification>;
         } else if (stage.role === "route") {
           route = result.output as Decision<Route>;
+        } else if (stage.role === "clarify") {
+          const decision = result.output as Decision<ClarificationResult>;
+          clarification = decision.value;
+          if (clarification.needed) {
+            // Short-circuit: return questions before executing
+            trace.end(result.output);
+            trace.finish();
+            this._recordTrace(trace);
+            const layerFilter2 = this.buildLayerFilter(classification, route, requestedLayers);
+            const activeLayers = this.thread.stack.layers.filter(layerFilter2).map((l) => l.id);
+            return {
+              messageId: message.id,
+              classification,
+              route,
+              clarification,
+              result: { output: null, contextHash: result.contextHash } as ExecutionResult,
+              trace,
+              timestamp: Date.now(),
+              invokedAgents,
+              activeLayers,
+            };
+          }
         }
 
         trace.end(result.output);
@@ -435,6 +471,7 @@ export class Harness {
         messageId: message.id,
         classification,
         route,
+        clarification,
         result: finalResult,
         trace,
         timestamp: Date.now(),

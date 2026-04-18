@@ -66,6 +66,14 @@ export {
   type RouterConfig,
 } from "./router";
 
+export {
+  Clarifier,
+  type ClarifyPayload,
+  type ClarificationResult,
+  type ClarifyHandler,
+  type ClarifierConfig,
+} from "./clarifier";
+
 // Middleware
 export {
   MiddlewareChain,
