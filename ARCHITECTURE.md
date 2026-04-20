@@ -4,7 +4,7 @@
 
 ---
 
-## How It Works: Three Agents, Three Perspectives
+## How It Works: Oracle Eval Team + Isolated Artificer
 
 ```mermaid
 graph LR
@@ -12,42 +12,45 @@ graph LR
         O["Orchestrator<br/><i>Coordinates the run</i>"]
     end
 
-    subgraph "SUBJECT — The Vague PM"
-        S["Subject Agent"]
-        SC["subject-context.md<br/><i>Q&A pairs — only reveals<br/>answers when asked</i>"]
-        S --- SC
+    subgraph "FIXTURE"
+        F["Task + Golden Diff + Review Q&A<br/><i>The fixture itself carries<br/>domain knowledge — no separate<br/>Subject agent needed</i>"]
     end
 
-    subgraph "IMPLEMENTER — Agent Under Test"
-        I["Implementer Agent"]
-        IC["System prompt + docs + skills<br/><i>The corpus being tested</i>"]
-        I --- IC
+    subgraph "ARTIFICER UNDER TEST — Isolated Worktree"
+        A["Artificer<br/><i>The user's own harness agent,<br/>run against the fixture</i>"]
+        AC["System prompt + docs + skills<br/><i>The corpus being tested</i>"]
+        A --- AC
     end
 
-    subgraph "ORACLE — The Judge"
-        OR["Oracle Agent"]
-        OC["Golden implementation<br/>+ assertions + task map"]
+    subgraph "ORACLE EVAL TEAM"
+        ST["Steward<br/><i>Bodyguard — enforces isolation<br/>via git worktrees/branches,<br/>brokers fixture access</i>"]
+        OR["Oracle<br/><i>Judge — sees golden + rubrics,<br/>scores output, diagnoses root causes</i>"]
+        OC["Golden implementation<br/>+ assertions + rubrics"]
         OR --- OC
     end
 
-    O -->|"terse prompt"| I
-    I <-->|"asks questions"| S
-    I -->|"produces output"| OR
+    O -->|"terse prompt"| A
+    F -->|"task + review Q&A<br/>(brokered by Steward)"| A
+    ST -->|"enforces isolation"| A
+    A -->|"produces output"| OR
     OR -->|"scores + diagnosis"| O
 
-    style S fill:#8b6914,stroke:#c49a1a,color:#fff
-    style I fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style F fill:#8b6914,stroke:#c49a1a,color:#fff
+    style A fill:#1a3a5c,stroke:#2e6ba6,color:#fff
+    style ST fill:#3a1a5c,stroke:#6e2ea6,color:#fff
     style OR fill:#5c1a3a,stroke:#a62e5c,color:#fff
     style O fill:#333,stroke:#666,color:#fff
 ```
 
 | Agent | Role | Sees | Key Signal |
 |-------|------|------|------------|
-| **Subject** | Vague PM | Domain knowledge (Q&A pairs) | Doesn't volunteer info — only answers when asked |
-| **Implementer** | Agent under test | Clean codebase + the corpus being evaluated | Produces the work output |
+| **Artificer (under test)** | The user's own harness agent, running in an isolated worktree | Clean codebase + the corpus being evaluated | Produces the work output |
+| **Steward** | Bodyguard / integrity-enforcer for the Oracle team | Fixture metadata + isolation topology | Prevents the Artificer from peeking at the golden; enforces chain-of-custody |
 | **Oracle** | Judge | Golden implementation + rubrics | Scores output, diagnoses root causes |
 
-**Physical isolation via git branches** — each agent sees only its branch. No credential tricks, no instruction-based scoping. The Implementer can't peek at the golden answer.
+The agent-under-test is the user's own **Artificer** — the Oracle team doesn't own one; it just spins one up against the fixture.
+
+**Physical isolation via git worktrees/branches** — the Steward enforces that each agent sees only its branch. No credential tricks, no instruction-based scoping. The Artificer can't peek at the golden answer.
 
 ---
 
@@ -149,7 +152,7 @@ graph LR
         API["API + Dashboard<br/><i>Projects, fixtures,<br/>feedback, oracle</i>"]
         DB["SQLite Schema<br/><i>Full data model</i>"]
         CLI["CLI Commands<br/><i>init-project, start-round</i>"]
-        WORK["Run Worker<br/><i>Coordinated mode:<br/>Implementer + Subject + Oracle</i>"]
+        WORK["Run Worker<br/><i>Coordinated mode:<br/>Artificer (isolated) + Steward + Oracle</i>"]
         HIV["Per-Run Hivemind<br/><i>Role-scoped auth,<br/>channel ACLs</i>"]
         GIT["Git Isolation<br/><i>Role-isolated workspaces,<br/>per-role branches</i>"]
     end
@@ -197,14 +200,14 @@ graph LR
 
 | Defined Role | Primitive | Status |
 |-------------|-----------|--------|
-| Subject Agent (vague PM) | Decider — answers questions from Q&A layer | Ready |
-| Implementer (agent under test) | Executor — takes context + payload, produces output | Ready |
+| Artificer (executor / agent under test) | Executor — takes context + payload, produces output | Ready |
 | Oracle (judge) | LLMScorer + HeuristicDiagnoser + LLMDiagnoser | Ready |
+| Steward (isolation / fixture broker for Oracle evals) | Worktree/branch isolation + fixture chain-of-custody | Planned |
 | The Cartographer | Router with full context visibility + contextSlice | Ready |
-| The Librarian | Classifier → Router pipeline (Harness classify→route) | Ready |
-| Guardian Skills | Decider<boolean> per concern (conventions, security) | Primitive ready, no implementations |
+| The Librarian (signal reconciliation) | Classifier → Router pipeline (Harness classify→route) | Ready |
+| Wardens (advise + guard per domain) | Decider<boolean> per concern (conventions, security, etc.) | Primitive ready, config-driven instances live |
 | Herald (cross-agent observation) | Herald class with 5 PatternDetectors | Ready |
-| Domain Executors | Executor with LayerFilter per context slice | Ready |
+| Artificer execution layer (per-domain context slicing) | Executor with LayerFilter per context slice | Ready |
 | Planner (plan mode) | Planner agent + planModeHook auto-shunt | Ready |
 
 ---
@@ -212,11 +215,9 @@ graph LR
 ## New Primitives (Since Initial Architecture)
 
 - **Herald** — cross-agent observation with snapshot-based coordination. 5 detectors: duplication, contradiction, convergence, cross-pollination, resource imbalance. Operates on frozen ThreadSnapshots, stateless, read-many write-none.
-- **Active Memory** — Levin-inspired trust competition. Layers gain trust when used, lose trust when overridden. Layers below dissolution threshold are removed. Conventions compete for influence.
 - **Corpus Compiler** — Three-stage pipeline: fluid entries (raw signals) → formal docs (conventions, ADRs, skills with lifecycle states) → compiled corpus (immutable, hashed, token-optimized). Supports tier promotion: personal → team → org.
 - **Token Tracker** — Per-provider/model/agent cost accounting with budget enforcement and analytics.
-- **Compaction Strategies** — 4 strategies for managing context budget: trust-based, LRU, LLM summarize, hybrid.
-- **Lifecycle Hooks** — 16 hook points (pre/post dispatch, classify, route, compact, session events, budget events, plan mode). Built-in hooks: planModeHook, budgetGuardHook, autoCompactHook.
+- **Lifecycle Hooks** — 16 hook points (pre/post dispatch, classify, route, session events, budget events, plan mode). Built-in hooks: planModeHook, budgetGuardHook.
 - **Streaming** — AsyncGenerator<LLMStreamEvent> for Anthropic, OpenAI, Gemini providers.
 - **Analytics** — First-class cost tracking with time-series rollups, thread costs, model rankings.
 - **Planner Agent** — Generates execution plans with dependency-ordered steps, dispatches to agents, tracks results.

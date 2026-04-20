@@ -114,7 +114,7 @@ This is the business model's structural decision.
 
 ### What's the Service (behind API key)
 - **The improvement engine** — takes classified signals, generates fixtures from real corrections, runs regressions, pushes verified improvements back into the corpus
-- **The Oracle evaluation loop** — the three-agent architecture (Subject, Implementer, Oracle) that scores output against golden references
+- **The Oracle evaluation loop** — the two-agent evaluation (Oracle + Steward) that measures an isolated Artificer instance against golden references
 - **Fixture generation from real corrections** — automated creation of test cases from captured signals
 - **Regression testing** — running the full fixture suite against proposed corpus changes
 
@@ -196,7 +196,7 @@ Foundry is now structured as three composable systems with distinct licensing an
 
 - **@foundry/primitives** (open, Apache 2.0) — The base layer. Corpus schemas, skill file format, scoring rubrics, fixture format, and the CorpusCompiler. These are the building blocks anyone can use, embed, or build on. Open by design so the ecosystem can standardize on shared formats.
 
-- **Foundry** (open / source-available) — The evaluation harness. The three-agent evaluation loop (Subject, Implementer, Oracle), the CLI, git isolation, run orchestration, and the viewer. Source-available so teams can inspect, self-host, and contribute — but with a license that prevents repackaging as a competing service.
+- **Foundry** (open / source-available) — The evaluation harness. The two-agent evaluation (Oracle + Steward) that measures an isolated Artificer instance, the CLI, git isolation, run orchestration, and the viewer. Source-available so teams can inspect, self-host, and contribute — but with a license that prevents repackaging as a competing service.
 
 - **Foundry Oracle** (closed service) — The calibrated judgment layer. Cross-customer scoring calibration, fixture cross-pollination, diagnosis-to-proposal mappings, and proposal effectiveness tracking. This is what turns raw evaluation into compounding insight. Closed because the value is in the accumulated data and calibration, not the code.
 
@@ -236,7 +236,7 @@ The Oracle service requires minimal infrastructure on our side:
 - **API + Dashboard** — project management, fixture management, feedback, oracle interface
 - **SQLite schema** — full data model for projects, fixtures, runs, scores
 - **CLI commands** — `init-project`, `start-round` for running evaluations
-- **Run Worker** — coordinated mode with Implementer + Subject + Oracle agents running in isolation
+- **Run Worker** — coordinated mode spinning up an isolated Artificer against the fixture, with Steward + Oracle enforcing isolation and scoring
 - **Per-run Hivemind** — role-scoped auth, channel ACLs for agent communication (built on inixiative's existing hivemind library)
 - **Git isolation** — role-isolated workspaces, per-role branches ensuring honest evaluation
 
@@ -274,8 +274,8 @@ Foundry builds on a real stack, not from zero:
 ## 14. What's Next
 
 **Immediate (weeks):**
-- Complete the canonical smoke fixture — first end-to-end evaluation run with all three agents
-- System prompt injector working — corpus loaded into Implementer context automatically
+- Complete the canonical smoke fixture — first end-to-end evaluation run (Artificer-under-test + Steward + Oracle)
+- System prompt injector working — corpus loaded into the Artificer-under-test's context automatically
 - Ship internal skill stubs — baseline conventions and patterns that work out of the box
 
 **Near-term (1-3 months):**

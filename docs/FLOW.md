@@ -25,7 +25,7 @@ The goal is not more autonomy. It's **horizon alignment** — making the agent's
 
 ## The Core Model
 
-Foundry is a nervous system wrapped around a Claude Code session.
+Foundry is a nervous system wrapped around an **Artificer** — a Claude Code session running as the executor under the harness.
 
 Claude Code does what it's already good at — tool use, file access, codebase reasoning. Foundry adds what it doesn't have: persistent memory, project conventions, multi-thread awareness, correctness checking, and an observation loop that makes everything smarter over time.
 
@@ -86,8 +86,8 @@ MESSAGE ARRIVES (user or system)
 │  (correction, convention, taste, ADR, security). Reconcile         │
 │  into the thread-state layer (one coherent view, one writer).      │
 │                                                                    │
-│  Post-execution: trust adjustments, map rebuilds, memory           │
-│  entries, convention proposals → feeds the corpus pipeline.        │
+│  Post-execution: map rebuilds, memory entries, convention          │
+│  proposals → feeds the corpus pipeline.                            │
 │                                                                    │
 │  Every execution is a training step. This is the gradient.         │
 └────────────────────────────────────────────────────────────────────┘
@@ -100,17 +100,17 @@ These are the agents we've named so far. Each implements one or more roles. The 
 | Role | Agent(s) | Notes |
 |------|----------|-------|
 | **Context routing** | Cartographer | Reads everything, owns the topology map, routes slices. |
-| **Domain advising** | Domain Librarians (docs, convention, security, architecture, memory) | Each maintains a warm cache for its domain. Advise mode: "what context does this message need from my domain?" |
+| **Domain advising** | Wardens (formerly called Domain Librarians) — Docs Warden, Convention Warden, Security Warden, Architecture Warden, Memory Warden | Each maintains a warm cache for its domain. Advise mode: "what context does this message need from my domain?" |
 | **Domain advising** (cross-thread) | Herald | Watches all threads. Detects convergence, divergence, resource conflicts. |
-| **Execution** | Claude Code Session | The real work. Full tool access, capable model. |
-| **Correctness checking** | Domain Librarians (guard mode) | Same agents as advising, different mode. Guard mode: "did this action violate anything in my domain?" |
-| **Signal reconciliation** | Librarian | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
+| **Execution** | Artificer (the Claude Code session running under the harness) | The real work. Full tool access, capable model. |
+| **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode: "did this action violate anything in my domain?" |
+| **Signal reconciliation** | Librarian (singular — distinct from the plural Wardens) | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
 
 A role can compose many subagents — the Librarian might delegate security checking to three specialized subagents, the Cartographer might have a doc-map builder and a dependency-graph builder underneath. The flow doesn't change. What matters is that after a tool call, *something* checks conventions, *something* checks security, and the results flow into *one* reconciliation point.
 
-### Domain librarians — the shared pattern
+### Wardens — the shared pattern
 
-Each domain librarian maintains knowledge, advises when asked, and guards when triggered:
+Each Warden maintains knowledge, advises when asked, and guards when triggered:
 
 | Domain | Warm Cache | Advise (on message) | Guard (on tool call) |
 |--------|-----------|--------------------|--------------------|
@@ -143,7 +143,7 @@ When debugging:
 3. **Cheap models for decisions, capable models for work.** Context routing, domain advising, and correctness checking all use Haiku/Flash. The executor session uses whatever Claude Code is running.
 4. **Pull over push.** Don't frontload every possible context. Inject what the middleware predicts is needed, let the session pull the rest via MCP.
 5. **Progressive depth, not blanket evaluation.** Basic layers run every message. Deeper layers run only when something changes — domain shift, confidence drop, new trigger. Most steady-state messages hit only classification + map match. The system escalates to deeper middleware and guards based on what the basic layers detect.
-6. **Backpropagation is the whole point.** Every execution updates caches, trust scores, and maps. The system improves after every interaction, not just when someone edits a config.
+6. **Backpropagation is the whole point.** Every execution updates caches, memory, and maps. The system improves after every interaction, not just when someone edits a config.
 7. **Grep is always available.** When a summary says "this might be relevant" but isn't sure, programmatic search resolves it without an LLM call.
 
 ---
@@ -253,14 +253,14 @@ No LLM calls, no dispatch log scanning. The awareness layer IS the state. This i
 
 ### One writer, many readers
 
-Multiple domain librarians, guards, and the Herald run in parallel — all producing signals. But only **one entity writes the thread-state layer**: the Librarian.
+Multiple Wardens, guards, and the Herald run in parallel — all producing signals. But only **one entity writes the thread-state layer**: the Librarian.
 
 ```
 Parallel agents (readers + signal emitters):
   Classification ──────→ { category: "feature", tags: ["security"] }
-  Convention Librarian ─→ "auth conventions applied"
-  Security Librarian ───→ "clean"
-  Architecture Librarian → "cross-module edit detected"
+  Convention Warden ───→ "auth conventions applied"
+  Security Warden ─────→ "clean"
+  Architecture Warden ─→ "cross-module edit detected"
   Herald ───────────────→ "thread B editing same file"
   Tool observation ─────→ "edited auth/middleware.ts"
            │
@@ -272,8 +272,8 @@ Librarian (sole writer):
 
 Why sole writer matters:
 - **Coherence** — the layer is always a consistent snapshot, never a race between parallel writers
-- **Reconciliation** — when classification says "auth" but the Architecture Librarian says "cross-module," the Librarian reconciles: `{ domain: "auth", flags: ["cross-module"] }`. That's a judgment call, not last-write-wins.
-- **Predicates stay simple** — every domain librarian reads one coherent state
+- **Reconciliation** — when classification says "auth" but the Architecture Warden says "cross-module," the Librarian reconciles: `{ domain: "auth", flags: ["cross-module"] }`. That's a judgment call, not last-write-wins.
+- **Predicates stay simple** — every Warden reads one coherent state
 
 The Librarian is mostly a programmatic reducer: last classification wins for domain, append-only for activity, union for flags. It only needs a Fast LLM call when signals genuinely conflict and need reconciliation — which is rare in a focused session.
 
@@ -341,7 +341,7 @@ flowchart LR
         CACHES[("Warm Caches\nMemory\nDocs\nConventions\nMap")]
     end
 
-    subgraph SESSION ["Claude Code Session"]
+    subgraph SESSION ["Artificer (Claude Code Session)"]
         EXEC["Execution\n(real session with tools)"]
     end
 
@@ -375,10 +375,10 @@ When a message arrives, context routing and domain advising run to contextualize
 flowchart TB
     MSG[/"Message arrives\n(user or system)"/]
 
-    subgraph MW_LAYER ["DOMAIN LIBRARIANS (advise mode, parallel where independent)"]
+    subgraph MW_LAYER ["WARDENS (advise mode, parallel where independent)"]
         direction TB
 
-        subgraph MW1 ["Docs Librarian"]
+        subgraph MW1 ["Docs Warden"]
             CACHE_DOC[("Warm Cache:\nDoc Map\n(what exists, where,\nhow stale)")]
             LLM_DOC["Fast LLM:\nWhat docs does this\nmessage need?"]
             OUT_DOC["Output:\ncontextSlice[]"]
@@ -386,7 +386,7 @@ flowchart TB
             LLM_DOC --> OUT_DOC
         end
 
-        subgraph MW2 ["Convention Librarian"]
+        subgraph MW2 ["Convention Warden"]
             CACHE_CONV[("Warm Cache:\nProject conventions\n+ recent corrections")]
             LLM_CONV["Fast LLM:\nAny conventions relevant\nto this request?"]
             OUT_CONV["Output:\nconventions to inject"]
@@ -394,7 +394,7 @@ flowchart TB
             LLM_CONV --> OUT_CONV
         end
 
-        subgraph MW3 ["Memory Librarian"]
+        subgraph MW3 ["Memory Warden"]
             CACHE_MEM[("Warm Cache:\nMemory index\n(what we remember)")]
             LLM_MEM["Fast LLM:\nAnything in memory\nrelevant here?"]
             OUT_MEM["Output:\nmemory entries"]
@@ -413,7 +413,7 @@ flowchart TB
 
     MERGE["Merge middleware outputs\n→ assembled injection context"]
     INJECT["Write .foundry-context.md\n(or update if session running)"]
-    SESSION["Claude Code Session\nstarts / continues with context"]
+    SESSION["Artificer (Claude Code session)\nstarts / continues with context"]
 
     MSG --> MW_LAYER
     MW_LAYER --> MERGE
@@ -455,11 +455,11 @@ When the router says "pull auth-api-docs," that layer gets hydrated (file I/O, n
 
 ## Loop 2: Mid-Session Bridge (MCP)
 
-The Claude Code session has a minimal MCP server that connects it back to Foundry. When the agent discovers it needs context that wasn't frontloaded, it pulls.
+The Artificer (Claude Code session) has a minimal MCP server that connects it back to Foundry. When the agent discovers it needs context that wasn't frontloaded, it pulls.
 
 ```mermaid
 flowchart LR
-    subgraph SESSION ["Claude Code Session"]
+    subgraph SESSION ["Artificer (Claude Code Session)"]
         AGENT["Agent working..."]
         GAP["Hits knowledge gap"]
         MCP_CALL["Calls MCP tool"]
@@ -513,28 +513,28 @@ foundry.signal(kind: string, content: string)
 
 ### Why MCP solves mid-session injection
 
-The old problem: Foundry can't pause a running Claude Code session to inject context.
+The old problem: Foundry can't pause a running Artificer to inject context.
 
-The MCP solution: Foundry doesn't need to. The session asks for what it needs, when it needs it. The agent is already good at recognizing knowledge gaps ("I need to check the auth conventions") — MCP gives it a way to resolve those gaps without grepping through files and hoping.
+The MCP solution: Foundry doesn't need to. The Artificer asks for what it needs, when it needs it. The agent is already good at recognizing knowledge gaps ("I need to check the auth conventions") — MCP gives it a way to resolve those gaps without grepping through files and hoping.
 
-The MCP tools show up in the Claude Code session as available tools alongside file read/write, bash, etc. The agent uses them naturally as part of its reasoning.
+The MCP tools show up in the Artificer's session as available tools alongside file read/write, bash, etc. The agent uses them naturally as part of its reasoning.
 
 ---
 
 ## Loop 3: Post-Action — Correctness Checking
 
-Tool calls from the Claude Code session fire PostToolUse hooks. Foundry captures these observations and runs correctness checks — but not all checks on every call. Guards are trigger-gated by the reconciliation layer.
+Tool calls from the Artificer fire PostToolUse hooks. Foundry captures these observations and runs correctness checks — but not all checks on every call. Guards are trigger-gated by the reconciliation layer.
 
 ```mermaid
 flowchart TB
-    TOOL["Claude Code makes\na tool call"]
+    TOOL["Artificer makes\na tool call"]
     HOOK["PostToolUse hook fires"]
     CAPTURE["Foundry captures:\ntool name, input, output,\nfiles affected, session state"]
 
-    subgraph GUARDS ["DOMAIN LIBRARIANS (guard mode, parallel, trigger-gated by Librarian)"]
+    subgraph GUARDS ["WARDENS (guard mode, parallel, trigger-gated by Librarian)"]
         direction TB
 
-        subgraph G1 ["Convention Librarian — guard"]
+        subgraph G1 ["Convention Warden — guard"]
             GC_CACHE[("Warm Cache:\nNaming conventions\nCode patterns\nProject structure")]
             GC_LLM["Fast LLM:\nDoes this tool output\nviolate any conventions?"]
             GC_OUT["Finding or ✓"]
@@ -542,7 +542,7 @@ flowchart TB
             GC_LLM --> GC_OUT
         end
 
-        subgraph G2 ["Security Librarian — guard"]
+        subgraph G2 ["Security Warden — guard"]
             GS_CACHE[("Warm Cache:\nSecurity patterns\nOWASP rules\nKnown vuln patterns")]
             GS_LLM["Fast LLM:\nAny security concern\nin this change?"]
             GS_OUT["Finding or ✓"]
@@ -550,7 +550,7 @@ flowchart TB
             GS_LLM --> GS_OUT
         end
 
-        subgraph G3 ["Architecture Librarian — guard"]
+        subgraph G3 ["Architecture Warden — guard"]
             GA_CACHE[("Warm Cache:\nModule boundaries\nDependency rules\nFile organization")]
             GA_LLM["Fast LLM:\nDoes this change respect\narchitecture boundaries?"]
             GA_OUT["Finding or ✓"]
@@ -558,7 +558,7 @@ flowchart TB
             GA_LLM --> GA_OUT
         end
 
-        subgraph G4 ["Memory Librarian — guard"]
+        subgraph G4 ["Memory Warden — guard"]
             GM_CACHE[("Warm Cache:\nPast decisions\nReverted changes\nKnown pitfalls")]
             GM_CHECK["Programmatic:\nPattern match against\nknown failure modes"]
             GM_OUT["Finding or ✓"]
@@ -589,9 +589,9 @@ flowchart TB
     style SIGNAL fill:#1a2e1a,stroke:#4a8a4a,color:#fff
 ```
 
-### Same librarians, two modes
+### Same Wardens, two modes
 
-There's no separate "guard" agent type. The same domain librarians that advise pre-message also guard post-action. The Librarian coordinates both modes — deciding what to fire and when.
+There's no separate "guard" agent type. The same Wardens that advise pre-message also guard post-action. The Librarian coordinates both modes — deciding what to fire and when.
 
 | | Advise mode (pre-message) | Guard mode (post-action) |
 |---|---|---|
@@ -601,18 +601,18 @@ There's no separate "guard" agent type. The same domain librarians that advise p
 | **Urgency** | Blocking (session waits) | Non-blocking (async, except critical) |
 | **Gating** | Classification domain shift | Tool call type (file-write, code-write, etc.) |
 
-Guard mode is trigger-gated by the Librarian: a file-read doesn't fire the Convention Librarian's guard, a bash command doesn't fire the Security Librarian. This means a session that does 50 tool calls but only 15 are file-writes runs convention guard 15 times, not 50. The Memory Librarian is the exception — it's programmatic pattern matching, so it runs on everything for free.
+Guard mode is trigger-gated by the Librarian: a file-read doesn't fire the Convention Warden's guard, a bash command doesn't fire the Security Warden. This means a session that does 50 tool calls but only 15 are file-writes runs convention guard 15 times, not 50. The Memory Warden is the exception — it's programmatic pattern matching, so it runs on everything for free.
 
-**Why the guard layer matters:** As a session grows and the context window fills, agents become more random. The guard-mode librarians don't degrade with session length because they compare tool outputs against their own warm caches — stable, compact, independent of the session's growing context. At message 50, the Security Librarian is comparing against the same security patterns it had at message 1. The guards are the mechanism that keeps the session aligned as context pressure mounts.
+**Why the guard layer matters:** As a session grows and the context window fills, agents become more random. The guard-mode Wardens don't degrade with session length because they compare tool outputs against their own warm caches — stable, compact, independent of the session's growing context. At message 50, the Security Warden is comparing against the same security patterns it had at message 1. The guards are the mechanism that keeps the session aligned as context pressure mounts.
 
-When a domain librarian in guard mode finds something:
+When a Warden in guard mode finds something:
 
-- **Critical findings** (security, breaking changes) → push immediately via MCP into the session. The agent sees it as a tool result: "Security Librarian: SQL injection risk in the query you just wrote on line 42 of auth/service.ts"
+- **Critical findings** (security, breaking changes) → push immediately via MCP into the session. The agent sees it as a tool result: "Security Warden: SQL injection risk in the query you just wrote on line 42 of auth/service.ts"
 - **Advisory findings** (style, suggestions) → emit as signals to the Librarian. The session doesn't see them immediately, but they feed into writeback and will inform future advise-mode decisions.
 
-### The Memory Librarian is special
+### The Memory Warden is special
 
-Unlike the other domain librarians, the Memory Librarian doesn't necessarily need an LLM call in guard mode. It does **programmatic pattern matching** against known failure modes:
+Unlike the other Wardens, the Memory Warden doesn't necessarily need an LLM call in guard mode. It does **programmatic pattern matching** against known failure modes:
 
 - "The last time someone edited this file and used that pattern, it was reverted in PR #847"
 - "This function signature was changed 3 times in the last month — it's unstable"
@@ -639,7 +639,6 @@ flowchart TB
     subgraph WRITEBACK ["WRITEBACK PIPELINE (async, non-blocking)"]
         direction TB
 
-        TRUST["Adjust trust scores\non affected layers\n(programmatic)"]
         MAP_UP["Rebuild map sections\nfor changed domains\n(Fast LLM)"]
         MEM_WRITE["Write new memory entries\nfrom observations\n(programmatic + Fast LLM)"]
         CONV_PROP["Propose convention changes\nif patterns detected\n(queue for human review)"]
@@ -649,7 +648,7 @@ flowchart TB
     subgraph RESULT_STATE ["UPDATED STATE"]
         direction LR
         WARMER["Warmer caches\n(more accurate maps)"]
-        SMARTER["Smarter memory\n(new entries, adjusted trust)"]
+        SMARTER["Smarter memory\n(new entries reconciled)"]
         SAFER["Refined guards\n(new patterns learned)"]
         READY["Ready for next message\n(the system improved)"]
     end
@@ -666,7 +665,6 @@ flowchart TB
 
 | What | How | Trigger |
 |------|-----|---------|
-| **Layer trust scores** | Layer that provided useful context → trust++ ; layer whose content was contradicted → trust-- | Every execution |
 | **Doc map** | If a layer's content changed (agent edited a file that's a layer source), rebuild that map section | File-change observation |
 | **Memory entries** | New observations become memory entries: "auth module uses middleware pattern X" | Guards + session signals |
 | **Convention proposals** | If the same correction appears 3+ times, propose it as a formal convention | Signal frequency threshold |
@@ -679,7 +677,6 @@ Without writeback, every session starts from the same baseline. With writeback:
 - The doc map gets more accurate (middleware makes better frontloading decisions)
 - Memory accumulates (the MCP returns richer results)
 - Guards learn new patterns (fewer false negatives over time)
-- Trust scores reflect reality (compaction evicts the right things)
 
 This is the gradient descent on corpus from the vision doc — every execution is a training step.
 
@@ -687,7 +684,7 @@ This is the gradient descent on corpus from the vision doc — every execution i
 
 ## Thread Lifecycle
 
-How a Foundry thread (wrapping a Claude Code session) moves through its lifecycle.
+How a Foundry thread (wrapping an Artificer) moves through its lifecycle.
 
 ```mermaid
 stateDiagram-v2
@@ -700,9 +697,9 @@ stateDiagram-v2
         Config: Load project config
         Layers: Build + warm layer caches
         Map: Cartographer builds\ndoc map (Fast LLM)
-        Agents: Register Cartographer,\nLibrarian + domain librarians,\nHerald
+        Agents: Register Cartographer,\nLibrarian + Wardens,\nHerald
         MCP: Start MCP server
-        Session: Start Claude Code session\nwith .foundry-context.md
+        Session: Start Artificer (Claude Code session)\nwith .foundry-context.md
 
         Config --> Layers
         Layers --> Map
@@ -732,9 +729,6 @@ stateDiagram-v2
     Active --> Stale: layer staleness\ntimer fires
     Stale --> Active: background re-warm\n+ map rebuild
 
-    Active --> Compacted: token budget\npressure
-    Compacted --> Active: evict low-trust layers\nmap survives\nMCP fills gaps
-
     Active --> Spawned: router middleware says\n"new thread needed"
     Spawned --> Bootstrap: child thread inherits\nparent layer configs
 
@@ -747,7 +741,7 @@ stateDiagram-v2
 - Build all layer caches (parallel I/O)
 - Build doc map (one Fast LLM call)
 - Start MCP server
-- Start Claude Code session with injected context
+- Start Artificer (Claude Code session) with injected context
 - First message has full middleware overhead
 
 **Steady state (~400ms overhead per message):**
@@ -756,11 +750,6 @@ stateDiagram-v2
 - Session is already running
 - MCP server is ready for pulls
 - Guards are watching the tool stream
-
-**After compaction:**
-- Low-trust layers evicted, but map survives
-- If the session needs evicted content, MCP can pull it on demand
-- Writeback from that MCP pull may trigger trust re-evaluation (maybe that layer shouldn't have been evicted)
 
 ---
 
@@ -771,20 +760,19 @@ Every branching point in the system, who decides, and how.
 | Decision | Flow role | Agent | Model | Input | Speed |
 |----------|----------|-------|-------|-------|-------|
 | What context slices does this message need? | Context routing | Cartographer | Fast LLM | Message + topology map | ~200ms |
-| Which docs to hydrate? | Domain advising | Docs Librarian | Fast LLM | Message + doc map cache | ~200ms |
-| Which conventions apply? | Domain advising | Convention Librarian | Fast LLM | Message + convention cache | ~200ms |
-| Any relevant memory? | Domain advising | Memory Librarian | Fast/Programmatic | Message + memory index | ~0-200ms |
+| Which docs to hydrate? | Domain advising | Docs Warden | Fast LLM | Message + doc map cache | ~200ms |
+| Which conventions apply? | Domain advising | Convention Warden | Fast LLM | Message + convention cache | ~200ms |
+| Any relevant memory? | Domain advising | Memory Warden | Fast/Programmatic | Message + memory index | ~0-200ms |
 | Sibling threads relevant? | Domain advising | Herald | Fast LLM | Message + thread summaries | ~200ms |
 | Session needs context mid-work? | Execution (MCP) | Cartographer | Fast LLM | Query + map | ~200ms |
-| Does this edit violate conventions? | Correctness checking | Convention Librarian | Fast LLM | Observation + convention cache | ~200ms |
-| Security concern in this change? | Correctness checking | Security Librarian | Fast LLM | Observation + security cache | ~200ms |
-| Does this respect architecture? | Correctness checking | Architecture Librarian | Fast LLM | Observation + architecture cache | ~200ms |
-| Seen this pattern fail before? | Correctness checking | Memory Librarian | Programmatic | Observation + failure mode index | ~0ms |
+| Does this edit violate conventions? | Correctness checking | Convention Warden | Fast LLM | Observation + convention cache | ~200ms |
+| Security concern in this change? | Correctness checking | Security Warden | Fast LLM | Observation + security cache | ~200ms |
+| Does this respect architecture? | Correctness checking | Architecture Warden | Fast LLM | Observation + architecture cache | ~200ms |
+| Seen this pattern fail before? | Correctness checking | Memory Warden | Programmatic | Observation + failure mode index | ~0ms |
 | Which guards fire on this tool call? | Correctness checking | Librarian | Programmatic | Tool call type | 0ms |
 | Push finding or defer? | Correctness checking | Librarian | Programmatic | Finding severity | 0ms |
 | Reconcile signals into thread state | Signal reconciliation | Librarian | Programmatic (rarely Fast LLM) | All signals | ~0ms |
 | Layer stale? | System learning | Staleness timer | Programmatic | `lastWarmed + staleness` | 0ms |
-| What to evict under budget pressure? | System learning | Trust scores | Programmatic | Sorted trust, compaction strategy | 0ms |
 | Convention promotion? | System learning | Librarian → human review | Human | Signal frequency + confidence | Async |
 
 ---
@@ -796,11 +784,11 @@ Every branching point in the system, who decides, and how.
 | Context routing | Classification is wrong | Wrong layers frontloaded | Session's own reasoning + MCP correct for it; writeback captures the miss for next time |
 | Domain advising | Advise LLM call fails | Missing context injection for that domain | Session proceeds with partial context; MCP available for on-demand pulls; retry in background |
 | Domain advising | Layer fails to warm | Domain has empty cache | Domain knows its cache is cold and says so; session relies on MCP + native tools |
-| Execution | Claude Code session crashes | Work interrupted | Foundry has full observation log; can restart session with context rebuilt from Session Store |
+| Execution | Artificer (Claude Code session) crashes | Work interrupted | Foundry has full observation log; can restart session with context rebuilt from Session Store |
 | Execution (MCP) | MCP server unavailable | Session can't pull on-demand context | Session falls back to native Claude Code tools (grep, file read); degraded but functional |
 | Correctness checking | Guard LLM call fails | Missed finding for one observation | Other guards still running; that guard retries on next observation; signal emitted so writeback knows |
 | Signal reconciliation | Fast LLM unavailable | Reconciliation and advising stall | Fall back to programmatic heuristics (keyword match against map, default routing); degrade gracefully |
-| System learning | Token budget exceeded | Can't fit all matched layers | Evict by trust score; map always survives; MCP fills gaps on demand |
+| System learning | Token budget exceeded | Can't fit all matched layers | Drop the lowest-priority layers; map always survives; MCP fills gaps on demand |
 | System learning | Memory backend down | No persistent memory | Thread-local observations still available; file-based caches still warm; memory writes queue for retry |
 
 ---
@@ -808,7 +796,7 @@ Every branching point in the system, who decides, and how.
 ## What Exists vs What Needs Building
 
 ### Already exists in the codebase
-- Context layers with warm/stale lifecycle and trust scores
+- Context layers with warm/stale lifecycle
 - Context stack with budget-aware assembly
 - **ContextStackView** — read-only stack introspection for middleware (`ctx.stack.hasLayer()`, `ctx.stack.getContent()`) — this is what makes the tiered predicate model work without dispatch log scanning
 - Middleware chain with tiered execution (always/conditional via `useWhen()`)
@@ -820,7 +808,6 @@ Every branching point in the system, who decides, and how.
 - Trace system with full span tree
 - ClaudeCodeRuntime with `.foundry-context.md` injection and PostToolUse hook scripts
 - ClaudeCodeProvider (currently `-p` mode, needs evolution)
-- Compaction strategies (trust-based, LRU, summarize, hybrid)
 - Herald cross-thread pattern detection
 - Capability gate with policy system (UNATTENDED, SUPERVISED, RESTRICTED) and ActionQueue for human-in-the-loop prompts
 
@@ -828,15 +815,15 @@ Every branching point in the system, who decides, and how.
 - **MCP server** — 5 tools (query, conventions, memory, threads, signal). Mid-session bridge for on-demand context. `packages/foundry/src/mcp/`
 - **Librarian** — signal reconciliation coordinator. Sole writer to thread-state layer. Consumes all signals, reconciles into coherent state. `packages/foundry/src/agents/librarian.ts`
 - **Thread-state layer** — compact (~200-500 token) materialized view. Updated by Librarian after every signal. Contains domain, recent activity, in-context layers, flags.
-- **Domain Librarian framework** — shared advise + guard pattern. Each domain maintains a warm cache, advises on incoming messages, guards on tool calls. Programmatic guard path for Memory domain. `packages/foundry/src/agents/domain-librarian.ts`
+- **Warden framework** — shared advise + guard pattern. Each Warden maintains a warm cache, advises on incoming messages, guards on tool calls. Programmatic guard path for Memory domain. (The shared implementation still lives at `packages/foundry/src/agents/domain-librarian.ts` / `DomainLibrarian` class — code rename is a separate concern.)
 - **Cartographer** — context routing role. Builds topology map from stack, routes messages to the right layers via fast LLM call, keyword fallback when LLM unavailable. `packages/foundry/src/agents/cartographer.ts`
 
 ### Needs to be built
 - **Real session management** — evolve ClaudeCodeProvider from `-p` one-shot to persistent session wrapper. Manage session lifecycle (start, observe, inject, restart).
-- **Guard trigger-gating orchestration** — wire the Librarian to route PostToolUse observations to domain librarians based on tool call type. The pieces exist (Librarian + DomainLibrarian.shouldGuard()) but aren't wired end-to-end with the hook system.
-- **Writeback pipeline** — post-execution signal processing. Connects to the corpus compilation pipeline (VISION.md §7): Librarian reconciles signals → trust adjustment → Docs Librarian rebuilds map sections → Memory Librarian writes new entries → convention proposals queue as fluid corpus entries → promoted to formal docs after batched human review → compiled into optimized corpus snapshots. The pieces exist separately but aren't wired as a coherent post-session flow.
-- **Model routing per role** — enforce cheap models for all domain librarians (advise + guard modes) and the Librarian's signal processing, capable models for execution. The provider system supports per-agent models but the harness doesn't enforce the routing pattern.
-- **Concrete domain librarian instances** — instantiate DomainLibrarian for each domain (docs, convention, security, architecture, memory) with domain-specific prompts, guard triggers, and warm cache strategies.
+- **Guard trigger-gating orchestration** — wire the Librarian to route PostToolUse observations to Wardens based on tool call type. The pieces exist (Librarian + DomainLibrarian.shouldGuard()) but aren't wired end-to-end with the hook system.
+- **Writeback pipeline** — post-execution signal processing. Connects to the corpus compilation pipeline (VISION.md §7): Librarian reconciles signals → Docs Warden rebuilds map sections → Memory Warden writes new entries → convention proposals queue as fluid corpus entries → promoted to formal docs after batched human review → compiled into optimized corpus snapshots. The pieces exist separately but aren't wired as a coherent post-session flow.
+- **Model routing per role** — enforce cheap models for all Wardens (advise + guard modes) and the Librarian's signal processing, capable models for execution. The provider system supports per-agent models but the harness doesn't enforce the routing pattern.
+- **Concrete Warden instances** — instantiate a Warden for each domain (docs, convention, security, architecture, memory) with domain-specific prompts, guard triggers, and warm cache strategies.
 
 ---
 
@@ -847,18 +834,17 @@ The writeback pipeline (Loop 4) feeds into the three-stage corpus compilation pi
 ```
 Loop 4 outputs:                    Corpus pipeline:
                                    
-  Trust score adjustments ───────→ Compiled corpus (layer weights)
   Memory entries ────────────────→ Fluid memory (raw signals)
   Convention proposals ──────────→ Fluid → Formal (after human review)
   Map rebuilds ──────────────────→ Compiled corpus (routing accuracy)
-  Guard patterns learned ────────→ Fluid → Formal (domain librarian caches)
+  Guard patterns learned ────────→ Fluid → Formal (Warden caches)
 ```
 
 **Fluid** — raw signals, corrections, observations. High volume, unstructured. This is where writeback outputs land. The Librarian classifies them.
 
 **Formal** — conventions docs, ADRs, skill definitions. Structured, versioned, attributed. Signals promoted here after batched human review (VISION.md §8). Each entry traces back to the signal that created it.
 
-**Compiled** — the effective context the session receives. Assembled from formal docs + layer trust scores, deduplicated, optimized for token efficiency. Immutable snapshots with content hashes for reproducibility.
+**Compiled** — the effective context the session receives. Assembled from formal docs, deduplicated, optimized for token efficiency. Immutable snapshots with content hashes for reproducibility.
 
 Every execution is a training step on the corpus. Writeback is the gradient. The corpus pipeline is where the gradient gets applied.
 

@@ -53,7 +53,6 @@ src/agents/
   hydrator.ts            148 lines   # HydrationRegistry, RefSource
   hooks.ts               360 lines   # HookRegistry, 16 HookPoints
   token-tracker.ts       459 lines   # TokenTracker, BudgetConfig, cost tables
-  compaction.ts          410 lines   # 4 strategies (trust, LRU, summarize, hybrid)
 
 src/providers/
   types.ts               143 lines   # LLMProvider, CompletionResult, streaming
@@ -76,7 +75,7 @@ src/adapters/
 **What it gives you:**
 - Build any agent composition (classify → route → dispatch)
 - Any LLM provider with streaming and cost tracking
-- Context management with compaction and budget enforcement
+- Context management with budget enforcement
 - Middleware, signals, tracing, sessions
 - Zero opinions about what agents do or how context is organized
 
@@ -85,7 +84,7 @@ src/adapters/
 ## System 2: Foundry
 
 **What:** Opinionated composition of primitives for the specific Foundry vision.
-This is where the Cartographer, Librarian, Guardians, Herald, Active Memory,
+This is where the Cartographer, Librarian, Guardians, Herald,
 and Corpus Compiler live. Also the operator UI.
 
 **License:** Source-available or open (your call — this is the product layer)
@@ -95,7 +94,6 @@ and Corpus Compiler live. Also the operator UI.
 ```
 src/agents/
   herald.ts              769 lines   # Herald, 5 PatternDetectors
-  active-memory.ts       367 lines   # ActiveMemory (Levin-inspired)
   corpus-compiler.ts     467 lines   # CorpusCompiler, 3-stage pipeline
 
 src/viewer/
@@ -115,7 +113,6 @@ src/viewer/ui/
 
 **What it gives you (on top of primitives):**
 - Herald cross-agent coordination
-- Active memory with trust competition and dissolution
 - Three-stage corpus pipeline (fluid → formal → compiled)
 - Full operator UI with analytics, settings, hotkeys
 - The "Foundry way" of composing agents
@@ -180,7 +177,8 @@ The Oracle does NOT host your agents, your LLMs, or your corpus.
 │                                                  │
 │  2. Evaluation Runs                              │
 │     - Reads your corpus + fixtures               │
-│     - Runs Implementer against fixtures           │
+│     - Spins up an isolated Artificer-under-test   │
+│       against fixtures (Steward enforces isolation)│
 │     - Scores with DiffScorer + LLMScorer         │
 │     - Diagnoses with HeuristicDiagnoser          │
 │     - Uses YOUR LLM keys (BYOI)                  │

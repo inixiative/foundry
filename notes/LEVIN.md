@@ -109,7 +109,7 @@
   Foundry analog: CLAUDE.md / AGENTS.md (agent communication)
   ────────────────────────────────────────
   Biological concept: Anatomical compiler (goals → cell policies)
-  Foundry analog: Foundry's Subject agent (vague goals → coding tasks)
+  Foundry analog: The fixture itself (task + golden diff + review Q&A — vague goals resolve into coding tasks, without a separate Subject agent)
   ────────────────────────────────────────
   Biological concept: Regeneration success (did the limb grow correctly?)
   Foundry analog: Rubric scores (did the code match conventions?)

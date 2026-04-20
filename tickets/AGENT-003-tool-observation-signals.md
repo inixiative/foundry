@@ -51,7 +51,7 @@ Findings → Librarian → thread-state layer
 
 ### Gap 1: Hook script write-to-disk
 - [ ] Call `generateHookScript()` during `ClaudeCodeRuntime.inject()` to write `.foundry-hook.mjs` to project root
-- [ ] Set `FOUNDRY_HOOK_CALLBACK` env var when spawning Claude Code session (points to viewer's callback endpoint)
+- [ ] Set `FOUNDRY_HOOK_CALLBACK` env var when spawning the Artificer's Claude Code session (points to viewer's callback endpoint)
 - [ ] Ensure Claude Code's `settings.json` (or `.claude/settings.json`) includes the PostToolUse hook entry
 
 ### Gap 2: Callback receiver endpoint
@@ -86,8 +86,8 @@ Findings → Librarian → thread-state layer
 ## Related
 
 - **Depends on**: FlowOrchestrator (postAction) — done
-- **Depends on**: Domain Librarians (guard mode) — done
-- **Blocks**: AGENT-002 (writeback needs observations to adjust trust)
+- **Depends on**: Wardens (guard mode) — done
+- **Blocks**: AGENT-002 (writeback consumes tool observations for map rebuild / memory entries)
 - **Reference**: `docs/FLOW.md` Loop 3, guard tiers
 
 ---

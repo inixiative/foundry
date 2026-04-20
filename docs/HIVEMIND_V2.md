@@ -103,7 +103,7 @@ V1 is standalone. V2 treats MuninnDB as its memory backend:
 V2 is the coordination layer Foundry's evaluation runs depend on:
 
 - Per-run agent isolation with role-scoped channels
-- Implementer / Subject / Oracle can communicate without seeing each other's context
+- Artificer (under test) / Steward / Oracle can communicate without seeing each other's context
 - Run telemetry flows back into Foundry's scoring pipeline
 - Fixture signals captured during runs feed the Librarian automatically
 

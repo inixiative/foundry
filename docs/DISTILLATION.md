@@ -367,32 +367,32 @@ The tax CLAUDE.md names is measured by the gap between "signals captured" and "s
 
 Distillation is not a single pipeline with a single owner. It's orchestrated across a small set of named agents, each with a specific role. The rule that keeps this from getting mushy:
 
-> **Any actor can emit evidence about an artifact. Only the artifact's steward reconciles that evidence into state.**
+> **Any actor can emit evidence about an artifact. Only the artifact's owning Warden reconciles that evidence into state.**
 
-Many writers of evidence; one writer per artifact kind.
+Many writers of evidence; one writer per artifact kind. ("Wardens" — formerly called Domain Librarians — are the per-domain advise+guard agents from FLOW.md. Distinct from the Oracle-eval **Steward** role, which enforces fixture isolation.)
 
 ### Agent map
 
 | Agent | Kind | Scope | Model tier |
 |---|---|---|---|
 | **IntakeLibrarian** | new | Every sealed message: universal ack, coarse classify, route to domain, emit first-pass summary. The initial sort that decides where a signal goes. | Gemini Flash |
-| **Domain Stewards** | existing Domain Librarians, expanded | Own artifacts within their domain. Read evidence (touches via Muninn, contradictions via new AnalysisPasses) and reconcile into artifact metadata. Decide "this memory stays memory" vs "this now deserves a convention." | Gemini Flash |
+| **Wardens** (formerly Domain Librarians), expanded to own post-hoc distillation for their domain | existing, expanded | Own artifacts within their domain. Read evidence (touches via Muninn, contradictions via new AnalysisPasses) and reconcile into artifact metadata. Decide "this memory stays memory" vs "this now deserves a convention." | Gemini Flash |
 | **Librarian** | existing | Reconciles cross-domain signals and writes thread-state. Unchanged from FLOW.md. | Gemini Flash |
 | **Herald** | existing | Cross-thread clustering (convergence/divergence detection). Produces `Cluster` rows. | Gemini Flash |
-| **Curator** | new | Wave-based promotion. Reads steward findings, clusters, and Oracle evidence; generates proposals; manages review queue. Handles memory → doc, pattern → guard, correction → fixture. | Gemini Flash |
+| **Curator** | new | Wave-based promotion. Reads Warden findings, clusters, and Oracle evidence; generates proposals; manages review queue. Handles memory → doc, pattern → guard, correction → fixture. | Gemini Flash |
 | **Deprecator** | new | Event-driven retirement. Responds to thread archive, task complete, project finished, contradiction signals. **Does not handle time decay — Muninn does.** Writes `ArtifactEvent` rows for every retirement/reintroduction. | Gemini Flash |
 | **CorpusCompiler** | existing | Takes currently-live `ArtifactVersion` rows and produces immutable, hashed snapshots. Pure code, no model calls. | — |
 | **Oracle** | existing | Scores snapshot deltas; validates promotions and deprecations. | varies |
 
 Every agent except CorpusCompiler and Oracle runs on cheap/fast models, keeping the "capable models for work, cheap models for decisions" rule intact.
 
-### Memory Steward specifically
+### Memory Warden specifically
 
-The Memory Steward is a Domain Steward. It is **a thin adapter over Muninn**, not a reimplementation.
+The Memory Warden (the Warden that owns the memory domain) is **a thin adapter over Muninn**, not a reimplementation.
 
 - **Reads** Muninn's native association/activation API to answer "is this entry still strong, still contested, still associated with X."
 - **Writes** new memory entries to Muninn via the existing adapter.
-- **Applies** lifecycle retirements: when the Deprecator emits "thread archived, retire unreferenced thread-local memories," the Memory Steward is the one that executes against Muninn.
+- **Applies** lifecycle retirements: when the Deprecator emits "thread archived, retire unreferenced thread-local memories," the Memory Warden is the one that executes against Muninn.
 - **Does not** maintain its own salience, decay, or reinforcement columns.
 
 ### Lifecycle event triggers
@@ -409,15 +409,15 @@ These are the events that drive the Deprecator (and, in some cases, Curator's la
 
 Every one of these writes an `ArtifactEvent` row, which is how Oracle and the viewer reconstruct lineage across stores.
 
-### Steward rule in practice
+### Warden-ownership rule in practice
 
-When an executor session cites a memory entry, the **session does not mutate** the memory's metadata. It emits a touch (into Muninn natively) and a trace. The **Memory Steward** periodically reads those, and only the steward can:
+When an Artificer (executor session) cites a memory entry, the **session does not mutate** the memory's metadata. It emits a touch (into Muninn natively) and a trace. The **Memory Warden** periodically reads those, and only the Warden can:
 
 - Propose the entry for upgrade (push to Curator).
 - Tag the entry as contradicted (push to Deprecator).
 - Retire the entry in response to a lifecycle event.
 
-Same pattern for Docs Steward, Guard Steward, Fixture Steward. Evidence flows freely; state transitions are deterministic and owned.
+Same pattern for Docs Warden, Guard Warden, Fixture Warden. Evidence flows freely; state transitions are deterministic and owned.
 
 ---
 
@@ -433,11 +433,11 @@ Capture exists. No distillation stage is implemented yet.
 4. **Operator labels view.** Derived query producing `New / Acknowledged / In N Systems / Historical`. Wire to viewer thread-tree badges.
 5. **`ArtifactEvent` log.** The append-only lifecycle audit table. Needed before any stage can write lifecycle transitions — the audit trail is the spine everything else hangs off.
 
-**Phase 2 — promotion ladder + stewards:**
+**Phase 2 — promotion ladder + Wardens:**
 
 6. **Herald clustering.** Hourly sweep across recent classified messages; write `Cluster` rows.
 7. **Curator.** New config-driven agent. Wave sweep generates proposals from clusters + summaries + Oracle evidence. Pending review UI.
-8. **Domain Stewards (post-hoc role).** Expand existing Domain Librarians to read evidence and reconcile artifact state. Start with Memory Steward (thin Muninn adapter) and Docs Steward.
+8. **Wardens — post-hoc distillation role.** Expand the existing Wardens (formerly Domain Librarians) to read evidence and reconcile artifact state. Start with the Memory Warden (thin Muninn adapter) and the Docs Warden.
 9. **ArtifactVersion + native-store binding.** Each `artifact_kind` wires to its native store. Memory promotions go to Muninn; doc promotions to `.foundry/corpus/formal/`; guards to the registry; fixtures to the index. Promotion writes a new version, updates the native store, emits a new corpus snapshot, writes an `ArtifactEvent`.
 10. **Deprecator.** New config-driven agent. Responds to lifecycle events (thread archive, task completed, project finished, contradiction signals). Writes `ArtifactEvent { kind: retired | reintroduced | contradicted }` rows. Does **not** handle time decay — that's Muninn.
 

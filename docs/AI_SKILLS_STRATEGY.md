@@ -23,7 +23,7 @@ Four skills focused on the product-to-prototype pipeline:
 
 A system for measuring and improving AI corpus (the docs/prompts/conventions that shape AI output). Key concepts:
 
-- **Three-agent testing**: Orchestrator coordinates an Implementer (agent under test), Subject (vague PM), and Oracle (judge with golden implementation). Physically isolated via git branches.
+- **Two-agent evaluation**: Oracle (judge with golden implementation) + Steward (bodyguard enforcing isolation via git worktrees/branches) measure an isolated Artificer (the user's own harness agent) run against the fixture. The fixture itself carries domain knowledge — no separate Subject agent.
 - **Scoring rubrics**: Prompt efficiency (quality / tokens), completion, demerits (rules broken), craft (pattern adherence), questioning quality.
 - **Corpus layering**: Global (foundry baseline) → Project (repo-specific) → Personal (local, gitignored). Immutable snapshots with content hashes for reproducibility.
 - **Core thesis**: Model improvements plateau, tool improvements are generic, but corpus is where the actual leverage is — and most organizational corpus actively degrades performance through rule bloat.
@@ -391,12 +391,11 @@ These could live alongside the coding skills but serve a completely different us
 | The Cartographer | Router agent with full context + contextSlice | agents/router.ts |
 | The Librarian | Classifier → Router via Harness pipeline | agents/classifier.ts, harness.ts |
 | Guardian Skills | Decider<boolean> per concern | agents/decider.ts (primitive ready) |
-| Four-Tier Memory | ContextStack with trust-scored layers + CorpusTier enum | agents/context-stack.ts, corpus-compiler.ts |
+| Four-Tier Memory | ContextStack layers + CorpusTier enum with per-tier confidence thresholds | agents/context-stack.ts, corpus-compiler.ts |
 | Promotion Flow | CorpusCompiler.canPromoteTier() + promoteTier() | agents/corpus-compiler.ts |
 | Doc Lifecycle States | DocState: draft → development → active → deprecated → archived | agents/corpus-compiler.ts |
 | Signal Classification | SignalBus with 6+ kinds (correction, convention, taste, ci_rule, adr, security) | agents/signal.ts |
 | Policy Pipeline | CorpusCompiler three-stage: fluid → formal → compiled | agents/corpus-compiler.ts |
 | Cross-Agent Observation | Herald with 5 pattern detectors | agents/herald.ts |
-| Active Memory (Levin) | ActiveMemory with trust competition and dissolution | agents/active-memory.ts |
 
 All strategy concepts from this document now have corresponding primitives or implementations. The Guardian Skills have ready primitives (Decider) but no concrete guard implementations yet — these would be wiring, not new code.

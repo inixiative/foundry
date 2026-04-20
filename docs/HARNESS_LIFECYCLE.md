@@ -12,7 +12,7 @@ Foundry is a harness. A harness is not a prompt wrapper. The minimum contract:
 3. Track the runtime's session identity on every branch; Foundry is the source of truth, the runtime is the mirror.
 4. Own process lifecycle: start, resume, fork, archive, restore, terminate.
 
-Until these hold, Foundry is a shim. FLOW.md (Cartographer, Librarians, Herald, guards) is what you build *on top of* this substrate — it cannot compensate for the substrate missing.
+Until these hold, Foundry is a shim. FLOW.md (Cartographer, Librarian, Wardens, Herald, guards) is what you build *on top of* this substrate — it cannot compensate for the substrate missing.
 
 ---
 
@@ -33,9 +33,9 @@ Each is independently controllable. Lifecycles are decoupled.
 The Foundry object. Owns:
 
 - Context layers (docs, convention, memory, architecture, `__thread-state`)
-- Middleware (FlowOrchestrator, Cartographer, Domain Librarians, Herald, guards)
+- Middleware (FlowOrchestrator, Cartographer, Librarian, Wardens (formerly called Domain Librarians), Herald, guards)
 - Worktree association
-- Signals, trust, injection ledger
+- Signals, injection ledger
 - Exactly one executor Session
 
 A Thread outlives restarts of its Session's process. It survives executor swaps (move from Claude Code to Codex without rebuilding the Thread). It owns everything the Session shouldn't know about.
@@ -213,7 +213,7 @@ Three distinct hooks, matching the three Foundry→Session directions from FLOW.
 The Session interface exposes all three as composable hooks. Middleware registers for the channel it owns:
 
 - FlowOrchestrator owns pre-send (delta hydration).
-- Domain Librarians in guard mode own mid-turn push (critical violations).
+- Wardens in guard mode own mid-turn push (critical violations).
 - Spawn-time injection is set once by whoever builds the Session.
 
 **Current vs target.** Today `HarnessSession` exposes `start / send / fork / interrupt / kill / onEvent / artifact`. Spawn-time injection works (via `baseContext` → `--append-system-prompt`). Pre-send and mid-turn hooks are not yet first-class on the interface — middleware that wants to prefix a message does it by wrapping the argument to `send()`, and mid-turn push doesn't exist. The three-hook surface is a target; the migration step is adding `onBeforeSend(handler)` and `push(payload)` (or equivalent) to `HarnessSession`, then rewiring FlowOrchestrator and the guard path onto them.
