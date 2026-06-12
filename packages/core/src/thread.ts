@@ -24,6 +24,9 @@ export interface ThreadMeta {
   /** Git branch this thread is assigned to. */
   branch?: string;
 
+  /** Parent thread when this thread is a subagent spawned by another. */
+  parentThreadId?: string;
+
   /** When this thread was created. */
   readonly createdAt: number;
 
@@ -63,6 +66,8 @@ export interface ThreadConfig {
   cwd?: string;
   /** Git branch this thread is assigned to. */
   branch?: string;
+  /** Parent thread when this thread is a subagent spawned by another. */
+  parentThreadId?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
   tokenTracker?: TokenTracker;
 }
@@ -105,6 +110,7 @@ export class Thread {
       status: "idle",
       cwd: opts?.cwd,
       branch: opts?.branch,
+      parentThreadId: opts?.parentThreadId,
       createdAt: now,
       lastActiveAt: now,
     };
@@ -154,7 +160,8 @@ export class Thread {
   async dispatch<TPayload>(
     agentId: string,
     payload: TPayload,
-    filterOverride?: LayerFilter
+    filterOverride?: LayerFilter,
+    opts?: { onDelta?: (text: string) => void }
   ): Promise<ExecutionResult> {
     const agent = this._agents.get(agentId);
     if (!agent) throw new Error(`Agent not found: ${agentId}`);
@@ -177,6 +184,7 @@ export class Thread {
       cwd: this.meta.cwd,
       threadId: this.id,
       annotations: ctx.annotations,
+      onDelta: opts?.onDelta,
     };
 
     try {

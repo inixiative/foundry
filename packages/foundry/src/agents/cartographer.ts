@@ -59,8 +59,37 @@ export interface RouteResult {
   layers: string[];
   /** Domains the message touches (for domain librarian advise gating). */
   domains: string[];
+  /** Atlas concepts the message touches (e.g. "feature:auth"), when an atlas index is loaded. */
+  concepts?: string[];
   /** Confidence in the routing decision (0-1). */
   confidence: number;
+}
+
+/**
+ * The shape of `atlas graph --json` (see @inixiative/atlas src/commands/graph.ts).
+ * Only the fields the Cartographer consumes.
+ */
+export interface AtlasGraph {
+  conceptToFiles: Record<string, string[]>;
+  usesConsumers: Record<string, string[]>;
+}
+
+/** Compact per-concept entry kept in the topology map. */
+export interface AtlasConceptEntry {
+  /** Concept id, e.g. "feature:auth" or "infrastructure:redis". */
+  id: string;
+  /** Number of files declaring @partOf this concept. */
+  files: number;
+  /** Number of files declaring @uses this concept. */
+  consumers: number;
+}
+
+/** The loaded atlas index. */
+export interface AtlasIndex {
+  concepts: AtlasConceptEntry[];
+  /** Where the index came from: the atlas CLI or a MAP.md fallback. */
+  source: "graph" | "map-md";
+  loadedAt: number;
 }
 
 /** Configuration for the Cartographer. */
@@ -80,6 +109,12 @@ export interface CartographerConfig {
   domainMap?: Record<string, string[]>;
   /** Custom system prompt for routing decisions. */
   routePrompt?: string;
+  /**
+   * Repo root of an atlas-mapped project (has `.atlas/` and/or `MAP.md`).
+   * When set, `loadAtlas()` pulls the concept graph into the topology map so
+   * routing can reason in codebase concepts, not just layer names.
+   */
+  atlasRoot?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +131,8 @@ export class Cartographer {
   private _map: TopologyMap;
   private _mapLayer: ContextLayer;
   private _unsubscribe: (() => void) | null = null;
+  private _atlasRoot: string | undefined;
+  private _atlas: AtlasIndex | null = null;
 
   constructor(config: CartographerConfig) {
     this._stack = config.stack;
@@ -103,15 +140,15 @@ export class Cartographer {
     this._llm = config.llm;
     this._llmOpts = config.llmOpts ?? { maxTokens: 256, temperature: 0 };
     this._domainMap = config.domainMap ?? {};
+    this._atlasRoot = config.atlasRoot;
     this._map = { entries: [], lastBuilt: 0, mapTokens: 0 };
 
     this._routePrompt = config.routePrompt ??
-      `You are a context router. Given a message and a topology map of available context, decide which layers the message needs. Route precisely — load what's needed, skip what isn't. Respond with JSON: { "layers": string[], "domains": string[], "confidence": number }`;
+      `You are a context router. Given a message, a topology map of available context, and (when present) the codebase concept map, decide which layers the message needs. Concepts (e.g. "feature:auth") tell you which part of the codebase a message touches — use them to pick the matching domains and layers. Route precisely — load what's needed, skip what isn't. Respond with JSON: { "layers": string[], "domains": string[], "concepts": string[], "confidence": number }`;
 
     // Create the map layer — always warm, holds the serialized topology map
     this._mapLayer = new ContextLayer({
       id: "__topology-map",
-      trust: 0.9,
       prompt: "Topology map of all available context. Used by the Cartographer for routing decisions.",
     });
 
@@ -131,6 +168,96 @@ export class Cartographer {
   /** The topology map as a context layer. */
   get mapLayer(): ContextLayer {
     return this._mapLayer;
+  }
+
+  /** The loaded atlas concept index, if any. */
+  get atlas(): Readonly<AtlasIndex> | null {
+    return this._atlas;
+  }
+
+  // -----------------------------------------------------------------------
+  // Atlas — codebase concept map (from @inixiative/atlas annotations)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Load the repo's atlas concept graph into the topology map.
+   *
+   * Tries `bunx atlas graph --json` in the configured root; falls back to the
+   * committed MAP.md when the CLI isn't installed. Both failing is fine —
+   * the Cartographer simply stays layer-only. Re-run on demand (e.g. from a
+   * map-rebuild signal) to pick up annotation changes.
+   */
+  async loadAtlas(root?: string): Promise<AtlasIndex | null> {
+    const atlasRoot = root ?? this._atlasRoot;
+    if (!atlasRoot) return null;
+
+    const fromGraph = await this._loadAtlasGraph(atlasRoot);
+    this._atlas = fromGraph ?? (await this._loadAtlasMapMd(atlasRoot));
+
+    // Refresh the map layer so routing sees the concepts immediately
+    if (this._atlas) this.buildMap();
+    return this._atlas;
+  }
+
+  private async _loadAtlasGraph(root: string): Promise<AtlasIndex | null> {
+    try {
+      // --no-install: only use the repo's own atlas devDep — never fall back
+      // to npm, where "atlas" is an unrelated package.
+      const proc = Bun.spawn(["bunx", "--no-install", "atlas", "graph", "--json"], {
+        cwd: root,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const stdout = await new Response(proc.stdout).text();
+      if ((await proc.exited) !== 0) return null;
+
+      const graph = JSON.parse(stdout) as AtlasGraph;
+      const ids = new Set([
+        ...Object.keys(graph.conceptToFiles ?? {}),
+        ...Object.keys(graph.usesConsumers ?? {}),
+      ]);
+      const concepts = [...ids].sort().map((id) => ({
+        id,
+        files: graph.conceptToFiles?.[id]?.length ?? 0,
+        consumers: graph.usesConsumers?.[id]?.length ?? 0,
+      }));
+      if (concepts.length === 0) return null;
+
+      return { concepts, source: "graph", loadedAt: Date.now() };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fallback: pull concept ids out of a committed MAP.md (class:name tokens). */
+  private async _loadAtlasMapMd(root: string): Promise<AtlasIndex | null> {
+    try {
+      const file = Bun.file(`${root.replace(/\/$/, "")}/MAP.md`);
+      if (!(await file.exists())) return null;
+      const text = await file.text();
+
+      const ids = new Set<string>();
+      for (const match of text.matchAll(/\b([a-z][a-z0-9_-]*):([a-z][a-zA-Z0-9_-]*)\b/g)) {
+        ids.add(`${match[1]}:${match[2]}`);
+      }
+      if (ids.size === 0) return null;
+
+      const concepts = [...ids].sort().map((id) => ({ id, files: 0, consumers: 0 }));
+      return { concepts, source: "map-md", loadedAt: Date.now() };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Compact serialization of the atlas index for prompts and the map layer. */
+  private _atlasSection(): string | null {
+    if (!this._atlas) return null;
+    const lines = this._atlas.concepts.map((c) =>
+      c.files || c.consumers
+        ? `${c.id} (${c.files} files, ${c.consumers} consumers)`
+        : c.id
+    );
+    return lines.join("\n");
   }
 
   // -----------------------------------------------------------------------
@@ -182,8 +309,13 @@ export class Cartographer {
       mapTokens: Math.ceil(JSON.stringify(entries).length / 4),
     };
 
-    // Write to the map layer
-    this._mapLayer.set(JSON.stringify(this._map.entries, null, 2));
+    // Write to the map layer — layer topology plus the codebase concept map
+    const atlasSection = this._atlasSection();
+    this._mapLayer.set(
+      atlasSection
+        ? `${JSON.stringify(this._map.entries, null, 2)}\n\n## Codebase concepts (atlas)\n${atlasSection}`
+        : JSON.stringify(this._map.entries, null, 2)
+    );
 
     return this._map;
   }
@@ -208,6 +340,7 @@ export class Cartographer {
     }
 
     const mapContent = JSON.stringify(this._map.entries, null, 2);
+    const atlasSection = this._atlasSection();
 
     const messages: LLMMessage[] = [
       { role: "system", content: this._routePrompt },
@@ -216,6 +349,7 @@ export class Cartographer {
         content: [
           "## Available context (topology map)",
           mapContent,
+          atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}` : "",
           threadState ? `\n## Current thread state\n${threadState}` : "",
           `\n## Message to route\n${message}`,
           `\nWhich layers does this message need? Respond with JSON only.`,
@@ -229,6 +363,7 @@ export class Cartographer {
       return {
         layers: parsed.layers ?? [],
         domains: parsed.domains ?? [],
+        concepts: parsed.concepts ?? [],
         confidence: parsed.confidence ?? 0.5,
       };
     } catch {
@@ -245,6 +380,7 @@ export class Cartographer {
     const lower = message.toLowerCase();
     const matched: string[] = [];
     const domains: string[] = [];
+    const concepts: string[] = [];
 
     for (const entry of this._map.entries) {
       // Check if any keyword from the domain name appears in the message
@@ -256,10 +392,22 @@ export class Cartographer {
       }
     }
 
+    // Match concept names: "feature:auth" hits on "auth"
+    if (this._atlas) {
+      for (const concept of this._atlas.concepts) {
+        const name = concept.id.split(":").pop() ?? concept.id;
+        const words = name.toLowerCase().split(/[-_\s]+/);
+        if (words.some((w) => w.length > 2 && lower.includes(w))) {
+          concepts.push(concept.id);
+        }
+      }
+    }
+
     return {
       layers: matched,
       domains,
-      confidence: matched.length > 0 ? 0.3 : 0,
+      concepts,
+      confidence: matched.length > 0 || concepts.length > 0 ? 0.3 : 0,
     };
   }
 

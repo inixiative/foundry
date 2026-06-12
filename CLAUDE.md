@@ -12,7 +12,7 @@ packages/
 
 **Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker). No behavioral opinions, no specific agent implementations, no external service deps. If it makes a decision about *how* to use the primitives, it belongs in foundry.
 
-Oracle (eval/scoring) is a planned third package. It depends on core only, not foundry.
+Oracle (eval/scoring) lives in its own repo (`../foundry-oracle`), linked to core via a `file:` dependency. It depends on core only, not foundry. Its roles: **Oracle** (scores), **Steward** (chain of custody), **Prospector** (mines session transcripts + merged PRs into fixtures and correction signal — see `oracle mine`).
 
 ## Running
 

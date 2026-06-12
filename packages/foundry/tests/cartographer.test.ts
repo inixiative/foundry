@@ -35,19 +35,19 @@ function failingLLM(): LLMProvider {
 // ---------------------------------------------------------------------------
 
 function makeStack() {
-  const authConventions = new ContextLayer({ id: "auth-conventions", trust: 0.8 });
+  const authConventions = new ContextLayer({ id: "auth-conventions" });
   authConventions.set("Use JWT for API auth. Rotate keys every 30 days.");
 
-  const authDocs = new ContextLayer({ id: "auth-api-docs", trust: 0.7 });
+  const authDocs = new ContextLayer({ id: "auth-api-docs" });
   authDocs.set("API endpoints: POST /login, POST /refresh, DELETE /logout");
 
-  const securityPatterns = new ContextLayer({ id: "security-patterns", trust: 0.9 });
+  const securityPatterns = new ContextLayer({ id: "security-patterns" });
   securityPatterns.set("OWASP top 10. SQL injection prevention. XSS sanitization.");
 
-  const testPatterns = new ContextLayer({ id: "testing-patterns", trust: 0.6 });
+  const testPatterns = new ContextLayer({ id: "testing-patterns" });
   testPatterns.set("Use bun:test. Fixtures in tests/fixtures/. Mock external APIs.");
 
-  const archRules = new ContextLayer({ id: "architecture-boundaries", trust: 0.7 });
+  const archRules = new ContextLayer({ id: "architecture-boundaries" });
   archRules.set("Module boundaries: auth/ cannot import from payments/.");
 
   return new ContextStack([authConventions, authDocs, securityPatterns, testPatterns, archRules]);
@@ -105,7 +105,7 @@ describe("Cartographer", () => {
 
     it("skips thread-state layer", () => {
       // Add the Librarian's thread-state layer
-      const internal = new ContextLayer({ id: "thread-state", trust: 1.0 });
+      const internal = new ContextLayer({ id: "thread-state" });
       internal.set("internal state");
       stack.addLayer(internal, 0);
 
@@ -215,6 +215,98 @@ describe("Cartographer", () => {
 
       expect(capturedContent).toContain("thread state");
       expect(capturedContent).toContain("security-concern-active");
+    });
+  });
+
+  describe("atlas awareness", () => {
+    const ATLAS_DIR = ".test-atlas-root";
+
+    async function writeMapMd() {
+      const { mkdirSync } = await import("node:fs");
+      mkdirSync(ATLAS_DIR, { recursive: true });
+      await Bun.write(
+        `${ATLAS_DIR}/MAP.md`,
+        [
+          "# MAP",
+          "## feature:auth",
+          "- apps/api/src/modules/auth/controller.ts",
+          "## feature:users",
+          "uses infrastructure:redis and primitive:authz",
+        ].join("\n")
+      );
+    }
+
+    async function cleanup() {
+      const { rmSync } = await import("node:fs");
+      rmSync(ATLAS_DIR, { recursive: true, force: true });
+    }
+
+    it("loadAtlas returns null without an atlasRoot", async () => {
+      const carto = new Cartographer({ stack, signals, llm: mockLLM("") });
+      expect(await carto.loadAtlas()).toBeNull();
+      expect(carto.atlas).toBeNull();
+    });
+
+    it("falls back to MAP.md concepts and folds them into the map layer", async () => {
+      await writeMapMd();
+      try {
+        const carto = new Cartographer({
+          stack, signals, llm: mockLLM(""), atlasRoot: ATLAS_DIR,
+        });
+        const atlas = await carto.loadAtlas();
+
+        expect(atlas).not.toBeNull();
+        expect(atlas!.source).toBe("map-md");
+        const ids = atlas!.concepts.map((c) => c.id);
+        expect(ids).toContain("feature:auth");
+        expect(ids).toContain("infrastructure:redis");
+
+        expect(carto.mapLayer.content).toContain("Codebase concepts (atlas)");
+        expect(carto.mapLayer.content).toContain("feature:auth");
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("routes with concepts from the LLM response", async () => {
+      await writeMapMd();
+      try {
+        const carto = new Cartographer({
+          stack, signals,
+          llm: mockLLM('{"layers":["auth-conventions"],"domains":["auth"],"concepts":["feature:auth"],"confidence":0.9}'),
+          atlasRoot: ATLAS_DIR,
+        });
+        await carto.loadAtlas();
+
+        const route = await carto.route("fix the login flow");
+        expect(route.concepts).toEqual(["feature:auth"]);
+        expect(route.layers).toEqual(["auth-conventions"]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("keyword fallback matches concept names", async () => {
+      await writeMapMd();
+      try {
+        const carto = new Cartographer({
+          stack, signals, llm: failingLLM(), atlasRoot: ATLAS_DIR,
+        });
+        await carto.loadAtlas();
+
+        const route = await carto.route("the redis cache is stale");
+        expect(route.concepts).toContain("infrastructure:redis");
+        expect(route.confidence).toBeGreaterThan(0);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("loadAtlas survives a root with no atlas artifacts", async () => {
+      const carto = new Cartographer({
+        stack, signals, llm: mockLLM(""), atlasRoot: "/tmp/definitely-not-an-atlas-root",
+      });
+      expect(await carto.loadAtlas()).toBeNull();
     });
   });
 

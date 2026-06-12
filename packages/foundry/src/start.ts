@@ -31,15 +31,25 @@ import {
   type SourceResolver,
 } from "./agents";
 import { ContextStack, ToolRegistry } from "@inixiative/foundry-core";
-import { FileMemory, inlineSource, PostgresMemory } from "./adapters";
+import { FileMemory, inlineSource, PostgresMemory, MarkdownDocs } from "./adapters";
 import { MemoryToolAdapter } from "./tools/memory-adapter";
 import { BashShell } from "./tools/bash-shell";
 import { BunScript } from "./tools/bun-script";
 import { rtk as rtkFilter } from "./tools/output-filters";
-import { AnthropicProvider, OpenAIProvider, GeminiProvider, ClaudeCodeProvider, GatedProvider } from "./providers";
+import {
+  AnthropicProvider,
+  OpenAIProvider,
+  GeminiProvider,
+  ClaudeCodeProvider,
+  GatedProvider,
+  ClaudeCodeSessionAdapter,
+  FileExternalSessionStore,
+  type SessionAdapter,
+} from "./providers";
 import type { LLMProvider } from "./providers";
 import { startViewer } from "./viewer/server";
 import { ConfigStore, starterConfig, type FoundryConfig } from "./viewer/config";
+import { DOCS_ADVISE_PROMPT } from "./setup/scan-docs";
 import { createQueue, setQueue, initializeWorker, shutdownWorker } from "./jobs";
 import { existsSync, mkdirSync } from "fs";
 
@@ -191,6 +201,12 @@ const sourceResolver: SourceResolver = (sourceId, cfg) => {
         return memory.asSource(srcCfg.id, "convention");
       }
       return memory.asSource(srcCfg.id);
+    case "markdown":
+      // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
+      // the full content blows the layer budget. topologySource() produces a
+      // compact H1+H2 index (~44 tokens/file) that the domain warden can
+      // reason over; file bodies get hydrated on demand.
+      return new MarkdownDocs(srcCfg.uri).topologySource(srcCfg.id);
     default:
       return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
   }
@@ -255,6 +271,33 @@ reactive.addRule(lowConfidenceRule(0.5));
 thread.middleware.use("reactive", reactive.asMiddleware());
 
 // ---------------------------------------------------------------------------
+// Session adapter — long-lived HarnessSession factory with crash recovery
+//
+// Only meaningful for runtime-backed providers (claude-code for now). The
+// adapter:
+//   - Persists (threadId → native session ID) to .foundry/sessions.json so
+//     Foundry restarts resume native sessions instead of abandoning them.
+//   - Bridges session_compact events from the runtime into the signal bus
+//     as `session_compacted` signals, which the FlowOrchestrator observes
+//     to clear the Librarian's injection ledger and re-hydrate next turn.
+// ---------------------------------------------------------------------------
+
+let sessionAdapter: SessionAdapter | undefined;
+
+if (config.defaults.provider === "claude-code") {
+  const sessionStore = FileExternalSessionStore.forProject(process.cwd());
+  sessionAdapter = new ClaudeCodeSessionAdapter({
+    store: sessionStore,
+    signals,
+    defaults: {
+      model: config.defaults.model,
+    },
+  });
+  factory.attachSessionAdapter(sessionAdapter);
+  console.log(`Session adapter: ${sessionAdapter.runtime} (store: ${FOUNDRY_DIR}/sessions.json)`);
+}
+
+// ---------------------------------------------------------------------------
 // Flow Orchestrator — pre-message context routing + post-action guard checks
 // ---------------------------------------------------------------------------
 
@@ -277,16 +320,32 @@ const librarian = new Librarian({
   stack,
 });
 
-// Cartographer — context routing, reads topology map, routes context slices
+// Cartographer — context routing, reads topology map, routes context slices.
+// atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
+const atlasRoot =
+  Object.values(config.projects)
+    .map((p) => p.path)
+    .filter((p): p is string => !!p)
+    .find((p) => existsSync(`${p}/.atlas`) || existsSync(`${p}/MAP.md`)) ??
+  (existsSync(".atlas") || existsSync("MAP.md") ? process.cwd() : undefined);
+
 const cartographer = new Cartographer({
   stack,
   signals,
   llm: flowLlm,
   llmOpts: { maxTokens: 256, temperature: 0 },
+  atlasRoot,
 });
 
-// Build initial topology map
+// Build initial topology map, then fold in the codebase concept map (async, non-fatal)
 cartographer.buildMap();
+if (atlasRoot) {
+  cartographer.loadAtlas().then((atlas) => {
+    if (atlas) {
+      console.log(`[Cartographer] atlas loaded: ${atlas.concepts.length} concepts (${atlas.source}) from ${atlasRoot}`);
+    }
+  });
+}
 
 // Domain Librarians — one per domain, advise + guard
 const domainLibrarians = new Map<string, DomainLibrarian>();
@@ -303,6 +362,12 @@ const domainConfigs: Array<{
     domain: "docs",
     layerId: "docs",
     guardTriggers: ["file_write", "Write"],
+    // Probe-validated topology-aware prompt. See scripts/PROBE_FINDINGS.md
+    // and packages/foundry/src/setup/scan-docs.ts (DOCS_ADVISE_PROMPT is the
+    // single source of truth — the setup scanner emits it into generated
+    // configs so every repo's docs warden stays on the validated operating
+    // point).
+    advisePrompt: DOCS_ADVISE_PROMPT,
   },
   {
     domain: "conventions",
@@ -565,6 +630,7 @@ startViewer({
   threadFactory: factory,
   configStore,
   actionQueue,
+  assistTools: tools,
 });
 
 console.log(`Viewer: http://localhost:${port}`);

@@ -10,7 +10,7 @@ import { html, useState } from "./lib.js";
 import {
   threadData, allThreads, layerColor, liveEvents, mergedLayers, mergedAgents,
   definitions, showToast, activeProjectId, promptCounts, createThread, projects,
-  activeThreadId, selectThread, worktrees, loadWorktrees,
+  activeThreadId, selectThread, worktrees, loadWorktrees, executeAction,
 } from "./store.js";
 import { settingsOpen } from "./settings.js";
 import { analyticsOpen } from "./analytics.js";
@@ -62,6 +62,48 @@ function StatusDot({ status }) {
 }
 
 // ---------------------------------------------------------------------------
+// Thread actions — overflow menu per thread (mirrors MessageActions)
+// ---------------------------------------------------------------------------
+
+function ThreadActions({ thread }) {
+  const [open, setOpen] = useState(false);
+  const toggle = (e) => { e.stopPropagation(); setOpen(v => !v); };
+  const run = (kind) => (e) => {
+    e.stopPropagation();
+    setOpen(false);
+    executeAction(kind, thread.id);
+  };
+
+  const status = thread.status || "idle";
+  const canPause = status === "active" || status === "idle";
+  const canResume = status === "waiting";
+  const isArchived = INACTIVE_THREAD_STATES.has(status);
+
+  return html`
+    <div class="thread-actions ${open ? "thread-actions-open" : ""}">
+      <button class="thread-action-btn thread-action-trigger" onClick=${toggle}
+        title="Actions" aria-expanded=${open}>${open ? "×" : "⋯"}</button>
+      ${open ? html`
+        ${canPause ? html`
+          <button class="thread-action-btn" onClick=${run("thread:pause")}
+            title="Pause thread">pause</button>
+        ` : null}
+        ${canResume ? html`
+          <button class="thread-action-btn" onClick=${run("thread:resume")}
+            title="Resume thread">resume</button>
+        ` : null}
+        ${!isArchived ? html`
+          <button class="thread-action-btn" onClick=${run("thread:archive")}
+            title="Archive thread">archive</button>
+        ` : null}
+        <button class="thread-action-btn" onClick=${run("thread:inspect")}
+          title="Inspect thread state">inspect</button>
+      ` : null}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
 // Thread node — shows metadata (model, temp, agent count, layers)
 // ---------------------------------------------------------------------------
 
@@ -96,6 +138,7 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
             ? html`<span class="prompt-badge ${count > 2 ? "urgent" : ""}" title="${count} pending prompt${count > 1 ? "s" : ""}">${count}</span>`
             : null;
         })()}
+        <${ThreadActions} thread=${thread} />
       </div>
 
       ${expanded && hasChildren ? html`
@@ -222,14 +265,26 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
     ? (projects.value.find(p => p.id === activeProject)?.label || activeProject)
     : null;
 
-  const threadNodes = threads.map(t => ({
+  // Build the hierarchy: subagent threads (meta.parentThreadId) nest under
+  // their parent; threads whose parent isn't in view stay at the root.
+  const nodeById = new Map(threads.map(t => [t.threadId, {
     id: t.threadId,
     status: t.meta?.status || "idle",
     description: t.meta?.description || "",
     branch: t.meta?.branch || null,
     cwd: t.meta?.cwd || null,
+    parentThreadId: t.meta?.parentThreadId || null,
     children: [],
-  }));
+  }]));
+  const threadNodes = [];
+  for (const node of nodeById.values()) {
+    const parent = node.parentThreadId ? nodeById.get(node.parentThreadId) : null;
+    if (parent && parent !== node) {
+      parent.children.push(node);
+    } else {
+      threadNodes.push(node);
+    }
+  }
 
   const handleSelect = (id) => { selectThread(id); };
 
@@ -285,7 +340,6 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
                 <span class="layer-dot" style="background: ${layerColor(l.id)}"></span>
                 <span class="layer-name">${l.id}</span>
                 <span class="layer-state ${l.state}">${l.state}</span>
-                <span class="layer-trust">${l.trust}</span>
               </div>
             `)}
 
@@ -296,7 +350,6 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
                 <span class="layer-dot" style="background: ${layerColor(l.id)}; opacity: 0.4"></span>
                 <span class="layer-name">${l.id}</span>
                 <span class="layer-state ${l.state}">${l.state}</span>
-                <span class="layer-trust">${l.trust}</span>
               </div>
             `)}
 

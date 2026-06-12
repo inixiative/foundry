@@ -10,6 +10,7 @@ import { html, useState, useRef, useEffect } from "./lib.js";
 import {
   messages, sending, inflight, sendMessage, selectedSpanId, loadTraceDetail,
   prompts, resolvePrompt, allThreads, tokenUsage, revertThread, forkThread,
+  threadData, layerColor,
 } from "./store.js";
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,94 @@ function TokenBar() {
 }
 
 // ---------------------------------------------------------------------------
+// Context bar — thread metadata + active context at top of conversation
+// ---------------------------------------------------------------------------
+
+const WARM_LAYER_STATES = new Set(["warm", "warming"]);
+
+function ContextBar() {
+  const data = threadData.value;
+  const msgList = messages.value;
+  const usage = tokenUsage.value;
+  if (!data) return null;
+
+  const meta = data.meta || {};
+  const layers = data.layers || [];
+  const agents = data.agents || [];
+  const warmLayers = layers.filter(l => WARM_LAYER_STATES.has(l.state));
+
+  // Rough token estimate: ~4 chars per token (same heuristic as store.estimateContextTokens)
+
+  // Warm: the pool of layer content currently cached on the thread (may or may not be injected).
+  const warmTokens = warmLayers.reduce((sum, l) => sum + Math.ceil((l.contentLength || 0) / 4), 0);
+
+  // System: what the last agent turn actually injected (from the Librarian's injection ledger on msg.meta).
+  const lastAgent = [...msgList].reverse().find(m => m.actor === "agent" && m.meta?.injectedLayers);
+  const injectedLayers = lastAgent?.meta?.injectedLayers || [];
+  const systemTokens = injectedLayers.reduce(
+    (sum, l) => sum + (l.tokens ?? Math.ceil((l.contentLength || 0) / 4)),
+    0,
+  );
+
+  // Thread: estimated tokens of the full conversation history so far.
+  const threadTokens = usage?.contextTokens ?? 0;
+
+  const contextWindow = usage?.contextWindow ?? null;
+  const denom = contextWindow && contextWindow > 0 ? contextWindow : Math.max(warmTokens, systemTokens, threadTokens, 1);
+
+  const title = meta.description || data.threadId;
+  const status = meta.status || "idle";
+  const branch = meta.branch || null;
+  const cwd = meta.cwd ? meta.cwd.split("/").slice(-2).join("/") : null;
+
+  // Stacked bar: segment-per-warm-layer, sized against context window so empty space = remaining budget.
+  const segments = warmLayers.map(l => {
+    const tokens = Math.ceil((l.contentLength || 0) / 4);
+    const pct = (tokens / denom) * 100;
+    return { id: l.id, tokens, pct, color: layerColor(l.id) };
+  });
+
+  const stat = (label, tokens, tooltip) => html`
+    <span class="context-bar-stat" title=${tooltip}>
+      <span class="context-bar-stat-label">${label}</span>
+      <span class="context-bar-stat-value">${fmtNum(tokens)}</span>
+    </span>
+  `;
+
+  return html`
+    <div class="context-bar">
+      <div class="context-bar-head">
+        <span class="context-bar-status context-bar-status--${status}" title=${status}></span>
+        <span class="context-bar-title" title=${data.threadId}>${title}</span>
+        ${branch ? html`<span class="context-bar-chip" title="branch">${branch}</span>` : null}
+        ${cwd ? html`<span class="context-bar-chip context-bar-chip--dim" title=${meta.cwd}>${cwd}</span>` : null}
+        <span class="context-bar-spacer"></span>
+        <span class="context-bar-count" title="agents">${agents.length} agent${agents.length === 1 ? "" : "s"}</span>
+        <span class="context-bar-count" title="warm / total layers">${warmLayers.length}/${layers.length} layers</span>
+        ${stat("warm", warmTokens, "Warm layer cache pool (tokens of currently-warm layer content)")}
+        ${stat("system", systemTokens, "System injection — layers injected on the last agent turn")}
+        ${stat("thread", threadTokens, "Thread context — estimated tokens of the conversation so far")}
+        ${contextWindow ? html`
+          <span class="context-bar-stat context-bar-stat--window" title="Model context window">
+            <span class="context-bar-stat-label">window</span>
+            <span class="context-bar-stat-value">${fmtNum(contextWindow)}</span>
+          </span>
+        ` : null}
+      </div>
+      ${segments.length > 0 ? html`
+        <div class="context-bar-stack" title="Warm layers vs. model context window">
+          ${segments.map(s => html`
+            <span key=${s.id} class="context-bar-seg"
+              style="width: ${s.pct}%; background: ${s.color}"
+              title="${s.id}: ${fmtNum(s.tokens)} tok (${s.pct.toFixed(1)}% of window)"></span>
+          `)}
+        </div>
+      ` : null}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
 // Chat input bar
 // ---------------------------------------------------------------------------
 
@@ -138,11 +227,11 @@ function ChatInput() {
       <textarea
         ref=${inputRef}
         class="chat-input"
-        placeholder="Send a message..."
+        placeholder="Send a message... (Enter to send, Shift+Enter for newline)"
         value=${text}
         onInput=${(e) => setText(e.target.value)}
         onKeyDown=${handleKeyDown}
-        rows="1"
+        rows="4"
       ></textarea>
       <button
         class="chat-send-btn"
@@ -158,12 +247,25 @@ function ChatInput() {
 // ---------------------------------------------------------------------------
 
 function MessageActions({ index }) {
+  const [open, setOpen] = useState(false);
+
+  const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  const run = (fn) => (e) => {
+    e.stopPropagation();
+    setOpen(false);
+    fn(index);
+  };
+
   return html`
-    <div class="msg-actions">
-      <button class="msg-action-btn" onClick=${(e) => { e.stopPropagation(); revertThread(index); }}
-        title="Revert to this point">revert</button>
-      <button class="msg-action-btn" onClick=${(e) => { e.stopPropagation(); forkThread(index); }}
-        title="Fork thread from here">fork</button>
+    <div class="msg-actions ${open ? "msg-actions-open" : ""}">
+      <button class="msg-action-btn msg-action-trigger" onClick=${toggle}
+        title="Actions" aria-expanded=${open}>${open ? "×" : "⋯"}</button>
+      ${open ? html`
+        <button class="msg-action-btn" onClick=${run(revertThread)}
+          title="Revert to this point">revert</button>
+        <button class="msg-action-btn" onClick=${run(forkThread)}
+          title="Fork thread from here">fork</button>
+      ` : null}
     </div>
   `;
 }
@@ -214,9 +316,32 @@ function PipelineBar({ stages, label, className, onTraceClick, traceId }) {
   `;
 }
 
+function fmtTokenCount(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return String(n);
+}
+
+/** Chips showing which layers were in-context when the model responded. */
+function LayerChips({ layers }) {
+  if (!layers?.length) return null;
+  return html`
+    <div class="chat-layers">
+      <span class="chat-layers-prefix">ctx:</span>
+      ${layers.map((l) => html`
+        <span class="chat-layer-chip"
+              title="${l.id}\nhash: ${l.hash}\n~${l.tokens} tokens">
+          ${l.id}<span class="chat-layer-chip-tokens">${fmtTokenCount(l.tokens)}</span>
+        </span>
+      `)}
+    </div>
+  `;
+}
+
 function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = msg.traceId && msg.trace;
   const stages = msg.trace?.stages || [];
+  const isStreaming = !!msg.streaming;
+  const injectedLayers = msg.meta?.injectedLayers;
 
   // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback)
   const execIdx = stages.findIndex(s => s.kind === "execute" || s.name?.includes("execut"));
@@ -225,7 +350,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const execStage = execIdx >= 0 ? stages[execIdx] : null;
 
   return html`
-    <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""}">
+    <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""} ${isStreaming ? "chat-streaming" : ""}">
       <${MessageActions} index=${index} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
@@ -257,7 +382,9 @@ function AgentMessage({ msg, index, onTraceClick }) {
         </div>
       ` : null}
 
-      <div class="chat-msg-content">${msg.content}</div>
+      <${LayerChips} layers=${injectedLayers} />
+
+      <div class="chat-msg-content">${msg.content}${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}
@@ -269,6 +396,29 @@ function AgentMessage({ msg, index, onTraceClick }) {
       />
 
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Thinking message — collapsed accordion, expand to read the reasoning
+// ---------------------------------------------------------------------------
+
+function ThinkingMessage({ msg }) {
+  const [open, setOpen] = useState(false);
+  const content = msg.content || "";
+  const words = content.split(/\s+/).filter(Boolean).length;
+
+  return html`
+    <div class="chat-msg chat-agent chat-thinking-block">
+      <div class="thinking-fold-header" onClick=${() => setOpen(!open)}>
+        <span class="thinking-caret">${open ? "▼" : "▶"}</span>
+        <span class="thinking-label">thinking</span>
+        <span class="thinking-meta">${words} words</span>
+      </div>
+      ${open ? html`
+        <div class="chat-msg-content thinking-content">${content}</div>
+      ` : null}
     </div>
   `;
 }
@@ -412,6 +562,7 @@ export function Conversation({ onTraceSelect }) {
 
   return html`
     <div class="conversation">
+      <${ContextBar} />
       <${TokenBar} />
       <div class="chat-messages" ref=${scrollRef}>
         ${msgList.length === 0 ? html`
@@ -421,10 +572,12 @@ export function Conversation({ onTraceSelect }) {
           </div>
         ` : null}
         ${msgList.map((msg, i) =>
-          msg.role === "user"
+          msg.actor === "user"
             ? html`<${UserMessage} key=${i} msg=${msg} index=${i} />`
-            : html`<${AgentMessage} key=${i} msg=${msg} index=${i}
-                onTraceClick=${handleTraceClick} />`
+            : msg.kind === "thinking"
+              ? html`<${ThinkingMessage} key=${i} msg=${msg} />`
+              : html`<${AgentMessage} key=${i} msg=${msg} index=${i}
+                  onTraceClick=${handleTraceClick} />`
         )}
         ${sending.value ? html`
           <div class="chat-msg chat-agent chat-thinking">

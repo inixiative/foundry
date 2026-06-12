@@ -12,7 +12,6 @@ function source(id: string, content: string): ContextSource {
 function makeThread(id: string = "test"): Thread {
   const layer = new ContextLayer({
     id: "docs",
-    trust: 10,
     sources: [source("docs", "test context")],
   });
   layer.set("test context");
@@ -52,6 +51,15 @@ describe("Thread", () => {
       thread.archive();
       expect(thread.meta.status).toBe("archived");
       expect(thread.meta.archivedAt).toBeDefined();
+    });
+
+    test("records parentThreadId for subagent threads", () => {
+      const parent = makeThread();
+      const child = new Thread("child", new ContextStack(), {
+        parentThreadId: parent.id,
+      });
+      expect(child.meta.parentThreadId).toBe(parent.id);
+      expect(parent.meta.parentThreadId).toBeUndefined();
     });
   });
 
