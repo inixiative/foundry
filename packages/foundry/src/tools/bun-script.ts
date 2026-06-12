@@ -101,7 +101,9 @@ try {
     const tmpFile = `/tmp/foundry-script-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`;
     await Bun.write(tmpFile, wrapper);
 
-    const proc = Bun.spawn(["bun", "run", tmpFile], {
+    // --env-file=/dev/null stops Bun from auto-loading .env/.env.local from
+    // the cwd, which would resurrect the scrubbed credentials in the child.
+    const proc = Bun.spawn(["bun", "run", "--env-file=/dev/null", tmpFile], {
       cwd: opts?.cwd ?? this._cwd,
       stdout: "pipe",
       stderr: "pipe",

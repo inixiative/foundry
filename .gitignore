@@ -11,3 +11,5 @@ bun.lock
 
 # Generated / tool artifacts
 .playwright-mcp/
+.idea/
+.test-*/

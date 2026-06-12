@@ -1,8 +1,51 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { HttpApi } from "../src/tools/http-api";
 
-// We'll test against a real local server for integration tests.
-// For unit tests, we test URL resolution and gating logic without network.
+// Local echo server (httpbin-shaped) so the suite is hermetic — no external
+// network dependency, no flaky timeouts.
+
+let server: ReturnType<typeof Bun.serve>;
+let origin: string;
+
+function echoPayload(req: Request, url: URL, json?: unknown) {
+  const headers: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    // httpbin capitalizes header names; tests read body.headers.Authorization
+    const canonical = key.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+    headers[canonical] = value;
+  });
+  return { url: url.href, headers, json };
+}
+
+beforeAll(() => {
+  server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      // keep durationMs measurably > 0 even on localhost
+      await Bun.sleep(2);
+
+      const statusMatch = url.pathname.match(/^\/status\/(\d+)$/);
+      if (statusMatch) {
+        const status = Number(statusMatch[1]);
+        return Response.json({}, { status, statusText: "NOT FOUND" });
+      }
+      if (url.pathname === "/get" && req.method === "GET") {
+        return Response.json(echoPayload(req, url), { status: 200, statusText: "OK" });
+      }
+      if (url.pathname === "/post" && req.method === "POST") {
+        const json = await req.json();
+        return Response.json(echoPayload(req, url, json), { status: 200, statusText: "OK" });
+      }
+      return Response.json({}, { status: 404, statusText: "NOT FOUND" });
+    },
+  });
+  origin = `http://localhost:${server.port}`;
+});
+
+afterAll(() => {
+  server.stop(true);
+});
 
 describe("HttpApi", () => {
   test("has correct metadata", () => {
@@ -30,10 +73,9 @@ describe("HttpApi", () => {
 
   test("allows URLs matching allowedUrls pattern", async () => {
     const api = new HttpApi({
-      baseUrl: "https://httpbin.org",
-      allowedUrls: ["https://httpbin.org/**"],
+      baseUrl: origin,
+      allowedUrls: [`${origin}/**`],
     });
-    // This will make a real request to httpbin
     const result = await api.get("/get");
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe(200);
@@ -52,8 +94,8 @@ describe("HttpApi", () => {
 
   test("prepends baseUrl to relative paths", async () => {
     const api = new HttpApi({
-      baseUrl: "https://httpbin.org",
-      allowedUrls: ["https://httpbin.org/**"],
+      baseUrl: origin,
+      allowedUrls: [`${origin}/**`],
     });
     const result = await api.get("/get");
     expect(result.ok).toBe(true);
@@ -63,16 +105,16 @@ describe("HttpApi", () => {
   test("uses absolute URLs as-is", async () => {
     const api = new HttpApi({
       baseUrl: "https://should-not-use.com",
-      allowedUrls: ["https://httpbin.org/**"],
+      allowedUrls: [`${origin}/**`],
     });
-    const result = await api.get("https://httpbin.org/get");
+    const result = await api.get(`${origin}/get`);
     expect(result.ok).toBe(true);
   });
 
   // -- HTTP methods --
 
   test("GET returns structured response", async () => {
-    const api = new HttpApi({ baseUrl: "https://httpbin.org" });
+    const api = new HttpApi({ baseUrl: origin });
     const result = await api.get("/get");
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe(200);
@@ -84,7 +126,7 @@ describe("HttpApi", () => {
   });
 
   test("POST sends body", async () => {
-    const api = new HttpApi({ baseUrl: "https://httpbin.org" });
+    const api = new HttpApi({ baseUrl: origin });
     const result = await api.post("/post", { key: "value" });
     expect(result.ok).toBe(true);
     expect(result.data?.status).toBe(200);
@@ -93,7 +135,7 @@ describe("HttpApi", () => {
   });
 
   test("handles 404 as ok=false", async () => {
-    const api = new HttpApi({ baseUrl: "https://httpbin.org" });
+    const api = new HttpApi({ baseUrl: origin });
     const result = await api.get("/status/404");
     expect(result.ok).toBe(false);
     expect(result.data?.status).toBe(404);
@@ -104,7 +146,7 @@ describe("HttpApi", () => {
 
   test("applies bearer token", async () => {
     const api = new HttpApi({
-      baseUrl: "https://httpbin.org",
+      baseUrl: origin,
       bearerToken: "test-token-123",
     });
     const result = await api.get("/get");
@@ -114,7 +156,7 @@ describe("HttpApi", () => {
   });
 
   test("setBearerToken updates token", async () => {
-    const api = new HttpApi({ baseUrl: "https://httpbin.org" });
+    const api = new HttpApi({ baseUrl: origin });
     api.setBearerToken("new-token");
     const result = await api.get("/get");
     expect(result.ok).toBe(true);
@@ -125,7 +167,7 @@ describe("HttpApi", () => {
   // -- Response handling --
 
   test("includes estimatedTokens", async () => {
-    const api = new HttpApi({ baseUrl: "https://httpbin.org" });
+    const api = new HttpApi({ baseUrl: origin });
     const result = await api.get("/get");
     expect(result.ok).toBe(true);
     expect(result.estimatedTokens).toBeGreaterThan(0);
