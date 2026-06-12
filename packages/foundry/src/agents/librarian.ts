@@ -92,8 +92,6 @@ export interface LibrarianConfig {
   stack: ContextStack;
   /** ID for the thread-state layer. Defaults to "thread-state". */
   layerId?: string;
-  /** Trust level for the thread-state layer. Defaults to 1.0 (highest). */
-  trust?: number;
 }
 
 export class Librarian {
@@ -106,11 +104,10 @@ export class Librarian {
     this._state = { ...emptyState(), lastUpdated: Date.now() };
     this._stack = config.stack;
 
-    // Create the thread-state layer — always warm, highest trust
+    // Create the thread-state layer — always warm
     const layerId = config.layerId ?? "thread-state";
     this._layer = new ContextLayer({
       id: layerId,
-      trust: config.trust ?? 1.0,
       prompt: "Current thread state. Use this to determine what the thread is working on, what context is loaded, and what flags are active.",
     });
 
@@ -276,6 +273,24 @@ export class Librarian {
     if (!data?.layerId) return;
     this._state.injectedLayers = this._state.injectedLayers.filter((r) => r.id !== data.layerId);
     this._state.inContext = this._state.injectedLayers.map((r) => r.id);
+  }
+
+  /**
+   * Clear the injection ledger — used when the session's context is reset
+   * (e.g., Claude Code auto-compaction, Codex session restart). After a
+   * reset the session no longer holds previously-injected layers, so the
+   * next turn must re-inject from scratch.
+   *
+   * Returns the list of layer IDs that were cleared (for caller-side
+   * invalidation reporting).
+   */
+  clearInjectionLedger(): string[] {
+    const cleared = this._state.injectedLayers.map((r) => r.id);
+    this._state.injectedLayers = [];
+    this._state.inContext = [];
+    this._state.lastUpdated = Date.now();
+    this._writeLayer();
+    return cleared;
   }
 
   // -----------------------------------------------------------------------

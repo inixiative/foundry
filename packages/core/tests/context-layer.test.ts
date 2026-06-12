@@ -59,19 +59,12 @@ describe("ContextLayer", () => {
     test("uses provided config", () => {
       const layer = new ContextLayer({
         id: "test",
-        trust: 8,
         staleness: 5000,
         maxTokens: 1000,
       });
       expect(layer.id).toBe("test");
-      expect(layer.trust).toBe(8);
       expect(layer.staleness).toBe(5000);
       expect(layer.maxTokens).toBe(1000);
-    });
-
-    test("defaults trust to 0", () => {
-      const layer = new ContextLayer({ id: "test" });
-      expect(layer.trust).toBe(0);
     });
   });
 
@@ -299,12 +292,6 @@ describe("ContextLayer", () => {
   });
 
   describe("configuration setters", () => {
-    test("can update trust", () => {
-      const layer = new ContextLayer({ id: "test", trust: 5 });
-      layer.trust = 10;
-      expect(layer.trust).toBe(10);
-    });
-
     test("can update staleness", () => {
       const layer = new ContextLayer({ id: "test" });
       expect(layer.staleness).toBeUndefined();

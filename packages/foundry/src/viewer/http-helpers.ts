@@ -36,7 +36,6 @@ export function threadToJSON(thread: Thread) {
     layers: thread.stack.layers.map((layer) => ({
       id: layer.id,
       state: layer.state,
-      trust: layer.trust,
       hash: layer.hash,
       contentLength: layer.content.length,
     })),

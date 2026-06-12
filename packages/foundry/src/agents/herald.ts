@@ -23,8 +23,10 @@
 
 import type { SessionManager } from "./session";
 import type { Thread, ThreadStatus, Dispatch } from "@inixiative/foundry-core";
+import { newId } from "@inixiative/foundry-core";
 import type { Signal, SignalKind } from "@inixiative/foundry-core";
 import { ContextLayer } from "@inixiative/foundry-core";
+import { WorkstreamOverloadDetector } from "./workstream-detector";
 
 // ---------------------------------------------------------------------------
 // Information Visibility Tiers (VISION.md §6)
@@ -85,7 +87,8 @@ export interface HeraldPattern {
     | "contradiction"
     | "convergence"
     | "cross_pollination"
-    | "resource_imbalance";
+    | "resource_imbalance"
+    | "workstream_overload";
   severity: "info" | "warning" | "critical";
   threads: string[];
   description: string;
@@ -94,11 +97,19 @@ export interface HeraldPattern {
   timestamp: number;
 }
 
-/** A recommendation the Herald injects back into a thread. */
+/**
+ * A recommendation the Herald injects back into a thread.
+ *
+ * `"split"` is workstream-overload's preferred action: in autoSplit mode
+ * the Herald spawns sub-threads carrying each detected workstream. When
+ * autoSplit is off (default), workstream-overload patterns map to
+ * `"inform"` instead, surfacing the pattern to the operator without
+ * forking anything.
+ */
 export interface HeraldRecommendation {
   targetThreadId: string;
   pattern: HeraldPattern;
-  action: "pause" | "redirect" | "inject_context" | "merge" | "inform";
+  action: "pause" | "redirect" | "inject_context" | "merge" | "inform" | "split";
   payload?: unknown;
 }
 
@@ -120,6 +131,14 @@ export interface HeraldConfig {
   maxHistory?: number;
   /** Whether Herald can inject signals into threads. Default true. */
   canInject?: boolean;
+  /**
+   * If true, workstream-overload patterns produce `"split"` recommendations
+   * (Herald implementation should fork sub-threads). If false (default),
+   * workstream-overload patterns map to `"inform"` — surfaced to the
+   * operator without action. Off by default until we calibrate the
+   * heuristic against real sessions.
+   */
+  autoSplit?: boolean;
   /** Custom pattern detectors to add. */
   detectors?: PatternDetector[];
   /**
@@ -140,9 +159,8 @@ export interface HeraldConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-let _patternCounter = 0;
 function nextPatternId(kind: string): string {
-  return `herald_${kind}_${++_patternCounter}_${Date.now().toString(36)}`;
+  return newId(`herald_${kind}`);
 }
 
 /** Dedup window: same kind + same set of threads within this ms = duplicate. */
@@ -527,8 +545,8 @@ export class ResourceImbalanceDetector implements PatternDetector {
 export class Herald {
   private _session: SessionManager;
   private _config: Required<
-    Omit<HeraldConfig, "detectors" | "visibility" | "triggerSignals">
-  >;
+    Omit<HeraldConfig, "detectors" | "visibility" | "triggerSignals" | "autoSplit">
+  > & { autoSplit: boolean };
   private _detectors: PatternDetector[] = [];
   private _patterns: HeraldPattern[] = [];
   private _recommendations: HeraldRecommendation[] = [];
@@ -554,6 +572,7 @@ export class Herald {
       maxSnapshots: config?.maxSnapshots ?? 20,
       maxHistory: config?.maxHistory ?? 500,
       canInject: config?.canInject ?? true,
+      autoSplit: config?.autoSplit ?? false,
     };
 
     // Register built-in detectors
@@ -563,6 +582,7 @@ export class Herald {
       new ConvergenceDetector(),
       new CrossPollinationDetector(),
       new ResourceImbalanceDetector(),
+      new WorkstreamOverloadDetector(),
     ];
 
     // Add custom detectors
@@ -593,7 +613,6 @@ export class Herald {
     // Summary layer — compact cross-thread state
     this._summaryLayer = new ContextLayer({
       id: "__herald-summary",
-      trust: 0.8,
       prompt: "Cross-thread awareness summary. Active threads, recent patterns, and relevant warnings from the Herald.",
     });
     this._writeSummary();
@@ -924,7 +943,7 @@ export class Herald {
     if (!thread) return;
 
     thread.signals.emit({
-      id: `herald_${Date.now().toString(36)}`,
+      id: newId("herald"),
       kind: "herald" as SignalKind,
       source: "herald",
       content: rec,
@@ -972,6 +991,10 @@ export class Herald {
       convergence: "merge",
       cross_pollination: "inject_context",
       resource_imbalance: "redirect",
+      // Auto-split is off by default — until we calibrate the heuristic, the
+      // overload pattern just informs the operator. Flip `autoSplit: true`
+      // on Herald construction to actually fork sub-threads.
+      workstream_overload: this._config.autoSplit ? "split" : "inform",
     };
 
     const action = actionMap[pattern.kind];

@@ -216,26 +216,26 @@ describe("PostgresMemory", () => {
       await pg.writeMessage({
         id: "msg-pg-1",
         threadId: "thread-1",
-        role: "user",
+        actor: "user",
         content: "Hello, agent",
       });
       await pg.writeMessage({
         id: "msg-pg-2",
         threadId: "thread-1",
-        role: "agent",
+        actor: "agent",
         content: "Hello, user",
       });
       await pg.writeMessage({
         id: "msg-pg-3",
         threadId: "thread-2",
-        role: "user",
+        actor: "user",
         content: "Different thread",
       });
 
       const messages = await pg.threadMessages("thread-1");
       expect(messages.length).toBe(2);
-      expect(messages[0].role).toBe("user");
-      expect(messages[1].role).toBe("agent");
+      expect(messages[0].actor).toBe("user");
+      expect(messages[1].actor).toBe("agent");
     });
   });
 

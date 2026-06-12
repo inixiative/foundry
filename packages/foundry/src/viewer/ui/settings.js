@@ -1,24 +1,24 @@
 /**
- * Settings — configuration panel.
+ * Settings — fullscreen configuration panel.
  *
- * Two scopes with clear visual separation:
- * - Global: providers, default models, viewer prefs
- * - Project: sources (docs, conventions, memory paths)
- *
- * Agents and layers are NOT settings — they're first-class sidebar items.
+ * Layout: left nav rail | main editor | right AI chat pane.
+ * Nav rail groups: Global (defaults / providers / tunnel) + Project (sources / overrides).
+ * Current focus (scope/tab/selected item) is relayed to the chat so it knows
+ * what the operator is looking at.
  */
 
 import { html, useState, useEffect, useRef } from "./lib.js";
 import { signal } from "./lib.js";
-import { showToast, activeProjectId, projects } from "./store.js";
+import { showToast, activeProjectId } from "./store.js";
+import { FilePicker } from "./file-picker.js";
+import { SelfChatPane } from "./self-chat.js";
 
 // Settings state
 export const settingsOpen = signal(false);
 export const settingsConfig = signal(null);
-const settingsScope = signal("global"); // "global" | "project"
+const settingsScope = signal("global");
 const activeTab = signal("defaults");
-const aiLoading = signal(false);
-const aiSuggestions = signal([]);
+const selectedFocus = signal(null); // { kind: "source"|"agent"|"layer"|"provider", id }
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -55,7 +55,6 @@ async function saveProjectSection(projectId, section, data) {
       body: JSON.stringify(data),
     });
     if (res.ok) {
-      // Reload full settings to get updated project config
       await loadSettings();
       showToast("Project settings saved", "ok");
     } else {
@@ -76,54 +75,11 @@ async function deleteItem(section, id) {
   }
 }
 
-async function requestAIAssist(section, target, question) {
-  aiLoading.value = true;
-  try {
-    const res = await fetch("/api/assist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ section, target, question }),
-    });
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, "error");
-    } else {
-      aiSuggestions.value = data.suggestions || [];
-      if (data.explanation) showToast(data.explanation, "ok");
-    }
-  } catch {
-    showToast("AI assist failed", "error");
-  }
-  aiLoading.value = false;
-}
-
-async function requestPromptImprove(type, id, currentPrompt, instruction) {
-  aiLoading.value = true;
-  try {
-    const res = await fetch("/api/assist/prompt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, id, currentPrompt, instruction }),
-    });
-    const data = await res.json();
-    aiLoading.value = false;
-    if (data.error) {
-      showToast(data.error, "error");
-      return null;
-    }
-    return data;
-  } catch {
-    aiLoading.value = false;
-    showToast("Prompt assist failed", "error");
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Shared components
+// Shared Field component
 // ---------------------------------------------------------------------------
 
-function Field({ label, value, onChange, type = "text", placeholder, mono, small, disabled }) {
+function Field({ label, value, onChange, type = "text", placeholder, mono, small, disabled, onFocus }) {
   return html`
     <div class="settings-field">
       <label class="settings-label">${label}</label>
@@ -132,25 +88,18 @@ function Field({ label, value, onChange, type = "text", placeholder, mono, small
           class="settings-input ${mono ? "mono" : ""} ${small ? "small" : ""}"
           value=${value ?? ""}
           onInput=${(e) => onChange(e.target.value)}
+          onFocus=${onFocus}
           placeholder=${placeholder}
           rows="4"
           disabled=${disabled}
         ></textarea>
-      ` : type === "select" ? html`
-        <select
-          class="settings-input ${small ? "small" : ""}"
-          value=${value ?? ""}
-          onChange=${(e) => onChange(e.target.value)}
-          disabled=${disabled}
-        >
-          ${placeholder}
-        </select>
       ` : html`
         <input
           class="settings-input ${mono ? "mono" : ""} ${small ? "small" : ""}"
           type=${type}
           value=${value ?? ""}
           onInput=${(e) => onChange(type === "number" ? Number(e.target.value) : e.target.value)}
+          onFocus=${onFocus}
           placeholder=${placeholder}
           disabled=${disabled}
         />
@@ -160,38 +109,180 @@ function Field({ label, value, onChange, type = "text", placeholder, mono, small
 }
 
 // ---------------------------------------------------------------------------
-// Scope bar — Global vs Project toggle
+// Source editor — with file picker + content editor
 // ---------------------------------------------------------------------------
 
-function ScopeBar({ scope, onScopeChange, projectName }) {
+function SourceContentEditor({ uri }) {
+  const [content, setContent] = useState(null);
+  const [original, setOriginal] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const path = uri?.startsWith("file://") ? uri.slice("file://".length) : null;
+
+  useEffect(() => {
+    if (!path) return;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/files?path=${encodeURIComponent(path)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          setError(data.error);
+          setContent(null);
+        } else {
+          setContent(data.content);
+          setOriginal(data.content);
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [path]);
+
+  if (!path) {
+    return html`
+      <div class="source-content-editor">
+        <div class="source-content-editor-header">
+          Content editing is only available for file:// sources.
+        </div>
+      </div>
+    `;
+  }
+
+  const dirty = content !== original;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/files", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast(data.error, "error");
+      } else {
+        setOriginal(content);
+        showToast("Saved", "ok");
+      }
+    } catch (err) {
+      showToast(`Save failed: ${err.message}`, "error");
+    }
+    setSaving(false);
+  };
+
+  const revert = () => setContent(original);
+
   return html`
-    <div class="settings-scope-bar">
-      <button
-        class="settings-scope-tab ${scope === "global" ? "active scope-global" : ""}"
-        onClick=${() => onScopeChange("global")}
-      >Global</button>
-      <button
-        class="settings-scope-tab ${scope === "project" ? "active scope-project" : ""}"
-        onClick=${() => onScopeChange("project")}
-        disabled=${!projectName}
-        title=${projectName ? `Project: ${projectName}` : "Select a project first"}
-      >${projectName ? `Project: ${projectName}` : "No project selected"}</button>
+    <div class="source-content-editor">
+      <div class="source-content-editor-header">
+        <span class="mono">${path}</span>
+        ${dirty ? html`<span class="dirty">\u2022 unsaved</span>` : null}
+      </div>
+      ${loading ? html`
+        <div style="padding: 12px; color: var(--text-dim); font-size: 12px;">Loading...</div>
+      ` : error ? html`
+        <div style="padding: 12px; color: var(--error); font-size: 12px;">${error}</div>
+      ` : html`
+        <textarea
+          class="source-content-editor-area"
+          value=${content ?? ""}
+          onInput=${(e) => setContent(e.target.value)}
+          spellcheck="false"
+        ></textarea>
+        <div class="source-content-editor-actions">
+          <button class="action-btn" onClick=${save} disabled=${!dirty || saving}>
+            ${saving ? "Saving..." : "Save"}
+          </button>
+          <button class="action-btn" onClick=${revert} disabled=${!dirty}>Revert</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
+  const [draft, setDraft] = useState({ ...source });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const update = (k, v) => setDraft({ ...draft, [k]: v });
+
+  const pathFromUri = draft.uri?.startsWith("file://") ? draft.uri.slice("file://".length) : null;
+  const isFileSource = !!pathFromUri;
+
+  const handlePick = (abs) => {
+    update("uri", `file://${abs}`);
+    setPickerOpen(false);
+  };
+
+  const onAnyFocus = () => onFocusChange?.({ kind: "source", id: draft.id });
+
+  return html`
+    <div class="settings-card" onFocusin=${onAnyFocus}>
+      <div class="settings-card-header">
+        <span class="settings-card-title">${draft.id}</span>
+        <span class="settings-card-kind">${draft.type}</span>
+        <label class="settings-toggle">
+          <input type="checkbox" checked=${draft.enabled} onChange=${(e) => update("enabled", e.target.checked)} />
+          ${draft.enabled ? "enabled" : "disabled"}
+        </label>
+      </div>
+
+      <${Field} label="Label" value=${draft.label} onChange=${(v) => update("label", v)} />
+
+      <div class="settings-field">
+        <label class="settings-label">URI / Path</label>
+        <div class="file-picker-inline">
+          <input
+            class="settings-input mono"
+            type="text"
+            value=${draft.uri ?? ""}
+            onInput=${(e) => update("uri", e.target.value)}
+            placeholder="file://path or postgres://..."
+          />
+          <button type="button" class="file-picker-btn" onClick=${() => setPickerOpen(true)}>
+            Browse\u2026
+          </button>
+        </div>
+      </div>
+
+      ${isFileSource ? html`
+        <button class="source-editor-toggle" onClick=${() => setShowEditor(!showEditor)}>
+          ${showEditor ? "Hide content editor" : "Edit file content"}
+        </button>
+      ` : null}
+
+      ${isFileSource && showEditor ? html`<${SourceContentEditor} uri=${draft.uri} />` : null}
+
+      <div class="settings-card-actions">
+        <button class="action-btn" onClick=${() => onSave(draft)}>Save</button>
+        <button class="action-btn danger" onClick=${() => onDelete(draft.id)}>Remove</button>
+      </div>
+
+      <${FilePicker}
+        open=${pickerOpen}
+        startPath=${pathFromUri}
+        mode="file"
+        onCancel=${() => setPickerOpen(false)}
+        onPick=${handlePick}
+      />
     </div>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// Global scope: Defaults
+// Defaults + Providers editors (unchanged shape, minor tidy)
 // ---------------------------------------------------------------------------
 
-function DefaultsEditor({ defaults, providers, onSave }) {
+function DefaultsEditor({ defaults, providers, onSave, onFocusChange }) {
   const [draft, setDraft] = useState({ ...defaults });
   const update = (k, v) => setDraft({ ...draft, [k]: v });
-
   const enabledProviders = Object.values(providers).filter(p => p.enabled);
 
   return html`
-    <div class="settings-card">
+    <div class="settings-card" onFocusin=${() => onFocusChange?.(null)}>
       <div class="settings-card-header">
         <span class="settings-card-title">Default Models</span>
         <span class="scope-label scope-global">GLOBAL</span>
@@ -206,9 +297,7 @@ function DefaultsEditor({ defaults, providers, onSave }) {
             value=${draft.provider}
             onChange=${(e) => update("provider", e.target.value)}
           >
-            ${enabledProviders.map(p => html`
-              <option key=${p.id} value=${p.id}>${p.label}</option>
-            `)}
+            ${enabledProviders.map(p => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
           </select>
         </div>
         <div class="settings-field">
@@ -225,7 +314,7 @@ function DefaultsEditor({ defaults, providers, onSave }) {
         </div>
       </div>
 
-      <div class="settings-section-label">Classifier / Router (runs on every message)</div>
+      <div class="settings-section-label">Classifier / Router</div>
       <div class="settings-row">
         <div class="settings-field">
           <label class="settings-label">Provider</label>
@@ -234,9 +323,7 @@ function DefaultsEditor({ defaults, providers, onSave }) {
             value=${draft.classifierProvider || draft.provider}
             onChange=${(e) => update("classifierProvider", e.target.value)}
           >
-            ${enabledProviders.map(p => html`
-              <option key=${p.id} value=${p.id}>${p.label}</option>
-            `)}
+            ${enabledProviders.map(p => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
           </select>
         </div>
         <div class="settings-field">
@@ -260,16 +347,12 @@ function DefaultsEditor({ defaults, providers, onSave }) {
   `;
 }
 
-// ---------------------------------------------------------------------------
-// Global scope: Providers
-// ---------------------------------------------------------------------------
-
-function ProviderEditor({ provider, onSave }) {
+function ProviderEditor({ provider, onSave, onFocusChange }) {
   const [draft, setDraft] = useState({ ...provider });
   const update = (k, v) => setDraft({ ...draft, [k]: v });
 
   return html`
-    <div class="settings-card">
+    <div class="settings-card" onFocusin=${() => onFocusChange?.({ kind: "provider", id: draft.id })}>
       <div class="settings-card-header">
         <span class="settings-card-title">${draft.label}</span>
         <span class="settings-card-kind">${draft.type}</span>
@@ -284,7 +367,7 @@ function ProviderEditor({ provider, onSave }) {
       ` : null}
 
       <div class="settings-section-label">Models</div>
-      ${(draft.models || []).map((m, i) => html`
+      ${(draft.models || []).map((m) => html`
         <div key=${m.id} class="model-row">
           <span class="model-id mono">${m.id}</span>
           <span class="model-label">${m.label}</span>
@@ -301,41 +384,7 @@ function ProviderEditor({ provider, onSave }) {
 }
 
 // ---------------------------------------------------------------------------
-// Project scope: Sources
-// ---------------------------------------------------------------------------
-
-function SourceEditor({ source, onSave, onDelete }) {
-  const [draft, setDraft] = useState({ ...source });
-  const update = (k, v) => setDraft({ ...draft, [k]: v });
-
-  return html`
-    <div class="settings-card">
-      <div class="settings-card-header">
-        <span class="settings-card-title">${draft.id}</span>
-        <span class="settings-card-kind">${draft.type}</span>
-        <label class="settings-toggle">
-          <input type="checkbox" checked=${draft.enabled} onChange=${(e) => update("enabled", e.target.checked)} />
-          ${draft.enabled ? "enabled" : "disabled"}
-        </label>
-      </div>
-
-      <${Field} label="Label" value=${draft.label} onChange=${(v) => update("label", v)} />
-      <${Field} label="URI / Path" value=${draft.uri} mono onChange=${(v) => update("uri", v)} placeholder="file://path or postgres://..." />
-
-      <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save</button>
-        <button class="action-btn danger" onClick=${() => onDelete(draft.id)}>Remove</button>
-      </div>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// Global tab bar
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Global scope: Tunnel
+// Tunnel editor (kept from prior version; wraps in focus handler)
 // ---------------------------------------------------------------------------
 
 function TunnelEditor() {
@@ -352,7 +401,7 @@ function TunnelEditor() {
       setStatus(data);
       setProvider(data.provider || "localtunnel");
       setSubdomain(data.subdomain || "");
-      if (data.hasPassword) setPassword("••••••••");
+      if (data.hasPassword) setPassword("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
     } catch { /* ignore */ }
   };
 
@@ -364,11 +413,8 @@ function TunnelEditor() {
       const endpoint = status?.active ? "/api/tunnel/stop" : "/api/tunnel/start";
       const res = await fetch(endpoint, { method: "POST" });
       const data = await res.json();
-      if (data.error) {
-        showToast(data.error, "error");
-      } else {
-        showToast(status?.active ? "Tunnel stopped" : `Tunnel started: ${data.url}`, "ok");
-      }
+      if (data.error) showToast(data.error, "error");
+      else showToast(status?.active ? "Tunnel stopped" : `Tunnel started: ${data.url}`, "ok");
       await refresh();
     } catch {
       showToast("Tunnel operation failed", "error");
@@ -379,20 +425,15 @@ function TunnelEditor() {
   const saveConfig = async () => {
     try {
       const body = { provider, subdomain: subdomain || undefined };
-      // Only send password if user changed it (not the masked placeholder)
-      if (password && password !== "••••••••") body.password = password;
+      if (password && password !== "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") body.password = password;
       const res = await fetch("/api/tunnel", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (data.ok) {
-        showToast("Tunnel config saved", "ok");
-        if (password && password !== "••••••••") setPassword("••••••••");
-      } else {
-        showToast(data.error || "Save failed", "error");
-      }
+      if (data.ok) showToast("Tunnel config saved", "ok");
+      else showToast(data.error || "Save failed", "error");
     } catch {
       showToast("Failed to save tunnel config", "error");
     }
@@ -404,11 +445,7 @@ function TunnelEditor() {
         <span class="settings-card-title">Tunnel</span>
         <span class="scope-label scope-global">GLOBAL</span>
       </div>
-
-      <p class="settings-desc">
-        Expose the viewer over a public URL. Local/private network requests bypass auth automatically.
-      </p>
-
+      <p class="settings-desc">Expose the viewer over a public URL. Local/private network requests bypass auth automatically.</p>
       <div class="tunnel-status">
         <div class="tunnel-status-row">
           <span class="tunnel-indicator ${status?.active ? "active" : "inactive"}"></span>
@@ -417,43 +454,23 @@ function TunnelEditor() {
             <a class="tunnel-url" href=${status.url} target="_blank" rel="noopener">${status.url}</a>
           ` : null}
         </div>
-        <button
-          class="action-btn ${status?.active ? "danger" : ""}"
-          onClick=${toggle}
-          disabled=${loading}
-        >${loading ? "..." : status?.active ? "Stop Tunnel" : "Start Tunnel"}</button>
+        <button class="action-btn ${status?.active ? "danger" : ""}" onClick=${toggle} disabled=${loading}>
+          ${loading ? "..." : status?.active ? "Stop Tunnel" : "Start Tunnel"}
+        </button>
       </div>
 
       <div class="settings-section-label">Configuration</div>
-
       <div class="settings-field">
         <label class="settings-label">Provider</label>
-        <select
-          class="settings-input small"
-          value=${provider}
-          onChange=${(e) => setProvider(e.target.value)}
-        >
+        <select class="settings-input small" value=${provider} onChange=${(e) => setProvider(e.target.value)}>
           <option value="localtunnel">localtunnel (zero-config)</option>
           <option value="cloudflared">cloudflared (production)</option>
         </select>
       </div>
-
-      <${Field}
-        label="Subdomain hint"
-        value=${subdomain}
-        onChange=${setSubdomain}
-        placeholder="my-foundry (localtunnel only, not guaranteed)"
-        small
-      />
-
-      <${Field}
-        label="Access password"
-        value=${password}
-        onChange=${setPassword}
-        type="password"
-        placeholder="Leave empty for auto-generated token"
-        small
-      />
+      <${Field} label="Subdomain hint" value=${subdomain} onChange=${setSubdomain}
+        placeholder="my-foundry (localtunnel only, not guaranteed)" small />
+      <${Field} label="Access password" value=${password} onChange=${setPassword} type="password"
+        placeholder="Leave empty for auto-generated token" small />
 
       <div class="settings-card-actions">
         <button class="action-btn" onClick=${saveConfig}>Save Config</button>
@@ -462,91 +479,12 @@ function TunnelEditor() {
   `;
 }
 
-function GlobalTabBar() {
-  const tabs = [
-    { id: "defaults", label: "Defaults" },
-    { id: "providers", label: "Providers" },
-    { id: "tunnel", label: "Tunnel" },
-  ];
-  return html`
-    <div class="settings-tabs">
-      ${tabs.map(t => html`
-        <button
-          key=${t.id}
-          class="settings-tab ${activeTab.value === t.id ? "active" : ""}"
-          onClick=${() => { activeTab.value = t.id; }}
-        >${t.label}</button>
-      `)}
-    </div>
-  `;
-}
-
 // ---------------------------------------------------------------------------
-// Project tab bar
-// ---------------------------------------------------------------------------
-
-function ProjectTabBar() {
-  const tabs = [
-    { id: "sources", label: "Sources" },
-    { id: "overrides", label: "Overrides" },
-  ];
-  return html`
-    <div class="settings-tabs">
-      ${tabs.map(t => html`
-        <button
-          key=${t.id}
-          class="settings-tab ${activeTab.value === t.id ? "active" : ""}"
-          onClick=${() => { activeTab.value = t.id; }}
-        >${t.label}</button>
-      `)}
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// AI Suggestions panel
-// ---------------------------------------------------------------------------
-
-function AISuggestions() {
-  const suggestions = aiSuggestions.value;
-  if (suggestions.length === 0) return null;
-
-  return html`
-    <div class="ai-suggestions">
-      <div class="ai-suggestions-header">
-        AI Suggestions
-        <button class="ai-dismiss" onClick=${() => { aiSuggestions.value = []; }}>dismiss</button>
-      </div>
-      ${suggestions.map(s => html`
-        <div key=${s.id} class="ai-suggestion ${s.kind}">
-          <div class="ai-suggestion-header">
-            <span class="ai-suggestion-kind">${s.kind}</span>
-            <span class="ai-suggestion-title">${s.title}</span>
-            <span class="ai-suggestion-confidence">${Math.round(s.confidence * 100)}%</span>
-          </div>
-          <div class="ai-suggestion-desc">${s.description}</div>
-          ${s.patch ? html`
-            <button class="action-btn small" onClick=${() => applyPatch(s)}>Apply</button>
-          ` : null}
-        </div>
-      `)}
-    </div>
-  `;
-}
-
-async function applyPatch(suggestion) {
-  await saveSection(suggestion.section, suggestion.patch);
-  aiSuggestions.value = aiSuggestions.value.filter(s => s.id !== suggestion.id);
-  showToast(`Applied: ${suggestion.title}`, "ok");
-}
-
-// ---------------------------------------------------------------------------
-// Project overrides — show what the project overrides from global
+// Project overrides preview
 // ---------------------------------------------------------------------------
 
 function ProjectOverrides({ project }) {
   if (!project) return null;
-
   const hasDefaults = project.defaults && Object.keys(project.defaults).length > 0;
   const hasAgents = project.agents && Object.keys(project.agents).length > 0;
   const hasLayers = project.layers && Object.keys(project.layers).length > 0;
@@ -554,10 +492,7 @@ function ProjectOverrides({ project }) {
   if (!hasDefaults && !hasAgents && !hasLayers) {
     return html`
       <div class="settings-empty">
-        No overrides — this project inherits all global defaults.
-        <p class="wizard-desc dim" style="margin-top: 8px">
-          Override defaults per-project by setting custom providers, models, or agent configs here.
-        </p>
+        No overrides \u2014 this project inherits all global defaults.
       </div>
     `;
   }
@@ -585,121 +520,170 @@ function ProjectOverrides({ project }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main Settings panel
+// Navigation rail — groups global + project tabs
+// ---------------------------------------------------------------------------
+
+function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
+  const globalTabs = [
+    { id: "defaults", label: "Defaults" },
+    { id: "providers", label: "Providers" },
+    { id: "tunnel", label: "Tunnel" },
+  ];
+  const projectTabs = [
+    { id: "sources", label: "Sources" },
+    { id: "overrides", label: "Overrides" },
+  ];
+
+  const selectTab = (newScope, newTab) => {
+    onScopeChange(newScope);
+    onTabChange(newTab);
+  };
+
+  return html`
+    <nav class="settings-nav">
+      <div class="settings-nav-section">Global</div>
+      ${globalTabs.map((t) => html`
+        <button
+          key=${t.id}
+          class="settings-nav-item ${scope === "global" && tab === t.id ? "active scope-global" : ""}"
+          onClick=${() => selectTab("global", t.id)}
+        >${t.label}</button>
+      `)}
+      <div class="settings-nav-section">
+        ${projectName ? `Project: ${projectName}` : "Project"}
+      </div>
+      ${projectTabs.map((t) => html`
+        <button
+          key=${t.id}
+          class="settings-nav-item ${scope === "project" && tab === t.id ? "active scope-project" : ""}"
+          disabled=${!projectName}
+          onClick=${() => selectTab("project", t.id)}
+        >${t.label}</button>
+      `)}
+    </nav>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Main Settings — fullscreen layout with chat pane
 // ---------------------------------------------------------------------------
 
 export function Settings() {
   const isOpen = settingsOpen.value;
   const config = settingsConfig.value;
   const scope = settingsScope.value;
+  const tab = activeTab.value;
+  const focus = selectedFocus.value;
 
   useEffect(() => {
     if (isOpen && !config) loadSettings();
   }, [isOpen]);
 
-  // When a project is selected in the sidebar, default to project scope
   useEffect(() => {
-    if (activeProjectId.value) {
+    if (activeProjectId.value && scope === "global" && tab === "defaults") {
       settingsScope.value = "project";
       activeTab.value = "sources";
     }
   }, [activeProjectId.value]);
 
   if (!isOpen) return null;
-  if (!config) return html`<div class="overlay-backdrop"><div class="settings-panel">Loading...</div></div>`;
+  if (!config) return html`
+    <div class="fullscreen-backdrop">
+      <div class="fullscreen-modal settings-panel"><div style="padding: 20px">Loading...</div></div>
+    </div>
+  `;
 
-  const tab = activeTab.value;
   const projectId = activeProjectId.value;
   const project = projectId ? config.projects?.[projectId] : null;
   const projectName = project?.label || projectId;
 
-  const handleScopeChange = (newScope) => {
-    settingsScope.value = newScope;
-    activeTab.value = newScope === "global" ? "defaults" : "sources";
+  const close = () => { settingsOpen.value = false; };
+
+  const onScopeChange = (newScope) => { settingsScope.value = newScope; };
+  const onTabChange = (newTab) => {
+    activeTab.value = newTab;
+    selectedFocus.value = null;
   };
+  const onFocusChange = (next) => { selectedFocus.value = next; };
 
   const handleProviderSave = (provider) => saveSection("providers", { [provider.id]: provider });
   const handleDefaultsSave = (defaults) => saveSection("defaults", defaults);
   const handleSourceSave = (source) => {
-    if (projectId) {
-      saveProjectSection(projectId, "sources", { [source.id]: source });
-    } else {
-      saveSection("sources", { [source.id]: source });
-    }
+    if (projectId) saveProjectSection(projectId, "sources", { [source.id]: source });
+    else saveSection("sources", { [source.id]: source });
   };
 
-  return html`
-    <div class="overlay-backdrop" onClick=${() => { settingsOpen.value = false; }}>
-      <div class="settings-panel" onClick=${(e) => e.stopPropagation()}>
-        <div class="settings-header">
-          <span class="settings-title">Settings</span>
-          <button
-            class="ai-assist-btn"
-            onClick=${() => requestAIAssist(tab === "defaults" ? "all" : tab)}
-            disabled=${aiLoading.value}
-          >${aiLoading.value ? "analyzing..." : "AI Analyze"}</button>
-          <button class="settings-close" onClick=${() => { settingsOpen.value = false; }}>Esc</button>
-        </div>
+  // Build focus packet for chat
+  const chatFocus = {
+    scope,
+    projectId: projectId ?? undefined,
+    tab,
+    focusKind: focus?.kind ?? null,
+    focusId: focus?.id ?? null,
+  };
 
-        <${ScopeBar}
-          scope=${scope}
-          onScopeChange=${handleScopeChange}
-          projectName=${projectName}
+  // Settings main body content
+  const body = scope === "global" ? (
+    tab === "defaults" ? html`
+      <${DefaultsEditor}
+        defaults=${config.defaults}
+        providers=${config.providers}
+        onSave=${handleDefaultsSave}
+        onFocusChange=${onFocusChange}
+      />
+    ` : tab === "providers" ? html`
+      ${Object.values(config.providers).map(p => html`
+        <${ProviderEditor} key=${p.id} provider=${p} onSave=${handleProviderSave} onFocusChange=${onFocusChange} />
+      `)}
+    ` : tab === "tunnel" ? html`<${TunnelEditor} />` : null
+  ) : (
+    !project ? html`
+      <div class="settings-empty">Select a project from the sidebar to configure its settings.</div>
+    ` : tab === "sources" ? html`
+      ${Object.values(project.sources || {}).map(s => html`
+        <${SourceEditor}
+          key=${s.id}
+          source=${s}
+          onSave=${handleSourceSave}
+          onDelete=${(id) => deleteItem("sources", id)}
+          onFocusChange=${onFocusChange}
         />
+      `)}
+      ${!project.sources || Object.keys(project.sources).length === 0 ? html`
+        <div class="settings-empty">
+          No sources configured for this project.
+        </div>
+      ` : null}
+    ` : tab === "overrides" ? html`
+      <${ProjectOverrides} project=${project} />
+    ` : null
+  );
 
-        <${AISuggestions} />
-
-        ${scope === "global" ? html`
-          <${GlobalTabBar} />
-          <div class="settings-body">
-            ${tab === "defaults" ? html`
-              <${DefaultsEditor}
-                defaults=${config.defaults}
-                providers=${config.providers}
-                onSave=${handleDefaultsSave}
-              />
-            ` : tab === "providers" ? html`
-              ${Object.values(config.providers).map(p => html`
-                <${ProviderEditor}
-                  key=${p.id}
-                  provider=${p}
-                  onSave=${handleProviderSave}
-                />
-              `)}
-            ` : tab === "tunnel" ? html`
-              <${TunnelEditor} />
-            ` : null}
+  return html`
+    <div class="fullscreen-backdrop" onClick=${(e) => {
+      if (e.target.classList.contains("fullscreen-backdrop")) close();
+    }}>
+      <div class="fullscreen-modal settings-panel">
+        <div class="settings-header">
+          <span class="settings-title">
+            Settings
+            ${focus ? html`<span class="settings-title-focus">\u00B7 ${focus.kind}:${focus.id}</span>` : null}
+          </span>
+          <button class="fullscreen-close" onClick=${close} aria-label="Close">\u00d7</button>
+        </div>
+        <div class="settings-layout">
+          <${NavRail}
+            scope=${scope}
+            tab=${tab}
+            projectName=${projectName}
+            onScopeChange=${onScopeChange}
+            onTabChange=${onTabChange}
+          />
+          <div class="settings-main">
+            <div class="settings-body">${body}</div>
           </div>
-        ` : html`
-          <${ProjectTabBar} />
-          <div class="settings-body">
-            ${!project ? html`
-              <div class="settings-empty">
-                Select a project from the sidebar to configure its settings.
-              </div>
-            ` : tab === "sources" ? html`
-              ${Object.values(project.sources || {}).map(s => html`
-                <${SourceEditor}
-                  key=${s.id}
-                  source=${s}
-                  onSave=${handleSourceSave}
-                  onDelete=${(id) => deleteItem("sources", id)}
-                />
-              `)}
-              ${!project.sources || Object.keys(project.sources).length === 0 ? html`
-                <div class="settings-empty">
-                  No sources configured for this project.
-                  <p class="wizard-desc dim" style="margin-top: 8px">
-                    Sources point to docs, conventions, and memory that feed into context layers.
-                    Add a project directory first.
-                  </p>
-                </div>
-              ` : null}
-            ` : tab === "overrides" ? html`
-              <${ProjectOverrides} project=${project} />
-            ` : null}
-          </div>
-        `}
+          <${SelfChatPane} focus=${chatFocus} />
+        </div>
       </div>
     </div>
   `;

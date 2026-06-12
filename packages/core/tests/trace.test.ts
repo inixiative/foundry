@@ -5,7 +5,7 @@ describe("Trace", () => {
   test("creates with root ingress span", () => {
     const trace = new Trace("msg-1");
     expect(trace.messageId).toBe("msg-1");
-    expect(trace.id).toContain("msg-1");
+    expect(trace.id).toMatch(/^trace_[0-9a-f-]{36}$/);
     expect(trace.root).toBeTruthy();
     expect(trace.root.kind).toBe("ingress");
     expect(trace.root.status).toBe("running");

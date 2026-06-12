@@ -1,5 +1,7 @@
-import type { LLMProvider } from "@inixiative/foundry-core";
+import type { LLMMessage, LLMProvider, ToolRegistry } from "@inixiative/foundry-core";
 import type { FoundryConfig, AgentSettingsConfig, LayerSettingsConfig } from "./config";
+import type { SelfChatFocus, SelfChatMessage } from "./foundry-self-chat";
+import { toolUseLoop } from "../agents/tool-loop";
 
 // ---------------------------------------------------------------------------
 // AI Assist — uses LLM to suggest configuration improvements
@@ -176,14 +178,13 @@ export class AIAssist {
     return [
       "You are an AI systems architect analyzing an agent infrastructure configuration.",
       "The system has: providers (LLM APIs), agents (each with a model/prompt/role),",
-      "layers (context with trust scores), and data sources (memory backends).",
+      "layers (context), and data sources (memory backends).",
       "",
       "Analyze the configuration and suggest improvements. Focus on:",
       "1. Model selection: are agents using appropriate models for their roles?",
       "2. Prompts: are they clear, specific, and non-redundant?",
-      "3. Layer trust: do trust scores match the reliability of data sources?",
-      "4. Architecture: are there missing agents or layers that would improve the system?",
-      "5. Cost: can cheaper models be used for simple tasks without quality loss?",
+      "3. Architecture: are there missing agents or layers that would improve the system?",
+      "4. Cost: can cheaper models be used for simple tasks without quality loss?",
       "",
       "Respond in JSON format:",
       '{ "suggestions": [{ "section": "agents"|"layers"|"prompts"|"providers",',
@@ -247,6 +248,112 @@ export class AIAssist {
         explanation: content.slice(0, 500),
       };
     }
+  }
+
+  /**
+   * Conversational chat — a persistent single-thread helper focused on
+   * customizing Foundry itself. Sees the current view context ("focus")
+   * so the user doesn't have to re-state where they are on every turn.
+   *
+   * When `tools` is provided, runs through `toolUseLoop` so the assistant
+   * has the same tool surface as the executor agent (bash, scripts, memory, etc).
+   */
+  async chat(
+    config: FoundryConfig,
+    history: SelfChatMessage[],
+    userText: string,
+    focus: SelfChatFocus,
+    opts?: {
+      tools?: ToolRegistry;
+      toolCwd?: string;
+      onToolCall?: (name: string, input: Record<string, unknown>, result: string) => void;
+    },
+  ): Promise<{ reply: string; tokens?: { input: number; output: number } }> {
+    const systemPrompt = this._buildSelfChatSystemPrompt(config, focus, !!opts?.tools);
+    const messages: LLMMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user", content: this._framedUserMessage(userText, focus) },
+    ];
+
+    const completionOpts = {
+      model: this._model,
+      maxTokens: 4096,
+      temperature: 0.4,
+    };
+
+    const completion = opts?.tools
+      ? await toolUseLoop(this._provider, messages, opts.tools, {
+          ...completionOpts,
+          toolCwd: opts.toolCwd,
+          maxIterations: 10,
+          onToolCall: opts.onToolCall,
+        })
+      : await this._provider.complete(messages, completionOpts);
+
+    return {
+      reply: completion.content,
+      tokens: completion.tokens,
+    };
+  }
+
+  private _framedUserMessage(userText: string, focus: SelfChatFocus): string {
+    const where = [
+      focus.scope ? `scope=${focus.scope}` : null,
+      focus.projectId ? `project=${focus.projectId}` : null,
+      focus.tab ? `tab=${focus.tab}` : null,
+      focus.focusKind && focus.focusId ? `focus=${focus.focusKind}:${focus.focusId}` : null,
+    ].filter(Boolean).join(" ");
+    const header = where ? `[viewing: ${where}]\n\n` : "";
+    return `${header}${userText}`;
+  }
+
+  private _buildSelfChatSystemPrompt(config: FoundryConfig, focus: SelfChatFocus, hasTools: boolean): string {
+    const project = focus.projectId ? config.projects?.[focus.projectId] : null;
+    const focusDetail = this._focusDetail(config, focus);
+
+    const toolsLine = hasTools
+      ? "You have the same tool surface as the executor agent — you can run shell commands, read files, search memory, and execute scripts to investigate and propose edits."
+      : "You see the full Foundry repo (read-only in this chat — you propose edits, the operator applies them from the UI).";
+
+    return [
+      "You are the Foundry self-help assistant — a conversational helper embedded in the Foundry viewer's settings panel.",
+      "You help the operator customize and understand their own Foundry install.",
+      "",
+      toolsLine,
+      "Be concrete: name files, name keys, show JSON patch snippets when suggesting config edits.",
+      "Be concise — the chat pane is narrow. Prefer short paragraphs and small code blocks.",
+      "",
+      `Default executor: ${config.defaults.provider}/${config.defaults.model}`,
+      `Classifier: ${config.defaults.classifierProvider ?? config.defaults.provider}/${config.defaults.classifierModel ?? config.defaults.model}`,
+      `Agents (${Object.keys(config.agents).length}): ${Object.keys(config.agents).join(", ") || "none"}`,
+      `Layers (${Object.keys(config.layers).length}): ${Object.keys(config.layers).join(", ") || "none"}`,
+      `Projects (${Object.keys(config.projects ?? {}).length}): ${Object.keys(config.projects ?? {}).join(", ") || "none"}`,
+      "",
+      project ? `Active project: ${project.label ?? project.id} (${project.path})` : "",
+      focusDetail ? `Operator is currently looking at:\n${focusDetail}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
+  private _focusDetail(config: FoundryConfig, focus: SelfChatFocus): string {
+    if (!focus.focusKind || !focus.focusId) return "";
+    const { focusKind, focusId } = focus;
+    const project = focus.projectId ? config.projects?.[focus.projectId] : null;
+
+    let target: unknown;
+    if (focusKind === "source") {
+      target = project?.sources?.[focusId] ?? config.sources?.[focusId];
+    } else if (focusKind === "agent") {
+      target = project?.agents?.[focusId] ?? config.agents?.[focusId];
+    } else if (focusKind === "layer") {
+      target = project?.layers?.[focusId] ?? config.layers?.[focusId];
+    } else if (focusKind === "provider") {
+      target = config.providers?.[focusId];
+    }
+    if (!target) return `(${focusKind}:${focusId} — not found in config)`;
+    return "```json\n" + JSON.stringify(target, null, 2) + "\n```";
   }
 
   private _extractJSON(content: string): any {

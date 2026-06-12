@@ -42,8 +42,7 @@ function makeThread(
   const layers = layerIds.map((lid) => {
     const layer = new ContextLayer({
       id: lid,
-      trust: 10,
-      sources: [source(lid, layerContent)],
+            sources: [source(lid, layerContent)],
     });
     layer.set(layerContent);
     return layer;
@@ -842,12 +841,5 @@ describe("Herald", () => {
       expect(content).toContain("Recent cross-thread patterns:");
     });
 
-    // -- 35. summary layer has correct trust --
-    test("summary layer has trust 0.8", () => {
-      const session = makeSession(makeThread("t1"));
-      herald = new Herald(session);
-
-      expect(herald.summaryLayer.trust).toBe(0.8);
-    });
   });
 });

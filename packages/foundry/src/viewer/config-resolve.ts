@@ -376,10 +376,6 @@ function resolveLayerDefinition(
   resolved.sourceIds = sourceIds.value ?? [];
   fields.sourceIds = sourceIds.provenance;
 
-  const trust = scalarField(base?.trust, project.trust, scope);
-  resolved.trust = trust.value;
-  fields.trust = trust.provenance;
-
   const staleness = scalarField(base?.staleness, project.staleness, scope);
   resolved.staleness = staleness.value;
   fields.staleness = staleness.provenance;

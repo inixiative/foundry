@@ -56,7 +56,6 @@ if (memory.all().length === 0) {
 
 const docsLayer = new ContextLayer({
   id: "docs",
-  trust: 10,
   sources: [
     inlineSource("system", [
       "You are a helpful engineering assistant.",
@@ -68,13 +67,11 @@ const docsLayer = new ContextLayer({
 
 const conventionsLayer = new ContextLayer({
   id: "conventions",
-  trust: 8,
   sources: [memory.asSource("conventions-src", "convention")],
 });
 
 const memoryLayer = new ContextLayer({
   id: "memory",
-  trust: 3,
   staleness: 30_000, // stale after 30s
   sources: [memory.asSource("memory-src")],
 });

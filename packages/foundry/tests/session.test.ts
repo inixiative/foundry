@@ -19,8 +19,7 @@ function source(id: string, content: string): ContextSource {
 function makeThread(id: string): Thread {
   const layer = new ContextLayer({
     id: "docs",
-    trust: 10,
-    sources: [source("docs", "context")],
+        sources: [source("docs", "context")],
   });
   layer.set("context");
   const stack = new ContextStack([layer]);

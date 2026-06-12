@@ -133,7 +133,6 @@ export class ActionHandler {
       layers: thread.stack.layers.map((l) => ({
         id: l.id,
         state: l.state,
-        trust: l.trust,
         hash: l.hash,
         contentLength: l.content.length,
         tokenEstimate: Math.ceil(l.content.length / 4),
@@ -232,7 +231,6 @@ export class ActionHandler {
       layers: thread.stack.layers.map((l) => ({
         id: l.id,
         state: l.state,
-        trust: l.trust,
         contentLength: l.content.length,
       })),
       traces: this._harness.traces.length,

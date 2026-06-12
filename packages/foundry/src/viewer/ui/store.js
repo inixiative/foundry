@@ -55,7 +55,7 @@ export const worktrees = signal([]);   // GitWorktree[] from GET /api/worktrees
 export const tokenUsage = signal(null); // { usedTokens, usedCost, percentage, warning, exceeded, totalInput, totalOutput, totalCalls }
 
 // Conversation — chat messages (user + agent responses)
-// Each entry: { role: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
+// Each entry: { actor: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
 export const messages = signal([]);
 export const inflight = signal(0); // count of in-flight API requests
 export const sending = computed(() => inflight.value > 0); // backwards compat
@@ -621,57 +621,121 @@ async function _loadThreadMessages(threadId) {
   }
 }
 
+/** Append a message to a specific thread's cache, and mirror to `messages` if that thread is active. */
+function _appendToThread(threadId, msg) {
+  const existing = _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
+  const next = [...existing, msg];
+  _threadMessages[threadId] = next;
+  if (activeThreadId.value === threadId) messages.value = next;
+  _persistLocal(threadId, next);
+}
+
+/** Replace the last agent message in a thread (used to progressively update streamed content). */
+function _updateLastAgentMessage(threadId, patch) {
+  const list = _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
+  // Find last agent message
+  let idx = -1;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].actor === "agent") { idx = i; break; }
+  }
+  if (idx === -1) return;
+  const next = [...list];
+  next[idx] = { ...next[idx], ...patch };
+  _threadMessages[threadId] = next;
+  if (activeThreadId.value === threadId) messages.value = next;
+}
+
 export async function sendMessage(text) {
   if (!text.trim()) return;
 
-  // Add user message immediately — input stays interactive
-  const userMsg = { role: "user", content: text, timestamp: Date.now() };
-  messages.value = [...messages.value, userMsg];
+  // Bind this send to the thread that was active at submit time.
+  // If the user navigates away during the request, the response still
+  // routes back to this thread (not whatever is active when it returns).
+  const tid = activeThreadId.value;
+  if (!tid) return; // no active thread — nothing to bind to
+
+  _appendToThread(tid, { actor: "user", content: text, timestamp: Date.now() });
 
   // Track in-flight (non-blocking — user can keep typing)
   inflight.value++;
 
-  // Fire API call in background — don't await in caller
-  _processMessageInBackground(text);
+  // Fire streaming API call in background — don't await in caller
+  _streamMessageInBackground(text, tid);
 }
 
-async function _processMessageInBackground(text) {
+async function _streamMessageInBackground(text, tid) {
+  // Seed a pending agent message we'll progressively fill as deltas arrive.
+  _appendToThread(tid, {
+    actor: "agent",
+    content: "",
+    timestamp: Date.now(),
+    streaming: true,
+  });
+
   try {
-    const res = await fetch("/api/messages", {
+    const res = await fetch("/api/messages/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, threadId: activeThreadId.value || undefined }),
+      body: JSON.stringify({ message: text, threadId: tid }),
     });
-    const result = await res.json();
 
-    if (result.error) {
-      messages.value = [...messages.value, {
-        role: "agent",
-        content: result.error,
-        timestamp: Date.now(),
-        error: true,
-      }];
-    } else {
-      messages.value = [...messages.value, {
-        role: "agent",
-        content: result.output,
-        timestamp: result.timestamp || Date.now(),
-        traceId: result.traceId,
-        classification: result.classification,
-        route: result.route,
-        trace: result.trace,
-      }];
+    if (!res.ok || !res.body) {
+      const errText = res.ok ? "no stream body" : `${res.status}`;
+      _updateLastAgentMessage(tid, { content: `Connection error: ${errText}`, streaming: false, error: true });
+      return;
     }
 
-    // Refresh in parallel after response
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let acc = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE: events separated by double newline; each line begins "data: "
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+
+      for (const evBlock of events) {
+        const line = evBlock.split("\n").find(l => l.startsWith("data: "));
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === "delta") {
+          acc += ev.text;
+          _updateLastAgentMessage(tid, { content: acc });
+        } else if (ev.type === "done") {
+          _updateLastAgentMessage(tid, {
+            content: ev.content || acc,
+            timestamp: ev.timestamp || Date.now(),
+            traceId: ev.traceId,
+            classification: ev.classification,
+            route: ev.route,
+            trace: ev.trace,
+            meta: ev.meta,
+            streaming: false,
+          });
+        } else if (ev.type === "error") {
+          _updateLastAgentMessage(tid, {
+            content: ev.error,
+            streaming: false,
+            error: true,
+          });
+        }
+      }
+    }
+
     Promise.all([loadTraces(), loadThreads(), loadTokenUsage()]);
   } catch (err) {
-    messages.value = [...messages.value, {
-      role: "agent",
+    _updateLastAgentMessage(tid, {
       content: `Connection error: ${err.message}`,
-      timestamp: Date.now(),
+      streaming: false,
       error: true,
-    }];
+    });
   } finally {
     inflight.value = Math.max(0, inflight.value - 1);
   }

@@ -10,6 +10,12 @@ export interface ExecuteMeta {
   threadId?: string;
   /** Arbitrary annotations from middleware. */
   annotations?: Record<string, unknown>;
+  /**
+   * Streaming sink — when provided, the executor should emit text deltas
+   * here as they arrive. Accumulates upstream into a StreamBuffer.
+   * Absent ⇒ non-streaming (complete → full result) semantics.
+   */
+  onDelta?: (text: string) => void;
 }
 
 export type ExecuteHandler<TPayload, TResult> = (

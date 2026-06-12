@@ -17,6 +17,7 @@ import type {
   ContextLayer,
   SignalKind,
 } from "@inixiative/foundry-core";
+import { newId } from "@inixiative/foundry-core";
 import type { SessionManager } from "../agents/session";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ export function createFoundryMcpServer(config: FoundryMcpConfig): McpServer {
       if (detail === "summary") {
         const summaries = matches.map((l) => {
           const tokens = estimateTokens(l.content);
-          return `- **${l.id}** (${l.state}, ~${tokens} tokens, trust=${l.trust.toFixed(2)}): ${l.content.slice(0, 150).replace(/\n/g, " ")}...`;
+          return `- **${l.id}** (${l.state}, ~${tokens} tokens): ${l.content.slice(0, 150).replace(/\n/g, " ")}...`;
         });
         return {
           content: [{ type: "text" as const, text: `Found ${matches.length} relevant layers for "${topic}":\n\n${summaries.join("\n")}` }],
@@ -242,7 +243,7 @@ export function createFoundryMcpServer(config: FoundryMcpConfig): McpServer {
     },
     async ({ kind, content: signalContent, confidence }) => {
       signals.emit({
-        id: crypto.randomUUID(),
+        id: newId("sig"),
         kind: kind as SignalKind,
         source: "session-mcp",
         content: signalContent,

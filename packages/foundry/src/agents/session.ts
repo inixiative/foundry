@@ -289,7 +289,7 @@ export class SessionManager {
         stack.addLayer(layer);
       } else if (copySet.has(layer.id) || rules.copyAll) {
         // Copy — new layer with same content
-        const copy = new ContextLayer({ id: layer.id, trust: layer.trust });
+        const copy = new ContextLayer({ id: layer.id });
         if (layer.isWarm) {
           copy.set(layer.content);
         }

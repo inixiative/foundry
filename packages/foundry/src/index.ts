@@ -23,12 +23,6 @@ export {
   type PlanStep,
   type PlannerConfig,
   type PlanExecutionResult,
-  // Active Memory
-  ActiveMemory,
-  type AccessRecord,
-  type CompetitionResult,
-  type ActiveMemoryConfig,
-  type LayerStats,
   // Corpus Compiler
   CorpusCompiler,
   type FluidEntry,

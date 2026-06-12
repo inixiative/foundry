@@ -6,7 +6,7 @@ Bring your own agents, harness, memory systems, and docs. Foundry provides the c
 
 ## Core Concepts
 
-**Context Layers** are independently managed caches. Each has its own sources, staleness, trust level, and lifecycle. Agents don't see raw sources — they see merged, filtered slices of the layer stack.
+**Context Layers** are independently managed caches. Each has its own sources, staleness, and lifecycle. Agents don't see raw sources — they see merged, filtered slices of the layer stack.
 
 **Agents** come in two modes:
 - **Executors** take context + payload, do work, return full results
@@ -29,7 +29,6 @@ import { ContextLayer } from "@foundry/agent-primitives";
 
 const layer = new ContextLayer({
   id: "conventions",
-  trust: 8,              // higher = compressed last, relative ordering
   staleness: 60_000,     // ms before layer is considered stale (undefined = never)
   maxTokens: 4000,       // budget hint (undefined = unbounded)
   sources: [source1, source2], // ContextSource[] — loaded in order on warm()
@@ -54,7 +53,6 @@ layer.isWarm      // true if state === "warm"
 layer.isStale     // true if stale (checks staleness threshold)
 layer.content     // Current content string
 layer.hash        // Content hash (16-char hex)
-layer.trust       // Trust level
 layer.lastWarmed  // Timestamp or null
 ```
 
@@ -112,21 +110,8 @@ await stack.refresh()   // Re-warm only stale layers
 ```ts
 stack.merge()                           // All warm layers, concatenated
 stack.merge(filter)                     // Only layers matching predicate
-stack.slice(layer => layer.trust > 5)   // Same as merge(filter)
+stack.slice(layer => layer.id === "docs") // Same as merge(filter)
 stack.sliceByIds("docs", "conventions") // By specific layer ids
-```
-
-### Compression
-
-```ts
-stack.setCompressor(compressor);
-await stack.compress(targetTokens, ratio?);    // Compress lowest-trust first
-await stack.compressLayer("id", ratio?);       // Compress specific layer
-stack.estimateTokens();                        // Rough ~4 chars/token estimate
-
-interface Compressor {
-  compress(content: string, targetRatio: number): Promise<string>;
-}
 ```
 
 ### Snapshots
@@ -182,7 +167,7 @@ import { Executor } from "@foundry/agent-primitives";
 const worker = new Executor({
   id: "code-writer",
   stack,
-  layerFilter: (l) => l.trust > 5,
+  layerFilter: (l) => l.id === "docs",
   handler: async (context, payload) => {
     // context = merged string from visible layers
     // payload = whatever the caller sent

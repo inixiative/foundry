@@ -2,6 +2,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { SignalBus, type Signal } from "@inixiative/foundry-core";
 import {
   ClaudeCodeSessionAdapter,
   FileExternalSessionStore,
@@ -413,6 +414,105 @@ describe("ClaudeCodeSessionAdapter", () => {
     const s = await adapter.createSession({ threadId: "t1", cwd: "/tmp" });
     await s.start();
     // send must still resolve even though the background store.save() fails
+    const r = await s.send("hi");
+    expect(r.content).toBe("ok");
+  });
+
+  test("bridges session_compact events to the signal bus as session_compacted", async () => {
+    const store = new InMemoryExternalSessionStore();
+    const signals = new SignalBus();
+    const received: Signal[] = [];
+    signals.on("session_compacted", (s) => { received.push(s); });
+
+    // Custom fake: emits init on first send (normal startup), then emits a
+    // compact_boundary on the second send to simulate mid-session compaction.
+    const spawnCalls: Array<{ cmd: string[] }> = [];
+    let sendCount = 0;
+    const spawn = (cmd: string[]): PipedSubprocess => {
+      spawnCalls.push({ cmd });
+      let stdoutCtrl: ReadableStreamDefaultController<Uint8Array>;
+      const stdout = new ReadableStream<Uint8Array>({ start(c) { stdoutCtrl = c; } });
+      const stderr = new ReadableStream<Uint8Array>({ start() {} });
+      let exitResolve: (code: number) => void;
+      const exited = new Promise<number>((r) => { exitResolve = r; });
+      const emit = (j: Record<string, unknown>) =>
+        stdoutCtrl.enqueue(new TextEncoder().encode(JSON.stringify(j) + "\n"));
+
+      return {
+        stdin: {
+          write(data: string) {
+            for (const line of data.split("\n")) {
+              if (!line.trim()) continue;
+              sendCount++;
+              const turn = sendCount;
+              queueMicrotask(() => {
+                if (turn === 1) {
+                  emit({ type: "system", subtype: "init", session_id: "compact-sid" });
+                } else {
+                  // Claude Code auto-compact surfaces as a compact_boundary
+                  // system event mid-stream.
+                  emit({ type: "system", subtype: "compact_boundary", session_id: "compact-sid" });
+                }
+                emit({
+                  type: "assistant",
+                  message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+                  session_id: "compact-sid",
+                });
+                emit({
+                  type: "result",
+                  subtype: "success",
+                  is_error: false,
+                  result: "ok",
+                  session_id: "compact-sid",
+                  usage: { input_tokens: 1, output_tokens: 1 },
+                });
+              });
+            }
+          },
+          flush() {},
+          end() {},
+        },
+        stdout,
+        stderr,
+        exited,
+        kill: () => { try { stdoutCtrl.close(); } catch {} exitResolve(143); },
+      };
+    };
+
+    const adapter = new ClaudeCodeSessionAdapter({
+      store,
+      signals,
+      defaults: { bin: "claude", maxTurns: 1, spawn },
+    });
+
+    const session = await adapter.createSession({ threadId: "t-compact", cwd: "/tmp" });
+    await session.start();
+    await session.send("first");
+    await session.send("second");
+    // Let the async signal emission settle
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(received.length).toBeGreaterThanOrEqual(1);
+    const sig = received[0];
+    expect(sig.kind).toBe("session_compacted");
+    expect(sig.source).toBe("session-adapter:claude-code");
+    const content = sig.content as { source?: string; threadId?: string; externalSessionId?: string };
+    expect(content.source).toBe("claude-code");
+    expect(content.threadId).toBe("t-compact");
+    expect(content.externalSessionId).toBe("compact-sid");
+  });
+
+  test("no signals config → no bridge (session_compact events do not reach the bus)", async () => {
+    const store = new InMemoryExternalSessionStore();
+    const { spawn } = makeSpawnCapture("native-nosignals");
+    const adapter = new ClaudeCodeSessionAdapter({
+      store,
+      defaults: { bin: "claude", maxTurns: 1, spawn },
+    });
+    // No signals passed — adapter should not fail or emit anywhere. Just
+    // verify createSession + send work normally.
+    const s = await adapter.createSession({ threadId: "t1", cwd: "/tmp" });
+    await s.start();
     const r = await s.send("hi");
     expect(r.content).toBe("ok");
   });

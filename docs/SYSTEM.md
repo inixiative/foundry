@@ -68,7 +68,6 @@ The fundamental unit. A layer is an independently managed context cache.
 ```ts
 const layer = new ContextLayer({
   id: "conventions",
-  trust: 8,            // higher = compressed last
   staleness: 60_000,   // ms before stale
   maxTokens: 4000,     // budget hint
   prompt: "Follow these project conventions strictly.",
@@ -76,11 +75,10 @@ const layer = new ContextLayer({
 });
 ```
 
-**States:** `cold` → `warming` → `warm` → `stale` → `compressing`
+**States:** `cold` → `warming` → `warm` → `stale`
 
 Each layer carries:
 - **Content** — the actual context text
-- **Trust score** — determines compression priority (higher = kept longer)
 - **Staleness** — automatic expiry timer
 - **Prompt** — instruction explaining how this layer should be used
 - **Sources** — `ContextSource[]` loaded in order on `warm()`
@@ -217,14 +215,6 @@ Cross-agent observation layer. Herald monitors agent interactions and detects em
 | Cross-pollination | Useful context from one agent applicable to another |
 | Resource imbalance | Uneven load or token usage across agents |
 
-### Active Memory
-
-Levin-inspired trust competition system for context management.
-
-- **Trust competition** — memory entries compete for attention based on trust scores; low-trust entries are displaced by high-trust ones
-- **Dissolution** — entries that remain unused or repeatedly fail to contribute are dissolved (removed)
-- **Access tracking** — every read/write is tracked to inform trust adjustments over time
-
 ### Corpus Compiler
 
 Three-stage pipeline for converting raw context into optimized compiled form.
@@ -246,22 +236,11 @@ Per-provider, per-model, per-agent cost accounting with budget enforcement.
 - Enforces budget limits — agents are blocked when budget is exhausted
 - Exposes data for the Analytics tab in the Viewer
 
-### Compaction Strategies
-
-4 strategies for reducing context size when token budgets are exceeded:
-
-| Strategy | Approach |
-|----------|----------|
-| Trust-based | Evict lowest-trust layers first |
-| LRU | Evict least-recently-used layers |
-| Summarize | Replace verbose layers with LLM-generated summaries |
-| Hybrid | Combines trust-based eviction with summarization for mid-trust layers |
-
 ### Lifecycle Hooks
 
 16 hook points across the agent lifecycle, enabling fine-grained control over agent behavior.
 
-- Hooks fire at key points: pre/post dispatch, pre/post execution, layer warm/stale transitions, compaction, session events, etc.
+- Hooks fire at key points: pre/post dispatch, pre/post execution, layer warm/stale transitions, session events, etc.
 - **Plan-mode auto-shunt** — when a Planner is active, hooks automatically shunt dispatch into plan-mode execution
 - **Budget guards** — hooks that intercept dispatch when token budgets are near exhaustion
 
@@ -462,7 +441,7 @@ Thin colored strips between agent calls. Each layer gets a persistent color (has
 Full configuration UI with five tabs:
 
 - **Agents** — prompt, provider, model, temperature, maxTokens, visible layers, peers
-- **Layers** — prompt, trust, staleness, maxTokens, source IDs
+- **Layers** — prompt, staleness, maxTokens, source IDs
 - **Providers** — enabled/disabled, base URL, model catalog with tier badges
 - **Sources** — type, URI, enabled
 - **Defaults** — global provider, model, temperature, maxTokens
@@ -536,8 +515,7 @@ PostgreSQL with pgvector extension.
 | Production code | ~16,300 lines (69 source files) |
 | Test code | ~8,000+ lines (29 test files) |
 | Tests passing | 472+ |
-| Agent primitives | 25+ (including Planner, Herald, ActiveMemory, CorpusCompiler) |
-| Compaction strategies | 4 |
+| Agent primitives | 25+ (including Planner, Herald, CorpusCompiler) |
 | Lifecycle hooks | 16 hook points |
 | Pattern detectors | 5 |
 | Memory adapters | 6 |

@@ -70,7 +70,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Always use arrow functions.",
       state: "draft",
-      trust: 60,
+      confidence: 0.6,
     });
 
     expect(doc.id).toBeTruthy();
@@ -79,7 +79,7 @@ describe("CorpusCompiler", () => {
     expect(doc.sources).toEqual([e1.id, e2.id]);
     expect(doc.version).toBe(1);
     expect(doc.state).toBe("draft");
-    expect(doc.trust).toBe(60);
+    expect(doc.confidence).toBe(0.6);
     expect(doc.createdAt).toBeGreaterThan(0);
   });
 
@@ -124,7 +124,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "test content",
       state: "draft",
-      trust: 50,
+      confidence: 0.5,
     });
 
     const updated = compiler.transition(doc.id, "active");
@@ -149,7 +149,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Use TypeScript strict mode.",
       state: "active",
-      trust: 50,
+      confidence: 0.5,
     });
     compiler.transition(doc.id, "active");
 
@@ -178,7 +178,7 @@ describe("CorpusCompiler", () => {
         kind: "convention",
         content: "x".repeat(100), // 25 tokens each
         state: "active",
-        trust: 50 + i,
+        confidence: 0.5 + i * 0.05,
       });
       compiler.transition(doc.id, "active");
     }
@@ -202,7 +202,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Use consistent naming.",
       state: "active",
-      trust: 60,
+      confidence: 0.6,
     });
     compiler.transition(doc.id, "active");
 
@@ -224,7 +224,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Layer content for stack.",
       state: "active",
-      trust: 70,
+      confidence: 0.7,
     });
     compiler.transition(doc.id, "active");
 
@@ -234,14 +234,13 @@ describe("CorpusCompiler", () => {
 
     expect(stack.layers.length).toBe(1);
     expect(stack.layers[0].content).toBe("Layer content for stack.");
-    expect(stack.layers[0].trust).toBe(70);
     expect(stack.layers[0].isWarm).toBe(true);
   });
 
-  test("canPromoteTier() checks trust thresholds", () => {
+  test("canPromoteTier() checks confidence thresholds", () => {
     const compiler = setupCompiler();
 
-    // Create a doc with trust 40 and 3 sources
+    // Create a doc with confidence 0.65 and 3 sources
     const entries = Array.from({ length: 3 }, () => makeEntry());
     entries.forEach((e) => compiler.ingest(e));
 
@@ -252,7 +251,7 @@ describe("CorpusCompiler", () => {
         kind: "convention",
         content: "Tiered content.",
         state: "active",
-        trust: 40,
+        confidence: 0.65,
       }
     );
     compiler.transition(doc.id, "active");
@@ -260,13 +259,13 @@ describe("CorpusCompiler", () => {
     // personal_private: always true
     expect(compiler.canPromoteTier(doc.id, "personal_private")).toBe(true);
 
-    // personal_public: trust >= 30 → true (trust is 40)
+    // personal_public: confidence >= 0.6 → true
     expect(compiler.canPromoteTier(doc.id, "personal_public")).toBe(true);
 
-    // team: trust >= 50 AND 5+ sources → false (trust 40 < 50)
+    // team: confidence >= 0.7 AND 5+ sources → false (confidence 0.65 < 0.7)
     expect(compiler.canPromoteTier(doc.id, "team")).toBe(false);
 
-    // org: trust >= 70 AND 10+ sources → false
+    // org: confidence >= 0.8 AND 10+ sources → false
     expect(compiler.canPromoteTier(doc.id, "org")).toBe(false);
   });
 
@@ -280,10 +279,10 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Not active yet.",
       state: "draft",
-      trust: 90,
+      confidence: 0.9,
     });
 
-    // Even with high trust, draft state blocks promotion
+    // Even with high confidence, draft state blocks promotion
     expect(compiler.canPromoteTier(doc.id, "personal_public")).toBe(false);
   });
 
@@ -299,7 +298,7 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "Persistent content.",
       state: "active",
-      trust: 55,
+      confidence: 0.55,
     });
     compiler.transition(doc.id, "active");
 
@@ -335,14 +334,14 @@ describe("CorpusCompiler", () => {
       kind: "convention",
       content: "draft content",
       state: "draft",
-      trust: 30,
+      confidence: 0.3,
     });
     const activeDoc = compiler.promote([e2.id], {
       title: "Active ADR",
       kind: "adr",
       content: "adr content",
       state: "active",
-      trust: 50,
+      confidence: 0.5,
     });
     compiler.transition(activeDoc.id, "active");
     compiler.promote([e3.id], {
@@ -350,7 +349,7 @@ describe("CorpusCompiler", () => {
       kind: "skill",
       content: "skill content",
       state: "draft",
-      trust: 40,
+      confidence: 0.4,
     });
 
     expect(compiler.docsByState("draft").length).toBe(2);
@@ -389,35 +388,35 @@ describe("CorpusCompiler", () => {
     unsub();
   });
 
-  test("compile() excludes docs below minTrust", () => {
-    const compiler = setupCompiler({ minTrust: 50 });
+  test("compile() excludes docs below minConfidence", () => {
+    const compiler = setupCompiler({ minConfidence: 0.5 });
 
     const e1 = makeEntry();
     const e2 = makeEntry();
     compiler.ingest(e1);
     compiler.ingest(e2);
 
-    const lowTrust = compiler.promote([e1.id], {
-      title: "Low Trust",
+    const low = compiler.promote([e1.id], {
+      title: "Low",
       kind: "convention",
-      content: "low trust content",
+      content: "low confidence content",
       state: "active",
-      trust: 30,
+      confidence: 0.3,
     });
-    compiler.transition(lowTrust.id, "active");
+    compiler.transition(low.id, "active");
 
-    const highTrust = compiler.promote([e2.id], {
-      title: "High Trust",
+    const high = compiler.promote([e2.id], {
+      title: "High",
       kind: "convention",
-      content: "high trust content",
+      content: "high confidence content",
       state: "active",
-      trust: 70,
+      confidence: 0.7,
     });
-    compiler.transition(highTrust.id, "active");
+    compiler.transition(high.id, "active");
 
     const corpus = compiler.compile();
 
     expect(corpus.layers.length).toBe(1);
-    expect(corpus.layers[0].trust).toBe(70);
+    expect(corpus.layers[0].confidence).toBe(0.7);
   });
 });

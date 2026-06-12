@@ -266,7 +266,10 @@ export class Harness {
 
   // -- Entry point --
 
-  async send<T>(message: Message<T>): Promise<HarnessResult> {
+  async send<T>(
+    message: Message<T>,
+    opts?: { onDelta?: (text: string) => void },
+  ): Promise<HarnessResult> {
     // Idempotency: return cached result for duplicate messages
     if (this._dedupCapacity > 0 && this._seenMessages.has(message.id)) {
       const cached = this._resultCache.get(message.id);
@@ -274,7 +277,7 @@ export class Harness {
     }
 
     const flow = this._resolveFlow();
-    const result = await this._runFlow(message, flow);
+    const result = await this._runFlow(message, flow, opts);
 
     // Cache for dedup
     if (this._dedupCapacity > 0) {
@@ -289,6 +292,58 @@ export class Harness {
     }
 
     return result;
+  }
+
+  /**
+   * Stream a message — yields text deltas as they arrive from the executor,
+   * then a final "done" event with the full HarnessResult. Deltas are
+   * gathered from the executor's provider.stream() path (when available);
+   * callers should concatenate deltas to reconstruct the text, or just use
+   * the done event's result.
+   */
+  async *sendStream<T>(
+    message: Message<T>,
+  ): AsyncGenerator<
+    | { kind: "delta"; text: string }
+    | { kind: "done"; result: HarnessResult }
+  > {
+    // Bounded buffer so deltas emitted while we're yielding don't get lost.
+    const pending: string[] = [];
+    let resolveWaiter: (() => void) | null = null;
+
+    const onDelta = (text: string) => {
+      pending.push(text);
+      if (resolveWaiter) {
+        const r = resolveWaiter;
+        resolveWaiter = null;
+        r();
+      }
+    };
+
+    let done = false;
+    let finalResult: HarnessResult | undefined;
+    let thrown: unknown;
+
+    const runPromise = this.send(message, { onDelta })
+      .then((r) => { finalResult = r; })
+      .catch((e) => { thrown = e; })
+      .finally(() => {
+        done = true;
+        if (resolveWaiter) { const r = resolveWaiter; resolveWaiter = null; r(); }
+      });
+
+    while (!done || pending.length > 0) {
+      if (pending.length > 0) {
+        yield { kind: "delta", text: pending.shift()! };
+        continue;
+      }
+      if (done) break;
+      await new Promise<void>((r) => { resolveWaiter = r; });
+    }
+
+    await runPromise;
+    if (thrown) throw thrown;
+    if (finalResult) yield { kind: "done", result: finalResult };
   }
 
   /**
@@ -398,7 +453,11 @@ export class Harness {
 
   // -- Unified flow pipeline --
 
-  private async _runFlow<T>(message: Message<T>, flow: FlowConfig): Promise<HarnessResult> {
+  private async _runFlow<T>(
+    message: Message<T>,
+    flow: FlowConfig,
+    opts?: { onDelta?: (text: string) => void },
+  ): Promise<HarnessResult> {
     const trace = new Trace(message.id);
     const invokedAgents: Array<{ id: string; mode: string }> = [];
 
@@ -490,7 +549,13 @@ export class Harness {
           ? { payload: message.payload, classification: classification.value }
           : message.payload;
 
-        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter);
+        // Only wire the delta sink for the execute stage — deltas from
+        // classifiers/routers/enrichers aren't user-visible content.
+        const dispatchOpts = stage.role === "execute" && opts?.onDelta
+          ? { onDelta: opts.onDelta }
+          : undefined;
+
+        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, dispatchOpts);
         invokedAgents.push({ id: agentId, mode: stage.invocation });
         stageResults.set(agentId, result);
 

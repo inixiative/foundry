@@ -2,6 +2,7 @@ import {
   ContextLayer,
   computeHash,
   ContextStack,
+  newId,
   type SignalBus,
   type Signal,
   type SignalKind,
@@ -33,7 +34,8 @@ export interface FormalDoc {
   sources: string[];
   version: number;
   state: DocState;
-  trust: number;
+  /** 0-1, averaged from source signal confidences. */
+  confidence: number;
   tier?: CorpusTier;
   createdAt: number;
   updatedAt: number;
@@ -55,7 +57,7 @@ export interface CompiledCorpus {
     id: string;
     content: string;
     tokens: number;
-    trust: number;
+    confidence: number;
     sources: string[];
   }>;
   totalTokens: number;
@@ -77,9 +79,7 @@ export type CorpusTier =
 export interface CorpusCompilerConfig {
   /** Max tokens for compiled output. Default 50000. */
   maxTokens?: number;
-  /** Minimum trust for a doc to be included in compilation. Default 20. */
-  minTrust?: number;
-  /** Minimum confidence for fluid entries to be promoted. Default 0.5. */
+  /** Minimum confidence for fluid entries to be promoted and for doc inclusion. Default 0.5. */
   minConfidence?: number;
 }
 
@@ -91,9 +91,8 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-let _nextId = 0;
 function generateId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${(++_nextId).toString(36)}`;
+  return newId(prefix);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,13 +114,11 @@ export class CorpusCompiler {
   private _fluid: FluidEntry[] = [];
   private _docs: Map<string, FormalDoc> = new Map();
   private _maxTokens: number;
-  private _minTrust: number;
   private _minConfidence: number;
   private _compilationCount = 0;
 
   constructor(config?: CorpusCompilerConfig) {
     this._maxTokens = config?.maxTokens ?? 50_000;
-    this._minTrust = config?.minTrust ?? 20;
     this._minConfidence = config?.minConfidence ?? 0.5;
   }
 
@@ -237,7 +234,7 @@ export class CorpusCompiler {
           kind: docKind,
           content: [...lines].join("\n"),
           state: "draft",
-          trust: Math.round(avgConfidence * 100),
+          confidence: avgConfidence,
         }
       );
 
@@ -277,9 +274,9 @@ export class CorpusCompiler {
   compile(tier?: CorpusTier): CompiledCorpus {
     this._compilationCount++;
 
-    // Filter docs: active state + trust threshold + optional tier
+    // Filter docs: active state + confidence threshold + optional tier
     let eligible = [...this._docs.values()].filter(
-      (d) => d.state === "active" && d.trust >= this._minTrust
+      (d) => d.state === "active" && d.confidence >= this._minConfidence
     );
 
     if (tier) {
@@ -288,8 +285,8 @@ export class CorpusCompiler {
       );
     }
 
-    // Sort by trust descending
-    eligible.sort((a, b) => b.trust - a.trust);
+    // Sort by confidence descending
+    eligible.sort((a, b) => b.confidence - a.confidence);
 
     // Build layers
     const layers: CompiledCorpus["layers"] = [];
@@ -308,7 +305,7 @@ export class CorpusCompiler {
             id: `layer_${doc.id}`,
             content: truncated,
             tokens: truncTokens,
-            trust: doc.trust,
+            confidence: doc.confidence,
             sources: [doc.id],
           });
           totalTokens += truncTokens;
@@ -320,7 +317,7 @@ export class CorpusCompiler {
         id: `layer_${doc.id}`,
         content: doc.content,
         tokens,
-        trust: doc.trust,
+        confidence: doc.confidence,
         sources: [doc.id],
       });
       totalTokens += tokens;
@@ -359,10 +356,7 @@ export class CorpusCompiler {
   /** Load a compiled corpus into a ContextStack. */
   loadIntoStack(corpus: CompiledCorpus, stack: ContextStack): void {
     for (const layer of corpus.layers) {
-      const contextLayer = new ContextLayer({
-        id: layer.id,
-        trust: layer.trust,
-      });
+      const contextLayer = new ContextLayer({ id: layer.id });
       contextLayer.set(layer.content);
       stack.addLayer(contextLayer);
     }
@@ -405,11 +399,11 @@ export class CorpusCompiler {
 
     switch (targetTier) {
       case "personal_public":
-        return doc.trust >= 30;
+        return doc.confidence >= 0.6;
       case "team":
-        return doc.trust >= 50 && doc.sources.length >= 5;
+        return doc.confidence >= 0.7 && doc.sources.length >= 5;
       case "org":
-        return doc.trust >= 70 && doc.sources.length >= 10;
+        return doc.confidence >= 0.8 && doc.sources.length >= 10;
       case "personal_private":
         return true; // Base tier, always allowed
     }

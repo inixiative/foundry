@@ -7,6 +7,7 @@ import {
   type InterventionLog,
   type LLMProvider,
   type TokenTracker,
+  type ToolRegistry,
 } from "@inixiative/foundry-core";
 import { ActionHandler } from "./actions";
 import { AIAssist } from "./ai-assist";
@@ -51,6 +52,8 @@ export interface ViewerConfig {
   actionQueue?: ActionQueue;
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
+  /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
+  assistTools?: ToolRegistry;
 }
 
 /**
@@ -120,6 +123,8 @@ export function createViewer(config: ViewerConfig) {
     actionQueue: config.actionQueue ?? null,
     tunnelHolder,
     port,
+    selfChatDir: config.configDir ?? ".foundry",
+    assistTools: config.assistTools,
   });
 
   const redisUrl = process.env.REDIS_URL;

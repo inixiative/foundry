@@ -42,16 +42,16 @@ function setup() {
   const signals = new SignalBus();
 
   // Build layers
-  const authConventions = new ContextLayer({ id: "auth-conventions", trust: 0.8 });
+  const authConventions = new ContextLayer({ id: "auth-conventions" });
   authConventions.set("Use JWT for API auth. Rotate keys every 30 days. Validate tokens on every request.");
 
-  const securityPatterns = new ContextLayer({ id: "security-patterns", trust: 0.9 });
+  const securityPatterns = new ContextLayer({ id: "security-patterns" });
   securityPatterns.set("OWASP top 10. SQL injection prevention. XSS sanitization. No eval().");
 
-  const testingPatterns = new ContextLayer({ id: "testing-patterns", trust: 0.6 });
+  const testingPatterns = new ContextLayer({ id: "testing-patterns" });
   testingPatterns.set("Use bun:test. Fixtures in tests/fixtures/. Mock external APIs.");
 
-  const archRules = new ContextLayer({ id: "architecture-boundaries", trust: 0.7 });
+  const archRules = new ContextLayer({ id: "architecture-boundaries" });
   archRules.set("Module boundaries: auth/ cannot import from payments/. One direction dependency.");
 
   const stack = new ContextStack([authConventions, securityPatterns, testingPatterns, archRules]);
@@ -103,7 +103,7 @@ function setup() {
 
   const memoryLib = new DomainLibrarian({
     domain: "memory",
-    cache: new ContextLayer({ id: "memory-cache", trust: 0.7 }),
+    cache: new ContextLayer({ id: "memory-cache" }),
     signals,
     llm: mockLLM({}),
     programmaticGuard: true,

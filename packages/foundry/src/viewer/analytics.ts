@@ -17,6 +17,7 @@ import type {
   UsageSummary,
   UsageBreakdown,
 } from "@inixiative/foundry-core";
+import { newId } from "@inixiative/foundry-core";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,7 +106,6 @@ export interface PersistedCall extends CallRecord {
 export class AnalyticsStore {
   private readonly _dir: string;
   private readonly _calls: PersistedCall[] = [];
-  private _callCounter = 0;
   private _loaded = false;
 
   constructor(dir: string) {
@@ -122,7 +122,7 @@ export class AnalyticsStore {
   /** Record a call from a UsageEntry (emitted by TokenTracker). */
   recordCall(entry: UsageEntry, extra?: { durationMs?: number }): PersistedCall {
     const call: PersistedCall = {
-      id: `call_${++this._callCounter}_${Date.now().toString(36)}`,
+      id: newId("call"),
       timestamp: entry.timestamp,
       provider: entry.provider,
       model: entry.model,
@@ -218,7 +218,6 @@ export class AnalyticsStore {
         try {
           const call = JSON.parse(line) as PersistedCall;
           this._calls.push(call);
-          this._callCounter++;
         } catch (err) {
           console.warn("[Analytics] skipping malformed JSONL line:", (err as Error).message);
         }

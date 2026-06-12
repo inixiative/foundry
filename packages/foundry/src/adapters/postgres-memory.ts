@@ -17,7 +17,6 @@ interface SearchEntryRow {
   source: string | null;
   timestamp: Date;
   meta: unknown;
-  createdAt: Date;
   updatedAt: Date;
 }
 
@@ -90,7 +89,7 @@ export class PostgresMemory {
     const escaped = query.replace(/[%_\\]/g, (c) => `\\${c}`);
     // Exclude the embedding column (pgvector Unsupported type) to avoid deserialization errors
     return this.prisma.$queryRaw`
-      SELECT id, kind, content, source, timestamp, meta, "createdAt", "updatedAt"
+      SELECT id, kind, content, source, timestamp, meta, "updatedAt"
       FROM entries
       WHERE content ILIKE ${"%" + escaped + "%"}
       ORDER BY timestamp DESC
@@ -130,7 +129,7 @@ export class PostgresMemory {
 
   async recentTraces(limit: number = 50) {
     return this.prisma.trace.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: { id: "desc" },
       take: limit,
       include: { spans: true },
     });
@@ -198,7 +197,11 @@ export class PostgresMemory {
   async writeMessage(msg: {
     id: string;
     threadId: string;
-    role: "user" | "agent" | "system";
+    actor: "user" | "agent" | "system";
+    /** Sub-classification. Defaults to "text". */
+    kind?: "text" | "tool_call" | "tool_result" | "thinking" | "error" | "routing";
+    /** Correlates every row produced within a single turn. */
+    turnId?: string;
     content: string;
     traceId?: string;
     meta?: Record<string, unknown>;
@@ -207,7 +210,9 @@ export class PostgresMemory {
       data: {
         id: msg.id,
         threadId: msg.threadId,
-        role: msg.role,
+        turnId: msg.turnId,
+        actor: msg.actor,
+        kind: msg.kind ?? "text",
         content: msg.content,
         traceId: msg.traceId,
         meta: toOptionalPrismaJson(msg.meta),
@@ -218,7 +223,7 @@ export class PostgresMemory {
   async threadMessages(threadId: string, limit: number = 100) {
     return this.prisma.message.findMany({
       where: { threadId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { id: "asc" },
       take: limit,
     });
   }

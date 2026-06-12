@@ -6,10 +6,9 @@ function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-function makeLayer(id: string, trust: number, content?: string, prompt?: string): ContextLayer {
+function makeLayer(id: string, content?: string, prompt?: string): ContextLayer {
   const layer = new ContextLayer({
     id,
-    trust,
     sources: content ? [source(`${id}-src`, content)] : [],
     prompt,
   });
@@ -21,8 +20,8 @@ describe("ContextStack", () => {
   describe("layer management", () => {
     test("addLayer and getLayers", () => {
       const stack = new ContextStack();
-      const a = makeLayer("a", 5);
-      const b = makeLayer("b", 10);
+      const a = makeLayer("a");
+      const b = makeLayer("b");
       stack.addLayer(a);
       stack.addLayer(b);
       expect(stack.layers.length).toBe(2);
@@ -31,37 +30,37 @@ describe("ContextStack", () => {
 
     test("addLayer at position", () => {
       const stack = new ContextStack();
-      stack.addLayer(makeLayer("a", 5));
-      stack.addLayer(makeLayer("c", 5));
-      stack.addLayer(makeLayer("b", 5), 1);
+      stack.addLayer(makeLayer("a"));
+      stack.addLayer(makeLayer("c"));
+      stack.addLayer(makeLayer("b"), 1);
       expect(stack.layers.map((l) => l.id)).toEqual(["a", "b", "c"]);
     });
 
     test("removeLayer", () => {
-      const stack = new ContextStack([makeLayer("a", 5), makeLayer("b", 10)]);
+      const stack = new ContextStack([makeLayer("a"), makeLayer("b")]);
       expect(stack.removeLayer("a")).toBe(true);
       expect(stack.layers.length).toBe(1);
       expect(stack.removeLayer("nonexistent")).toBe(false);
     });
 
     test("getLayer", () => {
-      const stack = new ContextStack([makeLayer("a", 5)]);
+      const stack = new ContextStack([makeLayer("a")]);
       expect(stack.getLayer("a")?.id).toBe("a");
       expect(stack.getLayer("nonexistent")).toBeUndefined();
     });
 
     test("reorder", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5),
-        makeLayer("b", 10),
-        makeLayer("c", 3),
+        makeLayer("a"),
+        makeLayer("b"),
+        makeLayer("c"),
       ]);
       stack.reorder(["c", "a"]);
       expect(stack.layers.map((l) => l.id)).toEqual(["c", "a", "b"]);
     });
 
     test("reorder with unknown ids ignores them", () => {
-      const stack = new ContextStack([makeLayer("a", 5), makeLayer("b", 10)]);
+      const stack = new ContextStack([makeLayer("a"), makeLayer("b")]);
       stack.reorder(["b", "nonexistent", "a"]);
       expect(stack.layers.map((l) => l.id)).toEqual(["b", "a"]);
     });
@@ -72,8 +71,8 @@ describe("ContextStack", () => {
       const stack = new ContextStack();
       const added: string[] = [];
       stack.onLayerAdded((layer) => added.push(layer.id));
-      stack.addLayer(makeLayer("a", 5));
-      stack.addLayer(makeLayer("b", 10));
+      stack.addLayer(makeLayer("a"));
+      stack.addLayer(makeLayer("b"));
       expect(added).toEqual(["a", "b"]);
     });
 
@@ -81,9 +80,9 @@ describe("ContextStack", () => {
       const stack = new ContextStack();
       const added: string[] = [];
       const unsub = stack.onLayerAdded((layer) => added.push(layer.id));
-      stack.addLayer(makeLayer("a", 5));
+      stack.addLayer(makeLayer("a"));
       unsub();
-      stack.addLayer(makeLayer("b", 10));
+      stack.addLayer(makeLayer("b"));
       expect(added).toEqual(["a"]);
     });
   });
@@ -128,14 +127,14 @@ describe("ContextStack", () => {
   describe("merge and slice", () => {
     test("merge concatenates warm layers", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
       ]);
       expect(stack.merge()).toBe("hello\n\nworld");
     });
 
     test("merge skips non-warm layers", () => {
-      const a = makeLayer("a", 5, "hello");
+      const a = makeLayer("a", "hello");
       const b = new ContextLayer({ id: "b" }); // cold
       const stack = new ContextStack([a, b]);
       expect(stack.merge()).toBe("hello");
@@ -143,25 +142,25 @@ describe("ContextStack", () => {
 
     test("merge with filter", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
       ]);
-      expect(stack.merge((l) => l.trust > 7)).toBe("world");
+      expect(stack.merge((l) => l.id === "b")).toBe("world");
     });
 
     test("slice is an alias for merge with filter", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
       ]);
-      expect(stack.slice((l) => l.trust > 7)).toBe("world");
+      expect(stack.slice((l) => l.id === "b")).toBe("world");
     });
 
     test("sliceByIds", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
-        makeLayer("c", 3, "foo"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
+        makeLayer("c", "foo"),
       ]);
       expect(stack.sliceByIds("a", "c")).toBe("hello\n\nfoo");
     });
@@ -170,8 +169,8 @@ describe("ContextStack", () => {
   describe("snapshot", () => {
     test("produces snapshot with hashes", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
       ]);
       const snap = stack.snapshot();
       expect(snap.content).toBe("hello\n\nworld");
@@ -184,7 +183,7 @@ describe("ContextStack", () => {
 
   describe("estimateTokens", () => {
     test("estimates ~4 chars per token", () => {
-      const stack = new ContextStack([makeLayer("a", 5, "a".repeat(400))]);
+      const stack = new ContextStack([makeLayer("a", "a".repeat(400))]);
       expect(stack.estimateTokens()).toBe(100);
     });
   });
@@ -192,8 +191,8 @@ describe("ContextStack", () => {
   describe("invalidateAll", () => {
     test("invalidates all warm layers", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "hello"),
-        makeLayer("b", 10, "world"),
+        makeLayer("a", "hello"),
+        makeLayer("b", "world"),
       ]);
       stack.invalidateAll();
       expect(stack.getLayer("a")!.state).toBe("stale");
@@ -204,8 +203,8 @@ describe("ContextStack", () => {
   describe("assemble", () => {
     test("assembles with agent prompt and layer prompts", () => {
       const stack = new ContextStack([
-        makeLayer("conventions", 10, "Use TypeScript strict mode", "These are project conventions. Follow them strictly."),
-        makeLayer("taxonomy", 8, "bug | feature | chore", "Use this taxonomy to classify incoming messages."),
+        makeLayer("conventions", "Use TypeScript strict mode", "These are project conventions. Follow them strictly."),
+        makeLayer("taxonomy", "bug | feature | chore", "Use this taxonomy to classify incoming messages."),
       ]);
 
       const assembled = stack.assemble("You are a classifier agent.");
@@ -220,7 +219,7 @@ describe("ContextStack", () => {
 
     test("assembles without agent prompt", () => {
       const stack = new ContextStack([
-        makeLayer("docs", 5, "API docs here", "Reference documentation."),
+        makeLayer("docs", "API docs here", "Reference documentation."),
       ]);
 
       const assembled = stack.assemble();
@@ -231,8 +230,8 @@ describe("ContextStack", () => {
 
     test("assembles layers without prompts as content-only", () => {
       const stack = new ContextStack([
-        makeLayer("with-prompt", 5, "content A", "instruction A"),
-        makeLayer("no-prompt", 5, "content B"),
+        makeLayer("with-prompt", "content A", "instruction A"),
+        makeLayer("no-prompt", "content B"),
       ]);
 
       const assembled = stack.assemble();
@@ -244,7 +243,7 @@ describe("ContextStack", () => {
 
     test("assemble skips cold and empty layers", () => {
       const cold = new ContextLayer({ id: "cold", prompt: "should not appear" });
-      const warm = makeLayer("warm", 5, "visible", "instruction");
+      const warm = makeLayer("warm", "visible", "instruction");
       const stack = new ContextStack([cold, warm]);
 
       const assembled = stack.assemble();
@@ -254,18 +253,18 @@ describe("ContextStack", () => {
 
     test("assemble respects filter", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "content A", "prompt A"),
-        makeLayer("b", 10, "content B", "prompt B"),
+        makeLayer("a", "content A", "prompt A"),
+        makeLayer("b", "content B", "prompt B"),
       ]);
 
-      const assembled = stack.assemble("system", (l) => l.trust > 7);
+      const assembled = stack.assemble("system", (l) => l.id === "b");
       expect(assembled.blocks.length).toBe(3); // system + prompt B + content B
       expect(assembled.blocks[1].id).toBe("b");
     });
 
     test("assemble text joins all blocks", () => {
       const stack = new ContextStack([
-        makeLayer("a", 5, "content A", "prompt A"),
+        makeLayer("a", "content A", "prompt A"),
       ]);
 
       const assembled = stack.assemble("system");

@@ -14,7 +14,7 @@ Open http://localhost:4400.
 
 Foundry is a framework for building agent systems where you control the context, permissions, and routing — not just the prompt.
 
-- **Context layers** — stackable, trust-weighted context with staleness, caching, and compaction. Agents see what you decide they should see.
+- **Context layers** — stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Classify → Route → Execute pipeline** — incoming messages are classified, routed to the right executor with the right context slice, and traced end-to-end.
 - **Capability gate** — agents request permission before dangerous operations. Three preset policies (unattended, supervised, restricted). Prompts surface in the viewer for human approval.
 - **Multi-thread hierarchy** — spawn child threads with inherited or isolated context. Herald observes across threads and detects duplication, contradiction, convergence.
@@ -30,7 +30,7 @@ packages/
 
 Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, hooks, and lightweight adapters (file, sqlite, http, markdown).
 
-Foundry adds opinions: compaction strategies, session management, LLM providers (Anthropic, OpenAI, Gemini, Claude Code), the viewer, heavy-infra adapters (Postgres, Redis), and higher-order agents (Planner, Herald, Active Memory, Corpus Compiler).
+Foundry adds opinions: session management, LLM providers (Anthropic, OpenAI, Gemini, Claude Code), the viewer, heavy-infra adapters (Postgres, Redis), and higher-order agents (Planner, Herald, Corpus Compiler).
 
 ## Setup
 
@@ -94,14 +94,13 @@ bun run test:db        # Postgres tests (requires DATABASE_URL)
 ```typescript
 import { ContextLayer, ContextStack } from "@inixiative/foundry-core";
 
-const system = new ContextLayer({ id: "system", trust: 1.0 });
+const system = new ContextLayer({ id: "system" });
 await system.load(mySource);
 
 const stack = new ContextStack();
 stack.add(system);
 
 const context = stack.assemble({ maxTokens: 8000 });
-// Higher-trust layers win when budget is tight
 ```
 
 ### Capability gate
@@ -144,7 +143,7 @@ const result = await harness.dispatch("Fix the login bug");
 
 The viewer is a Preact-based dashboard served by Hono. No build step — vanilla JS with htm tagged templates.
 
-- **Left panel**: thread tree (with prompt badges), layers (color-coded by trust), agents, live event stream
+- **Left panel**: thread tree (with prompt badges), layers, agents, live event stream
 - **Center panel**: conversation chat, pending prompt cards with approve/reject buttons
 - **Right panel**: trace inspector, span details, layer detail, intervention corrections
 

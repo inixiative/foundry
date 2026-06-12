@@ -254,17 +254,17 @@ registry.register(api.asAdapter("my-api"));
 
 // 3. Build layers with sources from different systems
 const stableLayer = new ContextLayer({
-  id: "stable", trust: 10,
+  id: "stable",
   sources: [docs.asSource("project-docs"), claudemdSource("claude", "./CLAUDE.md")],
 });
 
 const knowledgeLayer = new ContextLayer({
-  id: "knowledge", trust: 6, staleness: 300_000,
+  id: "knowledge", staleness: 300_000,
   sources: [sqlite.asSource("knowledge", "convention")],
 });
 
 const freshLayer = new ContextLayer({
-  id: "fresh", trust: 2, staleness: 30_000,
+  id: "fresh", staleness: 30_000,
   sources: [sqlite.asSource("recent", undefined, 20)],
 });
 

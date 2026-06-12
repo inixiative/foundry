@@ -151,15 +151,6 @@ export {
   type PlanExecutionResult,
 } from "./planner";
 
-// Active Memory (Levin-inspired)
-export {
-  ActiveMemory,
-  type AccessRecord,
-  type CompetitionResult,
-  type ActiveMemoryConfig,
-  type LayerStats,
-} from "./active-memory";
-
 // Corpus Compiler
 export {
   CorpusCompiler,
@@ -266,3 +257,15 @@ export {
   type GuardReport,
   type InvalidationEvent,
 } from "./flow-orchestrator";
+
+// Workstream-overload detector (Herald PatternDetector for intra-thread topology)
+export {
+  WorkstreamOverloadDetector,
+  WORKSTREAM_DETECTOR_PROMPT,
+  DEFAULT_DISTINCT_AGENT_THRESHOLD,
+  DEFAULT_CONTEXT_HASH_DIVERGENCE,
+  DEFAULT_DISTINCT_SIGNAL_SOURCES,
+  DEFAULT_WINDOW_MS as WORKSTREAM_DETECTOR_DEFAULT_WINDOW_MS,
+  type WorkstreamOverloadOptions,
+  type WorkstreamOverloadEvidence,
+} from "./workstream-detector";

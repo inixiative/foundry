@@ -4,7 +4,7 @@
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-04-09
-**Updated**: 2026-04-09
+**Updated**: 2026-04-19
 
 ---
 
@@ -14,9 +14,9 @@ FLOW.md Loop 4 defines a writeback pipeline that feeds learnings from completed 
 
 After a thread completes, the writeback pipeline:
 1. Reviews accumulated signals and thread-state
-2. Adjusts trust scores on layers that provided good/bad context
-3. Updates the Cartographer's doc map with new file observations
-4. Proposes new memory entries or convention updates
+2. Updates the Cartographer's doc map with new file observations
+3. Proposes new memory entries or convention updates
+4. Surfaces formal doc promotions from CorpusCompiler for review
 
 ## Key Gap
 
@@ -26,7 +26,6 @@ CorpusCompiler has a working three-stage pipeline (fluid → formal → corpus) 
 
 - **CorpusCompiler feed**: Librarian → CorpusCompiler.ingest() on each reconciled signal
 - **Writeback agent**: post-thread cleanup agent (fast LLM)
-- **Trust adjustment**: bump/decay trust scores based on signal quality
 - **Map rebuild trigger**: tell Cartographer to re-index changed files
 - **Memory proposals**: extract durable learnings from thread-state via CorpusCompiler formal docs
 - **Convention proposals**: CorpusCompiler already produces `convention` typed FormalDocs — surface for review
@@ -39,10 +38,9 @@ Thread completes
        ▼
  Writeback Agent (fast LLM)
        │
-       ├─→ Trust adjustments (layer trust +=/-= delta)
        ├─→ Map rebuild (Cartographer.rebuildMap())
        ├─→ Memory entries (append to memory layer source)
-       └─→ Convention proposals (append to convention layer source)
+       └─→ Convention proposals (CorpusCompiler FormalDoc promotions)
 ```
 
 ## Tasks
@@ -53,9 +51,8 @@ Thread completes
 - [ ] Wire CorpusCompiler's FormalDoc output to layer source updates (conventions, memory)
 
 ### Writeback agent
-- [ ] Define `WritebackResult` type (trust deltas, memory entries, convention proposals)
+- [ ] Define `WritebackResult` type (memory entries, convention proposals, map-rebuild targets)
 - [ ] Create writeback agent that reads thread-state layer + CorpusCompiler formal docs
-- [ ] Implement trust adjustment (update LayerSettingsConfig trust via ConfigStore)
 - [ ] Wire Cartographer map rebuild on relevant file observations
 - [ ] Surface CorpusCompiler convention/ADR proposals for human review (not auto-applied)
 - [ ] Trigger writeback on thread archive/complete
@@ -63,9 +60,9 @@ Thread completes
 ## Definition of Done
 
 - [ ] Thread completion triggers writeback agent
-- [ ] Trust scores update based on signal quality
 - [ ] New memory entries appear in memory layer on next thread
 - [ ] Convention proposals flagged for human review (not auto-applied)
+- [ ] Cartographer map reflects file observations from the completed thread
 
 ## Related
 

@@ -19,6 +19,7 @@ import {
   type ToolRegistry,
 } from "@inixiative/foundry-core";
 import { toolUseLoop } from "./tool-loop";
+import type { SessionAdapter } from "../providers/session-adapter";
 import type {
   FoundryConfig,
   AgentSettingsConfig,
@@ -60,7 +61,6 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
     layers.push(
       new ContextLayer({
         id,
-        trust: layerCfg.trust * 10, // Config uses 0-1, ContextLayer uses 0-10
         staleness: layerCfg.staleness || undefined,
         prompt: layerCfg.prompt || undefined,
         sources,
@@ -73,7 +73,6 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
     layers.push(
       new ContextLayer({
         id: "system",
-        trust: 10,
         sources: [{
           id: "default",
           load: async () => "You are a helpful engineering assistant.",
@@ -120,6 +119,13 @@ export interface ThreadFactoryDeps {
   stack: ContextStack;
   /** Shared project agents (built once, registered on each thread). */
   agents: Map<string, BaseAgent>;
+  /**
+   * Optional session adapter (e.g. ClaudeCodeSessionAdapter) for creating
+   * long-lived HarnessSessions per thread. Made available on the factory
+   * so viewer routes and future session-aware executors can resolve it
+   * without reaching into start.ts.
+   */
+  sessionAdapter?: SessionAdapter;
 }
 
 /**
@@ -132,10 +138,27 @@ export interface ThreadFactoryDeps {
 export class ThreadFactory {
   private _stack: ContextStack;
   private _agents: Map<string, BaseAgent>;
+  private _sessionAdapter?: SessionAdapter;
 
   constructor(deps: ThreadFactoryDeps) {
     this._stack = deps.stack;
     this._agents = deps.agents;
+    this._sessionAdapter = deps.sessionAdapter;
+  }
+
+  /** The runtime session adapter, if one was configured. */
+  get sessionAdapter(): SessionAdapter | undefined {
+    return this._sessionAdapter;
+  }
+
+  /**
+   * Attach a session adapter after construction. The adapter typically needs
+   * access to a thread's signal bus, which doesn't exist until a thread is
+   * created — so the factory often has to be built first, then retrofitted
+   * with the adapter once the main thread's signals are available.
+   */
+  attachSessionAdapter(adapter: SessionAdapter): void {
+    this._sessionAdapter = adapter;
   }
 
   /**
@@ -295,6 +318,30 @@ function buildAgent(
               }
 
               return result.content;
+            } else if (meta?.onDelta && typeof deps.provider.stream === "function") {
+              // Streaming path — forward text deltas to the sink, accumulate
+              // full content for the return value + single DB write upstream.
+              let full = "";
+              let tokens: { input: number; output: number } | undefined;
+              for await (const ev of deps.provider.stream(messages, { ...opts, cwd: meta?.cwd })) {
+                if (ev.type === "text" && ev.text) {
+                  full += ev.text;
+                  meta.onDelta(ev.text);
+                } else if (ev.type === "usage" && ev.tokens) {
+                  tokens = ev.tokens;
+                } else if (ev.type === "error") {
+                  throw new Error(ev.error ?? "stream error");
+                }
+              }
+              if (deps.tokenTracker && tokens) {
+                deps.tokenTracker.record({
+                  provider: deps.provider.id,
+                  model: opts.model ?? "unknown",
+                  agentId: id,
+                  tokens,
+                });
+              }
+              return full;
             } else {
               const result = await complete(messages, { ...opts, cwd: meta?.cwd });
               return result.content;

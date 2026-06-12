@@ -22,6 +22,7 @@
 
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join } from "path";
+import { newId, type SignalBus } from "@inixiative/foundry-core";
 import type { HarnessSession } from "./harness-session";
 import { ClaudeCodeSession, type ClaudeCodeSessionConfig } from "./claude-code-session";
 
@@ -223,16 +224,25 @@ export interface ClaudeCodeSessionAdapterConfig {
   store: ExternalSessionStore;
   /** Defaults applied to every session. Merged per createSession(). */
   defaults?: Omit<ClaudeCodeSessionConfig, "cwd" | "baseContext" | "externalSessionId">;
+  /**
+   * Optional signal bus. When provided, the adapter bridges session-level
+   * events into the signal bus so orchestration code (FlowOrchestrator,
+   * Librarian) can react without knowing about HarnessSession internals.
+   * Currently bridges: `session_compact` → `session_compacted`.
+   */
+  signals?: SignalBus;
 }
 
 export class ClaudeCodeSessionAdapter implements SessionAdapter {
   readonly runtime = "claude-code";
   private _store: ExternalSessionStore;
   private _defaults: ClaudeCodeSessionAdapterConfig["defaults"];
+  private _signals?: SignalBus;
 
   constructor(config: ClaudeCodeSessionAdapterConfig) {
     this._store = config.store;
     this._defaults = config.defaults;
+    this._signals = config.signals;
   }
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
@@ -250,20 +260,39 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     // runtime assigns a new ID on its first turn and we persist it so a
     // future Foundry restart can resume.
     let lastPersisted = existing ?? undefined;
-    session.onEvent((_event) => {
+    const signals = this._signals;
+    const runtime = this.runtime;
+    const threadId = opts.threadId;
+    session.onEvent((event) => {
       const current = session.externalSessionId;
-      if (!current || current === lastPersisted) return;
-      lastPersisted = current;
-      // Fire-and-forget — a persistence failure shouldn't crash the session.
-      // Emit an error event so the caller can observe it.
-      void this._store
-        .save(opts.threadId, this.runtime, current)
-        .catch((err) => {
-          console.warn(
-            "[ClaudeCodeSessionAdapter] failed to persist external session id:",
-            (err as Error).message,
-          );
+      if (current && current !== lastPersisted) {
+        lastPersisted = current;
+        // Fire-and-forget — a persistence failure shouldn't crash the session.
+        void this._store
+          .save(opts.threadId, this.runtime, current)
+          .catch((err) => {
+            console.warn(
+              "[ClaudeCodeSessionAdapter] failed to persist external session id:",
+              (err as Error).message,
+            );
+          });
+      }
+
+      // Bridge: compaction events → signal bus so FlowOrchestrator can
+      // invalidate the Librarian's injection ledger and re-hydrate next turn.
+      if (signals && event.kind === "session_compact") {
+        void signals.emit({
+          id: newId("sig-compact"),
+          kind: "session_compacted",
+          source: `session-adapter:${runtime}`,
+          content: {
+            source: event.compactionSource ?? runtime,
+            externalSessionId: event.externalSessionId,
+            threadId,
+          },
+          timestamp: event.timestamp,
         });
+      }
     });
 
     return session;

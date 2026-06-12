@@ -24,8 +24,8 @@ function makeSignal(kind: string, content: any, source = "test"): Signal {
 function setup() {
   const signals = new SignalBus();
   const stack = new ContextStack([
-    new ContextLayer({ id: "auth-conventions", trust: 0.5 }),
-    new ContextLayer({ id: "security-patterns", trust: 0.5 }),
+    new ContextLayer({ id: "auth-conventions" }),
+    new ContextLayer({ id: "security-patterns" }),
   ]);
   const librarian = new Librarian({ signals, stack });
   return { signals, stack, librarian };
@@ -43,15 +43,14 @@ describe("Librarian", () => {
   beforeEach(() => {
     signals = new SignalBus();
     stack = new ContextStack([
-      new ContextLayer({ id: "auth-conventions", trust: 0.5 }),
-      new ContextLayer({ id: "security-patterns", trust: 0.5 }),
+      new ContextLayer({ id: "auth-conventions" }),
+      new ContextLayer({ id: "security-patterns" }),
     ]);
     librarian = new Librarian({ signals, stack });
   });
 
   it("creates thread-state layer at position 0 in stack", () => {
     expect(stack.layers[0].id).toBe("thread-state");
-    expect(stack.layers[0].trust).toBe(1.0);
     expect(stack.layers[0].isWarm).toBe(true);
   });
 

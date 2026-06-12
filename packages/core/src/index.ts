@@ -214,6 +214,9 @@ export {
 // Bounded data structures
 export { BoundedSet } from "./bounded-set";
 
+// IDs (UUID v7 — carries its own creation timestamp)
+export { newId, idAtTime, timeFromId } from "./id";
+
 // Retry middleware
 export { retryMiddleware, type RetryConfig } from "./retry";
 

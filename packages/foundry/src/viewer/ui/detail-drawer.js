@@ -256,7 +256,6 @@ function LayerDetail({ layerId }) {
         </div>
         <${ScopeBar} section="layers" itemId=${layer.id} />
         <div class="detail-meta-row">
-          <div class="detail-meta"><label>Trust</label><span>${layer.trust}</span></div>
           <div class="detail-meta"><label>Content</label><span>${layer.contentLength} chars</span></div>
           <div class="detail-meta"><label>Tokens</label><span>~${Math.ceil(layer.contentLength / 4)}</span></div>
           <div class="detail-meta"><label>Hash</label><span class="mono">${layer.hash || "\u2014"}</span></div>
@@ -289,7 +288,6 @@ function LayerDetail({ layerId }) {
       <${ScopeBar} section="layers" itemId=${layerDef.id} />
       <div class="detail-def-fields">
         ${layerDef.prompt ? html`<div class="def-field"><label>Prompt</label><pre class="detail-json">${layerDef.prompt}</pre></div>` : null}
-        <div class="def-field"><label>Trust</label><span>${layerDef.trust}</span></div>
         <div class="def-field"><label>Sources</label><span>${(layerDef.sourceIds || []).join(", ") || "none"}</span></div>
       </div>
     </div>
@@ -437,7 +435,6 @@ function AgentDetail({ agentId }) {
 function CreateLayerForm({ onCreated }) {
   const [id, setId] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [trust, setTrust] = useState("0.5");
   const [staleness, setStaleness] = useState("0");
   const [saving, setSaving] = useState(false);
 
@@ -446,7 +443,7 @@ function CreateLayerForm({ onCreated }) {
     setSaving(true);
     const ok = await createDefinition("layers", id.trim(), {
       id: id.trim(), prompt, sourceIds: [],
-      trust: parseFloat(trust) || 0.5, staleness: parseInt(staleness) || 0,
+      staleness: parseInt(staleness) || 0,
       enabled: true,
     });
     setSaving(false);
@@ -468,9 +465,6 @@ function CreateLayerForm({ onCreated }) {
             value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
         </div>
         <div class="settings-row">
-          <div class="settings-field"><label class="settings-label">Trust (0-1)</label>
-            <input class="settings-input small" type="number" step="0.1" min="0" max="1"
-              value=${trust} onInput=${(e) => setTrust(e.target.value)} /></div>
           <div class="settings-field"><label class="settings-label">Staleness (ms)</label>
             <input class="settings-input small" type="number" min="0"
               value=${staleness} onInput=${(e) => setStaleness(e.target.value)} /></div>

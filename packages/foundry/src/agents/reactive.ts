@@ -6,6 +6,7 @@ import type {
   SignalBus,
   Signal,
 } from "@inixiative/foundry-core";
+import { newId } from "@inixiative/foundry-core";
 
 // ---------------------------------------------------------------------------
 // Reaction rules — what to do when a dispatch completes
@@ -131,7 +132,7 @@ export class ReactiveMiddleware {
         emit: (signal) => {
           this._signals.emit({
             ...signal,
-            id: `sig_${crypto.randomUUID()}`,
+            id: newId("sig"),
             timestamp: Date.now(),
           });
         },

@@ -103,6 +103,56 @@ export class MarkdownDocs {
     };
   }
 
+  /**
+   * Create a ContextSource that emits a compact topology of the corpus —
+   * one line per file with its H1 title and H2 headings. No full content.
+   *
+   * This is the docs-warden warm-cache substrate for corpora too large to
+   * hold inline (400KB+). The warden's advise LLM sees this ~50-tokens-per-file
+   * index and picks file paths; the orchestrator hydrates selected files
+   * on demand via HydrationAdapter.
+   *
+   * Output format (stable, deterministic — safe to diff across warm cycles):
+   *
+   *   docs/claude/API_ROUTES.md — API Routes
+   *     H2: Overview, Naming, Validation, Error shapes
+   *
+   *   docs/claude/AUTH.md — Authentication
+   *     H2: Session model, Token storage, Refresh flow
+   *
+   * Files with no H1 fall back to the file basename. Files with no H2s omit
+   * the headings line entirely. Empty files are skipped.
+   */
+  topologySource(id: string, opts: { maxHeadings?: number } = {}): ContextSource {
+    const docs = this;
+    const maxHeadings = opts.maxHeadings ?? 12;
+    return {
+      id,
+      async load() {
+        const files = await docs.load();
+        if (files.size === 0) return "";
+
+        const lines: string[] = [];
+        const paths = [...files.keys()].sort();
+
+        for (const path of paths) {
+          const content = files.get(path) ?? "";
+          if (!content.trim()) continue;
+
+          const { title, headings } = extractHeadings(content, maxHeadings);
+          const displayTitle = title ?? basename(path, extname(path));
+          lines.push(`${path} — ${displayTitle}`);
+          if (headings.length > 0) {
+            lines.push(`  H2: ${headings.join(", ")}`);
+          }
+          lines.push("");
+        }
+
+        return lines.join("\n").trimEnd();
+      },
+    };
+  }
+
   /** Create a HydrationAdapter. Refs use relative paths as locators. */
   asAdapter(): HydrationAdapter {
     const docs = this;
@@ -116,6 +166,36 @@ export class MarkdownDocs {
       },
     };
   }
+}
+
+/**
+ * Extract the first H1 and all H2 headings from markdown content.
+ * Returns `{ title: null, headings: [] }` if no structure is found.
+ */
+function extractHeadings(
+  content: string,
+  maxHeadings: number,
+): { title: string | null; headings: string[] } {
+  let title: string | null = null;
+  const headings: string[] = [];
+  const lines = content.split("\n");
+
+  for (const line of lines) {
+    if (title === null) {
+      const h1 = /^#\s+(.+?)\s*$/.exec(line);
+      if (h1) {
+        title = h1[1];
+        continue;
+      }
+    }
+    const h2 = /^##\s+(.+?)\s*$/.exec(line);
+    if (h2) {
+      headings.push(h2[1]);
+      if (headings.length >= maxHeadings) break;
+    }
+  }
+
+  return { title, headings };
 }
 
 /**

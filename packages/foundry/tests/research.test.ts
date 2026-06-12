@@ -208,7 +208,7 @@ describe("runner", () => {
       "executor-answer": { id: "executor-answer", kind: "executor", prompt: "Answer.", provider: "mock", model: "mock", temperature: 0, maxTokens: 4096, visibleLayers: [], peers: [], maxDepth: 3, enabled: true },
     };
     config.layers = {
-      system: { id: "system", prompt: "System.", sourceIds: ["system-prompt"], trust: 1, staleness: 0, maxTokens: 2000, enabled: true },
+      system: { id: "system", prompt: "System.", sourceIds: ["system-prompt"], staleness: 0, maxTokens: 2000, enabled: true },
     };
     config.sources = {
       "system-prompt": { id: "system-prompt", type: "inline", label: "System", uri: "You are helpful.", enabled: true },

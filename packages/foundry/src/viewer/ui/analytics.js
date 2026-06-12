@@ -315,7 +315,7 @@ export function Analytics() {
   ];
 
   return html`
-    <div class="analytics-overlay" onClick=${(e) => {
+    <div class="analytics-overlay fullscreen" onClick=${(e) => {
       if (e.target.classList.contains("analytics-overlay")) analyticsOpen.value = false;
     }}>
       <div class="analytics-panel">
@@ -330,7 +330,11 @@ export function Analytics() {
               >${t.label}</button>
             `)}
           </div>
-          <button class="analytics-close" onClick=${() => { analyticsOpen.value = false; }}>ESC</button>
+          <button
+            class="fullscreen-close"
+            onClick=${() => { analyticsOpen.value = false; }}
+            aria-label="Close analytics"
+          >\u00d7</button>
         </div>
 
         <div class="analytics-body">

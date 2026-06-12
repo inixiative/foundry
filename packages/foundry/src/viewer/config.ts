@@ -1,7 +1,6 @@
 import { mkdirSync, existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
-import type { Harness, LLMProvider } from "@inixiative/foundry-core";
+import { newId, type Harness, type LLMProvider } from "@inixiative/foundry-core";
 import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectView } from "./config-resolve";
 
 // ---------------------------------------------------------------------------
@@ -224,7 +223,6 @@ export interface AgentSettingsConfig {
   /**
    * Which layers this agent can WRITE (empty = none).
    * Domain librarians own their domain layer. The Librarian owns thread-state.
-   * Writeback agents may write to multiple layers (trust scores, content).
    */
   ownedLayers?: string[];
   /** Peer agent IDs for delegation. */
@@ -280,7 +278,7 @@ export interface AgentSettingsOverride
  * creates ContextLayer INSTANCES from these definitions. The distinction matters:
  *
  * - Feedback that changes a definition affects all future instances:
- *   "conventions should default to trust 0.9" → update this config.
+ *   "conventions should include X" → update this config.
  * - Feedback that changes an instance affects only that thread:
  *   "this thread's convention cache is stale" → runtime mutation, not config.
  *
@@ -289,7 +287,6 @@ export interface AgentSettingsOverride
  * - Domain Librarians: READ + WRITE their own domain layer (warm it, guard it)
  * - Librarian: WRITES the thread-state layer (sole writer)
  * - Executor (Claude Code): READS assembled context from all active layers
- * - Writeback: WRITES trust scores, content updates across layers
  */
 export interface LayerSettingsConfig {
   id: string;
@@ -311,8 +308,6 @@ export interface LayerSettingsConfig {
   prompt: string;
   /** Data source IDs that feed this layer. */
   sourceIds: string[];
-  /** Default trust score (0-1) for new instances. Writeback may adjust per-thread. */
-  trust: number;
   /** Staleness threshold in ms (0 = never stale). */
   staleness: number;
   /** Agent IDs that can write to this layer. Undefined = any agent. */
@@ -408,7 +403,7 @@ export function createProject(
   overrides?: Partial<Omit<ProjectSettingsConfig, "id" | "path">>,
 ): ProjectSettingsConfig {
   return {
-    id: randomUUID(),
+    id: newId("proj"),
     path: projectPath,
     label: overrides?.label ?? basename(projectPath),
     enabled: true,
@@ -570,7 +565,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       id: "system",
       prompt: "Core system instructions.",
       sourceIds: ["system-prompt"],
-      trust: 1.0,
       staleness: 0,
       enabled: true,
     },
@@ -578,7 +572,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       id: "conventions",
       prompt: "Project conventions and coding standards.",
       sourceIds: ["conventions-src"],
-      trust: 0.8,
       staleness: 60_000,
       enabled: true,
     },
@@ -586,7 +579,6 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       id: "memory",
       prompt: "Working memory — recent context, signals, decisions.",
       sourceIds: ["memory-src"],
-      trust: 0.3,
       staleness: 30_000,
       enabled: true,
     },
@@ -736,7 +728,6 @@ export class ConfigStore {
           id: layer.id,
           prompt: layer.prompt ?? "",
           sourceIds: layer.sources.map((s) => s.id),
-          trust: layer.trust,
           staleness: layer.staleness ?? 0,
           enabled: true,
         };

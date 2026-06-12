@@ -13,10 +13,9 @@ import { createFoundryMcpServer } from "../src/mcp/server";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeLayer(id: string, content: string, trust = 0.5): ContextLayer {
+function makeLayer(id: string, content: string): ContextLayer {
   return new ContextLayer({
     id,
-    trust,
     sources: [{ id: `${id}-src`, load: async () => content }],
   });
 }

@@ -13,11 +13,8 @@ export interface ContextSource {
 
 /**
  * A layer definition is the blueprint for a domain's context layer.
- * It describes the POLICY — what sources feed it, how it ages, its default
- * trust, its token budget. Definitions live in settings.json and are shared.
- *
- * Feedback that changes a definition affects all future instances:
- * "conventions should default to trust 0.9" → definition change.
+ * It describes the POLICY — what sources feed it, how it ages, its token
+ * budget. Definitions live in settings.json and are shared.
  */
 export interface LayerDefinition {
   /** Unique identifier (e.g., "conventions", "security", "thread-state"). */
@@ -26,8 +23,6 @@ export interface LayerDefinition {
   domain?: string;
   /** Source IDs that feed this layer (resolved at instantiation). */
   sourceIds?: string[];
-  /** Default trust score for new instances (0-100). */
-  defaultTrust?: number;
   /** Staleness threshold in ms. After this, the instance is considered stale. */
   staleness?: number;
   /** Token budget ceiling. */
@@ -57,7 +52,6 @@ export interface LayerInstanceState {
   content: string;
   hash: string;
   state: LayerState;
-  trust: number;
   lastWarmed: number | null;
   lastAccessed: number | null;
 }
@@ -72,16 +66,16 @@ export interface LayerInstanceState {
  * Two use cases, very different data profiles:
  *
  * DEFINITION VERSIONS (low volume, long-term value):
- *   Agent prompts change, model selections shift, trust defaults get tuned.
+ *   Agent prompts change, model selections shift.
  *   "We changed the Convention Librarian's prompt — did violations go down?"
  *   Connects to Oracle eval: config version A scored 0.72, version B scored 0.81.
  *   Keep indefinitely.
  *
  * INSTANCE VERSIONS (high volume, short-term debug value):
- *   Thread-state changes every message. Trust mutates on writeback.
+ *   Thread-state changes every message.
  *   "Why did security guard fire on message 23 but not 22?"
  *   These are events in the Session Store — the store IS the instance history.
- *   Compact or discard after retention window.
+ *   Discard after retention window.
  */
 export interface VersionEntry<T = unknown> {
   /** Content hash of the versioned payload. */
@@ -121,7 +115,6 @@ export interface ContextLayerConfig {
   definition?: LayerDefinition;
   sources?: ContextSource[];
   staleness?: number;
-  trust?: number;
   maxTokens?: number;
   /** Instruction explaining how this layer's content should be used. */
   prompt?: string;
@@ -132,7 +125,7 @@ export type LayerState = "cold" | "warming" | "warm" | "stale" | "compressing";
 /** Emitted on any write to a layer instance. The Session Store captures these. */
 export interface LayerMutationEvent {
   layerId: string;
-  /** What changed: "content", "trust", "state", "staleness", "prompt". */
+  /** What changed: "content", "state", "staleness", "prompt". */
   field: string;
   /** Previous value (serializable). */
   previous: unknown;
@@ -160,7 +153,6 @@ export class ContextLayer {
   private _lastAccessed: number | null = null;
   private _sources: ContextSource[];
   private _staleness: number | undefined;
-  private _trust: number;
   private _maxTokens: number | undefined;
   private _prompt: string | undefined;
   private _warmingPromise: Promise<void> | null = null;
@@ -169,10 +161,10 @@ export class ContextLayer {
     [];
 
   /**
-   * Mutation listeners — called on any write to this layer (content, trust, state).
+   * Mutation listeners — called on any write to this layer (content, state).
    * Used by the Session Store to capture instance history as events.
    * Unlike onStateChange (which only fires on state transitions), this fires
-   * on content changes, trust adjustments, and any other mutation.
+   * on content changes and any other mutation.
    */
   private _mutationListeners: Array<
     (event: LayerMutationEvent) => void
@@ -183,7 +175,6 @@ export class ContextLayer {
     this.definition = config.definition;
     this._sources = config.sources ?? [];
     this._staleness = config.staleness ?? config.definition?.staleness;
-    this._trust = config.trust ?? config.definition?.defaultTrust ?? 0;
     this._maxTokens = config.maxTokens ?? config.definition?.maxTokens;
     this._prompt = config.prompt ?? config.definition?.prompt;
   }
@@ -201,7 +192,6 @@ export class ContextLayer {
       definition,
       sources,
       staleness: overrides?.staleness ?? definition.staleness,
-      trust: overrides?.trust ?? definition.defaultTrust,
       maxTokens: overrides?.maxTokens ?? definition.maxTokens,
       prompt: overrides?.prompt ?? definition.prompt,
     });
@@ -215,7 +205,6 @@ export class ContextLayer {
       content: this._content,
       hash: this._hash,
       state: this._state,
-      trust: this._trust,
       lastWarmed: this._lastWarmed,
       lastAccessed: this._lastAccessed,
     };
@@ -225,7 +214,6 @@ export class ContextLayer {
   restoreInstance(snapshot: LayerInstanceState): void {
     this._content = snapshot.content;
     this._hash = snapshot.hash;
-    this._trust = snapshot.trust;
     this._lastWarmed = snapshot.lastWarmed;
     this._lastAccessed = snapshot.lastAccessed;
     this._setState(snapshot.state === "warming" ? "warm" : snapshot.state);
@@ -262,10 +250,6 @@ export class ContextLayer {
 
   get hash(): string {
     return this._hash;
-  }
-
-  get trust(): number {
-    return this._trust;
   }
 
   get lastWarmed(): number | null {
@@ -383,20 +367,6 @@ export class ContextLayer {
 
   set maxTokens(value: number | undefined) {
     this._maxTokens = value;
-  }
-
-  /** Set trust with attribution. Use setTrust() for author tracking, or the setter for backwards compat. */
-  set trust(value: number) {
-    this.setTrust(value, "system");
-  }
-
-  /** Set trust with explicit author attribution — for writeback, active memory, etc. */
-  setTrust(value: number, author: string): void {
-    const previous = this._trust;
-    this._trust = value;
-    if (previous !== value) {
-      this._emitMutation("trust", previous, value, author);
-    }
   }
 
   get prompt(): string | undefined {

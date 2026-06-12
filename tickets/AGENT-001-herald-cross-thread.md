@@ -16,7 +16,7 @@ FLOW.md designates the Herald as a domain advisor with cross-thread scope. It ru
 
 ## Key Components
 
-- **Herald agent class** (`packages/core/src/herald.ts` — exists, needs instantiation)
+- **Herald agent class** (`packages/foundry/src/agents/herald.ts` — exists, needs instantiation)
 - **Thread summary cache**: warm cache of sibling thread status/descriptions
 - **Signal emission**: convergence, divergence, resource conflict signals
 - **FlowOrchestrator integration**: Herald runs during pre-message flow at "on cross-cutting signals" tier (~5% of messages)

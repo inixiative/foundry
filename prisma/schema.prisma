@@ -11,6 +11,9 @@ datasource db {
 
 /// A memory entry — conventions, corrections, ADRs, taste, signals.
 /// The core unit of knowledge in the system.
+///
+/// IDs are UUID v7 (prefixed for readability). The first 48 bits encode the
+/// creation timestamp, so no `createdAt` column is needed — sort / filter by id.
 model Entry {
   id        String   @id
   kind      String   // "convention" | "correction" | "taste" | "adr" | "ci_rule" | "security" | etc.
@@ -22,7 +25,6 @@ model Entry {
   /// pgvector embedding for semantic search
   embedding Unsupported("vector(1536)")?
 
-  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([kind])
@@ -44,14 +46,11 @@ model Trace {
   root       Json
   summary    Json?
 
-  createdAt  DateTime  @default(now())
-
   spans      Span[]
   interventions Intervention[]
 
   @@index([messageId])
   @@index([threadId])
-  @@index([createdAt])
   @@map("traces")
 }
 
@@ -98,8 +97,6 @@ model Signal {
   timestamp  DateTime @default(now())
   refs       Json?    // Array of { system, locator }
 
-  createdAt  DateTime @default(now())
-
   @@index([kind])
   @@index([source])
   @@index([timestamp])
@@ -116,8 +113,6 @@ model Intervention {
   reason     String?
   operator   String
 
-  createdAt  DateTime @default(now())
-
   trace      Trace    @relation(fields: [traceId], references: [id], onDelete: Cascade)
 
   @@index([traceId])
@@ -133,7 +128,6 @@ model ThreadState {
   status      String   @default("idle") // "idle" | "active" | "waiting" | "archived"
   parentId    String?
 
-  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   archivedAt  DateTime?
 
@@ -142,18 +136,45 @@ model ThreadState {
   @@map("thread_states")
 }
 
-/// Conversation message — the human/agent dialogue within a thread.
+/// Who produced the message.
+enum Actor {
+  user
+  agent
+  system
+}
+
+/// Sub-classification. Add values via `ALTER TYPE ... ADD VALUE` as new
+/// capture categories emerge — we're starting broad since we don't yet
+/// know which signals drive improvement.
+enum MessageKind {
+  text
+  tool_call
+  tool_result
+  thinking
+  error
+  routing
+}
+
+/// Conversation message — everything that happens within a thread turn.
+///
+/// - `actor`:  who produced it
+/// - `kind`:   what sub-type of output
+/// - `turnId`: groups every row produced by a single turn (one user message
+///             plus the agent's text/tool_calls/tool_results/thinking/etc.)
+/// - `meta`:   structured payload (tool input/output, error details, ...)
 model Message {
-  id        String   @id
+  id        String      @id
   threadId  String
-  role      String   // "user" | "agent" | "system"
+  turnId    String?
+  actor     Actor
+  kind      MessageKind @default(text)
   content   String
-  traceId   String?  // Links to the trace if this message was processed
+  traceId   String?
   meta      Json?
 
-  createdAt DateTime @default(now())
-
-  @@index([threadId, createdAt])
+  @@index([threadId, id])
+  @@index([turnId])
   @@index([traceId])
+  @@index([kind])
   @@map("messages")
 }

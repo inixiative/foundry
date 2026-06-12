@@ -21,8 +21,7 @@ function source(id: string, content: string): ContextSource {
 function makeStack(content: string = "test context"): ContextStack {
   const layer = new ContextLayer({
     id: "docs",
-    trust: 10,
-    sources: [source("docs", content)],
+        sources: [source("docs", content)],
   });
   layer.set(content);
   return new ContextStack([layer]);
@@ -434,7 +433,6 @@ describe("Context stack concurrent access", () => {
     const layers = Array.from({ length: 5 }, (_, i) =>
       new ContextLayer({
         id: `layer-${i}`,
-        trust: i,
         sources: [
           {
             id: `src-${i}`,
@@ -462,15 +460,13 @@ describe("Context stack concurrent access", () => {
   test("warm during assemble: one task warms while another assembles", async () => {
     const layer1 = new ContextLayer({
       id: "existing",
-      trust: 10,
-      sources: [source("existing", "existing-content")],
+            sources: [source("existing", "existing-content")],
     });
     layer1.set("existing-content");
 
     const layer2 = new ContextLayer({
       id: "new-layer",
-      trust: 5,
-      sources: [
+            sources: [
         {
           id: "slow-source",
           load: async () => {

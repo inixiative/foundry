@@ -13,6 +13,7 @@ import { existsSync, mkdirSync } from "fs";
 import { basename } from "path";
 import { defaultConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
 import { writeComposed, writeFileRef, RUNTIME_OUTPUT_FILES } from "./prompts/composer";
+import { scanRepoDocs, formatPlan } from "./setup/scan-docs";
 
 const FOUNDRY_DIR = ".foundry";
 const CONFIG_PATH = `${FOUNDRY_DIR}/settings.json`;
@@ -159,6 +160,28 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
     (config as any)._pendingPrompts = prompts;
   }
 
+  // --- Opportunistic docs-layer scan ---
+  // If the repo has a docs/ directory worth indexing, offer to wire it up now.
+  // Silent no-op when the corpus is missing or too small.
+  console.log("\n  ── Docs layer ──\n");
+  const plan = await scanRepoDocs(process.cwd());
+  if (plan.strategy !== "none" && plan.settings) {
+    console.log(formatPlan(plan));
+    console.log();
+    if (await confirm("Wire this docs warden into your config?")) {
+      const { source, layer, agent } = plan.settings;
+      config.sources[source.id] = source;
+      config.layers[layer.id] = layer;
+      config.agents[agent.id] = agent;
+      console.log(`  Wired docs warden: ${plan.strategy} strategy, ${plan.chosen!.fileCount} files.`);
+    } else {
+      console.log("  Skipped. You can run the scan later via `bun run setup`.");
+    }
+  } else {
+    console.log("  No substantial docs corpus detected — skipping.");
+    console.log("  Add markdown under docs/ later and re-run `bun run setup`.");
+  }
+
   return config;
 }
 
@@ -178,9 +201,11 @@ async function configureLoop(config: FoundryConfig) {
   while (running) {
     const c = counts();
     const hasPrompts = Object.values(config.projects).some(p => p.prompts);
+    const docsStatus = config.sources["docs-src"] ? "configured" : "not scanned";
     const idx = await choose("What would you like to configure?", [
       `Provider & defaults  (${config.defaults.provider} / ${config.defaults.model})`,
       `Prompts              (${hasPrompts ? "configured" : "not set up"})`,
+      `Scan project docs    (${docsStatus})`,
       `Agents               (${c.agents} configured)`,
       `Layers               (${c.layers} configured)`,
       `Sources              (${c.sources} configured)`,
@@ -192,11 +217,12 @@ async function configureLoop(config: FoundryConfig) {
     switch (idx) {
       case 0: await configureDefaults(config); break;
       case 1: await configurePrompts(config); break;
-      case 2: await configureSection(config, "agents", agentEditor); break;
-      case 3: await configureSection(config, "layers", layerEditor); break;
-      case 4: await configureSection(config, "sources", sourceEditor); break;
-      case 5: await configureSection(config, "projects", projectEditor); break;
-      case 6: {
+      case 2: await configureDocsLayer(config); break;
+      case 3: await configureSection(config, "agents", agentEditor); break;
+      case 4: await configureSection(config, "layers", layerEditor); break;
+      case 5: await configureSection(config, "sources", sourceEditor); break;
+      case 6: await configureSection(config, "projects", projectEditor); break;
+      case 7: {
         if (await confirm("Replace config with starter defaults?", false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -206,7 +232,7 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 7: running = false; break;
+      case 8: running = false; break;
     }
 
     await saveConfig(config);
@@ -430,7 +456,7 @@ const layerEditor: ItemEditor<any> = {
   summarize: (id, l) => {
     const shape = l.contentShape ? ` [${l.contentShape}]` : "";
     const writers = l.writers?.length ? ` writers: ${l.writers.join(",")}` : "";
-    return `${id}  (trust: ${l.trust}${shape}${writers})${l.enabled ? "" : " [disabled]"}`;
+    return `${id}${shape}${writers}${l.enabled ? "" : " [disabled]"}`;
   },
   async create(config) {
     console.log("\n  A layer is a knowledge shelf — a token-budgeted window into a domain.");
@@ -446,11 +472,6 @@ const layerEditor: ItemEditor<any> = {
 
     const prompt = await ask("Instruction prompt (how to use this layer's content)", jobDesc);
     const contentShape = await ask("Content shape (e.g. 'JSON array', 'Markdown index')", "");
-
-    // Trust — explain in context
-    console.log("\n  Trust (0-1): How reliable is this layer's content based on user feedback?");
-    console.log("  1.0 = always correct (system instructions), 0.3 = needs validation (memory).");
-    const trust = await ask("Trust", "0.5");
 
     // Staleness — explain in context
     console.log("\n  Staleness: How long (ms) before this layer needs re-warming?");
@@ -507,7 +528,6 @@ const layerEditor: ItemEditor<any> = {
 
     return [id, {
       id, description, contentShape: contentShape || undefined, prompt, sourceIds,
-      trust: parseFloat(trust) || 0.5,
       staleness: parseInt(staleness) || 0,
       activation,
       writers: writerIds.length > 0 ? writerIds : undefined,
@@ -522,7 +542,6 @@ const layerEditor: ItemEditor<any> = {
 
     item.prompt = await ask("Prompt", item.prompt);
     item.contentShape = await ask("Content shape", item.contentShape || "") || undefined;
-    item.trust = parseFloat(await ask("Trust (0-1)", String(item.trust))) || 0.5;
     item.staleness = parseInt(await ask("Staleness ms", String(item.staleness))) || 0;
     const enabled = await confirm("Enabled?", item.enabled);
     item.enabled = enabled;
@@ -817,6 +836,50 @@ async function configurePrompts(config: FoundryConfig) {
 }
 
 // ---------------------------------------------------------------------------
+// Docs layer scanner
+// ---------------------------------------------------------------------------
+
+/**
+ * Scan the project's markdown docs and (optionally) wire a docs warden.
+ *
+ * Picks the most structured candidate directory (`docs/claude/` > `docs/` > …),
+ * decides between `inline` (full content) and `topology` (compact path+H1+H2)
+ * based on corpus size, and merges the resulting source/layer/agent into the
+ * config — only after the user confirms.
+ */
+async function configureDocsLayer(config: FoundryConfig) {
+  // Pick the repo to scan — prefer the first enabled project's path, fallback to cwd.
+  const projects = Object.values(config.projects).filter((p) => p.enabled !== false);
+  const repoPath = projects[0]?.path || process.cwd();
+
+  console.log(`\n  ── Docs-layer scan (${repoPath}) ──\n`);
+  const plan = await scanRepoDocs(repoPath);
+  console.log(formatPlan(plan));
+  console.log();
+
+  if (plan.strategy === "none" || !plan.settings) {
+    console.log("  Nothing to wire — the corpus is too small or missing.");
+    console.log("  Add markdown docs under docs/claude/ or docs/ and re-run this scan.\n");
+    return;
+  }
+
+  const existing = !!config.sources["docs-src"] || !!config.layers["docs"];
+  const verb = existing ? "Replace the existing docs source/layer/agent?" : "Wire this into your config?";
+  if (!(await confirm(verb))) {
+    console.log("  Skipped.\n");
+    return;
+  }
+
+  const { source, layer, agent } = plan.settings;
+  config.sources[source.id] = source;
+  config.layers[layer.id] = layer;
+  config.agents[agent.id] = agent;
+
+  console.log(`  Wired: source=${source.id}, layer=${layer.id}, agent=${agent.id}`);
+  console.log(`  Strategy: ${plan.strategy} (${plan.chosen!.fileCount} files, ~${plan.chosen!.approxTokens} tokens)\n`);
+}
+
+// ---------------------------------------------------------------------------
 // Starter config builder
 // ---------------------------------------------------------------------------
 
@@ -830,7 +893,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       id: "system",
       prompt: "Core system instructions.",
       sourceIds: ["system-prompt"],
-      trust: 1.0,
       staleness: 0,
       enabled: true,
     },
@@ -838,7 +900,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       id: "conventions",
       prompt: "Project conventions and coding standards.",
       sourceIds: ["conventions-src"],
-      trust: 0.8,
       staleness: 60_000,
       enabled: true,
     },
@@ -846,7 +907,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       id: "memory",
       prompt: "Working memory — recent context, signals, decisions.",
       sourceIds: ["memory-src"],
-      trust: 0.3,
       staleness: 30_000,
       enabled: true,
     },

@@ -20,6 +20,7 @@
 export type SessionEventKind =
   | "session_start"
   | "session_end"
+  | "session_compact"
   | "text"
   | "tool_use"
   | "tool_result"
@@ -40,6 +41,8 @@ export interface SessionEvent {
   readonly toolOutput?: string;
   /** Whether the tool call failed (for tool_result). */
   readonly toolError?: boolean;
+  /** Compaction source runtime (for session_compact): "claude-code" | "codex" | etc. */
+  readonly compactionSource?: string;
   /**
    * The agent runtime's native session ID (e.g. the UUID Claude Code uses
    * as the filename in ~/.claude/projects/<id>.jsonl). External to Foundry —

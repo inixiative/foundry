@@ -28,8 +28,7 @@ function source(id: string, content: string): ContextSource {
 function makeEnv() {
   const sysLayer = new ContextLayer({
     id: "system",
-    trust: 10,
-    sources: [source("system", "system context")],
+        sources: [source("system", "system context")],
   });
   sysLayer.set("system context");
 
@@ -229,8 +228,7 @@ describe("ReactiveMiddleware", () => {
     let loadCount = 0;
     const refreshable = new ContextLayer({
       id: "refreshable",
-      trust: 5,
-      sources: [{
+            sources: [{
         id: "counter",
         load: async () => `loaded-${++loadCount}`,
       }],
@@ -241,8 +239,7 @@ describe("ReactiveMiddleware", () => {
 
     const sysLayer = new ContextLayer({
       id: "system",
-      trust: 10,
-      sources: [{ id: "system", load: async () => "ctx" }],
+            sources: [{ id: "system", load: async () => "ctx" }],
     });
     sysLayer.set("ctx");
 
@@ -375,16 +372,14 @@ describe("rewarmOnAgentRule", () => {
     let loadCount = 0;
     const dynamic = new ContextLayer({
       id: "dynamic",
-      trust: 5,
-      sources: [{ id: "src", load: async () => `v${++loadCount}` }],
+            sources: [{ id: "src", load: async () => `v${++loadCount}` }],
     });
     await dynamic.warm();
     expect(dynamic.content).toBe("v1");
 
     const sysLayer = new ContextLayer({
       id: "system",
-      trust: 10,
-      sources: [{ id: "system", load: async () => "ctx" }],
+            sources: [{ id: "system", load: async () => "ctx" }],
     });
     sysLayer.set("ctx");
 

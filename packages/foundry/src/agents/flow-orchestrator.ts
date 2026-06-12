@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  newId,
   type ContextStack,
   type SignalBus,
   type Signal,
@@ -65,11 +66,13 @@ export interface HydrationResult {
 /** Event emitted when the orchestrator detects a state change that invalidates the current plan. */
 export interface InvalidationEvent {
   /** What triggered the invalidation. */
-  reason: "eviction" | "rehydration" | "map_rebuild";
+  reason: "eviction" | "rehydration" | "map_rebuild" | "compaction";
   /** Layer IDs affected. */
   affectedLayers: string[];
   /** Timestamp of the invalidation. */
   timestamp: number;
+  /** Source runtime for compaction events (e.g., "claude-code", "codex"). */
+  source?: string;
 }
 
 /** Result of the post-action flow — findings from guard checks. */
@@ -302,7 +305,7 @@ export class FlowOrchestrator {
 
       // Emit signal with hash so Librarian's ledger stays current
       await this._signals.emit({
-        id: `flow-inject-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: newId("flow-inject"),
         kind: "context_loaded",
         source: "flow-orchestrator",
         content: { layerId: id, hash: layer.hash },
@@ -362,7 +365,7 @@ export class FlowOrchestrator {
 
     // Emit tool observation signal for the Librarian's thread-state
     await this._signals.emit({
-      id: `flow-obs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: newId("flow-obs"),
       kind: "tool_observation",
       source: "flow-orchestrator",
       content: {
@@ -512,6 +515,20 @@ export class FlowOrchestrator {
             };
           }
         }
+        break;
+      }
+      case "session_compacted": {
+        // The underlying agent session was compacted (Claude Code auto-compact,
+        // Codex session restart). Whatever layers we told the Librarian were
+        // injected may have been summarized away. Clear the ledger so the
+        // next turn re-hydrates from scratch, and invalidate the plan.
+        const cleared = this._librarian.clearInjectionLedger();
+        event = {
+          reason: "compaction",
+          affectedLayers: cleared,
+          timestamp: Date.now(),
+          source: (signal.content as any)?.source as string | undefined,
+        };
         break;
       }
     }

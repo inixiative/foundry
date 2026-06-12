@@ -151,6 +151,14 @@ export class ClaudeCodeSession implements HarnessSession {
   private _turns = 0;
   private _totalTokens = { input: 0, output: 0 };
   private _startedAt: number;
+  /**
+   * Whether we've already seen a system/init event on the stream. If a second
+   * one arrives it signals a mid-session restart — Claude Code's auto-compact
+   * kills and resumes the session, which reproduces the init event. We use
+   * this to emit `session_compact` so the FlowOrchestrator can invalidate
+   * the Librarian's injection ledger.
+   */
+  private _sawInit = false;
 
   // -- Turn queue --
   private _queue: QueuedTurn[] = [];
@@ -542,6 +550,32 @@ export class ClaudeCodeSession implements HarnessSession {
     // (for resumed sessions, the config-supplied ID should match).
     if (typeof raw.session_id === "string" && !this._externalSessionId) {
       this._externalSessionId = raw.session_id;
+    }
+
+    // Compaction detection: a system/init message arriving after we've
+    // already seen one means the Claude Code session was restarted mid-run.
+    // Auto-compact works by killing and resuming the session, which fires
+    // a new init event. This tells the FlowOrchestrator that the session's
+    // in-memory state was summarized — the Librarian ledger is stale.
+    if (raw.type === "system" && (raw.subtype === "init" || raw.subtype === "compact_boundary")) {
+      if (this._sawInit && raw.subtype === "init") {
+        this._emit({
+          kind: "session_compact",
+          timestamp: Date.now(),
+          externalSessionId: this._externalSessionId,
+          compactionSource: "claude-code",
+          raw,
+        });
+      } else if (raw.subtype === "compact_boundary") {
+        this._emit({
+          kind: "session_compact",
+          timestamp: Date.now(),
+          externalSessionId: this._externalSessionId,
+          compactionSource: "claude-code",
+          raw,
+        });
+      }
+      this._sawInit = true;
     }
 
     const classified = this._classify(raw);

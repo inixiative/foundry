@@ -15,10 +15,10 @@ function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-function makeStack(...layers: [string, number, string][]): ContextStack {
+function makeStack(...layers: [string, string][]): ContextStack {
   return new ContextStack(
-    layers.map(([id, trust, content]) => {
-      const l = new ContextLayer({ id, trust, sources: [source(id, content)] });
+    layers.map(([id, content]) => {
+      const l = new ContextLayer({ id, sources: [source(id, content)] });
       l.set(content);
       return l;
     })
@@ -57,7 +57,7 @@ const defaultHandler: PlanHandler = async (_context, payload) => {
 
 describe("Planner", () => {
   test("run() produces a Plan with steps, goal, complexity", async () => {
-    const stack = makeStack(["docs", 10, "Project documentation"]);
+    const stack = makeStack(["docs", "Project documentation"]);
     const planner = new Planner({
       id: "planner",
       stack,
@@ -83,7 +83,7 @@ describe("Planner", () => {
       return makePlan({ goal: String(payload) });
     };
 
-    const stack = makeStack(["docs", 10, "Docs"]);
+    const stack = makeStack(["docs", "Docs"]);
     const planner = new Planner({
       id: "planner",
       stack,
@@ -116,7 +116,7 @@ describe("Planner", () => {
       });
     };
 
-    const stack = makeStack(["docs", 10, "Docs"]);
+    const stack = makeStack(["docs", "Docs"]);
     const planner = new Planner({
       id: "planner",
       stack,
@@ -152,7 +152,7 @@ describe("Planner", () => {
       });
     };
 
-    const stack = makeStack(["docs", 10, "Docs"]);
+    const stack = makeStack(["docs", "Docs"]);
     const planner = new Planner({
       id: "planner",
       stack,
@@ -174,7 +174,7 @@ describe("Planner", () => {
       return makePlan({ goal: String(payload) });
     };
 
-    const stack = makeStack(["docs", 10, "Docs"]);
+    const stack = makeStack(["docs", "Docs"]);
     const planner = new Planner({
       id: "planner",
       stack,
@@ -193,7 +193,7 @@ describe("Planner", () => {
 
 describe("executePlan", () => {
   test("walks steps in order, dispatches to agents, collects results", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
     const executionOrder: string[] = [];
 
     const exec1 = new Executor({
@@ -237,7 +237,7 @@ describe("executePlan", () => {
   });
 
   test("step B depends on step A — executed in dependency order", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
     const executionOrder: string[] = [];
 
     const exec1 = new Executor({
@@ -285,7 +285,7 @@ describe("executePlan", () => {
   });
 
   test("one step fails — dependents are skipped, others continue", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
 
     const failingExec = new Executor({
       id: "failing",
@@ -340,7 +340,7 @@ describe("executePlan", () => {
   });
 
   test("step with missing agent is marked as failed", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
     const registry = new Map<string, any>();
     // No agents registered
 
@@ -369,7 +369,7 @@ describe("executePlan", () => {
 
 describe("PlanExecutionResult", () => {
   test("verify completedSteps, failedSteps, totalTokens, durationMs", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
 
     const exec1 = new Executor({
       id: "exec1",
@@ -411,7 +411,7 @@ describe("PlanExecutionResult", () => {
   });
 
   test("durationMs reflects actual execution time", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
 
     const slowExec = new Executor({
       id: "exec1",
@@ -441,7 +441,7 @@ describe("PlanExecutionResult", () => {
   });
 
   test("results map contains ExecutionResult for each completed step", async () => {
-    const stack = makeStack(["docs", 10, "Context"]);
+    const stack = makeStack(["docs", "Context"]);
 
     const exec1 = new Executor({
       id: "exec1",

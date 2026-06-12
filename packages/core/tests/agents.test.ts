@@ -10,10 +10,10 @@ function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-function makeStack(...layers: [string, number, string][]): ContextStack {
+function makeStack(...layers: [string, string][]): ContextStack {
   return new ContextStack(
-    layers.map(([id, trust, content]) => {
-      const l = new ContextLayer({ id, trust, sources: [source(id, content)] });
+    layers.map(([id, content]) => {
+      const l = new ContextLayer({ id, sources: [source(id, content)] });
       l.set(content);
       return l;
     })
@@ -22,7 +22,7 @@ function makeStack(...layers: [string, number, string][]): ContextStack {
 
 describe("Executor", () => {
   test("runs handler with merged context", async () => {
-    const stack = makeStack(["docs", 10, "Use TypeScript"]);
+    const stack = makeStack(["docs", "Use TypeScript"]);
     const executor = new Executor({
       id: "writer",
       stack,
@@ -38,8 +38,8 @@ describe("Executor", () => {
 
   test("respects filterOverride", async () => {
     const stack = makeStack(
-      ["docs", 10, "docs content"],
-      ["memory", 3, "memory content"]
+      ["docs", "docs content"],
+      ["memory", "memory content"]
     );
     const executor = new Executor({
       id: "writer",
@@ -54,13 +54,13 @@ describe("Executor", () => {
 
   test("respects layerFilter from config", async () => {
     const stack = makeStack(
-      ["docs", 10, "docs content"],
-      ["memory", 3, "memory content"]
+      ["docs", "docs content"],
+      ["memory", "memory content"]
     );
     const executor = new Executor({
       id: "writer",
       stack,
-      layerFilter: (l) => l.trust > 5,
+      layerFilter: (l) => l.id === "docs",
       handler: async (context, _payload: string) => context,
     });
 
@@ -71,7 +71,7 @@ describe("Executor", () => {
 
 describe("Decider", () => {
   test("returns decision without leaking context", async () => {
-    const stack = makeStack(["taxonomy", 10, "Big secret taxonomy"]);
+    const stack = makeStack(["taxonomy", "Big secret taxonomy"]);
     const decider = new Decider({
       id: "priority",
       stack,
@@ -91,7 +91,7 @@ describe("Decider", () => {
   });
 
   test("decision can be any type", async () => {
-    const stack = makeStack(["docs", 10, "docs"]);
+    const stack = makeStack(["docs", "docs"]);
     const decider = new Decider<string, { score: number; label: string }>({
       id: "scorer",
       stack,
@@ -108,7 +108,7 @@ describe("Decider", () => {
 
 describe("Classifier", () => {
   test("returns classification", async () => {
-    const stack = makeStack(["taxonomy", 10, "Categories: bug, feature, question"]);
+    const stack = makeStack(["taxonomy", "Categories: bug, feature, question"]);
     const classifier = new Classifier({
       id: "classifier",
       stack,
@@ -130,7 +130,7 @@ describe("Classifier", () => {
   });
 
   test("classification with minimal fields", async () => {
-    const stack = makeStack(["docs", 5, "docs"]);
+    const stack = makeStack(["docs", "docs"]);
     const classifier = new Classifier({
       id: "simple",
       stack,
@@ -149,20 +149,19 @@ describe("Classifier", () => {
 describe("Agent prompt-layer pairing", () => {
   test("assembleContext includes agent prompt and layer prompts", () => {
     const stack = new ContextStack(
-      [
-        ["conventions", 10, "Use TypeScript strict mode"],
-        ["taxonomy", 8, "bug | feature | chore"],
-      ].map(([id, trust, content]) => {
+      ([
+        ["conventions", "Use TypeScript strict mode"],
+        ["taxonomy", "bug | feature | chore"],
+      ] as const).map(([id, content]) => {
         const l = new ContextLayer({
-          id: id as string,
-          trust: trust as number,
-          sources: [source(id as string, content as string)],
+          id,
+          sources: [source(id, content)],
           prompt:
             id === "conventions"
               ? "Follow these project conventions."
               : "Classify using this taxonomy.",
         });
-        l.set(content as string);
+        l.set(content);
         return l;
       })
     );
@@ -187,8 +186,8 @@ describe("Agent prompt-layer pairing", () => {
 
   test("assembleContext respects filterOverride", () => {
     const stack = makeStack(
-      ["docs", 10, "docs content"],
-      ["memory", 3, "memory content"]
+      ["docs", "docs content"],
+      ["memory", "memory content"]
     );
     // Add prompt to docs layer
     stack.getLayer("docs")!.prompt = "Reference documentation.";
@@ -207,7 +206,7 @@ describe("Agent prompt-layer pairing", () => {
   });
 
   test("assembleContext without agent prompt", () => {
-    const stack = makeStack(["docs", 10, "docs content"]);
+    const stack = makeStack(["docs", "docs content"]);
     stack.getLayer("docs")!.prompt = "Reference docs.";
 
     const executor = new Executor({
@@ -224,7 +223,7 @@ describe("Agent prompt-layer pairing", () => {
 
 describe("Router", () => {
   test("returns route decision", async () => {
-    const stack = makeStack(["topology", 10, "Agents: fix, build, answer"]);
+    const stack = makeStack(["topology", "Agents: fix, build, answer"]);
     const router = new Router({
       id: "router",
       stack,
@@ -245,7 +244,7 @@ describe("Router", () => {
   });
 
   test("route with minimal fields", async () => {
-    const stack = makeStack(["docs", 5, "docs"]);
+    const stack = makeStack(["docs", "docs"]);
     const router = new Router({
       id: "simple-router",
       stack,

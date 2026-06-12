@@ -20,7 +20,6 @@ function makeHarness(): {
     (() => {
       const l = new ContextLayer({
         id: "docs",
-        trust: 10,
         sources: [source("docs", "test docs")],
       });
       l.set("test docs");

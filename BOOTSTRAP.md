@@ -7,32 +7,30 @@ loops that compound over time. Start minimal, let the system learn.
 
 ## Philosophy
 
-Don't over-configure upfront. Foundry's strength is that layers gain and lose
-trust based on actual usage. Start with a thin stack, let the signal system
-and active memory figure out what matters. Your job is to seed the right
+Don't over-configure upfront. Start with a thin stack, let the signal system
+and writeback pipeline figure out what matters. Your job is to seed the right
 *structure* — the system fills in the *content*.
 
 ---
 
 ## Phase 1: Layer Architecture
 
-### Layer Stack (ordered by trust, highest first)
+### Layer Stack
 
-| Layer | Trust | Staleness | Max Tokens | Purpose |
-|---|---|---|---|---|
-| `system` | 1.0 | never | 2,000 | Identity + hard constraints. Never stale. |
-| `project-context` | 0.9 | 5min | 6,000 | Hydrated from project files (README, package.json, tsconfig, key dirs). Per-thread. |
-| `conventions` | 0.8 | 60s | 4,000 | Coding standards, naming, patterns. Starts seeded, grows via correction signals. |
-| `domain` | 0.7 | 5min | 6,000 | Domain knowledge — business rules, API contracts, schema shapes. Hydrated from docs/sources. |
-| `learnings` | 0.5 | 30s | 8,000 | Auto-accumulated from signals. Corpus compiler promotes fluid entries here. |
-| `memory` | 0.3 | 15s | 8,000 | Working memory — recent context, decisions, thread-local state. High churn. |
-| `scratch` | 0.1 | 10s | 4,000 | Ephemeral. Mid-run observations, hypotheses. Dissolved aggressively by active memory. |
+| Layer | Staleness | Max Tokens | Purpose |
+|---|---|---|---|
+| `system` | never | 2,000 | Identity + hard constraints. Never stale. |
+| `project-context` | 5min | 6,000 | Hydrated from project files (README, package.json, tsconfig, key dirs). Per-thread. |
+| `conventions` | 60s | 4,000 | Coding standards, naming, patterns. Starts seeded, grows via correction signals. |
+| `domain` | 5min | 6,000 | Domain knowledge — business rules, API contracts, schema shapes. Hydrated from docs/sources. |
+| `learnings` | 30s | 8,000 | Auto-accumulated from signals. Corpus compiler promotes fluid entries here. |
+| `memory` | 15s | 8,000 | Working memory — recent context, decisions, thread-local state. High churn. |
+| `scratch` | 10s | 4,000 | Ephemeral. Mid-run observations, hypotheses. |
 
-**Why this ordering:**
-- High-trust layers are slow-moving, low-staleness (system, conventions)
-- Mid-trust layers are the learning surface (learnings, domain)
-- Low-trust layers are fast-moving working memory (memory, scratch)
-- Active memory will naturally adjust trust based on actual use/override/ignore patterns
+**Why this shape:**
+- Slow-moving layers (system, conventions) are low-staleness
+- Learning surface layers (learnings, domain) absorb signals via the writeback pipeline
+- Working memory layers (memory, scratch) turn over quickly per thread
 
 ### Layer Activation Modes
 
@@ -217,19 +215,15 @@ These are the feedback mechanisms that make Foundry get better over time.
 ```
 Operator corrects a classification/route/output
   → InterventionLog emits correction signal (confidence: 1.0)
-  → ActiveMemory adjusts layer trust (override penalty on overridden layer)
+  → Librarian reconciles the signal into thread-state
   → CorpusCompiler ingests as fluid entry
   → After N corrections on same topic → auto-promote to formal doc
   → Formal doc compiles into conventions/learnings layer
 ```
 
-**Setup:** This is automatic. InterventionLog already emits correction signals,
-ActiveMemory already tracks outcomes, CorpusCompiler already ingests from SignalBus.
-Just wire them at startup:
+**Setup:** Wire the signal bus into CorpusCompiler at startup:
 
 ```typescript
-activeMemory.connectSignals(signals);
-activeMemory.connectLifecycle();
 corpus.ingestFromSignalBus(signals);
 ```
 
@@ -239,7 +233,7 @@ corpus.ingestFromSignalBus(signals);
 Executor produces output
   → Reviewer agent evaluates output (on-demand, triggered by hook)
   → Reviewer emits convention/correction signals
-  → Signals flow into layer trust + corpus
+  → Signals flow into the corpus via Librarian reconciliation
 ```
 
 **Setup:** Add a post:dispatch hook that conditionally invokes the reviewer:
@@ -300,38 +294,14 @@ const herald = new Herald(threadRegistry, signals);
 herald.start(); // 5s default interval
 ```
 
-### Loop 5: Active Memory → Layer Evolution (continuous)
-
-```
-Every layer access is tracked:
-  - "used" → trust boost (+1)
-  - "overridden" → trust penalty (-3)
-  - "ignored" → mild penalty (-0.5)
-
-Layers compete: overlapping content → higher-access layer wins
-Layers dissolve: trust drops below threshold → removed from stack
-```
-
-**Setup:** Already built into ActiveMemory. Configure thresholds:
-
-```typescript
-const activeMemory = new ActiveMemory(lifecycle, {
-  useBoost: 1,
-  overridePenalty: 3,
-  ignorePenalty: 0.5,
-  dissolutionThreshold: 5,
-  enableCompetition: true,
-});
-```
-
-### Loop 6: Corpus Tier Promotion (manual + automatic)
+### Loop 5: Corpus Tier Promotion (manual + automatic)
 
 ```
 Fluid entries cluster → formal docs (draft)
-  → docs gain trust from usage/signals
-  → personal_private (trust ≥ 0) → personal_public (trust ≥ 30)
-  → personal_public → team (trust ≥ 50, sources ≥ 5)
-  → team → org (trust ≥ 70, sources ≥ 10)
+  → docs accumulate confidence from usage/signals
+  → personal_private (always) → personal_public (confidence ≥ 0.6)
+  → personal_public → team (confidence ≥ 0.7, sources ≥ 5)
+  → team → org (confidence ≥ 0.8, sources ≥ 10)
 ```
 
 This is the path from "one agent learned something" to "the whole org knows it."
@@ -373,20 +343,15 @@ project-src       → file (README, package.json, tsconfig — per project)
 
 ---
 
-## Phase 5: Compaction Strategy
-
-As context grows, you need intelligent compression. Use the **HybridStrategy**:
-
-| Trust Range | Strategy | Behavior |
-|---|---|---|
-| < 0.3 | TrustBased | Evict stale, truncate low-trust layers to 50% |
-| 0.3 – 0.7 | LRU | Score by recency (70%) + frequency (30%), compact mid-priority |
-| ≥ 0.7 | Summarize | LLM-powered compression to 25% of original, preserve key terms |
+## Phase 5: Token Budget
 
 **Token budget:** Set based on your model's context window.
 - Haiku agents (classifier/router): 4K budget (they only see system + project-context)
 - Sonnet agents (executors): 32K budget (they see everything)
 - Leave headroom for the actual conversation (at least 50% of context window)
+
+Progressive hydration keeps cost low: the Cartographer routes only the layers a
+message needs, and MCP lets the session pull additional context on demand.
 
 ---
 
@@ -403,9 +368,6 @@ const tracker = new TokenTracker({
 
 // Wire the budget guard hook
 hooks.register(budgetGuardHook(tracker));
-
-// Wire the auto-compact hook (compress before dispatching if over budget)
-hooks.register(autoCompactHook(hybridStrategy, 32_000));
 
 // Wire plan mode for complex tasks
 hooks.register(planModeHook({
@@ -442,11 +404,10 @@ After a few hundred interactions:
 
 - **Conventions layer** has grown from seed → 20+ entries, all from real corrections
 - **Learnings layer** has auto-promoted patterns from signal clusters
-- **Low-value layers dissolved** — scratch layers that never got used are gone
 - **Classification accuracy** improved — fewer operator corrections over time
 - **Router confidence** higher — routes are more precise as domain layer fills in
 - **Cross-thread patterns detected** — Herald flagged duplications and contradictions
-- **Token budget respected** — compaction keeps context under control
+- **Token budget respected** — progressive hydration keeps context under control
 - **Trace history shows improvement** — earlier traces have more corrections, later ones fewer
 
 The goal is not a perfect system on day 1. It's a system that's measurably better

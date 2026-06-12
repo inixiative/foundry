@@ -60,9 +60,10 @@ export type SpanKind =
 
 export type SpanStatus = "running" | "ok" | "error";
 
-let _spanCounter = 0;
+import { newId } from "./id";
+
 function nextSpanId(): string {
-  return `span_${++_spanCounter}_${Date.now().toString(36)}`;
+  return newId("span");
 }
 
 /**
@@ -92,7 +93,7 @@ export class Trace {
   private _stack: Span[] = [];
 
   constructor(messageId: string) {
-    this.id = `trace_${Date.now().toString(36)}_${messageId}`;
+    this.id = newId("trace");
     this.messageId = messageId;
     this.startedAt = performance.now();
 

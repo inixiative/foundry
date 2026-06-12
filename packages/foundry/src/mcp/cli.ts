@@ -106,7 +106,6 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
 
     layers.push(new ContextLayer({
       id,
-      trust: layerCfg.trust ?? 0.5,
       sources,
       prompt: layerCfg.prompt,
       staleness: layerCfg.staleness,

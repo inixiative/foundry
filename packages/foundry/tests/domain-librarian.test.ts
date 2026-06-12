@@ -39,7 +39,7 @@ function failingLLM(): LLMProvider {
 // ---------------------------------------------------------------------------
 
 function makeConventionLibrarian(llm: LLMProvider, signals: SignalBus) {
-  const cache = new ContextLayer({ id: "convention-cache", trust: 0.8 });
+  const cache = new ContextLayer({ id: "convention-cache" });
   cache.set("Functions use camelCase. Files use kebab-case. No default exports.");
   return new DomainLibrarian({
     domain: "convention",
@@ -51,7 +51,7 @@ function makeConventionLibrarian(llm: LLMProvider, signals: SignalBus) {
 }
 
 function makeMemoryLibrarian(signals: SignalBus) {
-  const cache = new ContextLayer({ id: "memory-cache", trust: 0.7 });
+  const cache = new ContextLayer({ id: "memory-cache" });
   cache.set(JSON.stringify([
     { pattern: "setTimeout.*0\\)", failure: "Race condition — setTimeout(0) is unreliable" },
     { pattern: "eval\\(", failure: "eval() is banned — use Function() if needed" },
@@ -124,7 +124,7 @@ describe("DomainLibrarian", () => {
     });
 
     it("returns empty when cache is empty", async () => {
-      const cache = new ContextLayer({ id: "empty-cache", trust: 0.5 });
+      const cache = new ContextLayer({ id: "empty-cache" });
       const lib = new DomainLibrarian({
         domain: "empty",
         cache,
