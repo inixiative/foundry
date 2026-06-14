@@ -158,7 +158,8 @@ export {
   ClaudeCodeProvider,
   type ClaudeCodeConfig as ClaudeCodeProviderConfig,
 } from "./providers/claude-code";
-// HarnessSession — long-lived agent subprocess interface
+// HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
+// (the single source of truth for agent-driving sessions across the ecosystem).
 export {
   type HarnessSession,
   type SessionEvent,
@@ -166,11 +167,9 @@ export {
   type SessionEventHandler,
   type SessionResult,
   type SessionArtifact,
-} from "./providers/harness-session";
-export {
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
-} from "./providers/claude-code-session";
+} from "@inixiative/agent-session";
 
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {

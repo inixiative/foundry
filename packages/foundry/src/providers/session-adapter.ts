@@ -23,8 +23,11 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { newId, type SignalBus } from "@inixiative/foundry-core";
-import type { HarnessSession } from "./harness-session";
-import { ClaudeCodeSession, type ClaudeCodeSessionConfig } from "./claude-code-session";
+import {
+  ClaudeCodeSession,
+  type HarnessSession,
+  type ClaudeCodeSessionConfig,
+} from "@inixiative/agent-session";
 
 // ---------------------------------------------------------------------------
 // ExternalSessionStore — persists (threadId, runtime) → externalSessionId
