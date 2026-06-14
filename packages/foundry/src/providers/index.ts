@@ -26,7 +26,8 @@ export { GeminiProvider, GeminiEmbeddingProvider, type GeminiConfig } from "./ge
 // Gated provider (capability-checked wrapper)
 export { GatedProvider, type GatedProviderConfig } from "./gated";
 
-// HarnessSession — long-lived agent subprocess interface
+// HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
+// (the single source of truth for agent-driving sessions across the ecosystem).
 export {
   type HarnessSession,
   type SessionEvent,
@@ -34,13 +35,9 @@ export {
   type SessionEventHandler,
   type SessionResult,
   type SessionArtifact,
-} from "./harness-session";
-
-// ClaudeCodeSession — HarnessSession implementation for Claude Code CLI
-export {
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
-} from "./claude-code-session";
+} from "@inixiative/agent-session";
 
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {

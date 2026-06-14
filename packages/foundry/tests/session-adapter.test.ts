@@ -9,7 +9,11 @@ import {
   InMemoryExternalSessionStore,
   type ExternalSessionStore,
 } from "../src/providers/session-adapter";
-import type { PipedSubprocess } from "../src/providers/claude-code-session";
+import type { ClaudeCodeSessionConfig } from "@inixiative/agent-session";
+
+// The structural subprocess type the `spawn` override returns — derived from the
+// package's config rather than importing an internal symbol (mirrors bench).
+type PipedSubprocess = ReturnType<NonNullable<ClaudeCodeSessionConfig["spawn"]>>;
 
 // ---------------------------------------------------------------------------
 // Shared fake subprocess — same wire format as claude-code-session tests
