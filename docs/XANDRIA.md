@@ -10,17 +10,24 @@ The name descends from the great Library of Alexandria, because that is what it 
 
 ---
 
-## 1. The problem: define once, drop in anywhere
+## 1. The problem & the key card
 
-Today, interacting with an agent means wiring it up **per surface**. You configure a model, its context, and its tools inside Claude Code. Then you do it again in Cursor. Then again in the next app you build. The catalog of "what this agent can see and do" is assembled N times, once per client, and maintained N times.
+Today, bringing agentic reasoning to a thing means wiring it up **per surface**. For every app you want an agent in, you set up the integration *inside that app*, then own its whole lifecycle — keys, context, rotation, teardown. The catalog of "what this agent can see and do" is assembled N times and maintained N times. Most people cope by giving **one agent full access** — which is fine for solo work, but it's all-or-nothing, per-app, and unmanaged.
+
+The four pains this is actually aimed at:
+
+- **Integration sprawl (M×N).** Every app re-integrates every tool. MCP was meant to fix this, but each client still wires its own servers — you pay N times.
+- **Context portability.** Your agent's accumulated context and memory are trapped per-tool; you can't bring *your* agent to a new surface.
+- **Credential scoping.** Giving an agent access means scattering keys into every app, usually with no boundary finer than "all."
+- **Lifecycle.** Setup *and* teardown, rotation, revocation — done per-app, by hand.
 
 The thing Xandria is trying to solve is narrow and concrete:
 
-> **Configure your agent and its context once. Drop it into any surface you're building — your email builder, an IDE, a web app — as a lens-scoped grant, and have it just work.**
+> **Configure your agent and its context once. Drop it into any surface — your email builder, an IDE, a web app — as a lens-scoped grant, and have it just work.**
 
-Everything else in this document is mechanism in service of that one sentence. When a design choice doesn't make "define once, drop in anywhere" more true, it's out of scope (see §12).
+The framing that captures it: **a grant is a key card for your agent.** Portable, revocable, and scoped to *definable boundaries*. You don't bring your keys and you don't bring your context — you present a card and use what it opens. Enterprise account, an API key, or your personal subscription: connect it once, and use it anywhere. Everything else in this document is mechanism in service of that one card.
 
-This is the **lens primitive from json-rules, applied to agents.** In json-rules a lens is a composable, enforceable boundary over *data* — it declares what a rule author may see and which rows are in scope, and it can only ever be *narrowed* as it's passed along. Xandria applies the same algebra to an agent's surface: what a given consumer may see and reach, narrowed monotonically per grant.
+This is the **lens primitive from json-rules, applied to agents.** In json-rules a lens is a composable, enforceable boundary over *data* — it declares what a rule author may see and which rows are in scope, and it can only ever be *narrowed* as it's passed along. Xandria applies the same algebra to an agent's surface: what a given consumer may see and reach, narrowed monotonically per grant. The card's boundaries aren't hand-wavy — the lens enforces them.
 
 ---
 
@@ -54,7 +61,7 @@ This metaphor is load-bearing, not decorative. It commits us to:
 2. **Connections have IDs, and the ID is the unit of revocation, audit, and last-seen.** You don't revoke "the email builder"; you revoke *connection #7*, exactly like logging out one linked device.
 3. **Continuity, not portability, is the default.** A linked device remembers; its session persists and resumes. A connection is stateful by default; clean/stateless portability is the opt-in special case.
 
-There is **one hub, and everything else is a consumer.** This is deliberately *not* peer federation. Consumers may themselves be agents, but they are consumers of Xandria — not co-equal hubs. (Federation is possible — see §12 — but it is not the target.)
+There is **one hub, and everything else is a consumer.** This is deliberately *not* arbitrary peer federation. Consumers may themselves be agents — and a hub may be shared by a team (§11) — but they are consumers of a hub, not co-equal hubs-all-the-way-down. (See §14 for what stays parked.)
 
 ---
 
@@ -72,7 +79,7 @@ There is **one hub, and everything else is a consumer.** This is deliberately *n
 | **Connection** | The authorized link, *with an ID* — revocable, audited, live; may be session/agentic or a plain data link | A **linked device** entry | `SessionAdapter` + `ExternalSessionStore` (ID ↔ session map) |
 | **Thread** | A live, possibly multi-actor conversation | A chat | `Thread` + `SignalBus` |
 | **Tag** | A semantic axis (e.g. `marketing`, `engineering`) that scopes reads and stamps writes | — | json-rules lens `where` + Atlas `@partOf` |
-| **Grant** | A connection's lens-scoped (tag-scoped) view of Xandria — including *what kind* of access (§9) | Pairing a device | `Lens` + `LensNarrowing` (json-rules) |
+| **Grant** *(a.k.a. key card)* | A connection's lens-scoped (tag-scoped) view of Xandria — including *what kind* of access (§9); portable, revocable, definable | Pairing a device | `Lens` + `LensNarrowing` (json-rules) |
 | **Lens** | The boundary: how much of Xandria a grant exposes | — | `@inixiative/json-rules` lens |
 
 ---
@@ -133,7 +140,7 @@ But brokering does **not** make Xandria a vault. It does **not** hold your secre
 
 Two properties this preserves:
 
-- **No honeypot.** Xandria is a broker, not a credential trove. Compromising it spills (revocable) *bindings*, not your keys.
+- **No plaintext honeypot.** Xandria stores bindings, not values. Compromising it spills (revocable) *bindings*, not your keys. (It is still a *capability* concentration point — see §16.)
 - **"Identity stays home," sharpened.** The WhatsApp framing (§3) says capability is borrowed and identity stays home. "Home" for a *secret* is your secret manager; Xandria is the switchboard in front of the safe, not the safe.
 
 This is orthogonal to *what's in a grant* (§9): wherever the model executes, secrets resolve through the binding from your vault.
@@ -170,16 +177,43 @@ A consumer — including an agent — interacts with Xandria in one of two ways:
 1. **Switchboard / direct.** "Just talk to another model." Route a message to a specific contact surface. Sub-agents are this: an agent reaches another model *through* Xandria instead of wiring it up itself.
 2. **Aggregated surface.** "See, effectively like your MCP, all the things that you have." Xandria exposes its whole catalog — models, sources, contacts, threads, capabilities — scoped by the lens (i.e. by tags).
 
-**Open question (§13):** when a consumer routes through the switchboard to another model, does that conversation become a **thread Xandria manages and shows** (visible in your open-threads view), or a private side-call Xandria merely *permits* but doesn't track? "Xandria manages all open threads" argues for the former — an *observable switchboard*, not a mere permission gate — but it needs to be decided explicitly.
+**Open question (§15):** when a consumer routes through the switchboard to another model, does that conversation become a **thread Xandria manages and shows** (visible in your open-threads view), or a private side-call Xandria merely *permits* but doesn't track? "Xandria manages all open threads" argues for the former — an *observable switchboard*, not a mere permission gate — but it needs to be decided explicitly.
 
 ---
 
-## 11. Repo layout
+## 11. Teams: one shared hub, many workspaces
+
+Solo, most people give one agent full access — fine. But Xandria is **inherently multiplayer**, and that is where it stops being a power-user convenience and becomes infrastructure.
+
+- **One team hub.** A team runs a shared Xandria. Everyone connects their own agents to it (each with their own key card / grant).
+- **Conversations happen on the team hub.** Threads on the team's tag axes are shared — multiple people's agents co-participate on the same live sessions (§6: co-participation on an axis).
+- **Pull back into your own workspace.** You take results from the team hub into your personal Xandria and keep working — and **traverse that boundary natively.** The lens governs what crosses (you only pull what your card opens); tags stamp what you contribute back.
+
+This is **Herald, productized.** Herald (in `docs/FLOW.md`) watches *all threads* and detects convergence, divergence, and resource conflict across one person's work. The team hub is the cross-**workspace** version of the same job — convergence and sharing across *people*, not just across one person's threads. The boundary traversal is Xandria-native: a team hub simply issues you a grant, and a grant is already everything we need (scoped read in, tag-stamped write back).
+
+Note this is **bounded** personal↔team sharing, not arbitrary recursive federation (§14). One shared hub with many member-consumers, plus a clean personal/team boundary — not hubs-all-the-way-down.
+
+---
+
+## 12. The foundry app: configure and curate your Xandria
+
+Xandria is the library; **foundry is the app you curate it with.** The existing foundry viewer/dashboard (backed by `ConfigStore` over `.foundry/settings.json`) already configures providers, agents, layers, and sources. Xandria extends that same surface: you configure and curate your contacts, capabilities, tags, grants/key-cards, and connections there.
+
+This sharpens the split in §13:
+
+- **foundry** — the primitives *and* the **owner-facing curation app**: where *you* assemble and tend your Xandria.
+- **`foundry-xandria`** — the **consumer-facing product**: the drop-in SDK and the key card a surface presents to connect and use what it opens.
+
+Owner curates in foundry; consumers connect via foundry-xandria.
+
+---
+
+## 13. Repo layout
 
 Xandria is **not one thing** — decompose it:
 
 1. **New primitives** — grants, lens-over-agent surface, the catalog projection, semantic tagging, secret-binding resolution, the connection/session registry. These extend foundry (or core) because they are reusable engine concepts. **They belong in foundry.**
-2. **The product** — the contacts book, linked-device management, the live graph, the drop-in SDK. **This belongs in its own repo: `foundry-xandria`.**
+2. **The product** — the drop-in SDK, linked-device/connection management, the live graph, the key-card flow. **This belongs in its own repo: `foundry-xandria`.** (The owner-facing curation UI rides the existing foundry viewer — see §12.)
 
 This mirrors the established **oracle precedent**: `foundry-oracle` lives in its own repo and depends on `core` via a `file:` dependency, because it is a distinct concern built *on* the engine, not *part* of it. Xandria is the same shape — except it consumes the *full foundry framework* (viewer, `FlowOrchestrator`, providers, `SessionAdapter`) **and** `@inixiative/json-rules` (the lens). Dependency direction stays clean: `foundry-xandria` → `foundry` + `json-rules` → `core`.
 
@@ -187,11 +221,11 @@ This mirrors the established **oracle precedent**: `foundry-oracle` lives in its
 
 ---
 
-## 12. Enabled, but not the goal
+## 14. Enabled, but not the goal
 
-The lens algebra makes several things *possible*. They are real, they work, and they are explicitly **parked** — not what Xandria is trying to solve:
+The lens algebra makes several things *possible*. They are real, they work, and they are explicitly **parked** — not what Xandria is trying to solve. Note the **team hub (§11) is *not* parked** — it's a bounded, first-class case. What stays parked is the *arbitrary, recursive* generalization:
 
-- **Federation / hubs-all-the-way-down.** A consumer could itself be a hub, and grants could flow hub-to-hub. The lens enables it; the target is one-hub-many-consumers.
+- **Hubs-all-the-way-down federation.** A consumer being itself a full hub, with grants flowing through unbounded hub-to-hub chains. The team hub is the bounded version; the unbounded mesh is deferred.
 - **Transitive delegation.** Because lenses only attenuate, a consumer could safely re-grant a *narrower* slice onward (the object-capability default). Safe ≠ wanted; deferred.
 - **Object-capability chain of custody.** Monotonic narrowing gives delegation a provable "you can never leak more than you were granted" property — the same chain-of-custody guarantee as foundry-oracle's **Steward** role. Available if federation is ever pursued.
 
@@ -199,11 +233,11 @@ These are listed so the periphery is captured without taking over. If any become
 
 ---
 
-## 13. Open questions
+## 15. Open questions
 
 1. **Observable switchboard vs. permission gate** (§10) — does a switchboard-routed conversation become a managed, visible thread, or a permitted-but-untracked side-call?
 2. **Ride MCP, or build a sibling protocol** — if Xandria literally *is* an MCP server whose resources are your agents, every existing MCP client connects for free. The risk: MCP's request/response shape strains under a stateful, multi-turn, multi-actor agent. Bend MCP to the thread boundary, or define an agent-serving protocol that's MCP-shaped but thread-native?
-3. **Incubate in-monorepo or split on day one** (§11).
+3. **Incubate in-monorepo or split on day one** (§13).
 
 **Resolved:**
 - *Describe vs. broker* → **broker, with secrets delegated to an external manager** (§8).
@@ -211,11 +245,24 @@ These are listed so the periphery is captured without taking over. If any become
 
 ---
 
-## 14. Prior art: Claude Tag
+## 16. What this doesn't solve
+
+Honest limits, on the record so the elegant framing doesn't hide them:
+
+- **The integration glue doesn't vanish — it centralizes.** Turning a documented API into a *reliable* call (auth flows, pagination, rate limits, side effects, errors) is exactly the work MCP servers exist to encapsulate. Xandria makes you pay it **once** instead of N times — a real win — but someone still pays it. "No setup" is true for the *consumer*, not for whoever stands up the capability.
+- **It is a contested lane.** "Scoped, revocable credential for an agent" is its own emerging category — agent-identity / auth-for-agents vendors, MCP itself, and the model providers' native connectors are all building pieces of this. The differentiation is the *combination* (lens algebra + agnosticism + tag axes + continuity), not the broker alone.
+- **The broker is a trust concentration point.** Even without plaintext secrets, Xandria sits in the path of every call — a *capability* honeypot. Compromise binding-resolution and you compromise everything downstream. Key-card *systems* get attacked at the reader and the access server, not the card.
+- **Boundaries are only as good as the metadata.** Wrong tags → wrong scoping. Auto-stamp + curate helps, but boundary correctness depends on tag hygiene, and annotation metadata historically rots (Atlas faces the same).
+
+The moat, if there is one: the **json-rules lens algebra** makes the boundaries provably enforced rather than hand-wavy, and the **agnosticism + portability** is what no single provider is incentivized to build. The card is the pitch; the lens is why it holds.
+
+---
+
+## 17. Prior art: Claude Tag
 
 Anthropic shipped **Claude Tag** (public beta, June 23 2026): a persistent AI teammate embedded in enterprise Slack channels — one shared instance per channel, with channel memory, ambient/proactive mode, and pass-the-baton handoff between teammates mid-task.
 
-It **validates** parts of this thesis: shared, multi-actor, persistent agents that carry a thread across people are a real pattern.
+It **validates** parts of this thesis: shared, multi-actor, persistent agents that carry a thread across people are a real pattern (compare the team hub, §11).
 
 It is also the **opposite lane**, which is useful for positioning:
 
