@@ -10,7 +10,7 @@ The name descends from the great Library of Alexandria, because that is what it 
 
 ---
 
-## 1. The problem & the key card
+## 1. The problem & the Signet
 
 Today, bringing agentic reasoning to a thing means wiring it up **per surface**. For every app you want an agent in, you set up the integration *inside that app*, then own its whole lifecycle — keys, context, rotation, teardown. The catalog of "what this agent can see and do" is assembled N times and maintained N times. Most people cope by giving **one agent full access** — which is fine for solo work, but it's all-or-nothing, per-app, and unmanaged.
 
@@ -25,7 +25,7 @@ The thing Xandria is trying to solve is narrow and concrete:
 
 > **Configure your agent and its context once. Drop it into any surface — your email builder, an IDE, a web app — as a lens-scoped grant, and have it just work.**
 
-The framing that captures it: **a grant is a key card for your agent.** Portable, revocable, and scoped to *definable boundaries*. You don't bring your keys and you don't bring your context — you present a card and use what it opens. Enterprise account, an API key, or your personal subscription: connect it once, and use it anywhere. Everything else in this document is mechanism in service of that one card.
+The framing that captures it: **a grant is a Signet for your agent** — a key card. Portable, revocable, and scoped to *definable boundaries*. Like a signet ring, it lets the bearer act *in your name* within bounds: you don't bring your keys and you don't bring your context — you present a Signet and use what it opens. Enterprise account, an API key, or your personal subscription: connect it once, and use it anywhere. Everything else in this document is mechanism in service of that one Signet.
 
 This is the **lens primitive from json-rules, applied to agents.** In json-rules a lens is a composable, enforceable boundary over *data* — it declares what a rule author may see and which rows are in scope, and it can only ever be *narrowed* as it's passed along. Xandria applies the same algebra to an agent's surface: what a given consumer may see and reach, narrowed monotonically per grant. The card's boundaries aren't hand-wavy — the lens enforces them.
 
@@ -80,7 +80,7 @@ There is **one hub, and everything else is a consumer.** This is deliberately *n
 | **Connection** | The authorized link, *with an ID* — revocable, audited, live; may be session/agentic or a plain data link | A **linked device** entry | `SessionAdapter` + `ExternalSessionStore` (ID ↔ session map) |
 | **Thread** | A live, possibly multi-actor conversation | A chat | `Thread` + `SignalBus` |
 | **Tag** | A semantic axis (e.g. `marketing`, `engineering`) that scopes reads and stamps writes | — | json-rules lens `where` + Atlas `@partOf` |
-| **Grant** *(a.k.a. key card)* | A connection's lens-scoped (tag-scoped) view of Xandria — including *what kind* of access (§9); portable, revocable, definable | Pairing a device | `Lens` + `LensNarrowing` (json-rules) |
+| **Signet** *(a grant — the key card)* | A connection's lens-scoped (tag-scoped) view of Xandria — including *what kind* of access (§9); portable, revocable, definable; lets the bearer act in your name within bounds | A signet ring / pairing a device | `Lens` + `LensNarrowing` (json-rules) |
 | **Lens** | The boundary: how much of Xandria a grant exposes | — | `@inixiative/json-rules` lens |
 
 ---
@@ -207,7 +207,7 @@ Same shape foundry already uses for providers (contract in core, implementation 
 
 Solo, most people give one agent full access — fine. But Xandria is **inherently multiplayer**, and that is where it stops being a power-user convenience and becomes infrastructure.
 
-- **One team hub.** A team runs a shared Xandria. Everyone connects their own agents to it (each with their own key card / grant).
+- **One team hub.** A team runs a shared Xandria. Everyone connects their own agents to it (each with their own Signet).
 - **Conversations happen on the team hub.** Threads on the team's tag axes are shared — multiple people's agents co-participate on the same live sessions (§6: co-participation on an axis).
 - **Pull back into your own workspace.** You take results from the team hub into your personal Xandria and keep working — and **traverse that boundary natively.** The lens governs what crosses (you only pull what your card opens); tags stamp what you contribute back.
 
@@ -219,12 +219,12 @@ Note this is **bounded** personal↔team sharing, not arbitrary recursive federa
 
 ## 13. The foundry app: configure and curate your Xandria
 
-Xandria is the library; **foundry is the app you curate it with.** The existing foundry viewer/dashboard (backed by `ConfigStore` over `.foundry/settings.json`) already configures providers, agents, layers, and sources. Xandria extends that same surface: you configure and curate your contacts, capabilities, tags, grants/key-cards, and connections there.
+Xandria is the library; **foundry is the app you curate it with.** The existing foundry viewer/dashboard (backed by `ConfigStore` over `.foundry/settings.json`) already configures providers, agents, layers, and sources. Xandria extends that same surface: you configure and curate your contacts, capabilities, tags, Signets (grants), and connections there.
 
 This sharpens the split in §14:
 
 - **foundry** — the engine *and* the **owner-facing curation app** (the existing viewer): where *you* assemble and tend your Xandria.
-- **`packages/xandria`** — the **exposure + consumer-facing product**: the connector server, catalog projection, grants/key-cards, and the drop-in client connector a surface presents.
+- **`packages/xandria`** — the **exposure + consumer-facing product**: the connector server, catalog projection, Signets (grants), and the drop-in client connector a surface presents.
 
 Owner curates in foundry; consumers connect through the xandria package.
 
@@ -239,7 +239,7 @@ packages/
   core/      @inixiative/foundry-core     — primitives + contracts (incl. the connector contract, §11)
   foundry/   @inixiative/foundry          — the engine + owner-facing curation app (the viewer)
   xandria/   @inixiative/foundry-xandria  — the exposure: connector server, catalog projection,
-                                            grants/key-cards, secret-binding resolution, client SDK
+                                            Signets (grants), secret-binding resolution, client SDK
 ```
 
 Dependency direction stays clean: `xandria` → `foundry` → `core`, plus `@inixiative/json-rules` (the lens).
@@ -278,7 +278,7 @@ Honest limits, on the record so the elegant framing doesn't hide them:
 
 - **The integration glue doesn't vanish — it centralizes.** Turning a documented API into a *reliable* call (auth flows, pagination, rate limits, side effects, errors) is exactly the work MCP servers exist to encapsulate. Xandria makes you pay it **once** instead of N times — a real win — but someone still pays it. "No setup" is true for the *consumer*, not for whoever stands up the capability.
 - **It is a contested lane.** "Scoped, revocable credential for an agent" is its own emerging category — agent-identity / auth-for-agents vendors, MCP itself, and the model providers' native connectors are all building pieces of this. The differentiation is the *combination* (lens algebra + agnosticism + tag axes + continuity + one connector), not the broker alone.
-- **The broker is a trust concentration point.** Even without plaintext secrets, Xandria sits in the path of every call — a *capability* honeypot. Compromise binding-resolution and you compromise everything downstream. Key-card *systems* get attacked at the reader and the access server, not the card.
+- **The broker is a trust concentration point.** Even without plaintext secrets, Xandria sits in the path of every call — a *capability* honeypot. Compromise binding-resolution and you compromise everything downstream. Signet *systems* (the key-card model) get attacked at the reader and the access server, not the card.
 - **Boundaries are only as good as the metadata.** Wrong tags → wrong scoping. Auto-stamp + curate helps, but boundary correctness depends on tag hygiene, and annotation metadata historically rots (Atlas faces the same).
 
 The moat, if there is one: the **json-rules lens algebra** makes the boundaries provably enforced rather than hand-wavy, and the **agnosticism + portability** (one connector, any model, any surface) is what no single provider is incentivized to build. The card is the pitch; the lens is why it holds.
