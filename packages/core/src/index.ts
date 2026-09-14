@@ -270,3 +270,4 @@ export * from "./native-evidence";
 export type { CredentialReference, CredentialScope, CredentialResolver } from "./credentials";
 export { evidenceDigest, assemblyDigest, boundaryReceipt, verifyExpertDelivery } from "./delivery-evidence";
 export type { ProviderBoundaryReceipt, DeliveryOwner, ExpertDeliveryProof } from "./delivery-evidence";
+export { type TokenCounts, totalTokenCount, sumTokenCounts } from "./token-counts";

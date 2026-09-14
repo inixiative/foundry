@@ -1,18 +1,23 @@
 {
   "schema": 1,
-  "createdAt": "2026-09-10T14:15:15.066Z",
-  "sourceRevision": "4336603026fa64a15dbea5e0b8c61a12d6e14657",
-  "sourceDigest": "6da8c56fe68322580a37af44846d8877cebe6d091802d2ad3a29cd036bd976ea",
+  "createdAt": "2026-09-24T02:27:12.416Z",
+  "sourceRevision": "745faa738f5de44f1e480fef7d08dd8496089ed2",
+  "sourceDigest": "5bb78cf262d8ed34c5e398b7defd851ffd107ce228f3074ee7979a6b58ee5eaf",
   "files": [
     {
       "path": "package.json",
-      "bytes": 668,
-      "sha256": "34ae66e1af9a6e4bf4210868ebd7f0b45c8277106c9033a2eb949668f0e0ad13"
+      "bytes": 784,
+      "sha256": "89718d80c374cd8ad08c8ef70854d5ac4ed332c7e4f3f3708f183e27e771e12a"
     },
     {
       "path": "src/claude-code-session.ts",
-      "bytes": 37680,
-      "sha256": "cbb0f12fdba4a89c73ab99df93c31668d44bac0111fe0f3aa95333ebe1855be5"
+      "bytes": 38144,
+      "sha256": "64bedfd23a43aef3fd44b9bc8ad397871e0bf16c77a9c157ae8b3ca81538cc27"
+    },
+    {
+      "path": "src/claude-usage.ts",
+      "bytes": 1281,
+      "sha256": "d45d5232fe04acdc07accb4c7d8be59bdd45e298726ac881919aa26add94b50d"
     },
     {
       "path": "src/codex-session.ts",
@@ -21,13 +26,13 @@
     },
     {
       "path": "src/harness-session.ts",
-      "bytes": 11002,
-      "sha256": "fb2c069a81dfc64b7152d0e0b32a7d2dd45b1aa52854f7e9d86d37f4f62aa98d"
+      "bytes": 11505,
+      "sha256": "e72686a866e4562be8614730901012aa12a397d9a24fd0b99e867112e1022833"
     },
     {
       "path": "src/index.ts",
-      "bytes": 675,
-      "sha256": "e2ce9a569ebcb8cc15ae3f0baa768bf70501979951056d0fe0e7e11293298225"
+      "bytes": 727,
+      "sha256": "40c49515b67df77962dd5c9a87960b2adc3e98ffdfd77c7f0b6549497196bf02"
     },
     {
       "path": "src/retained-evidence.ts",
@@ -36,8 +41,8 @@
     },
     {
       "path": "src/turn-state.ts",
-      "bytes": 2395,
-      "sha256": "7f485932f5a28b158d31e40c83a2155141592b98d02fca79ef1841488c14219f"
+      "bytes": 2488,
+      "sha256": "ae6f6fd51acaff45e63f42e8777145565b4fa279d2a9da964a532e72f3150130"
     }
   ],
   "package": {
@@ -49,10 +54,10 @@
       ".": "./src/index.ts"
     }
   },
-  "bun": "1.3.14",
+  "bun": "1.4.2",
   "archive": {
     "path": "agent-session.tgz",
-    "sha256": "61b77cb0436a5b50331a29bbc3154cbe1104249a33b73581a27401f051161a31"
+    "sha256": "200adee9ec4052622c76fdfdd6c0a9601057159381540e16a1fadbb2de3cce7c"
   },
   "scope": "Source-only candidate; no native execution or rollout approval"
 }

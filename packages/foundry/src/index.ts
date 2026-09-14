@@ -171,6 +171,7 @@ export {
   type SessionEventKind,
   type SessionEventHandler,
   type SessionResult,
+  type SessionTokens,
   type SessionArtifact,
   ClaudeCodeSession,
   CodexSession,
@@ -331,3 +332,4 @@ export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthe
 
 export { KastleAuthentication, type KastleSource, type KastleAssignment } from "./providers/kastle-authentication";
 export { KastleClient, type KastleSelection, type KastleRunEnvelope } from "./providers/kastle-client";
+export { type ClaudeContextBudget } from "./providers/claude-context-budget";

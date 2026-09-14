@@ -1,4 +1,5 @@
 import type { NativeAuthenticationProvider, NativeAuthenticationLaunch } from "./native-authentication";
+import { claudeContextEnvironment, type ClaudeContextBudget } from "./claude-context-budget";
 // ---------------------------------------------------------------------------
 // SessionAdapter — mapping between Foundry threads and external session IDs
 // ---------------------------------------------------------------------------
@@ -416,6 +417,8 @@ function attachSessionIdPersistence(opts: {
 
 export interface ClaudeCodeSessionAdapterConfig {
   authentication?: NativeAuthenticationProvider;
+  /** Native 200k window with early compaction by default; false uses CLI settings. */
+  contextBudget?: ClaudeContextBudget | false;
   /** Where to persist the (thread, external ID) mapping. */
   store: ExternalSessionStore;
   /** Defaults applied to every session. Merged per createSession(). */
@@ -444,7 +447,18 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   constructor(config: ClaudeCodeSessionAdapterConfig) {
     this._store = config.store;
     this._authentication = config.authentication;
-    this._defaults = config.defaults;
+    // Validate before creating a session, and preserve the caller's spawner.
+    claudeContextEnvironment({}, config.contextBudget);
+    const spawn = config.defaults?.spawn;
+    this._defaults = {
+      ...config.defaults,
+      spawn: (cmd, opts) => {
+        const options = { ...opts, env: claudeContextEnvironment(opts.env, config.contextBudget) };
+        return spawn ? spawn(cmd, options) : Bun.spawn(cmd, {
+          ...options, stdin: "pipe", stdout: "pipe", stderr: "pipe",
+        });
+      },
+    };
     this._signals = new ThreadSignalBindings(config.signals);
   }
 

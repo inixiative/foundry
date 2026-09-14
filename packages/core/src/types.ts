@@ -1,3 +1,4 @@
+import type { TokenCounts } from "./token-counts";
 // ---------------------------------------------------------------------------
 // Shared types — used by harness for conditional invocation/activation
 // ---------------------------------------------------------------------------
@@ -111,7 +112,7 @@ export interface CompletionResult {
   readonly native?: import("./native-evidence").NativeEvidence;
   readonly content: string;
   readonly model: string;
-  readonly tokens?: { input: number; output: number };
+  readonly tokens?: TokenCounts;
   readonly finishReason?: string;
   /** Tool calls requested by the LLM (present when finishReason is "tool_use"). */
   readonly toolCalls?: ToolCall[];
@@ -126,7 +127,7 @@ export interface EmbeddingResult {
 export interface LLMStreamEvent {
   type: "text" | "usage" | "done" | "error";
   text?: string;
-  tokens?: { input: number; output: number };
+  tokens?: TokenCounts;
   error?: string;
   finishReason?: string;
 }

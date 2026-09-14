@@ -3,6 +3,7 @@ import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/
 import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
 import { validateKastleAccess, type KastleAccessSource } from "../providers/kastle-access-client";
 import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
+import type { ClaudeContextBudget } from "../providers/claude-context-budget";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { newId, validateMemorySelection, type Harness, type LLMProvider, type MemorySelectionPolicy } from "@inixiative/foundry-core";
@@ -154,6 +155,8 @@ export type ListPatch<T> =
   | { append?: T[]; remove: T[] };
 
 export interface ProviderConfig {
+  /** Claude Code native compaction policy; defaults to 200k / 80%. */
+  contextBudget?: ClaudeContextBudget | false;
   id: string;
   type: "anthropic" | "openai" | "gemini" | "claude-code" | "codex" | "custom";
   /** Display label. */

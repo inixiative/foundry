@@ -162,3 +162,11 @@ See [LICENSE](./LICENSE) for details.
 ## Session archives
 
 Foundry can capture its durable sessions, import old Claude Code/Codex transcripts, and publish selected projects to a personal or organization Kastle. See [setup and retrieval](docs/session-archives.md).
+
+## Usage telemetry and context budgets
+
+Claude cache reads/writes and original usage tags flow through sessions, providers,
+traces, token tracking, and persisted analytics. Foundry defaults Claude Code to a
+200k native compaction window with an 80% trigger (roughly 160k).
+See [usage telemetry and native context budgets](docs/usage-and-context.md) for
+configuration, counter semantics, and the limits of native compaction.

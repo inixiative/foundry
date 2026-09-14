@@ -1,3 +1,5 @@
+import { type TokenCounts, sumTokenCounts, totalTokenCount } from "./token-counts";
+
 // ---------------------------------------------------------------------------
 // Token & Cost Tracking
 // ---------------------------------------------------------------------------
@@ -5,7 +7,7 @@
 /**
  * Accumulated token usage with estimated cost.
  */
-export interface TokenUsage {
+export interface TokenUsage extends TokenCounts {
   readonly input: number;
   readonly output: number;
   readonly total: number;
@@ -22,7 +24,7 @@ export interface UsageEntry {
   readonly agentId?: string;
   readonly threadId?: string;
   readonly spanId?: string;
-  readonly tokens: { readonly input: number; readonly output: number };
+  readonly tokens: Readonly<TokenCounts>;
   readonly cost: number;
   /** False means cost is an unpriced subtotal, not a zero-price acknowledgment. */
   readonly costKnown?: boolean;
@@ -50,7 +52,7 @@ export interface CostTable {
  * Budget enforcement configuration.
  */
 export interface BudgetConfig {
-  /** Maximum total tokens (input + output) before budget is exceeded. */
+  /** Maximum total tokens (input + output + cache reads/writes) before budget is exceeded. */
   readonly maxTokens?: number;
   /** Maximum cost in dollars before budget is exceeded. */
   readonly maxCost?: number;
@@ -76,7 +78,7 @@ export interface BudgetStatus {
 /**
  * Breakdown row used inside UsageSummary.
  */
-export interface UsageBreakdown {
+export interface UsageBreakdown extends TokenCounts {
   readonly key: string;
   readonly input: number;
   readonly output: number;
@@ -89,6 +91,8 @@ export interface UsageBreakdown {
  * Full summary across all dimensions.
  */
 export interface UsageSummary {
+  /** Disjoint input/output/cache totals; tags live on recent entries. */
+  readonly tokens: Readonly<TokenCounts>;
   readonly totalInput: number;
   readonly totalOutput: number;
   readonly totalTokens: number;
@@ -263,10 +267,12 @@ export class TokenTracker {
 
   /** Full usage summary across all dimensions. */
   summary(): UsageSummary {
+    const tokens = sumTokenCounts(this._entries.map(e => e.tokens));
     return {
-      totalInput: this._sum("input"),
-      totalOutput: this._sum("output"),
-      totalTokens: this._sum("input") + this._sum("output"),
+      tokens,
+      totalInput: tokens.input,
+      totalOutput: tokens.output,
+      totalTokens: totalTokenCount(tokens),
       totalCost: this._entries.reduce((s, e) => s + e.cost, 0),
       totalCalls: this._entries.length,
       byProvider: this._groupBy("provider"),
@@ -328,68 +334,29 @@ export class TokenTracker {
   }
 
   private _aggregate(entries: UsageEntry[]): TokenUsage {
-    let input = 0;
-    let output = 0;
-    let cost = 0;
-    for (const e of entries) {
-      input += e.tokens.input;
-      output += e.tokens.output;
-      cost += e.cost;
-    }
-    return { input, output, total: input + output, estimatedCost: cost };
-  }
-
-  private _sum(field: "input" | "output"): number {
-    let total = 0;
-    for (const e of this._entries) {
-      total += e.tokens[field];
-    }
-    return total;
+    const tokens = sumTokenCounts(entries.map(e => e.tokens));
+    return { ...tokens, total: totalTokenCount(tokens), estimatedCost: entries.reduce((sum, e) => sum + e.cost, 0) };
   }
 
   private _groupBy(
     field: "provider" | "model" | "agentId" | "threadId"
   ): UsageBreakdown[] {
-    const map = new Map<
-      string,
-      { input: number; output: number; cost: number; calls: number }
-    >();
-
-    for (const e of this._entries) {
-      const key = e[field];
+    const groups = new Map<string, UsageEntry[]>();
+    for (const entry of this._entries) {
+      const key = entry[field];
       if (key == null) continue;
-      const existing = map.get(key);
-      if (existing) {
-        existing.input += e.tokens.input;
-        existing.output += e.tokens.output;
-        existing.cost += e.cost;
-        existing.calls += 1;
-      } else {
-        map.set(key, {
-          input: e.tokens.input,
-          output: e.tokens.output,
-          cost: e.cost,
-          calls: 1,
-        });
-      }
+      const group = groups.get(key) ?? [];
+      group.push(entry);
+      groups.set(key, group);
     }
-
-    const result: UsageBreakdown[] = [];
-    for (const [key, v] of map) {
-      result.push({
-        key,
-        input: v.input,
-        output: v.output,
-        total: v.input + v.output,
-        cost: v.cost,
-        calls: v.calls,
-      });
-    }
-    return result;
+    return [...groups].map(([key, entries]) => {
+      const { estimatedCost, ...tokens } = this._aggregate(entries);
+      return { key, ...tokens, cost: estimatedCost, calls: entries.length };
+    });
   }
 
   private _buildBudgetStatus(): BudgetStatus {
-    const usedTokens = this._sum("input") + this._sum("output");
+    const usedTokens = totalTokenCount(sumTokenCounts(this._entries.map(e => e.tokens)));
     const usedCost = this._entries.reduce((s, e) => s + e.cost, 0);
 
     const limitTokens = this._budget.maxTokens;

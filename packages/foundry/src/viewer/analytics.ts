@@ -13,12 +13,13 @@
 import { mkdirSync, existsSync } from "fs";
 import { appendFile, readFile } from "node:fs/promises";
 import type {
+  TokenCounts,
   TokenTracker,
   UsageEntry,
   UsageSummary,
   UsageBreakdown,
 } from "@inixiative/foundry-core";
-import { newId } from "@inixiative/foundry-core";
+import { BudgetExceededError, newId, sumTokenCounts, totalTokenCount } from "@inixiative/foundry-core";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,10 +41,10 @@ export interface AnalyticsSnapshot {
   /** Hourly/daily/weekly/monthly aggregates */
   readonly rollups: RollupSet;
   /** Historical known subtotals; missing observations are never zero usage. */
-  readonly observations: { calls: number; knownInput: number; knownOutput: number; knownTokens: number; knownCost: number; unavailableUsageCalls: number; unavailableCostCalls: number; persistence: "pending" | "settled" | "failed" };
+  readonly observations: { calls: number; knownInput: number; knownOutput: number; knownTokens: number; knownCacheRead?: number; knownCacheWrite?: number; knownCost: number; unavailableUsageCalls: number; unavailableCostCalls: number; persistence: "pending" | "settled" | "failed" };
 }
 
-export interface TimeSeriesPoint {
+export interface TimeSeriesPoint extends TokenCounts {
   readonly bucket: string; // ISO timestamp of bucket start
   readonly input: number;
   readonly output: number;
@@ -51,7 +52,7 @@ export interface TimeSeriesPoint {
   readonly calls: number;
 }
 
-export interface ThreadCostSummary {
+export interface ThreadCostSummary extends TokenCounts {
   readonly threadId: string;
   readonly description?: string;
   readonly input: number;
@@ -63,7 +64,8 @@ export interface ThreadCostSummary {
   readonly lastActive: number;
 }
 
-export interface CallRecord {
+/** Cache counters and provider tags stay absent when unreported. */
+export interface CallRecord extends Omit<TokenCounts, "input" | "output"> {
   readonly timestamp: number;
   readonly provider: string;
   readonly model: string;
@@ -137,8 +139,7 @@ export class AnalyticsStore {
       agentId: entry.agentId,
       threadId: entry.threadId,
       spanId: entry.spanId,
-      input: entry.tokens.input,
-      output: entry.tokens.output,
+      ...entry.tokens,
       cost: entry.costKnown === false ? null : entry.cost,
       durationMs: extra?.durationMs,
       cached: entry.cached,
@@ -171,9 +172,18 @@ export class AnalyticsStore {
     this.disconnectTracker();
     const originalRecord = tracker.record;
     const record: TokenTracker["record"] = (entry) => {
-      const result = originalRecord.call(tracker, entry);
-      this.recordCall(result);
-      return result;
+      try {
+        const result = originalRecord.call(tracker, entry);
+        this.recordCall(result);
+        return result;
+      } catch (error) {
+        // record() stores the spent usage before enforcing the budget.
+        if (error instanceof BudgetExceededError) {
+          const recorded = tracker.recent(1)[0];
+          if (recorded) this.recordCall(recorded);
+        }
+        throw error;
+      }
     };
     tracker.record = record;
     this._detach = () => { if (tracker.record === record) tracker.record = originalRecord; };
@@ -187,6 +197,7 @@ export class AnalyticsStore {
   snapshot(tracker: TokenTracker): AnalyticsSnapshot {
     const session = tracker.summary();
     const calls = this._calls;
+    const known = sumTokenCounts(calls.map(knownCounts));
 
     return {
       session,
@@ -194,7 +205,9 @@ export class AnalyticsStore {
         calls: calls.length,
         knownInput: calls.reduce((n, c) => n + (c.input ?? 0), 0),
         knownOutput: calls.reduce((n, c) => n + (c.output ?? 0), 0),
-        knownTokens: calls.reduce((n, c) => n + (c.input ?? 0) + (c.output ?? 0), 0),
+        knownTokens: totalTokenCount(known),
+        knownCacheRead: known.cacheRead,
+        knownCacheWrite: known.cacheWrite,
         knownCost: calls.reduce((n, c) => n + (c.cost ?? 0), 0),
         unavailableUsageCalls: calls.filter(c => c.input === null || c.output === null).length,
         unavailableCostCalls: calls.filter(c => c.cost === null).length,
@@ -259,20 +272,18 @@ export class AnalyticsStore {
   // -----------------------------------------------------------------------
 
   private _buildTimeSeries(calls: CallRecord[], period: RollupPeriod): TimeSeriesPoint[] {
-    const buckets = new Map<string, { input: number; output: number; cost: number; calls: number }>();
+    const buckets = new Map<string, TokenCounts & { cost: number; calls: number }>();
 
     for (const call of calls) {
       const key = this._bucketKey(call.timestamp, period);
       const existing = buckets.get(key);
       if (existing) {
-        existing.input += call.input ?? 0;
-        existing.output += call.output ?? 0;
+        Object.assign(existing, sumTokenCounts([existing, knownCounts(call)]));
         existing.cost += call.cost ?? 0;
         existing.calls += 1;
       } else {
         buckets.set(key, {
-          input: call.input ?? 0,
-          output: call.output ?? 0,
+          ...sumTokenCounts([knownCounts(call)]),
           cost: call.cost ?? 0,
           calls: 1,
         });
@@ -305,8 +316,8 @@ export class AnalyticsStore {
   }
 
   private _buildThreadSummaries(calls: CallRecord[]): ThreadCostSummary[] {
-    const map = new Map<string, {
-      input: number; output: number; cost: number;
+    const map = new Map<string, TokenCounts & {
+      cost: number;
       calls: number; lastActive: number;
     }>();
 
@@ -314,15 +325,13 @@ export class AnalyticsStore {
       const tid = call.threadId ?? "(no thread)";
       const existing = map.get(tid);
       if (existing) {
-        existing.input += call.input ?? 0;
-        existing.output += call.output ?? 0;
+        Object.assign(existing, sumTokenCounts([existing, knownCounts(call)]));
         existing.cost += call.cost ?? 0;
         existing.calls += 1;
         existing.lastActive = Math.max(existing.lastActive, call.timestamp);
       } else {
         map.set(tid, {
-          input: call.input ?? 0,
-          output: call.output ?? 0,
+          ...sumTokenCounts([knownCounts(call)]),
           cost: call.cost ?? 0,
           calls: 1,
           lastActive: call.timestamp,
@@ -333,9 +342,8 @@ export class AnalyticsStore {
     return [...map.entries()]
       .map(([threadId, v]) => ({
         threadId,
-        input: v.input,
-        output: v.output,
-        totalTokens: v.input + v.output,
+        ...sumTokenCounts([v]),
+        totalTokens: totalTokenCount(v),
         cost: v.cost,
         calls: v.calls,
         avgCostPerCall: v.calls > 0 ? v.cost / v.calls : 0,
@@ -355,12 +363,12 @@ export class AnalyticsStore {
       const existing = map.get(key);
       if (existing) {
         existing.cost += call.cost ?? 0;
-        existing.tokens += (call.input ?? 0) + (call.output ?? 0);
+        existing.tokens += totalTokenCount(knownCounts(call));
         existing.calls += 1;
       } else {
         map.set(key, {
           cost: call.cost ?? 0,
-          tokens: (call.input ?? 0) + (call.output ?? 0),
+          tokens: totalTokenCount(knownCounts(call)),
           calls: 1,
         });
       }
@@ -376,6 +384,11 @@ export class AnalyticsStore {
       }))
       .sort((a, b) => b.cost - a.cost);
   }
+}
+
+/** Unavailable input/output contributes nothing to known subtotals. */
+function knownCounts(call: CallRecord): TokenCounts {
+  return { ...call, input: call.input ?? 0, output: call.output ?? 0 };
 }
 
 function p2(n: number): string {

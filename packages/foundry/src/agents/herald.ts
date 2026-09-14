@@ -1,3 +1,4 @@
+import type { TokenCounts } from "@inixiative/foundry-core";
 // ---------------------------------------------------------------------------
 // Herald — cross-thread awareness, information boundaries, multi-user bridge
 //
@@ -69,7 +70,7 @@ export interface ThreadSnapshot {
     timestamp: number;
     contextHash: string;
     durationMs: number;
-    tokens?: { input: number; output: number };
+    tokens?: TokenCounts;
   }>;
   recentSignals: Array<{
     kind: string;

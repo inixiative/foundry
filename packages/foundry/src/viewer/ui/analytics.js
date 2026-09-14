@@ -77,6 +77,8 @@ function Overview({ data }) {
   const s = data.session;
   const b = s.budget;
   const o = data.observations;
+  const cacheRead = o ? o.knownCacheRead : s.tokens?.cacheRead;
+  const cacheWrite = o ? o.knownCacheWrite : s.tokens?.cacheWrite;
 
   return html`
     <div class="analytics-overview">
@@ -109,6 +111,16 @@ function Overview({ data }) {
         </div>
       </div>
 
+      <div class="breakdown-row">
+        <div class="breakdown-half">
+          <div class="section-label">CACHE READ TOKENS</div>
+          <div class="breakdown-value">${cacheRead == null ? "—" : fmtTokens(cacheRead)}</div>
+        </div>
+        <div class="breakdown-half">
+          <div class="section-label">CACHE WRITE TOKENS</div>
+          <div class="breakdown-value">${cacheWrite == null ? "—" : fmtTokens(cacheWrite)}</div>
+        </div>
+      </div>
       <!-- Top models -->
       ${data.topModels?.length > 0 ? html`
         <div class="ranked-section">
@@ -226,7 +238,9 @@ function Calls({ data }) {
           <span class="cl-in">In</span>
           <span class="cl-out">Out</span>
           <span class="cl-cost">Cost</span>
-          <span class="cl-cached">Cache</span>
+          <span class="cl-cache-read">Cache read</span>
+          <span class="cl-cache-write">Cache write</span>
+          <span class="cl-cached">Response cache</span>
         </div>
         ${calls.map((c, i) => html`
           <div key=${i} class="call-row ${c.cached ? 'cached' : ''}">
@@ -236,6 +250,8 @@ function Calls({ data }) {
             <span class="cl-in" data-label="Input">${fmtTokens(c.input)}</span>
             <span class="cl-out" data-label="Output">${fmtTokens(c.output)}</span>
             <span class="cl-cost" data-label="Cost">${fmt$(c.cost)}</span>
+            <span class="cl-cache-read" data-label="Cache read" title=${JSON.stringify(c.providerUsage ?? {})}>${c.cacheRead == null ? "—" : fmtTokens(c.cacheRead)}</span>
+            <span class="cl-cache-write" data-label="Cache write" title=${`5m: ${c.cacheWrite5m ?? "unreported"}; 1h: ${c.cacheWrite1h ?? "unreported"}`}>${c.cacheWrite == null ? "—" : fmtTokens(c.cacheWrite)}</span>
             <span class="cl-cached">${c.cached ? "hit" : ""}</span>
           </div>
         `)}

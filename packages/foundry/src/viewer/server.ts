@@ -253,7 +253,7 @@ export async function startViewer(config: ViewerConfig) {
     configDir: config.configDir,
   } };
   const viewer = createViewer({ ...config, configStore: initialStore });
-  const { app, port, actions, configStore, tunnelHolder, localStore } = viewer;
+  const { app, port, actions, configStore, analyticsStore, tunnelHolder, localStore } = viewer;
   const wsCleanup = new Map<object, () => void>();
 
   if (config.actionQueue) {
@@ -340,5 +340,5 @@ export async function startViewer(config: ViewerConfig) {
     }
   }
 
-  return { server, actions, tunnelHolder, localStore, get kingdomConnection() { return viewer.kingdomConnection; } };
+  return { server, actions, analyticsStore, tunnelHolder, localStore, get kingdomConnection() { return viewer.kingdomConnection; } };
 }

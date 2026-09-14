@@ -29,7 +29,7 @@ import type {
   ToolCallObservation,
   ToolCallResult,
 } from "@inixiative/foundry-core";
-import { ToolRegistry, newId } from "@inixiative/foundry-core";
+import { ToolRegistry, newId, type TokenCounts, sumTokenCounts } from "@inixiative/foundry-core";
 
 export interface ToolLoopOpts extends CompletionOpts {
   /** Max tool-use iterations before forcing a text response. Default: 10. */
@@ -85,7 +85,7 @@ export async function toolUseLoop(
 
   // Build conversation as a mutable array for the loop
   const conversation: LLMMessage[] = [...messages];
-  let totalTokens = { input: 0, output: 0 };
+  let totalTokens: TokenCounts | undefined;
   let sequence = 0;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -97,15 +97,14 @@ export async function toolUseLoop(
 
     // Accumulate tokens
     if (result.tokens) {
-      totalTokens.input += result.tokens.input;
-      totalTokens.output += result.tokens.output;
+      totalTokens = sumTokenCounts([...(totalTokens ? [totalTokens] : []), result.tokens]);
     }
 
     // No tool calls → we're done, return the text response
     if (!result.toolCalls || result.toolCalls.length === 0) {
       return {
         ...result,
-        tokens: totalTokens.input > 0 ? totalTokens : result.tokens,
+        tokens: totalTokens,
       };
     }
 
@@ -179,12 +178,11 @@ export async function toolUseLoop(
   });
 
   if (finalResult.tokens) {
-    totalTokens.input += finalResult.tokens.input;
-    totalTokens.output += finalResult.tokens.output;
+    totalTokens = sumTokenCounts([...(totalTokens ? [totalTokens] : []), finalResult.tokens]);
   }
 
   return {
     ...finalResult,
-    tokens: totalTokens.input > 0 ? totalTokens : finalResult.tokens,
+    tokens: totalTokens,
   };
 }

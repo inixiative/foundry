@@ -35,6 +35,7 @@ export {
   type SessionEventKind,
   type SessionEventHandler,
   type SessionResult,
+  type SessionTokens,
   type SessionArtifact,
   ClaudeCodeSession,
   CodexSession,
@@ -81,3 +82,4 @@ export { createTypeSafeMiddleware, type TypeSafeMiddlewareOptions } from "./type
 export { TypeSafeShadowRunner, type TypeSafeShadowOptions, type TypeSafeShadowCatalog, type TypeSafeShadowResult, type TypeSafeShadowStage } from "./typesafe-shadow";
 
 export { createNativeTextProvider, type NativeTextConfig, type NativeTextCall } from "./native-text-provider";
+export { type ClaudeContextBudget } from "./claude-context-budget";

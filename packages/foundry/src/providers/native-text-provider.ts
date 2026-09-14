@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, renameSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { createHash } from "node:crypto";
-import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMProvider, type NativeEvidence, type NativeOwner } from "@inixiative/foundry-core";
+import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMProvider, type NativeEvidence, type NativeOwner, type TokenCounts } from "@inixiative/foundry-core";
 import { NativeAuthentication, type NativeAuthenticationSource } from "./native-authentication";
 import { assertPrivateProfile } from "./private-profile";
 import { ClaudeCodeSessionAdapter, FileExternalSessionStore, type ClaudeCodeSessionAdapterConfig } from "./session-adapter";
@@ -35,7 +35,8 @@ export interface NativeTextCall {
   statusProcessExit: "not-started" | "pending" | "exited";
   deadline: boolean;
   valid: boolean;
-  usage?: { input: number; output: number };
+  /** Numeric counters only; the raw provider usage object is not retained here. */
+  usage?: Omit<TokenCounts, "providerUsage">;
   failure?: "provider-or-evidence" | "deadline";
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -164,7 +165,7 @@ export function buildNativeTextProvider(config: NativeTextConfig, controlled?: {
           || terminal.configuration?.requestedMaxTurns !== 1
           || terminal.configuration.observedModel !== (config.expectedObservedModel ?? config.model)) throw Error("Native text completion is not proven");
         call.terminal = evidence(terminal);
-        call.usage = result.tokens;
+        if (result.tokens) { const { providerUsage: _providerUsage, ...usage } = result.tokens; call.usage = usage; }
         const inspection = await native.completionLifecycle.inspectOwnedAdmission!(owner, terminal.admissionId!);
         if (inspection?.capacity !== "settled" || inspection.call !== "settled" || !owned(inspection.evidence)) throw Error("Native text capacity remains unknown");
         call.release = await Promise.race([deadline, native.completionLifecycle.releaseOwnedAdmission!(owner, terminal.admissionId!)]);

@@ -2677,7 +2677,7 @@ body {
   .analytics-body .ranked-row { flex-wrap: wrap; }
   .analytics-body .ranked-key { flex-basis: 100%; overflow-wrap: anywhere; }
   .analytics-body .call-header { display: none; }
-  .analytics-body .call-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px 0; }
+  .analytics-body .call-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; gap: 8px; padding: 12px 0; }
   .analytics-body .call-row > span { display: block; width: auto; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
   .analytics-body .call-row .cl-model { display: block; }
   .analytics-body .call-row [data-label]::before { content: attr(data-label) ': '; color: var(--text-dim); }
@@ -2855,11 +2855,12 @@ body {
 
 /* Call table */
 
-.call-table { margin-top: 8px; }
+.call-table { margin-top: 8px; overflow-x: auto; }
 
 .call-header, .call-row {
   display: grid;
-  grid-template-columns: 70px 1fr 100px 60px 60px 70px 40px;
+  grid-template-columns: 70px minmax(100px, 1fr) 100px 60px 60px 70px 70px 70px 90px;
+  min-width: 850px;
   gap: 6px;
   padding: 4px 8px;
   font-size: 10px;

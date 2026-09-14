@@ -84,10 +84,10 @@ function makeFakeProc(opts?: { sessionId?: string; compact?: boolean }): {
 // ---------------------------------------------------------------------------
 
 function makeSpawnCapture(sessionId: string = "native-session-1") {
-  const spawnCalls: Array<{ cmd: string[]; stdin: string[] }> = [];
-  const spawn = (cmd: string[]) => {
+  const spawnCalls: Array<{ cmd: string[]; stdin: string[]; env: Record<string, string | undefined> }> = [];
+  const spawn: NonNullable<ClaudeCodeSessionConfig["spawn"]> = (cmd, opts) => {
     const fake = makeFakeProc({ sessionId });
-    spawnCalls.push({ cmd, stdin: fake.stdinLines });
+    spawnCalls.push({ cmd, stdin: fake.stdinLines, env: opts.env });
     return fake.proc;
   };
   return { spawnCalls, spawn };
@@ -838,4 +838,28 @@ test("authentication cleanup failure prevents reporting a fully released process
     await session.start(); writeFileSync(join(profile, ".foundry-auth-lock", "unexpected"), "test");
     expect(await adapter.releaseIdleSession(session)).toBe("unknown");
   } finally { session.kill(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("context policy survives fresh sessions, resume and native forks without extra sends", async () => {
+  const { spawn, spawnCalls } = makeSpawnCapture("policy-session");
+  const store = new InMemoryExternalSessionStore();
+  const adapter = new ClaudeCodeSessionAdapter({ store, defaults: { spawn }, contextBudget: { maxTokens: 200000, compactAt: 0.8 } });
+  const session = await adapter.createSession({ cwd: "/tmp", threadId: "policy" });
+  await session.start();
+  await session.send("hello");
+  const fork = session.fork();
+  await fork.start();
+  const resumed = await adapter.createSession({ cwd: "/tmp", threadId: "policy" });
+  await resumed.start();
+  try {
+    expect(spawnCalls).toHaveLength(3);
+    expect(spawnCalls[1].cmd).toContain("--fork-session");
+    expect(spawnCalls[2].cmd).toContain("--resume");
+    expect(spawnCalls.flatMap(c => c.stdin)).toHaveLength(1);
+    for (const call of spawnCalls) {
+      expect(call.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("200000");
+      expect(call.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE).toBe("80");
+      expect(call.env.ANTHROPIC_API_KEY).toBeUndefined();
+    }
+  } finally { session.kill(); fork.kill(); resumed.kill(); }
 });

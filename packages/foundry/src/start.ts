@@ -179,6 +179,7 @@ function createProvider(config: FoundryConfig): {
   switch (providerId) {
     case "claude-code": {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
+        contextBudget: config.providers[providerId]?.contextBudget,
         store: sessionStore,
         authentication,
         defaults: {
@@ -602,5 +603,6 @@ process.on("SIGINT", async () => {
   viewer.server.stop();
   viewer.localStore?.close();
   await shutdownWorker();
+  await viewer.analyticsStore?.flush();
   process.exit(0);
 });
