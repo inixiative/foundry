@@ -87,6 +87,7 @@ function createProvider(providerId: string, cfg: FoundryConfig): LLMProvider {
   switch (providerId) {
     case "claude-code":
       return new ClaudeCodeProvider({
+        contextBudget: cfg.providers[providerId]?.contextBudget,
         defaultModel: cfg.defaults.model,
       });
     case "anthropic": {

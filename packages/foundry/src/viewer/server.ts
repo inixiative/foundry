@@ -173,7 +173,7 @@ export function createViewer(config: ViewerConfig) {
 
 /** Start the viewer server. */
 export async function startViewer(config: ViewerConfig) {
-  const { app, port, actions, configStore, tunnelHolder } = createViewer(config);
+  const { app, port, actions, configStore, analyticsStore, tunnelHolder } = createViewer(config);
   const wsCleanup = new Map<object, () => void>();
 
   if (config.actionQueue) {
@@ -256,5 +256,5 @@ export async function startViewer(config: ViewerConfig) {
     }
   }
 
-  return { server, actions, tunnelHolder };
+  return { server, actions, analyticsStore, tunnelHolder };
 }

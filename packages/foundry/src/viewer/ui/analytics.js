@@ -81,7 +81,7 @@ function Overview({ data }) {
     <div class="analytics-overview">
       <!-- Hero stats -->
       <div class="stats-grid">
-        <${StatCard} label="Total Cost" value=${fmt$(s.totalCost)} accent="blue" />
+        <${StatCard} label="Estimated Cost" value=${fmt$(s.totalCost)} accent="blue" />
         <${StatCard} label="Total Tokens" value=${fmtTokens(s.totalTokens)} accent="green" />
         <${StatCard} label="LLM Calls" value=${s.totalCalls} accent="purple" />
         <${StatCard} label="Avg $/Call" value=${fmt$(s.totalCalls > 0 ? s.totalCost / s.totalCalls : 0)} accent="orange" />
@@ -107,6 +107,16 @@ function Overview({ data }) {
         </div>
       </div>
 
+      <div class="breakdown-row">
+        <div class="breakdown-half">
+          <div class="section-label">CACHE READ TOKENS</div>
+          <div class="breakdown-value">${s.tokens?.cacheRead == null ? "—" : fmtTokens(s.tokens.cacheRead)}</div>
+        </div>
+        <div class="breakdown-half">
+          <div class="section-label">CACHE WRITE TOKENS</div>
+          <div class="breakdown-value">${s.tokens?.cacheWrite == null ? "—" : fmtTokens(s.tokens.cacheWrite)}</div>
+        </div>
+      </div>
       <!-- Top models -->
       ${data.topModels?.length > 0 ? html`
         <div class="ranked-section">
@@ -224,7 +234,9 @@ function Calls({ data }) {
           <span class="cl-in">In</span>
           <span class="cl-out">Out</span>
           <span class="cl-cost">Cost</span>
-          <span class="cl-cached">Cache</span>
+          <span class="cl-cache-read">Cache read</span>
+          <span class="cl-cache-write">Cache write</span>
+          <span class="cl-cached">Response cache</span>
         </div>
         ${calls.map((c, i) => html`
           <div key=${i} class="call-row ${c.cached ? 'cached' : ''}">
@@ -234,6 +246,8 @@ function Calls({ data }) {
             <span class="cl-in">${fmtTokens(c.input)}</span>
             <span class="cl-out">${fmtTokens(c.output)}</span>
             <span class="cl-cost">${fmt$(c.cost)}</span>
+            <span class="cl-cache-read" title=${JSON.stringify(c.providerUsage ?? {})}>${c.cacheRead == null ? "—" : fmtTokens(c.cacheRead)}</span>
+            <span class="cl-cache-write" title=${`5m: ${c.cacheWrite5m ?? "unreported"}; 1h: ${c.cacheWrite1h ?? "unreported"}`}>${c.cacheWrite == null ? "—" : fmtTokens(c.cacheWrite)}</span>
             <span class="cl-cached">${c.cached ? "hit" : ""}</span>
           </div>
         `)}

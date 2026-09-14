@@ -34,6 +34,7 @@ export {
   type SessionEventKind,
   type SessionEventHandler,
   type SessionResult,
+  type SessionTokens,
   type SessionArtifact,
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
@@ -64,3 +65,5 @@ export {
   type CodexConfig,
   type CursorConfig,
 } from "./runtime";
+
+export { type ClaudeContextBudget } from "./claude-context-budget";

@@ -227,3 +227,5 @@ export {
   type PermissionCheck,
   type PermissionCheckResult,
 } from "./permission-middleware";
+
+export { type TokenCounts, totalTokenCount, sumTokenCounts } from "./token-counts";

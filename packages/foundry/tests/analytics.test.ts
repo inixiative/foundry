@@ -463,3 +463,25 @@ describe("AnalyticsStore", () => {
     });
   });
 });
+
+
+test("cache usage and tags survive budget enforcement, concurrent appends and reload", async () => {
+  const dir = makeTmpDir();
+  const store = new AnalyticsStore(dir);
+  const tracker = new TokenTracker({ budget: { maxTokens: 1000 } });
+  store.connectTracker(tracker);
+  const tokens = { input: 10, output: 20, cacheRead: 1000, cacheWrite: 200, cacheWrite1h: 200, thinking: 12,
+    providerUsage: { service_tier: "standard", future_tag: true } };
+  try {
+    for (let i = 0; i < 3; i++) expect(() => tracker.record({ provider: "claude-code", model: "test-model", agentId: "worker", threadId: "thread", tokens })).toThrow();
+    await store.flush();
+    const loaded = new AnalyticsStore(dir);
+    await loaded.load();
+    const snapshot = loaded.snapshot(tracker);
+    expect(snapshot.recentCalls).toHaveLength(3);
+    expect(snapshot.recentCalls[0]).toMatchObject(tokens);
+    expect(snapshot.threads[0]).toMatchObject({ cacheRead: 3000, cacheWrite: 600, cacheWrite1h: 600, thinking: 36, totalTokens: 3690 });
+    expect(snapshot.topModels[0].tokens).toBe(3690);
+    for (const series of Object.values(snapshot.rollups)) expect(series[0]).toMatchObject({ cacheRead: 3000, cacheWrite: 600, thinking: 36 });
+  } finally { await store.flush(); rmSync(dir, { recursive: true, force: true }); }
+});

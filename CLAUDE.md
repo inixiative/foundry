@@ -84,7 +84,7 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 - Don't create hardcoded Warden subclasses. They're config-driven from settings.
 - Don't put behavioral opinions in core. Core is the engine.
 - Don't use Claude/Sonnet for classifiers or routers. Use Gemini Flash.
-- Don't add compaction or compression logic. It was removed intentionally.
+- Use Claude Code's native auto-compaction policy (`providers/claude-context-budget.ts`). Don't implement a separate summarizer or compression loop; Foundry layer caches remain independent.
 - Don't add backwards-compat shims for removed features.
 - Don't confuse the singular Librarian (signal reconciliation, sole thread-state writer) with the Wardens (domain-specific advise + guard).
 

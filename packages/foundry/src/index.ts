@@ -166,6 +166,7 @@ export {
   type SessionEventKind,
   type SessionEventHandler,
   type SessionResult,
+  type SessionTokens,
   type SessionArtifact,
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
@@ -348,3 +349,5 @@ export {
   createSseTransport,
   type FoundryMcpConfig,
 } from "./mcp";
+
+export { type ClaudeContextBudget } from "./providers/claude-context-budget";

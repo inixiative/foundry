@@ -1,3 +1,4 @@
+import type { TokenCounts } from "./token-counts";
 /**
  * A single span in a message's journey through the system.
  * Each stage (classify, route, dispatch, writeback, middleware) creates a span.
@@ -33,7 +34,7 @@ export interface Span {
   error?: unknown;
 
   /** Token usage for this span's LLM call (if any). */
-  tokens?: { input: number; output: number };
+  tokens?: TokenCounts;
 
   /** Estimated cost in dollars for this span's LLM call. */
   cost?: number;
@@ -254,7 +255,7 @@ export interface StageSummary {
   readonly status: SpanStatus;
   readonly durationMs?: number;
   readonly agentId?: string;
-  readonly tokens?: { input: number; output: number };
+  readonly tokens?: TokenCounts;
   readonly cost?: number;
   readonly depth: number;
 }

@@ -1,3 +1,5 @@
+import { parseClaudeUsage } from "@inixiative/agent-session";
+import { claudeContextEnvironment, type ClaudeContextBudget } from "./claude-context-budget";
 import type {
   LLMProvider,
   LLMMessage,
@@ -8,6 +10,8 @@ import type {
 import { splitSystemMessage } from "@inixiative/foundry-core";
 
 export interface ClaudeCodeConfig {
+  /** Native 200k window with early compaction by default; false uses CLI settings. */
+  contextBudget?: ClaudeContextBudget | false;
   /** Path to claude CLI binary. Defaults to "claude". */
   bin?: string;
   /** Default model. Defaults to "sonnet". */
@@ -45,6 +49,7 @@ export interface ClaudeCodeConfig {
 export class ClaudeCodeProvider implements LLMProvider {
   readonly id = "claude-code";
 
+  private _contextBudget?: ClaudeContextBudget | false;
   private _bin: string;
   private _defaultModel: string;
   private _defaultMaxTokens: number;
@@ -60,6 +65,8 @@ export class ClaudeCodeProvider implements LLMProvider {
   private _sessions: Map<string, string> = new Map();
 
   constructor(config?: ClaudeCodeConfig) {
+    claudeContextEnvironment({}, config?.contextBudget);
+    this._contextBudget = config?.contextBudget;
     const bin = config?.bin ?? "claude";
     if (!/^[a-zA-Z0-9_.\/\\-]+$/.test(bin)) {
       throw new Error(`Invalid claude CLI binary path: "${bin}". Only alphanumeric, dots, slashes, dashes, and underscores are allowed.`);
@@ -130,10 +137,10 @@ export class ClaudeCodeProvider implements LLMProvider {
     });
 
     // Strip API key env vars so the CLI uses subscription auth
-    const env: Record<string, string | undefined> = {
+    const env = claudeContextEnvironment({
       ...process.env,
       DISABLE_AUTOUPDATER: "1",
-    };
+    }, this._contextBudget);
     delete env.ANTHROPIC_API_KEY;
     delete env.ANTHROPIC_AUTH_TOKEN;
 
@@ -208,10 +215,10 @@ export class ClaudeCodeProvider implements LLMProvider {
       streaming: true,
     });
 
-    const env: Record<string, string | undefined> = {
+    const env = claudeContextEnvironment({
       ...process.env,
       DISABLE_AUTOUPDATER: "1",
-    };
+    }, this._contextBudget);
     delete env.ANTHROPIC_API_KEY;
     delete env.ANTHROPIC_AUTH_TOKEN;
 
@@ -279,6 +286,8 @@ export class ClaudeCodeProvider implements LLMProvider {
             if (msg.result) {
               yield { type: "text", text: msg.result };
             }
+            const tokens = parseClaudeUsage(msg.usage);
+            if (tokens) yield { type: "usage", tokens };
             yield { type: "done", finishReason: msg.subtype === "success" ? "end_turn" : "error" };
             return;
           }
@@ -391,9 +400,7 @@ export class ClaudeCodeProvider implements LLMProvider {
           return {
             content: msg.result ?? "",
             model,
-            tokens: msg.usage
-              ? { input: msg.usage.input_tokens ?? 0, output: msg.usage.output_tokens ?? 0 }
-              : undefined,
+            tokens: parseClaudeUsage(msg.usage),
             finishReason: msg.subtype === "success" ? "end_turn" : "error",
             raw: msg,
           };
@@ -414,7 +421,9 @@ export class ClaudeCodeProvider implements LLMProvider {
     }
 
     if (typeof data === "object" && data !== null && "result" in data) {
-      return { content: (data as any).result, model, finishReason: "end_turn", raw: data };
+      const msg = data as Record<string, unknown>;
+      return { content: String(msg.result ?? ""), model, tokens: parseClaudeUsage(msg.usage),
+        finishReason: msg.subtype === "success" ? "end_turn" : "error", raw: data };
     }
 
     throw new Error(`claude CLI returned unexpected format: ${raw.slice(0, 200)}`);

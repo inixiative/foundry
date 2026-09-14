@@ -108,6 +108,7 @@ function createProvider(config: FoundryConfig): LLMProvider {
   switch (providerId) {
     case "claude-code": {
       return new ClaudeCodeProvider({
+        contextBudget: config.providers[providerId]?.contextBudget,
         defaultModel: config.defaults.model,
       });
     }
@@ -287,6 +288,7 @@ let sessionAdapter: SessionAdapter | undefined;
 if (config.defaults.provider === "claude-code") {
   const sessionStore = FileExternalSessionStore.forProject(process.cwd());
   sessionAdapter = new ClaudeCodeSessionAdapter({
+    contextBudget: config.providers[config.defaults.provider]?.contextBudget,
     store: sessionStore,
     signals,
     defaults: {
@@ -616,7 +618,7 @@ if (config.projects) {
 
 const port = parseInt(process.env.VIEWER_PORT || "4400");
 
-startViewer({
+const viewerReady = startViewer({
   harness,
   eventStream,
   interventions,
@@ -679,5 +681,6 @@ process.on("SIGINT", async () => {
   librarian.dispose();
   thread.stop();
   await shutdownWorker();
+  await (await viewerReady).analyticsStore?.flush();
   process.exit(0);
 });

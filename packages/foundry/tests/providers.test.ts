@@ -180,7 +180,7 @@ describe("AnthropicProvider", () => {
       // Verify response
       expect(result.content).toBe("response");
       expect(result.model).toBe("claude-sonnet-4-20250514");
-      expect(result.tokens).toEqual({ input: 10, output: 5 });
+      expect(result.tokens).toMatchObject({ input: 10, output: 5 });
       expect(result.finishReason).toBe("end_turn");
     } finally {
       globalThis.fetch = originalFetch;

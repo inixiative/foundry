@@ -155,3 +155,12 @@ Keyboard shortcuts: `1-3` switch panels, `?` help, `s` settings, `a` analytics.
 - `packages/foundry/` — [BSL 1.1](./LICENSE-BSL) (converts to MIT on 2030-04-06)
 
 See [LICENSE](./LICENSE) for details.
+
+
+## Usage telemetry and context budgets
+
+Claude cache reads/writes and original usage tags flow through sessions, providers,
+traces, token tracking, and persisted analytics. Foundry defaults Claude Code to a
+200k native compaction window with an 80% trigger (roughly 160k).
+See [usage telemetry and native context budgets](docs/usage-and-context.md) for
+configuration, counter semantics, and the limits of native compaction.

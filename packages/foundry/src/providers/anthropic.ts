@@ -1,3 +1,4 @@
+import { parseClaudeUsage } from "@inixiative/agent-session";
 import type {
   LLMProvider,
   LLMMessage,
@@ -86,7 +87,7 @@ export class AnthropicProvider implements LLMProvider {
     const data = (await res.json()) as {
       content: Array<{ type: string; text?: string }>;
       model: string;
-      usage: { input_tokens: number; output_tokens: number };
+      usage: Record<string, unknown>;
       stop_reason: string;
     };
 
@@ -98,7 +99,7 @@ export class AnthropicProvider implements LLMProvider {
     return {
       content,
       model: data.model,
-      tokens: { input: data.usage.input_tokens, output: data.usage.output_tokens },
+      tokens: parseClaudeUsage(data.usage),
       finishReason: data.stop_reason,
       raw: data,
     };
@@ -151,13 +152,13 @@ export class AnthropicProvider implements LLMProvider {
       return;
     }
 
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let usage: Record<string, unknown> | undefined;
     let finishReason: string | undefined;
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let eventType = "";
 
     try {
       while (true) {
@@ -169,7 +170,6 @@ export class AnthropicProvider implements LLMProvider {
         // Keep the last potentially incomplete line in the buffer
         buffer = lines.pop() ?? "";
 
-        let eventType = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             eventType = line.slice(7).trim();
@@ -179,16 +179,14 @@ export class AnthropicProvider implements LLMProvider {
               const parsed = JSON.parse(data);
 
               if (eventType === "message_start" && parsed.message?.usage) {
-                inputTokens = parsed.message.usage.input_tokens ?? 0;
+                usage = { ...usage, ...parsed.message.usage };
               } else if (eventType === "content_block_delta") {
                 const text = parsed.delta?.text;
                 if (text) {
                   yield { type: "text", text };
                 }
               } else if (eventType === "message_delta") {
-                if (parsed.usage?.output_tokens) {
-                  outputTokens = parsed.usage.output_tokens;
-                }
+                if (parsed.usage) usage = { ...usage, ...parsed.usage };
                 if (parsed.delta?.stop_reason) {
                   finishReason = parsed.delta.stop_reason;
                 }
@@ -205,9 +203,8 @@ export class AnthropicProvider implements LLMProvider {
       reader.releaseLock();
     }
 
-    if (inputTokens > 0 || outputTokens > 0) {
-      yield { type: "usage", tokens: { input: inputTokens, output: outputTokens } };
-    }
+    const tokens = parseClaudeUsage(usage);
+    if (tokens) yield { type: "usage", tokens };
 
     yield { type: "done", finishReason };
   }

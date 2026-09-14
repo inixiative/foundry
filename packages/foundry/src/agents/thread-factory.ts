@@ -1,3 +1,4 @@
+import type { TokenCounts } from "@inixiative/foundry-core";
 import {
   ContextLayer,
   type ContextSource,
@@ -322,7 +323,7 @@ function buildAgent(
               // Streaming path — forward text deltas to the sink, accumulate
               // full content for the return value + single DB write upstream.
               let full = "";
-              let tokens: { input: number; output: number } | undefined;
+              let tokens: TokenCounts | undefined;
               for await (const ev of deps.provider.stream(messages, { ...opts, cwd: meta?.cwd })) {
                 if (ev.type === "text" && ev.text) {
                   full += ev.text;

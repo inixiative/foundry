@@ -1,3 +1,4 @@
+import type { ClaudeContextBudget } from "../providers/claude-context-budget";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { newId, type Harness, type LLMProvider } from "@inixiative/foundry-core";
@@ -131,6 +132,8 @@ export type ListPatch<T> =
   | { append?: T[]; remove: T[] };
 
 export interface ProviderConfig {
+  /** Claude Code native compaction policy; defaults to 200k / 80%. */
+  contextBudget?: ClaudeContextBudget | false;
   id: string;
   type: "anthropic" | "openai" | "gemini" | "claude-code" | "custom";
   /** Display label. */

@@ -1,5 +1,7 @@
 import {
   computeHash,
+  sumTokenCounts,
+  type TokenCounts,
   BaseAgent,
   type AgentConfig,
   type ExecutionResult,
@@ -37,7 +39,7 @@ export interface Plan {
 export interface PlanExecutionResult {
   plan: Plan;
   results: Map<string, ExecutionResult<unknown>>;
-  totalTokens: { input: number; output: number };
+  totalTokens: TokenCounts;
   totalCost: number;
   completedSteps: number;
   failedSteps: number;
@@ -140,8 +142,7 @@ export class Planner extends BaseAgent<unknown, Plan> {
   async executePlan(plan: Plan): Promise<PlanExecutionResult> {
     const startTime = performance.now();
     const results = new Map<string, ExecutionResult<unknown>>();
-    let totalInput = 0;
-    let totalOutput = 0;
+    let totalTokens: TokenCounts = { input: 0, output: 0 };
     let completedSteps = 0;
     let failedSteps = 0;
 
@@ -180,8 +181,7 @@ export class Planner extends BaseAgent<unknown, Plan> {
         results.set(step.id, result);
 
         if (result.tokens) {
-          totalInput += result.tokens.input;
-          totalOutput += result.tokens.output;
+          totalTokens = sumTokenCounts([totalTokens, result.tokens]);
         }
 
         step.status = "done";
@@ -198,7 +198,7 @@ export class Planner extends BaseAgent<unknown, Plan> {
     return {
       plan,
       results,
-      totalTokens: { input: totalInput, output: totalOutput },
+      totalTokens,
       totalCost: 0, // Cost calculation left to TokenTracker
       completedSteps,
       failedSteps,

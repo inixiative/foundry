@@ -2758,11 +2758,12 @@ body {
 
 /* Call table */
 
-.call-table { margin-top: 8px; }
+.call-table { margin-top: 8px; overflow-x: auto; }
 
 .call-header, .call-row {
   display: grid;
-  grid-template-columns: 70px 1fr 100px 60px 60px 70px 40px;
+  grid-template-columns: 70px minmax(100px, 1fr) 100px 60px 60px 70px 70px 70px 90px;
+  min-width: 850px;
   gap: 6px;
   padding: 4px 8px;
   font-size: 10px;

@@ -1,9 +1,10 @@
+import type { TokenCounts } from "./token-counts";
 import { computeHash } from "./context-layer";
 import { ContextStack, type LayerFilter, type AssembledContext } from "./context-stack";
 
 export interface ExecutionResult<T = unknown> {
   readonly output: T;
-  readonly tokens?: { input: number; output: number };
+  readonly tokens?: TokenCounts;
   readonly contextHash: string;
   readonly meta?: Record<string, unknown>;
 }

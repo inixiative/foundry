@@ -11,13 +11,15 @@
 // ---------------------------------------------------------------------------
 
 import { mkdirSync, existsSync } from "fs";
+import { appendFile } from "fs/promises";
 import type {
+  TokenCounts,
   TokenTracker,
   UsageEntry,
   UsageSummary,
   UsageBreakdown,
 } from "@inixiative/foundry-core";
-import { newId } from "@inixiative/foundry-core";
+import { BudgetExceededError, newId, sumTokenCounts, totalTokenCount } from "@inixiative/foundry-core";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,7 +42,7 @@ export interface AnalyticsSnapshot {
   readonly rollups: RollupSet;
 }
 
-export interface TimeSeriesPoint {
+export interface TimeSeriesPoint extends TokenCounts {
   readonly bucket: string; // ISO timestamp of bucket start
   readonly input: number;
   readonly output: number;
@@ -48,7 +50,7 @@ export interface TimeSeriesPoint {
   readonly calls: number;
 }
 
-export interface ThreadCostSummary {
+export interface ThreadCostSummary extends TokenCounts {
   readonly threadId: string;
   readonly description?: string;
   readonly input: number;
@@ -60,7 +62,7 @@ export interface ThreadCostSummary {
   readonly lastActive: number;
 }
 
-export interface CallRecord {
+export interface CallRecord extends TokenCounts {
   readonly timestamp: number;
   readonly provider: string;
   readonly model: string;
@@ -107,6 +109,7 @@ export class AnalyticsStore {
   private readonly _dir: string;
   private readonly _calls: PersistedCall[] = [];
   private _loaded = false;
+  private _persistQueue: Promise<void> = Promise.resolve();
 
   constructor(dir: string) {
     this._dir = dir;
@@ -129,15 +132,14 @@ export class AnalyticsStore {
       agentId: entry.agentId,
       threadId: entry.threadId,
       spanId: entry.spanId,
-      input: entry.tokens.input,
-      output: entry.tokens.output,
+      ...entry.tokens,
       cost: entry.cost,
       durationMs: extra?.durationMs,
       cached: entry.cached,
     };
     this._calls.push(call);
     // Async persist — fire and forget
-    this._persistCall(call);
+    this._persistQueue = this._persistQueue.then(() => this._persistCall(call));
     return call;
   }
 
@@ -147,9 +149,18 @@ export class AnalyticsStore {
     // system yet, so we intercept at the API level.
     const originalRecord = tracker.record.bind(tracker);
     tracker.record = (entry) => {
-      const result = originalRecord(entry);
-      this.recordCall(result);
-      return result;
+      try {
+        const result = originalRecord(entry);
+        this.recordCall(result);
+        return result;
+      } catch (error) {
+        // record() stores the spent usage before enforcing the budget.
+        if (error instanceof BudgetExceededError) {
+          const recorded = tracker.recent(1)[0];
+          if (recorded) this.recordCall(recorded);
+        }
+        throw error;
+      }
     };
   }
 
@@ -227,11 +238,16 @@ export class AnalyticsStore {
     }
   }
 
+  /** Wait for pending appends before shutdown or reading the persisted log. */
+  async flush(): Promise<void> {
+    await this._persistQueue;
+  }
+
   private async _persistCall(call: PersistedCall): Promise<void> {
     try {
       const path = `${this._dir}/calls.jsonl`;
       const line = JSON.stringify(call) + "\n";
-      await Bun.write(path, (existsSync(path) ? await Bun.file(path).text() : "") + line);
+      await appendFile(path, line, "utf-8");
     } catch (err) {
       console.warn("[Analytics] persistence failure (data lives in memory):", (err as Error).message);
     }
@@ -242,20 +258,18 @@ export class AnalyticsStore {
   // -----------------------------------------------------------------------
 
   private _buildTimeSeries(calls: CallRecord[], period: RollupPeriod): TimeSeriesPoint[] {
-    const buckets = new Map<string, { input: number; output: number; cost: number; calls: number }>();
+    const buckets = new Map<string, TokenCounts & { cost: number; calls: number }>();
 
     for (const call of calls) {
       const key = this._bucketKey(call.timestamp, period);
       const existing = buckets.get(key);
       if (existing) {
-        existing.input += call.input;
-        existing.output += call.output;
+        Object.assign(existing, sumTokenCounts([existing, call]));
         existing.cost += call.cost;
         existing.calls += 1;
       } else {
         buckets.set(key, {
-          input: call.input,
-          output: call.output,
+          ...sumTokenCounts([call]),
           cost: call.cost,
           calls: 1,
         });
@@ -288,8 +302,8 @@ export class AnalyticsStore {
   }
 
   private _buildThreadSummaries(calls: CallRecord[]): ThreadCostSummary[] {
-    const map = new Map<string, {
-      input: number; output: number; cost: number;
+    const map = new Map<string, TokenCounts & {
+      cost: number;
       calls: number; lastActive: number;
     }>();
 
@@ -297,15 +311,13 @@ export class AnalyticsStore {
       const tid = call.threadId ?? "(no thread)";
       const existing = map.get(tid);
       if (existing) {
-        existing.input += call.input;
-        existing.output += call.output;
+        Object.assign(existing, sumTokenCounts([existing, call]));
         existing.cost += call.cost;
         existing.calls += 1;
         existing.lastActive = Math.max(existing.lastActive, call.timestamp);
       } else {
         map.set(tid, {
-          input: call.input,
-          output: call.output,
+          ...sumTokenCounts([call]),
           cost: call.cost,
           calls: 1,
           lastActive: call.timestamp,
@@ -316,9 +328,8 @@ export class AnalyticsStore {
     return [...map.entries()]
       .map(([threadId, v]) => ({
         threadId,
-        input: v.input,
-        output: v.output,
-        totalTokens: v.input + v.output,
+        ...sumTokenCounts([v]),
+        totalTokens: totalTokenCount(v),
         cost: v.cost,
         calls: v.calls,
         avgCostPerCall: v.calls > 0 ? v.cost / v.calls : 0,
@@ -338,12 +349,12 @@ export class AnalyticsStore {
       const existing = map.get(key);
       if (existing) {
         existing.cost += call.cost;
-        existing.tokens += call.input + call.output;
+        existing.tokens += totalTokenCount(call);
         existing.calls += 1;
       } else {
         map.set(key, {
           cost: call.cost,
-          tokens: call.input + call.output,
+          tokens: totalTokenCount(call),
           calls: 1,
         });
       }
