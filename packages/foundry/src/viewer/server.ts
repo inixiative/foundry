@@ -24,6 +24,7 @@ import {
 } from "./tunnel";
 import { registerControlRoutes } from "./routes/control";
 import { registerRuntimeRoutes } from "./routes/runtime";
+import { registerGlossRoutes } from "./routes/gloss";
 
 export interface ViewerConfig {
   harness: Harness;
@@ -86,6 +87,7 @@ export function createViewer(config: ViewerConfig) {
 
   const actions = new ActionHandler({ harness, eventStream, interventions });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
+  registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)
     : null;

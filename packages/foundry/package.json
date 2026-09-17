@@ -26,6 +26,7 @@
     "@bull-board/hono": "^6.20.7",
     "@inixiative/agent-session": "^0.1.0",
     "@inixiative/foundry-core": "workspace:*",
+    "@inixiative/gloss": "0.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.6.0",
     "bullmq": "^5.73.0",

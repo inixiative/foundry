@@ -8,6 +8,7 @@ import {
   init, connected, eventCount, toast, currentTrace,
   selectedSpanId, loadTraces, loadThreads, executeAction,
   projectSidebarOpen, detailDrawerOpen, dismissToast,
+  activeProjectId,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
 import { ProjectSidebar } from "./project-sidebar.js";
@@ -18,6 +19,7 @@ import { CommandPalette, HelpOverlay } from "./command-palette.js";
 import { Settings, settingsOpen, settingsConfig, loadSettings } from "./settings.js";
 import { Analytics, analyticsOpen } from "./analytics.js";
 import { Wizard, wizardOpen, checkSetupNeeded } from "./wizard.js";
+import { GlossButton, GlossReview } from "./gloss.js";
 
 // ---------------------------------------------------------------------------
 // Header — slim: logo + connection status + hints
@@ -32,6 +34,7 @@ function Header() {
       <span class="header-logo"><span class="logo-bracket">${"<"}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${">"}</span></span>
       <span class="header-title">foundry</span>
       <div class="header-right">
+        <${GlossButton} projectId=${activeProjectId.value} />
         <span class="status-dot ${isConnected ? "on" : "off"}"></span>
         <span class="status-text">${isConnected ? "connected" : "reconnecting..."}</span>
         <span class="status-sep">|</span>
@@ -194,6 +197,7 @@ function App() {
       <${Analytics} />
       <${Wizard} />
       <${Toast} />
+      <${GlossReview} />
     </div>
   `;
 }

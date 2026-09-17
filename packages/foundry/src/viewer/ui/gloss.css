@@ -1,0 +1,73 @@
+.gloss-launch, .gloss-actions button, .gloss-note button, .gloss-controls button, .gloss-icon {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid #45454c; background: #252529; color: #eeeeef; border-radius: 4px;
+  min-height: 30px; padding: 4px 10px; cursor: pointer; font: inherit;
+}
+.gloss-launch:disabled, .gloss-settings button:disabled { opacity: .45; cursor: default; }
+.gloss-settings { color: #e2e2e6; max-width: 860px; }
+.gloss-settings h2, .gloss-toolbar h2 { font-size: 16px; margin: 0 0 18px; }
+.gloss-toggle { display: flex; align-items: center; gap: 8px; }
+.gloss-status { display: grid; grid-template-columns: minmax(120px, 1fr) 1fr; gap: 10px; margin: 20px 0; }
+.gloss-status dt { color: #aaaab3; } .gloss-status dd { margin: 0; overflow-wrap: anywhere; }
+.gloss-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.gloss-field { display: flex; gap: 12px; align-items: center; }
+.gloss-settings select, .gloss-controls select, .gloss-controls input {
+  background: #242429; color: #efeff2; border: 1px solid #505059; border-radius: 4px;
+  min-height: 32px; padding: 5px 8px; min-width: 0; font: inherit;
+}
+.gloss-confirm { border: 1px solid #bca463; padding: 12px; border-radius: 4px; }
+.gloss-confirm p { margin: 0; line-height: 1.6; }
+.gloss-result { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 12px; }
+.gloss-review { position: fixed; inset: 0; z-index: 1000; background: #19191d; color: #e7e7ea;
+  display: flex; flex-direction: column; font-size: 13px; letter-spacing: 0; outline: none; }
+.gloss-review-open .app > :not(.gloss-review) { display: none; }
+.gloss-settings-open .app > :not(.fullscreen-backdrop):not(.gloss-review) { display: none; }
+.gloss-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #393940; flex-shrink: 0; }
+.gloss-toolbar h2 { margin: 0; } .gloss-revision { color: #a9b9b2; margin-right: auto; font-size: 12px; }
+.gloss-icon { width: 32px; height: 32px; padding: 0; flex: 0 0 32px; }
+.gloss-controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #393940; }
+.gloss-controls form { display: flex; align-items: center; gap: 8px; flex: 1 1 360px; min-width: 0; }
+.gloss-controls input { flex: 1; width: 100%; }
+.gloss-controls label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gloss-controls select { max-width: 240px; }
+.gloss-code-layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); min-height: 0; }
+.gloss-code-layout[data-single="true"] { grid-template-columns: minmax(0, 1fr); }
+.gloss-code { overflow: auto; padding: 12px 0; background: #1d1d21; min-width: 0; }
+.gloss-line-block { position: relative; min-width: 100%; width: max-content; }
+.gloss-code-line { display: flex; align-items: center; min-height: 24px; font: 12px/24px ui-monospace, SFMono-Regular, Consolas, monospace; padding-right: 16px; }
+.gloss-code-line code { white-space: pre; color: #dedee5; background: transparent; padding: 0; font: inherit; }
+.gloss-selected { background: #293b35; }
+.gloss-line-number { flex: 0 0 48px; text-align: right; color: #9797a3; padding-right: 12px; user-select: none; }
+.gloss-marker-slot { display: inline-flex; width: 28px; flex: 0 0 28px; height: 24px; align-items: center; }
+.gloss-marker { border: 0; background: transparent; color: #7eddb2; padding: 3px; width: 24px; height: 24px; display: flex; align-items: center; cursor: pointer; }
+.gloss-margin { border-left: 1px solid #393940; overflow: auto; min-width: 0; }
+.gloss-note { padding: 18px; } .gloss-note h3 { margin: 0 0 8px; font: 600 14px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.gloss-advisory { color: #d2b875; font-size: 11px; }
+.gloss-freshness { color: #a7a7b0; font-size: 11px; line-height: 1.6; margin-top: 12px; }
+.gloss-freshness strong { display: block; font-weight: normal; color: #d2b875; }
+.gloss-prose { font: 13px/1.7 system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; margin: 16px 0; }
+.gloss-history { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.gloss-note details { margin-top: 16px; } .gloss-note summary { cursor: pointer; }
+.gloss-line-block > .gloss-note { width: min(660px, calc(100vw - 100px)); margin: 6px 0 12px 76px; border-left: 2px solid #649e85; }
+.gloss-hover { position: absolute; left: 76px; top: 24px; width: min(420px, calc(100vw - 100px)); z-index: 2;
+  padding: 12px; background: #303036; border: 1px solid #77777e; border-radius: 4px; pointer-events: none; }
+.gloss-hover pre { white-space: pre-wrap; font: 12px/1.6 system-ui; max-height: 180px; overflow: hidden; }
+.gloss-empty { padding: 24px; color: #a7a7b0; } .gloss-error { padding: 12px; color: #ffb5b5; overflow-wrap: anywhere; }
+.gloss-review :focus-visible, .gloss-settings :focus-visible { outline: 2px solid #83cbb5; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .fullscreen-backdrop:has(.gloss-settings) { padding: 0; }
+  .settings-panel:has(.gloss-settings) { border-radius: 0; }
+  .settings-panel:has(.gloss-settings) .settings-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings-panel:has(.gloss-settings) .settings-layout > :last-child { display: none; }
+  .settings-panel:has(.gloss-settings) .settings-nav { display: flex; flex-wrap: wrap; padding: 6px; gap: 4px; }
+  .settings-panel:has(.gloss-settings) .settings-nav-section { display: none; }
+  .settings-panel:has(.gloss-settings) .settings-nav-item { width: auto; padding: 8px; }
+  .gloss-code-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(140px, 40%); }
+  .gloss-code-layout[data-single="true"] { grid-template-rows: minmax(0, 1fr); }
+  .gloss-margin { border-left: 0; border-top: 1px solid #393940; }
+  .gloss-controls { gap: 8px; padding: 8px; }
+  .gloss-controls form { flex-basis: 100%; }
+  .gloss-controls form label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .gloss-controls > label { flex: 1 1 140px; } .gloss-controls select { width: 100%; max-width: 200px; }
+  .gloss-note { padding: 12px; } .gloss-toolbar { padding: 8px; }
+}

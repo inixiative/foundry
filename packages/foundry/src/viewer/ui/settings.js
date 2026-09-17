@@ -12,6 +12,7 @@ import { signal } from "./lib.js";
 import { showToast, activeProjectId } from "./store.js";
 import { FilePicker } from "./file-picker.js";
 import { SelfChatPane } from "./self-chat.js";
+import { GlossSettings } from "./gloss.js";
 
 // Settings state
 export const settingsOpen = signal(false);
@@ -530,6 +531,7 @@ function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
     { id: "tunnel", label: "Tunnel" },
   ];
   const projectTabs = [
+    { id: "gloss", label: "Gloss" },
     { id: "sources", label: "Sources" },
     { id: "overrides", label: "Overrides" },
   ];
@@ -639,7 +641,8 @@ export function Settings() {
   ) : (
     !project ? html`
       <div class="settings-empty">Select a project from the sidebar to configure its settings.</div>
-    ` : tab === "sources" ? html`
+    ` : tab === "gloss" ? html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
+    : tab === "sources" ? html`
       ${Object.values(project.sources || {}).map(s => html`
         <${SourceEditor}
           key=${s.id}

@@ -85,6 +85,8 @@ export interface ProjectPrompts {
 }
 
 export interface ProjectSettingsConfig {
+  /** Opt-in maintenance; existing margins remain readable when disabled. */
+  gloss?: { enabled: boolean; display: "margin" | "hover" | "inline" };
   /** Auto-generated UUID. Never manually specified. */
   id: string;
   /** Path to project root directory. The only truly required field. */
