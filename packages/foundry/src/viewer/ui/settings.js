@@ -15,6 +15,7 @@ import { SelfChatPane } from "./self-chat.js";
 import { ArchiveSettings } from "./archive-settings.js";
 import { KingdomSettings } from "./kingdom-settings.js";
 import { AccessSettings } from "./access-settings.js";
+import { GlossSettings } from "./gloss.js";
 
 // Settings state
 export const settingsOpen = signal(false);
@@ -532,6 +533,7 @@ function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
     { id: "archives", label: "Archives" },
   ];
   const projectTabs = [
+    { id: "gloss", label: "Gloss" },
     { id: "sources", label: "Sources" },
     { id: "integrations", label: "Integrations" },
     { id: "overrides", label: "Overrides" },
@@ -646,7 +648,8 @@ export function Settings() {
   ) : (
     !project ? html`
       <div class="settings-empty">Select a project from the sidebar to configure its settings.</div>
-    ` : tab === "integrations" ? html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
+    ` : tab === "gloss" ? html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
+    : tab === "integrations" ? html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
       : tab === "sources" ? html`
       ${Object.values(project.sources || {}).map(s => html`
         <${SourceEditor}

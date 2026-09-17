@@ -39,6 +39,7 @@ import { ViewerThreadDirectory } from "./thread-directory";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerArchiveRoutes } from "../archives/routes";
+import { registerGlossRoutes } from "./routes/gloss";
 
 export interface ViewerConfig {
   harness: Harness;
@@ -159,6 +160,7 @@ export function createViewer(config: ViewerConfig) {
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
   registerKingdomRoutes(app, configStore, config.configDir ?? ".foundry", () => directory.all().length, connection => { kingdomConnection?.stop(); kingdomConnection = connection; }, () => kingdomConnection?.connected ?? false, runtimeJobs);
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
+  registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)
     : null;
