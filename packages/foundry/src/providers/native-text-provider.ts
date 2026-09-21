@@ -10,7 +10,7 @@ import { SessionBackedProvider } from "./session-backed";
 
 type Spawn = NonNullable<NonNullable<ClaudeCodeSessionAdapterConfig["defaults"]>["spawn"]>;
 type Child = ReturnType<Spawn>;
-type StatusProcess = Pick<Child, "stdout" | "stderr" | "exited" | "kill">;
+export type StatusProcess = Pick<Child, "stdout" | "stderr" | "exited" | "kill">;
 export interface NativeTextConfig {
   source: Extract<NativeAuthenticationSource, { mode: "native-profile" }>;
   /** Existing private parent; a new run directory is created exclusively below it. */
@@ -205,7 +205,7 @@ export function buildNativeTextProvider(config: NativeTextConfig, controlled?: {
 }
 
 /** Supported read-only status command. Never persist raw output or account identity. */
-async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {
+export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {
   try {
     const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     if (code !== 0) return false;

@@ -1,3 +1,4 @@
+import { resolveSubscriptionPolicy, type SubscriptionPolicy } from "../providers/subscription-policy";
 import type { CredentialReference } from '@inixiative/foundry-core';
 import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
 import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
@@ -24,6 +25,7 @@ import { validateLearningSettings, type LearningSettings } from "../agents/learn
  * - Project level: each project can inherit global settings or override per-field
  */
 export interface FoundryConfig {
+  subscriptionOnly?: SubscriptionPolicy;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
   kastles?: KastleSource[];
@@ -669,6 +671,7 @@ const configValidators: ((config: FoundryConfig) => void)[] = [];
 export function registerConfigValidator(validate: (config: FoundryConfig) => void): void { configValidators.push(validate); }
 
 export function validateConfig(config: FoundryConfig): void {
+  resolveSubscriptionPolicy(config);
   if (config.kingdomRuntime) kingdomRuntimeSchema.parse(config.kingdomRuntime);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");

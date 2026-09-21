@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import { createSubscriptionDecisions } from "./providers/subscription-decisions";
+import { resolveSubscriptionPolicy } from "./providers/subscription-policy";
+import { SubscriptionAuthentication } from "./providers/subscription-authentication";
+import { nativeTextEnvironment } from "./providers/native-text-environment";
 import { createDecisionProvider, DECISION_MODEL } from "./providers/decision-provider";
 import { KastleAuthentication } from "./providers/kastle-authentication";
 import { NativeAuthentication } from "./providers/native-authentication";
@@ -85,7 +89,7 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
   const projectPath = process.cwd();
 
   if (!hasEntries(config.agents)) {
-    config.agents = defaultProjectAgents(config.defaults.provider, config.defaults.model);
+    config.agents = defaultProjectAgents(config.defaults.provider, config.defaults.model, config.defaults.classifierProvider, config.defaults.classifierModel);
     changed = true;
   }
 
@@ -130,7 +134,10 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   }
 }
 
-const flowLlm = createDecisionProvider(!!config.providers.openai?.enabled, process.env.OPENAI_API_KEY);
+const subscription = resolveSubscriptionPolicy(config);
+const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision }) : undefined;
+const flowLlm = decisions?.provider ?? createDecisionProvider(!!config.providers.openai?.enabled, process.env.OPENAI_API_KEY);
+const decisionModel = subscription?.policy.model ?? DECISION_MODEL;
 
 console.log(`Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`);
 
@@ -163,7 +170,7 @@ function createProvider(config: FoundryConfig): {
 } {
   const providerId = config.defaults.provider;
   const sessionStore = FileExternalSessionStore.forProject(process.cwd());
-  const authentication = config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
+  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
     ? new KastleAuthentication({ directory: `${process.cwd()}/.foundry/kastle`, sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments })
     : config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length ? new NativeAuthentication({
     directory: `${process.cwd()}/.foundry/runtime-profiles`, sources: config.nativeAuthentication ?? [],
@@ -172,7 +179,7 @@ function createProvider(config: FoundryConfig): {
   if (authentication && !["claude-code", "codex"].includes(providerId)) throw Error("Native authentication requires a native runtime provider");
   if (authentication instanceof NativeAuthentication) for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {})) authentication.select(threadId, sourceId);
   const selectedAuth = config.nativeAuthentication?.find(source => source.id === config.defaults.nativeAuthenticationId);
-  if (selectedAuth?.mode === "native-profile" && !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)) {
+  if (!subscription && selectedAuth?.mode === "native-profile" && !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)) {
     throw Error("A native profile has one refresh owner. Configure the separate OpenAI decision provider or use a gateway authentication source before starting Foundry.");
   }
 
@@ -184,6 +191,7 @@ function createProvider(config: FoundryConfig): {
         authentication,
         defaults: {
           model: config.defaults.model,
+          ...(subscription ? { spawn: (argv: string[], options: { cwd: string; env: Record<string, string | undefined> }) => Bun.spawn(argv, { ...options, env: nativeTextEnvironment(options.env), stdin: "pipe", stdout: "pipe", stderr: "pipe" }) } : {}),
         },
       });
       return {
@@ -357,11 +365,11 @@ const atlasRoot =
 const runtimeManager = new ThreadRuntimeManager({
   config,
   llm: flowLlm,
-  providers: new Map([[rawProvider.id, rawProvider], ["openai", flowLlm], [flowLlm.id, flowLlm]]),
+  providers: new Map([[rawProvider.id, rawProvider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]),
   // Review uses its explicit phase profile, otherwise the configured flow policy.
   // No provider is constructed and no live binding/settings are changed by this resolver.
-  learning: resolveLearningSettings(config.learning, new Map([[rawProvider.id, rawProvider], ["openai", flowLlm], [flowLlm.id, flowLlm]]), flowLlm,
-    DECISION_MODEL),
+  learning: resolveLearningSettings(config.learning, new Map([[rawProvider.id, rawProvider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]), flowLlm,
+    decisionModel),
   eventStream,
   atlasRoot,
   // Docs warden uses the probe-validated topology-aware prompt from
@@ -380,7 +388,7 @@ const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents
   configuration: { config, layers: { sourceResolver }, agents: { provider, tokenTracker, tools,
     // Preserve the central gate while refusing an unavailable explicit project
     // provider; only these providers have actually been constructed above.
-    providers: new Map([["openai", flowLlm], [flowLlm.id, flowLlm], [rawProvider.id, provider]]),
+    providers: new Map([...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm], [rawProvider.id, provider]]),
   } },
 });
 
@@ -587,7 +595,7 @@ console.log();
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-await runStartupSelfTest({ enabled: selfTestRequested, provider: rawProvider, model: config.defaults.model, cwd: process.cwd(),
+await runStartupSelfTest({ enabled: selfTestRequested, provider: decisions?.provider ?? rawProvider, model: decisions ? decisionModel : config.defaults.model, cwd: process.cwd(),
   log: console.log, warn: console.warn, error: console.error });
 
 console.log();
@@ -599,6 +607,7 @@ console.log("Ready. Send messages through the harness API or viewer.");
 
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
+  decisions?.close();
   runtimeManager.disposeAll();
   viewer.server.stop();
   viewer.localStore?.close();

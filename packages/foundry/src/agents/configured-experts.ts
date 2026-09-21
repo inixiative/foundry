@@ -84,7 +84,7 @@ export function resolveThreadDomains(config: FoundryConfig, available: ReadonlyM
     // Mirrors the established startup restriction. There is no public native
     // auxiliary capability negotiation; reject unsupported requests before send.
     if (provider.completionLifecycle?.kind !== "session" && provider.nativeOwnership !== "required-prewrite") return;
-    if (provider.id !== "claude-code") throw Error("Configured native expert requires an available text-only Claude provider");
+    if (!["claude-code", "subscription-decisions"].includes(provider.id)) throw Error("Configured native expert requires an available text-only Claude provider");
     if (opts.thinking !== undefined) throw Error("Native expert thinking/effort cannot be enforced by the current adapter");
     if (opts.cacheControl !== undefined || opts.temperature !== 0) throw Error("Native expert cache/temperature setting cannot be enforced by the current adapter");
   };

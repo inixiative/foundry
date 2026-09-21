@@ -69,6 +69,8 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 
 **Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-5.6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
 
+Explicit `subscriptionOnly` startup is an opt-in exception: it requires a separately authenticated Claude decision profile and an explicit supported model, with no API fallback or Luna substitution. See [subscription decisions](docs/subscription-decisions.md) for bounds, ownership and validation limits.
+
 ## Design Principles
 
 1. **Don't reinvent Claude Code.** Wrap it, don't replace it.
