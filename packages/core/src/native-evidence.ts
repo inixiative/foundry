@@ -23,6 +23,7 @@ export interface OwnedAdmissionInspection {
 }
 export interface NativeEvidence {
   readonly schema: 1;
+  readonly executionMode?: "controlled-fixture";
   readonly owner?: NativeOwner;
   readonly admissionId?: string;
   readonly nativeSessionId?: string;
@@ -60,7 +61,7 @@ export interface NativeEvidence {
   readonly toolError?: boolean;
   readonly observationFailures?: number;
   readonly configuration?: Readonly<{ requestedModel: string; observedModel?: string; requestedMaxTurns?: number | null;
-    engine?: "mcp" | "app-server"; requestedEffort?: string; observedEffort?: string | null;
+    engine?: "mcp" | "app-server"; transportMode?: "controlled-fixture"; requestedEffort?: string; observedEffort?: string | null;
     history?: Readonly<{source:"thread/start"|"thread/resume";available:boolean;hasMore:boolean;turns:readonly Readonly<{id:string;status:string}>[]}>;
     turnBudgetEnforcement: "launch-option" | "unavailable"; tokenBudget: "unavailable"; effortBudget: "unavailable" }>;
   readonly text?: string;
@@ -69,7 +70,7 @@ export interface NativeEvidence {
   readonly textPhase?: "commentary" | "final_answer";
   /** Safe setup/status evidence, never launch paths or config values. */
   readonly runtimeStatus?: Readonly<{ type: string; status?: string; reason?: string; server?: string; tools?: readonly string[] }>;
-  readonly bridge?: { readonly id: string; readonly configurationHash: string; readonly tools: readonly NativeToolEvidence[] };
+  readonly bridge?: { readonly id: string; readonly configurationHash: string; readonly toolPolicy?: NativeToolPolicy; readonly tools: readonly NativeToolEvidence[] };
 }
 export interface NativeToolRecord {
   readonly id: string;
@@ -97,6 +98,7 @@ export interface NativeToolEvidence {
 /** Process lifetime grant. Data/functions never become part of a provider prompt. */
 export interface NativeBridgeSource {
   readonly key: string;
+  readonly toolPolicy?: NativeToolPolicy;
   check(owner: NativeOwner): void;
   acquire(): Promise<NativeBridgeLease>;
 }
@@ -105,6 +107,9 @@ export interface NativeBridgeLease {
   readonly name: string;
   readonly owner: { readonly threadId: string; readonly projectId?: string; readonly generation: string };
   readonly configurationHash: string;
+  readonly toolPolicy?: NativeToolPolicy;
+  /** Private, empty native cwd owned by a restricted fixture lease. */
+  readonly fixtureCwd?: string;
   readonly launch: { readonly claudeJson: string; readonly codexOverrides: readonly string[] };
   check(): void;
   register(evidence: NativeEvidence): void;
@@ -112,6 +117,11 @@ export interface NativeBridgeLease {
   evidence(admissionId?: string): readonly NativeToolEvidence[];
   status?(): Readonly<{ closed: boolean; pendingCleanups: number; cleanupFailures: number; evictedRecords: number }>;
   close(): Promise<void>;
+}
+/** Immutable policy identity; contains no credentials, launch paths or tool input. */
+export interface NativeToolPolicy {
+  readonly version: "isolated-fixture-v1";
+  readonly digest: string;
 }
 export interface NativeObservation {
   readonly owner: NativeOwner;

@@ -31,6 +31,8 @@ export interface SessionBackedProviderConfig {
  * pass to the engine, not proof of the model that answered.
  */
 export interface NativeSessionProfile {
+  readonly toolPolicyIdentity?: string;
+  readonly transportMode?: "controlled-fixture";
   readonly authentication?: Readonly<{ sourceId: string; connectionId: string; mode: string; model?: string; effort?: string; capacityId?: string }>;
   readonly engine?: "mcp" | "app-server";
   readonly requestedEffort?: string;
@@ -186,8 +188,14 @@ export class SessionBackedProvider implements LLMProvider {
 
   private _attempt(session: HarnessSession, id: string, owner: NativeOwner): NativeEvidence | undefined {
     const attempt = (session as HarnessSession & { inspectAttempt?: (id: string) => unknown }).inspectAttempt?.(id);
-    const evidence = attempt ? projectNative(attempt, owner) : undefined;
+    const evidence = attempt ? this._ownedProjection(session, attempt, owner) : undefined;
     return evidence?.admissionId === id ? evidence : undefined;
+  }
+
+  private _ownedProjection(session: HarnessSession, value: unknown, owner?: NativeOwner): NativeEvidence {
+    const evidence = projectNative(value, owner);
+    return this._adapter.describeConstruction?.(session)?.transportMode === "controlled-fixture"
+      ? freezeEvidence({ ...evidence, executionMode: "controlled-fixture" as const }) : evidence;
   }
 
   private _callSettled(evidence: NativeEvidence): boolean {
@@ -273,7 +281,7 @@ export class SessionBackedProvider implements LLMProvider {
     catch(error) { if(error && typeof error === "object") {this._notAdmitted.add(error);this._settled.add(error);} throw error; }
     const maxTurns = textOnly ? 1 : opts?.maxTurns ?? null;
     if (maxTurns !== null && (!Number.isSafeInteger(maxTurns) || maxTurns <= 0)) throw Error("maxTurns must be a positive safe integer or null");
-    const session = await this._getSession(threadId, cwd, { requestedModel, textOnly, maxTurns, ...(source ? { bridgeKey: source.key } : {}) }, source);
+    const session = await this._getSession(threadId, cwd, { requestedModel, textOnly, maxTurns, ...(source ? { bridgeKey: source.key, ...(source.toolPolicy ? { toolPolicyIdentity: JSON.stringify(source.toolPolicy) } : {}) } : {}) }, source);
     try { this._adapter.checkAuthentication?.(session); }
     catch (error) { if (error && typeof error === "object") { this._notAdmitted.add(error); this._settled.add(error); } throw error; }
     call.session = session;
@@ -294,7 +302,7 @@ export class SessionBackedProvider implements LLMProvider {
     try {
       const sendOptions = { timeout: opts?.timeout ?? (textOnly ? 15_000 : 0),
         ...(observation ? { onAdmission: async (attempt: unknown) => {
-          const evidence = projectNative(attempt, observation.owner);
+          const evidence = this._ownedProjection(session, attempt, observation.owner);
           if (!evidence.admissionId) throw Error("Engine did not supply admission identity");
           await observation.register(evidence);
           bridge?.register(evidence);
@@ -304,7 +312,7 @@ export class SessionBackedProvider implements LLMProvider {
       result = await session.send(prompt, sendOptions);
     } catch (error) {
       const attempt = error && typeof error === "object" ? (error as { attempt?: unknown }).attempt : undefined;
-      const evidence = projectNative(attempt, observation?.owner);
+      const evidence = this._ownedProjection(session, attempt, observation?.owner);
       bridge?.observe(evidence);
       this._observe(observation, evidence);
       if (error && typeof error === "object") {
@@ -323,11 +331,11 @@ export class SessionBackedProvider implements LLMProvider {
       localError = error;
       result = { content: evidence.content ?? "", externalSessionId: evidence.externalSessionId ?? session.externalSessionId, events: [], ...evidence } as typeof result;
     }
-    const observedNative = projectNative(result, observation?.owner);
+    const observedNative = this._ownedProjection(session, result, observation?.owner);
     bridge?.observe(observedNative);
     this._observe(observation, observedNative);
     const native = freezeEvidence({ ...observedNative, ...(localError ? { localError: localError instanceof Error ? localError.message : String(localError) } : {}),
-      ...(bridge ? { bridge: { id: bridge.id, configurationHash: bridge.configurationHash, tools: bridge.evidence(observedNative.admissionId) } } : {}),
+      ...(bridge ? { bridge: { id: bridge.id, configurationHash: bridge.configurationHash, ...(bridge.toolPolicy ? { toolPolicy: bridge.toolPolicy } : {}), tools: bridge.evidence(observedNative.admissionId) } } : {}),
       ...(observation ? { observationFailures: this._observerFailures.get(observation) ?? 0 } : {}) });
     if (native.nativeOutcome === "failed") {
       const error = Object.assign(Error(`Native terminal failed: ${native.terminal?.reason ?? native.terminal?.subtype ?? "failed"}`), { native, partialOutput: result.content });
@@ -374,6 +382,7 @@ export class SessionBackedProvider implements LLMProvider {
     }
 
     const completionNative = freezeEvidence({ ...native, configuration: { requestedModel, observedModel: nativeModel, requestedMaxTurns: maxTurns,
+      ...(profile?.transportMode ? {transportMode:profile.transportMode} : {}),
       ...(profile?.engine ? {engine:profile.engine} : {}), ...(profile?.requestedEffort ? {requestedEffort:profile.requestedEffort} : {}),
       ...(observedEffort !== undefined ? {observedEffort} : {}),
       ...(history ? {history} : {}),
@@ -409,12 +418,12 @@ export class SessionBackedProvider implements LLMProvider {
     try { Promise.resolve(observer.observe(evidence)).catch(failed); } catch { failed(); }
   }
 
-  private _getSession(threadId: string, cwd: string, requested: { requestedModel: string; textOnly: boolean; maxTurns?: number | null; bridgeKey?: string }, source?: NativeBridgeSource): Promise<HarnessSession> {
+  private _getSession(threadId: string, cwd: string, requested: { requestedModel: string; textOnly: boolean; maxTurns?: number | null; bridgeKey?: string; toolPolicyIdentity?: string }, source?: NativeBridgeSource): Promise<HarnessSession> {
     const key = JSON.stringify([cwd, threadId]);
     const existing = this._sessions.get(key);
     const current = this._profiles.get(key);
     if (existing && current) {
-      const differences = (["requestedModel", "textOnly", "maxTurns", "bridgeKey"] as const)
+      const differences = (["requestedModel", "textOnly", "maxTurns", "bridgeKey", "toolPolicyIdentity"] as const)
         .filter((field) => current[field] !== requested[field])
         .map((field) => `${field}: warm ${JSON.stringify(current[field])}, requested ${JSON.stringify(requested[field])}`);
       if (this._bridgeSources.get(key) !== source) differences.push("owned bridge source changed");
@@ -444,6 +453,7 @@ export class SessionBackedProvider implements LLMProvider {
       .then(async (profile) => {
         this._profiles.set(key, profile);
         if (source) bridge = await source.acquire();
+        if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity) throw Error("Owned fixture policy changed during acquisition");
         const session = await this._adapter.createSession({ threadId, cwd, model: requested.requestedModel,
           ...(bridge ? { nativeBridge: bridge } : {}),
           ...(requested.maxTurns !== undefined ? { maxTurns: requested.maxTurns } : {}),
@@ -452,7 +462,7 @@ export class SessionBackedProvider implements LLMProvider {
         if (bridge) this._bridges.set(session, bridge);
         const observations = new Map<string, NativeObservation>(); this._observations.set(session, observations);
         session.onEvent?.(event => {
-          const evidence = projectNative(event);
+          const evidence = this._ownedProjection(session, event);
           if (!evidence.admissionId || !evidence.kind) return;
           const observer = observations.get(evidence.admissionId);
           if (!observer) return;
@@ -477,7 +487,7 @@ export class SessionBackedProvider implements LLMProvider {
         const bindingSource: NativeSessionProfile["bindingSource"] = constructed || exposes ? "construction" : "unavailable";
         this._profiles.set(key, Object.freeze<NativeSessionProfile>({
           ...profile, resumedBinding, bindingSource,
-          ...(constructed ? { bindingId: constructed.bindingId, authentication: constructed.authentication, engine: constructed.engine, requestedEffort: constructed.requestedEffort } : {}),
+          ...(constructed ? { bindingId: constructed.bindingId, transportMode: constructed.transportMode, authentication: constructed.authentication, engine: constructed.engine, requestedEffort: constructed.requestedEffort } : {}),
           persistedModelIdentity: bindingSource === "construction" && resumedBinding === null ? "fresh-session" : "unknown",
         }));
         return session;

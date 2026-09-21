@@ -33,6 +33,7 @@ export function appServerBridgeConfiguration(bridge: NativeBridgeLease, existing
  * all model/effort/budget arguments. Refuse explicit conflicting policy. */
 export function withNativeBridge(argv: readonly string[], engine: "claude" | "codex", bridge: NativeBridgeLease): string[] {
   bridge.check();
+  if (bridge.toolPolicy) throw Error("Fixture lease requires the isolated transport; generic bridge launch refused");
   const result = [...argv];
   if (engine === "claude") {
     if (argv.some(arg => ["--safe-mode", "--strict-mcp-config", "--bare"].includes(arg))) throw Error("Native bridge conflicts with the existing central MCP policy");
@@ -61,4 +62,36 @@ export function withNativeBridge(argv: readonly string[], engine: "claude" | "co
     for (const override of bridge.launch.codexOverrides) result.push("-c", override);
   }
   return result;
+}
+
+/** Exact configuration for the isolated fixture transport. This validates argv,
+ * not same-host containment: managed policy can still execute startup hooks in
+ * Claude 2.1.260. Only a controlled transport may currently consume this plan. */
+export function withIsolatedFixture(argv: readonly string[], bridge: NativeBridgeLease): string[] {
+  bridge.check();
+  if (bridge.toolPolicy?.version !== "isolated-fixture-v1" || !/^[a-f0-9]{64}$/.test(bridge.toolPolicy.digest) || !bridge.fixtureCwd)
+    throw Error("Owned fixture policy required");
+  // Validate the process-owned descriptor before copying it. Its capability
+  // stays in the private launch file, never the argv/config evidence.
+  appServerBridgeConfiguration(bridge);
+  const valueFlags = new Set(["--input-format", "--output-format", "--model", "--effort", "--max-turns", "--permission-mode", "--append-system-prompt", "--setting-sources"]);
+  const switches = new Set(["--print", "--verbose", "--include-hook-events"]);
+  const seen = new Set<string>();
+  for (let index = 1; index < argv.length; index++) {
+    const flag = argv[index];
+    if (seen.has(flag)) throw Error("Duplicate isolated launch setting");
+    seen.add(flag);
+    if (switches.has(flag)) continue;
+    if (!valueFlags.has(flag) || ++index >= argv.length) throw Error("Unapproved isolated launch option");
+    const value = argv[index];
+    if (["--input-format", "--output-format"].includes(flag) && value !== "stream-json"
+      || flag === "--permission-mode" && value !== "dontAsk"
+      || flag === "--setting-sources" && value !== ""
+      || flag === "--max-turns" && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100)) throw Error("Unapproved isolated launch value");
+  }
+  if (!["--print", "--input-format", "--output-format", "--model", "--permission-mode", "--max-turns"].every(flag => seen.has(flag))) throw Error("Bounded isolated launch configuration required");
+  return [...argv, "--restricted", "--tools", "", "--strict-mcp-config", "--mcp-config", bridge.launch.claudeJson,
+    "--disable-slash-commands", "--no-chrome", "--no-session-persistence",
+    ...(!seen.has("--setting-sources") ? ["--setting-sources", ""] : []),
+    "--settings", JSON.stringify({ disableAllHooks: true, disableClaudeAiConnectors: true })];
 }
