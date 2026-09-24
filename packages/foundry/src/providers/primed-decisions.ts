@@ -28,6 +28,8 @@ export interface PrimedDecisionHostConfig {
   directory: string;
   model: string;
   effort?: string;
+  /** Hedge a decision still running after this long on a second branch; the first to finish wins. */
+  hedgeAfterMs?: number;
   /** Concurrent decision turns on the one warm process. */
   maxConcurrent: number;
   callTimeoutMs: number;
@@ -77,7 +79,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   // The warm process shares the user's Codex login like any decision process: a shared registration for its lifetime.
   const auth = new NativeAuthentication({ directory: root, sources: [source], defaultSourceId: source.id, shared: true });
   let releaseFailures = 0;
-  const host = new CodexPrimedSessions({ model: config.model, effort: config.effort, cwd, baseInstructions: PRIMED_DECISION_CONTEXT,
+  const host = new CodexPrimedSessions({ model: config.model, effort: config.effort, hedgeAfterMs: config.hedgeAfterMs, cwd, baseInstructions: PRIMED_DECISION_CONTEXT,
     maxConcurrent: config.maxConcurrent, timeoutMs: config.callTimeoutMs, clientName: "foundry-decisions", onEvent: config.onEvent,
     spawn: async (argv, options) => {
       const launch = await auth.prepare(`primed-decisions:${hostId}`, "codex");
@@ -171,7 +173,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           throw Object.assign(Error("Codex text call failed; inspect retained ownership and release evidence"), { evidencePath: receiptsPath, callId: id });
         } finally {
           call.finishedAt = Date.now();
-          receipt(call, result ? { prime: result.prime, timing: result.timing } : {});
+          receipt(call, result ? { prime: result.prime, timing: result.timing, ...(result.hedged ? { hedged: true } : {}) } : {});
           if (oneShot && spec!) void host.evict(spec.key).catch(() => undefined);
         }
       },

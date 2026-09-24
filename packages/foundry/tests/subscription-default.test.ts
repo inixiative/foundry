@@ -42,7 +42,7 @@ test("a fresh configuration is subscription-only: Claude worker and Codex Luna d
   expect(resolved.worker).toMatchObject({ runtime: "claude", mode: "native-profile", profileDirectory: join(root, ".claude") });
   expect(resolved.decision).toMatchObject({ runtime: "codex", mode: "native-profile", profileDirectory: join(root, ".codex") });
   expect(resolved.policy).toEqual({ model: "gpt-6-luna", directory: join(cwd, ".foundry", "decision-receipts"), maxCalls: 10000,
-    maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 8, callTimeoutMs: 30000 });
+    maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 16, callTimeoutMs: 30000, effort: "low", hedgeAfterMs: 4000 });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-6-luna" });
   expect(resolved.rerouted).toEqual([]);
@@ -161,20 +161,23 @@ test("Codex decisions run on one warm, tool-free app-server with the prompt neve
 test("each middleware role keeps its own primed session and re-primes only when its stable context changes", async () => {
   const transport = appServerTransport();
   const { decisions, close } = primedDecisions(transport);
-  const cache = "## Domain cache (api)\nroutes live under src/api\n";
+  const cache = "## Domain cache (api)\nroutes live under src/api\n", moved = "## Domain cache (api)\nroutes moved to src/http\n";
   const advise = (message: string, content = cache) => decisions.provider.complete([{ role: "system", content: "ADVISE" },
     { role: "user", content: `${content}\n## Message\n${message}` }], { threadId: "T:aux:domain:api", stablePrefix: content });
+  const settle = () => Bun.sleep(20); // background priming (controlled double answers at once)
   try {
-    await advise("one"); await advise("two");
+    await advise("one"); await settle();
+    await advise("two");
     await decisions.provider.complete([{ role: "system", content: "GUARD" }, { role: "user", content: `${cache}\n## Tool observation\nls` }],
       { threadId: "T:aux:domain:api", stablePrefix: cache });
-    await advise("three", "## Domain cache (api)\nroutes moved to src/http\n");
+    await settle();
+    await advise("three", moved); await settle();
     const primers = transport.requests.filter(r => r.method === "turn/start" && String(r.params.input[0].text).includes("standing context"));
-    // advice primed once, guard (other instructions, same aux id) separately, then advice again after the cache changed.
+    // advice primed once, guard (other instructions, same aux id) separately, then advice again after its cache changed.
     expect(primers.map(r => String(r.params.input[0].text).split("\n")[1])).toEqual(["routes live under src/api", "routes live under src/api", "routes moved to src/http"]);
-    expect(transport.requests.filter(r => r.method === "thread/fork")).toHaveLength(4);
-    // Only the per-cycle part is sent as the decision input.
-    expect(transport.turns).toEqual(["\n## Message\none", "\n## Message\ntwo", "\n## Tool observation\nls", "\n## Message\nthree"]);
+    // A miss decides inline with its context; a primed role forks and sends only the per-cycle part.
+    expect(transport.turns).toEqual([`${cache}\n\n\n## Message\none`, "\n## Message\ntwo", `${cache}\n\n\n## Tool observation\nls`, `${moved}\n\n\n## Message\nthree`]);
+    expect(transport.requests.filter(r => r.method === "thread/fork")).toHaveLength(1);
   } finally { await close(); }
 });
 

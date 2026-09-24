@@ -20,9 +20,11 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only. Codex exec does not acknowledge an observed model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
 | `subscriptionOnly.maxCalls` | `10000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
-| `subscriptionOnly.maxConcurrent` | `8` for Codex, `1` for Claude | Decisions running at once across all threads: concurrent turns on the one warm Codex process, or processes for a Claude profile (limited to 1). |
+| `subscriptionOnly.maxConcurrent` | `16` for Codex, `1` for Claude | Decisions running at once across all threads: concurrent turns on the one warm Codex process, or processes for a Claude profile (limited to 1). |
 | `subscriptionOnly.maxQueued` | `256` | Waiting decisions across all threads (up to 1024). |
 | `subscriptionOnly.maxQueuedPerThread` | `32` | Waiting decisions per logical thread. |
+| `subscriptionOnly.effort` | `low` for Codex | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`). The model default, `medium`, adds about 0.5 s per decision. |
+| `subscriptionOnly.hedgeAfterMs` | `4000` for Codex | A decision still running after this long starts the same input on a second branch; the first to finish wins (500 to 30000). |
 | `subscriptionOnly.callTimeoutMs` | `30000` | Per-decision deadline including queue and preflight time (100 to 30000). |
 
 Explicit profile sources are credential references in `nativeAuthentication`, never tokens:
@@ -74,7 +76,33 @@ One process-wide scheduler serves every thread's decisions, with up to `maxConcu
 - **Rate limits.** A Codex usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission. While the account reports usage blocked, the warm host refuses decisions before sending anything and re-reads limits at most once a minute.
 - **Failures.** A refusal before any native write (expired deadline, revoked preflight or registration) leaves nothing owned and does not close admission. A turn the runtime settled (a native failure, or a deadline whose interrupt was acknowledged or whose process exit was observed) leaves nothing owned either and does not close admission. A violation, a substituted model or an unproven result still closes further admission.
 
-The flow already fires domain assessments concurrently (up to `maxAdviseParallel`, default 5) alongside routing, each with its own 10 s deadline; a late answer is recorded as a timeout and not used. Advice is composed in configured order once every participant has answered or timed out.
+## Latency
+
+Every advisor has to be fast, so the pre-message phase is one concurrent round:
+
+- The classifier and router run at the same time, both on the frozen message. The router no longer waits for the classification.
+- The Cartographer and every domain assessment start on the message's first decision dispatch, against the same frozen input. They run alongside classification and routing, with no parallelism cap by default (`maxAdviseParallel`).
+- The worker starts once the slowest of them answers.
+- Composition stays deterministic: configured order, hash provenance, and the sealed plan are journalled before the worker starts.
+
+Speed comes from how each decision runs:
+
+- Each decision runs on its role's warm primed session.
+- Contexts that change are decided inline, and priming never sits on the critical path.
+- A decision still running after `hedgeAfterMs` is hedged.
+
+Every decision, including classification and routing, has a 10 s deadline (`DECISION_DEADLINE_MS`). It is a safety net, not the normal path: a late answer is recorded as a timeout, the call is cancelled, and a classifier or router falls back to keywords.
+
+Budget (`providers/decision-budget.ts`), measured live with `bun scripts/measure-decisions.ts` (six experts, gpt-6-luna at low effort, a spare `VIEWER_PORT`):
+
+| | Before (per-call `codex exec`, classify, then route, then advise) | After |
+|---|---|---|
+| Message to worker start | p50 17.4 s, p95 20.9 s | p50 5.5 s; served turns ≤ 7.1 s |
+| One decision | p50 4.3 s, p95 6.1 s | p50 3.5 s, p95 5.5 s under the full fan-out |
+
+- The budget is 5.5 s p95 per decision and 7.5 s p95 from message to worker start over served turns.
+- In provider-wide stalls, when every request is slow at once, turns end at the safety net and are reported separately.
+- The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
 ## Ownership and bounds
 

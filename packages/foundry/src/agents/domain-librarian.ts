@@ -58,6 +58,8 @@ export interface AdviseOpts {
    * and one turn. A late, failed or timed-out completion cannot change what was observed.
    */
   observeRequest?: (request: AdviceRequestEvidence) => void;
+  /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
+  timeoutMs?: number;
 }
 
 /** The exact input one phase call supplied to its provider, frozen at the call boundary. Text only. */
@@ -843,7 +845,8 @@ export class DomainLibrarian {
 
     let content: string;
     try {
-      content = (await this._llm.complete(messages, { ...this._llmOpts, stablePrefix })).content;
+      content = (await this._llm.complete(messages, { ...this._llmOpts, stablePrefix,
+        ...(opts?.timeoutMs !== undefined ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) } : {}) })).content;
     } catch (err) {
       // Model failure: advise nothing, but say why so the composer records an error, not silence.
       return { layers: [], snippets: [], confidence: 0, error: (err as Error)?.message ?? String(err) };

@@ -66,6 +66,8 @@ export interface RouteRequestEvidence {
 export interface RouteOpts {
   /** Observes the exact messages supplied to the routing provider, once, before the call. Invocation-scoped. */
   observeRequest?: (request: RouteRequestEvidence) => void;
+  /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
+  timeoutMs?: number;
 }
 
 export interface RouteResult {
@@ -385,7 +387,8 @@ export class Cartographer {
       messages: Object.freeze(messages.map((m) => Object.freeze({ role: m.role, content: m.content }))) }));
 
     try {
-      const result = await this._llm.complete(messages, { ...this._llmOpts, stablePrefix });
+      const result = await this._llm.complete(messages, { ...this._llmOpts, stablePrefix,
+        ...(opts?.timeoutMs !== undefined ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) } : {}) });
       const parsed = parseJSON<RouteResult>(result.content);
       return {
         layers: parsed.layers ?? [],

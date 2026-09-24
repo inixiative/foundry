@@ -18,6 +18,10 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, "runI
   rateLimitBackoffMs?: number;
   /** Codex decisions: warm-host events (priming, eviction, recycles, limits); observers only. */
   onPrimedEvent?: (event: PrimedEvent) => void;
+  /** Codex decision reasoning effort (the model's default when omitted). */
+  effort?: string;
+  /** Codex decisions: hedge a decision still running after this long (off when omitted). */
+  hedgeAfterMs?: number;
 }
 export type DecisionPressure =
   | { kind: "shed"; threadId: string; priority: number; queued: number }
@@ -39,7 +43,7 @@ type Pending = { messages: LLMMessage[]; opts: CompletionOpts; owner: NativeOwne
 export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
   const { onPrimedEvent, ...options } = config;
   if (config.source.runtime !== "codex") return buildSubscriptionDecisions(options, createNativeTextProvider);
-  const primed = createPrimedDecisionHost({ source: config.source, directory: config.directory, model: config.model,
+  const primed = createPrimedDecisionHost({ source: config.source, directory: config.directory, model: config.model, effort: config.effort, hedgeAfterMs: config.hedgeAfterMs,
     maxConcurrent: config.maxConcurrent ?? 1, callTimeoutMs: config.callTimeoutMs, onEvent: onPrimedEvent });
   const decisions = buildSubscriptionDecisions(options, primed.createRun);
   return { ...decisions,

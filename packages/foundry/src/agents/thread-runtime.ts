@@ -627,20 +627,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // committed only after the executor demonstrably received the turn.
     const flow = this.flowOrchestrator;
     const domainLibrarians = this.domainLibrarians;
-    thread.middleware.use(FLOW_MIDDLEWARE_ID, async (ctx, next) => {
-      const agentCfg = deps.config.agents[ctx.agentId];
-      if (agentCfg?.kind !== "executor" || typeof ctx.payload !== "string") return next();
-
-      // This dispatch is live from here until it returns: only a live
-      // dispatch can receive tool evidence, so an arbitrary or stale id
-      // never opens a bucket.
-      const liveId = ctx.dispatchId;
-      if (liveId) this._liveDispatches.set(liveId, { annotations: ctx.annotations as Record<string, unknown>, guards: [], messageId: ctx.messageId ?? null });
-      try {
+    // One concurrent pre-message phase: the Cartographer and every domain assessment start on the
+    // message's first decision dispatch (classify/route, themselves concurrent), against the same
+    // frozen input, and the executor dispatch picks up the sealed plan. Without a decision stage the
+    // executor dispatch starts it. Composition stays deterministic (configured order, hashes).
+    const prepare = async (message: string, identity: { messageId: string; threadId: string; projectId?: string } | undefined) => {
       // Snapshot pending reviews without waiting. A later turn uses the latest
       // committed revision; this turn's historical preparation stays immutable.
       const barrier = await this._awaitPendingLearning();
-
       // Newly resolved project experts must read their actual owned sources on
       // the first pre-hook, not abstain because only the global template warmed.
       // No model/review wait is introduced. Failure blocks this work preparation.
@@ -648,12 +642,43 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const cache = domainLibrarians.get(d.domain)!.cache;
         return cache.checkStaleness() === "warm" ? undefined : cache.warm();
       }));
+      let plan: InjectionPlan | undefined, prepared: HydrationResult | undefined, failure: Error | undefined;
+      try { plan = await flow.preMessage(message, identity); prepared = await flow.hydrateDelta(plan); }
+      catch (error) { failure = error as Error; }
+      return { barrier, plan, prepared, failure };
+    };
+    const early = new Map<string, { message: string; startedAt: number; preparation: ReturnType<typeof prepare> }>();
+    const identityOf = (ctx: { messageId?: string; threadId?: string; projectId?: string }) => ctx.messageId && ctx.threadId
+      ? { messageId: ctx.messageId, threadId: ctx.threadId, projectId: ctx.projectId } : undefined;
+    thread.middleware.use(FLOW_MIDDLEWARE_ID, async (ctx, next) => {
+      const agentCfg = deps.config.agents[ctx.agentId];
+      if (typeof ctx.payload !== "string") return next();
+      if ((agentCfg?.kind === "classifier" || agentCfg?.kind === "router") && ctx.messageId) {
+        if (!early.has(ctx.messageId)) {
+          // A preparation whose message never reaches an executor is dropped after ten minutes.
+          for (const [id, entry] of early) if (Date.now() - entry.startedAt > 600_000) early.delete(id);
+          const preparation = prepare(ctx.payload, identityOf(ctx));
+          preparation.catch(() => undefined); // observed by the executor dispatch that consumes it
+          early.set(ctx.messageId, { message: ctx.payload, startedAt: Date.now(), preparation });
+        }
+        return next();
+      }
+      if (agentCfg?.kind !== "executor") return next();
 
-      let prepared: HydrationResult | undefined;
+      // This dispatch is live from here until it returns: only a live
+      // dispatch can receive tool evidence, so an arbitrary or stale id
+      // never opens a bucket.
+      const liveId = ctx.dispatchId;
+      if (liveId) this._liveDispatches.set(liveId, { annotations: ctx.annotations as Record<string, unknown>, guards: [], messageId: ctx.messageId ?? null });
       try {
-        const plan = await flow.preMessage(ctx.payload, ctx.messageId && ctx.threadId
-          ? { messageId: ctx.messageId, threadId: ctx.threadId, projectId: ctx.projectId } : undefined);
-        prepared = await flow.hydrateDelta(plan);
+      const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
+      if (ctx.messageId) early.delete(ctx.messageId);
+      const { barrier, plan: preparedPlan, prepared, failure } = await (started && started.message === ctx.payload
+        ? started.preparation : prepare(ctx.payload, identityOf(ctx)));
+
+      try {
+        if (failure || !preparedPlan || !prepared) throw failure ?? Error("pre-message produced no plan");
+        const plan = preparedPlan;
         ctx.annotations.injectionPlan = plan;
         ctx.annotations.decoration = prepared.decoration;
         // Durable at seal, before the central call: the routing request and every expert's advice request
