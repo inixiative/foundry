@@ -20,7 +20,8 @@ export const runtimeUpdateCloseReason = (expectedBackWithinMs: number) =>
 
 export const RUNTIME_PING_INTERVAL_MS = 10_000;
 export const RUNTIME_PONG_TIMEOUT_MS = 5_000;
-const AUTHENTICATION_TIMEOUT_MS = 10_000;
+const AUTHENTICATION_TIMEOUT_MS = 5_000;
+const CHECK_REDIAL_SPACING_MS = 2_000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const CLAIM_RETRY_BASE_MS = 15_000;
@@ -69,6 +70,7 @@ export class KingdomRuntimeConnection {
   private started = false;
   private stopped = false;
   private failures = 0;
+  private lastFailureAt = 0;
   private claimFailures = 0;
   private lastStatus?: string;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
@@ -81,10 +83,11 @@ export class KingdomRuntimeConnection {
     this.settings = kingdomRuntimeSchema.parse(settings);
   }
   get connected() { return this.available; }
-  /** Resolves while the socket is authenticated; otherwise reconnects now and waits for the outcome. */
+  /** Resolves while the socket is authenticated; otherwise joins or starts a reconnect (at most one redial per 2 s) and waits for it. */
   check(): Promise<void> {
     if (this.available) return Promise.resolve();
-    if (this.stopped) return Promise.reject(unavailable());
+    if (this.attempt) return this.attempt.promise;
+    if (this.stopped || Date.now() - this.lastFailureAt < CHECK_REDIAL_SPACING_MS) return Promise.reject(unavailable());
     return this.connect();
   }
   /** Connects and keeps reconnecting with backoff until `stop()`; rejects when the first connection fails. */
@@ -232,6 +235,7 @@ export class KingdomRuntimeConnection {
     if (socket && socket !== this.socket) return;
     if (socket) this.detach(socket);
     this.available = false;
+    this.lastFailureAt = Date.now();
     if (isRejection(code)) this.failures = Math.max(this.failures, 5);
     this.attempt?.settle(unavailable());
     this.scheduleReconnect();
