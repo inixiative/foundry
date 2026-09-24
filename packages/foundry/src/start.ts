@@ -402,8 +402,12 @@ const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents
 // Create main thread (lightweight handle over shared project state)
 // ---------------------------------------------------------------------------
 
+// Main joins the first enabled project at construction, so its runtime's learning owner
+// (captured when the runtime is built) matches the project it is later listed under.
+const mainProjectId = Object.values(config.projects ?? {}).find(project => project.enabled !== false)?.id;
 const thread = factory.create("main", {
   description: "Main conversation thread",
+  ...(mainProjectId ? { projectId: mainProjectId } : {}),
 });
 
 // Main's own stack. Everything below (reactive rules, Librarian, Cartographer,
