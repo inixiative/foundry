@@ -17,9 +17,27 @@ export interface OpenAIConfig {
   baseUrl?: string;
   /** Optional organization header. */
   organization?: string;
+  /** Extra headers sent on every request (compatible hosts that require attribution). */
+  headers?: Record<string, string>;
+  /** Which model ids take `reasoning_effort`. Defaults to the OpenAI gpt-5.6 family. */
+  reasoningModels?: (model: string) => boolean;
+  /** Send `reasoning_effort: "none"` when the caller asked for no thinking. Off for hosts that reject it. */
+  explicitNoReasoning?: boolean;
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
+const OPENAI_REASONING_MODELS = (model: string) => /^gpt-5\.6(?:-|$)/.test(model);
+
+/**
+ * Resolve the versioned API root for an OpenAI-compatible host.
+ * Hosts publish their base either bare ("https://api.openai.com") or already
+ * versioned ("https://api.x.ai/v1", "https://api.z.ai/api/paas/v4"); both must
+ * produce exactly one version segment.
+ */
+export function openAiApiRoot(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
 
 /**
  * OpenAI Chat Completions adapter.
@@ -38,15 +56,51 @@ export class OpenAIProvider implements LLMProvider {
 
   private _apiKey: string;
   private _defaultModel: string;
-  private _baseUrl: string;
+  private _apiRoot: string;
   private _organization: string | undefined;
+  private _extraHeaders: Record<string, string>;
+  private _isReasoningModel: (model: string) => boolean;
+  private _explicitNoReasoning: boolean;
 
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? "openai";
     this._apiKey = config.apiKey;
     this._defaultModel = config.defaultModel ?? "gpt-5.6-luna";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._apiRoot = openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
+    this._extraHeaders = config.headers ?? {};
+    this._isReasoningModel = config.reasoningModels ?? OPENAI_REASONING_MODELS;
+    this._explicitNoReasoning = config.explicitNoReasoning ?? true;
+  }
+
+  /** Versioned API root this adapter posts to. */
+  get apiRoot(): string { return this._apiRoot; }
+
+  private _headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      ...this._extraHeaders,
+      "content-type": "application/json",
+      authorization: `Bearer ${this._apiKey}`,
+    };
+    if (this._organization) headers["openai-organization"] = this._organization;
+    return headers;
+  }
+
+  private _body(messages: LLMMessage[], opts: CompletionOpts | undefined, model: string): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    };
+    const reasoningModel = this._isReasoningModel(model);
+    if (reasoningModel) {
+      const effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
+      if (effort !== "none" || this._explicitNoReasoning) body.reasoning_effort = effort;
+    }
+    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
+    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
+    if (opts?.topP !== undefined) body.top_p = opts.topP;
+    if (opts?.stop) body.stop = opts.stop;
+    return body;
   }
 
   async complete(
@@ -54,30 +108,11 @@ export class OpenAIProvider implements LLMProvider {
     opts?: CompletionOpts
   ): Promise<CompletionResult> {
     const model = opts?.model ?? this._defaultModel;
+    const body = this._body(messages, opts, model);
 
-    const body: Record<string, unknown> = {
-      model,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    };
-
-    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
-    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
-    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
-    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (opts?.topP !== undefined) body.top_p = opts.topP;
-    if (opts?.stop) body.stop = opts.stop;
-
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      authorization: `Bearer ${this._apiKey}`,
-    };
-    if (this._organization) {
-      headers["openai-organization"] = this._organization;
-    }
-
-    const res = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this._apiRoot}/chat/completions`, {
       method: "POST",
-      headers,
+      headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
@@ -121,32 +156,11 @@ export class OpenAIProvider implements LLMProvider {
     opts?: CompletionOpts
   ): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? this._defaultModel;
+    const body = { ...this._body(messages, opts, model), stream: true, stream_options: { include_usage: true } };
 
-    const body: Record<string, unknown> = {
-      model,
-      stream: true,
-      stream_options: { include_usage: true },
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    };
-
-    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
-    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
-    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
-    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (opts?.topP !== undefined) body.top_p = opts.topP;
-    if (opts?.stop) body.stop = opts.stop;
-
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      authorization: `Bearer ${this._apiKey}`,
-    };
-    if (this._organization) {
-      headers["openai-organization"] = this._organization;
-    }
-
-    const res = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this._apiRoot}/chat/completions`, {
       method: "POST",
-      headers,
+      headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
@@ -229,7 +243,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   private _apiKey: string;
   private _model: string;
-  private _baseUrl: string;
+  private _apiRoot: string;
 
   constructor(config: {
     apiKey: string;
@@ -238,7 +252,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }) {
     this._apiKey = config.apiKey;
     this._model = config.model ?? "text-embedding-3-small";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._apiRoot = openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
@@ -253,7 +267,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private async _request(input: string[]): Promise<EmbeddingResult[]> {
     if (input.length === 0) return [];
 
-    const res = await fetch(`${this._baseUrl}/v1/embeddings`, {
+    const res = await fetch(`${this._apiRoot}/embeddings`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
