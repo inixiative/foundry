@@ -52,8 +52,12 @@ export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "ma
  * are not knowable in advance.
  */
 export interface ModelReasoning {
-  /** OpenAI's flat `reasoning_effort`, or xAI's nested `reasoning: { effort }`. */
-  param: "reasoning_effort" | "reasoning.effort";
+  /**
+   * Where the effort goes. Only the first two reach the OpenAI-compatible
+   * adapter; Anthropic and Gemini have their own adapters and their own fields,
+   * recorded here so the map describes every model, not just the compatible ones.
+   */
+  param: "reasoning_effort" | "reasoning.effort" | "output_config.effort" | "thinking_level";
   /** Accepted levels. Without "none", thinking cannot be switched off. */
   efforts: readonly ReasoningEffort[];
   /** Sent when the caller asks for nothing, or asks for a level this model rejects. */
@@ -90,13 +94,15 @@ const OPENAI_REASONING: ModelReasoning = {
 /** Codex CLI catalogue (~/.codex/models_cache.json): no "none", medium by default. */
 const CODEX_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "medium" };
 const CODEX_REASONING_ULTRA: ModelReasoning = { ...CODEX_REASONING, efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] };
-/** Anthropic: adaptive thinking, steered by output_config.effort. */
-const CLAUDE_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "high" };
+/** Anthropic: adaptive thinking, steered by output_config.effort, never by reasoning_effort. */
+const CLAUDE_REASONING: ModelReasoning = { param: "output_config.effort", efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "high" };
 /** Grok nests effort and cannot be switched off; reasoning models reject stop. */
 const GROK_REASONING: ModelReasoning = { param: "reasoning.effort", efforts: ["low", "medium", "high"], fallback: "high", rejectsStop: true };
 const GROK_REASONING_XHIGH: ModelReasoning = { ...GROK_REASONING, efforts: ["low", "medium", "high", "xhigh"] };
-/** Hosts whose thinking is a plain on/off effort with no "none" and no output-field change. */
+/** Compatible hosts whose thinking is a plain effort with no "none" and no output-field change. */
 const EFFORT_ONLY: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high"], fallback: "medium" };
+/** Gemini takes thinking_level, and rejects "minimal". */
+const GEMINI_REASONING: ModelReasoning = { param: "thinking_level", efforts: ["low", "medium", "high"], fallback: "medium" };
 /** DeepSeek publishes its own ladder, including "none" and "max". */
 const DEEPSEEK_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["none", "low", "high", "max"], fallback: "none" };
 
@@ -269,11 +275,11 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     models: [
       // The Pro and Flash lines carry different version numbers; Pro has no GA
       // successor to 3.1 yet. thinking_level takes low/medium/high, not minimal.
-      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful", costTier: "high", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
-      { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
-      { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
-      { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
-      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", tier: "fast", costTier: "low", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful", costTier: "high", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: GEMINI_REASONING },
+      { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: GEMINI_REASONING },
+      { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: GEMINI_REASONING },
+      { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, reasoning: GEMINI_REASONING },
+      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", tier: "fast", costTier: "low", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: GEMINI_REASONING },
     ],
   },
   xai: {

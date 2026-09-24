@@ -168,3 +168,9 @@ describe("the map, not the model name, decides request shape", () => {
     expect(registryModel("gemini", "gemini-3.1-flash-lite")).toBeDefined();
   });
 });
+
+test("each vendor's own effort field is recorded, not flattened into OpenAI's", () => {
+  expect(registryModel("anthropic", "claude-opus-5")!.reasoning!.param).toBe("output_config.effort");
+  expect(registryModel("gemini", "gemini-3.8-flash")!.reasoning!.param).toBe("thinking_level");
+  expect(registryModel("kimi", "kimi-k3")!.reasoning!.param).toBe("reasoning_effort");
+});

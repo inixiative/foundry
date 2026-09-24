@@ -95,8 +95,9 @@ export class OpenAIProvider implements LLMProvider {
     if (reasoning) {
       const asked = typeof opts?.thinking === "string" ? (opts.thinking as ModelReasoning["fallback"]) : undefined;
       const effort = asked && reasoning.efforts.includes(asked) ? asked : reasoning.fallback;
+      // The other params belong to adapters that are not chat completions.
       if (reasoning.param === "reasoning.effort") body.reasoning = { effort };
-      else body.reasoning_effort = effort;
+      else if (reasoning.param === "reasoning_effort") body.reasoning_effort = effort;
     }
     if (opts?.maxTokens !== undefined) body[reasoning?.outputField ?? "max_tokens"] = opts.maxTokens;
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
