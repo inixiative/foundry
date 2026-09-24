@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { buildPlist, DAEMON_LABEL } from "./plist";
 import { checkReadiness } from "./ready";
+import { installLocations, resolveDaemonPath } from "./agent-clis";
 
 const repoRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const home = homedir();
@@ -49,16 +50,14 @@ const install = async () => {
   await mkdir(logDir, { recursive: true });
   await mkdir(`${home}/Library/LaunchAgents`, { recursive: true });
 
-  const pathEntries = [
-    bunPath.replace(/\/bun$/, ""),
-    `${home}/.bun/bin`,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-  ];
+  const { pathEntries, resolved, missing } = await resolveDaemonPath(bunPath, home);
+  if (missing.length) {
+    console.error(`No working ${missing.join(" or ")} was found for the daemon's environment.`);
+    console.error("The daemon starts with only the PATH written to its LaunchAgent, so every agent CLI must launch there.");
+    for (const cli of missing) console.error(`  ✗ ${cli}: tried ${(await installLocations(cli, home)).join(", ") || "no install found"}`);
+    process.exit(1);
+  }
+  for (const [cli, install] of resolved) info(`${cli}: ${install.binary} (${install.version.join(".")})`);
 
   await writeFile(
     plistPath,
@@ -67,7 +66,7 @@ const install = async () => {
       bunPath,
       logDir,
       port: Number.parseInt(process.env.VIEWER_PORT ?? "4400", 10),
-      pathEntries: [...new Set(pathEntries)],
+      pathEntries,
     }),
   );
   ok(`wrote ${plistPath}`);

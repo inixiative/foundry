@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "archive": "bun run packages/foundry/src/archives/cli.ts",
-    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts",
+    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./scripts/daemon/",
     "test:core": "bun test ./packages/core/tests/",
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
     "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bun test ./packages/foundry/tests/db/ --max-concurrency=1",
