@@ -7,12 +7,13 @@ import { html, render, useState, useEffect } from "./lib.js";
 import {
   init, connected, eventCount, toast, currentTrace, selectedEvent, dismissTraceSelection,
   selectedSpanId, loadTraces, resyncStreams, executeAction,
-  projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast,
+  projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast, activePanel,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
 import { ProjectSidebar } from "./project-sidebar.js";
 import { Sidebar } from "./thread-tree.js";
 import { Conversation } from "./conversation.js";
+import { GraphPanel } from "./graph-view.js";
 import { DetailDrawer } from "./detail-drawer.js";
 import { CommandPalette, HelpOverlay } from "./command-palette.js";
 import { Settings, settingsOpen, settingsConfig, loadSettings } from "./settings.js";
@@ -74,6 +75,17 @@ function PanelNavigation() {
       onKeyDown=${event => onKeyDown(event, index)}
       onClick=${() => select(id)}>${label}</button>`)}
   </nav>`;
+}
+
+// Center panel mode: the conversation, or graphs of the structures behind it.
+function CenterViews() {
+  const current = activePanel.value === "graph" ? "graph" : "conversation";
+  return html`<div class="center-views" role="tablist" aria-label="Center view">
+    ${[["conversation", "Chat"], ["graph", "Graph"]].map(([id, label]) => html`<button key=${id} role="tab"
+      class="center-view ${current === id ? "center-view--active" : ""}" aria-selected=${current === id}
+      title=${id === "graph" ? "Threads, turn flow and learning loops (g)" : "Conversation"}
+      onClick=${() => { activePanel.value = id; }}>${label}</button>`)}
+  </div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +188,7 @@ function App() {
       openAnalytics: () => { analyticsOpen.value = !analyticsOpen.value; },
       toggleLayers: () => {},
       toggleEvents: () => {},
+      toggleGraph: () => { activePanel.value = activePanel.value === "graph" ? "conversation" : "graph"; },
     });
     initHotkeys();
   }, []);
@@ -213,12 +226,17 @@ function App() {
           />
         </div>
 
-        <!-- Center: Conversation / trace timeline -->
+        <!-- Center: Conversation / trace timeline, or the graph panel -->
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
-          <${Conversation}
-            onSpanSelect=${handleSpanSelect}
-            onLayerClick=${handleLayerClick}
-          />
+          <${CenterViews} />
+          ${activePanel.value === "graph" ? html`
+            <${GraphPanel} onLayerClick=${handleLayerClick} />
+          ` : html`
+            <${Conversation}
+              onSpanSelect=${handleSpanSelect}
+              onLayerClick=${handleLayerClick}
+            />
+          `}
         </div>
 
         <!-- Right: Detail drawer -->

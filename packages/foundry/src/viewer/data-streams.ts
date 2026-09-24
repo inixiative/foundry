@@ -3,6 +3,7 @@ import type { StreamFamily } from "../ws/types";
 import { threadToJSON } from "./http-helpers";
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from "./stream-buffer";
 import type { ViewerThreadDirectory } from "./thread-directory";
+import { FLOW_LEARNING, FLOW_TURNS, flowSnapshot, slimKnowledge, slimLearning, slimReview, slimTurn, type FlowJournal } from "./turn-flow";
 
 /**
  * The viewer's data streams. Each panel opens exactly what it shows:
@@ -18,6 +19,8 @@ import type { ViewerThreadDirectory } from "./thread-directory";
  *   prompts             snapshot { prompts }                      append { prompt }  (status says pending or settled)
  *   events              snapshot { events }  (runtime-wide)       append { event }
  *   events:<threadId>   snapshot { events }  (owned by thread)    append { event }  (plus threadless errors, for toasts)
+ *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, limits }  (bounded; see turn-flow.ts)
+ *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review }
  */
 export type ThreadAppend = TurnAppend | { kind: "event"; event: StreamEvent };
 export type TurnTerminal = { kind: "done" | "error"; turnId: string; result: Record<string, unknown> };
@@ -25,6 +28,8 @@ export type TurnTerminal = { kind: "done" | "error"; turnId: string; result: Rec
 export interface ThreadSnapshot { threadId: string; projectId?: string; turns: StreamBufferSnapshot[] }
 
 const EVENT_HISTORY = 200;
+/** Journal notices arrive in bursts (every native observation); a flow stream re-reads at most this often. */
+const FLOW_SETTLE_MS = 250;
 
 /** The thread an event belongs to, as the inspector's activity panel reads it. */
 export function eventThread(event: StreamEvent): string | undefined {
@@ -46,8 +51,11 @@ export function createViewerStreams(deps: {
   actionQueue?: ActionQueue;
   /** Deliver to one client's connections that hold the stream (the socket's appendTo). */
   deliverTo: (clientId: string, stream: string, payload: TurnTerminal) => void;
+  /** The owned journal behind `flow:<threadId>`; without a store the stream reports it unavailable. */
+  journal?: FlowJournal;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
+  const journal: FlowJournal = deps.journal ?? { store: null };
   const threadSinks = new Map<string, (payload: ThreadAppend) => void>();
   const turns = new StreamBufferRegistry({
     active: threadId => threadSinks.has(threadId),
@@ -132,9 +140,82 @@ export function createViewerStreams(deps: {
     },
   };
 
+  // Graph panel: a thread's recent turns as recorded flows, its learning history and knowledge revisions.
+  // Journal notices name the turn that changed; each settle re-reads only those turns and sends what differs.
+  const flow: StreamFamily = {
+    matches: stream => suffix(stream, "flow:") !== null,
+    authorize: stream => !!directory.get(suffix(stream, "flow:")!),
+    start(stream, append) {
+      const threadId = suffix(stream, "flow:")!;
+      const sentTurns = new Map<string, string>();
+      // Learning ids within the history window last read; older ids fall out with the window.
+      let sentLearning = new Set<string>();
+      let sentKnowledge = "";
+      const dirtyTurns = new Set<string>();
+      let learningDirty = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const knowledgeNow = () => {
+        const knowledge = slimKnowledge(journal.store!.knowledge(threadId)), review = slimReview(journal.learningState?.(threadId));
+        return { knowledge, review, text: JSON.stringify({ knowledge, review }) };
+      };
+      const settle = () => {
+        timer = null;
+        const store = journal.store;
+        if (!store) return;
+        try {
+          for (const turnId of [...dirtyTurns].slice(-FLOW_TURNS)) {
+            const detail = store.turnDetail(threadId, turnId);
+            if (!detail) continue;
+            const turn = slimTurn(detail), text = JSON.stringify(turn);
+            if (sentTurns.get(turnId) === text) continue;
+            sentTurns.delete(turnId);
+            sentTurns.set(turnId, text);
+            while (sentTurns.size > FLOW_TURNS) sentTurns.delete(sentTurns.keys().next().value!);
+            append({ kind: "turn", turn });
+          }
+          if (learningDirty) {
+            const history = store.learningHistory(threadId, FLOW_LEARNING);
+            const entries = history.filter(entry => !sentLearning.has(entry.signal.id));
+            sentLearning = new Set(history.map(entry => entry.signal.id));
+            if (entries.length) append({ kind: "learning", entries: entries.map(slimLearning) });
+            const next = knowledgeNow();
+            if (next.text !== sentKnowledge) { sentKnowledge = next.text; append({ kind: "knowledge", knowledge: next.knowledge, review: next.review }); }
+          }
+        } catch { /* An unreadable journal row is reported by the next snapshot; the next notice retries. */ }
+        finally { dirtyTurns.clear(); learningDirty = false; }
+      };
+      const schedule = () => { timer ??= setTimeout(settle, FLOW_SETTLE_MS); };
+      const unsubscribe = eventStream.subscribe(event => {
+        if (eventThread(event) !== threadId) return;
+        if (event.kind === "journal") {
+          if (event.scope === "learning") learningDirty = true;
+          else if (event.turnId) dirtyTurns.add(event.turnId);
+          schedule();
+        } else if (event.kind === "signal" && event.signal.kind === "domain_learning") {
+          learningDirty = true;
+          schedule();
+        }
+      });
+      return {
+        // A later opener joins a running stream: pending changes go to the holders first, so the new
+        // snapshot never records as sent a change they have not received.
+        snapshot() {
+          if (timer) { clearTimeout(timer); settle(); }
+          const snapshot = flowSnapshot(journal, threadId);
+          for (const turn of snapshot.turns) sentTurns.set(turn.turnId, JSON.stringify(turn));
+          while (sentTurns.size > FLOW_TURNS) sentTurns.delete(sentTurns.keys().next().value!);
+          sentLearning = new Set(snapshot.learning.map(entry => entry.signal.id));
+          sentKnowledge = JSON.stringify({ knowledge: snapshot.knowledge, review: snapshot.review });
+          return snapshot;
+        },
+        stop() { unsubscribe(); if (timer) clearTimeout(timer); timer = null; },
+      };
+    },
+  };
+
   return {
     turns,
-    families: [thread, threads, prompts, events],
+    families: [thread, threads, prompts, events, flow],
     /** Deliver a turn's full terminal to the client that sent it, on whichever of its connections holds the thread stream. */
     publishTerminal: (threadId: string, clientId: string | undefined, payload: TurnTerminal) => {
       if (clientId) deliverTo(clientId, `thread:${threadId}`, payload);

@@ -437,6 +437,13 @@ export class LocalSessionStore {
     return row ?? undefined;
   }
 
+  /** The thread's newest turn ids, newest first. */
+  recentTurnIds(threadId: string, limit: number): string[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Recent turn limit must be an integer between 1 and 500");
+    return (this.query("SELECT id FROM session_turns WHERE thread_id=? ORDER BY started_at DESC, rowid DESC LIMIT ?").all(threadId, limit) as Array<{ id: string }>)
+      .map(row => row.id);
+  }
+
   beginTurn(thread: Pick<Thread, "id" | "meta">, id: string, content: string): void {
     this.db.transaction(() => {
       if (this.turn(id) || this.traceForTurn(id)) throw new Error(`Turn already accepted or archived: ${id}`);

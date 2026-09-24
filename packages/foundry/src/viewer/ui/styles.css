@@ -3961,3 +3961,99 @@ body {
 .kingdom-connection code { overflow-wrap: anywhere; }
 .kingdom-connection strong { color: var(--accent); letter-spacing: .08em; }
 .kingdom-connection [role="alert"] { color: var(--error); }
+
+/* ---- Center view switch + graph panel ---- */
+
+.center-views {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex: none;
+}
+.center-view, .graph-tab {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.center-view:hover, .graph-tab:hover { color: var(--text); }
+.center-view--active, .graph-tab--active { color: var(--accent); border-color: var(--border); background: var(--surface2); }
+.center-view:focus-visible, .graph-tab:focus-visible, .graph-turn:focus-visible, .graph-control:focus-visible { outline: 1px solid var(--accent); }
+
+.graph-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.graph-header { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--border); flex: none; }
+.graph-tabs { display: flex; gap: 2px; }
+.graph-live { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-dim); }
+.graph-close { margin-left: auto; }
+.graph-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.graph-caption { padding: 4px 10px; font-size: 10px; color: var(--text-dim); flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-empty { padding: 24px; color: var(--text-dim); line-height: 1.6; max-width: 560px; }
+
+.graph-canvas { position: relative; flex: 1; min-height: 160px; overflow: hidden; cursor: grab; background:
+  radial-gradient(circle, var(--border) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg); touch-action: none; }
+.graph-canvas:active { cursor: grabbing; }
+.graph-svg { display: block; user-select: none; }
+
+.graph-node { cursor: pointer; --status: var(--ok); }
+.graph-node-box { fill: var(--surface2); stroke: var(--border); stroke-width: 1; }
+.graph-node:hover .graph-node-box, .graph-node:focus .graph-node-box { stroke: var(--status); }
+.graph-node:focus { outline: none; }
+.graph-node--selected .graph-node-box { stroke: var(--accent); stroke-width: 2; }
+.graph-node-bar { fill: var(--status); }
+.graph-node-label { fill: var(--text); font-size: 11px; font-family: var(--font); }
+.graph-node-sub { fill: var(--text-dim); font-size: 9.5px; font-family: var(--font); }
+.graph-node--more .graph-node-box { fill: none; stroke-dasharray: 4 3; }
+.graph-node--more .graph-node-label { fill: var(--text-dim); }
+.graph-node-badge circle { fill: var(--warn); }
+.graph-node-badge text { fill: var(--bg); font-size: 9px; font-weight: 700; }
+
+.graph-status--ok { --status: var(--ok); }
+.graph-status--warn { --status: var(--warn); }
+.graph-status--error { --status: var(--error); }
+.graph-status--pending { --status: var(--accent); }
+.graph-status--skip { --status: var(--text-dimmer); }
+
+.graph-edge path { fill: none; stroke: var(--border-focus); stroke-width: 1.2; }
+.graph-edge.graph-status--warn path { stroke: var(--warn); stroke-opacity: 0.6; }
+.graph-edge.graph-status--error path { stroke: var(--error); stroke-opacity: 0.7; }
+.graph-edge--feedback path { stroke: var(--accent); stroke-dasharray: 5 3; stroke-opacity: 0.8; }
+.graph-edge--folded path { stroke-dasharray: 3 3; }
+.graph-arrow { fill: var(--border-focus); }
+.graph-edge-label { fill: var(--text-dim); font-size: 9px; font-family: var(--font); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+
+.graph-lane { fill: var(--surface); stroke: var(--border); stroke-width: 0.5; }
+.graph-lane-label { fill: var(--text-dim); font-size: 10px; font-family: var(--font); }
+.graph-turn-label { fill: var(--text-dimmer); font-size: 9px; font-family: var(--font); }
+
+.graph-controls { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 2px; }
+.graph-control { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); font: inherit; font-size: 11px;
+  min-width: 26px; padding: 2px 6px; border-radius: 3px; cursor: pointer; }
+.graph-control:hover { color: var(--text); border-color: var(--border-focus); }
+
+.graph-tooltip { position: absolute; z-index: 5; width: 272px; max-height: 60%; overflow: auto; padding: 8px 10px; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--border-focus); border-radius: 4px; box-shadow: 0 6px 20px #0008; font-size: 10.5px; }
+.graph-tooltip-title { color: var(--text); font-weight: 600; margin-bottom: 2px; word-break: break-all; }
+.graph-tooltip-sub { color: var(--text-dim); margin-bottom: 6px; }
+.graph-tooltip-row { display: flex; gap: 8px; padding: 1px 0; }
+.graph-tooltip-key { color: var(--text-dimmer); flex: none; width: 96px; }
+.graph-tooltip-value { color: var(--text); word-break: break-word; }
+
+.graph-turns { display: flex; gap: 4px; padding: 6px 8px 0; overflow-x: auto; flex: none; }
+.graph-turn { --status: var(--text-dimmer); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; background: var(--surface);
+  border: 1px solid var(--border); color: var(--text-dim); font: inherit; font-size: 10px; padding: 2px 8px; border-radius: 10px; cursor: pointer; }
+.graph-turn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status); }
+.graph-turn--selected { color: var(--text); border-color: var(--accent); }
+
+.graph-tasks { flex: none; max-height: 30%; overflow: auto; border-top: 1px solid var(--border); padding: 6px 10px; font-size: 10.5px; }
+.graph-tasks--empty { color: var(--text-dimmer); }
+.graph-task-title { color: var(--text-dim); margin-bottom: 4px; }
+.graph-task { display: flex; gap: 8px; padding: 1px 0; color: var(--text); }
+.graph-task-status { flex: none; width: 76px; color: var(--text-dim); }
+.graph-task--completed { color: var(--text-dim); text-decoration: line-through; }
+.graph-task--in_progress .graph-task-status { color: var(--accent); }

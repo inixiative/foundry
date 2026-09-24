@@ -37,7 +37,7 @@ export const threadData = signal(null);
 export const allThreads = signal([]);   // all threads (multi-thread support)
 export const activeThreadId = signal(null); // selected thread ID (null = first/default)
 export const liveEvents = signal([]);
-export const activePanel = signal("conversation"); // "conversation" | "layers" | "events"
+export const activePanel = signal("conversation"); // center panel view: "conversation" | "graph"
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
 export const toast = signal(null); // { message, type: "ok"|"error"|"warn", persistent?: boolean }
@@ -124,6 +124,7 @@ export function layerColor(layerId) {
 //   events | events:<id>            activity panel: runtime-wide, or the active thread's
 //   threads | threads:<projectId>   thread list for the active scope
 //   prompts                         pending agent→human prompts
+//   flow:<id>                       graph panel, while it is visible (holdStream)
 // A reconnect re-opens every held stream; each answers with a fresh snapshot.
 // ---------------------------------------------------------------------------
 
@@ -172,6 +173,25 @@ function applyFrame(frame, touched) {
   else if (family === "threads") applyThreadsFrame(frame);
   else if (family === "prompts") applyPromptsFrame(frame);
   else if (family === "events") applyEventsFrame(frame);
+  else for (const onFrame of heldStreams.get(frame.stream) ?? []) onFrame(frame);
+}
+
+// Streams a panel holds for itself, with the handler that applies their frames (in the same
+// per-animation-frame batch as the store's own). One holder per stream: a second open of a held
+// stream shares the server subscription and gets no snapshot of its own.
+const heldStreams = new Map();
+
+/** Open `stream` for a panel while it shows it. Returns the release. */
+export function holdStream(stream, onFrame) {
+  if (!heldStreams.has(stream)) heldStreams.set(stream, new Set());
+  heldStreams.get(stream).add(onFrame);
+  socket.open(stream);
+  return () => {
+    const handlers = heldStreams.get(stream);
+    if (!handlers?.delete(onFrame)) return;
+    if (!handlers.size) heldStreams.delete(stream);
+    socket.close(stream);
+  };
 }
 
 function applyThreadFrame(threadId, frame, touched) {

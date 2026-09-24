@@ -10,7 +10,7 @@ export {
 } from "./vendor/preact.module.js";
 
 export {
-  useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext
+  useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useReducer, useContext
 } from "./vendor/hooks.module.js";
 
 // Signals — fine-grained reactivity, no VDOM diffing for hot paths

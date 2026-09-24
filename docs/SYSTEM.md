@@ -495,6 +495,13 @@ open re-checks the Kingdom runtime, and losing Kingdom authorization closes ever
 | `threads`, `threads:<projectId>` | thread list for the scope | changed or removed threads |
 | `prompts` | pending prompts | new and settled prompts |
 | `events`, `events:<threadId>` | recent events (runtime-wide or the thread's) | new events (runtime errors always) |
+| `flow:<threadId>` | the thread's recent turns as recorded flows (phase rows, sealed plan, spans, delivery, task lists), learning history, committed revisions, live review status; bounded, provider payloads reduced to counts | a changed turn, new learning outcomes, changed knowledge; re-read at most every 250 ms from the journal notices |
+
+The viewer's graph panel (center panel → Graph, or `g`) holds `flow:<threadId>` only while a flow
+view is on screen: the thread graph (subagent threads under their parent), one turn's loop
+(input → routing ∥ domain assessment → sealed plan → delivered layers → executor → guards → delivery
+→ writeback), and the learning loop per domain across turns. Builders live in `ui/flow-graph.js`;
+task-list sources (the executor's `TodoWrite` / `update_plan` input) in `viewer/turn-flow.ts`.
 
 ### ActionHandler
 

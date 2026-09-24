@@ -129,6 +129,7 @@ export function createViewer(config: ViewerConfig) {
   const revoke = () => closeAllConnections(socket.registry, 1008, "Kingdom runtime unavailable");
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({ directory, eventStream, actionQueue: config.actionQueue,
+    journal: { store: localStore, learningState: threadId => config.threadFactory?.runtime?.get(threadId)?.learningState },
     deliverTo: (clientId, stream, payload) => {
       if (kingdomLost()) { revoke(); return; }
       socket.streams.appendTo(clientId, stream, payload);
