@@ -1,5 +1,5 @@
 import type { CredentialReference } from '@inixiative/foundry-core';
-import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import { kingdomRuntimeKey, kingdomRuntimesSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
 import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
 import { validateKastleAccess, type KastleAccessSource } from "../providers/kastle-access-client";
 import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
@@ -77,7 +77,8 @@ export interface FoundryConfig {
 
   /** Tunnel configuration — expose the viewer over a public URL. */
   tunnel?: TunnelSettingsConfig;
-  kingdomRuntime?: KingdomRuntimeSettings;
+  /** Every Kingdom this Foundry is enrolled with; credentials stay in private files. */
+  kingdomRuntimes?: KingdomRuntimeSettings[];
 
   /** MCP server configuration — mid-session bridge for Claude Code. */
   mcp?: McpSettingsConfig;
@@ -669,7 +670,7 @@ const configValidators: ((config: FoundryConfig) => void)[] = [];
 export function registerConfigValidator(validate: (config: FoundryConfig) => void): void { configValidators.push(validate); }
 
 export function validateConfig(config: FoundryConfig): void {
-  if (config.kingdomRuntime) kingdomRuntimeSchema.parse(config.kingdomRuntime);
+  if (config.kingdomRuntimes) kingdomRuntimesSchema.parse(config.kingdomRuntimes);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");
   for (const source of validateKastleAccess(config.kastleAccess ?? [])) {
@@ -703,6 +704,16 @@ export function validateConfig(config: FoundryConfig): void {
   for (const [pid, project] of Object.entries(config.projects ?? {})) check(`project ${JSON.stringify(pid)} sources`, project?.sources as Record<string, DataSourceConfig> | undefined);
 }
 
+/** One-shot move of the single-Kingdom `kingdomRuntime` setting into `kingdomRuntimes`. */
+function migrateKingdomRuntimes(raw: Partial<FoundryConfig> & { kingdomRuntime?: KingdomRuntimeSettings }): { saved: Partial<FoundryConfig>; migrated: boolean } {
+  const { kingdomRuntime, ...saved } = raw;
+  if (!("kingdomRuntime" in raw)) return { saved, migrated: false };
+  const runtimes = saved.kingdomRuntimes ?? [];
+  if (kingdomRuntime && !runtimes.some(runtime => kingdomRuntimeKey(runtime) === kingdomRuntimeKey(kingdomRuntime)))
+    return { saved: { ...saved, kingdomRuntimes: [...runtimes, kingdomRuntime] }, migrated: true };
+  return { saved, migrated: true };
+}
+
 export class ConfigStore {
   private _dir: string;
   private _config: FoundryConfig;
@@ -723,7 +734,7 @@ export class ConfigStore {
     const path = join(this._dir, "settings.json");
     const file = Bun.file(path);
     if (await file.exists()) {
-      const saved = await file.json() as Partial<FoundryConfig>;
+      const { saved, migrated } = migrateKingdomRuntimes(await file.json() as Partial<FoundryConfig> & { kingdomRuntime?: KingdomRuntimeSettings });
       const defaults = defaultConfig();
       // Merge saved over defaults into a candidate; validate before it becomes live.
       // An invalid persisted policy fails loudly, keeps the last working live
@@ -737,6 +748,7 @@ export class ConfigStore {
       try { validateConfig(candidate); }
       catch (err) { throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`); }
       this._config = candidate;
+      if (migrated) await this._write();
     }
     this._loaded = true;
     return this._config;

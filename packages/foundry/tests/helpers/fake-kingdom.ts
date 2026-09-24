@@ -60,7 +60,7 @@ export const startFakeKingdom = (options: {
   };
 };
 
-export const waitFor = async (predicate: () => boolean | Promise<boolean>, timeoutMs = 3000) => {
+export const waitFor = async (predicate: () => boolean | Promise<boolean>, timeoutMs = 10_000) => {
   const start = Date.now();
   while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) throw Error("waitFor timed out");

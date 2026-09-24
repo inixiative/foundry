@@ -6,15 +6,16 @@ import type { Hono } from "hono";
 import { ConfigStore } from "../config";
 import { kastleUrl } from "../../providers/kastle-client";
 import { writePrivateJson } from "../../providers/kastle-credential-file";
-import { KingdomRuntimeConnection } from "../../providers/kingdom-runtime-connection";
-import type { RuntimeJobRegistry } from "../../providers/runtime-job-handler";
+import { kingdomRuntimeKey, type KingdomRuntimeSelection, type KingdomRuntimeSettings } from "../../providers/kingdom-runtime-connection";
+import type { KingdomRuntimeConnections } from "../../providers/kingdom-runtime-connections";
 
-const beginSchema = z.object({ url: z.string().transform(kastleUrl), name: z.string().trim().min(1).max(120) }).strict();
+const beginSchema = z.object({ url: z.string().transform(kastleUrl), name: z.string().trim().min(1).max(120), replaces: z.string().uuid().optional() }).strict();
+const runtimeSelectionSchema = z.object({ url: z.string().transform(kastleUrl), installationId: z.string().uuid() }).strict();
 const pairSchema = z.object({ data: z.object({ deviceCode: z.string().regex(/^[A-Za-z0-9_-]{43}$/), userCode: z.string().regex(/^[A-F0-9]{12}$/), verificationUrl: z.string().url(), expiresAt: z.string().datetime() }) });
 const pollSchema = z.object({ data: z.discriminatedUnion("status", [z.object({ status: z.literal("pending") }), z.object({ status: z.literal("approved"), installationId: z.string().uuid() })]) });
 
-export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, sessionCount: () => number, activate: (connection: KingdomRuntimeConnection | null) => void, connected: () => boolean, handlers?: RuntimeJobRegistry) {
-  let pending: { url: string; secret: string; deviceCode: string; userCode: string; verificationUrl: string; expiresAt: string } | undefined;
+export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, runtimes: KingdomRuntimeConnections) {
+  let pending: { url: string; secret: string; deviceCode: string; userCode: string; verificationUrl: string; expiresAt: string; replaces?: string } | undefined;
   let busy = false, lastPoll = 0;
   const request = async (url: string, action: string, body: unknown) => {
     const response = await fetch(`${url}/api/v1/access/${action}`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(10000), headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -22,10 +23,21 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     return response.json();
   };
   const status = async () => {
-    const config = await store.load();
     if (pending && Date.parse(pending.expiresAt) <= Date.now()) pending = undefined;
-    if (!pending && config.kingdomRuntime) return { status: connected() ? "connected" : "unavailable", url: config.kingdomRuntime.url, installationId: config.kingdomRuntime.installationId };
-    return pending ? { status: "pending", url: pending.url, userCode: pending.userCode, verificationUrl: pending.verificationUrl, expiresAt: pending.expiresAt } : { status: "disconnected" };
+    const listed = runtimes.all().map(({ runtime, connected }) => ({ url: runtime.url, installationId: runtime.installationId, status: connected ? "connected" : "unavailable" }));
+    const overall = !listed.length ? "disconnected" : listed.every(runtime => runtime.status === "connected") ? "connected" : "unavailable";
+    return pending
+      ? { status: "pending", runtimes: listed, url: pending.url, userCode: pending.userCode, verificationUrl: pending.verificationUrl, expiresAt: pending.expiresAt }
+      : { status: overall, runtimes: listed };
+  };
+  /** Drops one enrolled runtime: its socket, its settings entry and its private credential. */
+  const forget = async (selection: KingdomRuntimeSelection) => {
+    runtimes.remove(selection);
+    const config = await store.load();
+    const runtime = config.kingdomRuntimes?.find(item => kingdomRuntimeKey(item) === kingdomRuntimeKey(selection));
+    if (!runtime) return;
+    await store.save({ ...config, kingdomRuntimes: config.kingdomRuntimes!.filter(item => item !== runtime) });
+    await unlink(runtime.credentialFile).catch(() => {});
   };
   app.use("/api/kingdom/*", async (c, next) => { c.header("Cache-Control", "no-store"); return next(); });
   app.get("/api/kingdom/status", async c => c.json(await status()));
@@ -35,7 +47,10 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     try {
       const parsed = beginSchema.safeParse(await c.req.json());
       if (!parsed.success) return c.json({ error: "Enter an HTTPS Kingdom API address (HTTP is allowed only on localhost) and a runtime name." }, 400);
-      if ((await status()).status === "pending") return c.json({ error: "Already connected or pairing; cancel pending pairing first." }, 409);
+      if ((await status()).status === "pending") return c.json({ error: "Already pairing; cancel pending pairing first." }, 409);
+      const { replaces } = parsed.data;
+      if (replaces && !(await store.load()).kingdomRuntimes?.some(runtime => runtime.installationId === replaces && kastleUrl(runtime.url) === parsed.data.url))
+        return c.json({ error: "The runtime to replace is not enrolled with this Kingdom." }, 400);
       const directory = resolve(configDir);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const stat = await lstat(directory);
@@ -47,7 +62,7 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
       kastleUrl(verification.origin);
       if (verification.username || verification.password || (new URL(parsed.data.url).protocol === "https:" && verification.protocol !== "https:"))
         throw Error("Kingdom returned an unsafe login address.");
-      pending = { ...data, url: parsed.data.url, secret };
+      pending = { ...data, url: parsed.data.url, secret, ...(replaces ? { replaces } : {}) };
       lastPoll = 0;
       return c.json(await status());
     } catch { return c.json({ error: "Could not start pairing. Check your Kingdom API address and private configuration directory." }, 400); }
@@ -64,15 +79,15 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
       if (data.status === "pending") return c.json(current);
       const credentialFile = join(resolve(configDir), `kingdom-runtime-${data.installationId}.json`);
       await writePrivateJson(credentialFile, { secret: pending.secret });
-      const settings = { url: pending.url, installationId: data.installationId, credentialFile };
-      const connection = new KingdomRuntimeConnection(settings, sessionCount, fetch, handlers);
+      const settings: KingdomRuntimeSettings = { url: pending.url, installationId: data.installationId, credentialFile };
+      const replaced = pending.replaces ? { url: pending.url, installationId: pending.replaces } : undefined;
       try {
-        await connection.start();
+        await runtimes.add(settings);
         const config = await store.load();
-        
-        await store.save({ ...config, kingdomRuntime: settings });
-        activate(connection);
-      } catch (error) { connection.stop(); await unlink(credentialFile).catch(() => {}); throw error; }
+        const kept = (config.kingdomRuntimes ?? []).filter(runtime => kingdomRuntimeKey(runtime) !== kingdomRuntimeKey(settings));
+        await store.save({ ...config, kingdomRuntimes: [...kept, settings] });
+      } catch (error) { runtimes.remove(settings); await unlink(credentialFile).catch(() => {}); throw error; }
+      if (replaced) await forget(replaced);
       pending = undefined;
       return c.json(await status());
     } catch { return c.json({ error: "Connection not completed. Retry, or check the runtime in Kingdom before starting again." }, 503); }
@@ -85,15 +100,12 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
   });
   app.post("/api/kingdom/disconnect", async c => {
     if (busy) return c.json({ error: "Connection operation in progress" }, 409);
+    const selection = runtimeSelectionSchema.safeParse(await c.req.json().catch(() => null));
+    if (!selection.success) return c.json({ error: "Choose the Kingdom runtime to disconnect (url and installationId)." }, 400);
     busy = true;
     try {
       pending = undefined;
-      const { kingdomRuntime, ...config } = await store.load();
-      if (kingdomRuntime) {
-        await store.save(config);
-        activate(null);
-        await unlink(kingdomRuntime.credentialFile).catch(() => {});
-      }
+      await forget(selection.data);
       return c.json(await status());
     } finally { busy = false; }
   });

@@ -32,7 +32,7 @@ function Header() {
       <span class="header-logo"><span class="logo-bracket">${"<"}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${">"}</span></span>
       <span class="header-title">foundry</span>
       <div class="header-right">
-        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomRuntime ? "Kingdom" : "Connect to Kingdom"}</a>
+        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomRuntimes?.length ? "Kingdom" : "Connect to Kingdom"}</a>
         <span class="status-dot ${isConnected ? "on" : "off"}"></span>
         <span class="status-text">${isConnected ? "connected" : "reconnecting..."}</span>
         <span class="status-sep">|</span>

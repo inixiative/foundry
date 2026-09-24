@@ -11,8 +11,8 @@ import { runtimeJobsInFlight } from "./idle";
 export interface WatchOptions {
   repoRoot: string;
   intervalMs: number;
-  /** Holds the runtime-jobs directory; absent when this Foundry is not enrolled. */
-  runtimeDirectory?: string;
+  /** Directories holding each enrolled Kingdom runtime's runtime-jobs; empty when this Foundry is not enrolled. */
+  runtimeDirectories?: readonly string[];
   /** Told how long the runtime expects to be gone, so presence reads "restarting" rather than "offline". */
   closeForUpdate?: (expectedBackWithinMs: number) => Promise<void> | void;
   log?: (message: string) => void;
@@ -32,7 +32,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
     checking = true;
     try {
       if ((await readAutoUpdate(options.repoRoot)) !== "apply") return;
-      if (await runtimeJobsInFlight(options.runtimeDirectory)) return;
+      if ((await Promise.all((options.runtimeDirectories ?? []).map(runtimeJobsInFlight))).some(Boolean)) return;
 
       const result = await applyUpdate(options.repoRoot);
       if (result.action !== "applied") {

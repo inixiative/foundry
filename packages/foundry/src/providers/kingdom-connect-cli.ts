@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
 import { mkdir, lstat } from "node:fs/promises";
 import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kastle-credential-file";
-import { KingdomRuntimeConnection, kingdomRuntimeSchema } from "./kingdom-runtime-connection";
+import { KingdomRuntimeConnection, kingdomRuntimeKey, kingdomRuntimeSchema } from "./kingdom-runtime-connection";
 import { ConfigStore } from "../viewer/config";
 
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
@@ -22,11 +22,10 @@ try {
     throw Error("Foundry configuration directory must be owned and private (0700)");
   const store = new ConfigStore(directory);
   const config = await store.load();
-  if (config.kingdomRuntime && config.kingdomRuntime.installationId !== settings.installationId)
-    throw Error("This Foundry is already enrolled; revoke and remove the old binding before replacing it");
   const secret = installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile));
-  const privatePath = join(directory, "kingdom-runtime.json");
+  const privatePath = join(directory, `kingdom-runtime-${settings.installationId}.json`);
   await writePrivateJson(privatePath, secret);
-  await store.save({ ...config, kingdomRuntime: { ...settings, credentialFile: privatePath } });
+  const others = (config.kingdomRuntimes ?? []).filter(runtime => kingdomRuntimeKey(runtime) !== kingdomRuntimeKey(settings));
+  await store.save({ ...config, kingdomRuntimes: [...others, { ...settings, credentialFile: privatePath }] });
   console.log(JSON.stringify({ connected: true, installationId: settings.installationId, configDirectory: directory, restartViewer: true }));
 } finally { connection.stop(); }

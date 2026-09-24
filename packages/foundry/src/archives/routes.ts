@@ -26,7 +26,7 @@ export function registerArchiveRoutes(
 ) {
   const credentials = new FoundryCredentials(
     configDir,
-    async () => (await new ConfigStore(configDir).load()).kingdomRuntime,
+    async () => (await new ConfigStore(configDir).load()).kingdomRuntimes,
   );
   const configPath = join(configDir, 'archives.json');
   let destinations = existsSync(configPath)
@@ -87,7 +87,7 @@ export function registerArchiveRoutes(
   for (const archive of store.list()) void publish(archive.id);
   app.get('/api/archives/kingdom', async (c) => {
     try {
-      const identity = await credentials.kingdomIdentity(fetch, journal.threads().length);
+      const identity = await credentials.kingdomIdentity(fetch, journal.threads().length, c.req.query('url'));
       const result = await archiveRequest(
         {
           ...identity,

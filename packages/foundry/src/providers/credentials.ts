@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { CredentialReference, CredentialResolver, CredentialScope } from '@inixiative/foundry-core';
 import { destinationUrl } from '@inixiative/session-archive/config';
 import { installationCredentialSchema, readPrivateJson, writePrivateJson } from './kastle-credential-file';
-import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from './kingdom-runtime-connection';
+import { kingdomRuntimeSchema, selectKingdomRuntime, type KingdomRuntimeSettings } from './kingdom-runtime-connection';
 
 export const credentialReferenceSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('managed'), id: z.uuid() }),
@@ -27,7 +27,7 @@ export class FoundryCredentials implements CredentialResolver {
   private directory: string;
   constructor(
     configDir = process.env.FOUNDRY_CONFIG_DIR ?? '.foundry',
-    private runtime?: () => KingdomRuntimeSettings | undefined | Promise<KingdomRuntimeSettings | undefined>,
+    private runtimes?: () => KingdomRuntimeSettings[] | undefined | Promise<KingdomRuntimeSettings[] | undefined>,
   ) {
     this.directory = join(resolve(configDir), 'credentials');
   }
@@ -42,8 +42,9 @@ export class FoundryCredentials implements CredentialResolver {
     const parsed = credentialReferenceSchema.parse(reference);
     if (parsed.type === 'managed') await unlink(join(this.directory, `${parsed.id}.json`));
   }
-  async kingdomIdentity(transport: typeof fetch = fetch, sessionCount = 0) {
-    const settings = kingdomRuntimeSchema.parse(await this.runtime?.());
+  /** Identity of the runtime enrolled with `url` (or the only enrolled runtime). */
+  async kingdomIdentity(transport: typeof fetch = fetch, sessionCount = 0, url?: string) {
+    const settings = kingdomRuntimeSchema.parse(selectKingdomRuntime(await this.runtimes?.(), url));
     const { secret } = installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile));
     const response = await transport(`${settings.url}/api/v1/access/runtimeHeartbeat`, {
       method: 'POST',
@@ -76,12 +77,8 @@ export class FoundryCredentials implements CredentialResolver {
         throw Error('Credential is outside the requested scope');
       return record.secret;
     }
-    const settings = kingdomRuntimeSchema.parse(await this.runtime?.());
-    if (
-      requested.service !== 'archive' ||
-      !requested.kastleId ||
-      destinationUrl(settings.url).href !== requested.url
-    )
+    const settings = (await this.runtimes?.())?.find((runtime) => destinationUrl(runtime.url).href === requested.url);
+    if (requested.service !== 'archive' || !requested.kastleId || !settings)
       throw Error('Kingdom credential is outside the requested scope');
     // Kingdom checks current installation expiry, revocation and Kastle membership on every request.
     return installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile)).secret;

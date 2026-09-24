@@ -50,11 +50,9 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
     kastleId = crypto.randomUUID();
   const secret = 'kastle_runtime_' + 'a'.repeat(43);
   await writePrivateJson(credentialFile, { secret });
-  const credentials = new FoundryCredentials(dir, () => ({
-    url: 'https://kingdom.example',
-    installationId,
-    credentialFile,
-  }));
+  const credentials = new FoundryCredentials(dir, () => [
+    { url: 'https://kingdom.example', installationId, credentialFile },
+  ]);
   const destination = {
     kind: 'kingdom' as const,
     url: 'https://kingdom.example/',

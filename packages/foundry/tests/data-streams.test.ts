@@ -305,13 +305,13 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   const revoke = async () => {
     allowed = false;
     kingdom.revoke(id);
-    await until(() => viewer.kingdomConnection?.connected === false);
+    await until(() => viewer.kingdomRuntimes.connected === false);
   };
   await writeFile(credentialFile, JSON.stringify({ secret: `kastle_runtime_${"0".repeat(43)}` }), { mode: 0o600 });
   const thread = new Thread("kingdom-main", new ContextStack()), events = new EventStream();
   const viewer = await startViewer({ port: 0, configDir: root, analyticsDir: join(root, "analytics"), localStore: null,
     harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(thread.signals),
-    kingdomRuntime: { url: kingdom.url, installationId: id, credentialFile } });
+    kingdomRuntimes: [{ url: kingdom.url, installationId: id, credentialFile }] });
   cleanup.push(async () => { viewer.server.stop(true); kingdom.stop(); await rm(root, { recursive: true, force: true }); });
   const url = `ws://127.0.0.1:${viewer.server.port}/ws`;
   const until = async (check: () => boolean) => { const end = performance.now() + 4000; while (!check() && performance.now() < end) await Bun.sleep(5); };

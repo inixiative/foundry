@@ -48,7 +48,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
       const thread = new Thread(`runtime-${index}`, new ContextStack());
       viewers.push(await startViewer({ port: 0, configDir: directory, analyticsDir: join(directory, "analytics"), localStore: null,
         harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals),
-        kingdomRuntime: { url: kingdom.url, installationId: id, credentialFile },
+        kingdomRuntimes: [{ url: kingdom.url, installationId: id, credentialFile }],
       }));
     }
     const get = (index: number) => fetch(`http://127.0.0.1:${viewers[index].server.port}/api/tunnel`);
@@ -57,7 +57,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
     expect(ids.map(id => kingdom.statuses.find(status => status.installationId === id)?.frame.sessionCount)).toEqual([1, 1]);
     allowed.delete(`kastle_runtime_${"0".repeat(43)}`);
     kingdom.revoke(ids[0]);
-    await waitFor(() => viewers[0].kingdomConnection?.connected === false);
+    await waitFor(() => viewers[0].kingdomRuntimes.connected === false);
     expect((await get(0)).status).toBe(503);
     expect((await get(1)).status).toBe(200);
     expect((await fetch(`http://127.0.0.1:${viewers[1].server.port}/api/tunnel`, { headers: { origin: "https://evil.test" } })).status).toBe(403);

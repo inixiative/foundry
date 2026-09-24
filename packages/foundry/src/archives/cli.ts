@@ -44,7 +44,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   const storePath = String(v.store ?? join(dirname(config), 'archives', 'archives.sqlite'));
   const credentials = new FoundryCredentials(
     dirname(resolve(config)),
-    async () => (await new ConfigStore(dirname(resolve(config))).load()).kingdomRuntime,
+    async () => (await new ConfigStore(dirname(resolve(config))).load()).kingdomRuntimes,
   );
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (v.help) {
@@ -71,7 +71,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       1
     )
       throw Error('Choose one credential source');
-    const identity = v['kingdom-identity'] ? await credentials.kingdomIdentity() : undefined;
+    const identity = v['kingdom-identity'] ? await credentials.kingdomIdentity(fetch, 0, v.url ? String(v.url) : undefined) : undefined;
     const kind = identity ? 'kingdom' : String(v.kind ?? 'archive');
     const destination = archiveDestinationSchema.parse({
       kind,

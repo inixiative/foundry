@@ -30,13 +30,16 @@ if (result.action === "reported") log(`${result.behind} commit(s) behind origin/
 if (result.action === "failed") log(`update skipped — ${result.detail}`);
 
 const settings = await readSettings();
-const credentialFile = settings?.kingdomRuntime?.credentialFile;
+const { ConfigStore } = await import(`${repoRoot}/packages/foundry/src/viewer/config.ts`);
+const { closeKingdomRuntimeForUpdate } = await import(`${repoRoot}/packages/foundry/src/providers/kingdom-runtime-connection.ts`);
+const kingdomRuntimes: { credentialFile: string }[] = (await new ConfigStore(`${repoRoot}/.foundry`).load()).kingdomRuntimes ?? [];
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
     repoRoot,
     intervalMs: checkSeconds * 1000,
-    runtimeDirectory: credentialFile ? dirname(resolve(credentialFile)) : undefined,
+    runtimeDirectories: [...new Set(kingdomRuntimes.map(runtime => dirname(resolve(runtime.credentialFile))))],
+    closeForUpdate: closeKingdomRuntimeForUpdate,
     log,
   });
 

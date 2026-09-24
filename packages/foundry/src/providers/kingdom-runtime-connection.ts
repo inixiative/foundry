@@ -12,6 +12,20 @@ export const kingdomRuntimeSchema = z.object({
   credentialFile: z.string().refine(isAbsolute, "Credential path must be absolute"),
 }).strict();
 export type KingdomRuntimeSettings = z.input<typeof kingdomRuntimeSchema>;
+/** One Foundry may hold runtimes on many Kingdoms; a runtime is identified by Kingdom origin and installation. */
+export type KingdomRuntimeSelection = Pick<KingdomRuntimeSettings, "url" | "installationId">;
+export const kingdomRuntimeKey = (runtime: KingdomRuntimeSelection) => `${kastleUrl(runtime.url)} ${runtime.installationId}`;
+/** Picks the enrolled runtime on a Kingdom: by origin when given, otherwise the only one enrolled. */
+export const selectKingdomRuntime = <T extends KingdomRuntimeSelection>(runtimes: readonly T[] | undefined, url?: string): T => {
+  const candidates = (runtimes ?? []).filter(runtime => !url || kastleUrl(runtime.url) === kastleUrl(url));
+  if (candidates.length === 1) return candidates[0]!;
+  if (!candidates.length) throw Error(url ? "Foundry is not connected to that Kingdom" : "Connect Foundry to Kingdom first");
+  throw Error(url ? "Several runtimes are enrolled with that Kingdom" : "Foundry is connected to several Kingdoms; choose one by its API address");
+};
+export const kingdomRuntimesSchema = z.array(kingdomRuntimeSchema).superRefine((runtimes, context) => {
+  const keys = runtimes.map(kingdomRuntimeKey);
+  if (new Set(keys).size !== keys.length) context.addIssue({ code: "custom", message: "Each Kingdom runtime (url + installationId) may appear once" });
+});
 
 /** Close code for a planned update restart; the reason is `runtimeUpdateCloseReason(...)`. Kingdom holds presence as "restarting" instead of "offline". */
 export const RUNTIME_UPDATE_CLOSE_CODE = 4000;
@@ -82,6 +96,7 @@ export class KingdomRuntimeConnection {
     this.settings = kingdomRuntimeSchema.parse(settings);
   }
   get connected() { return this.available; }
+  get runtime(): Readonly<z.output<typeof kingdomRuntimeSchema>> { return this.settings; }
   /** Resolves while the socket is authenticated; otherwise joins or starts a reconnect now and waits for it. */
   check(): Promise<void> {
     if (this.available) return Promise.resolve();

@@ -153,7 +153,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.put("/api/settings", async (c) => {
     const body = await c.req.json<FoundryConfig>();
     await configStore.load();
-    try { await configStore.save({ ...body, kingdomRuntime: configStore.config.kingdomRuntime }); }
+    try { await configStore.save({ ...body, kingdomRuntimes: configStore.config.kingdomRuntimes }); }
     catch (err) { return c.json({ error: (err as Error).message }, 400); }
     return c.json({ ok: true });
   });
