@@ -1,0 +1,8 @@
+{
+  "maxAgeDays": 14,
+  "blessed": {
+    "claude": "2.1.281",
+    "codex": "0.155.1",
+    "@inixiative/agent-session": "0.2.0"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "version": "3c7e18fb7058",
+  "status": 101,
+  "body": {
+    "kind": "websocket",
+    "path": "/",
+    "sent": [
+      "{\"action\":\"ping\"}",
+      "{\"action\":\"authenticate\",\"headers\":{}}"
+    ],
+    "frames": [
+      {
+        "after": 0,
+        "stream": "in",
+        "data": "{\"type\":\"connected\",\"connectionId\":\"42bd06b8-6b22-4de9-bb16-296f2370e5f6\"}"
+      },
+      {
+        "after": 1,
+        "stream": "in",
+        "data": "{\"type\":\"pong\"}"
+      },
+      {
+        "after": 2,
+        "stream": "in",
+        "data": "{\"type\":\"identity\",\"userId\":null}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": 1000,
+      "reason": "",
+      "by": "client"
+    }
+  },
+  "recorded": {
+    "service": "kingdom",
+    "recordedAt": "2026-09-24T05:05:07.503Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal",
+    "durationMs": 1
+  }
+}

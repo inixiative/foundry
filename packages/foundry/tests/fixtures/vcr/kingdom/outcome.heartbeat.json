@@ -1,0 +1,14 @@
+{
+  "version": "3c7e18fb7058",
+  "status": 200,
+  "body": {
+    "connected": false,
+    "error": "Kingdom runtime unavailable; check enrollment, expiry and connection"
+  },
+  "recorded": {
+    "service": "kingdom",
+    "recordedAt": "2026-09-24T05:05:07.501Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

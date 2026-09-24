@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, realpathSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,9 +7,11 @@ import { resolveSubscriptionPolicy } from "../src/providers/subscription-policy"
 import { resolveProjectView } from "../src/viewer/config-resolve";
 import { SubscriptionAuthentication } from "../src/providers/subscription-authentication";
 import { subscriptionStatusProcess } from "./helpers/subscription-transport";
+import { recordedClaudeTransport, settleRecordings } from "./helpers/vcr";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterAll(settleRecordings);
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "subscription-policy-")); roots.push(root);
   const profile = (name: string) => { const dir = join(root, name); mkdirSync(dir, { mode: 0o700 }); return dir; };
@@ -83,7 +85,8 @@ test("native worker requires subscription status and strips paid credentials whi
   const f = fixture();
   const denied = new SubscriptionAuthentication(f.root, f.worker, () => subscriptionStatusProcess(false));
   await expect(denied.prepare("worker", "claude")).rejects.toThrow("no API fallback");
-  const auth = new SubscriptionAuthentication(f.root, f.worker, () => subscriptionStatusProcess());
+  // The real `claude auth status --json` on the subscription login.
+  const auth = new SubscriptionAuthentication(f.root, f.worker, recordedClaudeTransport({ status: ["subscribed"] }).statusSpawn);
   const launch = await auth.prepare("worker", "claude");
   const command = launch.launch(["claude", "--model", "worker-model"], { PATH: process.env.PATH, OPENAI_API_KEY: "synthetic-paid-key", ANTHROPIC_API_KEY: "synthetic-paid-key", CLAUDE_CODE_OAUTH_TOKEN: "synthetic-other-account" });
   try {
@@ -96,7 +99,7 @@ test("native worker requires subscription status and strips paid credentials whi
   } finally { launch.release(); }
   const override = await auth.prepare("worker", "claude");
   expect(() => override.launch(["claude", "--fallback-model=paid-model"], {})).toThrow("override");
-});
+}, 30_000);
 
 test("full subscription startup reaches viewer with no API provider requests or native model launch", async () => {
   const f = fixture(), configDir = join(f.root, ".foundry"); mkdirSync(configDir, { mode: 0o700 });
@@ -149,10 +152,10 @@ for (const throwsOnKill of [false, true]) test(`unknown status exit closes admis
 
 test("concurrent worker launches share one subscription status check and reuse the verified result", async () => {
   const f = fixture();
-  let checks = 0;
-  const auth = new SubscriptionAuthentication(f.root, f.worker, () => { checks++; return subscriptionStatusProcess(); });
+  const status = recordedClaudeTransport({ status: ["subscribed"] });
+  const auth = new SubscriptionAuthentication(f.root, f.worker, status.statusSpawn);
   const [first, second] = await Promise.all([auth.prepare("thread-a", "claude"), auth.prepare("thread-b", "claude")]);
   const third = await auth.prepare("thread-c", "claude");
-  expect(checks).toBe(1);
+  expect(status.statusChecks).toBe(1);
   for (const launch of [first, second, third]) launch.release();
-});
+}, 30_000);

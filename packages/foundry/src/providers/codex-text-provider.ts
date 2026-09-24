@@ -212,6 +212,8 @@ async function readTurn(child: CodexTextProcess, refuse: () => void): Promise<Tu
       case "thread.started": if (typeof event.thread_id === "string") outcome.threadId = event.thread_id; else violate(); break;
       case "turn.started": break;
       case "item.started": case "item.updated": case "item.completed":
+        // A CLI notice, not model output or tool use (e.g. "Falling back from WebSockets to HTTPS transport").
+        if (item?.type === "error") { if (typeof item.message === "string") outcome.error = item.message.slice(0, 2_000); break; }
         if (!item || !TEXT_ITEMS.has(item.type as string)) return violate();
         if (event.type === "item.completed" && item.type === "agent_message" && typeof item.text === "string") outcome.content = item.text;
         break;

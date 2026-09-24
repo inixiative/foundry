@@ -4,7 +4,7 @@ import { ThreadFactory, buildLayers, buildAgents, type SourceResolver } from "..
 import { ThreadRuntimeManager } from "../src/agents/thread-runtime";
 import { LocalSessionStore } from "../src/persistence/local-session-store";
 import { KnowledgePersistence } from "../src/persistence/knowledge-persistence";
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,33 +13,41 @@ import { buildNativeTextProvider } from "../src/providers/native-text-provider";
 import { buildSubscriptionDecisions, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
 import { scopedProvider } from "../src/agents/thread-runtime";
 import { subscriptionTransport } from "./helpers/subscription-transport";
+import { DECIDED, LIVE, decisionMessages, recordedClaudeTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 
 const roots: string[] = [];
 afterEach(async () => { await Bun.sleep(10); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-function fixture(transport = subscriptionTransport(), timeout = 2000) {
+afterAll(settleRecordings);
+const LIVE_TIMEOUT = 90_000;
+type Transport = Parameters<typeof buildNativeTextProvider>[1] & { launches: { argv: string[]; cwd: string; exited: boolean }[]; writes: number };
+function fixture<T extends Transport>(transport: T = subscriptionTransport() as unknown as T, timeout = 2000, live = false) {
   const directory = mkdtempSync(join(tmpdir(), "subscription-decisions-")); roots.push(directory);
   const profileDirectory = join(directory, "profile"); mkdirSync(profileDirectory, { mode: 0o700 });
   const config: SubscriptionDecisionConfig = { directory, source: { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude", mode: "native-profile", profileDirectory },
-    model: "test-model", expectedObservedModel: "test-model", maxCalls: 20, maxQueued: 5, callTimeoutMs: timeout };
+    model: live ? LIVE.claudeModel : "test-model", expectedObservedModel: live ? LIVE.claudeObservedModel : "test-model", maxCalls: 20, maxQueued: 5, callTimeoutMs: timeout };
   const run = buildSubscriptionDecisions(config, cfg => buildNativeTextProvider(cfg, transport));
   return { ...run, config, transport };
 }
+/** Claude decisions recorded from the real CLI; one status probe per call. */
+const recorded = (decisions: string[]) => fixture(recordedClaudeTransport({ status: decisions.map(() => "subscribed"), decision: decisions }), 30_000, true);
 const messages = [{ role: "user" as const, content: "private-input" }];
 const owner: NativeOwner = { threadId: "T", generation: "G", dispatchId: "D", projectId: "P", reviewJobId: "R" };
 const until = async (check: () => boolean) => { for (let n = 0; !check(); n++) { if (n > 100) throw Error("Controlled condition missing"); await Bun.sleep(5); } };
 
 test("serial native decisions preserve scoped logical ownership and accept only settled isolated output", async () => {
-  const f = fixture(), observed: NativeEvidence[] = [];
+  const f = recorded(["serial-1", "serial-2"]), observed: NativeEvidence[] = [];
   const phase = scopedProvider(f.provider, { threadId: "T:aux:review:G:domain:docs", cwd: "/logical/project" });
-  const first = phase.complete(messages, { nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
-  const second = f.provider.complete(messages, { threadId: "T:aux:route" });
-  const [result] = await Promise.all([first, second]);
+  const first = phase.complete(decisionMessages(), { nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
+  const second = f.provider.complete(decisionMessages(), { threadId: "T:aux:route" });
+  const [result, other] = await Promise.all([first, second]);
   expect(f.transport.launches).toHaveLength(2);
   expect(f.transport.launches.every(p => p.exited)).toBe(true);
   expect(f.transport.launches.every(p => p.cwd !== "/logical/project" && p.argv.includes("--safe-mode"))).toBe(true);
   expect(result.native?.owner?.providerSessionKey).toBe("T:aux:review:G:domain:docs");
   const evidence = result.native!;
-  expect(await phase.completionLifecycle!.inspectOwnedAdmission!(evidence.owner!, evidence.admissionId!)).toMatchObject({ capacity: "settled", cleanup: "released", evidence: { content: "accepted-private-answer" } });
+  const inspection = await phase.completionLifecycle!.inspectOwnedAdmission!(evidence.owner!, evidence.admissionId!);
+  expect(inspection).toMatchObject({ capacity: "settled", cleanup: "released" });
+  expect(inspection!.evidence.content).toMatch(DECIDED);
   expect(await f.provider.completionLifecycle!.inspectOwnedAdmission!({ ...evidence.owner!, projectId: "foreign" }, evidence.admissionId!)).toBeUndefined();
   expect(await f.provider.completionLifecycle!.releaseOwnedAdmission!({ ...evidence.owner!, dispatchId: "foreign" }, evidence.admissionId!)).toBe("unavailable");
   expect(observed[0].nativeOutcome).toBe("unknown");
@@ -47,10 +55,12 @@ test("serial native decisions preserve scoped logical ownership and accept only 
   expect(observed.at(-1)?.nativeOutcome).toBe("completed");
   for (const child of readdirSync(f.config.directory).filter(p => p !== "profile")) {
     const report = readFileSync(join(f.config.directory, child, "native-text.json"), "utf8");
-    expect(report).not.toContain("private-input"); expect(report).not.toContain("accepted-private-answer");
+    expect(report).not.toContain("private-input"); expect(report).not.toContain(result.content);
   }
   f.close();
-});
+  const outcome = { answers: [result.content, other.content], observed: observed.map(e => e.nativeOutcome) };
+  expect(outcome).toEqual((await sameAsLive(f.transport.vcr, "serial", outcome)).live);
+}, LIVE_TIMEOUT);
 
 for (const bad of ["model", "tool"] as const) test(`${bad} violation never exposes a promotable learning answer`, async () => {
   const f = fixture(subscriptionTransport(bad === "model" ? { model: "wrong-model" } : { tool: true }));
@@ -82,17 +92,18 @@ test("queued expiry and revocation prevent a second native launch", async () => 
 });
 
 test("prewrite rechecks the original logical preflight and old release cannot touch another call", async () => {
-  const f = fixture();
-  const result = await f.provider.complete(messages);
+  const f = fixture(recordedClaudeTransport({ status: ["subscribed", "subscribed"], decision: ["prewrite"] }), 30_000, true);
+  const result = await f.provider.complete(decisionMessages());
+  expect(result.content).toMatch(DECIDED);
   const original = result.native!;
   let checks = 0;
-  await expect(f.provider.complete(messages, { threadId: "T:aux:review:G:domain:docs", nativeObservation: { owner,
+  await expect(f.provider.complete(decisionMessages(), { threadId: "T:aux:review:G:domain:docs", nativeObservation: { owner,
     preflight() { if (++checks > 1) throw Error("revoked while preparing"); }, register() {}, observe() {},
   } })).rejects.toThrow("failed");
   expect(f.transport.writes).toBe(1);
   expect(await f.provider.completionLifecycle!.releaseOwnedAdmission!(original.owner!, original.admissionId!)).toBe("released");
   f.close();
-});
+}, LIVE_TIMEOUT);
 
 test("tool and model overrides fail before any subprocess", async () => {
   const f = fixture();
@@ -172,13 +183,13 @@ test("total attempt bounds reject without paid fallback or extra launches", asyn
 
 
 test("a stalled final observer cannot retain scheduler capacity", async () => {
-  const f = fixture();
-  await f.provider.complete(messages, { nativeObservation: { owner, register() {}, observe: () => new Promise(() => {}) } });
-  await f.provider.complete(messages);
+  const f = recorded(["observer-1", "observer-2"]);
+  await f.provider.complete(decisionMessages(), { nativeObservation: { owner, register() {}, observe: () => new Promise(() => {}) } });
+  await f.provider.complete(decisionMessages());
   expect(f.transport.launches).toHaveLength(2);
   expect(f.snapshot()).toMatchObject({ active: false, queued: 0 });
   f.close();
-});
+}, LIVE_TIMEOUT);
 
 test("queue bound rejects excess waiting calls before native admission", async () => {
   let finish!: (answer: string) => void;

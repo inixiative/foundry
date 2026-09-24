@@ -1,0 +1,21 @@
+{
+  "version": "2.1.281",
+  "status": 200,
+  "body": {
+    "turns": [
+      "accepted-private-answer",
+      "accepted-private-answer"
+    ],
+    "launches": 1,
+    "writes": 2,
+    "statusChecks": 1,
+    "sameSession": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-09-24T05:05:04.172Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

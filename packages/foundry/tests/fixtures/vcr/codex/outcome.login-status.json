@@ -1,0 +1,14 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "subscribed": true
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-09-24T05:04:50.228Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

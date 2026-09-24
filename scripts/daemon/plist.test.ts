@@ -41,6 +41,20 @@ describe("buildPlist", () => {
     expect(plist).not.toContain("co<de>");
   });
 
+  test("a smoke job keeps the daemon's environment and process type but runs once under its own label", () => {
+    const plist = buildPlist({ ...options, job: { label: "com.inixiative.foundry.vcr-smoke.1", programArguments: ["/opt/homebrew/bin/bun", "run", "job.ts"],
+      environment: { FOUNDRY_VCR: "record" }, stdoutPath: "/tmp/out.log", stderrPath: "/tmp/err.log" } });
+    const daemon = buildPlist(options);
+    expect(plist).toContain("<string>com.inixiative.foundry.vcr-smoke.1</string>");
+    expect(plist).not.toContain(`<string>${DAEMON_LABEL}</string>`);
+    expect(plist).toContain("<key>KeepAlive</key>\n  <false/>");
+    expect(plist).toContain("<string>job.ts</string>");
+    expect(plist).not.toContain("supervisor.ts");
+    expect(plist).toContain("<key>FOUNDRY_VCR</key>\n    <string>record</string>");
+    for (const shared of ["<key>ProcessType</key>\n  <string>Interactive</string>", "<string>/opt/homebrew/bin:/usr/bin</string>", "<key>FOUNDRY_DAEMON</key>"])
+      expect(plist).toContain(shared), expect(daemon).toContain(shared);
+  });
+
   test("labels the agent consistently", () => {
     expect(buildPlist(options)).toContain(`<string>${DAEMON_LABEL}</string>`);
   });

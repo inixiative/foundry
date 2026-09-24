@@ -1,0 +1,23 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "content": "{\"category\":\"feature\"}",
+    "model": "gpt-6-luna",
+    "tokens": true,
+    "native": "completed",
+    "call": {
+      "valid": true,
+      "release": "released",
+      "processExit": "exited",
+      "statusProcessExit": "exited"
+    }
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-09-24T05:04:58.452Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}
