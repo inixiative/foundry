@@ -7,7 +7,7 @@ import { resolveProjectView } from "../src/viewer/config-resolve";
 
 test("development team resolves ordinary UUID-owned experts and warms attributed source snapshots", async () => {
   const id = crypto.randomUUID(), config = developmentTeam({ projectId: id, projectPath: "/tmp/isolated-project", worker: { provider: "claude-code", model: "fable" },
-    decision: { provider: "gemini", model: "gemini-3.1-flash-lite-preview" }, snapshots: {
+    decision: { provider: "gemini", model: "gemini-3.1-flash-lite" }, snapshots: {
       features: { content: "## feature\n### feature:logs\n- logger.ts", reference: "base-sha:MAP.md", capturedAt: "2026-09-10T00:00:00Z" },
       primitives: { content: "## primitive\n### primitive:scope\n- scope.ts", reference: "base-sha:MAP.md", capturedAt: "2026-09-10T00:00:00Z" },
     } });

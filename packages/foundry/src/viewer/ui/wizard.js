@@ -48,10 +48,10 @@ const FALLBACK_PROVIDERS = [
     desc: "Fast, affordable API access — best for high-volume agent work",
     envKey: "GEMINI_API_KEY",
     models: [
-      { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite", tier: "fast" },
-      { id: "gemini-3.1-flash", label: "Gemini 3.1 Flash", tier: "standard" },
-      { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro", tier: "powerful" },
-      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", tier: "fast" },
+      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", tier: "fast" },
+      { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tier: "standard" },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful" },
+      { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tier: "fast" },
     ],
   },
   {
@@ -202,6 +202,7 @@ function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, on
           >
             <span class="wizard-option-label">${m.label}</span>
             <span class="wizard-option-tier" style="color: ${tierColors[m.tier]}">${m.tier}</span>
+            ${m.trainsOnInput ? html`<span class="wizard-option-trains">trains on your data</span>` : null}
             <span class="wizard-option-desc mono">${m.id}</span>
           </button>
         `)}
@@ -257,6 +258,7 @@ function ClassifierModelStep({ providers, enabledProviders, provider, selected, 
           >
             <span class="wizard-option-label">${m.label}</span>
             <span class="wizard-option-tier" style="color: ${tierColors[m.tier]}">${m.tier}</span>
+            ${m.trainsOnInput ? html`<span class="wizard-option-trains">trains on your data</span>` : null}
             <span class="wizard-option-desc mono">${m.id}</span>
           </button>
         `)}

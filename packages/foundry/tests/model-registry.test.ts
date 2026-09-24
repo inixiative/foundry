@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { defaultConfig } from "../src/viewer/config";
+import { createRegisteredProvider, providerApiRoot, providerReasoning } from "../src/providers/openai-compatible";
 import {
+  DECISION_MODEL,
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
   modelCapabilities,
@@ -173,4 +175,83 @@ test("each vendor's own effort field is recorded, not flattened into OpenAI's", 
   expect(registryModel("anthropic", "claude-opus-5")!.reasoning!.param).toBe("output_config.effort");
   expect(registryModel("gemini", "gemini-3.8-flash")!.reasoning!.param).toBe("thinking_level");
   expect(registryModel("kimi", "kimi-k3")!.reasoning!.param).toBe("reasoning_effort");
+});
+
+describe("the registry moved to core without moving any import path", () => {
+  test("the foundry re-export and core's own export are the same table and the same functions", async () => {
+    const core = await import("@inixiative/foundry-core");
+    const foundry = await import("../src/models/registry");
+    expect(foundry.MODEL_REGISTRY).toBe(core.MODEL_REGISTRY);
+    expect(foundry.registryModel).toBe(core.registryModel);
+    expect(foundry.modelHasCapability).toBe(core.modelHasCapability);
+    expect(foundry.modelCapabilities).toBe(core.modelCapabilities);
+    expect(foundry.modelOptionsByCapability).toBe(core.modelOptionsByCapability);
+    expect(foundry.providersWithCapability).toBe(core.providersWithCapability);
+    expect(foundry.resolveDecisionModel).toBe(core.resolveDecisionModel);
+    expect(foundry.DECISION_MODEL).toBe(core.DECISION_MODEL);
+    expect(foundry.DECISION_PROVIDER).toBe(core.DECISION_PROVIDER);
+  });
+
+  test("resolveDecisionModel keeps its old import path on the provider module", async () => {
+    const { resolveDecisionModel } = await import("../src/providers/decision-provider");
+    const core = await import("@inixiative/foundry-core");
+    expect(resolveDecisionModel).toBe(core.resolveDecisionModel);
+  });
+
+  test("the projections that need Foundry's own shapes stayed behind", async () => {
+    const core = await import("@inixiative/foundry-core") as Record<string, unknown>;
+    for (const name of ["providerConfigsFromRegistry", "registryForViewer", "modelOptionsByTier"])
+      expect(core[name]).toBeUndefined();
+  });
+});
+
+describe("Muse Spark reaches the surfaces a user chooses from", () => {
+  test("it goes through the existing openai-compatible adapter, with no new adapter kind", () => {
+    expect(MODEL_REGISTRY.meta.type).toBe("openai-compatible");
+    const provider = createRegisteredProvider("meta", { apiKey: "k" });
+    expect(provider.id).toBe("meta");
+    expect(providerApiRoot("meta")).toBe("https://api.meta.ai/v1");
+    expect(providerReasoning("meta")("muse-spark-1.3")!.outputField).toBe("max_completion_tokens");
+    expect(() => createRegisteredProvider("meta")).toThrow("MODEL_API_KEY");
+  });
+
+  test("the contributor warning survives both projections of the table", () => {
+    const saved = defaultConfig().providers.meta!;
+    const contributor = saved.models.find(model => model.id === "muse-spark-1.3-contributor")!;
+    const standard = saved.models.find(model => model.id === "muse-spark-1.3")!;
+    expect(saved.baseUrl).toBe("https://api.meta.ai/v1");
+    expect(contributor.trainsOnInput).toBe(true);
+    expect(standard.trainsOnInput).toBeUndefined();
+
+    const meta = registryForViewer().providers.find(provider => provider.id === "meta")!;
+    expect(meta.envKey).toBe("MODEL_API_KEY");
+    expect(meta.models.find(model => model.id === "muse-spark-1.3-contributor")).toMatchObject({
+      trainsOnInput: true,
+      label: expect.stringContaining("trains on your data"),
+    });
+    expect(meta.models.find(model => model.id === "muse-spark-1.3")!.trainsOnInput).toBe(false);
+  });
+});
+
+describe("shipped defaults name a model that is actually served", () => {
+  test("decisions default to Codex Luna everywhere a new configuration is built from", async () => {
+    const { starterConfig } = await import("../src/viewer/config");
+    const { SUBSCRIPTION_DECISIONS } = await import("../src/providers/subscription-policy");
+    for (const config of [defaultConfig(), starterConfig(), starterConfig("claude-code", "opus")])
+      expect(config.defaults).toMatchObject({ classifierProvider: SUBSCRIPTION_DECISIONS, classifierModel: DECISION_MODEL });
+    expect(DECISION_MODEL).toBe("gpt-6-luna");
+    // The subscription decision profile is the Codex login; Luna is registered on it.
+    expect(registryModel("codex", DECISION_MODEL)!.runtimeKind).toBe("native-harness");
+
+    const example = await Bun.file(new URL("../../../examples/domain-team.settings.json", import.meta.url)).json();
+    expect(example.defaults).toMatchObject({ classifierProvider: SUBSCRIPTION_DECISIONS, classifierModel: DECISION_MODEL });
+  });
+
+  test("no adapter or wizard fallback hardcodes a model the registry does not serve", async () => {
+    const shutDown = ["gemini-3.1-flash-lite-preview", "gemini-3-pro-preview", "gemini-3.1-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
+    for (const path of ["../src/providers/gemini.ts", "../src/viewer/ui/wizard.js"]) {
+      const source = await Bun.file(new URL(path, import.meta.url)).text();
+      for (const id of shutDown) expect(source).not.toContain(`"${id}"`);
+    }
+  });
 });

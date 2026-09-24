@@ -191,6 +191,8 @@ export interface ModelConfig {
   contextWindow?: number;
   /** What this model is worth using for. Always includes "judgment". */
   capabilities?: ModelCapability[];
+  /** The vendor trains on prompts and completions sent to this model. */
+  trainsOnInput?: boolean;
 }
 
 /**

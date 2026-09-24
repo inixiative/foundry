@@ -3363,6 +3363,14 @@ body {
   font-size: 10px;
   font-weight: 500;
 }
+.wizard-option-trains {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warn);
+  background: var(--warn-dim);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
 .wizard-option-env {
   font-size: 10px;
   font-family: var(--mono);
