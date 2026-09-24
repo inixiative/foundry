@@ -3,7 +3,7 @@ import { createSubscriptionDecisions } from "./providers/subscription-decisions"
 import { resolveSubscriptionPolicy } from "./providers/subscription-policy";
 import { SubscriptionAuthentication } from "./providers/subscription-authentication";
 import { nativeTextEnvironment } from "./providers/native-text-environment";
-import { createDecisionProvider, DECISION_MODEL } from "./providers/decision-provider";
+import { createDecisionProvider, resolveDecisionModel } from "./providers/decision-provider";
 import { KastleAuthentication } from "./providers/kastle-authentication";
 import { NativeAuthentication } from "./providers/native-authentication";
 /**
@@ -142,8 +142,8 @@ if (subscription) {
   if (subscription.rerouted.length) console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(", ")}`);
 }
 const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision }) : undefined;
-const flowLlm = decisions?.provider ?? createDecisionProvider(!!config.providers.openai?.enabled, process.env.OPENAI_API_KEY);
-const decisionModel = subscription?.policy.model ?? DECISION_MODEL;
+const flowLlm = decisions?.provider ?? createDecisionProvider(config);
+const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 
 console.log(`Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`);
 

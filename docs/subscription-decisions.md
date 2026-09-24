@@ -3,7 +3,7 @@
 Foundry runs subscription-only by default. A fresh install, with no settings at all, runs the Claude Code worker and Foundry's decisions from the logins already on the machine:
 
 - **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset).
-- **Decisions:** GPT-5.6 Luna through the Codex CLI's ChatGPT login (`~/.codex`). Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review) and configured experts all use this decision profile.
+- **Decisions:** GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`). Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review) and configured experts all use this decision profile.
 
 No API provider is constructed in this mode. There is no paid fallback, no automatic retry and no model substitution. API-key providers need an explicit opt-in.
 
@@ -14,9 +14,9 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `apiTokens` | absent (`false`) | `true` opts in to API-key providers (Anthropic, OpenAI, Gemini, gateways, Kastle bindings) and the OpenAI/Luna API decision provider, which requires `OPENAI_API_KEY`. It cannot be combined with `subscriptionOnly`. |
 | `defaults.provider` | `claude-code` | The subscription worker must be `claude-code`. Any other worker requires `apiTokens: true`. |
 | `defaults.nativeAuthenticationId` | absent: `~/.claude` | Optional explicit Claude `native-profile` source for the worker. |
-| `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `gpt-5.6-luna` | New configurations record the decision profile here. With a Codex decision profile, `classifierModel` selects its model. |
+| `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `gpt-6-luna` | New configurations record the decision profile here. With a Codex decision profile, `classifierModel` selects its model. |
 | `subscriptionOnly.decisionSourceId` | absent: `~/.codex` | Optional explicit `native-profile` source for decisions: Codex, or a *separate* Claude profile. |
-| `subscriptionOnly.model` | `gpt-5.6-luna` for Codex | Decision model. Required for a Claude decision profile. |
+| `subscriptionOnly.model` | `gpt-6-luna` for Codex | Decision model. Required for a Claude decision profile. |
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only. Codex exec does not acknowledge an observed model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
 | `subscriptionOnly.maxCalls` | `1000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |

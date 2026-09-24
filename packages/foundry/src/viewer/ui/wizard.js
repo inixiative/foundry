@@ -39,7 +39,7 @@ const FALLBACK_PROVIDERS = [
       { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful" },
       { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful" },
       { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard" },
-      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast" },
+      { id: "gpt-6-luna", label: "GPT-6 Luna", tier: "fast" },
     ],
   },
   {
@@ -75,7 +75,7 @@ const FALLBACK_PROVIDERS = [
       { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful" },
       { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful" },
       { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard" },
-      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast" },
+      { id: "gpt-6-luna", label: "GPT-6 Luna", tier: "fast" },
     ],
   },
 ];
@@ -114,7 +114,7 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
       </p>
       <p class="wizard-desc dim">
         Foundry is subscription-only by default: the Claude Code worker and Codex
-        (GPT-5.6 Luna) decisions use your existing logins. Choosing a provider that
+        (GPT-6 Luna) decisions use your existing logins. Choosing a provider that
         needs an API key opts this install in to API tokens.
       </p>
 
@@ -381,7 +381,7 @@ export function Wizard() {
       const id = subscription ? "codex" : defaultProvider;
       setClassifierProvider(id);
       const prov = providers.find(p => p.id === id);
-      const fast = subscription ? prov?.models.find(m => m.id === "gpt-5.6-luna") : prov?.models.find(m => m.tier === "fast");
+      const fast = subscription ? prov?.models.find(m => m.id === "gpt-6-luna") : prov?.models.find(m => m.tier === "fast");
       setClassifierModel(fast?.id || prov?.models[0]?.id || "");
     }
     setStep(4);

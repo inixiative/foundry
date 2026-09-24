@@ -1,4 +1,5 @@
 import { HttpCompletionSettlement } from "./http-settlement";
+import { DECISION_MODEL, registryModel, type ModelReasoning } from "../models/registry";
 import type {
   LLMProvider,
   LLMMessage,
@@ -11,25 +12,44 @@ import type {
 
 export interface OpenAIConfig {
   apiKey: string;
-  /** Defaults to "gpt-5.6-luna". */
+  /** Defaults to the registry decision model. */
   defaultModel?: string;
-  /** Override base URL for Cursor, Azure, local proxies, etc. */
+  /** Override base URL for Cursor, Azure, local proxies, etc. Normalized to a versioned root. */
   baseUrl?: string;
+  /** Exact API root, used verbatim. For hosts whose published root is not /v1 (DeepSeek, GLM). */
+  apiRoot?: string;
   /** Optional organization header. */
   organization?: string;
+  /** Extra headers sent on every request (compatible hosts that require attribution). */
+  headers?: Record<string, string>;
+  /**
+   * Reasoning request shape per model id. Defaults to the registry's OpenAI
+   * entries — the map is authoritative; model names are not parsed.
+   */
+  reasoning?: (model: string) => ModelReasoning | undefined;
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
 
 /**
- * OpenAI Chat Completions adapter.
- * Covers GPT-4o, Codex, o-series, and any OpenAI-compatible API
- * (Cursor, Azure, Together, Groq, local LLMs via LiteLLM/Ollama).
+ * Resolve the versioned API root for an OpenAI-compatible host.
+ * Hosts publish their base either bare ("https://api.openai.com") or already
+ * versioned ("https://api.x.ai/v1", "https://api.z.ai/api/paas/v4"); both must
+ * produce exactly one version segment.
+ */
+export function openAiApiRoot(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
+/**
+ * OpenAI Chat Completions adapter, and the single adapter for the whole
+ * OpenAI-compatible family. Per-model differences — which effort parameter,
+ * which levels, which output field — come from the registry, never from the
+ * model id's shape. `createRegisteredProvider` is the usual way in.
  *
- * Set baseUrl to point at any compatible endpoint:
- *   - Cursor: uses OpenAI-compatible format
- *   - Azure: "https://{resource}.openai.azure.com/openai/deployments/{deployment}"
- *   - Local: "http://localhost:11434/v1" (Ollama)
+ * Azure is not covered: its deployment paths and api-version query carry no
+ * version segment for `openAiApiRoot` to find.
  */
 export class OpenAIProvider implements LLMProvider {
   readonly id: string;
@@ -38,15 +58,52 @@ export class OpenAIProvider implements LLMProvider {
 
   private _apiKey: string;
   private _defaultModel: string;
-  private _baseUrl: string;
+  private _apiRoot: string;
   private _organization: string | undefined;
+  private _extraHeaders: Record<string, string>;
+  protected _reasoningFor: (model: string) => ModelReasoning | undefined;
 
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? "openai";
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gpt-5.6-luna";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._defaultModel = config.defaultModel ?? DECISION_MODEL;
+    this._apiRoot = config.apiRoot?.trim() || openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
+    this._extraHeaders = config.headers ?? {};
+    this._reasoningFor = config.reasoning ?? ((model) => registryModel("openai", model)?.reasoning);
+  }
+
+  /** Versioned API root this adapter posts to. */
+  get apiRoot(): string { return this._apiRoot; }
+
+  protected _headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      ...this._extraHeaders,
+      "content-type": "application/json",
+      authorization: `Bearer ${this._apiKey}`,
+    };
+    if (this._organization) headers["openai-organization"] = this._organization;
+    return headers;
+  }
+
+  protected _body(messages: LLMMessage[], opts: CompletionOpts | undefined, model: string): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    };
+    const reasoning = this._reasoningFor(model);
+    if (reasoning) {
+      const asked = typeof opts?.thinking === "string" ? (opts.thinking as ModelReasoning["fallback"]) : undefined;
+      const effort = asked && reasoning.efforts.includes(asked) ? asked : reasoning.fallback;
+      // The other params belong to adapters that are not chat completions.
+      if (reasoning.param === "reasoning.effort") body.reasoning = { effort };
+      else if (reasoning.param === "reasoning_effort") body.reasoning_effort = effort;
+    }
+    if (opts?.maxTokens !== undefined) body[reasoning?.outputField ?? "max_tokens"] = opts.maxTokens;
+    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
+    if (opts?.topP !== undefined) body.top_p = opts.topP;
+    if (opts?.stop && !reasoning?.rejectsStop) body.stop = opts.stop;
+    return body;
   }
 
   async complete(
@@ -54,30 +111,11 @@ export class OpenAIProvider implements LLMProvider {
     opts?: CompletionOpts
   ): Promise<CompletionResult> {
     const model = opts?.model ?? this._defaultModel;
+    const body = this._body(messages, opts, model);
 
-    const body: Record<string, unknown> = {
-      model,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    };
-
-    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
-    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
-    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
-    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (opts?.topP !== undefined) body.top_p = opts.topP;
-    if (opts?.stop) body.stop = opts.stop;
-
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      authorization: `Bearer ${this._apiKey}`,
-    };
-    if (this._organization) {
-      headers["openai-organization"] = this._organization;
-    }
-
-    const res = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this._apiRoot}/chat/completions`, {
       method: "POST",
-      headers,
+      headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
@@ -121,32 +159,11 @@ export class OpenAIProvider implements LLMProvider {
     opts?: CompletionOpts
   ): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? this._defaultModel;
+    const body = { ...this._body(messages, opts, model), stream: true, stream_options: { include_usage: true } };
 
-    const body: Record<string, unknown> = {
-      model,
-      stream: true,
-      stream_options: { include_usage: true },
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    };
-
-    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
-    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
-    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
-    if (opts?.temperature !== undefined) body.temperature = opts.temperature;
-    if (opts?.topP !== undefined) body.top_p = opts.topP;
-    if (opts?.stop) body.stop = opts.stop;
-
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      authorization: `Bearer ${this._apiKey}`,
-    };
-    if (this._organization) {
-      headers["openai-organization"] = this._organization;
-    }
-
-    const res = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this._apiRoot}/chat/completions`, {
       method: "POST",
-      headers,
+      headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
@@ -229,7 +246,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   private _apiKey: string;
   private _model: string;
-  private _baseUrl: string;
+  private _apiRoot: string;
 
   constructor(config: {
     apiKey: string;
@@ -238,7 +255,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }) {
     this._apiKey = config.apiKey;
     this._model = config.model ?? "text-embedding-3-small";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._apiRoot = openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
@@ -253,7 +270,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private async _request(input: string[]): Promise<EmbeddingResult[]> {
     if (input.length === 0) return [];
 
-    const res = await fetch(`${this._baseUrl}/v1/embeddings`, {
+    const res = await fetch(`${this._apiRoot}/embeddings`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -310,8 +327,8 @@ export function createOllamaProvider(config?: {
   return new OpenAIProvider(
     {
       apiKey: "ollama", // Ollama ignores auth
-      baseUrl: config?.baseUrl ?? "http://localhost:11434",
-      defaultModel: config?.defaultModel ?? "llama3",
+      baseUrl: config?.baseUrl ?? "http://localhost:11434/v1",
+      defaultModel: config?.defaultModel ?? "llama3.2:3b",
     },
     "ollama"
   );

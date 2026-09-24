@@ -19,8 +19,17 @@ export {
   OpenAIEmbeddingProvider,
   createCursorProvider,
   createOllamaProvider,
+  openAiApiRoot,
   type OpenAIConfig,
 } from "./openai";
+export {
+  createRegisteredProvider,
+  providerApiRoot,
+  providerApiKey,
+  providerReasoning,
+  registeredProvider,
+  type RegisteredProviderConfig,
+} from "./openai-compatible";
 export { GeminiProvider, GeminiEmbeddingProvider, type GeminiConfig } from "./gemini";
 
 // Gated provider (capability-checked wrapper)
