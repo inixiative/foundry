@@ -35,11 +35,10 @@ const ask = (decisions: ReturnType<typeof scheduler>["decisions"], label: string
 test("decisions run concurrently up to the cap on one shared Codex login, and every holder is released", async () => {
   const transport = labelled(60);
   const { root, decisions } = scheduler(transport, { maxConcurrent: 3 });
-  const started = Date.now();
   const results = await Promise.all(Array.from({ length: 7 }, (_, i) => ask(decisions, `d${i}`, `T${i}`)));
   expect(results).toEqual(["d0", "d1", "d2", "d3", "d4", "d5", "d6"]);
+  // Overlap is proven by concurrent live processes, not wall-clock time (suite load varies).
   expect(transport.peak).toBe(3);
-  expect(Date.now() - started).toBeLessThan(7 * 60);
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
   expect(decisions.snapshot()).toMatchObject({ closed: false, running: 0, queued: 0, attempts: 7 });
 });
