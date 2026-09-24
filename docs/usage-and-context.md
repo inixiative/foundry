@@ -3,8 +3,8 @@
 Foundry preserves Claude's cache telemetry rather than reducing usage to input
 and output. The parser lives in `@inixiative/agent-session`
 ([agent-session PR #4](https://github.com/inixiative/agent-session/pull/4)); Foundry
-consumes it through the vendored source snapshot in `vendor/agent-session/`, whose
-`manifest.json` records the source revision and file hashes.
+consumes the published package (`^0.2.0`), pinned to an exact tarball integrity by
+the committed `bun.lock`.
 
 ## Counters and tags
 
