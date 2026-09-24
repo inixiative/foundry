@@ -1,5 +1,6 @@
 import { lstatSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDefaultProfile } from "./default-profiles";
 
 export function assertPrivateProfile(directory: string): void {
   const stat = lstatSync(directory);
@@ -16,6 +17,30 @@ export function assertPrivateProfile(directory: string): void {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
+}
+
+/** The user's own ~/.claude or ~/.codex, shared with their interactive sessions. Foundry does not
+ * own its mode; it requires an owned real directory whose credential files are private. */
+export function assertUserProfile(directory: string): void {
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || (process.getuid && stat.uid !== process.getuid()))
+    throw Error("Default native profile must be an owned directory, not a symlink");
+  for (const name of ["auth.json", ".credentials.json"]) {
+    try {
+      const file = lstatSync(join(directory, name));
+      if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 || (file.mode & 0o077) !== 0
+        || (process.getuid && file.uid !== process.getuid()))
+        throw Error("Native credential files must be owned private regular files (0600)");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+
+/** Default login locations are referenced in place; every other profile must be Foundry-private. */
+export function assertProfile(directory: string, runtime: "claude" | "codex"): void {
+  if (isDefaultProfile(directory, runtime)) assertUserProfile(directory);
+  else assertPrivateProfile(directory);
 }
 
 export function writeProfileConfiguration(directory: string, path: string, content: string): void {

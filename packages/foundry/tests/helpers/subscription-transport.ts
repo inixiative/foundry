@@ -28,3 +28,39 @@ export function subscriptionTransport(options: { model?: string; response?: (inp
     },
   };
 }
+
+export function codexStatusProcess(login = "Logged in using ChatGPT") {
+  const stream = (text: string) => new ReadableStream<Uint8Array>({ start(c) { if (text) c.enqueue(new TextEncoder().encode(text)); c.close(); } });
+  return { stdout: stream(""), stderr: stream(`${login}\n`), exited: Promise.resolve(0), kill() {} };
+}
+
+/** Controlled `codex exec --json` process: records argv/env/stdin and replays JSONL events. */
+export function codexTransport(options: { login?: string; response?: string; items?: unknown[]; hang?: boolean; exitCode?: number } = {}) {
+  const launches: { argv: string[]; env: Record<string, string | undefined>; cwd: string; stdin: string; exited: boolean }[] = [];
+  let statusChecks = 0;
+  return { launches, get statusChecks() { return statusChecks; },
+    statusSpawn: () => { statusChecks++; return codexStatusProcess(options.login); },
+    spawn: (argv: string[], config: { cwd: string; env: Record<string, string | undefined> }) => {
+      const launch = { argv, ...config, stdin: "", exited: false }; launches.push(launch);
+      let controller!: ReadableStreamDefaultController<Uint8Array>, exit!: (code: number) => void;
+      const stdout = new ReadableStream<Uint8Array>({ start(c) { controller = c; } });
+      const exited = new Promise<number>(resolve => { exit = resolve; });
+      const finish = (code: number) => { if (!launch.exited) { launch.exited = true; controller.close(); exit(code); } };
+      const emit = (event: unknown) => { if (!launch.exited) controller.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n")); };
+      return { stdout, stderr: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }), exited,
+        stdin: { write(input: string) { launch.stdin += input; }, end() {
+          if (options.hang) return;
+          queueMicrotask(() => {
+            emit({ type: "thread.started", thread_id: crypto.randomUUID() });
+            emit({ type: "turn.started" });
+            for (const item of options.items ?? []) emit({ type: "item.completed", item });
+            emit({ type: "item.completed", item: { id: "answer", type: "agent_message", text: options.response ?? "accepted-private-answer" } });
+            emit({ type: "turn.completed", usage: { input_tokens: 3, cached_input_tokens: 0, output_tokens: 2 } });
+            finish(options.exitCode ?? 0);
+          });
+        } },
+        kill() { finish(143); },
+      };
+    },
+  };
+}

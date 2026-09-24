@@ -112,6 +112,11 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
         Which LLM providers will you use? Enable all that apply —
         different agents can use different providers.
       </p>
+      <p class="wizard-desc dim">
+        Foundry is subscription-only by default: the Claude Code worker and Codex
+        (GPT-5.6 Luna) decisions use your existing logins. Choosing a provider that
+        needs an API key opts this install in to API tokens.
+      </p>
 
       <div class="wizard-options">
         ${providers.map(p => html`
@@ -310,6 +315,15 @@ function DoneStep({ providers, enabledProviders, provider, executorModel, classi
 // Main Wizard component
 // ---------------------------------------------------------------------------
 
+async function patchSettings(section, body) {
+  const res = await fetch(`/api/settings/${section}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || `Saving ${section} failed`);
+}
+
 export function Wizard() {
   const isOpen = wizardOpen.value;
   // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=classifier model, 5=done
@@ -360,11 +374,14 @@ export function Wizard() {
   };
 
   const handleExecutorNext = () => {
-    // Default classifier to the fastest model on the same provider
+    // Subscription default: Codex Luna decisions beside a Claude Code worker.
+    // Otherwise default the classifier to the fastest model on the same provider.
     if (!classifierProvider) {
-      setClassifierProvider(defaultProvider);
-      const prov = providers.find(p => p.id === defaultProvider);
-      const fast = prov?.models.find(m => m.tier === "fast");
+      const subscription = defaultProvider === "claude-code" && enabledProviders.includes("codex");
+      const id = subscription ? "codex" : defaultProvider;
+      setClassifierProvider(id);
+      const prov = providers.find(p => p.id === id);
+      const fast = subscription ? prov?.models.find(m => m.id === "gpt-5.6-luna") : prov?.models.find(m => m.tier === "fast");
       setClassifierModel(fast?.id || prov?.models[0]?.id || "");
     }
     setStep(4);
@@ -396,16 +413,16 @@ export function Wizard() {
         body: JSON.stringify(updatedProviders),
       });
 
+      // A Claude Code worker with native decisions stays subscription-only; any other choice opts in to API tokens.
+      const subscription = defaultProvider === "claude-code" && classifierProvider === "codex";
+      await patchSettings("apiTokens", { enabled: !subscription });
+
       // Update defaults — executor model is the global default
-      await fetch("/api/settings/defaults", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: defaultProvider,
-          model: executorModel,
-          classifierProvider,
-          classifierModel,
-        }),
+      await patchSettings("defaults", {
+        provider: defaultProvider,
+        model: executorModel,
+        classifierProvider: subscription ? "subscription-decisions" : classifierProvider,
+        classifierModel,
       });
 
       // Mark setup complete

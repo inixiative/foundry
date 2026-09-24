@@ -3,7 +3,8 @@ import { isAbsolute, join } from "node:path";
 import { createHash } from "node:crypto";
 import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMProvider, type NativeEvidence, type NativeOwner, type TokenCounts } from "@inixiative/foundry-core";
 import { NativeAuthentication, type NativeAuthenticationSource } from "./native-authentication";
-import { assertPrivateProfile } from "./private-profile";
+import { assertPrivateProfile, assertProfile } from "./private-profile";
+import { withProfile } from "./default-profiles";
 import { ClaudeCodeSessionAdapter, FileExternalSessionStore, type ClaudeCodeSessionAdapterConfig } from "./session-adapter";
 import { nativeTextEnvironment } from "./native-text-environment";
 import { SessionBackedProvider } from "./session-backed";
@@ -70,7 +71,7 @@ export function buildNativeTextProvider(config: NativeTextConfig, controlled?: {
     || !Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 4
     || !Number.isSafeInteger(timeout) || timeout < 100 || timeout > 30_000) throw Error("Invalid bounded native text configuration");
   assertPrivateProfile(config.directory);
-  assertPrivateProfile(source.profileDirectory);
+  assertProfile(source.profileDirectory, source.runtime);
   const directory = join(config.directory, config.runId);
   const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
   mkdirSync(directory, { mode: 0o700 }); // Existing runs cannot be replayed after restart.
@@ -131,7 +132,7 @@ export function buildNativeTextProvider(config: NativeTextConfig, controlled?: {
       try {
         persist();
         statusChild = controlled ? controlled.statusSpawn(source.profileDirectory) : Bun.spawn(["claude", "auth", "status", "--json"], {
-          env: { ...nativeTextEnvironment(process.env), CLAUDE_CONFIG_DIR: source.profileDirectory },
+          env: withProfile(nativeTextEnvironment(process.env), "claude", source.profileDirectory),
           stdin: "ignore", stdout: "pipe", stderr: "pipe",
         });
         call.statusProcessExit = "pending";

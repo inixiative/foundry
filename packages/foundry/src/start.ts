@@ -134,7 +134,13 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   }
 }
 
-const subscription = resolveSubscriptionPolicy(config);
+// Subscription-only unless settings opt in with apiTokens: true. Only the opt-in constructs API providers.
+const subscription = resolveSubscriptionPolicy(config, { startup: true });
+if (subscription) {
+  config = subscription.config;
+  console.log(`Subscription-only: worker claude-code (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`);
+  if (subscription.rerouted.length) console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(", ")}`);
+}
 const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision }) : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(!!config.providers.openai?.enabled, process.env.OPENAI_API_KEY);
 const decisionModel = subscription?.policy.model ?? DECISION_MODEL;

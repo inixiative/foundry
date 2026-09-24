@@ -1,4 +1,5 @@
-import { resolveSubscriptionPolicy, type SubscriptionPolicy } from "../providers/subscription-policy";
+import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionSettings } from "../providers/subscription-policy";
+import { DECISION_MODEL } from "../providers/decision-provider";
 import type { CredentialReference } from '@inixiative/foundry-core';
 import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
 import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
@@ -25,7 +26,10 @@ import { validateLearningSettings, type LearningSettings } from "../agents/learn
  * - Project level: each project can inherit global settings or override per-field
  */
 export interface FoundryConfig {
-  subscriptionOnly?: SubscriptionPolicy;
+  /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
+  apiTokens?: boolean;
+  /** Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md. */
+  subscriptionOnly?: SubscriptionSettings;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
   kastles?: KastleSource[];
@@ -476,6 +480,8 @@ export function defaultConfig(): FoundryConfig {
     defaults: {
       provider: "claude-code",
       model: "fable",
+      classifierProvider: SUBSCRIPTION_DECISIONS,
+      classifierModel: DECISION_MODEL,
     },
     providers: providerConfigsFromRegistry(),
     agents: {},
@@ -498,6 +504,12 @@ export function starterConfig(
   const config = defaultConfig();
   config.defaults.provider = providerId;
   config.defaults.model = model;
+  if (providerId !== "claude-code") {
+    // Subscription mode runs the worker on Claude Code; any other worker is the API-token mode.
+    config.apiTokens = true;
+    delete config.defaults.classifierProvider;
+    delete config.defaults.classifierModel;
+  }
   config.setupComplete = false;
   return config;
 }
@@ -777,6 +789,9 @@ export class ConfigStore {
       next.mcp = { ...this._config.mcp, ...data } as McpSettingsConfig;
     } else if (section === "learning") {
       next.learning = { ...this._config.learning, ...data } as LearningSettings;
+    } else if (section === "apiTokens") {
+      // Explicit opt-in to API-key providers; absent or false is subscription-only.
+      if (data.enabled === true) next.apiTokens = true; else delete next.apiTokens;
     }
     validateConfig(next);
     this._config = next;

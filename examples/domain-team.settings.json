@@ -2,7 +2,7 @@
   "defaults": {
     "provider": "claude-code",
     "model": "fable",
-    "classifierProvider": "openai",
+    "classifierProvider": "subscription-decisions",
     "classifierModel": "gpt-5.6-luna"
   },
   "providers": {
@@ -194,7 +194,7 @@
           "kind": "classifier",
           "flowRole": "context-routing",
           "prompt": "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "temperature": 0,
           "tools": false,
@@ -218,7 +218,7 @@
           "kind": "router",
           "flowRole": "context-routing",
           "prompt": "Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {\"destination\": \"artificer\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "temperature": 0,
           "tools": false,
@@ -266,7 +266,7 @@
           "flowRole": "domain-advising",
           "domain": "docs",
           "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "tools": false,
           "visibleLayers": {
@@ -291,7 +291,7 @@
           "flowRole": "domain-advising",
           "domain": "architecture",
           "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "tools": false,
           "visibleLayers": {
@@ -316,7 +316,7 @@
           "flowRole": "domain-advising",
           "domain": "security",
           "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "tools": false,
           "visibleLayers": {
@@ -341,7 +341,7 @@
           "flowRole": "domain-advising",
           "domain": "testing",
           "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
-          "provider": "openai",
+          "provider": "subscription-decisions",
           "model": "gpt-5.6-luna",
           "tools": false,
           "visibleLayers": {

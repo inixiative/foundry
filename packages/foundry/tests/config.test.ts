@@ -6,6 +6,7 @@ import { ConfigStore, defaultConfig, type FoundryConfig } from "../src/viewer/co
 
 function buildConfig(): FoundryConfig {
   const config = defaultConfig();
+  config.apiTokens = true; // API-provider agents
 
   config.sources = {
     "system-prompt": {

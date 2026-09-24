@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfig, defaultProjectAgents, validateConfig } from "../src/viewer/config";
 import { resolveSubscriptionPolicy } from "../src/providers/subscription-policy";
+import { resolveProjectView } from "../src/viewer/config-resolve";
 import { SubscriptionAuthentication } from "../src/providers/subscription-authentication";
 import { subscriptionStatusProcess } from "./helpers/subscription-transport";
 
@@ -29,24 +30,46 @@ test("subscription policy resolves explicit models and sources without API acces
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({ worker: { id: f.worker.id }, decision: { id: f.decision.id }, policy: { model: "decision-model" } });
 });
 
-for (const change of ["worker-api", "classifier-api", "project-api", "review-api", "review-model", "same-profile", "gateway", "codex", "agent-model", "expert-tools", "project-model"] as const)
+for (const change of ["worker-api", "review-api", "review-model", "same-profile", "gateway", "codex-worker", "expert-tools", "claude-decision-model", "codex-observed-model"] as const)
   test(`subscription startup refuses ${change} before provider construction`, () => {
     const f = fixture();
     switch (change) {
       case "worker-api": f.c.defaults.provider = "openai"; break;
-      case "classifier-api": f.c.agents.classifier.provider = "openai"; break;
-      case "project-api": f.c.projects.project.agents = { router: { provider: "openai" } }; break;
       case "review-api": f.c.learning = { review: { provider: "openai" } }; break;
       case "review-model": f.c.learning = { review: { model: "gpt-5.6-luna" } }; break;
       case "same-profile": f.decision.profileDirectory = f.worker.profileDirectory; break;
       case "gateway": f.c.nativeAuthentication![1] = { id: f.decision.id, connectionId: f.decision.connectionId, runtime: "claude", mode: "gateway", baseUrl: "https://example.com", credential: { type: "environment", variable: "SYNTHETIC_KEY" } }; break;
-      case "codex": f.c.nativeAuthentication![1].runtime = "codex"; break;
-      case "agent-model": f.c.agents.router.model = "gpt-5.6-luna"; break;
+      case "codex-worker": f.c.nativeAuthentication![0].runtime = "codex"; break;
       case "expert-tools": f.c.agents.router.tools = true; break;
-      case "project-model": f.c.projects.project.defaults = { classifierModel: "gpt-5.6-luna" }; break;
+      case "claude-decision-model": delete f.c.subscriptionOnly!.model; break;
+      case "codex-observed-model": f.c.nativeAuthentication![1].runtime = "codex"; break;
     }
     expect(() => validateConfig(f.c)).toThrow();
   });
+
+// Decision roles saved on another provider or model run on the subscription decision profile.
+for (const change of ["classifier-api", "project-api", "agent-model", "project-model"] as const)
+  test(`subscription mode routes ${change} to subscription decisions`, () => {
+    const f = fixture();
+    switch (change) {
+      case "classifier-api": f.c.agents.classifier.provider = "openai"; break;
+      case "project-api": f.c.projects.project.agents = { router: { provider: "openai" } }; break;
+      case "agent-model": f.c.agents.router.model = "gpt-5.6-luna"; break;
+      case "project-model": f.c.projects.project.defaults = { classifierModel: "gpt-5.6-luna" }; break;
+    }
+    expect(() => validateConfig(f.c)).not.toThrow();
+    const resolved = resolveSubscriptionPolicy(f.c)!;
+    const view = resolveProjectView(resolved.config, "project")!.config;
+    for (const agent of [view.agents.classifier, view.agents.router]) expect(agent).toMatchObject({ provider: "subscription-decisions", model: "decision-model" });
+    expect(view.defaults).toMatchObject({ classifierProvider: "subscription-decisions", classifierModel: "decision-model" });
+  });
+
+test("an explicit Codex decision profile runs Codex decisions beside the Claude worker", () => {
+  const f = fixture();
+  f.c.nativeAuthentication![1].runtime = "codex";
+  delete f.c.subscriptionOnly!.expectedObservedModel;
+  expect(resolveSubscriptionPolicy(f.c)).toMatchObject({ worker: { runtime: "claude" }, decision: { id: f.decision.id, runtime: "codex" }, policy: { model: "decision-model" } });
+});
 
 test("different IDs or aliases cannot share the warm worker profile", () => {
   const f = fixture();

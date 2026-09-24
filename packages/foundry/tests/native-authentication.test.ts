@@ -114,7 +114,7 @@ test("competing preparation cannot overwrite a live owner's configuration", asyn
 test("settings validate source assignments and reject inline secrets", async () => {
   const { validateConfig, defaultConfig } = await import("../src/viewer/config");
   const source = gateway("claude"), config = defaultConfig();
-  config.defaults.provider = "claude-code"; config.nativeAuthentication = [source];
+  config.defaults.provider = "claude-code"; config.nativeAuthentication = [source]; config.apiTokens = true;
   config.nativeAuthenticationSelections = { thread: source.id };
   expect(() => validateConfig(config)).not.toThrow();
   config.nativeAuthenticationSelections.thread = crypto.randomUUID();

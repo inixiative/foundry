@@ -1,19 +1,21 @@
 import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMMessage, type LLMProvider, type NativeEvidence, type NativeOwner, type OwnedAdmissionInspection } from "@inixiative/foundry-core";
 import { createNativeTextProvider, type NativeTextConfig } from "./native-text-provider";
+import { createCodexTextProvider } from "./codex-text-provider";
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, "runId" | "maxCalls"> {
   maxCalls: number;
   maxQueued: number;
   callTimeoutMs: number;
 }
-type TextRun = ReturnType<typeof createNativeTextProvider>;
+type TextRun = Pick<ReturnType<typeof createNativeTextProvider>, "provider" | "snapshot" | "close">;
 type Outcome = { admission: "not-admitted" | "attempted" | "unknown"; settlement: "settled" | "unknown" };
 type Record = { owner: NativeOwner; inspection: OwnedAdmissionInspection };
 type Pending = { messages: LLMMessage[]; opts: CompletionOpts; owner: NativeOwner; deadline: number;
   resolve(value: CompletionResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
+/** Decisions run on the decision profile's own runtime: Codex exec or text-only Claude. */
 export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
-  return buildSubscriptionDecisions(config, createNativeTextProvider);
+  return buildSubscriptionDecisions(config, config.source.runtime === "codex" ? createCodexTextProvider : createNativeTextProvider);
 }
 
 export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, createRun: (config: NativeTextConfig) => TextRun) {

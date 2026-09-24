@@ -1,6 +1,7 @@
 import { NativeAuthentication, type NativeAuthenticationLaunch, type NativeAuthenticationSource } from "./native-authentication";
 import { subscriptionStatus, type StatusProcess } from "./native-text-provider";
 import { nativeTextEnvironment } from "./native-text-environment";
+import { withProfile } from "./default-profiles";
 
 export class SubscriptionAuthentication extends NativeAuthentication {
   private statusChild?: StatusProcess;
@@ -20,7 +21,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     let exited = false;
     try {
       const child = this.statusChild = this.statusSpawn ? this.statusSpawn(this.workerSource.profileDirectory) : Bun.spawn(["claude", "auth", "status", "--json"], {
-        env: { ...nativeTextEnvironment(process.env), CLAUDE_CONFIG_DIR: this.workerSource.profileDirectory },
+        env: withProfile(nativeTextEnvironment(process.env), "claude", this.workerSource.profileDirectory),
         stdin: "ignore", stdout: "pipe", stderr: "pipe",
       });
       const exit = child.exited.then(() => { exited = true; }, () => {});

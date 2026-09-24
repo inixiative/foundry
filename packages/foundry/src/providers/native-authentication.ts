@@ -3,7 +3,8 @@ import { mkdirSync, rmdirSync, writeFileSync, readFileSync, unlinkSync } from "n
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { assertPrivateProfile, writeProfileConfiguration } from "./private-profile";
+import { assertPrivateProfile, assertProfile, writeProfileConfiguration } from "./private-profile";
+import { profileEnvironment } from "./default-profiles";
 
 export type NativeAuthenticationSource = {
   /** Local identities, never provider account names or secrets. */
@@ -103,7 +104,7 @@ export class NativeAuthentication {
     const source = this.source(threadId, runtime);
     if (source.mode === "native-profile" && threadId.includes(":aux:")) throw Error("Auxiliary sessions require a gateway source or a separate decision provider; native profiles have one refresh owner");
     const bindingId = this.bindingId(threadId, runtime);
-    if (source.mode === "native-profile") assertPrivateProfile(source.profileDirectory);
+    if (source.mode === "native-profile") assertProfile(source.profileDirectory, runtime);
     const directory = source.mode === "native-profile" ? await realpath(source.profileDirectory)
       : join(this.options.directory, source.id, hash(bindingId));
     const ownerId = crypto.randomUUID();
@@ -135,7 +136,9 @@ export class NativeAuthentication {
         // Clear competing credential, endpoint and profile overrides on the child only.
         for (const key of Object.keys(env)) if (/^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(key)) delete env[key];
         for (const configured of this.sources.values()) if (configured.mode === "gateway" && configured.credential.type === "environment") delete env[configured.credential.variable];
-        env[runtime === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] = directory;
+        // A default login location is selected by leaving the override unset.
+        Object.assign(env, source.mode === "native-profile" ? profileEnvironment(runtime, directory)
+          : { [runtime === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"]: directory });
         if (source.mode === "gateway") {
           if (source.credential.type === "environment") {
             const token = process.env[source.credential.variable];
@@ -162,12 +165,13 @@ export class NativeAuthentication {
               : arg.startsWith("--config=") ? arg.slice(9) : arg.startsWith("-c") ? arg.slice(2).replace(/^=/, "") : undefined;
             // Only launch controls are accepted here. A denylist of provider keys
             // can be bypassed by TOML quoting, dotted keys or new auth settings.
-            if (override !== undefined && !/^(sandbox_mode|approval_policy|model_reasoning_effort)\s*=/.test(override)) throw Error("Conflicting native authentication settings");
+            if (override !== undefined && !/^(sandbox_mode|approval_policy|model_reasoning_effort)\s*=/.test(override)
+              && !/^web_search\s*=\s*"disabled"$/.test(override)) throw Error("Conflicting native authentication settings");
             if ((arg === "-c" || arg === "--config") && override === undefined) throw Error("Missing native configuration override");
           }
         }
         mkdirSync(directory, { recursive: true, mode: 0o700 });
-        assertPrivateProfile(directory);
+        if (source.mode === "native-profile") assertProfile(directory, runtime); else assertPrivateProfile(directory);
         try { mkdirSync(lock, { mode: 0o700 }); } catch { throw Error("Native profile is in use or unavailable; release its owner before reuse"); }
         try {
           for (const [path, contents] of files) writeProfileConfiguration(directory, path, contents);

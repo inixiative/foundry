@@ -1,5 +1,5 @@
 import { expect, test, spyOn } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { inspectReadiness } from "../src/readiness";
@@ -8,6 +8,7 @@ import { resolveProjectView } from "../src/viewer/config-resolve";
 
 function team() {
   const config = defaultConfig();
+  config.apiTokens = true; // OpenAI experts
   config.layers.docs = { id: "docs", domain: "docs", segment: "domain-knowledge", prompt: "PRIVATE_CORPUS", writers: ["expert"], sourceIds: [], staleness: 0, enabled: true };
   config.agents.worker = { id: "worker", kind: "executor", prompt: "PRIVATE_WORKER", visibleLayers: [], peers: [], maxDepth: 1, enabled: true };
   config.agents.expert = { id: "expert", kind: "decider", flowRole: "domain-advising", domain: "docs", prompt: "PRIVATE_EXPERT", provider: "openai", model: "configured-model", tools: false, visibleLayers: ["docs"], ownedLayers: ["docs"], peers: [], maxDepth: 1, enabled: true };
@@ -16,7 +17,10 @@ function team() {
 }
 const local = { environment: { OPENAI_API_KEY: "PRIVATE_KEY" }, which: () => "/controlled/cli" };
 test("the team example loads through production configuration with four separately owned experts", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "foundry-team-example-"));
+  const directory = await mkdtemp(join(tmpdir(), "foundry-team-example-")), home = process.env.HOME;
+  // Hermetic default login locations; readiness checks ~/.claude and ~/.codex in subscription mode.
+  process.env.HOME = directory;
+  for (const profile of [".claude", ".codex"]) await mkdir(join(directory, profile), { mode: 0o700 });
   try {
     await writeFile(join(directory, "settings.json"), await readFile(join(import.meta.dir, "../../../examples/domain-team.settings.json")));
     const config = await new ConfigStore(directory).load();
@@ -33,8 +37,10 @@ test("the team example loads through production configuration with four separate
       for (const source of layer.sourceIds) expect(effective.sources[source]?.enabled).toBe(true);
     }
     expect(report.profiles.find(profile => profile.role === "execution")?.provider).toBe("claude-code");
-    expect(report.profiles.filter(profile => profile.role !== "execution").every(profile => profile.provider === "openai")).toBe(true);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    expect(report.profiles.filter(profile => profile.role !== "execution").every(profile => profile.provider === "subscription-decisions" && profile.model === "gpt-5.6-luna")).toBe(true);
+    process.env.HOME = join(directory, "absent");
+    expect((await inspectReadiness(config, local)).issues.map(item => item.code)).toEqual(["subscription-profile-unavailable", "subscription-profile-unavailable"]);
+  } finally { process.env.HOME = home; await rm(directory, { recursive: true, force: true }); }
 });
 test("readiness resolves effective experts without dispatch, loading corpus or exposing secrets", async () => {
   const config = team(), before = JSON.stringify(config);
@@ -66,7 +72,7 @@ test("Kastle inspection enforces the same private-file schema as launch and neve
   try {
     const file = join(directory, "installation.json"), secret = `kastle_runtime_${"a".repeat(43)}`;
     const config = team(), id = crypto.randomUUID();
-    config.kastles = [{ id, url: "http://127.0.0.1:1", credentialFile: file, selection: { model: "exact-model", effort: "low" } }]; config.defaults.kastleId = id;
+    config.kastles = [{ id, url: "http://127.0.0.1:1", credentialFile: file, selection: { model: "exact-model", effort: "low" } }]; config.defaults.kastleId = id; config.apiTokens = true;
     await writeFile(file, JSON.stringify({ secret }), { mode: 0o600 });
     const before = await readFile(file, "utf8"), inventory = await readdir(directory);
     const report = await inspectReadiness(config, local);
@@ -92,7 +98,7 @@ test("readiness refuses wrong-runtime sources and missing or non-executable help
   try {
     const config = team(), sourceId = crypto.randomUUID(), helper = join(directory, "helper");
     config.nativeAuthentication = [{ id: sourceId, connectionId: crypto.randomUUID(), runtime: "codex", mode: "gateway", baseUrl: "http://127.0.0.1:1", credential: { type: "command", command: helper } }];
-    config.defaults.nativeAuthenticationId = sourceId;
+    config.defaults.nativeAuthenticationId = sourceId; config.apiTokens = true;
     const missing = await inspectReadiness(config, local);
     expect(missing.issues.some(item => item.code === "native-runtime-mismatch")).toBe(true);
     expect(missing.issues.some(item => item.code === "gateway-helper-unavailable")).toBe(true);

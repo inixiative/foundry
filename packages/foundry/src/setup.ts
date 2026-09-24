@@ -12,7 +12,7 @@ import * as readline from "readline/promises";
 import { MODEL_REGISTRY } from "./models/registry";
 import { existsSync, mkdirSync } from "fs";
 import { basename } from "path";
-import { defaultConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
+import { defaultConfig, starterConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
 import { writeComposed, writeFileRef, RUNTIME_OUTPUT_FILES } from "./prompts/composer";
 import { scanRepoDocs, formatPlan } from "./setup/scan-docs";
 
@@ -669,11 +669,8 @@ async function pickProvider(currentId?: ProviderId): Promise<{ providerId: Provi
     console.log();
   }
 
-  const defaultIdx = currentId
-    ? PROVIDERS.findIndex(p => p.id === currentId)
-    : detected.length > 0
-      ? PROVIDERS.findIndex(p => p.id === detected[0].id)
-      : 0;
+  // Subscription (Claude Code) is the default; a detected key is not an opt-in to API tokens.
+  const defaultIdx = PROVIDERS.findIndex(p => p.id === (currentId ?? "claude-code"));
 
   const providerIdx = await choose(
     "Which LLM provider?",
@@ -698,8 +695,10 @@ async function pickProvider(currentId?: ProviderId): Promise<{ providerId: Provi
     if (!apiKey) {
       console.log("  No key — add it to .env.local later.");
     }
+  } else if (provider.id === "claude-code") {
+    console.log("\n  Subscription-only: Claude Code worker, Codex decisions (no API key needed).");
   } else {
-    console.log("\n  Using Claude Code CLI subscription (no API key needed).");
+    console.log("\n  A non-Claude worker opts in to API tokens: decisions need OPENAI_API_KEY.");
   }
 
   const model = await ask("Default model", provider.defaultModel);
@@ -882,9 +881,10 @@ async function configureDocsLayer(config: FoundryConfig) {
 // ---------------------------------------------------------------------------
 
 function buildStarterConfig(providerId: ProviderId | string, model: string): FoundryConfig {
-  const config = defaultConfig();
-  config.defaults.provider = providerId;
-  config.defaults.model = model;
+  // Claude Code is subscription-only with Codex decisions; any other worker opts in to API tokens.
+  const config = starterConfig(providerId, model);
+  const decision = config.apiTokens ? { provider: providerId, model }
+    : { provider: config.defaults.classifierProvider!, model: config.defaults.classifierModel! };
 
   config.layers = {
     system: {
@@ -915,8 +915,8 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       id: "classifier",
       kind: "classifier",
       prompt: "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
-      provider: providerId,
-      model,
+      provider: decision.provider,
+      model: decision.model,
       temperature: 0,
       visibleLayers: ["system"],
       peers: [],
@@ -927,8 +927,8 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       id: "router",
       kind: "router",
       prompt: "Route the classified message to the appropriate executor.\nAvailable executors: executor-fix (bugs), executor-build (features, refactors), executor-answer (questions, general).\nChoose context layers relevant to the task.\nRespond with JSON: {\"destination\": \"...\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
-      provider: providerId,
-      model,
+      provider: decision.provider,
+      model: decision.model,
       temperature: 0,
       visibleLayers: ["system"],
       peers: [],
