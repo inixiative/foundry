@@ -105,7 +105,9 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const failure = (error: DecisionError): NonNullable<NativeTextCall["failure"]> =>
     error.dispatch === "not-dispatched" ? (error.reason === "rate-limited" ? "rate-limited" : "not-admitted")
       : error.reason === "rate-limited" ? "rate-limited" : error.reason === "timeout" || error.reason === "aborted" ? "deadline"
-      : error.reason === "native-failed" ? "native-failed" : "provider-or-evidence";
+      : error.reason === "native-failed" ? "native-failed"
+      // The shared process was lost or recycled and its exit observed: nothing of this call still runs.
+      : error.reason === "transport" && error.settled ? "process-lost" : "provider-or-evidence";
 
   /** A scheduler run: one decision on the shared host. */
   const createRun = (run: NativeTextConfig) => {
@@ -133,7 +135,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         const call: NativeTextCall = { id, owner, inputHash: hash(JSON.stringify(messages)), startedAt: Date.now(), transport: "primed",
           release: "not-requested", processExit: "not-started", statusProcessExit: "not-started", deadline: false, valid: false };
         calls.push(call);
-        let spec: PrimeSpec, input: string, admission: NativeEvidence | undefined, result: DecisionResult | undefined;
+        let spec: PrimeSpec, input: string, admission: NativeEvidence | undefined, result: DecisionResult | undefined, failedHedge = false;
         try {
           ({ spec, input } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
@@ -159,6 +161,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           return { content: result.content, model: config.model, native: terminal, ...(result.tokens ? { tokens: result.tokens } : {}) };
         } catch (error) {
           if (error instanceof DecisionError) {
+            failedHedge = !!error.hedged;
             call.settled = error.settled;
             call.failure = failure(error);
             call.deadline = error.reason === "timeout";
@@ -173,7 +176,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           throw Object.assign(Error("Codex text call failed; inspect retained ownership and release evidence"), { evidencePath: receiptsPath, callId: id });
         } finally {
           call.finishedAt = Date.now();
-          receipt(call, result ? { prime: result.prime, timing: result.timing, ...(result.hedged ? { hedged: true } : {}) } : {});
+          receipt(call, result ? { prime: result.prime, timing: result.timing, ...(result.hedged ? { hedged: true } : {}), ...(result.transportFallback ? { transportFallback: true } : {}) }
+            : failedHedge ? { hedged: true } : {});
           if (oneShot && spec!) void host.evict(spec.key).catch(() => undefined);
         }
       },

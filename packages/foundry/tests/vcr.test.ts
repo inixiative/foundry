@@ -331,3 +331,11 @@ describe("scrubbing and freshness", () => {
     expect(checkFreshness(dir, { now, installed: { claude: "2.1.281" }, agentSession: "0.2.0" }).map(f => f.cassette).filter((c, i, all) => all.indexOf(c) === i).sort()).toEqual(["leak.json", "old.json", "under-blessed.json", "x.pending.json"]);
   });
 });
+
+it("a login method survives scrubbing; every other account field, and any other value under account, is redacted", () => {
+  const scrubbed = scrubValue({ account: { type: "chatgpt", email: "someone@example.com", planType: "pro" }, requiresOpenaiAuth: true });
+  expect(scrubbed).toEqual({ account: { type: "chatgpt", email: "redacted@example.invalid", planType: "REDACTED" }, requiresOpenaiAuth: true });
+  expect(scrubValue({ account: { type: "enterprise-team-x" } })).toEqual({ account: { type: "REDACTED" } });
+  expect(findLeaks(JSON.stringify(scrubbed))).toEqual([]);
+  expect(findLeaks(JSON.stringify({ account: { type: "enterprise-team-x" } }))).toContain("unredacted type");
+});

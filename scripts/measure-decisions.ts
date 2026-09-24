@@ -91,10 +91,14 @@ const pct = (values: number[], p: number) => { const s = [...values].sort((a, b)
 // Per-decision latency from the decision receipts (primed hosts write decisions.jsonl; exec runs write codex-text.json).
 const receipts = join(project, ".foundry", "decision-receipts");
 const decisions: number[] = [];
+let hedged = 0, fallbacks = 0, receiptsSeen = 0;
 for (const entry of existsSync(receipts) ? readdirSync(receipts) : []) {
   const jsonl = join(receipts, entry, "decisions.jsonl"), exec = join(receipts, entry, "codex-text.json");
   if (existsSync(jsonl)) for (const line of readFileSync(jsonl, "utf8").trim().split("\n").filter(Boolean)) {
-    const r = JSON.parse(line); if (r.valid && r.prime === "warm" && r.finishedAt) decisions.push(r.finishedAt - r.startedAt);
+    const r = JSON.parse(line); receiptsSeen++;
+    if (r.hedged) hedged++;
+    if (r.transportFallback) fallbacks++;
+    if (r.valid && r.prime === "warm" && r.finishedAt) decisions.push(r.finishedAt - r.startedAt);
   }
   if (existsSync(exec)) for (const call of JSON.parse(readFileSync(exec, "utf8")).calls ?? []) if (call.valid && call.finishedAt) decisions.push(call.finishedAt - call.startedAt);
 }
@@ -110,4 +114,5 @@ console.log(JSON.stringify({ foundry, experts: DOMAINS.length, runs: rows.length
   messageToWorkerStartMs: { p50: pct(rows, 0.5), p95: pct(rows, 0.95), max: Math.max(...rows), all: rows },
   ...(budgetCheck ? { budget: budgetCheck } : {}),
   decisionMs: decisions.length ? { count: decisions.length, p50: pct(decisions, 0.5), p95: pct(decisions, 0.95) } : undefined,
+  decisions: { total: receiptsSeen, hedged, websocketFallbacks: fallbacks },
   workerLaunch: /in use or unavailable/.test(foundryInstance.output) ? "refused: another Foundry holds the Claude worker lock" : "attempted" }));

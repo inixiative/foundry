@@ -10,7 +10,7 @@ import { defaultProfileSource } from "../src/providers/default-profiles";
 import { createPrimedDecisionHost } from "../src/providers/primed-decisions";
 import { buildSubscriptionDecisions, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
 import { appServerTransport, subscriptionTransport } from "./helpers/subscription-transport";
-import { settleRecordings } from "./helpers/vcr";
+import { DECIDED, LIVE, decisionMessages, recordedAppServerTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 import { ClaudeCodeSessionAdapter, InMemoryExternalSessionStore } from "../src/providers/session-adapter";
 
 const roots: string[] = [];
@@ -121,8 +121,8 @@ test("default profiles are selected by omission, so the child never overrides CL
   }
 });
 
-/** The production scheduler over a primed host whose app-server is a controlled double. */
-function primedDecisions(transport: ReturnType<typeof appServerTransport>, bounds: Partial<SubscriptionDecisionConfig> = {}) {
+/** The production scheduler over a primed host whose app-server is a controlled double or a recording. */
+function primedDecisions(transport: { spawn: ReturnType<typeof appServerTransport>["spawn"] }, bounds: Partial<SubscriptionDecisionConfig> = {}) {
   const root = userHome(), directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
   const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 20, maxQueued: 8, callTimeoutMs: 2000, ...bounds };
   const primed = createPrimedDecisionHost({ source: config.source, directory, model: config.model, maxConcurrent: config.maxConcurrent ?? 1,
@@ -132,31 +132,38 @@ function primedDecisions(transport: ReturnType<typeof appServerTransport>, bound
 }
 
 test("Codex decisions run on one warm, tool-free app-server with the prompt never on argv", async () => {
-  const transport = appServerTransport();
-  const { root, primed, decisions, close } = primedDecisions(transport);
+  const transport = recordedAppServerTransport(["launch"]);
+  const { root, primed, decisions, close } = primedDecisions(transport, { model: LIVE.codexModel, callTimeoutMs: 30_000 });
+  let result: Awaited<ReturnType<typeof decisions.provider.complete>>;
   try {
-    const result = await decisions.provider.complete([{ role: "system", content: "Return JSON" }, ...messages], { threadId: "T:aux:route" });
-    expect(result).toMatchObject({ content: "accepted-private-answer", model: "gpt-5.6-luna", tokens: { input: 2, cacheRead: 1, output: 2 }, native: { nativeOutcome: "completed" } });
+    result = await decisions.provider.complete(decisionMessages(), { threadId: "T:aux:agent:classifier" });
+    expect(result).toMatchObject({ model: LIVE.codexModel, native: { nativeOutcome: "completed" } });
+    expect(result.content).toMatch(DECIDED);
+    expect(result.tokens!.output).toBeGreaterThan(0);
     const [launch] = transport.launches;
     expect(launch!.argv.slice(0, 2)).toEqual(["codex", "app-server"]);
     expect(launch!.argv).toContain("shell_tool");
     expect(launch!.argv.filter((_, i) => launch!.argv[i - 1] === "-c")).toEqual(['approval_policy="never"', 'web_search="disabled"']);
     expect(launch!.argv.join(" ")).not.toContain("private-input");
     expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
-    const start = transport.requests.find(r => r.method === "thread/start")!.params;
-    expect(start).toMatchObject({ model: "gpt-5.6-luna", sandbox: "read-only", approvalPolicy: "never", ephemeral: true, developerInstructions: "Return JSON",
+    const requests = launch!.stdin.split("\n").filter(Boolean).map(line => JSON.parse(line) as { method?: string; params?: Record<string, any> });
+    const start = requests.find(r => r.method === "thread/start")!.params!;
+    expect(start).toMatchObject({ model: LIVE.codexModel, sandbox: "read-only", approvalPolicy: "never", ephemeral: true,
       config: { "mcp_servers.node_repl.enabled": false, notify: [] } });
+    expect(start.developerInstructions).toContain("Classify the user message");
     expect(start.baseInstructions).toContain("Foundry's internal decision middleware");
-    expect(transport.turns).toEqual(["private-input"]);
+    expect(requests.some(r => r.method === "account/read")).toBe(true);
     // The warm process holds a shared registration on the login while it lives.
     expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(true);
     const receipts = readFileSync(primed.receiptsPath, "utf8");
-    expect(receipts).not.toContain("private-input"); expect(receipts).not.toContain("accepted-private-answer");
-    expect(JSON.parse(receipts.trim().split("\n")[0]!)).toMatchObject({ transport: "primed", valid: true, settled: true, release: "released", prime: "cold" });
+    expect(receipts).not.toContain("private-input"); expect(receipts).not.toContain(result.content);
+    expect(JSON.parse(receipts.trim().split("\n")[0]!)).toMatchObject({ transport: "primed", valid: true, settled: true, release: "released" });
   } finally { await close(); }
   expect(transport.launches[0]!.exited).toBe(true);
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
-});
+  const outcome = { decided: DECIDED.test(result!.content), native: result!.native?.nativeOutcome };
+  expect(outcome).toEqual((await sameAsLive(transport.vcr, "launch", outcome)).live);
+}, LIVE_TIMEOUT);
 
 test("each middleware role keeps its own primed session and re-primes only when its stable context changes", async () => {
   const transport = appServerTransport();
@@ -212,6 +219,18 @@ test("an unacknowledged interrupt recycles the process before the decision repor
     await expect(decisions.provider.complete(messages)).rejects.toThrow("no fallback or retry");
     expect(t.launches[0]!.exited).toBe(true);
     expect(decisions.snapshot().closed).toBe(false);
+  } finally { await close(); }
+});
+
+test("a lost shared process fails its decisions as settled and leaves admission open for the next", async () => {
+  const t = appServerTransport({ crashOn: "crash-input" });
+  const { decisions, close } = primedDecisions(t);
+  try {
+    await expect(decisions.provider.complete([{ role: "user", content: "crash-input" }])).rejects.toThrow("no fallback or retry");
+    expect(decisions.snapshot().closed).toBe(false);
+    const next = await decisions.provider.complete([{ role: "user", content: "after the crash" }]);
+    expect(next.content).toBe("accepted-private-answer");
+    expect(t.launches).toHaveLength(2);
   } finally { await close(); }
 });
 

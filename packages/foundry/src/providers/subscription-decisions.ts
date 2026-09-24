@@ -187,7 +187,7 @@ export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, 
       } });
       // Refusal before any native write leaves nothing owned. A primed turn that settled (a native failure, or a
       // deadline whose interrupt was acknowledged) leaves nothing owned either. Anything else closes admission.
-      const settledFailures = call?.transport === "primed" ? ["not-admitted", "rate-limited", "deadline", "native-failed"] : ["not-admitted", "rate-limited"];
+      const settledFailures = call?.transport === "primed" ? ["not-admitted", "rate-limited", "deadline", "native-failed", "process-lost"] : ["not-admitted", "rate-limited"];
       if (!settled || (call?.failure && !settledFailures.includes(call.failure))) close();
       pending.reject(error);
     } finally {

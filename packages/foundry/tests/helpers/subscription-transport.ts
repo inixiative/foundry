@@ -35,7 +35,9 @@ export function subscriptionTransport(options: { model?: string; response?: (inp
  * concurrent decision turns. `response` sees the turn input (never the primer).
  */
 export function appServerTransport(options: { login?: "chatgpt" | "apiKey"; response?: string | ((input: string) => string); items?: unknown[];
-  hang?: boolean; ignoreInterrupt?: boolean; delayMs?: number; failure?: { message: string; codexErrorInfo?: string }; model?: string } = {}) {
+  hang?: boolean; ignoreInterrupt?: boolean; delayMs?: number; failure?: { message: string; codexErrorInfo?: string }; model?: string;
+  /** The process exits (crashes) when a decision turn with this input starts. */
+  crashOn?: string } = {}) {
   const launches: { argv: string[]; env: Record<string, string | undefined>; cwd: string; exited: boolean }[] = [];
   const requests: { method: string; params: any }[] = [], turns: string[] = [];
   let live = 0, peak = 0, threads = 0, turnCount = 0;
@@ -75,6 +77,7 @@ export function appServerTransport(options: { login?: "chatgpt" | "apiKey"; resp
             inflight.set(turnId, () => complete("interrupted"));
             if (!primer) { turns.push(input); live++; peak = Math.max(peak, live); }
             if (primer) { note("item/completed", { item: { id: `a-${turnId}`, type: "agentMessage", text: "OK", phase: "final_answer" } }); return complete("completed"); }
+            if (options.crashOn !== undefined && input === options.crashOn) { queueMicrotask(() => finish(1)); return; }
             if (options.hang) return;
             setTimeout(() => {
               if (!inflight.has(turnId)) return;

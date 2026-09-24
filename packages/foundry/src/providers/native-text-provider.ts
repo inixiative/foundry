@@ -39,8 +39,9 @@ export interface NativeTextCall {
   /** Numeric counters only; the raw provider usage object is not retained here. */
   usage?: Omit<TokenCounts, "providerUsage">;
   /** not-admitted: refused before any native write, so nothing remains owned.
-   * native-failed: the runtime settled the turn as failed (primed decisions). */
-  failure?: "provider-or-evidence" | "deadline" | "not-admitted" | "rate-limited" | "native-failed";
+   * native-failed: the runtime settled the turn as failed (primed decisions).
+   * process-lost: the shared decision process was lost or recycled and its exit observed (primed decisions). */
+  failure?: "provider-or-evidence" | "deadline" | "not-admitted" | "rate-limited" | "native-failed" | "process-lost";
   /** "primed": no per-call process; the warm host proves settlement (turn terminal or process exit). */
   transport?: "primed";
   /** Primed calls: the native turn reached a terminal or its process exit was observed. */

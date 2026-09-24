@@ -631,6 +631,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // message's first decision dispatch (classify/route, themselves concurrent), against the same
     // frozen input, and the executor dispatch picks up the sealed plan. Without a decision stage the
     // executor dispatch starts it. Composition stays deterministic (configured order, hashes).
+    // The input is frozen when the message arrives: thread state is as of the previous turn, so this
+    // message's own classification is not part of what the Cartographer and Wardens assess. Layer
+    // hydration (focus, warming) happens only in the executor dispatch that uses the plan.
     const prepare = async (message: string, identity: { messageId: string; threadId: string; projectId?: string } | undefined) => {
       // Snapshot pending reviews without waiting. A later turn uses the latest
       // committed revision; this turn's historical preparation stays immutable.
@@ -642,12 +645,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const cache = domainLibrarians.get(d.domain)!.cache;
         return cache.checkStaleness() === "warm" ? undefined : cache.warm();
       }));
-      let plan: InjectionPlan | undefined, prepared: HydrationResult | undefined, failure: Error | undefined;
-      try { plan = await flow.preMessage(message, identity); prepared = await flow.hydrateDelta(plan); }
+      let plan: InjectionPlan | undefined, failure: Error | undefined;
+      try { plan = await flow.preMessage(message, identity); }
       catch (error) { failure = error as Error; }
-      return { barrier, plan, prepared, failure };
+      return { barrier, plan, failure };
     };
     const early = new Map<string, { message: string; startedAt: number; preparation: ReturnType<typeof prepare> }>();
+    // A preparation whose message never reaches an executor (a failed or non-executor route) is dropped after ten minutes.
+    const pruneEarly = setInterval(() => { for (const [id, entry] of early) if (Date.now() - entry.startedAt > 600_000) early.delete(id); }, 60_000);
+    (pruneEarly as { unref?: () => void }).unref?.();
+    this._unsubs.push(() => { clearInterval(pruneEarly); early.clear(); });
     const identityOf = (ctx: { messageId?: string; threadId?: string; projectId?: string }) => ctx.messageId && ctx.threadId
       ? { messageId: ctx.messageId, threadId: ctx.threadId, projectId: ctx.projectId } : undefined;
     thread.middleware.use(FLOW_MIDDLEWARE_ID, async (ctx, next) => {
@@ -655,8 +662,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (typeof ctx.payload !== "string") return next();
       if ((agentCfg?.kind === "classifier" || agentCfg?.kind === "router") && ctx.messageId) {
         if (!early.has(ctx.messageId)) {
-          // A preparation whose message never reaches an executor is dropped after ten minutes.
-          for (const [id, entry] of early) if (Date.now() - entry.startedAt > 600_000) early.delete(id);
           const preparation = prepare(ctx.payload, identityOf(ctx));
           preparation.catch(() => undefined); // observed by the executor dispatch that consumes it
           early.set(ctx.messageId, { message: ctx.payload, startedAt: Date.now(), preparation });
@@ -673,12 +678,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       try {
       const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
       if (ctx.messageId) early.delete(ctx.messageId);
-      const { barrier, plan: preparedPlan, prepared, failure } = await (started && started.message === ctx.payload
+      const { barrier, plan: preparedPlan, failure } = await (started && started.message === ctx.payload
         ? started.preparation : prepare(ctx.payload, identityOf(ctx)));
 
+      let prepared: HydrationResult | undefined;
       try {
-        if (failure || !preparedPlan || !prepared) throw failure ?? Error("pre-message produced no plan");
+        if (failure || !preparedPlan) throw failure ?? Error("pre-message produced no plan");
         const plan = preparedPlan;
+        prepared = await flow.hydrateDelta(plan);
         ctx.annotations.injectionPlan = plan;
         ctx.annotations.decoration = prepared.decoration;
         // Durable at seal, before the central call: the routing request and every expert's advice request
