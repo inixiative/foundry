@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isAbsolute } from "node:path";
 import { kastleUrl } from "./kastle-client";
 import { installationCredentialSchema, readPrivateJson } from "./kastle-credential-file";
+import { makeUnrefInterval, type UnrefInterval } from "../ws/unref-interval";
 
 export const kingdomRuntimeSchema = z.object({
   url: z.string().transform(kastleUrl),
@@ -21,7 +22,6 @@ export const runtimeUpdateCloseReason = (expectedBackWithinMs: number) =>
 export const RUNTIME_PING_INTERVAL_MS = 10_000;
 export const RUNTIME_PONG_TIMEOUT_MS = 5_000;
 const AUTHENTICATION_TIMEOUT_MS = 5_000;
-const CHECK_REDIAL_SPACING_MS = 2_000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const CLAIM_RETRY_BASE_MS = 15_000;
@@ -70,12 +70,11 @@ export class KingdomRuntimeConnection {
   private started = false;
   private stopped = false;
   private failures = 0;
-  private lastFailureAt = 0;
   private claimFailures = 0;
   private lastStatus?: string;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private authenticationTimer?: ReturnType<typeof setTimeout>;
-  private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private heartbeat?: UnrefInterval;
   private pongTimer?: ReturnType<typeof setTimeout>;
   private claimRetryTimer?: ReturnType<typeof setTimeout>;
   private jobs?: RuntimeJobWorker;
@@ -83,11 +82,10 @@ export class KingdomRuntimeConnection {
     this.settings = kingdomRuntimeSchema.parse(settings);
   }
   get connected() { return this.available; }
-  /** Resolves while the socket is authenticated; otherwise joins or starts a reconnect (at most one redial per 2 s) and waits for it. */
+  /** Resolves while the socket is authenticated; otherwise joins or starts a reconnect now and waits for it. */
   check(): Promise<void> {
     if (this.available) return Promise.resolve();
-    if (this.attempt) return this.attempt.promise;
-    if (this.stopped || Date.now() - this.lastFailureAt < CHECK_REDIAL_SPACING_MS) return Promise.reject(unavailable());
+    if (this.stopped) return Promise.reject(unavailable());
     return this.connect();
   }
   /** Connects and keeps reconnecting with backoff until `stop()`; rejects when the first connection fails. */
@@ -208,19 +206,20 @@ export class KingdomRuntimeConnection {
     this.lastStatus = status;
   }
   private startHeartbeat(socket: WebSocket): void {
-    clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = unref(setInterval(() => {
+    this.heartbeat?.stop();
+    this.heartbeat = makeUnrefInterval({ intervalMs: this.options.pingIntervalMs ?? RUNTIME_PING_INTERVAL_MS, tick: () => {
       if (socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
       this.sendStatus(socket);
       socket.send(JSON.stringify({ action: "ping" }));
       clearTimeout(this.pongTimer);
       this.pongTimer = unref(setTimeout(() => this.abandon(socket), this.options.pongTimeoutMs ?? RUNTIME_PONG_TIMEOUT_MS));
-    }, this.options.pingIntervalMs ?? RUNTIME_PING_INTERVAL_MS));
+    } });
+    this.heartbeat.start();
   }
   private detach(socket: WebSocket): void {
     if (this.socket === socket) this.socket = undefined;
     socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
-    clearInterval(this.heartbeatTimer);
+    this.heartbeat?.stop();
     clearTimeout(this.pongTimer);
     clearTimeout(this.authenticationTimer);
     this.available = false;
@@ -235,7 +234,6 @@ export class KingdomRuntimeConnection {
     if (socket && socket !== this.socket) return;
     if (socket) this.detach(socket);
     this.available = false;
-    this.lastFailureAt = Date.now();
     if (isRejection(code)) this.failures = Math.max(this.failures, 5);
     this.attempt?.settle(unavailable());
     this.scheduleReconnect();
