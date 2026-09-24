@@ -1,7 +1,10 @@
 // Live pre-message latency on the machine's own logins, through a Foundry
 // instance on a spare VIEWER_PORT (never the daemon's 4400).
 //
-//   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--experts 6]
+//   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--experts 6] [--gap-ms 30000]
+//
+// --gap-ms spaces messages like real turns (the worker's own run separates them);
+// back-to-back messages measure a request burst the provider may throttle.
 //
 // Builds a throwaway project with N domain experts, sends a warm-up message and
 // then --runs messages to the main thread, and reads the timings Foundry already
@@ -18,7 +21,7 @@ import { join, resolve } from "node:path";
 
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1]! : fallback; };
 const foundry = resolve(arg("foundry", join(import.meta.dir, "..")));
-const port = Number(arg("port", "4471")), runs = Number(arg("runs", "10")), expertCount = Number(arg("experts", "6"));
+const port = Number(arg("port", "4471")), runs = Number(arg("runs", "10")), expertCount = Number(arg("experts", "6")), gapMs = Number(arg("gap-ms", "30000"));
 if (port === 4400) throw Error("4400 belongs to the daemon; choose a spare port");
 const DOMAINS = ["api", "db", "ui", "auth", "security", "testing", "performance", "docs"].slice(0, expertCount);
 const project = mkdtempSync(join(tmpdir(), "foundry-measure-"));
@@ -70,7 +73,10 @@ const send = async (id: string, message: string) => {
 const ids: string[] = [];
 try {
   await send(`warmup-${Date.now()}`, "Warm up: summarize what this project does.");
-  for (let n = 0; n < runs; n++) { const id = `measure-${n}-${Date.now()}`; ids.push(id); await send(id, messages[n % messages.length]!); }
+  for (let n = 0; n < runs; n++) {
+    await Bun.sleep(gapMs);
+    const id = `measure-${n}-${Date.now()}`; ids.push(id); await send(id, messages[n % messages.length]!);
+  }
 } finally { await foundryInstance.stop(); }
 
 // 3. Journaled timings.
@@ -100,7 +106,7 @@ const budgetCheck = budget?.DECISION_LATENCY_BUDGET && served.length
   ? { messageToWorkerP95Ms: budget.DECISION_LATENCY_BUDGET.messageToWorkerP95Ms, servedP95: pct(served, 0.95),
       met: pct(served, 0.95)! <= budget.DECISION_LATENCY_BUDGET.messageToWorkerP95Ms, safetyNetTurns: rows.length - served.length }
   : undefined;
-console.log(JSON.stringify({ foundry, experts: DOMAINS.length, runs: rows.length,
+console.log(JSON.stringify({ foundry, experts: DOMAINS.length, runs: rows.length, gapMs,
   messageToWorkerStartMs: { p50: pct(rows, 0.5), p95: pct(rows, 0.95), max: Math.max(...rows), all: rows },
   ...(budgetCheck ? { budget: budgetCheck } : {}),
   decisionMs: decisions.length ? { count: decisions.length, p50: pct(decisions, 0.5), p95: pct(decisions, 0.95) } : undefined,
