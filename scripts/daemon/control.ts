@@ -9,7 +9,9 @@
 import { $ } from "bun";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { buildPlist, DAEMON_LABEL } from "./plist";
+import { checkReadiness } from "./ready";
 
 const repoRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const home = homedir();
@@ -33,6 +35,16 @@ const isLoaded = async () => {
 };
 
 const install = async () => {
+  const gate = await checkReadiness(resolve(repoRoot, ".foundry"));
+  if (!gate.ready) {
+    console.error("Foundry is not configured, so the daemon would restart into a runtime that cannot start.\n");
+    for (const error of gate.errors) console.error(`  ✗ ${error}`);
+    console.error("\nRun `bun run setup` to configure a provider, then `bun run start` to check it works.");
+    console.error("Install the daemon once it starts cleanly.");
+    process.exit(1);
+  }
+  for (const warning of gate.warnings) console.log(`  ! ${warning}`);
+
   const bunPath = await resolveBun();
   await mkdir(logDir, { recursive: true });
   await mkdir(`${home}/Library/LaunchAgents`, { recursive: true });
