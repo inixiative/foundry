@@ -2,6 +2,7 @@ import {
   computeHash,
   BaseAgent,
   type AgentConfig,
+  type ContextStack,
   type ExecutionResult,
   type LayerFilter,
 } from "@inixiative/foundry-core";
@@ -99,6 +100,17 @@ export class Planner extends BaseAgent<unknown, Plan> {
     this._estimateTokens = config.estimateTokens ?? true;
     this._availableAgents = config.availableAgents ?? [];
     this._agentRegistry = config.agentRegistry ?? new Map();
+  }
+
+  withStack(stack: ContextStack): Planner {
+    return new Planner({
+      ...this.agentConfig(stack),
+      handler: this._handler,
+      maxSteps: this._maxSteps,
+      estimateTokens: this._estimateTokens,
+      availableAgents: [...this._availableAgents],
+      agentRegistry: new Map(this._agentRegistry),
+    });
   }
 
   async run(

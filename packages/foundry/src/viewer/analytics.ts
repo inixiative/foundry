@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { mkdirSync, existsSync } from "fs";
+import { appendFile, readFile } from "node:fs/promises";
 import type {
   TokenTracker,
   UsageEntry,
@@ -38,6 +39,8 @@ export interface AnalyticsSnapshot {
   readonly topAgents: RankedItem[];
   /** Hourly/daily/weekly/monthly aggregates */
   readonly rollups: RollupSet;
+  /** Historical known subtotals; missing observations are never zero usage. */
+  readonly observations: { calls: number; knownInput: number; knownOutput: number; knownTokens: number; knownCost: number; unavailableUsageCalls: number; unavailableCostCalls: number; persistence: "pending" | "settled" | "failed" };
 }
 
 export interface TimeSeriesPoint {
@@ -67,9 +70,9 @@ export interface CallRecord {
   readonly agentId?: string;
   readonly threadId?: string;
   readonly spanId?: string;
-  readonly input: number;
-  readonly output: number;
-  readonly cost: number;
+  readonly input: number | null;
+  readonly output: number | null;
+  readonly cost: number | null;
   readonly durationMs?: number;
   readonly cached?: boolean;
 }
@@ -107,6 +110,11 @@ export class AnalyticsStore {
   private readonly _dir: string;
   private readonly _calls: PersistedCall[] = [];
   private _loaded = false;
+  private _loading?: Promise<void>;
+  private _writes: Promise<void> = Promise.resolve();
+  private _writeFailure: unknown;
+  private _pending = 0;
+  private _detach?: () => void;
 
   constructor(dir: string) {
     this._dir = dir;
@@ -131,26 +139,44 @@ export class AnalyticsStore {
       spanId: entry.spanId,
       input: entry.tokens.input,
       output: entry.tokens.output,
-      cost: entry.cost,
+      cost: entry.costKnown === false ? null : entry.cost,
       durationMs: extra?.durationMs,
       cached: entry.cached,
     };
-    this._calls.push(call);
-    // Async persist — fire and forget
-    this._persistCall(call);
+    return this._record(call);
+  }
+
+  recordUnavailable(entry: Pick<CallRecord, "provider" | "model" | "agentId" | "threadId" | "spanId">): PersistedCall {
+    return this._record({ ...entry, id: newId("call"), timestamp: Date.now(), input: null, output: null, cost: null });
+  }
+
+  private _record(call: PersistedCall): PersistedCall {
+    this._calls.push(call); this._pending++;
+    this._writes = this._writes.then(async () => {
+      if (this._writeFailure) return;
+      await appendFile(`${this._dir}/calls.jsonl`, JSON.stringify(call) + "\n", { mode: 0o600 });
+    }).catch(error => { this._writeFailure = error; })
+      .finally(() => { this._pending--; });
     return call;
   }
+
+  /** Acknowledges every original append, or exposes its original failure. */
+  async flush(): Promise<void> { await this._writes; if (this._writeFailure) throw this._writeFailure; }
+  disconnectTracker(): void { this._detach?.(); this._detach = undefined; }
 
   /** Wire up a TokenTracker so all records auto-persist here. */
   connectTracker(tracker: TokenTracker): void {
     // We monkey-patch by wrapping record. The tracker doesn't have an event
     // system yet, so we intercept at the API level.
-    const originalRecord = tracker.record.bind(tracker);
-    tracker.record = (entry) => {
-      const result = originalRecord(entry);
+    this.disconnectTracker();
+    const originalRecord = tracker.record;
+    const record: TokenTracker["record"] = (entry) => {
+      const result = originalRecord.call(tracker, entry);
       this.recordCall(result);
       return result;
     };
+    tracker.record = record;
+    this._detach = () => { if (tracker.record === record) tracker.record = originalRecord; };
   }
 
   // -----------------------------------------------------------------------
@@ -164,6 +190,16 @@ export class AnalyticsStore {
 
     return {
       session,
+      observations: {
+        calls: calls.length,
+        knownInput: calls.reduce((n, c) => n + (c.input ?? 0), 0),
+        knownOutput: calls.reduce((n, c) => n + (c.output ?? 0), 0),
+        knownTokens: calls.reduce((n, c) => n + (c.input ?? 0) + (c.output ?? 0), 0),
+        knownCost: calls.reduce((n, c) => n + (c.cost ?? 0), 0),
+        unavailableUsageCalls: calls.filter(c => c.input === null || c.output === null).length,
+        unavailableCostCalls: calls.filter(c => c.cost === null).length,
+        persistence: this._writeFailure ? "failed" : this._pending ? "pending" : "settled",
+      },
       timeSeries: this._buildTimeSeries(calls, "hourly"),
       threads: this._buildThreadSummaries(calls),
       recentCalls: calls.slice(-100).reverse(),
@@ -206,35 +242,16 @@ export class AnalyticsStore {
   /** Load historical calls from disk. */
   async load(): Promise<void> {
     if (this._loaded) return;
-    this._loaded = true;
-
-    const indexPath = `${this._dir}/calls.jsonl`;
-    if (!existsSync(indexPath)) return;
-
-    try {
-      const content = await Bun.file(indexPath).text();
-      const lines = content.trim().split("\n").filter(Boolean);
-      for (const line of lines) {
-        try {
-          const call = JSON.parse(line) as PersistedCall;
-          this._calls.push(call);
-        } catch (err) {
-          console.warn("[Analytics] skipping malformed JSONL line:", (err as Error).message);
-        }
-      }
-    } catch (err) {
-      console.warn("[Analytics] failed to load persisted data, starting fresh:", (err as Error).message);
-    }
-  }
-
-  private async _persistCall(call: PersistedCall): Promise<void> {
-    try {
-      const path = `${this._dir}/calls.jsonl`;
-      const line = JSON.stringify(call) + "\n";
-      await Bun.write(path, (existsSync(path) ? await Bun.file(path).text() : "") + line);
-    } catch (err) {
-      console.warn("[Analytics] persistence failure (data lives in memory):", (err as Error).message);
-    }
+    if (!this._loading) this._loading = (async () => {
+      let content: string;
+      try { content = await readFile(`${this._dir}/calls.jsonl`, "utf8"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") { this._loaded = true; return; } throw error; }
+      const loaded = content.trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as PersistedCall);
+      const existing = new Set(this._calls.map(c => c.id));
+      this._calls.unshift(...loaded.filter(c => !existing.has(c.id)));
+      this._loaded = true;
+    })();
+    return this._loading;
   }
 
   // -----------------------------------------------------------------------
@@ -248,15 +265,15 @@ export class AnalyticsStore {
       const key = this._bucketKey(call.timestamp, period);
       const existing = buckets.get(key);
       if (existing) {
-        existing.input += call.input;
-        existing.output += call.output;
-        existing.cost += call.cost;
+        existing.input += call.input ?? 0;
+        existing.output += call.output ?? 0;
+        existing.cost += call.cost ?? 0;
         existing.calls += 1;
       } else {
         buckets.set(key, {
-          input: call.input,
-          output: call.output,
-          cost: call.cost,
+          input: call.input ?? 0,
+          output: call.output ?? 0,
+          cost: call.cost ?? 0,
           calls: 1,
         });
       }
@@ -297,16 +314,16 @@ export class AnalyticsStore {
       const tid = call.threadId ?? "(no thread)";
       const existing = map.get(tid);
       if (existing) {
-        existing.input += call.input;
-        existing.output += call.output;
-        existing.cost += call.cost;
+        existing.input += call.input ?? 0;
+        existing.output += call.output ?? 0;
+        existing.cost += call.cost ?? 0;
         existing.calls += 1;
         existing.lastActive = Math.max(existing.lastActive, call.timestamp);
       } else {
         map.set(tid, {
-          input: call.input,
-          output: call.output,
-          cost: call.cost,
+          input: call.input ?? 0,
+          output: call.output ?? 0,
+          cost: call.cost ?? 0,
           calls: 1,
           lastActive: call.timestamp,
         });
@@ -334,16 +351,16 @@ export class AnalyticsStore {
     for (const call of calls) {
       const key = call[field];
       if (!key) continue;
-      totalCost += call.cost;
+      totalCost += call.cost ?? 0;
       const existing = map.get(key);
       if (existing) {
-        existing.cost += call.cost;
-        existing.tokens += call.input + call.output;
+        existing.cost += call.cost ?? 0;
+        existing.tokens += (call.input ?? 0) + (call.output ?? 0);
         existing.calls += 1;
       } else {
         map.set(key, {
-          cost: call.cost,
-          tokens: call.input + call.output,
+          cost: call.cost ?? 0,
+          tokens: (call.input ?? 0) + (call.output ?? 0),
           calls: 1,
         });
       }

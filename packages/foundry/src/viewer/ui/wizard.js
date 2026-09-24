@@ -17,20 +17,29 @@ export function checkSetupNeeded(config) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Provider definitions (mirrors config.ts)
-// ---------------------------------------------------------------------------
-
-const PROVIDERS = [
+const FALLBACK_PROVIDERS = [
   {
     id: "claude-code",
     label: "Claude Code (recommended)",
     desc: "CLI subscription — no API key needed, works out of the box",
     envKey: "",
     models: [
-      { id: "sonnet", label: "Sonnet 4.6", tier: "standard" },
-      { id: "opus", label: "Opus 4.6", tier: "powerful" },
+      { id: "fable", label: "Fable 5.1", tier: "powerful" },
+      { id: "opus", label: "Opus 5", tier: "powerful" },
+      { id: "sonnet", label: "Sonnet 5", tier: "standard" },
       { id: "haiku", label: "Haiku 4.5", tier: "fast" },
+    ],
+  },
+  {
+    id: "codex",
+    label: "Codex CLI (recommended)",
+    desc: "Native Codex harness — use Astra through your authenticated Codex session",
+    envKey: "",
+    models: [
+      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful" },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful" },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard" },
+      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast" },
     ],
   },
   {
@@ -51,10 +60,10 @@ const PROVIDERS = [
     desc: "Direct API — for programmatic access without Claude Code CLI",
     envKey: "ANTHROPIC_API_KEY",
     models: [
-      { id: "claude-opus-4-7", label: "Opus 4.7", tier: "powerful" },
-      { id: "claude-opus-4-6", label: "Opus 4.6", tier: "powerful" },
-      { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tier: "standard" },
-      { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tier: "fast" },
+      { id: "claude-fable-5-1", label: "Claude Fable 5.1", tier: "powerful" },
+      { id: "claude-opus-5", label: "Claude Opus 5", tier: "powerful" },
+      { id: "claude-sonnet-5", label: "Claude Sonnet 5", tier: "standard" },
+      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", tier: "fast" },
     ],
   },
   {
@@ -63,10 +72,10 @@ const PROVIDERS = [
     desc: "GPT models — alternative provider",
     envKey: "OPENAI_API_KEY",
     models: [
-      { id: "gpt-5.4", label: "GPT-5.4", tier: "powerful" },
-      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", tier: "standard" },
-      { id: "gpt-5.3-codex", label: "GPT-5.3 Codex", tier: "powerful" },
-      { id: "o4-mini", label: "o4-mini", tier: "fast" },
+      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful" },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful" },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard" },
+      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast" },
     ],
   },
 ];
@@ -95,7 +104,7 @@ function WelcomeStep({ onNext }) {
   `;
 }
 
-function ProvidersStep({ enabled, onToggle, onNext, onBack }) {
+function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
   return html`
     <div class="wizard-step">
       <h2 class="wizard-heading">Enable Providers</h2>
@@ -105,7 +114,7 @@ function ProvidersStep({ enabled, onToggle, onNext, onBack }) {
       </p>
 
       <div class="wizard-options">
-        ${PROVIDERS.map(p => html`
+        ${providers.map(p => html`
           <button
             key=${p.id}
             class="wizard-option ${enabled.includes(p.id) ? "selected" : ""}"
@@ -129,8 +138,8 @@ function ProvidersStep({ enabled, onToggle, onNext, onBack }) {
   `;
 }
 
-function DefaultProviderStep({ enabled, selected, onSelect, onNext, onBack }) {
-  const enabledProviders = PROVIDERS.filter(p => enabled.includes(p.id));
+function DefaultProviderStep({ providers, enabled, selected, onSelect, onNext, onBack }) {
+  const enabledProviders = providers.filter(p => enabled.includes(p.id));
 
   // Skip this step if only one provider enabled
   if (enabledProviders.length === 1 && !selected) {
@@ -165,8 +174,8 @@ function DefaultProviderStep({ enabled, selected, onSelect, onNext, onBack }) {
   `;
 }
 
-function ExecutorModelStep({ provider, selected, onSelect, onNext, onBack }) {
-  const prov = PROVIDERS.find(p => p.id === provider);
+function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, onBack }) {
+  const prov = providers.find(p => p.id === provider);
   if (!prov) return null;
 
   const tierColors = { fast: "#4ade80", standard: "#6c9eff", powerful: "#c084fc" };
@@ -207,12 +216,12 @@ function ExecutorModelStep({ provider, selected, onSelect, onNext, onBack }) {
   `;
 }
 
-function ClassifierModelStep({ enabledProviders, provider, selected, onSelect, onSelectProvider, onNext, onBack }) {
-  const prov = PROVIDERS.find(p => p.id === provider);
+function ClassifierModelStep({ providers, enabledProviders, provider, selected, onSelect, onSelectProvider, onNext, onBack }) {
+  const prov = providers.find(p => p.id === provider);
   if (!prov) return null;
 
   const tierColors = { fast: "#4ade80", standard: "#6c9eff", powerful: "#c084fc" };
-  const availableProviders = PROVIDERS.filter(p => enabledProviders.includes(p.id));
+  const availableProviders = providers.filter(p => enabledProviders.includes(p.id));
 
   return html`
     <div class="wizard-step">
@@ -260,13 +269,13 @@ function ClassifierModelStep({ enabledProviders, provider, selected, onSelect, o
   `;
 }
 
-function DoneStep({ enabledProviders, provider, executorModel, classifierProvider, classifierModel, saving }) {
-  const execProv = PROVIDERS.find(p => p.id === provider);
+function DoneStep({ providers, enabledProviders, provider, executorModel, classifierProvider, classifierModel, saving }) {
+  const execProv = providers.find(p => p.id === provider);
   const execMod = execProv?.models.find(m => m.id === executorModel);
-  const classProv = PROVIDERS.find(p => p.id === classifierProvider);
+  const classProv = providers.find(p => p.id === classifierProvider);
   const classMod = classProv?.models.find(m => m.id === classifierModel);
   const enabledNames = enabledProviders
-    .map(id => PROVIDERS.find(p => p.id === id)?.label)
+    .map(id => providers.find(p => p.id === id)?.label)
     .filter(Boolean);
 
   return html`
@@ -305,12 +314,26 @@ export function Wizard() {
   const isOpen = wizardOpen.value;
   // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=classifier model, 5=done
   const [step, setStep] = useState(0);
-  const [enabledProviders, setEnabledProviders] = useState(["claude-code", "gemini"]);
+  const [providers, setProviders] = useState(FALLBACK_PROVIDERS);
+  const [enabledProviders, setEnabledProviders] = useState(["claude-code", "codex"]);
   const [defaultProvider, setDefaultProvider] = useState("claude-code");
-  const [executorModel, setExecutorModel] = useState("sonnet");
+  const [executorModel, setExecutorModel] = useState("fable");
   const [classifierProvider, setClassifierProvider] = useState("");
   const [classifierModel, setClassifierModel] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/models")
+      .then((res) => res.ok ? res.json() : null)
+      .then((body) => {
+        if (!cancelled && Array.isArray(body?.providers) && body.providers.length > 0) {
+          setProviders(body.providers);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -322,7 +345,7 @@ export function Wizard() {
 
   const handleSelectDefault = (id) => {
     setDefaultProvider(id);
-    const prov = PROVIDERS.find(p => p.id === id);
+    const prov = providers.find(p => p.id === id);
     if (prov) setExecutorModel(prov.models[0].id);
   };
 
@@ -340,7 +363,7 @@ export function Wizard() {
     // Default classifier to the fastest model on the same provider
     if (!classifierProvider) {
       setClassifierProvider(defaultProvider);
-      const prov = PROVIDERS.find(p => p.id === defaultProvider);
+      const prov = providers.find(p => p.id === defaultProvider);
       const fast = prov?.models.find(m => m.tier === "fast");
       setClassifierModel(fast?.id || prov?.models[0]?.id || "");
     }
@@ -349,7 +372,7 @@ export function Wizard() {
 
   const handleClassifierProviderChange = (id) => {
     setClassifierProvider(id);
-    const prov = PROVIDERS.find(p => p.id === id);
+    const prov = providers.find(p => p.id === id);
     const fast = prov?.models.find(m => m.tier === "fast");
     setClassifierModel(fast?.id || prov?.models[0]?.id || "");
   };
@@ -416,6 +439,7 @@ export function Wizard() {
         ${step === 0 ? html`<${WelcomeStep} onNext=${() => setStep(1)} />` : null}
         ${step === 1 ? html`
           <${ProvidersStep}
+            providers=${providers}
             enabled=${enabledProviders}
             onToggle=${toggleProvider}
             onNext=${handleProvidersNext}
@@ -424,6 +448,7 @@ export function Wizard() {
         ` : null}
         ${step === 2 ? html`
           <${DefaultProviderStep}
+            providers=${providers}
             enabled=${enabledProviders}
             selected=${defaultProvider}
             onSelect=${handleSelectDefault}
@@ -433,6 +458,7 @@ export function Wizard() {
         ` : null}
         ${step === 3 ? html`
           <${ExecutorModelStep}
+            providers=${providers}
             provider=${defaultProvider}
             selected=${executorModel}
             onSelect=${setExecutorModel}
@@ -442,6 +468,7 @@ export function Wizard() {
         ` : null}
         ${step === 4 ? html`
           <${ClassifierModelStep}
+            providers=${providers}
             enabledProviders=${enabledProviders}
             provider=${classifierProvider}
             selected=${classifierModel}
@@ -453,6 +480,7 @@ export function Wizard() {
         ` : null}
         ${step === 5 ? html`
           <${DoneStep}
+            providers=${providers}
             enabledProviders=${enabledProviders}
             provider=${defaultProvider}
             executorModel=${executorModel}

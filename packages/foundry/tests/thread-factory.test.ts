@@ -8,7 +8,8 @@ import {
   parseJSON,
   type SourceResolver,
 } from "../src/agents/thread-factory";
-import { ContextStack } from "@inixiative/foundry-core";
+import { auxiliarySessionId } from "../src/agents/thread-runtime";
+import { ContextLayer, ContextStack } from "@inixiative/foundry-core";
 import type { LLMProvider, CompletionResult, LLMMessage, CompletionOpts } from "@inixiative/foundry-core";
 import { TokenTracker } from "@inixiative/foundry-core";
 import type { FoundryConfig } from "../src/viewer/config";
@@ -326,7 +327,7 @@ describe("ThreadFactory", () => {
     expect(thread.getAgent("executor-answer")).toBeDefined();
   });
 
-  test("threads share the same stack (project-scoped)", () => {
+  test("threads get independent stacks and agent instances from the project template", () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
@@ -335,10 +336,105 @@ describe("ThreadFactory", () => {
     const t1 = factory.create("t1");
     const t2 = factory.create("t2");
 
-    expect(t1.id).toBe("t1");
-    expect(t2.id).toBe("t2");
-    // Both threads share the same underlying stack
-    expect(t1.stack).toBe(t2.stack);
+    expect(t1.stack).not.toBe(t2.stack);
+    expect(t1.stack).not.toBe(stack);
+    expect(t1.stack.getLayer("system")).not.toBe(stack.getLayer("system"));
+    expect(t1.stack.layers.map((l) => l.id)).toEqual(stack.layers.map((l) => l.id));
+
+    expect(t1.getAgent("executor-answer")).toBeDefined();
+    expect(t1.getAgent("executor-answer")).not.toBe(t2.getAgent("executor-answer"));
+    expect(t1.getAgent("executor-answer")).not.toBe(agents.get("executor-answer"));
+  });
+
+  test("seeds new threads from the warm template without sharing layer instances", async () => {
+    const config = minimalConfig();
+    const resolver: SourceResolver = () => ({ id: "seed", load: async () => "TEMPLATE-CONTENT" });
+    const stack = new ContextStack(buildLayers(
+      minimalConfig({ layers: { system: { ...config.layers.system, sourceIds: ["seed"] } } }),
+      { sourceResolver: resolver },
+    ));
+    await stack.warmAll();
+    const agents = buildAgents(config, stack, { provider: mockProvider() });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const t1 = factory.create("t1");
+    const layer = t1.stack.getLayer("system")!;
+    expect(layer.isWarm).toBe(true);
+    expect(layer.content).toBe("TEMPLATE-CONTENT");
+    expect(layer.prompt).toBe("System layer");
+
+    layer.set("THREAD-LOCAL-EDIT");
+    expect(stack.getLayer("system")!.content).toBe("TEMPLATE-CONTENT");
+    expect(factory.create("t2").stack.getLayer("system")!.content).toBe("TEMPLATE-CONTENT");
+  });
+
+  test("concurrent dispatch on two threads sees only its own sentinel context", async () => {
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    await stack.warmAll();
+
+    // Barrier provider: holds every call until both threads are in flight,
+    // so the two dispatches genuinely overlap rather than run serially.
+    const calls: LLMMessage[][] = [];
+    let release!: () => void;
+    const bothArrived = new Promise<void>((r) => { release = r; });
+    const provider: LLMProvider = {
+      id: "barrier",
+      async complete(messages: LLMMessage[]): Promise<CompletionResult> {
+        calls.push(messages);
+        if (calls.length === 2) release();
+        await bothArrived;
+        const system = messages[0].content;
+        const seen = system.includes("SENTINEL-A") ? "A" : system.includes("SENTINEL-B") ? "B" : "none";
+        return { content: `saw:${seen}`, model: "mock-model", tokens: { input: 1, output: 1 } };
+      },
+    };
+
+    const agents = buildAgents(config, stack, { provider });
+    const factory = new ThreadFactory({ stack, agents });
+    const a = factory.create("a");
+    const b = factory.create("b");
+    a.stack.getLayer("system")!.set("SENTINEL-A");
+    b.stack.getLayer("system")!.set("SENTINEL-B");
+
+    const [ra, rb] = await Promise.all([
+      a.dispatch("executor-answer", "from a"),
+      b.dispatch("executor-answer", "from b"),
+    ]);
+
+    expect(ra.output).toBe("saw:A");
+    expect(rb.output).toBe("saw:B");
+    expect(calls).toHaveLength(2);
+    const byPayload = (p: string) => calls.find((m) => m[1].content === p)![0].content;
+    expect(byPayload("from a")).toContain("SENTINEL-A");
+    expect(byPayload("from a")).not.toContain("SENTINEL-B");
+    expect(byPayload("from b")).toContain("SENTINEL-B");
+    expect(byPayload("from b")).not.toContain("SENTINEL-A");
+    expect(stack.getLayer("system")!.content).not.toContain("SENTINEL");
+  });
+
+  test("a private layer added to one thread never reaches another thread's dispatch", async () => {
+    const provider = mockProvider("ok");
+    const config = minimalConfig();
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    await stack.warmAll();
+    const agents = buildAgents(config, stack, { provider });
+    const factory = new ThreadFactory({ stack, agents });
+
+    const a = factory.create("a");
+    const b = factory.create("b");
+    const privateState = new ContextLayer({ id: "thread-state", prompt: "Thread state" });
+    privateState.set("PRIVATE-TO-A");
+    a.stack.addLayer(privateState, 0);
+
+    await b.dispatch("executor-answer", "hello from b");
+
+    expect(b.stack.getLayer("thread-state")).toBeUndefined();
+    expect(factory.create("c").stack.getLayer("thread-state")).toBeUndefined();
+    expect(provider.calls[0][0].content).not.toContain("PRIVATE-TO-A");
+
+    await a.dispatch("executor-answer", "hello from a");
+    expect(provider.calls[1][0].content).toContain("PRIVATE-TO-A");
   });
 
   test("passes thread config (description, tags)", () => {
@@ -367,6 +463,40 @@ describe("ThreadFactory", () => {
     expect(summary.totalInput).toBe(100);
     expect(summary.totalOutput).toBe(50);
     expect(summary.byAgent.find((b) => b.key === "executor-answer")).toBeDefined();
+  });
+
+  test("classifier and router use per-thread auxiliary session identity and the thread cwd", async () => {
+    const optsLog: CompletionOpts[] = [];
+    const provider: LLMProvider = {
+      id: "mock",
+      async complete(_messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
+        optsLog.push(opts ?? {});
+        return { content: '{"category":"bug","destination":"artificer"}', model: "mock-model" };
+      },
+    };
+    const config = minimalConfig({
+      agents: {
+        classifier: { id: "classifier", kind: "classifier", prompt: "Classify", provider: "mock", model: "mock-model", temperature: 0, maxTokens: 256, visibleLayers: [], peers: [], maxDepth: 1, enabled: true },
+        router: { id: "router", kind: "router", prompt: "Route", provider: "mock", model: "mock-model", temperature: 0, maxTokens: 256, visibleLayers: [], peers: [], maxDepth: 1, enabled: true },
+        artificer: { ...minimalConfig().agents["executor-answer"], id: "artificer" },
+      },
+    });
+    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+    const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider }) });
+    const a = factory.create("a", { cwd: "/work/a" });
+    const b = factory.create("b", { cwd: "/work/b" });
+
+    await a.dispatch("classifier", "fix the bug");
+    await a.dispatch("router", { payload: "fix the bug", classification: { category: "bug" } });
+    await b.dispatch("classifier", "fix the bug");
+
+    expect(optsLog.map((o) => o.threadId)).toEqual([
+      auxiliarySessionId("a", "agent:classifier"),
+      auxiliarySessionId("a", "agent:router"),
+      auxiliarySessionId("b", "agent:classifier"),
+    ]);
+    expect(optsLog.map((o) => o.cwd)).toEqual(["/work/a", "/work/a", "/work/b"]);
+    expect(optsLog.every((o) => o.threadId !== "a" && o.threadId !== "b")).toBe(true);
   });
 
   test("executor agent calls provider with correct messages", async () => {
@@ -430,6 +560,12 @@ describe("keywordClassify", () => {
 
 describe("keywordRoute", () => {
   const config = minimalConfig();
+  config.agents = { artificer: { ...config.agents["executor-answer"], id: "artificer" } };
+
+  test("uses the configured executor instead of inventing artificer", () => {
+    expect(keywordRoute({ category: "bug" }, minimalConfig()).value.destination).toBe("executor-answer");
+    expect(() => keywordRoute({ category: "bug" }, minimalConfig({ agents: {} }))).toThrow("no enabled executor");
+  });
 
   test("routes bugs to artificer", () => {
     const route = keywordRoute({ category: "bug" }, config);

@@ -181,11 +181,30 @@ export {
   keywordRoute,
   parseJSON,
   resolveAgentOpts,
+  createSourceResolver,
   type SourceResolver,
+  type SourceResolverDeps,
   type BuildLayersDeps,
   type BuildAgentsDeps,
   type ThreadFactoryDeps,
 } from "./thread-factory";
+
+// Thread Runtime — per-thread Librarian, Cartographer, Wardens, orchestrator, bridges
+export {
+  ThreadRuntimeManager,
+  DEFAULT_THREAD_DOMAINS,
+  auxiliarySessionId,
+  scopedProvider,
+  type ThreadRuntime,
+  type ThreadRuntimeDeps,
+  type ThreadDomainConfig,
+  type SignalSink,
+  type ScopedProviderIdentity,
+  type ThreadKnowledgeBundle,
+  type LearningConfig,
+  type CorrelatedToolObservation,
+  type ToolEvidenceState,
+} from "./thread-runtime";
 
 // Tool-use loop
 export { toolUseLoop, type ToolLoopOpts } from "./tool-loop";
@@ -230,13 +249,22 @@ export {
 // Domain Librarian — shared advise + guard pattern
 export {
   DomainLibrarian,
+  ThreadKnowledge,
   type DomainLibrarianConfig,
   type ProcessingStrategy,
   type RuleCompiler,
   type AdviseResult,
+  type AdviseOpts,
   type GuardFinding,
   type GuardResult,
   type ToolObservation,
+  type KnowledgeEvidence,
+  type KnowledgeOwner,
+  type LearningDecision,
+  type LearningRecord,
+  type ThreadKnowledgeSnapshot,
+  type ReviewInput,
+  type ReviewResult,
 } from "./domain-librarian";
 
 // Cartographer — context routing (reads map, routes slices)
@@ -253,7 +281,18 @@ export {
   FlowOrchestrator,
   type FlowOrchestratorConfig,
   type InjectionPlan,
+  type PlanInput,
+  type DomainContribution,
+  type ContributionDecision,
+  type ContributionSegments,
+  type ContributionProvenance,
+  type RoutingStatus,
+  type RoutingOutcome,
+  type OutstandingCall,
+  type LayerRevision,
+  type FlowTimingConfig,
   type HydrationResult,
+  type DeliveryEvidence,
   type GuardReport,
   type InvalidationEvent,
 } from "./flow-orchestrator";

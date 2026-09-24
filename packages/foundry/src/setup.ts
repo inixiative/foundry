@@ -9,6 +9,7 @@
  */
 
 import * as readline from "readline/promises";
+import { MODEL_REGISTRY } from "./models/registry";
 import { existsSync, mkdirSync } from "fs";
 import { basename } from "path";
 import { defaultConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
@@ -56,12 +57,9 @@ async function confirm(question: string, fallback = true): Promise<boolean> {
 // Provider definitions
 // ---------------------------------------------------------------------------
 
-const PROVIDERS = [
-  { id: "claude-code", label: "Claude Code (CLI subscription — no API key)", envKey: "", defaultModel: "claude-sonnet-4-20250514" },
-  { id: "anthropic", label: "Anthropic (API key)", envKey: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-4-20250514" },
-  { id: "openai", label: "OpenAI (GPT-4o)", envKey: "OPENAI_API_KEY", defaultModel: "gpt-4o" },
-  { id: "gemini", label: "Google (Gemini)", envKey: "GEMINI_API_KEY", defaultModel: "gemini-2.5-flash" },
-] as const;
+const PROVIDERS = Object.values(MODEL_REGISTRY).map(provider => ({
+  id: provider.id, label: provider.label, envKey: provider.envKey ?? "", defaultModel: provider.models[0]!.id,
+}));
 
 type ProviderId = (typeof PROVIDERS)[number]["id"];
 

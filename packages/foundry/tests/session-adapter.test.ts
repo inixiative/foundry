@@ -5,26 +5,29 @@ import { join } from "path";
 import { SignalBus, type Signal } from "@inixiative/foundry-core";
 import {
   ClaudeCodeSessionAdapter,
+  CodexSessionAdapter,
   FileExternalSessionStore,
   InMemoryExternalSessionStore,
   type ExternalSessionStore,
 } from "../src/providers/session-adapter";
-import type { ClaudeCodeSessionConfig } from "@inixiative/agent-session";
+import type { ClaudeCodeSessionConfig, CodexSessionConfig } from "@inixiative/agent-session";
 
 // The structural subprocess type the `spawn` override returns — derived from the
 // package's config rather than importing an internal symbol (mirrors bench).
 type PipedSubprocess = ReturnType<NonNullable<ClaudeCodeSessionConfig["spawn"]>>;
+type CodexPipedSubprocess = ReturnType<NonNullable<CodexSessionConfig["spawn"]>>;
 
 // ---------------------------------------------------------------------------
 // Shared fake subprocess — same wire format as claude-code-session tests
 // ---------------------------------------------------------------------------
 
-function makeFakeProc(opts?: { sessionId?: string }): {
+function makeFakeProc(opts?: { sessionId?: string; compact?: boolean }): {
   proc: PipedSubprocess;
   stdinLines: string[];
 } {
   const sessionId = opts?.sessionId ?? "native-session-1";
   const stdinLines: string[] = [];
+  let initialized = false;
 
   let stdoutCtrl: ReadableStreamDefaultController<Uint8Array>;
   const stdout = new ReadableStream<Uint8Array>({ start(c) { stdoutCtrl = c; } });
@@ -43,7 +46,11 @@ function makeFakeProc(opts?: { sessionId?: string }): {
           if (!line.trim()) continue;
           stdinLines.push(line);
           queueMicrotask(() => {
-            emit({ type: "system", subtype: "init", session_id: sessionId });
+            if (!opts?.compact || !initialized) {
+              emit({ type: "system", subtype: "init", session_id: sessionId });
+              initialized = true;
+            }
+            if (opts?.compact) emit({ type: "system", subtype: "compact_boundary", session_id: sessionId });
             emit({
               type: "assistant",
               message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
@@ -86,9 +93,164 @@ function makeSpawnCapture(sessionId: string = "native-session-1") {
   return { spawnCalls, spawn };
 }
 
+test("text-only Claude sessions disable tools and customizations without stripping worker tools", async () => {
+  const { spawn, spawnCalls } = makeSpawnCapture();
+  const adapter = new ClaudeCodeSessionAdapter({ store: new InMemoryExternalSessionStore(), defaults: { spawn } });
+  const decision = await adapter.createSession({ threadId: "decision", cwd: "/tmp", tools: false, maxTurns: 1 });
+  const worker = await adapter.createSession({ threadId: "worker", cwd: "/tmp" });
+  try {
+    await decision.start();
+    await worker.start();
+    const restricted = spawnCalls[0].cmd;
+    expect(restricted).toContain("--safe-mode");
+    expect(restricted[restricted.indexOf("--tools") + 1]).toBe("");
+    expect(restricted).toContain("--strict-mcp-config");
+    expect(restricted[restricted.indexOf("--max-turns") + 1]).toBe("1");
+    expect(restricted).not.toContain("--bare");
+    expect(spawnCalls[1].cmd).not.toContain("--safe-mode");
+    expect(spawnCalls[1].cmd).not.toContain("--tools");
+  } finally { decision.kill(); worker.kill(); }
+});
+
+test("Codex MCP adapter refuses a text-only profile it cannot enforce", async () => {
+  const adapter = new CodexSessionAdapter({ store: new InMemoryExternalSessionStore() });
+  await expect(adapter.createSession({ threadId: "decision", cwd: "/tmp", tools: false })).rejects.toThrow("text-only");
+});
+
+test("restricted auxiliary policy preserves but does not resume contaminated legacy history", async () => {
+  const store = new InMemoryExternalSessionStore();
+  const id = "work:aux:agent:classifier";
+  await store.save(id, "claude-code", "legacy-coding-session");
+  const { spawn, spawnCalls } = makeSpawnCapture("restricted-decision-session");
+  const adapter = new ClaudeCodeSessionAdapter({ store, defaults: { spawn } });
+  const session = await adapter.createSession({ threadId: id, cwd: "/tmp", tools: false, maxTurns: 1 });
+  try {
+    await session.start();
+    expect(spawnCalls[0].cmd).not.toContain("--resume");
+    await session.send("Classify this");
+    await Bun.sleep(5);
+    expect(await store.load(id, "claude-code")).toBe("legacy-coding-session");
+    expect(await adapter.getExternalSessionId(id)).toBe("restricted-decision-session");
+  } finally { session.kill(); }
+  const resumed = await adapter.createSession({ threadId: id, cwd: "/tmp", tools: false, maxTurns: 1 });
+  try {
+    await resumed.start();
+    expect(spawnCalls[1].cmd[spawnCalls[1].cmd.indexOf("--resume") + 1]).toBe("restricted-decision-session");
+  } finally { resumed.kill(); }
+});
+
+function makeCodexSpawnCapture(sessionId: string = "codex-thread-1") {
+  const spawnCalls: Array<{ cmd: string[]; stdin: string[] }> = [];
+  const spawn = (cmd: string[]) => {
+    const stdinLines: string[] = [];
+    let stdoutCtrl: ReadableStreamDefaultController<Uint8Array>;
+    const stdout = new ReadableStream<Uint8Array>({ start(c) { stdoutCtrl = c; } });
+    const stderr = new ReadableStream<Uint8Array>({ start() {} });
+    let exitResolve: (code: number) => void;
+    const exited = new Promise<number>((r) => { exitResolve = r; });
+    const emit = (j: Record<string, unknown>) =>
+      stdoutCtrl.enqueue(new TextEncoder().encode(JSON.stringify(j) + "\n"));
+
+    const proc: CodexPipedSubprocess = {
+      stdin: {
+        write(data: string) {
+          for (const line of data.split("\n")) {
+            if (!line.trim()) continue;
+            stdinLines.push(line);
+            const msg = JSON.parse(line) as { id?: number; method?: string; params?: Record<string, unknown> };
+            if (typeof msg.id !== "number") continue;
+            queueMicrotask(() => {
+              if (msg.method === "initialize") {
+                emit({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: {} } });
+              } else if (msg.method === "tools/list") {
+                emit({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  result: {
+                    tools: [
+                      { name: "codex", inputSchema: {} },
+                      { name: "codex-reply", inputSchema: {} },
+                    ],
+                  },
+                });
+              } else if (msg.method === "tools/call") {
+                emit({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  result: {
+                    structuredContent: {
+                      threadId: sessionId,
+                      content: "ok",
+                      usage: { input_tokens: 1, output_tokens: 1 },
+                    },
+                    content: [{ type: "text", text: "ok" }],
+                  },
+                });
+              }
+            });
+          }
+        },
+        flush() {},
+        end() {},
+      },
+      stdout,
+      stderr,
+      exited,
+      kill: () => { try { stdoutCtrl.close(); } catch {} exitResolve(143); },
+    };
+
+    spawnCalls.push({ cmd, stdin: stdinLines });
+    return proc;
+  };
+  return { spawnCalls, spawn };
+}
+
 // ---------------------------------------------------------------------------
 // InMemoryExternalSessionStore
 // ---------------------------------------------------------------------------
+
+test("native compaction follows the current owning thread binding and detaches cleanly", async () => {
+  const fallback = new SignalBus();
+  const a = new SignalBus();
+  const b = new SignalBus();
+  const replacement = new SignalBus();
+  const adapter = new ClaudeCodeSessionAdapter({
+    store: new InMemoryExternalSessionStore(), signals: fallback,
+    defaults: { spawn: () => makeFakeProc({ compact: true }).proc },
+  });
+  // Sessions may already exist when a recovered thread binds its subscribers.
+  const sessionA = await adapter.createSession({ threadId: "a", cwd: "/tmp" });
+  const sessionB = await adapter.createSession({ threadId: "b", cwd: "/tmp" });
+  try {
+    const unbindA = adapter.bindSignals("a", a);
+    const unbindB = adapter.bindSignals("b", b);
+    await sessionA.start();
+    await sessionB.start();
+    await sessionA.send("A compact");
+    expect(a.recent("session_compacted")).toHaveLength(1);
+    expect(b.recent("session_compacted")).toHaveLength(0);
+    expect(fallback.recent()).toHaveLength(0);
+    expect(a.recent()[0].content).toMatchObject({ threadId: "a" });
+
+    const unbindReplacement = adapter.bindSignals("a", replacement);
+    unbindA(); // An old disposer must not remove a newer binding.
+    await sessionA.send("A replacement compact");
+    expect(a.recent()).toHaveLength(1);
+    expect(replacement.recent()).toHaveLength(1);
+    unbindReplacement();
+    await sessionA.send("A disposed compact");
+    expect(replacement.recent()).toHaveLength(1);
+    expect(fallback.recent()).toHaveLength(0);
+
+    await sessionB.send("B compact");
+    expect(b.recent()).toHaveLength(1);
+    expect(b.recent()[0].content).toMatchObject({ threadId: "b" });
+    unbindB();
+  } finally {
+    sessionA.kill();
+    sessionB.kill();
+  }
+});
 
 describe("InMemoryExternalSessionStore", () => {
   test("save + load roundtrip", async () => {
@@ -520,4 +682,160 @@ describe("ClaudeCodeSessionAdapter", () => {
     const r = await s.send("hi");
     expect(r.content).toBe("ok");
   });
+});
+
+// ---------------------------------------------------------------------------
+// CodexSessionAdapter — same mapping contract for native Codex/Astra sessions
+// ---------------------------------------------------------------------------
+
+describe("CodexSessionAdapter", () => {
+  test("createSession for a fresh thread starts codex mcp-server without resume state", async () => {
+    const store = new InMemoryExternalSessionStore();
+    const { spawnCalls, spawn } = makeCodexSpawnCapture();
+    const adapter = new CodexSessionAdapter({
+      store,
+      defaults: { bin: "codex", model: "gpt-6-astra", spawn },
+    });
+
+    const session = await adapter.createSession({ threadId: "t1", cwd: "/tmp" });
+    await session.start();
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0].cmd).toContain("mcp-server");
+    expect(session.externalSessionId).toBeUndefined();
+  });
+
+  test("persists Codex native thread ID after send result", async () => {
+    const store = new InMemoryExternalSessionStore();
+    const { spawn, spawnCalls } = makeCodexSpawnCapture("codex-native-xyz");
+    const adapter = new CodexSessionAdapter({
+      store,
+      defaults: { bin: "codex", model: "gpt-6-astra", spawn },
+    });
+
+    const session = await adapter.createSession({ threadId: "t1", cwd: "/tmp" });
+    await session.start();
+    const result = await session.send("hello");
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(result.externalSessionId).toBe("codex-native-xyz");
+    expect(await store.load("t1", "codex")).toBe("codex-native-xyz");
+
+    const toolCall = spawnCalls[0].stdin
+      .map((line) => JSON.parse(line) as { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } })
+      .find((msg) => msg.method === "tools/call");
+    expect(toolCall?.params?.name).toBe("codex");
+    expect(toolCall?.params?.arguments?.model).toBe("gpt-6-astra");
+  });
+
+  test("resumes persisted Codex native thread with codex-reply", async () => {
+    const store = new InMemoryExternalSessionStore();
+    await store.save("t1", "codex", "codex-persisted");
+    const { spawn, spawnCalls } = makeCodexSpawnCapture("codex-persisted");
+    const adapter = new CodexSessionAdapter({
+      store,
+      defaults: { bin: "codex", model: "gpt-6-astra", spawn },
+    });
+
+    const session = await adapter.createSession({ threadId: "t1", cwd: "/tmp" });
+    expect(session.externalSessionId).toBe("codex-persisted");
+    await session.start();
+    await session.send("continue");
+
+    const toolCall = spawnCalls[0].stdin
+      .map((line) => JSON.parse(line) as { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } })
+      .find((msg) => msg.method === "tools/call");
+    expect(toolCall?.params?.name).toBe("codex-reply");
+    expect(toolCall?.params?.arguments?.threadId).toBe("codex-persisted");
+  });
+});
+
+describe("Native authentication adapter integration", () => {
+  test("Claude receives a per-child gateway token after substrate scrubbing and preserves source-scoped resume", async () => {
+    const { NativeAuthentication } = await import("../src/providers/native-authentication");
+    const directory = mkdtempSync(join(tmpdir(), "foundry-auth-adapter-"));
+    const variable = "FOUNDRY_TEST_ADAPTER_TOKEN", previous = process.env[variable];
+    process.env[variable] = "synthetic-adapter-token";
+    const source = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude" as const, mode: "gateway" as const, baseUrl: "http://127.0.0.1:34567", credential: { type: "environment" as const, variable } };
+    const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
+    const store = new InMemoryExternalSessionStore();
+    await store.save("thread", "claude-code", "ambient-native-history");
+    let childEnv: Record<string,string|undefined> = {};
+    const adapter = new ClaudeCodeSessionAdapter({ store, authentication: auth, defaults: { spawn: (_cmd, options) => {
+      childEnv = options.env; return makeFakeProc({ sessionId: "source-native-history" }).proc;
+    } } });
+    const session = await adapter.createSession({ threadId: "thread", cwd: directory });
+    try {
+      expect(adapter.describeConstruction(session)?.resumedBinding).toBeNull();
+      await session.start(); await session.send("hello");
+      expect(childEnv.ANTHROPIC_AUTH_TOKEN).toBe("synthetic-adapter-token");
+      expect(adapter.describeConstruction(session)?.authentication?.sourceId).toBe(source.id);
+      expect(await adapter.getExternalSessionId("thread")).toBe("source-native-history");
+      expect(await store.load("thread", "claude-code")).toBe("ambient-native-history");
+      auth.revoke(source.id);
+      expect(() => session.send("denied")).toThrow("unavailable");
+    } finally {
+      await adapter.releaseIdleSession(session);
+      if (previous === undefined) delete process.env[variable]; else process.env[variable] = previous;
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("Codex native adapter uses the selected home and refuses account changes on warm sessions", async () => {
+    const { NativeAuthentication } = await import("../src/providers/native-authentication");
+    const directory = mkdtempSync(join(tmpdir(), "foundry-auth-codex-"));
+    const source = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "codex" as const, mode: "gateway" as const, baseUrl: "http://127.0.0.1:34567", credential: { type: "command" as const, command: "/usr/bin/false" } };
+    const next = { ...source, id: crypto.randomUUID() };
+    const auth = new NativeAuthentication({ directory, sources: [source, next], defaultSourceId: source.id });
+    const capture = makeCodexSpawnCapture();
+    let selectedHome = "";
+    const adapter = new CodexSessionAdapter({ store: new InMemoryExternalSessionStore(), authentication: auth, defaults: { spawn: (cmd, options) => {
+      selectedHome = options.env.CODEX_HOME!; return capture.spawn(cmd);
+    } } });
+    const session = await adapter.createSession({ threadId: "thread", cwd: directory });
+    try {
+      await session.start();
+      expect(selectedHome.startsWith(directory)).toBe(true);
+      expect(readFileSync(join(selectedHome, "config.toml"), "utf8")).toContain('model_provider = "foundry_gateway"');
+      auth.select("thread", next.id);
+      expect(() => adapter.checkAuthentication(session)).toThrow("binding changed");
+      expect(() => session.send("denied")).toThrow("binding changed");
+    } finally { await adapter.releaseIdleSession(session); rmSync(directory, { recursive: true, force: true }); }
+  });
+});
+
+test("revocation during admission prevents current and queued native writes", async () => {
+  const { NativeAuthentication } = await import("../src/providers/native-authentication");
+  const directory = mkdtempSync(join(tmpdir(), "foundry-auth-queue-"));
+  const source = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude" as const, mode: "gateway" as const, baseUrl: "http://127.0.0.1:34567", credential: { type: "command" as const, command: "/usr/bin/false" } };
+  const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
+  const fake = makeFakeProc();
+  const adapter = new ClaudeCodeSessionAdapter({ store: new InMemoryExternalSessionStore(), authentication: auth, defaults: { spawn: () => fake.proc } });
+  const session = await adapter.createSession({ threadId: "thread", cwd: directory });
+  const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  try {
+    await session.start();
+    const first = session.send("first", { onAdmission: async () => { started.resolve(); await release.promise; } });
+    await started.promise;
+    const second = session.send("second");
+    const outcomes = Promise.allSettled([first, second]);
+    auth.revoke(source.id); release.resolve();
+    expect((await outcomes).map(result => result.status)).toEqual(["rejected", "rejected"]);
+    expect(fake.stdinLines).toHaveLength(0);
+  } finally { release.resolve(); await adapter.releaseIdleSession(session); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("authentication cleanup failure prevents reporting a fully released process", async () => {
+  const { NativeAuthentication } = await import("../src/providers/native-authentication");
+  const { writeFileSync } = await import("node:fs");
+  const directory = mkdtempSync(join(tmpdir(), "foundry-auth-cleanup-"));
+  const source = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude" as const, mode: "gateway" as const, baseUrl: "http://127.0.0.1:34567", credential: { type: "command" as const, command: "/usr/bin/false" } };
+  const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
+  let profile = "";
+  const adapter = new ClaudeCodeSessionAdapter({ store: new InMemoryExternalSessionStore(), authentication: auth, defaults: { spawn: (_cmd, options) => { profile = options.env.CLAUDE_CONFIG_DIR!; return makeFakeProc().proc; } } });
+  const session = await adapter.createSession({ threadId: "thread", cwd: directory });
+  try {
+    await session.start(); writeFileSync(join(profile, ".foundry-auth-lock", "unexpected"), "test");
+    expect(await adapter.releaseIdleSession(session)).toBe("unknown");
+  } finally { session.kill(); rmSync(directory, { recursive: true, force: true }); }
 });

@@ -81,6 +81,17 @@ function emptyState(): ThreadState {
 
 const MAX_RECENT_ACTIVITY = 10;
 
+/** Render signal content for activity: strings as-is, objects as bounded JSON, never "[object Object]". */
+function describeContent(content: unknown, max = 80): string {
+  if (typeof content === "string") return content.slice(0, max);
+  if (content === undefined || content === null) return String(content);
+  try {
+    return JSON.stringify(content).slice(0, max);
+  } catch {
+    return String(content).slice(0, max);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Librarian
 // ---------------------------------------------------------------------------
@@ -109,6 +120,8 @@ export class Librarian {
     this._layer = new ContextLayer({
       id: layerId,
       prompt: "Current thread state. Use this to determine what the thread is working on, what context is loaded, and what flags are active.",
+      // Generated per-thread state, whatever id the configuration chose for it.
+      segment: "thread-knowledge",
     });
 
     // Set initial content
@@ -164,7 +177,8 @@ export class Librarian {
         break;
 
       case "tool_observation":
-        this._handleToolObservation(content as any);
+        if (source === "flow-orchestrator") this._handleGuardObservation(content as any);
+        else this._handleToolObservation(content as any);
         break;
 
       case "context_loaded":
@@ -177,23 +191,31 @@ export class Librarian {
 
       case "security_concern":
         this._addFlag("security-concern-active");
-        this._pushActivity(`Security: ${String(content).slice(0, 80)}`);
+        this._pushActivity(`Security: ${describeContent(content)}`);
         break;
 
       case "correction":
-        this._pushActivity(`Correction from ${source}: ${String(content).slice(0, 80)}`);
+        this._pushActivity(`Correction from ${source}: ${describeContent(content)}`);
         break;
 
       case "architecture_observation":
-        if (String(content).toLowerCase().includes("cross-module")) {
+        if (describeContent(content, 400).toLowerCase().includes("cross-module")) {
           this._addFlag("cross-module");
         }
-        this._pushActivity(`Architecture: ${String(content).slice(0, 80)}`);
+        this._pushActivity(`Architecture: ${describeContent(content)}`);
         break;
+
+      case "domain_learning": {
+        const data = content as { domain?: string; decision?: string; revision?: number; reason?: string } | undefined;
+        const rev = data?.revision !== undefined ? ` rev ${data.revision}` : "";
+        const why = data?.reason ? ` (${String(data.reason).slice(0, 60)})` : "";
+        this._pushActivity(`Learning (${data?.domain ?? "?"}): ${data?.decision ?? "?"}${rev}${why}`);
+        break;
+      }
 
       default:
         // Unknown signal kinds just get logged as activity
-        this._pushActivity(`[${kind}] ${String(content).slice(0, 80)}`);
+        this._pushActivity(`[${kind}] ${describeContent(content)}`);
         break;
     }
 
@@ -228,23 +250,47 @@ export class Librarian {
     }
   }
 
-  private _handleDispatch(data: { agentId?: string; payload?: string }): void {
+  private _handleDispatch(data: { agentId?: string; payload?: string; ok?: boolean; error?: string }): void {
     if (!data) return;
-    const desc = data.agentId
-      ? `Dispatched: ${data.agentId}${data.payload ? ` on ${String(data.payload).slice(0, 50)}` : ""}`
-      : "Dispatched agent";
+    const target = data.agentId ?? "agent";
+    const on = data.payload ? ` on ${String(data.payload).slice(0, 50)}` : "";
+    const desc = data.ok === false
+      ? `Failed: ${target}${on} (${String(data.error ?? "unknown error").slice(0, 80)})`
+      : `Dispatched: ${target}${on}`;
     this._pushActivity(desc);
   }
 
-  private _handleToolObservation(data: { tool?: string; input?: any; output?: any }): void {
+  private _handleGuardObservation(data?: { guardOutcomes?: Array<{ domain?: string; status?: string; findings?: number }> }): void {
+    if (!Array.isArray(data?.guardOutcomes)) {
+      this._pushActivity("Guard review: outcome not recorded");
+      return;
+    }
+    if (data.guardOutcomes.length === 0) {
+      this._pushActivity("Guard review: no domains checked");
+      return;
+    }
+    // Shared activity carries outcome metadata, not private guard inputs or error payloads.
+    for (const outcome of data.guardOutcomes) {
+      const domain = typeof outcome?.domain === "string" ? outcome.domain.slice(0, 60) : "unknown";
+      const status = ["completed", "skipped", "cold-cache", "provider-error", "invalid-response"].includes(outcome?.status ?? "")
+        ? outcome.status : "outcome not recorded";
+      const count = status === "completed" && Number.isSafeInteger(outcome.findings) && outcome.findings! >= 0
+        ? `; ${outcome.findings} findings` : "";
+      this._pushActivity(`Guard (${domain}): ${status}${count}`);
+    }
+  }
+
+  private _handleToolObservation(data: { tool?: string; input?: any; inputSummary?: string; ok?: boolean; output?: any }): void {
     if (!data) return;
     const tool = data.tool ?? "unknown";
     let target = "";
     if (data.input?.file_path) target = ` ${data.input.file_path}`;
     else if (data.input?.command) target = ` ${String(data.input.command).slice(0, 60)}`;
     else if (data.input?.pattern) target = ` ${data.input.pattern}`;
+    else if (typeof data.inputSummary === "string") target = ` ${data.inputSummary.slice(0, 60)}`;
+    const status = data.ok === false ? " (failed)" : "";
 
-    this._pushActivity(`${tool}${target}`);
+    this._pushActivity(`${tool}${target}${status}`);
   }
 
   private _handleContextLoaded(data: { layerId?: string; hash?: string }): void {

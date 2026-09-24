@@ -10,6 +10,8 @@ bun run start
 
 Open http://localhost:4400.
 
+For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
+
 ## What this is
 
 Foundry is a framework for building agent systems where you control the context, permissions, and routing — not just the prompt.
@@ -45,7 +47,7 @@ bun run setup
 
 Setup is interactive — picks your LLM provider and model, creates `.foundry/settings.json`, writes `.env.local` with your API key, and scaffolds a starter config (3 context layers, classifier → router → executor pipeline, file-based memory).
 
-Supported providers: Anthropic, OpenAI, Google Gemini, Claude Code CLI.
+Provider choices come from the shared registry: Anthropic, OpenAI, Google Gemini, Claude Code CLI and Codex. See [team readiness and the current roadmap](docs/TEAM-READINESS.md) before enabling a shared team instance.
 
 ### Environment variables
 
@@ -65,6 +67,7 @@ FOUNDRY_MODE=supervised         # supervised (default) or unattended
 ## Running
 
 ```bash
+bun run doctor       # Inspect existing setup without starting agents or making provider calls
 bun run start        # Production — loads config, starts viewer + harness
 bun run setup        # Reconfigure (additive — edit agents, layers, sources, projects)
 bun run demo         # Demo mode with sample data
@@ -81,9 +84,9 @@ curl -X POST http://localhost:4400/api/messages \
 ## Testing
 
 ```bash
-bun run test           # All tests (511 across core + foundry)
-bun run test:core      # Core engine tests only (223)
-bun run test:foundry   # Framework tests only (288)
+bun run test           # Core + Foundry tests
+bun run test:core      # Core engine tests
+bun run test:foundry   # Framework tests
 bun run test:db        # Postgres tests (requires DATABASE_URL)
 ```
 
@@ -155,3 +158,7 @@ Keyboard shortcuts: `1-3` switch panels, `?` help, `s` settings, `a` analytics.
 - `packages/foundry/` — [BSL 1.1](./LICENSE-BSL) (converts to MIT on 2030-04-06)
 
 See [LICENSE](./LICENSE) for details.
+
+## Session archives
+
+Foundry can capture its durable sessions, import old Claude Code/Codex transcripts, and publish selected projects to a personal or organization Kastle. See [setup and retrieval](docs/session-archives.md).

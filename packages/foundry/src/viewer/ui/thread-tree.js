@@ -11,7 +11,9 @@ import {
   threadData, allThreads, layerColor, liveEvents, mergedLayers, mergedAgents,
   definitions, showToast, activeProjectId, promptCounts, createThread, projects,
   activeThreadId, selectThread, worktrees, loadWorktrees, executeAction,
+  selectedEvent, currentTrace, selectedSpanId, detailDrawerOpen, compactPanel, dismissTraceSelection,
 } from "./store.js";
+import { eventsForThread } from "./inspector-data.js";
 import { settingsOpen } from "./settings.js";
 import { analyticsOpen } from "./analytics.js";
 
@@ -242,7 +244,7 @@ export const creatingType = { value: null }; // "layer" | "agent" | null
 
 export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAgent }) {
   const data = threadData.value;
-  const events = liveEvents.value;
+  const events = eventsForThread(liveEvents.value, activeThreadId.value);
   const selectedThread = activeThreadId.value;
   const [addingThread, setAddingThread] = useState(false);
 
@@ -410,16 +412,23 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
       <!-- ─── LIVE EVENTS + FOOTER ─── -->
       <div class="sidebar-bottom">
         <${SidebarSection}
-          title="LIVE EVENTS"
+          title=${selectedThread ? "THREAD ACTIVITY" : "RUNTIME ACTIVITY"}
           count=${events.length}
           defaultOpen=${false}
         >
           <div class="live-events-list">
             ${events.slice(0, 30).map((ev, i) => html`
-              <div key=${i} class="live-event-row">
+              <button key=${i} class="live-event-row activity-event" title="Inspect event"
+                onClick=${() => {
+                  dismissTraceSelection();
+                  selectedSpanId.value = null;
+                  selectedEvent.value = ev;
+                  detailDrawerOpen.value = true;
+                  compactPanel.value = "detail";
+                }}>
                 <span class="le-kind">${ev.kind}</span>
                 <span class="le-time">${ev._time}</span>
-              </div>
+              </button>
             `)}
             ${events.length === 0 ? html`<div class="sidebar-empty-sm">No events yet</div>` : null}
           </div>

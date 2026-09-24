@@ -1,3 +1,4 @@
+import { HttpCompletionSettlement } from "./http-settlement";
 import type {
   LLMProvider,
   LLMMessage,
@@ -10,7 +11,7 @@ import type {
 
 export interface OpenAIConfig {
   apiKey: string;
-  /** Defaults to "gpt-5.4-mini". */
+  /** Defaults to "gpt-5.6-luna". */
   defaultModel?: string;
   /** Override base URL for Cursor, Azure, local proxies, etc. */
   baseUrl?: string;
@@ -32,6 +33,8 @@ const DEFAULT_BASE = "https://api.openai.com";
  */
 export class OpenAIProvider implements LLMProvider {
   readonly id: string;
+  private readonly _settlement = new HttpCompletionSettlement();
+  readonly completionLifecycle = this._settlement.lifecycle;
 
   private _apiKey: string;
   private _defaultModel: string;
@@ -41,7 +44,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? "openai";
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gpt-5.4-mini";
+    this._defaultModel = config.defaultModel ?? "gpt-5.6-luna";
     this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
     this._organization = config.organization;
   }
@@ -57,7 +60,9 @@ export class OpenAIProvider implements LLMProvider {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
 
-    if (opts?.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
+    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
+    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
     if (opts?.topP !== undefined) body.top_p = opts.topP;
     if (opts?.stop) body.stop = opts.stop;
@@ -74,11 +79,12 @@ export class OpenAIProvider implements LLMProvider {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OpenAI API ${res.status}: ${text}`);
+      await res.text();
+      throw this._settlement.completedError(`OpenAI API ${res.status}`);
     }
 
     const data = (await res.json()) as {
@@ -123,7 +129,9 @@ export class OpenAIProvider implements LLMProvider {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
 
-    if (opts?.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+    const reasoningModel = /^gpt-5\.6(?:-|$)/.test(model);
+    if (reasoningModel) body.reasoning_effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
+    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
     if (opts?.topP !== undefined) body.top_p = opts.topP;
     if (opts?.stop) body.stop = opts.stop;
@@ -140,11 +148,12 @@ export class OpenAIProvider implements LLMProvider {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      yield { type: "error", error: `OpenAI API ${res.status}: ${text}` };
+      await res.text();
+      yield { type: "error", error: `OpenAI API ${res.status}` };
       return;
     }
 

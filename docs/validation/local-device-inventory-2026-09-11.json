@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-11T05:52:45.982084+00:00",
+  "mode": "controlled-local-validation",
+  "tests": {
+    "pass": 1487,
+    "skip": 0,
+    "fail": 0
+  },
+  "typecheck": "passed",
+  "browser": {
+    "localEnrollment": "passed",
+    "fourSiblingProjectNamesVisible": true,
+    "profile": "disposable",
+    "remoteEnrollment": false
+  },
+  "scope": "Local device identity and viewer inventory. Cross-device links, native-agent access, remote enrollment and live two-device operation remain incomplete."
+}

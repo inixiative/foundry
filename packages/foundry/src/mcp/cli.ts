@@ -129,8 +129,12 @@ const thread = new Thread("mcp-session", stack);
 thread.meta.description = "MCP bridge session";
 thread.meta.tags = ["mcp"];
 
+// Standalone operator mode: a reconstructed configuration thread, not a live
+// Foundry runtime. Its legacy signal emission is kept as an explicit grant here;
+// the native bridge grant stays read-only.
 const server = createFoundryMcpServer({
   thread,
+  grant: { signal: true },
   name: "foundry",
   version: "0.1.0",
 });

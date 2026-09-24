@@ -92,12 +92,12 @@ export class Trace {
   /** Current active span stack — the innermost is where new children attach. */
   private _stack: Span[] = [];
 
-  constructor(messageId: string) {
+  constructor(messageId: string, detail?: Pick<Span, "input" | "threadId">) {
     this.id = newId("trace");
     this.messageId = messageId;
     this.startedAt = performance.now();
 
-    this.root = this._createSpan("ingress", "ingress");
+    this.root = this._createSpan("ingress", "ingress", undefined, detail);
     this._stack.push(this.root);
   }
 

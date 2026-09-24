@@ -1,0 +1,40 @@
+[
+  {
+    "id": "synthetic-ambiguous-goal",
+    "profile": "problem-framing",
+    "message": "Please improve this. No desired outcome has been specified.",
+    "files": [],
+    "mock": {
+      "yesProbability": 1,
+      "choice": "clarify-goal"
+    },
+    "expected": {
+      "outcome": "candidate",
+      "candidateId": "clarify-goal"
+    }
+  },
+  {
+    "id": "synthetic-routine",
+    "profile": "architectural-placement",
+    "message": "Change the requested display label using the established presentation component.",
+    "files": [],
+    "mock": {
+      "yesProbability": 0
+    },
+    "expected": {
+      "outcome": "no-intervention"
+    }
+  },
+  {
+    "id": "synthetic-unknown",
+    "profile": "architectural-placement",
+    "message": "A change may be needed; no description or source is available.",
+    "files": [],
+    "mock": {
+      "yesProbability": 0.5
+    },
+    "expected": {
+      "outcome": "review"
+    }
+  }
+]

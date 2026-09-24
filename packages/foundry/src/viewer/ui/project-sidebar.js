@@ -5,6 +5,7 @@
  * Collapsed: thin strip with project icons. Expanded: full list.
  */
 
+import { LocalDevicePanel } from "./devices.js";
 import { html, useState, useEffect } from "./lib.js";
 import {
   projects, projectTags, activeProjectId, projectSidebarOpen,
@@ -194,6 +195,7 @@ export function ProjectSidebar() {
 
   return html`
     <div class="proj-sidebar">
+      <${LocalDevicePanel} projectIds=${JSON.stringify(items.map(project => project.id))} />
       <div class="proj-sidebar-header">
         <span class="proj-sidebar-title">PROJECTS</span>
         <span class="proj-sidebar-count">${items.length}</span>

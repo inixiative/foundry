@@ -5,9 +5,9 @@
 
 import { html, render, useState, useEffect } from "./lib.js";
 import {
-  init, connected, eventCount, toast, currentTrace,
+  init, connected, eventCount, toast, currentTrace, selectedEvent, dismissTraceSelection,
   selectedSpanId, loadTraces, loadThreads, executeAction,
-  projectSidebarOpen, detailDrawerOpen, dismissToast,
+  projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
 import { ProjectSidebar } from "./project-sidebar.js";
@@ -32,6 +32,7 @@ function Header() {
       <span class="header-logo"><span class="logo-bracket">${"<"}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${">"}</span></span>
       <span class="header-title">foundry</span>
       <div class="header-right">
+        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomRuntime ? "Kingdom" : "Connect to Kingdom"}</a>
         <span class="status-dot ${isConnected ? "on" : "off"}"></span>
         <span class="status-text">${isConnected ? "connected" : "reconnecting..."}</span>
         <span class="status-sep">|</span>
@@ -44,6 +45,35 @@ function Header() {
       </div>
     </div>
   `;
+}
+
+const panelViews = [["projects", "Projects"], ["threads", "Threads"],
+  ["conversation", "Chat"], ["detail", "Inspect"]];
+
+function PanelNavigation() {
+  const select = (id) => {
+    if (id === "projects") projectSidebarOpen.value = true;
+    if (id === "detail") detailDrawerOpen.value = true;
+    compactPanel.value = id;
+  };
+  const onKeyDown = (event, index) => {
+    let next;
+    if (event.key === "ArrowRight") next = (index + 1) % panelViews.length;
+    if (event.key === "ArrowLeft") next = (index + panelViews.length - 1) % panelViews.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = panelViews.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    select(panelViews[next][0]);
+    event.currentTarget.parentElement.children[next].focus();
+  };
+  return html`<nav class="panel-navigation" role="tablist" aria-label="Workspace views">
+    ${panelViews.map(([id, label], index) => html`<button key=${id} role="tab"
+      aria-selected=${compactPanel.value === id} aria-controls=${`workspace-${id}`}
+      tabIndex=${compactPanel.value === id ? 0 : -1}
+      onKeyDown=${event => onKeyDown(event, index)}
+      onClick=${() => select(id)}>${label}</button>`)}
+  </nav>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +105,7 @@ function App() {
   const [creating, setCreating] = useState(null);
 
   const clearSelection = () => {
+    selectedEvent.value = null;
     setSelectedSpan(null);
     setSelectedLayer(null);
     setSelectedAgent(null);
@@ -84,26 +115,40 @@ function App() {
   const handleSpanSelect = (span) => {
     clearSelection();
     setSelectedSpan(span);
+    detailDrawerOpen.value = true;
+    compactPanel.value = "detail";
   };
 
   const handleLayerClick = (layerId) => {
     clearSelection();
+    dismissTraceSelection();
+    selectedSpanId.value = null;
     setSelectedLayer(layerId);
+    detailDrawerOpen.value = true;
+    compactPanel.value = "detail";
   };
 
   const handleAgentClick = (agentId) => {
     clearSelection();
+    dismissTraceSelection();
+    selectedSpanId.value = null;
     setSelectedAgent(agentId);
+    detailDrawerOpen.value = true;
+    compactPanel.value = "detail";
   };
 
   const handleCreateLayer = () => {
     clearSelection();
     setCreating("layer");
+    detailDrawerOpen.value = true;
+    compactPanel.value = "detail";
   };
 
   const handleCreateAgent = () => {
     clearSelection();
     setCreating("agent");
+    detailDrawerOpen.value = true;
+    compactPanel.value = "detail";
   };
 
   const handleCreated = () => {
@@ -150,15 +195,16 @@ function App() {
   return html`
     <div class="app">
       <${Header} />
+      <${PanelNavigation} />
 
-      <div class=${panelClass}>
+      <div class=${panelClass} data-compact-panel=${compactPanel.value}>
         <!-- Far left: Project sidebar (collapsible) -->
-        <div class="panel-projects" tabIndex="0">
+        <div class="panel-projects" id="workspace-projects" tabIndex="0">
           <${ProjectSidebar} />
         </div>
 
         <!-- Left: Thread/Layer/Agent sidebar -->
-        <div class="panel-left" tabIndex="0">
+        <div class="panel-left" id="workspace-threads" tabIndex="0">
           <${Sidebar}
             onLayerClick=${handleLayerClick}
             onAgentClick=${handleAgentClick}
@@ -168,7 +214,7 @@ function App() {
         </div>
 
         <!-- Center: Conversation / trace timeline -->
-        <div class="panel-center" tabIndex="0">
+        <div class="panel-center" id="workspace-conversation" tabIndex="0">
           <${Conversation}
             onSpanSelect=${handleSpanSelect}
             onLayerClick=${handleLayerClick}
@@ -176,7 +222,7 @@ function App() {
         </div>
 
         <!-- Right: Detail drawer -->
-        <div class="panel-right" tabIndex="0">
+        <div class="panel-right" id="workspace-detail" tabIndex="0">
           <${DetailDrawer}
             selectedSpan=${selectedSpan}
             selectedLayer=${selectedLayer}

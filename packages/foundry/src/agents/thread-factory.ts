@@ -1,7 +1,14 @@
+import { FoundryCredentials } from '../providers/credentials';
+import { fileURLToPath } from "node:url";
+import { createNativeToolProjector } from "./native-tool-projection";
 import {
   ContextLayer,
   type ContextSource,
   ContextStack,
+  FileMemory,
+  MarkdownDocs,
+  inlineSource,
+  type OwnershipScope,
   Thread,
   type ThreadConfig,
   Classifier,
@@ -15,16 +22,22 @@ import {
   type LLMMessage,
   type CompletionOpts,
   type CompletionResult,
+  type ExecuteMeta,
   type TokenTracker,
   type ToolRegistry,
 } from "@inixiative/foundry-core";
 import { toolUseLoop } from "./tool-loop";
 import type { SessionAdapter } from "../providers/session-adapter";
+import { auxiliarySessionId, type ThreadRuntimeManager } from "./thread-runtime";
+import { nativeBridgeSource, type NativeToolJournal } from "../mcp/native-bridge";
 import type {
   FoundryConfig,
   AgentSettingsConfig,
   LayerSettingsConfig,
 } from "../viewer/config";
+import { resolveProjectView } from "../viewer/config-resolve";
+import { configuredExperts } from "./configured-experts";
+import { ArchiveContextSource, archiveContextSchema } from "../archives/context-source";
 
 // ---------------------------------------------------------------------------
 // Source resolver — turns config source IDs into ContextSources
@@ -35,6 +48,52 @@ import type {
  * The adapter parameter lets callers supply memory-backed or file-backed sources.
  */
 export type SourceResolver = (sourceId: string, config: FoundryConfig) => ContextSource | null;
+
+export interface SourceResolverDeps {
+  /** Project memory store backing every "file" source. */
+  memory: FileMemory;
+  configDir?: string;
+}
+
+/**
+ * The production source resolver shared by startup and research runs.
+ *
+ * "file" sources are memory-backed and scope-aware: each thread's clone binds
+ * them to that thread, so a thread reads its own captures plus whatever was
+ * explicitly published to its project or globally. The source's configured
+ * `scope` caps that ("project" or "global" never expose thread captures), and
+ * legacy unowned records stay hidden unless `includeUnowned` is set.
+ */
+export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
+  return (sourceId, cfg) => {
+    const srcCfg = cfg.sources[sourceId];
+    if (!srcCfg || !srcCfg.enabled) return null;
+
+    switch (srcCfg.type) {
+      case "archive":
+        return new ArchiveContextSource(srcCfg.id, srcCfg.uri, archiveContextSchema.parse(srcCfg.archive), undefined, fetch, new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntime));
+      case "inline":
+        return inlineSource(srcCfg.id, srcCfg.uri);
+      case "file":
+        // Bounded selection by default: the owned log stays complete and
+        // searchable, the automatic input is a deterministic, reported subset.
+        return deps.memory.asSource(srcCfg.id, {
+          kind: srcCfg.id.includes("convention") ? "convention" : undefined,
+          scope: srcCfg.scope,
+          includeUnowned: srcCfg.includeUnowned,
+          selection: srcCfg.selection === false ? false : { ...(srcCfg.selection ?? {}) },
+        });
+      case "markdown":
+        // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
+        // the full content blows the layer budget. topologySource() produces a
+        // compact H1+H2 index (~44 tokens/file) that the domain warden can
+        // reason over; file bodies get hydrated on demand.
+        return new MarkdownDocs(srcCfg.uri.startsWith("file:") ? fileURLToPath(srcCfg.uri) : srcCfg.uri).topologySource(srcCfg.id);
+      default:
+        return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
+    }
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Project-level builders — create shared layers and agents from config
@@ -49,6 +108,7 @@ export interface BuildLayersDeps {
  * Called once at project startup — layers are shared across all threads.
  */
 export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): ContextLayer[] {
+  configuredExperts(config);
   const layers: ContextLayer[] = [];
 
   for (const [id, layerCfg] of Object.entries(config.layers)) {
@@ -61,8 +121,14 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
     layers.push(
       new ContextLayer({
         id,
+        ...((layerCfg.domain !== undefined || layerCfg.writers !== undefined) ? { definition: Object.freeze({
+          id, ...(layerCfg.domain !== undefined ? { domain: layerCfg.domain } : {}),
+          ...(layerCfg.writers !== undefined ? { writers: Object.freeze([...layerCfg.writers]) as unknown as string[] } : {}),
+        }) } : {}),
         staleness: layerCfg.staleness || undefined,
         prompt: layerCfg.prompt || undefined,
+        // Configured provenance only; an unconfigured layer keeps the legacy classification.
+        ...(layerCfg.segment ? { segment: layerCfg.segment } : {}),
         sources,
       }),
     );
@@ -86,13 +152,15 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
 
 export interface BuildAgentsDeps {
   provider: LLMProvider;
+  /** When supplied, every enabled agent must resolve its configured provider. */
+  providers?: ReadonlyMap<string, LLMProvider>;
   tokenTracker?: TokenTracker;
   tools?: ToolRegistry;
 }
 
 /**
  * Build agent instances from project config.
- * Called once at project startup — agents are shared across all threads.
+ * Called once for the project template; ThreadFactory clones agents per thread.
  */
 export function buildAgents(
   config: FoundryConfig,
@@ -103,7 +171,12 @@ export function buildAgents(
 
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
-    const agent = buildAgent(id, agentCfg, config, stack, deps);
+    // The runtime owns these pre/post actors; do not build a second executor.
+    if (agentCfg.flowRole === "domain-advising") continue;
+    const providerId = agentCfg.provider || config.defaults.provider;
+    const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
+    if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);
+    const agent = buildAgent(id, agentCfg, config, stack, { ...deps, provider });
     if (agent) agents.set(id, agent);
   }
 
@@ -115,9 +188,22 @@ export function buildAgents(
 // ---------------------------------------------------------------------------
 
 export interface ThreadFactoryDeps {
-  /** Shared project stack (layers built once, shared across threads). */
+  /** Saved snapshot for project-specific construction through the same builders.
+   * Hot edits require an explicit new factory; existing threads are untouched. */
+  configuration?: { config: FoundryConfig; layers: BuildLayersDeps; agents: BuildAgentsDeps };
+  /** Actual scoped registry used by the owned runtime's native read-only bridge. */
+  nativeTools?: ToolRegistry;
+  /**
+   * Project template stack. Built and warmed once from config; every thread
+   * receives independent clones of these layers seeded from the template's
+   * current warm content. The template itself is never handed to a thread.
+   */
   stack: ContextStack;
-  /** Shared project agents (built once, registered on each thread). */
+  /**
+   * Project template agents. Every thread receives its own agent instances
+   * bound to that thread's stack; the template agents are never registered
+   * on a thread directly.
+   */
   agents: Map<string, BaseAgent>;
   /**
    * Optional session adapter (e.g. ClaudeCodeSessionAdapter) for creating
@@ -126,29 +212,53 @@ export interface ThreadFactoryDeps {
    * without reaching into start.ts.
    */
   sessionAdapter?: SessionAdapter;
+  /**
+   * Optional per-thread runtime manager. When present, every created thread
+   * is wired (Librarian, Cartographer, Wardens, orchestrator, event bridges)
+   * before it is returned, and archiving the thread tears that wiring down.
+   */
+  runtime?: ThreadRuntimeManager;
 }
 
 /**
- * Factory that creates Thread instances from shared project state.
+ * Factory that creates Thread instances from a project template.
  *
- * Layers and agents are project-scoped — built once, shared across threads.
- * ThreadFactory just wraps them in a new Thread handle. The only per-thread
- * state is the Librarian's `thread-state` layer, created separately.
+ * Layer definitions and agent configuration are project-scoped and built once.
+ * Each thread gets its own layer instances (cloned from the warm template) and
+ * its own agent instances bound to that stack, so one thread's writes, private
+ * layers, and dispatches never reach another thread.
  */
 export class ThreadFactory {
   private _stack: ContextStack;
   private _agents: Map<string, BaseAgent>;
   private _sessionAdapter?: SessionAdapter;
+  private _runtime?: ThreadRuntimeManager;
+  private _nativeTools?: ToolRegistry;
+  private _configuration?: ThreadFactoryDeps["configuration"];
 
   constructor(deps: ThreadFactoryDeps) {
     this._stack = deps.stack;
     this._agents = deps.agents;
     this._sessionAdapter = deps.sessionAdapter;
+    this._runtime = deps.runtime;
+    this._nativeTools = deps.nativeTools;
+    if (deps.configuration) this._configuration = { ...deps.configuration, config: structuredClone(deps.configuration.config) };
   }
 
   /** The runtime session adapter, if one was configured. */
   get sessionAdapter(): SessionAdapter | undefined {
     return this._sessionAdapter;
+  }
+
+  /** The per-thread runtime manager, if one was configured. */
+  get runtime(): ThreadRuntimeManager | undefined {
+    return this._runtime;
+  }
+
+  nativeBridge(thread: Thread, journal: NativeToolJournal, deviceIdentityPath?: string) {
+    if (!this._nativeTools) return undefined;
+    if (!this._runtime) throw Error("Native tools require a registered live runtime");
+    return nativeBridgeSource(thread, this._runtime, this._nativeTools, journal, deviceIdentityPath);
   }
 
   /**
@@ -162,17 +272,40 @@ export class ThreadFactory {
   }
 
   /**
-   * Create a Thread that shares the project's stack and agents.
+   * Create a Thread with its own stack and agents, seeded from the template.
+   * Scope-aware sources are bound to this thread; the project is resolved
+   * lazily so assignment after creation (project.addThread) is honored on
+   * every later warm and refresh.
    */
   create(
     id: string,
     opts?: ThreadConfig,
   ): Thread {
-    const thread = new Thread(id, this._stack, opts);
+    let thread: Thread | undefined;
+    const scope: OwnershipScope = {
+      threadId: id,
+      get projectId() { return thread?.meta.projectId ?? opts?.projectId; },
+    };
+    const base = this._configuration;
+    if (opts?.projectId && base?.config.projects[opts.projectId]?.enabled === false) throw Error("Cannot construct a thread for a disabled project");
+    const config = base && (opts?.projectId ? resolveProjectView(base.config, opts.projectId)?.config : undefined) || base?.config;
+    const template = config && base ? new ContextStack(buildLayers(config, base.layers)) : this._stack;
+    const agents = config && base ? buildAgents(config, template, base.agents) : this._agents;
+    const stack = template.clone(scope);
+    thread = new Thread(id, stack, opts);
 
-    for (const agent of this._agents.values()) {
-      thread.register(agent);
+    for (const agent of agents.values()) {
+      thread.register(agent.withStack(stack));
     }
+
+    // Match startup's initial warm, but bind sources to the owning thread first.
+    // A failed load does not admit a provider call or use another project's cache.
+    if (base) { let initialized = false; thread.middleware.use("factory:configured-sources", async (_ctx, next) => {
+      if (!initialized) { await stack.warmAll(); initialized = true; }
+      return next();
+    }); }
+    try { this._runtime?.attach(thread, config); }
+    catch (error) { thread.dispose(); throw error; }
 
     return thread;
   }
@@ -197,7 +330,7 @@ function buildAgent(
       return new Classifier<string>({
         id,
         stack,
-        handler: async (ctx, payload) => {
+        handler: async (ctx, payload, meta) => {
           if (!agentCfg.prompt) return keywordClassify(payload);
           try {
             const result = await complete(
@@ -208,9 +341,12 @@ function buildAgent(
                 },
                 { role: "user", content: payload },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1 },
+              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
             );
             const parsed = parseJSON(result.content);
+            if (!parsed || typeof parsed.category !== "string" || !parsed.category.trim() || parsed.reasoning === "parse failure") {
+              throw new Error("Invalid classifier JSON");
+            }
             return {
               value: { category: parsed.category as string || "general", subcategory: parsed.subcategory as string },
               confidence: 0.9,
@@ -227,7 +363,7 @@ function buildAgent(
       return new Router<{ payload: string; classification: Classification } | string>({
         id,
         stack,
-        handler: async (ctx, input) => {
+        handler: async (ctx, input, meta) => {
           const payload = typeof input === "string" ? input : input.payload;
           const classification = typeof input === "string" ? null : input.classification;
 
@@ -248,12 +384,20 @@ function buildAgent(
                   content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
                 },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1 },
+              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
             );
             const parsed = parseJSON(result.content);
+            const target = typeof parsed?.destination === "string" ? config.agents[parsed.destination] : undefined;
+            if (!target || target.kind !== "executor" || !target.enabled || !target.prompt) {
+              throw new Error("Router did not select an enabled configured executor");
+            }
+            if (parsed.contextSlice !== undefined && (!Array.isArray(parsed.contextSlice)
+              || !parsed.contextSlice.every(id => typeof id === "string" && !!config.layers[id]))) {
+              throw new Error("Router returned an invalid context slice");
+            }
             return {
               value: {
-                destination: (parsed.destination as string) || "executor-answer",
+                destination: parsed.destination as string,
                 contextSlice: (parsed.contextSlice as string[]) || Object.keys(config.layers),
                 priority: (parsed.priority as number) ?? 5,
               },
@@ -262,7 +406,9 @@ function buildAgent(
             };
           } catch (err) {
             console.warn(`[buildAgent] LLM route failed, falling back to keyword:`, (err as Error).message);
-            return keywordRoute(classification, config);
+            const fallback = keywordRoute(classification, config);
+            return { ...fallback, confidence: 0,
+              reasoning: `fallback: ${(err as Error).message}; ${fallback.reasoning}` };
           }
         },
       });
@@ -291,6 +437,27 @@ function buildAgent(
             { role: "system", content: systemParts.join("\n\n") },
             { role: "user", content: payload },
           ];
+          meta?.recordProviderInput?.(messages);
+          // Owned public native tool events feed the dispatch's ordinary tool observation channel
+          // (the same one the local tool loop uses), so post-review input sees what the native
+          // engine ran. The raw journal write comes first and is independent of this projection.
+          // The central executor's provider pool is the thread id; the provider adds it to the admitted
+          // owner at registration, so the projector validates the logical owner plus this expected pool.
+          const projector = meta?.nativeObservation?.owner && meta.observeTool && meta.threadId
+            ? createNativeToolProjector({ owner: meta.nativeObservation.owner, expectedPool: meta.threadId, observeTool: meta.observeTool }) : undefined;
+          const nativeObservation = meta?.nativeObservation && deps.provider.nativeOwnership === "required-prewrite" ? {
+            ...meta.nativeObservation,
+            register: async (evidence: import("@inixiative/foundry-core").NativeEvidence) => {
+              await meta.nativeObservation!.register(evidence);
+              projector?.register(evidence);
+            },
+            observe: async (evidence: import("@inixiative/foundry-core").NativeEvidence) => {
+              meta.recordNative?.(evidence);
+              if ((evidence.kind === "text" || evidence.kind === "text_delta") && evidence.text) meta.onDelta?.(evidence.text);
+              await meta.nativeObservation!.observe(evidence);
+              projector?.observe(evidence);
+            },
+          } : undefined;
 
           try {
             if (useToolLoop) {
@@ -300,7 +467,14 @@ function buildAgent(
                 tools,
                 {
                   ...opts,
+                  nativeObservation,
+                  threadId: meta?.threadId,
                   toolCwd: meta?.cwd,
+                  // Memory tools read and write within the dispatching thread's ownership.
+                  toolScope: meta?.threadId ? { threadId: meta.threadId, projectId: meta.projectId } : undefined,
+                  // Every executed tool is attributed to this dispatch, never to the next completion.
+                  dispatchId: meta?.dispatchId,
+                  onToolObservation: meta?.observeTool,
                   maxIterations: 10,
                   onToolCall: (name, input, resultStr) => {
                     console.log(`    [${id}] tool: ${name}(${Object.values(input).map((v) => String(v).slice(0, 40)).join(", ")})`);
@@ -323,7 +497,7 @@ function buildAgent(
               // full content for the return value + single DB write upstream.
               let full = "";
               let tokens: { input: number; output: number } | undefined;
-              for await (const ev of deps.provider.stream(messages, { ...opts, cwd: meta?.cwd })) {
+              for await (const ev of deps.provider.stream(messages, { ...opts, nativeObservation, cwd: meta?.cwd, threadId: meta?.threadId })) {
                 if (ev.type === "text" && ev.text) {
                   full += ev.text;
                   meta.onDelta(ev.text);
@@ -343,11 +517,12 @@ function buildAgent(
               }
               return full;
             } else {
-              const result = await complete(messages, { ...opts, cwd: meta?.cwd });
+              const result = await complete(messages, { ...opts, nativeObservation, cwd: meta?.cwd, threadId: meta?.threadId });
+              if (result.native) meta?.recordNative?.(result.native);
               return result.content;
             }
           } catch (err) {
-            return `[${id}] Error: ${(err as Error).message}`;
+            throw err;
           }
         },
       });
@@ -358,6 +533,18 @@ function buildAgent(
 // ---------------------------------------------------------------------------
 // Provider helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Session identity for a thread's auxiliary decision (classifier/router).
+ * Never the bare thread id: that belongs to the central executor session.
+ */
+function auxiliaryIdentity(meta: ExecuteMeta | undefined, role: string, provider: LLMProvider): Pick<CompletionOpts, "threadId" | "cwd" | "nativeObservation"> {
+  if (!meta?.threadId) return {};
+  return { threadId: auxiliarySessionId(meta.threadId, role), cwd: meta.cwd,
+    ...(meta.nativeObservation && provider.nativeOwnership === "required-prewrite" ? { nativeObservation: { ...meta.nativeObservation, bridge: undefined, observe: evidence => {
+      meta.recordNative?.(evidence); return meta.nativeObservation!.observe(evidence);
+    } } } : {}) };
+}
 
 function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
   const { provider, tokenTracker } = deps;
@@ -404,10 +591,13 @@ export function keywordRoute(
     general: { dest: "artificer", layers: ["system"] },
   };
   const route = routeMap[classification.category] ?? routeMap.general;
+  const candidates = Object.entries(config.agents).filter(([, agent]) => agent.enabled && agent.kind === "executor" && !!agent.prompt);
+  const destination = candidates.find(([id]) => id === route.dest)?.[0] ?? candidates[0]?.[0];
+  if (!destination) throw new Error("Routing failed and no enabled executor is configured");
   return {
-    value: { destination: route.dest, contextSlice: route.layers, priority: 5 },
+    value: { destination, contextSlice: route.layers.filter(id => !!config.layers[id]), priority: 5 },
     confidence: 0.8,
-    reasoning: `rule: ${classification.category} → ${route.dest}`,
+    reasoning: `rule: ${classification.category} → ${destination}`,
   };
 }
 
@@ -429,7 +619,7 @@ export function resolveAgentOpts(
   const isLightweight = agentCfg.kind === "classifier" || agentCfg.kind === "router";
 
   return {
-    model: agentCfg.model || (isLightweight ? "gemini-3.1-flash-lite-preview" : config.defaults.model),
+    model: agentCfg.model || (isLightweight ? config.defaults.classifierModel ?? "gpt-5.6-luna" : config.defaults.model),
     temperature: agentCfg.temperature ?? 0,
     maxTokens: isLightweight ? 256 : 16384,
     tools: agentCfg.tools ?? !isLightweight,

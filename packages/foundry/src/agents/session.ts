@@ -288,8 +288,8 @@ export class SessionManager {
         // Share by reference — same instance
         stack.addLayer(layer);
       } else if (copySet.has(layer.id) || rules.copyAll) {
-        // Copy — new layer with same content
-        const copy = new ContextLayer({ id: layer.id });
+        // Copy — new layer with same content and the same content segment
+        const copy = new ContextLayer({ id: layer.id, segment: layer.segment });
         if (layer.isWarm) {
           copy.set(layer.content);
         }

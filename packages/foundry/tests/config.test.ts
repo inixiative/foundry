@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigStore, defaultConfig, type FoundryConfig } from "../src/viewer/config";
@@ -207,5 +207,39 @@ describe("ConfigStore project resolution", () => {
     expect(system!.scope).toBe("global");
     expect(system!.fields.prompt.origin).toBe("global");
     expect(system!.fields.prompt.strategy).toBe("inherit");
+  });
+
+  test("load refreshes built-in provider models while preserving user settings", async () => {
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({
+      defaults: {
+        provider: "claude-code",
+        model: "sonnet",
+      },
+      providers: {
+        "claude-code": {
+          id: "claude-code",
+          type: "claude-code",
+          label: "Old Claude Code label",
+          enabled: false,
+          models: [{ id: "sonnet", label: "Sonnet 4.6", tier: "standard" }],
+        },
+        openai: {
+          id: "openai",
+          type: "openai",
+          label: "OpenAI",
+          enabled: true,
+          baseUrl: "https://example.test/v1",
+          models: [{ id: "gpt-5.4", label: "GPT-5.4", tier: "powerful" }],
+        },
+      },
+    }));
+
+    const loaded = await store.load();
+
+    expect(loaded.providers["claude-code"].enabled).toBe(false);
+    expect(loaded.providers["claude-code"].models.some((model) => model.id === "fable")).toBe(true);
+    expect(loaded.providers.openai.baseUrl).toBe("https://example.test/v1");
+    expect(loaded.providers.openai.models.map((model) => model.id)).toContain("gpt-6-astra");
+    expect(loaded.providers.codex.models.map((model) => model.id)).toContain("gpt-6-astra");
   });
 });

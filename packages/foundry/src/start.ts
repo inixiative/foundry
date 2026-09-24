@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { createDecisionProvider, DECISION_MODEL } from "./providers/decision-provider";
+import { KastleAuthentication } from "./providers/kastle-authentication";
+import { NativeAuthentication } from "./providers/native-authentication";
 /**
  * Foundry — production entrypoint.
  *
@@ -20,19 +23,18 @@ import {
   UNATTENDED_POLICY,
   ProjectRegistry,
   ThreadFactory,
+  ThreadRuntimeManager,
+  DEFAULT_THREAD_DOMAINS,
   buildLayers,
   buildAgents,
-  ReactiveMiddleware,
-  lowConfidenceRule,
-  Librarian,
-  Cartographer,
-  DomainLibrarian,
-  FlowOrchestrator,
-  type SourceResolver,
+  createSourceResolver,
 } from "./agents";
-import { ContextStack, ToolRegistry } from "@inixiative/foundry-core";
-import { FileMemory, inlineSource, PostgresMemory, MarkdownDocs } from "./adapters";
+import { ContextStack, ToolRegistry, type SignalBus } from "@inixiative/foundry-core";
+import { resolveLearningSettings } from "./agents/learning-config";
+import { runStartupSelfTest, startupSelfTestEnabled } from "./startup-self-test";
+import { FileMemory, PostgresMemory } from "./adapters";
 import { MemoryToolAdapter } from "./tools/memory-adapter";
+import { registerKastleAccess } from "./tools/kastle-access";
 import { BashShell } from "./tools/bash-shell";
 import { BunScript } from "./tools/bun-script";
 import { rtk as rtkFilter } from "./tools/output-filters";
@@ -43,12 +45,23 @@ import {
   ClaudeCodeProvider,
   GatedProvider,
   ClaudeCodeSessionAdapter,
+  CodexSessionAdapter,
   FileExternalSessionStore,
+  SessionBackedProvider,
   type SessionAdapter,
 } from "./providers";
 import type { LLMProvider } from "./providers";
 import { startViewer } from "./viewer/server";
-import { ConfigStore, starterConfig, type FoundryConfig } from "./viewer/config";
+import { RuntimeJobRegistry } from "./providers/runtime-job-handler";
+import {
+  ConfigStore,
+  createProject,
+  defaultProjectAgents,
+  defaultProjectLayers,
+  defaultProjectSources,
+  starterConfig,
+  type FoundryConfig,
+} from "./viewer/config";
 import { DOCS_ADVISE_PROMPT } from "./setup/scan-docs";
 import { createQueue, setQueue, initializeWorker, shutdownWorker } from "./jobs";
 import { existsSync, mkdirSync } from "fs";
@@ -58,14 +71,50 @@ import { existsSync, mkdirSync } from "fs";
 // ---------------------------------------------------------------------------
 
 const FOUNDRY_DIR = ".foundry";
+const selfTestRequested = startupSelfTestEnabled(process.env.FOUNDRY_STARTUP_SELF_TEST);
 
 const configStore = new ConfigStore(FOUNDRY_DIR);
 let config: FoundryConfig;
 
+function hasEntries(record: Record<string, unknown> | undefined): boolean {
+  return !!record && Object.keys(record).length > 0;
+}
+
+function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
+  let changed = false;
+  const projectPath = process.cwd();
+
+  if (!hasEntries(config.agents)) {
+    config.agents = defaultProjectAgents(config.defaults.provider, config.defaults.model);
+    changed = true;
+  }
+
+  if (!hasEntries(config.layers)) {
+    config.layers = defaultProjectLayers();
+    changed = true;
+  }
+
+  if (!hasEntries(config.sources)) {
+    config.sources = defaultProjectSources(projectPath);
+    changed = true;
+  }
+
+  if (!hasEntries(config.projects)) {
+    const project = createProject(projectPath, {
+      label: "Foundry",
+    });
+    config.projects = { [project.id]: project };
+    changed = true;
+  }
+
+  return changed;
+}
+
 if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
-  // First run — generate minimal starter config (providers + defaults only)
+  // First run — generate a runnable local config.
   console.log("No config found — generating starter config...");
-  config = starterConfig("claude-code", "sonnet");
+  config = starterConfig("claude-code", "fable");
+  ensureRunnableLocalConfig(config);
   await configStore.save(config);
 
   // Ensure directories exist
@@ -75,7 +124,13 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   console.log("Starter config generated — setup wizard will open in the viewer.");
 } else {
   config = await configStore.load();
+  if (ensureRunnableLocalConfig(config)) {
+    await configStore.save(config);
+    console.log("Updated starter config with default local agents, layers, and project.");
+  }
 }
+
+const flowLlm = createDecisionProvider(!!config.providers.openai?.enabled, process.env.OPENAI_API_KEY);
 
 console.log(`Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`);
 
@@ -102,14 +157,61 @@ for (const project of Object.values(config.projects)) {
 // Create LLM provider
 // ---------------------------------------------------------------------------
 
-function createProvider(config: FoundryConfig): LLMProvider {
+function createProvider(config: FoundryConfig): {
+  provider: LLMProvider;
+  sessionAdapter?: SessionAdapter;
+} {
   const providerId = config.defaults.provider;
+  const sessionStore = FileExternalSessionStore.forProject(process.cwd());
+  const authentication = config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
+    ? new KastleAuthentication({ directory: `${process.cwd()}/.foundry/kastle`, sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments })
+    : config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length ? new NativeAuthentication({
+    directory: `${process.cwd()}/.foundry/runtime-profiles`, sources: config.nativeAuthentication ?? [],
+    defaultSourceId: config.defaults.nativeAuthenticationId,
+  }) : undefined;
+  if (authentication && !["claude-code", "codex"].includes(providerId)) throw Error("Native authentication requires a native runtime provider");
+  if (authentication instanceof NativeAuthentication) for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {})) authentication.select(threadId, sourceId);
+  const selectedAuth = config.nativeAuthentication?.find(source => source.id === config.defaults.nativeAuthenticationId);
+  if (selectedAuth?.mode === "native-profile" && !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)) {
+    throw Error("A native profile has one refresh owner. Configure the separate OpenAI decision provider or use a gateway authentication source before starting Foundry.");
+  }
 
   switch (providerId) {
     case "claude-code": {
-      return new ClaudeCodeProvider({
-        defaultModel: config.defaults.model,
+      const sessionAdapter = new ClaudeCodeSessionAdapter({
+        store: sessionStore,
+        authentication,
+        defaults: {
+          model: config.defaults.model,
+        },
       });
+      return {
+        sessionAdapter,
+        provider: new SessionBackedProvider({
+          id: "claude-code",
+          adapter: sessionAdapter,
+          defaultModel: config.defaults.model,
+        }),
+      };
+    }
+    case "codex": {
+      const sessionAdapter = new CodexSessionAdapter({
+        store: sessionStore,
+        authentication,
+        engine: config.defaults.codexEngine,
+        defaults: {
+          model: config.defaults.model,
+          effort: config.defaults.codexEffort,
+        },
+      });
+      return {
+        sessionAdapter,
+        provider: new SessionBackedProvider({
+          id: "codex",
+          adapter: sessionAdapter,
+          defaultModel: config.defaults.model,
+        }),
+      };
     }
     case "anthropic": {
       const key = process.env.ANTHROPIC_API_KEY;
@@ -117,10 +219,12 @@ function createProvider(config: FoundryConfig): LLMProvider {
         console.error("ANTHROPIC_API_KEY not set. Add it to .env.local or environment.");
         process.exit(1);
       }
-      return new AnthropicProvider({
-        apiKey: key,
-        defaultModel: config.defaults.model,
-      });
+      return {
+        provider: new AnthropicProvider({
+          apiKey: key,
+          defaultModel: config.defaults.model,
+        }),
+      };
     }
     case "openai": {
       const key = process.env.OPENAI_API_KEY;
@@ -128,10 +232,12 @@ function createProvider(config: FoundryConfig): LLMProvider {
         console.error("OPENAI_API_KEY not set. Add it to .env.local or environment.");
         process.exit(1);
       }
-      return new OpenAIProvider({
-        apiKey: key,
-        defaultModel: config.defaults.model,
-      });
+      return {
+        provider: new OpenAIProvider({
+          apiKey: key,
+          defaultModel: config.defaults.model,
+        }),
+      };
     }
     case "gemini": {
       const key = process.env.GEMINI_API_KEY;
@@ -139,10 +245,12 @@ function createProvider(config: FoundryConfig): LLMProvider {
         console.error("GEMINI_API_KEY not set. Add it to .env.local or environment.");
         process.exit(1);
       }
-      return new GeminiProvider({
-        apiKey: key,
-        defaultModel: config.defaults.model,
-      });
+      return {
+        provider: new GeminiProvider({
+          apiKey: key,
+          defaultModel: config.defaults.model,
+        }),
+      };
     }
     default:
       console.error(`Unknown provider: ${providerId}`);
@@ -150,7 +258,9 @@ function createProvider(config: FoundryConfig): LLMProvider {
   }
 }
 
-const rawProvider = createProvider(config);
+const providerSetup = createProvider(config);
+const rawProvider = providerSetup.provider;
+let sessionAdapter: SessionAdapter | undefined = providerSetup.sessionAdapter;
 
 // ---------------------------------------------------------------------------
 // Capability gate + action queue
@@ -185,38 +295,17 @@ await memory.load();
 
 console.log(`Memory loaded: ${memory.all().length} entries`);
 
-/**
- * Source resolver — turns config source IDs into ContextSources.
- * This is the bridge between config (source IDs) and runtime (loadable sources).
- */
-const sourceResolver: SourceResolver = (sourceId, cfg) => {
-  const srcCfg = cfg.sources[sourceId];
-  if (!srcCfg || !srcCfg.enabled) return null;
-
-  switch (srcCfg.type) {
-    case "inline":
-      return inlineSource(srcCfg.id, srcCfg.uri);
-    case "file":
-      if (srcCfg.id.includes("convention")) {
-        return memory.asSource(srcCfg.id, "convention");
-      }
-      return memory.asSource(srcCfg.id);
-    case "markdown":
-      // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
-      // the full content blows the layer budget. topologySource() produces a
-      // compact H1+H2 index (~44 tokens/file) that the domain warden can
-      // reason over; file bodies get hydrated on demand.
-      return new MarkdownDocs(srcCfg.uri).topologySource(srcCfg.id);
-    default:
-      return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
-  }
-};
+// Source resolver — turns config source IDs into ContextSources. Memory-backed
+// sources are scope-aware: the template warms with globally published
+// knowledge only, and each thread's clone binds them to that thread.
+const sourceResolver = createSourceResolver({ memory, configDir: FOUNDRY_DIR });
 
 // ---------------------------------------------------------------------------
 // Tool registry — agents discover and use registered tools during execution
 // ---------------------------------------------------------------------------
 
 const tools = new ToolRegistry();
+registerKastleAccess(tools, config.kastleAccess);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -239,13 +328,60 @@ tools.register(scriptTool, "Execute TypeScript/JS in isolated Bun subprocess");
 // Build project-scoped layers and agents (shared across all threads)
 // ---------------------------------------------------------------------------
 
-const layers = buildLayers(config, { sourceResolver });
-const stack = new ContextStack(layers);
-await stack.warmAll();
+// The template stack and agents are the project baseline. They are never
+// registered on a thread directly: ThreadFactory clones them per thread so
+// each thread owns independent layer and agent instances.
+const templateStack = new ContextStack(buildLayers(config, { sourceResolver }));
+await templateStack.warmAll();
 
-const agents = buildAgents(config, stack, { provider, tokenTracker, tools });
+const templateAgents = buildAgents(config, templateStack, { provider, tokenTracker, tools });
 
-const factory = new ThreadFactory({ stack, agents });
+// ---------------------------------------------------------------------------
+// Per-thread runtime — Librarian, Cartographer, Wardens, orchestrator, bridges
+// ---------------------------------------------------------------------------
+
+const eventStream = new EventStream();
+
+// atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
+const atlasRoot =
+  Object.values(config.projects)
+    .map((p) => p.path)
+    .filter((p): p is string => !!p)
+    .find((p) => existsSync(`${p}/.atlas`) || existsSync(`${p}/MAP.md`)) ??
+  (existsSync(".atlas") || existsSync("MAP.md") ? process.cwd() : undefined);
+
+// Every factory-created thread (main included) gets its own Librarian,
+// Cartographer, Wardens, FlowOrchestrator, reactive rules, event bridges and
+// persistence sinks; archiving the thread disposes them.
+const runtimeManager = new ThreadRuntimeManager({
+  config,
+  llm: flowLlm,
+  providers: new Map([[rawProvider.id, rawProvider], ["openai", flowLlm], [flowLlm.id, flowLlm]]),
+  // Review uses its explicit phase profile, otherwise the configured flow policy.
+  // No provider is constructed and no live binding/settings are changed by this resolver.
+  learning: resolveLearningSettings(config.learning, new Map([[rawProvider.id, rawProvider], ["openai", flowLlm], [flowLlm.id, flowLlm]]), flowLlm,
+    DECISION_MODEL),
+  eventStream,
+  atlasRoot,
+  // Docs warden uses the probe-validated topology-aware prompt from
+  // setup/scan-docs.ts (single source of truth for generated configs too).
+  legacyDomains: DEFAULT_THREAD_DOMAINS.map((d) =>
+    d.domain === "docs" ? { ...d, advisePrompt: DOCS_ADVISE_PROMPT } : d,
+  ),
+  signalSinks: [memory.signalWriter()],
+  // Native session lifecycle (compaction) binds per thread: central session
+  // to the thread bus, auxiliaries (classifier/router/cartographer/wardens)
+  // to a side bus that never invalidates the central ledger.
+  sessionAdapter,
+});
+
+const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents, runtime: runtimeManager, nativeTools: tools,
+  configuration: { config, layers: { sourceResolver }, agents: { provider, tokenTracker, tools,
+    // Preserve the central gate while refusing an unavailable explicit project
+    // provider; only these providers have actually been constructed above.
+    providers: new Map([["openai", flowLlm], [flowLlm.id, flowLlm], [rawProvider.id, provider]]),
+  } },
+});
 
 // ---------------------------------------------------------------------------
 // Create main thread (lightweight handle over shared project state)
@@ -255,25 +391,18 @@ const thread = factory.create("main", {
   description: "Main conversation thread",
 });
 
-// Signal bus: write to file memory
+// Main's own stack. Everything below (reactive rules, Librarian, Cartographer,
+// Wardens, FlowOrchestrator) binds to this instance, not to the template, so
+// main's thread-state and cache writes stay private to main.
+const stack = thread.stack;
+
 const signals = thread.signals;
-signals.onAny(memory.signalWriter());
-
-// Wire reactive middleware — dynamic behavior during runs
-const reactive = new ReactiveMiddleware({
-  stack,
-  signals,
-});
-
-// Built-in rule: emit signal on low-confidence results (Librarian reconciles)
-reactive.addRule(lowConfidenceRule(0.5));
-
-thread.middleware.use("reactive", reactive.asMiddleware());
+const mainRuntime = runtimeManager.get(thread.id)!;
 
 // ---------------------------------------------------------------------------
 // Session adapter — long-lived HarnessSession factory with crash recovery
 //
-// Only meaningful for runtime-backed providers (claude-code for now). The
+// Only meaningful for runtime-backed providers (claude-code, codex). The
 // adapter:
 //   - Persists (threadId → native session ID) to .foundry/sessions.json so
 //     Foundry restarts resume native sessions instead of abandoning them.
@@ -282,193 +411,18 @@ thread.middleware.use("reactive", reactive.asMiddleware());
 //     to clear the Librarian's injection ledger and re-hydrate next turn.
 // ---------------------------------------------------------------------------
 
-let sessionAdapter: SessionAdapter | undefined;
-
-if (config.defaults.provider === "claude-code") {
-  const sessionStore = FileExternalSessionStore.forProject(process.cwd());
-  sessionAdapter = new ClaudeCodeSessionAdapter({
-    store: sessionStore,
-    signals,
-    defaults: {
-      model: config.defaults.model,
-    },
-  });
+if (sessionAdapter) {
   factory.attachSessionAdapter(sessionAdapter);
   console.log(`Session adapter: ${sessionAdapter.runtime} (store: ${FOUNDRY_DIR}/sessions.json)`);
 }
 
 // ---------------------------------------------------------------------------
-// Flow Orchestrator — pre-message context routing + post-action guard checks
+// Flow — main's Cartographer, Wardens, Librarian and FlowOrchestrator are
+// owned by its ThreadRuntime (see agents/thread-runtime.ts). Every other
+// factory-created thread gets the same wiring automatically.
 // ---------------------------------------------------------------------------
 
-// Lightweight LLM for Cartographer and domain librarians (cheap, fast, no tools)
-const flowLlm = (() => {
-  // Prefer Gemini Flash for lightweight agents — cheapest option
-  if (config.providers.gemini?.enabled && process.env.GEMINI_API_KEY) {
-    return new GeminiProvider({
-      apiKey: process.env.GEMINI_API_KEY,
-      defaultModel: "gemini-3.1-flash-lite-preview",
-    });
-  }
-  // Fall back to the default provider
-  return rawProvider;
-})();
-
-// Librarian — sole writer to thread-state layer, signal reconciler
-const librarian = new Librarian({
-  signals,
-  stack,
-});
-
-// Cartographer — context routing, reads topology map, routes context slices.
-// atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
-const atlasRoot =
-  Object.values(config.projects)
-    .map((p) => p.path)
-    .filter((p): p is string => !!p)
-    .find((p) => existsSync(`${p}/.atlas`) || existsSync(`${p}/MAP.md`)) ??
-  (existsSync(".atlas") || existsSync("MAP.md") ? process.cwd() : undefined);
-
-const cartographer = new Cartographer({
-  stack,
-  signals,
-  llm: flowLlm,
-  llmOpts: { maxTokens: 256, temperature: 0 },
-  atlasRoot,
-});
-
-// Build initial topology map, then fold in the codebase concept map (async, non-fatal)
-cartographer.buildMap();
-if (atlasRoot) {
-  cartographer.loadAtlas().then((atlas) => {
-    if (atlas) {
-      console.log(`[Cartographer] atlas loaded: ${atlas.concepts.length} concepts (${atlas.source}) from ${atlasRoot}`);
-    }
-  });
-}
-
-// Domain Librarians — one per domain, advise + guard
-const domainLibrarians = new Map<string, DomainLibrarian>();
-
-const domainConfigs: Array<{
-  domain: string;
-  layerId: string;
-  guardTriggers: string[];
-  advisePrompt?: string;
-  guardPrompt?: string;
-  programmaticGuard?: boolean;
-}> = [
-  {
-    domain: "docs",
-    layerId: "docs",
-    guardTriggers: ["file_write", "Write"],
-    // Probe-validated topology-aware prompt. See scripts/PROBE_FINDINGS.md
-    // and packages/foundry/src/setup/scan-docs.ts (DOCS_ADVISE_PROMPT is the
-    // single source of truth — the setup scanner emits it into generated
-    // configs so every repo's docs warden stays on the validated operating
-    // point).
-    advisePrompt: DOCS_ADVISE_PROMPT,
-  },
-  {
-    domain: "conventions",
-    layerId: "conventions",
-    guardTriggers: ["file_write", "Write", "Edit"],
-  },
-  {
-    domain: "security",
-    layerId: "security",
-    guardTriggers: ["file_write", "Write", "Edit", "Bash", "bash"],
-  },
-  {
-    domain: "architecture",
-    layerId: "architecture",
-    guardTriggers: ["file_write", "Write"],
-  },
-  {
-    domain: "memory",
-    layerId: "memory",
-    guardTriggers: [],
-    programmaticGuard: true,
-  },
-];
-
-for (const dc of domainConfigs) {
-  const cacheLayer = stack.getLayer(dc.layerId);
-  if (!cacheLayer) continue; // Layer not configured — skip this domain
-
-  const domLib = new DomainLibrarian({
-    domain: dc.domain,
-    cache: cacheLayer,
-    signals,
-    llm: flowLlm,
-    llmOpts: { maxTokens: 512, temperature: 0 },
-    guardTriggers: dc.guardTriggers,
-    advisePrompt: dc.advisePrompt,
-    guardPrompt: dc.guardPrompt,
-    programmaticGuard: dc.programmaticGuard,
-  });
-  domainLibrarians.set(dc.domain, domLib);
-}
-
-// Wire the FlowOrchestrator
-const flowOrchestrator = new FlowOrchestrator({
-  cartographer,
-  domainLibrarians,
-  librarian,
-  stack,
-  signals,
-});
-
-// Pre-message middleware: run context routing before execution
-thread.middleware.use("flow-pre-message", async (ctx, next) => {
-  // Only run pre-message for the executor (the Artificer)
-  const agentCfg = config.agents[ctx.agentId];
-  if (agentCfg?.kind !== "executor") return next();
-
-  try {
-    const plan = await flowOrchestrator.preMessage(ctx.payload as string);
-    if (plan.layers.length > 0) {
-      // Hydrate the planned layers so they're warm for the executor
-      await flowOrchestrator.hydrate(plan);
-      console.log(`  [flow] pre-message: ${plan.domainsConsulted.join(", ")} → ${plan.layers.length} layers (${plan.elapsed}ms)`);
-    }
-  } catch (err) {
-    console.warn(`  [flow] pre-message failed:`, (err as Error).message);
-  }
-
-  return next();
-});
-
-// Post-action: listen for tool observation signals and run guard checks
-signals.onAny(async (signal) => {
-  if (signal.kind !== "tool_observation") return;
-  if (signal.source === "flow-orchestrator") return; // Don't re-process our own signals
-
-  const content = signal.content as any;
-  if (!content?.tool) return;
-
-  try {
-    const report = await flowOrchestrator.postAction({
-      tool: content.tool,
-      input: content.input ?? {},
-      output: content.output,
-      filesAffected: content.filesAffected,
-    });
-
-    if (report.critical.length > 0) {
-      console.warn(`  [flow] CRITICAL findings (${report.domainsChecked.join(", ")}):`);
-      for (const f of report.critical) {
-        console.warn(`    ⚠ ${f.description}${f.location ? ` at ${f.location}` : ""}`);
-      }
-    } else if (report.findings.length > 0) {
-      console.log(`  [flow] guard: ${report.findings.length} advisory findings from ${report.domainsChecked.join(", ")} (${report.elapsed}ms)`);
-    }
-  } catch (err) {
-    console.warn(`  [flow] post-action failed:`, (err as Error).message);
-  }
-});
-
-console.log(`Flow: Cartographer + ${domainLibrarians.size} domain librarians + Librarian (${flowLlm.id})`);
+console.log(`Flow: Cartographer + ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`);
 
 // ---------------------------------------------------------------------------
 // Build harness
@@ -502,7 +456,7 @@ if (process.env.DATABASE_URL) {
     const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
     pgMemory = new PostgresMemory(prisma);
     // Wire signal persistence to postgres
-    signals.onAny(pgMemory.signalWriter());
+    runtimeManager.addSignalSink(pgMemory.signalWriter());
     // Also register as a queryable tool for agents
     const pgTool = MemoryToolAdapter.from("postgres", {
       write: (e) => pgMemory!.writeEntry(e),
@@ -532,7 +486,7 @@ if (process.env.MUNINN_URL) {
     });
 
     // Wire signal persistence to MuninnDB
-    signals.onAny(muninn.signalWriter());
+    runtimeManager.addSignalSink(muninn.signalWriter());
 
     // Register as queryable tool for agents
     const muninnTool = MemoryToolAdapter.fromMuninnMemory(muninn);
@@ -554,16 +508,13 @@ if (redisUrl && pgMemory) {
     const queue = createQueue(redisUrl);
     setQueue(queue);
 
-    // Registry of live stacks for in-process jobs (warmLayers, etc.)
-    const liveStacks = new Map<string, typeof stack>();
-    liveStacks.set("main", stack);
-
     await initializeWorker({
       queue,
       redisUrl,
       db: pgMemory,
       concurrency: 10,
-      stacks: liveStacks,
+      // Runtime-owned live stacks: every attached thread, dropped on dispose.
+      stacks: runtimeManager.stacks,
     });
 
     // Wire signal persistence through the job queue instead of direct DB writes
@@ -584,19 +535,8 @@ console.log(`Tools: ${tools.list().map((t) => t.id).join(", ")}`);
 // Event stream + viewer
 // ---------------------------------------------------------------------------
 
-const eventStream = new EventStream();
-
-thread.lifecycle.on("layer:warm", async (event) => {
-  eventStream.push({ kind: "layer", threadId: thread.id, event });
-});
-thread.lifecycle.on("layer:stale", async (event) => {
-  eventStream.push({ kind: "layer", threadId: thread.id, event });
-});
-signals.onAny(async (signal) => {
-  eventStream.push({ kind: "signal", threadId: thread.id, signal });
-});
-
-thread.start();
+// Lifecycle/signal bridges into eventStream and thread.start() are owned by
+// each thread's runtime (attached at factory.create).
 
 const interventions = new InterventionLog(signals);
 
@@ -616,11 +556,12 @@ if (config.projects) {
 
 const port = parseInt(process.env.VIEWER_PORT || "4400");
 
-startViewer({
+const viewer = await startViewer({
   harness,
   eventStream,
   interventions,
   port,
+  configDir: FOUNDRY_DIR,
   assistProvider: provider,
   assistModel: config.defaults.model,
   tokenTracker,
@@ -631,39 +572,22 @@ startViewer({
   configStore,
   actionQueue,
   assistTools: tools,
+  runtimeJobs: new RuntimeJobRegistry(),
 });
 
 console.log(`Viewer: http://localhost:${port}`);
 console.log(`Provider: ${provider.id} (${config.defaults.model})`);
 console.log(`Agents: ${[...thread.agents.keys()].join(", ")}`);
 console.log(`Layers: ${stack.layers.map((l) => l.id).join(", ")}`);
-console.log(`Persistence: ${pgMemory ? "postgres" : "in-memory only"}${process.env.MUNINN_URL ? " + muninn" : ""}`);
+console.log(`Persistence: local SQLite${pgMemory ? " + postgres mirror" : ""}${process.env.MUNINN_URL ? " + muninn" : ""}`);
 console.log();
 
 // ---------------------------------------------------------------------------
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-async function selfTest() {
-  console.log("Running provider self-test...");
-  try {
-    const result = await rawProvider.complete(
-      [{ role: "user", content: "Respond with exactly: FOUNDRY_OK" }],
-      { maxTokens: 32 },
-    );
-    if (result.content.includes("FOUNDRY_OK")) {
-      console.log(`Self-test: PASSED (${config.defaults.provider}/${config.defaults.model})`);
-    } else {
-      console.warn(`Self-test: provider responded but unexpected output: "${result.content.slice(0, 60)}"`);
-    }
-  } catch (err) {
-    console.error(`Self-test: FAILED — ${(err as Error).message}`);
-    console.error("The viewer will still start, but LLM calls will fail.");
-    console.error("Check: is Claude Code logged in? Run 'claude' interactively to verify.");
-  }
-}
-
-await selfTest();
+await runStartupSelfTest({ enabled: selfTestRequested, provider: rawProvider, model: config.defaults.model, cwd: process.cwd(),
+  log: console.log, warn: console.warn, error: console.error });
 
 console.log();
 console.log("Ready. Send messages through the harness API or viewer.");
@@ -674,10 +598,9 @@ console.log("Ready. Send messages through the harness API or viewer.");
 
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
-  flowOrchestrator.dispose();
-  cartographer.dispose();
-  librarian.dispose();
-  thread.stop();
+  runtimeManager.disposeAll();
+  viewer.server.stop();
+  viewer.localStore?.close();
   await shutdownWorker();
   process.exit(0);
 });

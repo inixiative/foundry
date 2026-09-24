@@ -54,6 +54,20 @@ export interface TopologyMap {
 }
 
 /** Routing result — which layers the message needs. */
+/** The exact routing input one call supplied to its provider, frozen at the call boundary. */
+export interface RouteRequestEvidence {
+  readonly phase: "route";
+  readonly providerId: string;
+  readonly messages: readonly LLMMessage[];
+  readonly capturedAt: number;
+}
+
+/** Caller-supplied observation hook for one routing call. */
+export interface RouteOpts {
+  /** Observes the exact messages supplied to the routing provider, once, before the call. Invocation-scoped. */
+  observeRequest?: (request: RouteRequestEvidence) => void;
+}
+
 export interface RouteResult {
   /** Layer IDs to hydrate and inject. */
   layers: string[];
@@ -63,6 +77,13 @@ export interface RouteResult {
   concepts?: string[];
   /** Confidence in the routing decision (0-1). */
   confidence: number;
+  /**
+   * How the route was produced. A keyword fallback after a model failure is
+   * not a model decision and must never be presented as one.
+   */
+  source?: "model" | "keyword-fallback" | "empty-map";
+  /** Why a fallback was taken, when it was. */
+  reason?: string;
 }
 
 /**
@@ -276,7 +297,7 @@ export class Cartographer {
       // Skip the Librarian's thread-state layer (not routable context)
       if (layer.id === "thread-state") continue;
 
-      const domain = this._inferDomain(layer.id);
+      const domain = layer.definition?.domain ?? this._inferDomain(layer.id);
       if (!domainGroups.has(domain)) {
         domainGroups.set(domain, { layers: [], totalTokens: 0, oldestWarm: null });
       }
@@ -328,7 +349,7 @@ export class Cartographer {
    * Route a message: decide which layers it needs from the topology map.
    * This is the fast LLM call from FLOW.md step 1.
    */
-  async route(message: string, threadState?: string): Promise<RouteResult> {
+  async route(message: string, threadState?: string, opts?: RouteOpts): Promise<RouteResult> {
     // If map is empty, build it first
     if (this._map.entries.length === 0) {
       this.buildMap();
@@ -336,7 +357,7 @@ export class Cartographer {
 
     // If still empty after build, nothing to route
     if (this._map.entries.length === 0) {
-      return { layers: [], domains: [], confidence: 0 };
+      return { layers: [], domains: [], confidence: 0, source: "empty-map", reason: "no layers in the topology map" };
     }
 
     const mapContent = JSON.stringify(this._map.entries, null, 2);
@@ -357,6 +378,10 @@ export class Cartographer {
       },
     ];
 
+    // The exact input, frozen before the provider sees it. Empty-map returns above make no call.
+    opts?.observeRequest?.(Object.freeze({ phase: "route" as const, providerId: this._llm.id, capturedAt: Date.now(),
+      messages: Object.freeze(messages.map((m) => Object.freeze({ role: m.role, content: m.content }))) }));
+
     try {
       const result = await this._llm.complete(messages, this._llmOpts);
       const parsed = parseJSON<RouteResult>(result.content);
@@ -365,10 +390,15 @@ export class Cartographer {
         domains: parsed.domains ?? [],
         concepts: parsed.concepts ?? [],
         confidence: parsed.confidence ?? 0.5,
+        source: "model",
       };
-    } catch {
-      // LLM failure → fall back to keyword matching against map
-      return this._keywordFallback(message);
+    } catch (err) {
+      // Model failure → keyword matching against the map, labelled as such.
+      return {
+        ...this._keywordFallback(message),
+        source: "keyword-fallback",
+        reason: (err as Error)?.message ?? String(err),
+      };
     }
   }
 

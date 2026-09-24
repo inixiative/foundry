@@ -39,6 +39,8 @@ export class GatedProvider implements LLMProvider {
   private _gate: CapabilityGate;
   private _threadId: string;
   private _estimateCost: (model: string, inputTokens: number) => number;
+  get completionLifecycle() { return this._provider.completionLifecycle; }
+  get nativeOwnership() { return this._provider.nativeOwnership; }
 
   constructor(config: GatedProviderConfig) {
     this._provider = config.provider;

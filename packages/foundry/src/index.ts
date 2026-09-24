@@ -152,6 +152,11 @@ export {
   GatedProvider,
   type GatedProviderConfig,
 } from "./providers/gated";
+export {
+  SessionBackedProvider,
+  formatMessagesForNativeSession,
+  type SessionBackedProviderConfig,
+} from "./providers/session-backed";
 
 // LLM Providers
 export {
@@ -168,7 +173,9 @@ export {
   type SessionResult,
   type SessionArtifact,
   ClaudeCodeSession,
+  CodexSession,
   type ClaudeCodeSessionConfig,
+  type CodexSessionConfig,
 } from "@inixiative/agent-session";
 
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
@@ -179,7 +186,9 @@ export {
   InMemoryExternalSessionStore,
   FileExternalSessionStore,
   ClaudeCodeSessionAdapter,
+  CodexSessionAdapter,
   type ClaudeCodeSessionAdapterConfig,
+  type CodexSessionAdapterConfig,
 } from "./providers/session-adapter";
 export {
   AnthropicProvider,
@@ -288,37 +297,6 @@ export {
 // Logger
 export { log, initLogger, type LogLevel, type Logger } from "./logger";
 
-// Research — auto-research for optimal agent configurations
-export {
-  ExperimentRunner,
-  Judge,
-  BUILTIN_FIXTURES,
-  getAllFixtures,
-  loadFixtures,
-  modelSweep,
-  temperatureSweep,
-  toolsSweep,
-  dimensionSweep,
-  oneAtATime,
-  applyVariation,
-  writeReport,
-  generateMarkdown,
-  DEFAULT_EXPERIMENT_CONFIG,
-  type Fixture,
-  type ConfigVariation,
-  type SingleRunResult,
-  type FixtureResult,
-  type ConfigResult,
-  type ExperimentReport,
-  type ExperimentConfig,
-  type CompositeWeights,
-  type ProviderFactory,
-  type RunnerDeps,
-  type JudgeResult,
-  type JudgeConfig,
-  type DimensionSweepOpts,
-} from "./research";
-
 // Git — worktree detection for thread→branch assignment
 export {
   listWorktrees,
@@ -348,3 +326,8 @@ export {
   createSseTransport,
   type FoundryMcpConfig,
 } from "./mcp";
+
+export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthenticationLaunch } from "./providers/native-authentication";
+
+export { KastleAuthentication, type KastleSource, type KastleAssignment } from "./providers/kastle-authentication";
+export { KastleClient, type KastleSelection, type KastleRunEnvelope } from "./providers/kastle-client";

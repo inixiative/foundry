@@ -1,3 +1,4 @@
+import { HttpCompletionSettlement } from "./http-settlement";
 import type {
   LLMProvider,
   LLMMessage,
@@ -62,6 +63,8 @@ function toGeminiFunctionDecl(tool: ToolDefinition): Record<string, unknown> {
  * Uses raw fetch — zero SDK dependency.
  */
 export class GeminiProvider implements LLMProvider {
+  private readonly _settlement = new HttpCompletionSettlement();
+  readonly completionLifecycle = this._settlement.lifecycle;
   readonly id = "gemini";
 
   private _apiKey: string;
@@ -123,7 +126,7 @@ export class GeminiProvider implements LLMProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Gemini API ${res.status}: ${text}`);
+      throw this._settlement.completedError(`Gemini API ${res.status}: ${text}`);
     }
 
     const data = (await res.json()) as GeminiResponse;

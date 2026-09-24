@@ -1,3 +1,4 @@
+import { HttpCompletionSettlement } from "./http-settlement";
 import type {
   LLMProvider,
   LLMMessage,
@@ -28,6 +29,8 @@ const API_VERSION = "2023-06-01";
  */
 export class AnthropicProvider implements LLMProvider {
   readonly id = "anthropic";
+  private readonly _settlement = new HttpCompletionSettlement();
+  readonly completionLifecycle = this._settlement.lifecycle;
 
   private _apiKey: string;
   private _defaultModel: string;
@@ -80,7 +83,7 @@ export class AnthropicProvider implements LLMProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Anthropic API ${res.status}: ${text}`);
+      throw this._settlement.completedError(`Anthropic API ${res.status}: ${text}`);
     }
 
     const data = (await res.json()) as {

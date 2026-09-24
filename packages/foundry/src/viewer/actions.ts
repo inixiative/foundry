@@ -1,4 +1,4 @@
-import type { Harness, EventStream, InterventionLog } from "@inixiative/foundry-core";
+import type { Harness, EventStream, InterventionLog, Thread } from "@inixiative/foundry-core";
 import type { RuntimeAdapter } from "../providers/runtime";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ export type ActionKind =
 export interface OperatorAction {
   readonly kind: ActionKind;
   readonly target?: string;
+  readonly threadId?: string;
   readonly payload?: Record<string, unknown>;
   readonly operator?: string;
   readonly timestamp: number;
@@ -42,15 +43,21 @@ export class ActionHandler {
   private _runtimes: Map<string, RuntimeAdapter> = new Map();
   private _actionLog: OperatorAction[] = [];
   private _maxLog = 500;
+  private _resolveThread: (id: string) => Thread | undefined;
+  private _onThreadChange?: (thread: Thread) => void;
 
   constructor(opts: {
     harness: Harness;
     eventStream: EventStream;
     interventions: InterventionLog;
+    resolveThread?: (id: string) => Thread | undefined;
+    onThreadChange?: (thread: Thread) => void;
   }) {
     this._harness = opts.harness;
     this._events = opts.eventStream;
     this._interventions = opts.interventions;
+    this._resolveThread = opts.resolveThread ?? (id => id === opts.harness.thread.id ? opts.harness.thread : undefined);
+    this._onThreadChange = opts.onThreadChange;
   }
 
   /** Register a runtime adapter for command passthrough. */
@@ -65,25 +72,40 @@ export class ActionHandler {
       this._actionLog.shift();
     }
 
+    if (action.kind === "runtime:command") return this._runtimeCommand(action);
+    const threadAction = action.kind.startsWith("thread:");
+    if (threadAction && action.target && action.threadId && action.target !== action.threadId) {
+      return { ok: false, action: action.kind, message: "Conflicting thread targets" };
+    }
+    const threadId = (threadAction ? action.target : undefined) ?? action.threadId ?? this._harness.thread.id;
+    const thread = this._resolveThread(threadId);
+    if (!thread) return { ok: false, action: action.kind, message: `Thread ${threadId} not found` };
+    if (thread.disposed && action.kind !== "thread:inspect" && action.kind !== "system:snapshot") {
+      return { ok: false, action: action.kind, message: `Thread ${threadId} is disposed; create a new thread to restore it` };
+    }
+    const result = await this._executeThread(action, thread);
+    if (result.ok) this._onThreadChange?.(thread);
+    return result;
+  }
+
+  private async _executeThread(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     switch (action.kind) {
       case "thread:pause":
-        return this._pauseThread(action);
+        return this._pauseThread(action, thread);
       case "thread:resume":
-        return this._resumeThread(action);
+        return this._resumeThread(action, thread);
       case "thread:archive":
-        return this._archiveThread(action);
+        return this._archiveThread(action, thread);
       case "thread:inspect":
-        return this._inspectThread(action);
+        return this._inspectThread(action, thread);
       case "layer:warm":
-        return this._warmLayer(action);
+        return this._warmLayer(action, thread);
       case "layer:invalidate":
-        return this._invalidateLayer(action);
+        return this._invalidateLayer(action, thread);
       case "agent:dispatch":
-        return this._dispatchAgent(action);
-      case "runtime:command":
-        return this._runtimeCommand(action);
+        return this._dispatchAgent(action, thread);
       case "system:snapshot":
-        return this._systemSnapshot();
+        return this._systemSnapshot(thread);
       default:
         return { ok: false, action: action.kind, message: `Unknown action: ${action.kind}` };
     }
@@ -96,34 +118,24 @@ export class ActionHandler {
 
   // -- Handlers --
 
-  private _pauseThread(action: OperatorAction): ActionResult {
-    const thread = this._harness.thread;
-    if (action.target && action.target !== thread.id) {
-      return { ok: false, action: action.kind, message: `Thread ${action.target} not found` };
-    }
+  private _pauseThread(action: OperatorAction, thread: Thread): ActionResult {
     thread.meta.status = "waiting";
     thread.stop();
-    return { ok: true, action: action.kind, message: `Thread ${thread.id} paused` };
+    return { ok: true, action: action.kind, message: `Thread ${thread.id} cache lifecycle paused; current work is not interrupted` };
   }
 
-  private _resumeThread(action: OperatorAction): ActionResult {
-    const thread = this._harness.thread;
-    if (action.target && action.target !== thread.id) {
-      return { ok: false, action: action.kind, message: `Thread ${action.target} not found` };
-    }
-    thread.meta.status = "idle";
+  private _resumeThread(action: OperatorAction, thread: Thread): ActionResult {
     thread.start();
+    thread.meta.status = thread.activeDispatches > 0 ? "active" : "idle";
     return { ok: true, action: action.kind, message: `Thread ${thread.id} resumed` };
   }
 
-  private _archiveThread(action: OperatorAction): ActionResult {
-    const thread = this._harness.thread;
+  private _archiveThread(action: OperatorAction, thread: Thread): ActionResult {
     thread.archive();
     return { ok: true, action: action.kind, message: `Thread ${thread.id} archived` };
   }
 
-  private _inspectThread(action: OperatorAction): ActionResult {
-    const thread = this._harness.thread;
+  private _inspectThread(action: OperatorAction, thread: Thread): ActionResult {
     const data = {
       id: thread.id,
       meta: thread.meta,
@@ -143,44 +155,43 @@ export class ActionHandler {
     return { ok: true, action: action.kind, message: "Thread state", data };
   }
 
-  private async _warmLayer(action: OperatorAction): Promise<ActionResult> {
+  private async _warmLayer(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     const layerId = action.target;
     if (!layerId) {
       return { ok: false, action: action.kind, message: "layer:warm requires a target layer ID" };
     }
-    const layer = this._harness.thread.stack.layers.find((l) => l.id === layerId);
+    const layer = thread.stack.layers.find((l) => l.id === layerId);
     if (!layer) {
       return { ok: false, action: action.kind, message: `Layer ${layerId} not found` };
     }
-    // Emit a lifecycle event to trigger warming rules
-    await this._harness.thread.lifecycle.emit({
-      type: "warm",
-      layerId,
-      timestamp: Date.now(),
-    });
-    return { ok: true, action: action.kind, message: `Layer ${layerId} warm event emitted` };
+    try {
+      await layer.warm();
+      return { ok: true, action: action.kind, message: `Layer ${layerId} warmed` };
+    } catch (err) {
+      return { ok: false, action: action.kind, message: `Layer ${layerId} warming failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 
-  private _invalidateLayer(action: OperatorAction): ActionResult {
+  private _invalidateLayer(action: OperatorAction, thread: Thread): ActionResult {
     const layerId = action.target;
     if (!layerId) {
       return { ok: false, action: action.kind, message: "layer:invalidate requires a target layer ID" };
     }
-    const layer = this._harness.thread.stack.layers.find((l) => l.id === layerId);
+    const layer = thread.stack.layers.find((l) => l.id === layerId);
     if (!layer) {
       return { ok: false, action: action.kind, message: `Layer ${layerId} not found` };
     }
-    layer.clear();
+    layer.invalidate();
     return { ok: true, action: action.kind, message: `Layer ${layerId} invalidated` };
   }
 
-  private async _dispatchAgent(action: OperatorAction): Promise<ActionResult> {
+  private async _dispatchAgent(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     const agentId = action.target;
     if (!agentId) {
       return { ok: false, action: action.kind, message: "agent:dispatch requires a target agent ID" };
     }
     try {
-      const result = await this._harness.dispatch(agentId, action.payload ?? {});
+      const result = await thread.dispatch(agentId, action.payload ?? {});
       return {
         ok: true,
         action: action.kind,
@@ -206,19 +217,15 @@ export class ActionHandler {
       const available = [...this._runtimes.keys()].join(", ") || "none";
       return { ok: false, action: action.kind, message: `Runtime ${runtimeId} not found. Available: ${available}` };
     }
-    // Emit the command as a runtime event that the adapter can pick up
-    // This is the passthrough mechanism — the viewer sends a command,
-    // and registered event handlers on the runtime process it
     return {
-      ok: true,
+      ok: false,
       action: action.kind,
-      message: `Command sent to runtime ${runtimeId}`,
+      message: `Runtime ${runtimeId} does not support operator command dispatch`,
       data: { runtimeId, command: action.payload },
     };
   }
 
-  private _systemSnapshot(): ActionResult {
-    const thread = this._harness.thread;
+  private _systemSnapshot(thread: Thread): ActionResult {
     const data = {
       timestamp: Date.now(),
       thread: {
@@ -233,7 +240,7 @@ export class ActionHandler {
         state: l.state,
         contentLength: l.content.length,
       })),
-      traces: this._harness.traces.length,
+      traces: thread === this._harness.thread ? this._harness.traces.length : null,
       recentDispatches: thread.dispatches.slice(-10).map((d) => ({
         agentId: d.agentId,
         timestamp: d.timestamp,

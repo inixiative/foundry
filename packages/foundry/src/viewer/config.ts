@@ -1,7 +1,14 @@
+import type { CredentialReference } from '@inixiative/foundry-core';
+import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
+import { validateKastleAccess, type KastleAccessSource } from "../providers/kastle-access-client";
+import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { newId, type Harness, type LLMProvider } from "@inixiative/foundry-core";
+import { newId, validateMemorySelection, type Harness, type LLMProvider, type MemorySelectionPolicy } from "@inixiative/foundry-core";
+import { providerConfigsFromRegistry } from "../models/registry";
 import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectView } from "./config-resolve";
+import { validateLearningSettings, type LearningSettings } from "../agents/learning-config";
 
 // ---------------------------------------------------------------------------
 // Settings config model — serializable representation of system configuration
@@ -16,10 +23,25 @@ import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectV
  * - Project level: each project can inherit global settings or override per-field
  */
 export interface FoundryConfig {
+  /** Credential references only; do not put tokens in settings. */
+  nativeAuthentication?: NativeAuthenticationSource[];
+  kastles?: KastleSource[];
+  /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
+  kastleAccess?: KastleAccessSource[];
+  kastleAssignments?: Record<string, KastleAssignment>;
+  /** Explicit thread-to-source UUID assignments, applied on Foundry startup. */
+  nativeAuthenticationSelections?: Record<string, string>;
+  /** Background domain review phase; does not override classifier/router or executor profiles. */
+  learning?: LearningSettings;
   /** Global defaults — executor provider/model + classifier provider/model. */
   defaults: {
     provider: string;
     model: string;
+    nativeAuthenticationId?: string;
+    kastleId?: string;
+    /** Explicit native selection; MCP stays default. Applies on construction only. */
+    codexEngine?: "mcp" | "app-server";
+    codexEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;
     /** Classifier/router model. Defaults to same as executor if omitted. */
@@ -54,6 +76,7 @@ export interface FoundryConfig {
 
   /** Tunnel configuration — expose the viewer over a public URL. */
   tunnel?: TunnelSettingsConfig;
+  kingdomRuntime?: KingdomRuntimeSettings;
 
   /** MCP server configuration — mid-session bridge for Claude Code. */
   mcp?: McpSettingsConfig;
@@ -132,7 +155,7 @@ export type ListPatch<T> =
 
 export interface ProviderConfig {
   id: string;
-  type: "anthropic" | "openai" | "gemini" | "claude-code" | "custom";
+  type: "anthropic" | "openai" | "gemini" | "claude-code" | "codex" | "custom";
   /** Display label. */
   label: string;
   /** Available models for this provider. */
@@ -225,6 +248,8 @@ export interface AgentSettingsConfig {
    * Domain librarians own their domain layer. The Librarian owns thread-state.
    */
   ownedLayers?: string[];
+  /** Tool names that trigger this configured Warden's post-action guard. [] disables guards. */
+  guardTriggers?: string[];
   /** Peer agent IDs for delegation. */
   peers: string[];
   /** Max call-chain depth. */
@@ -261,11 +286,12 @@ export interface AgentSettingsConfig {
 }
 
 export interface AgentSettingsOverride
-  extends Omit<Partial<AgentSettingsConfig>, "visibleLayers" | "ownedLayers" | "peers" | "browser" | "condition" | "description"> {
+  extends Omit<Partial<AgentSettingsConfig>, "visibleLayers" | "ownedLayers" | "guardTriggers" | "peers" | "browser" | "condition" | "description"> {
   /** Override description file path for this project. */
   description?: string;
   visibleLayers?: ListPatch<string>;
   ownedLayers?: ListPatch<string>;
+  guardTriggers?: ListPatch<string>;
   peers?: ListPatch<string>;
   browser?: BrowserConfigOverride | null;
   condition?: InvocationConditionOverride | null;
@@ -290,7 +316,8 @@ export interface AgentSettingsOverride
  */
 export interface LayerSettingsConfig {
   id: string;
-  /** Which domain this layer belongs to. Domain librarians find their layers by this. */
+  /** Domain knowledge ownership. An enabled domain-advising agent must explicitly
+   * own this layer to register a custom expert; passive layers do not spawn actors. */
   domain?: string;
   /**
    * Human-readable description of this layer's job in the system.
@@ -306,6 +333,13 @@ export interface LayerSettingsConfig {
   contentShape?: string;
   /** Instruction prompt for this layer. */
   prompt: string;
+  /**
+   * Semantic segment of the layer's CONTENT in the reading view. Optional: a
+   * configured layer without it keeps the legacy id-based classification. Only
+   * "domain-knowledge" (configured/published cache) or "thread-knowledge"
+   * (generated, thread-private) are accepted; the prompt is always an instruction.
+   */
+  segment?: "domain-knowledge" | "thread-knowledge";
   /** Data source IDs that feed this layer. */
   sourceIds: string[];
   /** Staleness threshold in ms (0 = never stale). */
@@ -353,12 +387,33 @@ export interface InvocationConditionOverride {
 
 export interface DataSourceConfig {
   id: string;
-  type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline" | "supermemory";
+  type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline" | "supermemory" | "archive";
+  archive?: { projectId: string; kind?: "archive" | "kingdom"; kastleId?: string; keepId?: string; connectionId?: string; tokenEnv?: string; credential?: CredentialReference; budget?: number };
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;
   /** Whether this source is enabled. */
   enabled: boolean;
+  /**
+   * Memory-backed ("file") sources only. Widest visibility this source
+   * exposes to a thread: "thread" (default) = the thread's own captures plus
+   * project/global publications; "project" = publications only;
+   * "global" = globally published knowledge, identical for every project.
+   */
+  scope?: "thread" | "project" | "global";
+  /**
+   * Memory-backed sources only. Also expose unowned legacy records written
+   * before ownership existed. Off by default: legacy records are preserved
+   * on disk but never become shared knowledge implicitly.
+   */
+  includeUnowned?: boolean;
+  /**
+   * Memory-backed sources only. Bounded automatic selection is on by default:
+   * pinned kinds always, records relevant to the current message, a few recent
+   * captures, and an explicit account of what was left out. Override fields of
+   * the policy here, or set `false` to inject the full formatted log.
+   */
+  selection?: false | Partial<MemorySelectionPolicy>;
 }
 
 export interface TunnelSettingsConfig {
@@ -368,11 +423,7 @@ export interface TunnelSettingsConfig {
   provider?: "localtunnel" | "cloudflared";
   /** Subdomain hint (localtunnel only, not guaranteed). */
   subdomain?: string;
-  /**
-   * User-chosen password for tunnel access.
-   * If unset, an auto-generated token is used.
-   */
-  password?: string;
+
 }
 
 export interface McpSettingsConfig {
@@ -418,57 +469,10 @@ export function createProject(
 export function defaultConfig(): FoundryConfig {
   return {
     defaults: {
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
+      provider: "claude-code",
+      model: "fable",
     },
-    providers: {
-      "claude-code": {
-        id: "claude-code",
-        type: "claude-code",
-        label: "Claude Code (CLI subscription)",
-        models: [
-          { id: "sonnet", label: "Sonnet 4.6", tier: "standard", costTier: "medium", contextWindow: 200000 },
-          { id: "opus", label: "Opus 4.7", tier: "powerful", costTier: "high", contextWindow: 200000 },
-          { id: "haiku", label: "Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200000 },
-        ],
-        enabled: true,
-      },
-      anthropic: {
-        id: "anthropic",
-        type: "anthropic",
-        label: "Anthropic (API key)",
-        models: [
-          { id: "claude-opus-4-7", label: "Opus 4.7", tier: "powerful", costTier: "high", contextWindow: 1000000 },
-          { id: "claude-opus-4-6", label: "Opus 4.6", tier: "powerful", costTier: "high", contextWindow: 1000000 },
-          { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tier: "standard", costTier: "medium", contextWindow: 1000000 },
-          { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200000 },
-        ],
-        enabled: true,
-      },
-      openai: {
-        id: "openai",
-        type: "openai",
-        label: "OpenAI",
-        models: [
-          { id: "gpt-5.4", label: "GPT-5.4", tier: "powerful", costTier: "high", contextWindow: 1000000 },
-          { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", tier: "standard", costTier: "medium", contextWindow: 400000 },
-          { id: "gpt-5.3-codex", label: "GPT-5.3 Codex", tier: "powerful", costTier: "high", contextWindow: 400000 },
-          { id: "o4-mini", label: "o4-mini", tier: "fast", costTier: "low", contextWindow: 200000 },
-        ],
-        enabled: true,
-      },
-      gemini: {
-        id: "gemini",
-        type: "gemini",
-        label: "Google Gemini",
-        models: [
-          { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite", tier: "fast", costTier: "low", contextWindow: 1000000 },
-          { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", tier: "standard", costTier: "medium", contextWindow: 1000000 },
-          { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful", costTier: "high", contextWindow: 1000000 },
-        ],
-        enabled: true,
-      },
-    },
+    providers: providerConfigsFromRegistry(),
     agents: {},
     layers: {},
     sources: {},
@@ -612,9 +616,89 @@ export function defaultProjectSources(projectPath: string): Record<string, DataS
   };
 }
 
+function mergeProviderConfigs(
+  defaults: Record<string, ProviderConfig>,
+  saved?: Record<string, ProviderConfig>,
+): Record<string, ProviderConfig> {
+  const merged: Record<string, ProviderConfig> = {};
+
+  for (const [id, provider] of Object.entries(defaults)) {
+    const existing = saved?.[id];
+    merged[id] = {
+      ...provider,
+      ...existing,
+      models: provider.models,
+      enabled: existing?.enabled ?? provider.enabled,
+      baseUrl: existing?.baseUrl ?? provider.baseUrl,
+    };
+  }
+
+  for (const [id, provider] of Object.entries(saved ?? {})) {
+    if (!(id in merged)) merged[id] = provider;
+  }
+
+  return merged;
+}
+
 // ---------------------------------------------------------------------------
 // ConfigStore — persists settings to disk
 // ---------------------------------------------------------------------------
+
+/**
+ * Runtime validation of operator/persisted configuration at every write
+ * boundary. Only memory selection policies carry semantics the TypeScript
+ * shapes cannot protect; validate them wherever a source may be declared:
+ * global sources and each project's source overrides.
+ */
+/** A layer's content segment must be absent or exactly one of the two bounded values. Applied
+ * to global definitions and every project override before any live or persisted publication. */
+function validateLayerSegment(owner: string, id: string, layer: unknown): void {
+  const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
+  if (segment !== undefined && segment !== "domain-knowledge" && segment !== "thread-knowledge")
+    throw new Error(`invalid layer ${JSON.stringify(id)} in ${owner}: segment must be "domain-knowledge" or "thread-knowledge"`);
+}
+
+/**
+ * Validators for settings owned by modules outside the framework. A module that augments
+ * FoundryConfig registers its check here; nothing in config.ts knows the field.
+ */
+const configValidators: ((config: FoundryConfig) => void)[] = [];
+export function registerConfigValidator(validate: (config: FoundryConfig) => void): void { configValidators.push(validate); }
+
+export function validateConfig(config: FoundryConfig): void {
+  if (config.kingdomRuntime) kingdomRuntimeSchema.parse(config.kingdomRuntime);
+  for (const validate of configValidators) validate(config);
+  if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");
+  for (const source of validateKastleAccess(config.kastleAccess ?? [])) {
+    if (source.projectIds.some(id => !config.projects[id] || config.projects[id]!.enabled === false))
+      throw Error("Kastle access references an unavailable project");
+  }
+  if (config.kastles || config.defaults.kastleId || config.kastleAssignments) {
+    if (config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length) throw Error("Choose Kastle bindings or local native sources for this Foundry instance");
+    if (!["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Kastle bindings require a native runtime provider");
+    new KastleAuthentication({ directory: join(process.cwd(), ".foundry", "kastle"), sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments });
+  }
+  if (config.nativeAuthentication || config.defaults.nativeAuthenticationId || config.nativeAuthenticationSelections) {
+    const authentication = new NativeAuthentication({ directory: join(process.cwd(), ".foundry", "runtime-profiles"),
+      sources: config.nativeAuthentication ?? [], defaultSourceId: config.defaults.nativeAuthenticationId });
+    for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {})) authentication.select(threadId, sourceId);
+    if (config.defaults.nativeAuthenticationId && !["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Native authentication requires a native runtime provider");
+  }
+  validateLearningSettings(config.learning);
+  for (const [id, layer] of Object.entries(config.layers ?? {})) validateLayerSegment("global layers", id, layer);
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    for (const [id, layer] of Object.entries((project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {}))
+      validateLayerSegment(`project ${JSON.stringify(pid)} layers`, id, layer);
+  const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
+    for (const [id, src] of Object.entries(sources ?? {})) {
+      if (!src || src.selection === undefined || src.selection === false) continue;
+      try { validateMemorySelection(src.selection); }
+      catch (err) { throw new Error(`invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`); }
+    }
+  };
+  check("global sources", config.sources);
+  for (const [pid, project] of Object.entries(config.projects ?? {})) check(`project ${JSON.stringify(pid)} sources`, project?.sources as Record<string, DataSourceConfig> | undefined);
+}
 
 export class ConfigStore {
   private _dir: string;
@@ -629,19 +713,27 @@ export class ConfigStore {
     this._config = defaultConfig();
   }
 
+  get directory(): string { return this._dir; }
+
   /** Load config from disk, merging with defaults. */
   async load(): Promise<FoundryConfig> {
     const path = join(this._dir, "settings.json");
     const file = Bun.file(path);
     if (await file.exists()) {
       const saved = await file.json() as Partial<FoundryConfig>;
-      // Merge saved over defaults
-      this._config = {
-        ...defaultConfig(),
+      const defaults = defaultConfig();
+      // Merge saved over defaults into a candidate; validate before it becomes live.
+      // An invalid persisted policy fails loudly, keeps the last working live
+      // configuration, and leaves the file untouched for the operator to repair.
+      const candidate: FoundryConfig = {
+        ...defaults,
         ...saved,
-        providers: { ...defaultConfig().providers, ...saved.providers },
+        providers: mergeProviderConfigs(defaults.providers, saved.providers),
         projects: { ...saved.projects },
       };
+      try { validateConfig(candidate); }
+      catch (err) { throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`); }
+      this._config = candidate;
     }
     this._loaded = true;
     return this._config;
@@ -654,27 +746,34 @@ export class ConfigStore {
 
   /** Update the full config and persist. */
   async save(config: FoundryConfig): Promise<void> {
+    validateConfig(config);
     this._config = config;
     await this._write();
   }
 
   /** Patch a section of the config. */
   async patch(section: string, data: Record<string, unknown>): Promise<FoundryConfig> {
+    // Build the candidate on a copy; live and persisted settings change only after validation.
+    const next: FoundryConfig = { ...this._config };
     if (section === "defaults") {
-      this._config.defaults = { ...this._config.defaults, ...data } as FoundryConfig["defaults"];
+      next.defaults = { ...this._config.defaults, ...data } as FoundryConfig["defaults"];
     } else if (section === "providers") {
-      this._config.providers = { ...this._config.providers, ...data } as FoundryConfig["providers"];
+      next.providers = { ...this._config.providers, ...data } as FoundryConfig["providers"];
     } else if (section === "agents") {
-      this._config.agents = { ...this._config.agents, ...data } as FoundryConfig["agents"];
+      next.agents = { ...this._config.agents, ...data } as FoundryConfig["agents"];
     } else if (section === "layers") {
-      this._config.layers = { ...this._config.layers, ...data } as FoundryConfig["layers"];
+      next.layers = { ...this._config.layers, ...data } as FoundryConfig["layers"];
     } else if (section === "sources") {
-      this._config.sources = { ...this._config.sources, ...data } as FoundryConfig["sources"];
+      next.sources = { ...this._config.sources, ...data } as FoundryConfig["sources"];
     } else if (section === "projects") {
-      this._config.projects = { ...this._config.projects, ...data } as FoundryConfig["projects"];
+      next.projects = { ...this._config.projects, ...data } as FoundryConfig["projects"];
     } else if (section === "mcp") {
-      this._config.mcp = { ...this._config.mcp, ...data } as McpSettingsConfig;
+      next.mcp = { ...this._config.mcp, ...data } as McpSettingsConfig;
+    } else if (section === "learning") {
+      next.learning = { ...this._config.learning, ...data } as LearningSettings;
     }
+    validateConfig(next);
+    this._config = next;
     await this._write();
     return this._config;
   }
@@ -724,12 +823,15 @@ export class ConfigStore {
     // Sync layers
     for (const layer of thread.stack.layers) {
       if (!this._config.layers[layer.id]) {
+        // A newly discovered layer carries its construction segment when it has one;
+        // an existing configured definition is never overwritten and no absent field is added.
         this._config.layers[layer.id] = {
           id: layer.id,
           prompt: layer.prompt ?? "",
           sourceIds: layer.sources.map((s) => s.id),
           staleness: layer.staleness ?? 0,
           enabled: true,
+          ...(layer.segment ? { segment: layer.segment } : {}),
         };
       }
     }

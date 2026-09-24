@@ -101,6 +101,25 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
     meta?: Record<string, unknown>
   ): Promise<ExecutionResult<TResult>>;
 
+  /**
+   * Create an independent instance of this agent bound to another stack.
+   * Handler, prompt, LLM config, peers, and layer filter carry over; the
+   * original keeps its own stack. Used to give each thread its own agents.
+   */
+  abstract withStack(stack: ContextStack): BaseAgent<TPayload, TResult>;
+
+  /** Config needed to re-instantiate this agent on a different stack. */
+  protected agentConfig(stack: ContextStack): AgentConfig {
+    return {
+      id: this.id,
+      stack,
+      layerFilter: this._layerFilter,
+      prompt: this.prompt,
+      llm: this.llm,
+      peers: [...this.peers],
+    };
+  }
+
   setLayerFilter(filter: LayerFilter): void {
     this._layerFilter = filter;
   }

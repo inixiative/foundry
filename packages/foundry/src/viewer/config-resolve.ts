@@ -335,6 +335,7 @@ function resolveAgentDefinition(
   resolved.temperature = scalarField(base?.temperature, override.temperature, scope).value;
   resolved.visibleLayers = listField(base?.visibleLayers, override.visibleLayers, scope, `project.agents.${id}.visibleLayers`).value ?? [];
   resolved.ownedLayers = listField(base?.ownedLayers, override.ownedLayers, scope, `project.agents.${id}.ownedLayers`).value;
+  resolved.guardTriggers = listField(base?.guardTriggers, override.guardTriggers, scope, `project.agents.${id}.guardTriggers`).value;
   resolved.peers = listField(base?.peers, override.peers, scope, `project.agents.${id}.peers`).value ?? [];
   resolved.maxDepth = scalarField(base?.maxDepth, override.maxDepth, scope).value;
   resolved.tools = scalarField(base?.tools, override.tools, scope).value;
@@ -371,6 +372,13 @@ function resolveLayerDefinition(
   const prompt = scalarField(base?.prompt, project.prompt, scope);
   resolved.prompt = prompt.value;
   fields.prompt = prompt.provenance;
+
+  // Content segment follows the same scalar policy as every other layer field
+  // (inherit, override, project-only). The key is written only when a value is
+  // declared, so legacy definitions without metadata stay without it.
+  const segment = scalarField(base?.segment, project.segment, scope);
+  if (segment.value !== undefined) resolved.segment = segment.value;
+  fields.segment = segment.provenance;
 
   const sourceIds = listField(base?.sourceIds, project.sourceIds, scope, `project.layers.${id}.sourceIds`);
   resolved.sourceIds = sourceIds.value ?? [];
@@ -412,6 +420,7 @@ export function resolveProjectView(
   if (!project) return null;
 
   const resolved: FoundryConfig = {
+    ...(config.learning !== undefined ? { learning: structuredClone(config.learning) } : {}),
     defaults: { ...config.defaults, ...project.defaults },
     providers: config.providers,
     agents: { ...config.agents },

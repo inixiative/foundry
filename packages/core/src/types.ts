@@ -79,7 +79,9 @@ export interface CompletionOpts {
   topP?: number;
   stop?: string[];
   /** Max agentic turns (for runtimes that support tool use). */
-  maxTurns?: number;
+  maxTurns?: number | null;
+  /** Additive native ownership contract; optional for standalone/legacy providers. */
+  nativeObservation?: import("./native-evidence").NativeObservation;
   /** Enable/disable tool use. False = pure text completion. */
   tools?: boolean;
   /** Tool definitions for the LLM to call. Providers map to native format. */
@@ -106,6 +108,7 @@ export interface CompletionOpts {
 }
 
 export interface CompletionResult {
+  readonly native?: import("./native-evidence").NativeEvidence;
   readonly content: string;
   readonly model: string;
   readonly tokens?: { input: number; output: number };
@@ -130,6 +133,20 @@ export interface LLMStreamEvent {
 
 export interface LLMProvider {
   readonly id: string;
+  /** Native callback support, distinct from stateless/legacy serializable options. */
+  readonly nativeOwnership?: "required-prewrite";
+  /** Optional owned-call evidence. A rejected waiter alone never proves remote settlement. */
+  readonly completionLifecycle?: {
+    readonly kind: "request" | "session";
+    settlement(outcome: { result?: CompletionResult; error?: unknown }): "settled" | "unknown";
+    admission?(outcome: { result?: CompletionResult; error?: unknown }): "not-admitted" | "attempted" | "unknown";
+    /** Read only the original registered admission. Never sends, resumes or replaces work. */
+    inspectOwnedAdmission?(owner: import("./native-evidence").NativeOwner, admissionId: string): Promise<import("./native-evidence").OwnedAdmissionInspection | undefined>;
+    /** Cleanup of that original, confirmed idle pool entry; never a current-scope lookup. */
+    releaseOwnedAdmission?(owner: import("./native-evidence").NativeOwner, admissionId: string): Promise<"released" | "unknown" | "unavailable">;
+    /** Release only a confirmed idle owned resource; never clear its resume binding. */
+    releaseIdle?(opts: CompletionOpts): Promise<"released" | "unknown" | "unavailable">;
+  };
   complete(
     messages: LLMMessage[],
     opts?: CompletionOpts

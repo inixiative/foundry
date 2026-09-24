@@ -167,19 +167,23 @@ describe("FlowOrchestrator", () => {
       expect(plan.layers).toContain("testing-patterns");
     });
 
-    it("emits context_loaded signals during hydration (not preMessage)", async () => {
+    it("emits context_loaded signals only on delivery commit (not preMessage, not hydration)", async () => {
       const { orchestrator, signals } = setup();
       const emitted: any[] = [];
-      signals.on("context_loaded", (s) => emitted.push(s));
+      signals.on("context_loaded", (s) => { emitted.push(s); });
 
       const plan = await orchestrator.preMessage("Fix auth middleware");
-      // Signals are deferred to hydrateDelta — plan is what's WANTED, hydration is what's SENT
+      // The plan is what's WANTED; hydration prepares what WOULD be sent
       expect(emitted.length).toBe(0);
 
-      await orchestrator.hydrateDelta(plan);
+      const prepared = await orchestrator.hydrateDelta(plan);
+      expect(emitted.length).toBe(0);
+      expect(prepared.pending.some((p) => p.id === "auth-conventions")).toBe(true);
+
+      // Only evidence of delivery commits the ledger
+      await orchestrator.commitDelivery({ layers: prepared.pending });
       expect(emitted.length).toBeGreaterThan(0);
       expect(emitted.some((s) => s.content.layerId === "auth-conventions")).toBe(true);
-      // Delta hydration includes hashes for ledger tracking
       expect(emitted.every((s) => typeof s.content.hash === "string")).toBe(true);
     });
 
@@ -190,12 +194,14 @@ describe("FlowOrchestrator", () => {
       expect(plan.elapsed).toBeGreaterThanOrEqual(0);
     });
 
-    it("updates Librarian thread-state via signals after hydration", async () => {
+    it("updates Librarian thread-state via signals after delivery commit", async () => {
       const { orchestrator, librarian } = setup();
       const plan = await orchestrator.preMessage("Fix auth middleware");
-      await orchestrator.hydrateDelta(plan);
+      const prepared = await orchestrator.hydrateDelta(plan);
+      expect(librarian.state.injectedLayers).toEqual([]);
+      await orchestrator.commitDelivery({ layers: prepared.pending });
 
-      // hydrateDelta emits context_loaded → Librarian updates inContext + injectedLayers
+      // commitDelivery emits context_loaded → Librarian updates inContext + injectedLayers
       expect(librarian.state.inContext.length).toBeGreaterThan(0);
       expect(librarian.state.injectedLayers.length).toBeGreaterThan(0);
       // Ledger records include hashes
@@ -277,7 +283,7 @@ describe("FlowOrchestrator", () => {
     it("emits tool_observation signal", async () => {
       const { orchestrator, signals } = setup();
       const emitted: any[] = [];
-      signals.on("tool_observation", (s) => emitted.push(s));
+      signals.on("tool_observation", (s) => { emitted.push(s); });
 
       await orchestrator.postAction({
         tool: "file_write",
@@ -308,9 +314,13 @@ describe("FlowOrchestrator", () => {
       const plan = await orchestrator.preMessage("Fix the JWT validation bug in auth middleware");
       expect(plan.layers.length).toBeGreaterThan(0);
 
-      // 2. Hydrate context for the executor
-      const context = await orchestrator.hydrate(plan);
-      expect(context).toContain("JWT");
+      // 2. Prepare context for the executor (no ledger commit yet)
+      const prepared = await orchestrator.hydrateDelta(plan);
+      expect(prepared.content).toContain("JWT");
+      expect(librarian.state.inContext).toEqual([]);
+
+      // 2b. The executor received it: commit the delivery ledger
+      await orchestrator.commitDelivery({ layers: prepared.pending });
 
       // 3. Post-action: executor wrote a file
       const report = await orchestrator.postAction({
@@ -392,6 +402,24 @@ describe("FlowOrchestrator", () => {
       expect(orchestrator.pendingInvalidations).toHaveLength(0);
     });
 
+    it("freezes caller identity before async planning and retains it through refire and decoration", async () => {
+      const { orchestrator } = setup();
+      try {
+        const identity = { messageId: "first", threadId: "work", projectId: "P" };
+        const pending = orchestrator.preMessage("Fix auth middleware", identity);
+        identity.messageId = "mutated";
+        const plan = await pending;
+        expect(plan.input.currentMessage?.messageId).toBe("first");
+        expect(Object.isFrozen(plan.input.currentMessage)).toBe(true);
+        expect((await orchestrator.refire())?.input.currentMessage).toEqual(plan.input.currentMessage);
+        expect((await orchestrator.hydrateDelta(plan)).decoration.input.currentMessage).toEqual(plan.input.currentMessage);
+        const historical = JSON.stringify(plan);
+        await orchestrator.preMessage("Fix auth middleware");
+        expect((await orchestrator.refire())?.input.currentMessage).toBeUndefined();
+        expect(JSON.stringify(plan)).toBe(historical);
+      } finally { orchestrator.dispose(); }
+    });
+
     it("refire() returns null if no previous message", async () => {
       const { orchestrator } = setup();
       const result = await orchestrator.refire();
@@ -401,8 +429,9 @@ describe("FlowOrchestrator", () => {
     it("does NOT invalidate on its own context_loaded emissions", async () => {
       const { orchestrator } = setup();
       const plan = await orchestrator.preMessage("Fix the JWT validation in auth middleware");
-      // hydrateDelta emits context_loaded signals from "flow-orchestrator" source
-      await orchestrator.hydrateDelta(plan);
+      // commitDelivery emits context_loaded signals from "flow-orchestrator" source
+      const prepared = await orchestrator.hydrateDelta(plan);
+      await orchestrator.commitDelivery({ layers: prepared.pending });
 
       // Those self-emitted signals should not have invalidated the plan
       expect(orchestrator.isInvalidated).toBe(false);

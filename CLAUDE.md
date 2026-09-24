@@ -22,7 +22,7 @@ bun run dev            # Watch mode
 bun run test           # Core + foundry tests
 bun run typecheck      # Both packages
 bun run viewer         # Dashboard only
-bun run research       # Auto-research CLI for config sweeps
+bun run --cwd ../foundry-lab research  # Internal research CLI
 ```
 
 ## The Five FLOW.md Roles
@@ -67,7 +67,7 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 
 ## Model Routing
 
-**Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on Gemini Flash or similar fast/cheap models. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
+**Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-5.6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
 
 ## Design Principles
 
@@ -83,7 +83,7 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 - Don't treat layers as parts of a shared context window. Each is independent.
 - Don't create hardcoded Warden subclasses. They're config-driven from settings.
 - Don't put behavioral opinions in core. Core is the engine.
-- Don't use Claude/Sonnet for classifiers or routers. Use Gemini Flash.
+- Don't use Claude/Sonnet for classifiers or routers. Use GPT-5.6 Luna.
 - Don't add compaction or compression logic. It was removed intentionally.
 - Don't add backwards-compat shims for removed features.
 - Don't confuse the singular Librarian (signal reconciliation, sole thread-state writer) with the Wardens (domain-specific advise + guard).

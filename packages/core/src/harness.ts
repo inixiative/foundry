@@ -7,6 +7,7 @@ import type { LayerFilter } from "./context-stack";
 import type { ContextLayer } from "./context-layer";
 import { Trace } from "./trace";
 import { BoundedSet } from "./bounded-set";
+import { newId } from "./id";
 import type {
   InvocationCondition,
   AgentModeConfig,
@@ -131,6 +132,13 @@ export function matchesCondition(
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
+
+interface SendOptions {
+  nativeObservation?: import("./thread").DispatchOptions["nativeObservation"];
+  onDelta?: (text: string) => void;
+  /** Final trace for this attempt, independent of the bounded history cache. */
+  onTrace?: (trace: Trace) => void;
+}
 
 /**
  * The Harness is the entry point for external callers.
@@ -268,7 +276,7 @@ export class Harness {
 
   async send<T>(
     message: Message<T>,
-    opts?: { onDelta?: (text: string) => void },
+    opts?: SendOptions,
   ): Promise<HarnessResult> {
     // Idempotency: return cached result for duplicate messages
     if (this._dedupCapacity > 0 && this._seenMessages.has(message.id)) {
@@ -303,6 +311,7 @@ export class Harness {
    */
   async *sendStream<T>(
     message: Message<T>,
+    opts?: Pick<SendOptions, "onTrace" | "nativeObservation">,
   ): AsyncGenerator<
     | { kind: "delta"; text: string }
     | { kind: "done"; result: HarnessResult }
@@ -323,10 +332,11 @@ export class Harness {
     let done = false;
     let finalResult: HarnessResult | undefined;
     let thrown: unknown;
+    let failed = false;
 
-    const runPromise = this.send(message, { onDelta })
+    const runPromise = this.send(message, { ...opts, onDelta })
       .then((r) => { finalResult = r; })
-      .catch((e) => { thrown = e; })
+      .catch((e) => { failed = true; thrown = e; })
       .finally(() => {
         done = true;
         if (resolveWaiter) { const r = resolveWaiter; resolveWaiter = null; r(); }
@@ -342,7 +352,7 @@ export class Harness {
     }
 
     await runPromise;
-    if (thrown) throw thrown;
+    if (failed) throw thrown;
     if (finalResult) yield { kind: "done", result: finalResult };
   }
 
@@ -456,9 +466,9 @@ export class Harness {
   private async _runFlow<T>(
     message: Message<T>,
     flow: FlowConfig,
-    opts?: { onDelta?: (text: string) => void },
+    opts?: SendOptions,
   ): Promise<HarnessResult> {
-    const trace = new Trace(message.id);
+    const trace = new Trace(message.id, { input: structuredClone(message.payload), threadId: this.thread.id });
     const invokedAgents: Array<{ id: string; mode: string }> = [];
 
     const requestedAgents = new Set<string>();
@@ -510,7 +520,10 @@ export class Harness {
           }
           continue;
         }
-        if (!this.thread.getAgent(agentId)) continue;
+        if (!this.thread.getAgent(agentId)) {
+          if (stage.role === "execute") throw new Error(`Execution target "${agentId}" is not registered`);
+          continue;
+        }
 
         // Build layer filter for this dispatch
         const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
@@ -520,7 +533,11 @@ export class Harness {
           const bgStart = performance.now();
           const msgId = message.id;
           const bgStage = stage;
-          const { promise } = this.thread.dispatchBackground(agentId, message.payload, layerFilter);
+          const { promise } = this.thread.dispatchBackground(agentId, message.payload, layerFilter, {
+            role: stage.role,
+            messageId: message.id,
+            invocation: "background",
+          });
           invokedAgents.push({ id: agentId, mode: "background" });
 
           // Wire callback — runs when the background dispatch completes
@@ -538,8 +555,9 @@ export class Harness {
         }
 
         // Trace and dispatch (foreground — blocks pipeline)
-        trace.start(`${stage.role}:${agentId}`, stage.role as any, {
+        const stageSpan = trace.start(`${stage.role}:${agentId}`, stage.role as any, {
           agentId,
+          threadId: this.thread.id,
           input: message.payload,
           annotations: { invocation: stage.invocation },
         });
@@ -549,13 +567,19 @@ export class Harness {
           ? { payload: message.payload, classification: classification.value }
           : message.payload;
 
-        // Only wire the delta sink for the execute stage — deltas from
-        // classifiers/routers/enrichers aren't user-visible content.
-        const dispatchOpts = stage.role === "execute" && opts?.onDelta
-          ? { onDelta: opts.onDelta }
-          : undefined;
-
-        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, dispatchOpts);
+        // The thread observes this dispatch once at its boundary; the stage
+        // only contributes correlation. Only the execute stage streams deltas:
+        // classifier/router/enricher output isn't user-visible content.
+        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, {
+          onDelta: stage.role === "execute" ? opts?.onDelta : undefined,
+          role: stage.role,
+          messageId: message.id,
+          invocation: stage.invocation,
+          recordInjection: artifact => { stageSpan.annotations.injection = artifact; },
+          nativeObservation: opts?.nativeObservation,
+          recordNative: evidence => { stageSpan.annotations.native = evidence; },
+          recordCompleted: output => { stageSpan.annotations.executorCompletion = { output }; },
+        });
         invokedAgents.push({ id: agentId, mode: stage.invocation });
         stageResults.set(agentId, result);
 
@@ -567,10 +591,23 @@ export class Harness {
         // Capture classification/route from appropriate stages
         if (stage.role === "classify") {
           classification = result.output as Decision<Classification>;
+          if (classification?.value) {
+            await this.thread.signals.emit({
+              id: newId("sig-classify"),
+              kind: "classification",
+              source: `harness:${agentId}`,
+              content: classification.value,
+              confidence: classification.confidence,
+              timestamp: Date.now(),
+            });
+          }
         } else if (stage.role === "route") {
           route = result.output as Decision<Route>;
         }
 
+        if (trace.current && result.meta?.injection) {
+          trace.current.annotations.injection = result.meta.injection;
+        }
         trace.end(result.output);
       }
 
@@ -582,14 +619,18 @@ export class Harness {
 
         const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
         trace.start(`on-demand:${agentId}`, "enrich", { agentId });
-        const result = await this.thread.dispatch(agentId, message.payload, layerFilter);
+        const result = await this.thread.dispatch(agentId, message.payload, layerFilter, {
+          role: "enrich",
+          messageId: message.id,
+          invocation: "on-demand",
+        });
         invokedAgents.push({ id: agentId, mode: "on-demand" });
         stageResults.set(agentId, result);
         trace.end(result.output);
       }
 
       trace.finish();
-      this._recordTrace(trace);
+      this._recordTrace(trace, opts?.onTrace);
 
       // Final result: from last execute-role agent, or last invoked agent
       const finalAgentId = lastExecuteAgentId
@@ -611,12 +652,10 @@ export class Harness {
         activeLayers,
       };
     } catch (err) {
-      const current = trace.current;
-      if (current && current.status === "running") {
-        trace.end(undefined, err);
-      }
+      const error = err instanceof Error ? { name: err.name, message: err.message } : { message: String(err) };
+      while (trace.current) trace.end(undefined, error);
       trace.finish();
-      this._recordTrace(trace);
+      this._recordTrace(trace, opts?.onTrace);
       throw err;
     }
   }
@@ -647,7 +686,7 @@ export class Harness {
     route?: Decision<Route>,
   ): Promise<ExecutionResult> {
     const layerFilter = this.buildLayerFilter(classification, route);
-    return this.thread.dispatch(agentId, payload, layerFilter);
+    return this.thread.dispatch(agentId, payload, layerFilter, { role: "enrich", invocation: "on-demand" });
   }
 
   async runPipeline<T>(input: T, trace?: Trace): Promise<unknown> {
@@ -699,10 +738,12 @@ export class Harness {
 
   // -- Internal --
 
-  private _recordTrace(trace: Trace): void {
+  private _recordTrace(trace: Trace, onTrace?: (trace: Trace) => void): void {
     this._traces.push(trace);
     if (this._traces.length > this._maxTraces) {
       this._traces.shift();
     }
+    try { onTrace?.(trace); }
+    catch (error) { console.warn("[Harness] trace observer failed:", error); }
   }
 }

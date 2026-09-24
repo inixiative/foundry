@@ -1,0 +1,143 @@
+{
+  "shadow": true,
+  "actionsExecuted": 0,
+  "reports": [
+    {
+      "fixture": "auth-regression",
+      "mode": "offline-fixture",
+      "matchesExpected": true,
+      "result": {
+        "shadow": true,
+        "outcome": "candidate",
+        "reason": "candidate-selected",
+        "candidateId": "hydrate-auth-context",
+        "catalogRevision": "fixture-auth-v1",
+        "candidateIds": [
+          "hydrate-auth-context",
+          "request-regression-test"
+        ],
+        "learningIds": [
+          "redirect-origin"
+        ],
+        "stages": [
+          {
+            "stage": "intervene",
+            "model": "offline-fixture",
+            "latencyMs": 2.1190829999999963,
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            },
+            "yesProbability": 0.95
+          },
+          {
+            "stage": "choose",
+            "model": "offline-fixture",
+            "latencyMs": 0.5438749999999999,
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            },
+            "choice": "hydrate-auth-context",
+            "confidence": 0.9
+          }
+        ],
+        "latencyMs": 5.1627499999999955,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    },
+    {
+      "fixture": "routine-progress",
+      "mode": "offline-fixture",
+      "matchesExpected": true,
+      "result": {
+        "shadow": true,
+        "outcome": "no-intervention",
+        "reason": "gate-no",
+        "catalogRevision": "fixture-tests-v1",
+        "candidateIds": [
+          "request-regression-test"
+        ],
+        "learningIds": [],
+        "stages": [
+          {
+            "stage": "intervene",
+            "model": "offline-fixture",
+            "latencyMs": 0.09579199999999588,
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            },
+            "yesProbability": 0.05
+          }
+        ],
+        "latencyMs": 0.18295899999999676,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    },
+    {
+      "fixture": "ambiguous-situation",
+      "mode": "offline-fixture",
+      "matchesExpected": true,
+      "result": {
+        "shadow": true,
+        "outcome": "review",
+        "reason": "gate-uncertain",
+        "catalogRevision": "fixture-ambiguous-v1",
+        "candidateIds": [
+          "request-context"
+        ],
+        "learningIds": [],
+        "stages": [
+          {
+            "stage": "intervene",
+            "model": "offline-fixture",
+            "latencyMs": 0.06858299999999673,
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            },
+            "yesProbability": 0.5
+          }
+        ],
+        "latencyMs": 0.11499999999999488,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    },
+    {
+      "fixture": "empty-catalog",
+      "mode": "offline-fixture",
+      "matchesExpected": true,
+      "result": {
+        "shadow": true,
+        "outcome": "no-intervention",
+        "reason": "no-candidates",
+        "catalogRevision": "fixture-empty-v1",
+        "candidateIds": [],
+        "learningIds": [],
+        "stages": [],
+        "latencyMs": 0.029832999999996446,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    }
+  ],
+  "validation": {
+    "date": "2026-09-20",
+    "tests": 25,
+    "assertions": 81,
+    "typecheck": "passed",
+    "liveRequests": false
+  }
+}

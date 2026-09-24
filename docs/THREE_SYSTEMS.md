@@ -298,7 +298,7 @@ Oracle imports from both.
 Three repos:
 - `inixiative/foundry-primitives` (open)
 - `inixiative/foundry` (open/source-available)
-- `inixiative/foundry-oracle` (private)
+- `inixiative/oracle` (private)
 
 ### What Needs to Change for Split
 1. **Primitives** have zero imports from Foundry or Oracle ✓ (already true)

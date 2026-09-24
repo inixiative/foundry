@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "createdAt": "2026-09-10T14:15:15.066Z",
+  "sourceRevision": "4336603026fa64a15dbea5e0b8c61a12d6e14657",
+  "sourceDigest": "6da8c56fe68322580a37af44846d8877cebe6d091802d2ad3a29cd036bd976ea",
+  "files": [
+    {
+      "path": "package.json",
+      "bytes": 668,
+      "sha256": "34ae66e1af9a6e4bf4210868ebd7f0b45c8277106c9033a2eb949668f0e0ad13"
+    },
+    {
+      "path": "src/claude-code-session.ts",
+      "bytes": 37680,
+      "sha256": "cbb0f12fdba4a89c73ab99df93c31668d44bac0111fe0f3aa95333ebe1855be5"
+    },
+    {
+      "path": "src/codex-session.ts",
+      "bytes": 65314,
+      "sha256": "0be222c234e858d963039a5bb4cbae9a5d7c4c923ceea8e061c9ea959d056bd8"
+    },
+    {
+      "path": "src/harness-session.ts",
+      "bytes": 11002,
+      "sha256": "fb2c069a81dfc64b7152d0e0b32a7d2dd45b1aa52854f7e9d86d37f4f62aa98d"
+    },
+    {
+      "path": "src/index.ts",
+      "bytes": 675,
+      "sha256": "e2ce9a569ebcb8cc15ae3f0baa768bf70501979951056d0fe0e7e11293298225"
+    },
+    {
+      "path": "src/retained-evidence.ts",
+      "bytes": 779,
+      "sha256": "7082cde4c70bf08ed93d99e1950a567fc281edb1c5976a3b59d48ea28f1cfa65"
+    },
+    {
+      "path": "src/turn-state.ts",
+      "bytes": 2395,
+      "sha256": "7f485932f5a28b158d31e40c83a2155141592b98d02fca79ef1841488c14219f"
+    }
+  ],
+  "package": {
+    "name": "@inixiative/agent-session",
+    "version": "0.1.0",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "exports": {
+      ".": "./src/index.ts"
+    }
+  },
+  "bun": "1.3.14",
+  "archive": {
+    "path": "agent-session.tgz",
+    "sha256": "61b77cb0436a5b50331a29bbc3154cbe1104249a33b73581a27401f051161a31"
+  },
+  "scope": "Source-only candidate; no native execution or rollout approval"
+}

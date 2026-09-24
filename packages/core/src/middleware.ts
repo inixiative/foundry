@@ -13,6 +13,11 @@ export interface DispatchContext<TPayload = unknown> {
   readonly stack?: ContextStackView;
   /** Thread identity. */
   readonly threadId?: string;
+  readonly projectId?: string;
+  /** Logical message being processed; absent for unidentified direct/background work. */
+  readonly messageId?: string;
+  /** Identity of this dispatch; tool observations for it carry the same id. */
+  readonly dispatchId?: string;
 }
 
 export interface DispatchOutcome<TResult = unknown> {

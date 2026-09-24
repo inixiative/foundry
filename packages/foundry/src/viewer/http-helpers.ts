@@ -37,7 +37,7 @@ export function threadToJSON(thread: Thread) {
       id: layer.id,
       state: layer.state,
       hash: layer.hash,
-      contentLength: layer.content.length,
+      contentLength: layer.snapshotInstance().content.length,
     })),
   };
 }

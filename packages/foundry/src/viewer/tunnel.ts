@@ -17,8 +17,8 @@
 // the login page (cookie session) or Authorization: Bearer header.
 // ---------------------------------------------------------------------------
 
-import { createHmac, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { privateTunnelToken } from "./private-token";
+import { authenticatedRequest, sameOrigin, sameSecret, SESSION_COOKIE, sessionValue } from "./request-auth";
 import type { Context, Next } from "hono";
 import type { Subprocess } from "bun";
 
@@ -46,50 +46,8 @@ export interface TunnelConfig {
 export interface TunnelInfo {
   /** Public URL. */
   url: string;
-  /** Bearer token required for access. */
-  token: string;
   /** Which provider is active. */
   provider: TunnelProvider;
-}
-
-// ---------------------------------------------------------------------------
-// Network detection — skip auth for private/local IPs
-// ---------------------------------------------------------------------------
-
-const PRIVATE_IP_PREFIXES = [
-  "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.",
-  "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
-  "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
-  "::1", "fc", "fd", "fe80:",
-];
-
-/** Check if an IP address is on a private/local network. */
-export function isPrivateIP(ip: string): boolean {
-  if (!ip) return false;
-  return PRIVATE_IP_PREFIXES.some((prefix) => ip.startsWith(prefix)) || ip === "localhost";
-}
-
-/**
- * Extract the client IP from a request — check forwarding headers first
- * (tunnel proxies set these), then fall back to the socket address.
- */
-export function clientIP(c: Context): string {
-  // X-Forwarded-For is set by tunnel proxies — first entry is the real client
-  const forwarded = c.req.header("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  // Fallback to direct connection (Bun sets this)
-  return c.req.header("x-real-ip") ?? "";
-}
-
-// ---------------------------------------------------------------------------
-// Auth middleware (Hono) — cookie-based for browsers, bearer for API clients
-// ---------------------------------------------------------------------------
-
-export const SESSION_COOKIE = "foundry_session";
-
-/** Generate a signed session value from the token. */
-export function sessionValue(token: string): string {
-  return createHmac("sha256", token).update("foundry-session").digest("hex");
 }
 
 /**
@@ -136,25 +94,22 @@ function loginPage(error?: string): string {
  *   1. Browser without cookie → redirect to /auth login page
  *   2. POST /auth with token → validate, set cookie, redirect to /
  *   3. API clients can use Authorization: Bearer <token> header
- *   4. WebSocket uses ?authorization= query param (can't set headers on WS upgrade)
+ *   4. WebSocket uses the same cookie or bearer authentication.
  *   5. /api/health is always open (uptime monitors)
  *
  * Session cookie is HttpOnly + SameSite=Strict. Value is HMAC of the
  * token, not the token itself.
  */
-export function tunnelAuth(token: string) {
+export function tunnelAuth(token: string, publicOrigin?: string) {
   const validSession = sessionValue(token);
 
   return async (c: Context, next: Next) => {
     const url = new URL(c.req.url);
     const path = url.pathname;
 
-    // Always allow health check
-    if (path === "/api/health") return next();
-
-    // Skip auth for private/local network requests
-    const ip = clientIP(c);
-    if (isPrivateIP(ip)) return next();
+    c.header("Cache-Control", "no-store");
+    if (!sameOrigin(c.req.raw, publicOrigin)) return c.json({ error: "Origin not allowed" }, 403);
+    if (path === "/api/health" && c.req.method === "GET") return next();
 
     // Serve login page (GET /auth)
     if (path === "/auth" && c.req.method === "GET") {
@@ -165,9 +120,9 @@ export function tunnelAuth(token: string) {
     if (path === "/auth" && c.req.method === "POST") {
       const body = await c.req.parseBody();
       const submitted = typeof body.token === "string" ? body.token.trim() : "";
-      if (submitted === token) {
+      if (sameSecret(submitted, token)) {
         // Set session cookie and redirect to root
-        const secure = url.protocol === "https:";
+        const secure = url.protocol === "https:" || (!!publicOrigin && new URL(publicOrigin).protocol === "https:");
         const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? "; Secure" : ""}`;
         return new Response(null, {
           status: 302,
@@ -177,18 +132,7 @@ export function tunnelAuth(token: string) {
       return c.html(loginPage("Invalid token. Try again."), 401);
     }
 
-    // Check Authorization header (API clients)
-    const authHeader = c.req.header("authorization") ?? "";
-    if (authHeader === `Bearer ${token}`) return next();
-
-    // Check session cookie
-    const cookies = c.req.header("cookie") ?? "";
-    const sessionMatch = cookies.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
-    if (sessionMatch && sessionMatch[1] === validSession) return next();
-
-    // WebSocket: check Authorization via query param (WS can't set custom headers)
-    const wsToken = url.searchParams.get("authorization");
-    if (path === "/ws" && wsToken === token) return next();
+    if (authenticatedRequest(c.req.raw, token, publicOrigin)) return next();
 
     // Not authenticated — redirect browsers to login, return 401 for API
     const accept = c.req.header("accept") ?? "";
@@ -204,33 +148,13 @@ export function tunnelAuth(token: string) {
 // ---------------------------------------------------------------------------
 
 function resolveToken(config: TunnelConfig): string {
-  if (config.token) return config.token;
-
-  const dir = config.configDir ?? ".foundry";
-  const tokenPath = `${dir}/tunnel-token`;
-
-  // Read existing token
-  try {
-    if (existsSync(tokenPath)) {
-      const content = readFileSync(tokenPath, "utf-8").trim();
-      if (content.length >= 32) return content;
-    }
-  } catch {
-    // Fall through to generate
+  if (config.token) {
+    if (config.token.length < 32 || config.token.length > 256 || /[\r\n\0]/.test(config.token))
+      throw Error("Tunnel access token must contain 32 to 256 characters");
+    return config.token;
   }
 
-  // Generate new token
-  const token = randomBytes(32).toString("hex");
-
-  // Persist
-  try {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(tokenPath, token, "utf-8");
-  } catch (err) {
-    import("../logger").then(({ log }) => log.warn("[Tunnel] could not persist token:", (err as Error).message));
-  }
-
-  return token;
+  return privateTunnelToken(config.configDir ?? ".foundry");
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +185,6 @@ export class FoundryTunnel {
     if (!this._url) return null;
     return {
       url: this._url,
-      token: this._token,
       provider: this._config.provider ?? "localtunnel",
     };
   }
@@ -323,7 +246,6 @@ export class FoundryTunnel {
 
     const { log } = await import("../logger");
     log.info(`[Tunnel] localtunnel active: ${url}`);
-    log.info(`[Tunnel] Token: ${this._token}`);
 
     return url;
   }
@@ -352,7 +274,6 @@ export class FoundryTunnel {
 
     const { log } = await import("../logger");
     log.info(`[Tunnel] cloudflared active: ${url}`);
-    log.info(`[Tunnel] Token: ${this._token}`);
 
     return url;
   }
@@ -394,7 +315,7 @@ export class FoundryTunnel {
 
     reader.releaseLock();
     throw new Error(
-      `Tunnel did not produce a URL within ${timeout / 1000}s. Output: ${buffer.slice(0, 300)}`,
+      `Tunnel did not produce a URL within ${timeout / 1000}s`,
     );
   }
 }

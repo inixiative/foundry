@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "archive": "bun run packages/foundry/src/archives/cli.ts",
     "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts",
     "test:core": "bun test ./packages/core/tests/",
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
@@ -21,14 +22,25 @@
     "dev": "bun --watch run packages/foundry/src/start.ts",
     "viewer": "bun run packages/foundry/src/viewer/server.ts",
     "demo": "bun run packages/foundry/src/demo.ts",
-    "research": "bun run packages/foundry/src/research/cli.ts",
     "db:push": "bunx prisma db push",
-    "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push"
+    "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5532/foundry_test bunx prisma db push",
+    "setup": "bun run packages/foundry/src/setup.ts",
+    "doctor": "bun run packages/foundry/src/doctor.ts",
+    "team": "bun run packages/foundry/src/development-team-cli.ts",
+    "archive:viewer": "bun run packages/foundry/src/archives/viewer.ts",
+    "signet": "bun run packages/foundry/src/providers/signet-cli.ts",
+    "runtime:worker": "bun run packages/foundry/src/providers/runtime-worker-cli.ts",
+    "medical:profile": "bun run packages/foundry/src/providers/medical-profile-cli.ts",
+    "oracle:profile": "bun packages/foundry/src/providers/oracle-profile-cli.ts"
   },
   "devDependencies": {
     "@prisma/client": "6",
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "prisma": "6",
     "typescript": "^5.7.0"
+  },
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": "1.4.2"
   }
 }

@@ -67,6 +67,37 @@ describe("Executor", () => {
     const result = await executor.run("test");
     expect(result.output).toBe("docs content");
   });
+
+  test("returns an injection artifact in metadata", async () => {
+    const stack = makeStack(
+      ["conventions", "Use existing primitives."],
+      ["__thread-state", "Graph approved."]
+    );
+    stack.getLayer("conventions")!.prompt = "Project conventions.";
+
+    const executor = new Executor({
+      id: "writer",
+      stack,
+      prompt: "You are the Artificer.",
+      handler: async (context, _payload: string) => context,
+    });
+
+    const result = await executor.run("build the loop");
+    const injection = result.meta?.injection;
+
+    expect(injection).toBeDefined();
+    expect(injection?.userMessage).toBe("build the loop");
+    expect(injection?.text).toContain("# User Message");
+    expect(injection?.text).toContain("## Instructions");
+    expect(injection?.text).toContain("## Domain Knowledge");
+    expect(injection?.text).toContain("## Thread State");
+    expect(injection?.blocks.map((block) => block.kind)).toEqual([
+      "instructions",
+      "instructions",
+      "domain-knowledge",
+      "thread-knowledge",
+    ]);
+  });
 });
 
 describe("Decider", () => {

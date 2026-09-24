@@ -67,6 +67,12 @@ describe("Cartographer", () => {
   });
 
   describe("map building", () => {
+    it("routes UUID layer IDs through their configured domain", () => {
+      const id = crypto.randomUUID();
+      const layer = new ContextLayer({ id, definition: { id, domain: "architecture" } });
+      const carto = new Cartographer({ stack: new ContextStack([layer]), signals, llm: mockLLM("") });
+      expect(carto.buildMap().entries.map(e => ({ domain: e.domain, layers: e.layers }))).toEqual([{ domain: "architecture", layers: [id] }]);
+    });
     it("builds a map from stack layers", () => {
       const carto = new Cartographer({ stack, signals, llm: mockLLM("") });
       const map = carto.buildMap();

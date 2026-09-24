@@ -1,0 +1,34 @@
+{
+  "name": "@inixiative/session-archive",
+  "version": "0.1.2",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./local": "./src/local.ts",
+    "./import": "./src/import.ts",
+    "./client": "./src/client.ts",
+    "./config": "./src/config.ts",
+    "./cli": "./src/cli.ts",
+    "./collector": "./src/collector.ts",
+    "./import-file": "./src/import-file.ts",
+    "./preview": "./src/preview.ts",
+    "./server": "./src/server.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "js-tiktoken": "1.0.21",
+    "zod": "^4.3.6",
+    "archive-standalone": "npm:@inixiative/archive@0.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}

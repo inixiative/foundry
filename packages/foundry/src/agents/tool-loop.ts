@@ -25,17 +25,39 @@ import type {
   LLMMessage,
   CompletionOpts,
   CompletionResult,
+  OwnershipScope,
+  ToolCallObservation,
   ToolCallResult,
 } from "@inixiative/foundry-core";
-import { ToolRegistry } from "@inixiative/foundry-core";
+import { ToolRegistry, newId } from "@inixiative/foundry-core";
 
 export interface ToolLoopOpts extends CompletionOpts {
   /** Max tool-use iterations before forcing a text response. Default: 10. */
   maxIterations?: number;
   /** Callback fired after each tool execution. */
   onToolCall?: (toolName: string, input: Record<string, unknown>, result: string) => void;
+  /**
+   * Structured, bounded observation of each executed tool call, carrying the
+   * call id and sequence. The dispatching thread correlates these to the
+   * work that made them.
+   */
+  onToolObservation?: (observation: ToolCallObservation) => void;
+  /** Identity of the dispatch this loop serves; echoed for callers that need it. */
+  dispatchId?: string;
   /** Working directory for tool execution (passed to each tool dispatch). */
   toolCwd?: string;
+  /** Owning thread/project for tool execution; memory tools read and write within it. */
+  toolScope?: OwnershipScope;
+}
+
+const MAX_OBSERVED_INPUT = 500;
+const MAX_OBSERVED_OUTPUT = 500;
+
+/** Cut to `max` characters total, marker included, so the bound is exact. */
+function bounded(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const marker = `… [truncated; original ${text.length} chars]`;
+  return `${text.slice(0, Math.max(0, max - marker.length))}${marker}`;
 }
 
 /**
@@ -64,6 +86,7 @@ export async function toolUseLoop(
   // Build conversation as a mutable array for the loop
   const conversation: LLMMessage[] = [...messages];
   let totalTokens = { input: 0, output: 0 };
+  let sequence = 0;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const result = await provider.complete(conversation, {
@@ -98,7 +121,8 @@ export async function toolUseLoop(
     const toolResults: ToolCallResult[] = [];
 
     for (const call of result.toolCalls) {
-      const toolResult = await tools.dispatch(call.name, call.input, { cwd: opts?.toolCwd });
+      const startedAt = performance.now();
+      const toolResult = await tools.dispatch(call.name, call.input, { cwd: opts?.toolCwd, scope: opts?.toolScope });
 
       const resultContent = toolResult.ok
         ? toolResult.data
@@ -112,8 +136,25 @@ export async function toolUseLoop(
         isError: !toolResult.ok,
       });
 
-      // Fire callback
+      // Fire callbacks: legacy string form and the identity-bearing observation.
       opts?.onToolCall?.(call.name, call.input, resultContent);
+      sequence += 1;
+      let rawInput: string;
+      try { rawInput = JSON.stringify(call.input) ?? "{}"; } catch { rawInput = "[unserializable input]"; }
+      const rawResult = toolResult.ok ? resultContent : (toolResult.error ?? toolResult.summary);
+      const truncated: { input?: number; output?: number; error?: number } = {};
+      if (rawInput.length > MAX_OBSERVED_INPUT) truncated.input = rawInput.length;
+      if (rawResult.length > MAX_OBSERVED_OUTPUT) truncated[toolResult.ok ? "output" : "error"] = rawResult.length;
+      opts?.onToolObservation?.({
+        callId: call.id || newId("call"),
+        tool: call.name,
+        inputSummary: bounded(rawInput, MAX_OBSERVED_INPUT),
+        ok: toolResult.ok,
+        ...(toolResult.ok ? { outputSummary: bounded(rawResult, MAX_OBSERVED_OUTPUT) } : { error: bounded(rawResult, MAX_OBSERVED_OUTPUT) }),
+        durationMs: performance.now() - startedAt,
+        sequence,
+        ...(Object.keys(truncated).length ? { truncated } : {}),
+      });
     }
 
     // Append tool results as a user message

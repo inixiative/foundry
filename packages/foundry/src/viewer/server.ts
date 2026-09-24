@@ -1,3 +1,6 @@
+import { KingdomRuntimeConnection, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import { RuntimeJobRegistry } from "../providers/runtime-job-handler";
+import { registerKingdomRoutes } from "./routes/kingdom";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import {
@@ -16,14 +19,20 @@ import { ConfigStore } from "./config";
 import { log } from "../logger";
 import {
   FoundryTunnel,
-  SESSION_COOKIE,
-  sessionValue,
   tunnelAuth,
   type TunnelConfig,
   type TunnelInfo,
 } from "./tunnel";
+import { authenticatedRequest, sameOrigin } from "./request-auth";
+import { registerDeviceRoutes } from "./routes/devices";
 import { registerControlRoutes } from "./routes/control";
 import { registerRuntimeRoutes } from "./routes/runtime";
+import { LocalSessionStore } from "../persistence/local-session-store";
+import { KnowledgePersistence } from "../persistence/knowledge-persistence";
+import { ViewerThreadDirectory } from "./thread-directory";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { registerArchiveRoutes } from "../archives/routes";
 
 export interface ViewerConfig {
   harness: Harness;
@@ -32,6 +41,8 @@ export interface ViewerConfig {
   port?: number;
   /** Directory for persisting settings. Defaults to .foundry/ */
   configDir?: string;
+  /** Optional identity file for an isolated local profile. */
+  deviceIdentityPath?: string;
   /** LLM provider for AI assist (optional). */
   assistProvider?: LLMProvider;
   /** Model for AI assist (optional). */
@@ -52,8 +63,13 @@ export interface ViewerConfig {
   actionQueue?: ActionQueue;
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
+  kingdomRuntime?: KingdomRuntimeSettings;
+  /** Job kinds this runtime may execute. Defaults to the framework built-ins. */
+  runtimeJobs?: RuntimeJobRegistry;
   /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
   assistTools?: ToolRegistry;
+  /** Durable local journal; null opts out for an explicitly transient viewer. */
+  localStore?: LocalSessionStore | null;
 }
 
 /**
@@ -68,24 +84,65 @@ export interface ViewerConfig {
  */
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4400 } = config;
+  const runtimeJobs = config.runtimeJobs ?? new RuntimeJobRegistry();
   const app = new Hono();
+  let kingdomConnection = config.kingdomRuntime
+    ? new KingdomRuntimeConnection(config.kingdomRuntime, () => directory.all().length, fetch, runtimeJobs) : null;
 
   // Mutable tunnel holder — routes can start/stop at runtime
   const tunnelHolder: { tunnel: FoundryTunnel | null } = { tunnel: null };
   if (config.tunnel) {
-    tunnelHolder.tunnel = new FoundryTunnel({ ...config.tunnel, port });
+    tunnelHolder.tunnel = new FoundryTunnel({ configDir: config.configDir, ...config.tunnel, port });
   }
 
   // Auth middleware — checks tunnelHolder dynamically so it works
   // even when tunnel is started/stopped at runtime
   app.use("*", async (c, next) => {
     const t = tunnelHolder.tunnel;
-    if (!t) return next(); // no tunnel → no auth needed
-    return tunnelAuth(t.token)(c, next);
+    if (!sameOrigin(c.req.raw, t?.url ?? undefined)) return c.json({ error: "Origin not allowed" }, 403);
+    if (!t) {
+      if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.req.url).hostname))
+        return c.json({ error: "Local viewer requires a loopback host" }, 403);
+      return next();
+    }
+    return tunnelAuth(t.token, t.url ?? undefined)(c, next);
   });
 
-  const actions = new ActionHandler({ harness, eventStream, interventions });
+  app.use("*", async (c, next) => {
+    if (kingdomConnection && c.req.path !== "/api/health" && c.req.path !== "/kingdom" && !c.req.path.startsWith("/api/kingdom/") && !c.req.path.startsWith("/ui/")) {
+      try { await kingdomConnection.check(); }
+      catch { return c.req.path === "/" ? c.redirect("/kingdom") : c.json({ error: "Kingdom runtime authorization unavailable", recoveryUrl: "/kingdom" }, 503); }
+    }
+    return next();
+  });
+
+  const localStore = config.localStore === undefined
+    ? new LocalSessionStore(join(config.configDir ?? ".foundry", "sessions.sqlite")) : config.localStore;
+  const directory = new ViewerThreadDirectory(harness.thread, config.projectRegistry, config.threadFactory);
+  if (localStore) {
+    localStore.recoverInterrupted();
+    for (const warning of directory.restore(localStore.threads())) log.warn(`[Recovery] ${warning}`);
+    for (const thread of directory.all()) localStore.saveThread(thread);
+  }
+  if (localStore) registerArchiveRoutes(app, localStore, eventStream, config.configDir ?? ".foundry");
+  const knowledgePersistence = localStore && config.threadFactory?.runtime
+    ? new KnowledgePersistence(config.threadFactory.runtime, localStore, eventStream, directory.all()) : null;
+  app.get("/api/threads/:threadId/knowledge", c => {
+    const id = c.req.param("threadId");
+    if (!directory.get(id)) return c.json({ error: "Thread not found" }, 404);
+    if (!knowledgePersistence) return c.json({ status: "unavailable", error: "Durable knowledge runtime is not configured" }, 503);
+    const limit = Number(c.req.query("limit") ?? 100);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) return c.json({ error: "Invalid history limit" }, 400);
+    try { return c.json(knowledgePersistence.inspect(id, limit)); }
+    catch (error) { return c.json({ status: "blocked", error: (error as Error).message }, 503); }
+  });
+  const actions = new ActionHandler({ harness, eventStream, interventions,
+    resolveThread: id => directory.get(id),
+    onThreadChange: thread => localStore?.saveThread(thread),
+  });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
+  registerKingdomRoutes(app, configStore, config.configDir ?? ".foundry", () => directory.all().length, connection => { kingdomConnection?.stop(); kingdomConnection = connection; }, () => kingdomConnection?.connected ?? false, runtimeJobs);
+  registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)
     : null;
@@ -93,10 +150,17 @@ export function createViewer(config: ViewerConfig) {
     ? new AnalyticsStore(config.analyticsDir ?? ".foundry/analytics")
     : null;
 
+  const analyticsReady = analyticsStore?.load() ?? Promise.resolve();
+  // Retain rejection for constructors that await readiness; do not expose paths
+  // or parsed private file contents in a startup diagnostic.
+  analyticsReady.catch(() => log.warn("[Viewer] analytics history unavailable"));
   if (analyticsStore && config.tokenTracker) {
-    analyticsStore.load().catch((err) => log.warn("[Viewer] background op failed:", err.message ?? err));
     analyticsStore.connectTracker(config.tokenTracker);
   }
+  app.use('/api/analytics*', async (c, next) => {
+    try { await analyticsReady; } catch { return c.json({ error: 'Analytics history unavailable' }, 503); }
+    await next();
+  });
 
   const db = config.db ?? null;
 
@@ -110,6 +174,9 @@ export function createViewer(config: ViewerConfig) {
     configStore,
     projectRegistry: config.projectRegistry,
     namingProvider: config.assistProvider,
+    deviceIdentityPath: config.deviceIdentityPath,
+    localStore,
+    directory,
   });
 
   registerControlRoutes(app, {
@@ -165,15 +232,28 @@ export function createViewer(config: ViewerConfig) {
     });
   }
 
-  app.get("/ui/*", serveStatic({ root: "./packages/foundry/src/viewer/" }));
-  app.get("/", serveStatic({ path: "./packages/foundry/src/viewer/ui/index.html" }));
+  // The browser and offline verifier execute the same import-free proof module.
+  app.get("/ui/delivery-evidence.js", async c => c.body(new Bun.Transpiler({ loader: "ts" }).transformSync(
+    await Bun.file(new URL("../../../core/src/delivery-evidence.ts", import.meta.url)).text()), 200,
+    { "Content-Type": "application/javascript" }));
+  app.get("/ui/*", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)) }));
+  app.get("/kingdom", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)), path: "ui/kingdom.html" }));
+  app.get("/", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)), path: "ui/index.html" }));
 
-  return { app, port, actions, configStore, analyticsStore, tunnelHolder };
+  return { app, port, actions, configStore, analyticsStore, analyticsReady, tunnelHolder, localStore, directory, get kingdomConnection() { return kingdomConnection; } };
 }
 
 /** Start the viewer server. */
 export async function startViewer(config: ViewerConfig) {
-  const { app, port, actions, configStore, tunnelHolder } = createViewer(config);
+  const initialStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
+  const saved = await initialStore.load();
+  config = { ...config, kingdomRuntime: config.kingdomRuntime ?? saved.kingdomRuntime };
+  if (!config.tunnel && saved.tunnel?.enabled) config = { ...config, tunnel: {
+    port: config.port ?? 4400, provider: saved.tunnel.provider, subdomain: saved.tunnel.subdomain,
+    configDir: config.configDir,
+  } };
+  const viewer = createViewer({ ...config, configStore: initialStore });
+  const { app, port, actions, configStore, tunnelHolder, localStore } = viewer;
   const wsCleanup = new Map<object, () => void>();
 
   if (config.actionQueue) {
@@ -186,26 +266,28 @@ export async function startViewer(config: ViewerConfig) {
     });
   }
 
-  const server = Bun.serve({
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    await viewer.kingdomConnection?.start().catch(() => log.warn("[Kingdom] Runtime unavailable; reconnect at /kingdom"));
+    server = Bun.serve({
     port,
-    fetch(req, server) {
+    hostname: "127.0.0.1",
+    idleTimeout: 240,
+    async fetch(req, server) {
       const url = new URL(req.url);
 
       if (url.pathname === "/ws") {
-        // Check tunnel auth dynamically — tunnel may be started/stopped at runtime
         const activeTunnel = tunnelHolder.tunnel;
-        if (activeTunnel) {
-          const validSession = sessionValue(activeTunnel.token);
-          const cookies = req.headers.get("cookie") ?? "";
-          const match = cookies.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
-          const hasValidCookie = match?.[1] === validSession;
-          const hasValidToken = url.searchParams.get("authorization") === activeTunnel.token;
-          if (!hasValidCookie && !hasValidToken) {
-            return new Response("Unauthorized", { status: 401 });
-          }
-        }
+        if (!sameOrigin(req, activeTunnel?.url ?? undefined)) return new Response("Origin not allowed", { status: 403 });
+        if (activeTunnel ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined)
+          : !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+          return new Response("Unauthorized", { status: 401 });
 
-        if (server.upgrade(req)) return undefined;
+        if (viewer.kingdomConnection) {
+          try { await viewer.kingdomConnection.check(); }
+          catch { return new Response("Kingdom runtime unavailable", { status: 503 }); }
+        }
+        if (server.upgrade(req, { data: undefined })) return undefined;
         return new Response("WebSocket upgrade failed", { status: 400 });
       }
 
@@ -213,10 +295,15 @@ export async function startViewer(config: ViewerConfig) {
     },
     websocket: {
       open(ws) {
+        const timer = setInterval(() => {
+          void viewer.kingdomConnection?.check().catch(() => ws.close(1008, "Kingdom runtime unavailable"));
+        }, 15000);
+        timer?.unref();
         const unsub = config.eventStream.subscribe((event) => {
+          if (viewer.kingdomConnection && !viewer.kingdomConnection.connected) { ws.close(1008, "Kingdom runtime unavailable"); return; }
           ws.send(JSON.stringify(event));
         });
-        wsCleanup.set(ws, unsub);
+        wsCleanup.set(ws, () => { if (timer) clearInterval(timer); unsub(); });
       },
       message() {},
       close(ws) {
@@ -227,24 +314,21 @@ export async function startViewer(config: ViewerConfig) {
     },
   });
 
-  log.info(`Foundry Viewer running at http://localhost:${port}`);
-
-  // Auto-start tunnel from persisted config (survives restarts)
-  if (!tunnelHolder.tunnel) {
-    try {
-      const cfg = await configStore.load();
-      if (cfg.tunnel?.enabled) {
-        tunnelHolder.tunnel = new FoundryTunnel({
-          port,
-          provider: cfg.tunnel.provider ?? "localtunnel",
-          subdomain: cfg.tunnel.subdomain,
-          token: cfg.tunnel.password || undefined,
-        });
-      }
-    } catch (err) {
-      log.warn(`[Tunnel] failed to load config: ${(err as Error).message}`);
-    }
+  } catch (error) {
+    viewer.kingdomConnection?.stop();
+    localStore?.close();
+    throw error;
   }
+  const stopServer = server.stop.bind(server);
+  server.stop = (closeActiveConnections?: boolean) => {
+    viewer.kingdomConnection?.stop();
+    void tunnelHolder.tunnel?.stop();
+    for (const cleanup of wsCleanup.values()) cleanup();
+    wsCleanup.clear();
+    return stopServer(closeActiveConnections);
+  };
+
+  log.info(`Foundry Viewer running at http://localhost:${server.port}`);
 
   if (tunnelHolder.tunnel) {
     try {
@@ -256,5 +340,5 @@ export async function startViewer(config: ViewerConfig) {
     }
   }
 
-  return { server, actions, tunnelHolder };
+  return { server, actions, tunnelHolder, localStore, get kingdomConnection() { return viewer.kingdomConnection; } };
 }

@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T05:58:33.204853+00:00",
+  "mode": "controlled-native-transport-validation",
+  "fullTests": {
+    "pass": 1489,
+    "fail": 0
+  },
+  "finalProxyTests": {
+    "pass": 11,
+    "fail": 0
+  },
+  "typecheck": "passed",
+  "scope": "Scoped local device tool over SDK and real local stdio proxy/journal. No live model, remote device, or cross-machine link verification."
+}

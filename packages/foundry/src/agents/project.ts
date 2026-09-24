@@ -110,6 +110,12 @@ export class Project {
     if (this._threads.has(thread.id)) {
       throw new Error(`Thread "${thread.id}" already exists in project "${this.id}"`);
     }
+    // Ownership is explicit: a thread belongs to exactly one project, and its
+    // scoped memory sources and tool calls resolve that project lazily.
+    if (thread.meta.projectId && thread.meta.projectId !== this.id) {
+      throw new Error(`Thread "${thread.id}" is owned by project "${thread.meta.projectId}", not "${this.id}"`);
+    }
+    thread.meta.projectId = this.id;
     this._threads.set(thread.id, thread);
     this.status = "active";
   }

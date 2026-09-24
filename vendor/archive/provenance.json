@@ -1,0 +1,7 @@
+{
+  "package": "@inixiative/archive@0.2.0",
+  "source": "../../../archive",
+  "sha256": "0ebf31e7ccc671afdb2502438128fc6f0de21d46e2494e156d80093289690d75",
+  "license": "MIT",
+  "note": "Source-only standalone package; no credentials, session histories, or private QA artifacts."
+}

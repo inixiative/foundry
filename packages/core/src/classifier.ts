@@ -1,5 +1,7 @@
 import { Decider, type DeciderConfig, type Decision } from "./decider";
 import type { AgentConfig } from "./base-agent";
+import type { ContextStack } from "./context-stack";
+import type { ExecuteMeta } from "./executor";
 
 /**
  * A classification — "what is this thing?"
@@ -12,7 +14,8 @@ export interface Classification {
 
 export type ClassifyHandler<TPayload> = (
   context: string,
-  payload: TPayload
+  payload: TPayload,
+  meta?: ExecuteMeta
 ) => Promise<Decision<Classification>>;
 
 export interface ClassifierConfig<TPayload = unknown> extends AgentConfig {
@@ -32,5 +35,9 @@ export class Classifier<TPayload = unknown> extends Decider<
 > {
   constructor(config: ClassifierConfig<TPayload>) {
     super(config as DeciderConfig<TPayload, Classification>);
+  }
+
+  override withStack(stack: ContextStack): Classifier<TPayload> {
+    return new Classifier<TPayload>({ ...this.agentConfig(stack), handler: this._handler });
   }
 }

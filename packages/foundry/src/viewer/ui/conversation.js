@@ -10,8 +10,11 @@ import { html, useState, useRef, useEffect } from "./lib.js";
 import {
   messages, sending, inflight, sendMessage, selectedSpanId, loadTraceDetail,
   prompts, resolvePrompt, allThreads, tokenUsage, revertThread, forkThread,
-  threadData, layerColor,
+  threadData, layerColor, threadContextTokens, activeThreadId, historyPaging, loadOlderMessages,
 } from "./store.js";
+import { failurePresentation } from "./inspector-data.js";
+import { liveThreadStatus, liveWorkLabel } from './live-state.js';
+import { isUnsavedCompletion, browserStorageNotice, browserStorageSummary } from "./conversation-state.js";
 
 // ---------------------------------------------------------------------------
 // Token bar — session usage + budget at top of conversation
@@ -27,8 +30,10 @@ function TokenBar() {
   const usage = tokenUsage.value;
   if (!usage) return null;
 
-  const { usedTokens, totalInput, totalOutput, usedCost, totalCalls, percentage, warning, exceeded, limitCost, contextWindow, contextTokens, contextPct } = usage;
-  if (usedTokens === 0 && totalCalls === 0) return null;
+  const { usedTokens, totalInput, totalOutput, usedCost, totalCalls, percentage, warning, exceeded, limitCost, contextWindow } = usage;
+  const contextTokens = threadContextTokens.value;
+  const contextPct = contextWindow ? contextTokens / contextWindow : null;
+  if (usedTokens === 0 && totalCalls === 0 && !usage.usageUnavailable) return null;
 
   const budgetPct = Math.min(percentage * 100, 100);
   const budgetColor = exceeded ? "#f87171" : warning ? "#facc15" : "#4ade80";
@@ -53,11 +58,11 @@ function TokenBar() {
         <span class="token-stat-divider"></span>
         <span class="token-stat">
           <span class="token-stat-value">${fmtNum(usedTokens)}</span>
-          <span class="token-stat-label">tokens</span>
+          <span class="token-stat-label">${usage.usageUnavailable ? "known tokens" : "tokens"}</span>
         </span>
         <span class="token-stat-divider"></span>
         <span class="token-stat">
-          <span class="token-stat-value">$${usedCost.toFixed(4)}</span>
+          <span class="token-stat-value">${usage.costUnavailable ? "Unavailable" : `$${usedCost.toFixed(4)}`}</span>
           <span class="token-stat-label">cost</span>
         </span>
         <span class="token-stat-divider"></span>
@@ -76,8 +81,8 @@ function TokenBar() {
             <span class="token-bar-pct" style="color: ${ctxColor}">${ctxPct.toFixed(0)}%</span>
           </div>
         ` : null}
-        ${limitCost ? html`
-          <div class="token-bar-meter" title="$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget">
+        ${limitCost && !usage.costUnavailable ? html`
+          <div class="token-bar-meter" title=${usage.costUnavailable ? "Cost unavailable; budget shows known subtotal only" : `$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget`}>
             <span class="token-bar-meter-label" style="color: ${budgetColor}">$$$</span>
             <div class="token-bar-track">
               <div class="token-bar-fill" style="width: ${budgetPct}%; background: ${budgetColor}"></div>
@@ -121,13 +126,13 @@ function ContextBar() {
   );
 
   // Thread: estimated tokens of the full conversation history so far.
-  const threadTokens = usage?.contextTokens ?? 0;
+  const threadTokens = threadContextTokens.value;
 
   const contextWindow = usage?.contextWindow ?? null;
   const denom = contextWindow && contextWindow > 0 ? contextWindow : Math.max(warmTokens, systemTokens, threadTokens, 1);
 
   const title = meta.description || data.threadId;
-  const status = meta.status || "idle";
+  const status = liveThreadStatus(messages.value) || meta.status || "idle";
   const branch = meta.branch || null;
   const cwd = meta.cwd ? meta.cwd.split("/").slice(-2).join("/") : null;
 
@@ -270,12 +275,28 @@ function MessageActions({ index }) {
   `;
 }
 
+function BrowserStorageWarning({ msg }) {
+  const notice = browserStorageNotice(msg);
+  return notice ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn, #facc15); margin: 8px 0;">${notice}</div>` : null;
+}
+
+function browserHistoryLabel(msg) {
+  if (msg.browserStorage?.status === "volatile") return " | Browser copy not saved";
+  return msg.storage === "browser-only" ? " | Browser-only history" : "";
+}
+
+function evidenceText(value) {
+  try { return JSON.stringify(value, null, 2); }
+  catch { return "Evidence could not be serialized for display. The message above remains available in this tab."; }
+}
+
 function UserMessage({ msg, index }) {
   return html`
-    <div class="chat-msg chat-user">
+    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ""} data-actor="user">
       <${MessageActions} index=${index} />
       <div class="chat-msg-content">${msg.content}</div>
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+      <${BrowserStorageWarning} msg=${msg} />
+      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
     </div>
   `;
 }
@@ -338,10 +359,12 @@ function LayerChips({ layers }) {
 }
 
 function AgentMessage({ msg, index, onTraceClick }) {
-  const hasTrace = msg.traceId && msg.trace;
+  const hasTrace = !!msg.traceId;
   const stages = msg.trace?.stages || [];
   const isStreaming = !!msg.streaming;
   const injectedLayers = msg.meta?.injectedLayers;
+  const failure = failurePresentation(msg.meta);
+  const volatile = msg.browserStorage?.status === "volatile";
 
   // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback)
   const execIdx = stages.findIndex(s => s.kind === "execute" || s.name?.includes("execut"));
@@ -350,7 +373,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const execStage = execIdx >= 0 ? stages[execIdx] : null;
 
   return html`
-    <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""} ${isStreaming ? "chat-streaming" : ""}">
+    <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""} ${isStreaming ? "chat-streaming" : ""}" data-turn-id=${msg.turnId ?? ""} data-actor="agent">
       <${MessageActions} index=${index} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
@@ -362,7 +385,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
       />
 
       <!-- Classification + route badges (inline) -->
-      ${msg.classification || msg.route || execStage ? html`
+      ${msg.classification || msg.route || execStage || hasTrace ? html`
         <div class="chat-pipeline">
           ${msg.classification ? html`
             <span class="chat-badge classify">${msg.classification.category}</span>
@@ -376,7 +399,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
           ${hasTrace ? html`
             <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
               title="Inspect trace in detail panel">
-              trace ${msg.trace.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ""}
+              trace ${msg.trace?.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ""}
             </button>
           ` : null}
         </div>
@@ -384,7 +407,38 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
       <${LayerChips} layers=${injectedLayers} />
 
+      ${msg.live ? html`<section class="live-work" aria-label="Work activity">
+        <div class="live-work-status">${liveWorkLabel(msg)}</div>
+        ${!msg.live.activity.length ? html`<div>Public native detail ${msg.live.nativeDetail==='unavailable'?'unavailable':'not yet received'}.</div>` : null}
+        ${msg.live.native?html`<div>Observed native ${msg.live.native.outcome} · RPC ${msg.live.native.rpc}. Cleanup is separate.</div>`:null}
+        <div class="live-work-activity">${msg.live.activity.map(a=>a.kind==='text'?html`<div class="live-work-progress">${a.phase==='final_answer'?html`<small>Final answer preview</small><br/>`:a.phase==='unavailable'?html`<small>Public text · phase unavailable</small><br/>`:null}${a.text}</div>`:
+          html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`)}</div>
+        ${msg.live.truncated?html`<div>Partial activity window; complete recorded evidence is in inspection.</div>`:null}
+      </section>`:null}
+
       <div class="chat-msg-content">${msg.content}${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
+      <${BrowserStorageWarning} msg=${msg} />
+      ${failure.notices.filter(notice => !volatile || !notice.includes("browser-only") && !notice.includes("Browser-only"))
+        .map(notice => html`<div class="chat-msg-time">${notice}</div>`)}
+      ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this browser's observed result is separate.</div>` : null}
+      ${isUnsavedCompletion(msg) ? html`
+        <details>
+          <summary>${volatile ? "Tab-only completed evidence" : "Browser-only completed evidence"}</summary>
+          <div class="chat-msg-content">${evidenceText({ trace: msg.traceSnapshot ?? msg.trace, input: msg.meta?.injection })}</div>
+        </details>
+      ` : null}
+      ${failure.partialOutput ? html`
+        <details open>
+          <summary>Partial output (unconfirmed)</summary>
+          <div class="chat-msg-content">${failure.partialOutput}</div>
+        </details>
+      ` : null}
+      ${failure.browserEvidence ? html`
+        <details>
+          <summary>${volatile ? "Tab-only failure evidence" : "Browser-only failure evidence"}</summary>
+          <div class="chat-msg-content">${evidenceText(failure.browserEvidence)}</div>
+        </details>
+      ` : null}
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}
@@ -395,7 +449,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
         traceId=${msg.traceId}
       />
 
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === "unconfirmed" ? " | Connection interrupted; server outcome unconfirmed" : ""}</div>
     </div>
   `;
 }
@@ -543,16 +597,59 @@ function PromptList() {
 // Conversation (exported)
 // ---------------------------------------------------------------------------
 
+/** Older-page control at the top of the list. Reaching the oldest record is stated explicitly. */
+function HistoryPager({ threadId, count, onLoadOlder }) {
+  const paging = historyPaging.value[threadId] ?? null;
+  if (!threadId || !paging) return null;
+  if (paging.indexUnavailable) return html`<div class="chat-history-pager" role="status">Older history is not available from this server; showing the rows it returned (${count}).</div>`;
+  if (paging.offline) return html`<div class="chat-history-pager" role="status">Server history unavailable; showing this browser's saved copy (${count} rows). Older records were not fetched.</div>`;
+  return html`
+    <div class="chat-history-pager" role="status">
+      ${paging.hasMore ? html`
+        <button class="chat-history-older" type="button" disabled=${paging.loading} onClick=${onLoadOlder}>
+          ${paging.loading ? "Loading older messages…" : `Load older messages (${count} loaded)`}
+        </button>
+      ` : html`<span class="chat-history-oldest">Oldest record reached (${count} messages)</span>`}
+      ${paging.error ? html`<span class="chat-history-error">${paging.error}</span>` : null}
+    </div>
+  `;
+}
+
+/** One scoped notice for the thread's optional browser cache instead of one per durable row. */
+function CacheStatus({ msgList }) {
+  const summary = browserStorageSummary(msgList);
+  if (!summary || (summary.notCached === 0 && summary.volatile === 0)) return null;
+  if (summary.notCached === 0) return null; // volatile rows carry their own per-row notices
+  return html`<div class="chat-cache-status" role="status">${summary.message}</div>`;
+}
+
 export function Conversation({ onTraceSelect }) {
   const msgList = messages.value;
   const scrollRef = useRef(null);
+  const threadId = activeThreadId.value;
+  const prepend = useRef(null);
 
-  // Auto-scroll on new messages
+  // Auto-scroll only when the newest row changes (new message or streaming text),
+  // not when older pages are prepended above.
+  const last = msgList.at(-1);
+  const newestKey = last ? `${last.turnId ?? last.id ?? ""}:${last.actor}:${last.content?.length ?? 0}:${last.streaming ? 1 : 0}` : "";
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (prepend.current) {
+      // Keep the reader's place after older rows arrive above.
+      el.scrollTop = prepend.current.top + (el.scrollHeight - prepend.current.height);
+      prepend.current = null;
+      return;
     }
-  }, [msgList.length]);
+    el.scrollTop = el.scrollHeight;
+  }, [newestKey, msgList.length]);
+
+  const handleLoadOlder = () => {
+    const el = scrollRef.current;
+    if (el) prepend.current = { top: el.scrollTop, height: el.scrollHeight };
+    loadOlderMessages(threadId);
+  };
 
   const handleTraceClick = (traceId) => {
     // Load trace and show in detail drawer (right pane)
@@ -565,6 +662,8 @@ export function Conversation({ onTraceSelect }) {
       <${ContextBar} />
       <${TokenBar} />
       <div class="chat-messages" ref=${scrollRef}>
+        <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
+        <${CacheStatus} msgList=${msgList} />
         ${msgList.length === 0 ? html`
           <div class="conv-empty">
             Type a message below to start a conversation.<br/>
@@ -573,10 +672,10 @@ export function Conversation({ onTraceSelect }) {
         ` : null}
         ${msgList.map((msg, i) =>
           msg.actor === "user"
-            ? html`<${UserMessage} key=${i} msg=${msg} index=${i} />`
+            ? html`<${UserMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : msg.id ?? i} msg=${msg} index=${i} />`
             : msg.kind === "thinking"
-              ? html`<${ThinkingMessage} key=${i} msg=${msg} />`
-              : html`<${AgentMessage} key=${i} msg=${msg} index=${i}
+              ? html`<${ThinkingMessage} key=${msg.id ?? i} msg=${msg} />`
+              : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : msg.id ?? i} msg=${msg} index=${i}
                   onTraceClick=${handleTraceClick} />`
         )}
         ${sending.value ? html`

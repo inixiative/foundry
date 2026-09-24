@@ -1,5 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { BashShell } from "../src/tools/bash-shell";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const shell = new BashShell({ cwd: "/tmp" });
 
@@ -78,10 +81,32 @@ describe("BashShell", () => {
   });
 
   test("handles git commands", async () => {
-    const projectShell = new BashShell({ cwd: process.cwd() });
-    const result = await projectShell.exec("git rev-parse --short HEAD");
-    expect(result.ok).toBe(true);
-    expect(result.data?.stdout.trim().length).toBeGreaterThan(0);
+    // Own real Git history solely in this disposable fixture. No source checkout
+    // history, signing, global configuration, inherited Git routing or hooks.
+    const dir = await mkdtemp(join(tmpdir(), "foundry-bash-git-"));
+    const git = async (...args: string[]) => {
+      const proc = Bun.spawn(["git", "-c", "user.name=BashShell Fixture", "-c", "user.email=bash-shell@example.invalid",
+        "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+        cwd: dir, stdout: "pipe", stderr: "pipe",
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" },
+      });
+      const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+      if (code !== 0) throw Error(`Fixture git failed: ${err}`);
+      return out.trim();
+    };
+    try {
+      await git("init", "--quiet", "--template=");
+      await git("commit", "--quiet", "--allow-empty", "--no-gpg-sign", "-m", "BashShell disposable fixture");
+      expect(await git("cat-file", "-t", "HEAD")).toBe("commit");
+      const projectShell = new BashShell({ cwd: dir });
+      const result = await projectShell.exec("git rev-parse --short HEAD", { env: {
+        GIT_DIR: join(dir, ".git"), GIT_COMMON_DIR: join(dir, ".git"), GIT_WORK_TREE: dir,
+        GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null",
+      } });
+      expect(result.ok).toBe(true);
+      expect(result.data?.stdout.trim().length).toBeGreaterThan(0);
+      expect(result.data?.stdout.trim()).toBe(await git("rev-parse", "--short", "HEAD"));
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
   test("custom id", () => {

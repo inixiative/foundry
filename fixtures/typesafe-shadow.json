@@ -1,0 +1,30 @@
+[
+  {
+    "id": "auth-regression",
+    "state": { "message": "The login callback stopped working after the redirect URL changed.", "changedFiles": ["src/auth/callback.ts"] },
+    "catalog": { "revision": "fixture-auth-v1", "candidates": [{ "id": "hydrate-auth-context", "description": "Supply the auth callback and redirect configuration conventions" }, { "id": "request-regression-test", "description": "Suggest running a focused login regression test" }], "learnings": [{ "id": "redirect-origin", "text": "This project requires callback origins to match the configured web origin." }] },
+    "mock": { "yesProbability": 0.95, "choice": "hydrate-auth-context", "confidence": 0.9 },
+    "expected": { "outcome": "candidate", "reason": "candidate-selected", "candidateId": "hydrate-auth-context" }
+  },
+  {
+    "id": "routine-progress",
+    "state": { "message": "The focused test passed and the requested change is complete." },
+    "catalog": { "revision": "fixture-tests-v1", "candidates": [{ "id": "request-regression-test", "description": "Suggest a focused regression test when validation is missing" }], "learnings": [] },
+    "mock": { "yesProbability": 0.05 },
+    "expected": { "outcome": "no-intervention", "reason": "gate-no" }
+  },
+  {
+    "id": "ambiguous-situation",
+    "state": { "message": "Something might have changed, but no symptoms or files are available." },
+    "catalog": { "revision": "fixture-ambiguous-v1", "candidates": [{ "id": "request-context", "description": "Ask for a specific failure symptom" }], "learnings": [] },
+    "mock": { "yesProbability": 0.5 },
+    "expected": { "outcome": "review", "reason": "gate-uncertain" }
+  },
+  {
+    "id": "empty-catalog",
+    "state": { "message": "Review this work." },
+    "catalog": { "revision": "fixture-empty-v1", "candidates": [], "learnings": [] },
+    "mock": { "yesProbability": 1 },
+    "expected": { "outcome": "no-intervention", "reason": "no-candidates" }
+  }
+]

@@ -1,3 +1,6 @@
+import { ViewerFileAccess } from "../file-access";
+import { constants } from "node:fs";
+import { resolve as resolveFilePath } from "node:path";
 import type {
   ActionQueue,
   Harness,
@@ -21,7 +24,9 @@ import {
 import { validateId } from "../http-helpers";
 import { readFileRef, writeFileRef, writeComposed, decomposeBack, RUNTIME_OUTPUT_FILES } from "../../prompts/composer";
 import { FoundryTunnel, type TunnelInfo } from "../tunnel";
+import { SESSION_COOKIE, sessionValue } from "../request-auth";
 import { FoundrySelfChatStore, type SelfChatFocus } from "../foundry-self-chat";
+import { registerAccessRoutes } from "./access";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -61,6 +66,11 @@ export interface ControlRoutesDeps {
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void {
+  const protectedConfig = new ViewerFileAccess(deps.configStore.directory);
+  protectedConfig.remember(deps.configStore.config);
+  let initialProtection: Promise<void> | undefined;
+  app.use("*", async (_c, next) => { initialProtection ??= deps.configStore.load().then(config => protectedConfig.remember(config)); await initialProtection; protectedConfig.remember(deps.configStore.config); return next(); });
+  registerAccessRoutes(app, deps.configStore);
   const {
     harness,
     actions,
@@ -109,10 +119,16 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     if (!isActionKind(body.kind)) {
       return c.json({ error: `unknown action kind: ${body.kind}` }, 400);
     }
+    for (const field of ["target", "threadId"] as const) {
+      if (body[field] !== undefined && (typeof body[field] !== "string" || !body[field].trim())) {
+        return c.json({ error: `${field} must be a nonempty string when supplied` }, 400);
+      }
+    }
 
     const action: OperatorAction = {
       kind: body.kind,
       target: typeof body.target === "string" ? body.target : undefined,
+      threadId: typeof body.threadId === "string" ? body.threadId : undefined,
       payload: isRecord(body.payload) ? body.payload : undefined,
       operator: typeof body.operator === "string" ? body.operator : "ui",
       timestamp: typeof body.timestamp === "number" ? body.timestamp : Date.now(),
@@ -135,7 +151,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.put("/api/settings", async (c) => {
     const body = await c.req.json<FoundryConfig>();
     await configStore.load();
-    await configStore.save(body);
+    try { await configStore.save({ ...body, kingdomRuntime: configStore.config.kingdomRuntime }); }
+    catch (err) { return c.json({ error: (err as Error).message }, 400); }
     return c.json({ ok: true });
   });
 
@@ -143,8 +160,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const section = c.req.param("section");
     const body = await c.req.json<Record<string, unknown>>();
     await configStore.load();
-    const updated = await configStore.patch(section, body);
-    return c.json(updated);
+    try { return c.json(await configStore.patch(section, body)); }
+    catch (err) { return c.json({ error: (err as Error).message }, 400); }
   });
 
   app.delete("/api/settings/:section/:id", async (c) => {
@@ -362,8 +379,10 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const body = await c.req.json<Record<string, unknown>>();
     await configStore.load();
     const cfg = configStore.config;
-    const project = cfg.projects[id];
-    if (!project) return c.json({ error: "project not found" }, 404);
+    const current = cfg.projects[id];
+    if (!current) return c.json({ error: "project not found" }, 404);
+    // Mutate a copy: the live configuration changes only after the store validates the patch.
+    const project = structuredClone(current);
 
     if (section === "sources") {
       project.sources = { ...project.sources, ...body } as Record<string, any>;
@@ -377,7 +396,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       return c.json({ error: `unknown section: ${section}` }, 400);
     }
 
-    await configStore.patch("projects", { [id]: project });
+    try { await configStore.patch("projects", { [id]: project }); }
+    catch (err) { return c.json({ error: (err as Error).message }, 400); }
     return c.json({ ok: true, project });
   });
 
@@ -433,20 +453,11 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
 
   // -- File read/write (gated to project roots) --
 
-  const resolveGatedPath = async (rawPath: string): Promise<{ ok: true; abs: string } | { ok: false; error: string; status: 400 | 403 | 404 }> => {
-    const { resolve, sep } = await import("node:path");
-    const { existsSync } = await import("node:fs");
-    const cfg = await configStore.load();
-    const projectRoots = Object.values(cfg.projects ?? {})
-      .map((p) => resolve(p.path))
-      .filter((p) => existsSync(p));
-    const foundryRoot = resolve(".");
-    const allowed = [...projectRoots, foundryRoot];
-
-    const abs = resolve(rawPath.replace(/^file:\/\//, ""));
-    const within = allowed.some((root) => abs === root || abs.startsWith(root + sep));
-    if (!within) return { ok: false, error: "Path outside allowed roots", status: 403 };
-    return { ok: true, abs };
+  const fileAccess = protectedConfig;
+  fileAccess.remember(configStore.config);
+  const resolveGatedPath = async (rawPath: string): Promise<{ ok: true; abs: string } | { ok: false; error: string; status: 403 }> => {
+    try { return { ok: true, abs: await fileAccess.resolve(rawPath, await configStore.load()) }; }
+    catch { return { ok: false, error: "Path is outside allowed roots or contains private configuration", status: 403 }; }
   };
 
   app.get("/api/files", async (c) => {
@@ -455,13 +466,16 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const gated = await resolveGatedPath(rawPath);
     if (!gated.ok) return c.json({ error: gated.error }, gated.status);
 
-    const { readFile, stat } = await import("node:fs/promises");
+    const { open } = await import("node:fs/promises");
     try {
-      const s = await stat(gated.abs);
-      if (!s.isFile()) return c.json({ error: "Not a file" }, 400);
+      const file = await open(gated.abs, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+      const s = await file.stat();
+      if (!s.isFile() || s.nlink !== 1) return c.json({ error: "Not a regular project file" }, 400);
       if (s.size > 2_000_000) return c.json({ error: "File too large (>2MB)" }, 400);
-      const content = await readFile(gated.abs, "utf8");
-      return c.json({ path: gated.abs, content, size: s.size, mtime: s.mtimeMs });
+      const content = await file.readFile("utf8");
+      return c.json({ path: resolveFilePath(rawPath.replace(/^file:\/\//, "")), content, size: s.size, mtime: s.mtimeMs });
+      } finally { await file.close(); }
     } catch (err) {
       return c.json({ error: `Cannot read file: ${(err as Error).message}` }, 404);
     }
@@ -476,13 +490,21 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const gated = await resolveGatedPath(body.path);
     if (!gated.ok) return c.json({ error: gated.error }, gated.status);
 
-    const { writeFile, mkdir, stat } = await import("node:fs/promises");
+    const { open, mkdir } = await import("node:fs/promises");
     const { dirname } = await import("node:path");
     try {
       await mkdir(dirname(gated.abs), { recursive: true });
-      await writeFile(gated.abs, body.content, "utf8");
-      const s = await stat(gated.abs);
-      return c.json({ ok: true, path: gated.abs, size: s.size, mtime: s.mtimeMs });
+      const checked = await resolveGatedPath(body.path);
+      if (!checked.ok) return c.json({ error: checked.error }, checked.status);
+      const file = await open(checked.abs, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+      try {
+      const before = await file.stat();
+      if (!before.isFile() || before.nlink !== 1) return c.json({ error: "Not a regular project file" }, 400);
+      await file.truncate(0);
+      await file.writeFile(body.content, "utf8");
+      const s = await file.stat();
+      return c.json({ ok: true, path: resolveFilePath(body.path.replace(/^file:\/\//, "")), size: s.size, mtime: s.mtimeMs });
+      } finally { await file.close(); }
     } catch (err) {
       return c.json({ error: `Cannot write file: ${(err as Error).message}` }, 500);
     }
@@ -600,57 +622,48 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       url: info?.url ?? null,
       provider: info?.provider ?? cfg.tunnel?.provider ?? "localtunnel",
       enabled: cfg.tunnel?.enabled ?? false,
-      hasPassword: !!(cfg.tunnel?.password),
       subdomain: cfg.tunnel?.subdomain ?? null,
     });
   });
 
+  let changingTunnel = false;
   app.post("/api/tunnel/start", async (c) => {
-    if (tunnelHolder.tunnel?.info) {
-      return c.json({ error: "Tunnel already running", url: tunnelHolder.tunnel.info.url }, 400);
-    }
-
-    const cfg = await configStore.load();
-    const tunnelCfg = cfg.tunnel ?? { enabled: true };
-
-    const tunnel = new FoundryTunnel({
-      port,
-      provider: tunnelCfg.provider ?? "localtunnel",
-      subdomain: tunnelCfg.subdomain,
-      token: tunnelCfg.password || undefined,
-    });
-
+    if (changingTunnel) return c.json({ error: "Tunnel operation in progress" }, 409);
+    changingTunnel = true;
     try {
-      await tunnel.start();
+      if (tunnelHolder.tunnel?.info) return c.json({ error: "Tunnel already running" }, 409);
+      const cfg = await configStore.load();
+      const tunnelCfg = cfg.tunnel ?? { enabled: true };
+      const tunnel = tunnelHolder.tunnel ?? new FoundryTunnel({
+        configDir: deps.selfChatDir, port, provider: tunnelCfg.provider ?? "localtunnel", subdomain: tunnelCfg.subdomain,
+      });
       tunnelHolder.tunnel = tunnel;
-
-      // Persist enabled state
-      cfg.tunnel = { ...tunnelCfg, enabled: true };
-      await configStore.save(cfg);
-
-      return c.json({ active: true, url: tunnel.info!.url, token: tunnel.token });
-    } catch (err) {
-      return c.json({ error: `Failed to start tunnel: ${(err as Error).message}` }, 500);
-    }
+      c.header("Cache-Control", "no-store");
+      const secure = new URL(c.req.url).protocol === "https:" ? "; Secure" : "";
+      c.header("Set-Cookie", `${SESSION_COOKIE}=${sessionValue(tunnel.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure}`);
+      try {
+        await tunnel.start();
+        cfg.tunnel = { ...tunnelCfg, enabled: true };
+        await configStore.save(cfg);
+        return c.json({ active: true, url: tunnel.info!.url });
+      } catch {
+        await tunnel.stop();
+        return c.json({ error: "Tunnel could not start" }, 500);
+      }
+    } finally { changingTunnel = false; }
   });
 
   app.post("/api/tunnel/stop", async (c) => {
-    const tunnel = tunnelHolder.tunnel;
-    if (!tunnel) {
-      return c.json({ error: "No tunnel running" }, 400);
-    }
-
-    await tunnel.stop();
-    tunnelHolder.tunnel = null;
-
-    // Persist disabled state
-    const cfg = await configStore.load();
-    if (cfg.tunnel) {
-      cfg.tunnel.enabled = false;
-      await configStore.save(cfg);
-    }
-
-    return c.json({ active: false });
+    if (changingTunnel) return c.json({ error: "Tunnel operation in progress" }, 409);
+    changingTunnel = true;
+    try {
+      const tunnel = tunnelHolder.tunnel;
+      if (!tunnel) return c.json({ error: "No tunnel running" }, 400);
+      await tunnel.stop();
+      const cfg = await configStore.load();
+      if (cfg.tunnel) { cfg.tunnel.enabled = false; await configStore.save(cfg); }
+      return c.json({ active: false });
+    } finally { changingTunnel = false; }
   });
 
   app.patch("/api/tunnel", async (c) => {
@@ -658,13 +671,15 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const cfg = await configStore.load();
     const current = cfg.tunnel ?? { enabled: false };
 
-    if (typeof body.password === "string") current.password = body.password || undefined;
-    if (typeof body.provider === "string") current.provider = body.provider as any;
+    if ("password" in body) return c.json({ error: "Use the private tunnel-token file for credentials" }, 400);
+    if (body.provider !== undefined && !["localtunnel", "cloudflared"].includes(String(body.provider)))
+      return c.json({ error: "Unknown tunnel provider" }, 400);
+    if (body.provider === "localtunnel" || body.provider === "cloudflared") current.provider = body.provider;
     if (typeof body.subdomain === "string") current.subdomain = body.subdomain || undefined;
 
     cfg.tunnel = current;
     await configStore.save(cfg);
-    return c.json({ ok: true, tunnel: { ...current, password: current.password ? "***" : undefined } });
+    return c.json({ ok: true, tunnel: current });
   });
 
   // -- MCP server management --

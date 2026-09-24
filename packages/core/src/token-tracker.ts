@@ -24,6 +24,8 @@ export interface UsageEntry {
   readonly spanId?: string;
   readonly tokens: { readonly input: number; readonly output: number };
   readonly cost: number;
+  /** False means cost is an unpriced subtotal, not a zero-price acknowledgment. */
+  readonly costKnown?: boolean;
   readonly cached?: boolean;
 }
 
@@ -210,6 +212,7 @@ export class TokenTracker {
       ...entry,
       timestamp: Date.now(),
       cost,
+      costKnown: !!this._costTable[entry.provider]?.[entry.model],
     };
 
     this._entries.push(full);

@@ -1,0 +1,488 @@
+{
+  "defaults": {
+    "provider": "claude-code",
+    "model": "fable",
+    "classifierProvider": "openai",
+    "classifierModel": "gpt-5.6-luna"
+  },
+  "providers": {
+    "claude-code": {
+      "id": "claude-code",
+      "type": "claude-code",
+      "label": "Claude Code (CLI subscription)",
+      "enabled": true,
+      "models": [
+        {
+          "id": "fable",
+          "label": "Fable 5.1",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "opus",
+          "label": "Opus 5",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "sonnet",
+          "label": "Sonnet 5",
+          "tier": "standard",
+          "costTier": "medium",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "haiku",
+          "label": "Haiku 4.5",
+          "tier": "fast",
+          "costTier": "low",
+          "contextWindow": 200000
+        }
+      ]
+    },
+    "anthropic": {
+      "id": "anthropic",
+      "type": "anthropic",
+      "label": "Anthropic (API key)",
+      "enabled": true,
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "label": "Claude Fable 5.1",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "claude-opus-5",
+          "label": "Claude Opus 5",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "claude-sonnet-5",
+          "label": "Claude Sonnet 5",
+          "tier": "standard",
+          "costTier": "medium",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "label": "Claude Haiku 4.5",
+          "tier": "fast",
+          "costTier": "low",
+          "contextWindow": 200000
+        }
+      ]
+    },
+    "codex": {
+      "id": "codex",
+      "type": "codex",
+      "label": "Codex CLI (OpenAI subscription)",
+      "enabled": true,
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "label": "GPT-6 Astra",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "label": "GPT-5.6 Sol",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "label": "GPT-5.6 Terra",
+          "tier": "standard",
+          "costTier": "medium",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "label": "GPT-5.6 Luna",
+          "tier": "fast",
+          "costTier": "low",
+          "contextWindow": 1050000
+        }
+      ]
+    },
+    "openai": {
+      "id": "openai",
+      "type": "openai",
+      "label": "OpenAI",
+      "enabled": true,
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "label": "GPT-6 Astra",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "label": "GPT-5.6 Sol",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "label": "GPT-5.6 Terra",
+          "tier": "standard",
+          "costTier": "medium",
+          "contextWindow": 1050000
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "label": "GPT-5.6 Luna",
+          "tier": "fast",
+          "costTier": "low",
+          "contextWindow": 1050000
+        }
+      ]
+    },
+    "openai": {
+      "id": "openai",
+      "type": "openai",
+      "label": "Google Gemini",
+      "enabled": true,
+      "models": [
+        {
+          "id": "gpt-5.6-luna",
+          "label": "Gemini 3.1 Flash Lite",
+          "tier": "fast",
+          "costTier": "low",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "gemini-3-flash-preview",
+          "label": "Gemini 3 Flash",
+          "tier": "standard",
+          "costTier": "medium",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "label": "Gemini 3.1 Pro",
+          "tier": "powerful",
+          "costTier": "high",
+          "contextWindow": 1000000
+        }
+      ]
+    }
+  },
+  "agents": {},
+  "layers": {},
+  "sources": {},
+  "projects": {
+    "661d4d35-22f0-472d-a660-c573a90761eb": {
+      "id": "661d4d35-22f0-472d-a660-c573a90761eb",
+      "label": "Domain development team",
+      "path": "/absolute/path/to/project",
+      "agents": {
+        "classifier": {
+          "id": "classifier",
+          "kind": "classifier",
+          "flowRole": "context-routing",
+          "prompt": "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "temperature": 0,
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "system"
+            ]
+          },
+          "ownedLayers": {
+            "replace": []
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "invocation": "always",
+          "enabled": true
+        },
+        "router": {
+          "id": "router",
+          "kind": "router",
+          "flowRole": "context-routing",
+          "prompt": "Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {\"destination\": \"artificer\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "temperature": 0,
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "system"
+            ]
+          },
+          "ownedLayers": {
+            "replace": []
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "invocation": "always",
+          "enabled": true
+        },
+        "artificer": {
+          "id": "artificer",
+          "kind": "executor",
+          "flowRole": "execution",
+          "prompt": "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
+          "provider": "claude-code",
+          "model": "fable",
+          "temperature": 0,
+          "tools": true,
+          "permissions": "bypass",
+          "visibleLayers": {
+            "replace": []
+          },
+          "ownedLayers": {
+            "replace": []
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 5,
+          "invocation": "on-demand",
+          "enabled": true
+        },
+        "expert-docs": {
+          "id": "expert-docs",
+          "kind": "decider",
+          "flowRole": "domain-advising",
+          "domain": "docs",
+          "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "domain-docs"
+            ]
+          },
+          "ownedLayers": {
+            "replace": [
+              "domain-docs"
+            ]
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "enabled": true
+        },
+        "expert-architecture": {
+          "id": "expert-architecture",
+          "kind": "decider",
+          "flowRole": "domain-advising",
+          "domain": "architecture",
+          "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "domain-architecture"
+            ]
+          },
+          "ownedLayers": {
+            "replace": [
+              "domain-architecture"
+            ]
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "enabled": true
+        },
+        "expert-security": {
+          "id": "expert-security",
+          "kind": "decider",
+          "flowRole": "domain-advising",
+          "domain": "security",
+          "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "domain-security"
+            ]
+          },
+          "ownedLayers": {
+            "replace": [
+              "domain-security"
+            ]
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "enabled": true
+        },
+        "expert-testing": {
+          "id": "expert-testing",
+          "kind": "decider",
+          "flowRole": "domain-advising",
+          "domain": "testing",
+          "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
+          "provider": "openai",
+          "model": "gpt-5.6-luna",
+          "tools": false,
+          "visibleLayers": {
+            "replace": [
+              "domain-testing"
+            ]
+          },
+          "ownedLayers": {
+            "replace": [
+              "domain-testing"
+            ]
+          },
+          "peers": {
+            "replace": []
+          },
+          "maxDepth": 1,
+          "enabled": true
+        }
+      },
+      "layers": {
+        "system": {
+          "id": "system",
+          "prompt": "Core system instructions.",
+          "sourceIds": {
+            "replace": [
+              "system-prompt"
+            ]
+          },
+          "staleness": 0,
+          "enabled": true
+        },
+        "conventions": {
+          "id": "conventions",
+          "prompt": "Project conventions and coding standards.",
+          "sourceIds": {
+            "replace": [
+              "conventions-src"
+            ]
+          },
+          "staleness": 60000,
+          "enabled": true
+        },
+        "memory": {
+          "id": "memory",
+          "prompt": "Working memory — recent context, signals, decisions.",
+          "sourceIds": {
+            "replace": [
+              "memory-src"
+            ]
+          },
+          "staleness": 30000,
+          "enabled": true
+        },
+        "domain-docs": {
+          "id": "domain-docs",
+          "domain": "docs",
+          "segment": "domain-knowledge",
+          "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
+          "writers": {
+            "replace": [
+              "expert-docs"
+            ]
+          },
+          "sourceIds": {
+            "replace": []
+          },
+          "staleness": 0,
+          "enabled": true
+        },
+        "domain-architecture": {
+          "id": "domain-architecture",
+          "domain": "architecture",
+          "segment": "domain-knowledge",
+          "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
+          "writers": {
+            "replace": [
+              "expert-architecture"
+            ]
+          },
+          "sourceIds": {
+            "replace": []
+          },
+          "staleness": 0,
+          "enabled": true
+        },
+        "domain-security": {
+          "id": "domain-security",
+          "domain": "security",
+          "segment": "domain-knowledge",
+          "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
+          "writers": {
+            "replace": [
+              "expert-security"
+            ]
+          },
+          "sourceIds": {
+            "replace": []
+          },
+          "staleness": 0,
+          "enabled": true
+        },
+        "domain-testing": {
+          "id": "domain-testing",
+          "domain": "testing",
+          "segment": "domain-knowledge",
+          "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
+          "writers": {
+            "replace": [
+              "expert-testing"
+            ]
+          },
+          "sourceIds": {
+            "replace": []
+          },
+          "staleness": 0,
+          "enabled": true
+        }
+      },
+      "sources": {
+        "system-prompt": {
+          "id": "system-prompt",
+          "type": "inline",
+          "label": "System prompt",
+          "uri": "You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.",
+          "enabled": true
+        },
+        "conventions-src": {
+          "id": "conventions-src",
+          "type": "markdown",
+          "label": "Project conventions",
+          "uri": "/absolute/path/to/project/docs",
+          "enabled": true
+        },
+        "memory-src": {
+          "id": "memory-src",
+          "type": "file",
+          "label": "Working memory",
+          "uri": "/absolute/path/to/project/.foundry/memory",
+          "enabled": true
+        }
+      }
+    }
+  }
+}

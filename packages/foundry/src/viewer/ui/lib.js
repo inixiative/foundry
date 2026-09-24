@@ -1,25 +1,25 @@
 /**
- * Foundry UI lib — re-exports Preact, HTM, and Signals from ESM CDN.
- * Single import point for all components. ~5KB total runtime.
- * No build step required.
+ * Foundry UI lib — one local, pinned Preact/HTM/Signals module graph.
+ * No external bootstrap dependency or build step. See vendor/manifest.json
+ * for pinned source hashes/transformations and vendor/licenses.json for licenses.
  */
 
 // Preact core + hooks
 export {
   h, render, Component, Fragment, createRef, toChildArray, cloneElement
-} from "https://esm.sh/preact@10.25.4";
+} from "./vendor/preact.module.js";
 
 export {
   useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext
-} from "https://esm.sh/preact@10.25.4/hooks";
+} from "./vendor/hooks.module.js";
 
 // Signals — fine-grained reactivity, no VDOM diffing for hot paths
-// deps= pins signals to use the SAME Preact instance we import above
+// Local imports in signals/hooks use the SAME Preact instance as above.
 export {
   signal, computed, effect, batch
-} from "https://esm.sh/@preact/signals@1.3.1?deps=preact@10.25.4";
+} from "./vendor/signals.module.js";
 
 // HTM — tagged template JSX alternative, no build step
-import htm from "https://esm.sh/htm@3.1.1";
-import { h as _h } from "https://esm.sh/preact@10.25.4";
+import htm from "./vendor/htm.module.js";
+import { h as _h } from "./vendor/preact.module.js";
 export const html = htm.bind(_h);

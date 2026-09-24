@@ -1,4 +1,5 @@
 import { ContextLayer, computeHash, type LayerState } from "./context-layer";
+import type { OwnershipScope } from "./scope";
 
 export type LayerFilter = (layer: ContextLayer) => boolean;
 
@@ -27,6 +28,14 @@ export interface PromptBlock {
   readonly role: "system" | "layer" | "content";
   readonly id?: string;
   readonly text: string;
+  /**
+   * Explicit injection segment (instructions, domain-knowledge,
+   * thread-knowledge, routing, guard-findings). Decorated blocks declare it;
+   * plain layer blocks leave it unset and are classified by the artifact builder.
+   */
+  readonly segment?: string;
+  /** Who produced this block (a domain, the router, a layer id). */
+  readonly source?: string;
 }
 
 /** Structured prompt assembled from agent prompt + layer prompts + layer content. */
@@ -57,6 +66,14 @@ export class ContextStack {
 
   get layers(): ReadonlyArray<ContextLayer> {
     return this._layers;
+  }
+
+  /**
+   * New stack whose layers are independent clones of this stack's layers, in
+   * order. A scope binds every scope-aware source to the owning thread/project.
+   */
+  clone(scope?: OwnershipScope): ContextStack {
+    return new ContextStack(this._layers.map((layer) => layer.clone(scope)));
   }
 
   /** Register a callback for when layers are added (used by CacheLifecycle). */
@@ -161,9 +178,12 @@ export class ContextStack {
       if (!layer.isWarm || layer.content.length === 0) continue;
 
       if (layer.prompt) {
+        // A layer prompt is always an instruction; it never inherits the content segment.
         blocks.push({ role: "layer", id: layer.id, text: layer.prompt });
       }
-      blocks.push({ role: "content", id: layer.id, text: layer.content });
+      // The content block carries the layer's declared segment when it has one; legacy
+      // layers leave it unset and the artifact builder falls back to its id heuristic.
+      blocks.push({ role: "content", id: layer.id, text: layer.content, ...(layer.segment ? { segment: layer.segment } : {}) });
     }
 
     const text = blocks.map((b) => b.text).join("\n\n");

@@ -19,19 +19,43 @@ export type {
   EmbeddingProvider,
 } from "./types";
 
+// Ownership scope — which thread/project owns a source read or tool call
+export { normalizeScope, type OwnershipScope } from "./scope";
+
 // Message utilities
-export { assembledToMessages, splitSystemMessage } from "./messages";
+export {
+  assembledToMessages,
+  buildInjectionArtifact,
+  splitSystemMessage,
+  type BuildInjectionArtifactOpts,
+  type InjectionArtifact,
+  type InjectionBlock,
+  type InjectionSegmentKind,
+  type MessageDecoration,
+  type DecorationParticipant,
+  type ParticipantRequest,
+  type DeliveryRecord,
+} from "./messages";
 
 // Context primitives
 export {
   ContextLayer,
   computeHash,
+  copyMessageIdentity,
+  type LogicalMessageIdentity,
   type ContextSource,
   type ContextLayerConfig,
   type LayerDefinition,
   type LayerInstanceState,
+  type LayerVersionMark,
+  type LayerSegment,
+  LAYER_SEGMENTS,
+  isLayerSegment,
   type LayerMutationEvent,
+  type LayerSelectionState,
   type LayerState,
+  type SourceLoadHint,
+  type SourceSelectionReport,
   type VersionEntry,
   type VersionLog,
 } from "./context-layer";
@@ -93,6 +117,8 @@ export {
   type ThreadMeta,
   type ThreadConfig,
   type Dispatch,
+  type DispatchOptions,
+  type DispatchObservation,
   type FanResult,
 } from "./thread";
 
@@ -175,9 +201,18 @@ export {
 // Lightweight adapters (zero external deps)
 export {
   FileMemory,
+  MemoryView,
+  entryVisibleTo,
   inlineSource,
   fileSource,
+  selectMemory,
+  focusTerms,
+  DEFAULT_MEMORY_SELECTION, validateMemorySelection,
   type MemoryEntry,
+  type MemoryReadScope,
+  type MemorySourceOpts,
+  type MemorySelectionPolicy,
+  type MemorySelectionReport,
 } from "./adapters/file-memory";
 
 export { SqliteMemory, type SqliteEntry } from "./adapters/sqlite-memory";
@@ -191,6 +226,7 @@ export {
   type ToolKind,
   type ToolInfo,
   type ToolResult,
+  type ToolCallObservation,
   type BrowserTool,
   type PageSnapshot,
   type PageElement,
@@ -208,6 +244,7 @@ export {
   type ScriptOpts,
   type MemoryTool,
   type MemoryEntry as ToolMemoryEntry,
+  type MemoryVisibility,
   type MemorySearchOpts,
 } from "./tools";
 
@@ -227,3 +264,9 @@ export {
   type PermissionCheck,
   type PermissionCheckResult,
 } from "./permission-middleware";
+
+export { REQUIRED_CONTEXT_BLOCKED } from "./context-layer";
+export * from "./native-evidence";
+export type { CredentialReference, CredentialScope, CredentialResolver } from "./credentials";
+export { evidenceDigest, assemblyDigest, boundaryReceipt, verifyExpertDelivery } from "./delivery-evidence";
+export type { ProviderBoundaryReceipt, DeliveryOwner, ExpertDeliveryProof } from "./delivery-evidence";

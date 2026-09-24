@@ -41,14 +41,14 @@ async function loadAnalytics() {
 // ---------------------------------------------------------------------------
 
 function fmt$(n) {
-  if (n == null) return "$0.00";
+  if (n == null) return "Unavailable";
   if (n < 0.01) return `$${n.toFixed(4)}`;
   if (n < 1) return `$${n.toFixed(3)}`;
   return `$${n.toFixed(2)}`;
 }
 
 function fmtTokens(n) {
-  if (n == null) return "0";
+  if (n == null) return "Unavailable";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return `${n}`;
@@ -76,19 +76,21 @@ function Overview({ data }) {
 
   const s = data.session;
   const b = s.budget;
+  const o = data.observations;
 
   return html`
     <div class="analytics-overview">
       <!-- Hero stats -->
       <div class="stats-grid">
-        <${StatCard} label="Total Cost" value=${fmt$(s.totalCost)} accent="blue" />
-        <${StatCard} label="Total Tokens" value=${fmtTokens(s.totalTokens)} accent="green" />
-        <${StatCard} label="LLM Calls" value=${s.totalCalls} accent="purple" />
-        <${StatCard} label="Avg $/Call" value=${fmt$(s.totalCalls > 0 ? s.totalCost / s.totalCalls : 0)} accent="orange" />
+        <${StatCard} label="Recorded cost" value=${fmt$(o?.unavailableCostCalls ? null : o?.knownCost ?? s.totalCost)} accent="blue" />
+        <${StatCard} label="Recorded tokens" value=${fmtTokens(o?.knownTokens ?? s.totalTokens)} accent="green" />
+        <${StatCard} label="Recorded calls" value=${o?.calls ?? s.totalCalls} accent="purple" />
+        <${StatCard} label="Avg $/Call" value=${fmt$(o?.unavailableCostCalls ? null : (o?.calls ? o.knownCost / o.calls : 0))} accent="orange" />
       </div>
+      ${o ? html`<p class="analytics-availability">Recorded history: known subtotals only. Usage unavailable for ${o.unavailableUsageCalls} calls; cost unavailable for ${o.unavailableCostCalls} calls. Persistence: ${o.persistence}.</p>` : null}
 
       <!-- Budget gauge -->
-      ${b.limitTokens || b.limitCost ? html`
+      ${(b.limitTokens || b.limitCost) && !o?.unavailableCostCalls ? html`
         <div class="budget-section">
           <div class="section-label">BUDGET</div>
           <${BudgetGauge} budget=${b} />
@@ -99,11 +101,11 @@ function Overview({ data }) {
       <div class="breakdown-row">
         <div class="breakdown-half">
           <div class="section-label">INPUT TOKENS</div>
-          <div class="breakdown-value">${fmtTokens(s.totalInput)}</div>
+          <div class="breakdown-value">${fmtTokens(o?.knownInput ?? s.totalInput)}</div>
         </div>
         <div class="breakdown-half">
           <div class="section-label">OUTPUT TOKENS</div>
-          <div class="breakdown-value">${fmtTokens(s.totalOutput)}</div>
+          <div class="breakdown-value">${fmtTokens(o?.knownOutput ?? s.totalOutput)}</div>
         </div>
       </div>
 
@@ -112,7 +114,7 @@ function Overview({ data }) {
         <div class="ranked-section">
           <div class="section-label">TOP MODELS BY SPEND</div>
           ${data.topModels.slice(0, 5).map(m => html`
-            <${RankedRow} key=${m.key} item=${m} />
+            <${RankedRow} key=${m.key} item=${m} unpriced=${!!o?.unavailableCostCalls} />
           `)}
         </div>
       ` : null}
@@ -122,7 +124,7 @@ function Overview({ data }) {
         <div class="ranked-section">
           <div class="section-label">TOP AGENTS BY SPEND</div>
           ${data.topAgents.slice(0, 5).map(a => html`
-            <${RankedRow} key=${a.key} item=${a} />
+            <${RankedRow} key=${a.key} item=${a} unpriced=${!!o?.unavailableCostCalls} />
           `)}
         </div>
       ` : null}
@@ -159,15 +161,15 @@ function BudgetGauge({ budget }) {
   `;
 }
 
-function RankedRow({ item }) {
+function RankedRow({ item, unpriced }) {
   return html`
     <div class="ranked-row">
       <div class="ranked-bar" style="width: ${Math.max(item.percentage * 100, 2)}%"></div>
       <span class="ranked-key">${item.key}</span>
-      <span class="ranked-cost">${fmt$(item.cost)}</span>
+      <span class="ranked-cost">${fmt$(unpriced ? null : item.cost)}</span>
       <span class="ranked-tokens">${fmtTokens(item.tokens)}</span>
       <span class="ranked-calls">${item.calls} calls</span>
-      <span class="ranked-pct">${fmtPct(item.percentage)}</span>
+      <span class="ranked-pct">${unpriced ? "—" : fmtPct(item.percentage)}</span>
     </div>
   `;
 }
@@ -194,10 +196,10 @@ function Threads({ data }) {
         ${threads.map(t => html`
           <div key=${t.threadId} class="thread-row">
             <span class="th-id" title=${t.threadId}>${t.threadId}</span>
-            <span class="th-cost">${fmt$(t.cost)}</span>
+            <span class="th-cost">${fmt$(data.observations?.unavailableCostCalls ? null : t.cost)}</span>
             <span class="th-tokens">${fmtTokens(t.totalTokens)}</span>
             <span class="th-calls">${t.calls}</span>
-            <span class="th-avg">${fmt$(t.avgCostPerCall)}</span>
+            <span class="th-avg">${fmt$(data.observations?.unavailableCostCalls ? null : t.avgCostPerCall)}</span>
           </div>
         `)}
       </div>
@@ -231,9 +233,9 @@ function Calls({ data }) {
             <span class="cl-time">${fmtTime(c.timestamp)}</span>
             <span class="cl-model" title=${c.model}>${c.model.split("/").pop()}</span>
             <span class="cl-agent">${c.agentId ?? "-"}</span>
-            <span class="cl-in">${fmtTokens(c.input)}</span>
-            <span class="cl-out">${fmtTokens(c.output)}</span>
-            <span class="cl-cost">${fmt$(c.cost)}</span>
+            <span class="cl-in" data-label="Input">${fmtTokens(c.input)}</span>
+            <span class="cl-out" data-label="Output">${fmtTokens(c.output)}</span>
+            <span class="cl-cost" data-label="Cost">${fmt$(c.cost)}</span>
             <span class="cl-cached">${c.cached ? "hit" : ""}</span>
           </div>
         `)}
@@ -262,7 +264,7 @@ function Models({ data }) {
           ${byProvider.map(p => html`
             <div key=${p.key} class="model-row">
               <span class="md-name">${p.key}</span>
-              <span class="md-cost">${fmt$(p.cost)}</span>
+              <span class="md-cost">${fmt$(data.observations?.unavailableCostCalls ? null : p.cost)}</span>
               <span class="md-tokens">${fmtTokens(p.total)} tokens</span>
               <span class="md-calls">${p.calls} calls</span>
             </div>
@@ -276,7 +278,7 @@ function Models({ data }) {
           ${byModel.map(m => html`
             <div key=${m.key} class="model-row">
               <span class="md-name">${m.key}</span>
-              <span class="md-cost">${fmt$(m.cost)}</span>
+              <span class="md-cost">${fmt$(data.observations?.unavailableCostCalls ? null : m.cost)}</span>
               <span class="md-in">${fmtTokens(m.input)} in</span>
               <span class="md-out">${fmtTokens(m.output)} out</span>
               <span class="md-calls">${m.calls} calls</span>
@@ -338,6 +340,7 @@ export function Analytics() {
         </div>
 
         <div class="analytics-body">
+          ${tab !== "overview" && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
           ${tab === "overview" ? html`<${Overview} data=${data} />` : null}
           ${tab === "threads" ? html`<${Threads} data=${data} />` : null}
           ${tab === "calls" ? html`<${Calls} data=${data} />` : null}

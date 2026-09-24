@@ -11,6 +11,16 @@ function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
+test("an unknown mandatory executor fails instead of returning router JSON", async () => {
+  const stack = new ContextStack();
+  const thread = new Thread("missing-executor", stack);
+  thread.register(new Router({ id: "router", stack, handler: async () => ({ value: { destination: "not-registered" }, confidence: 1 }) }));
+  const harness = new Harness(thread); harness.setRouter("router");
+  try {
+    await expect(harness.send({ id: "missing", payload: "Do real work" })).rejects.toThrow("not-registered");
+  } finally { thread.dispose(); }
+});
+
 function makeHarness(): {
   harness: Harness;
   thread: Thread;

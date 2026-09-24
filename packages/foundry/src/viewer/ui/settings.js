@@ -12,6 +12,9 @@ import { signal } from "./lib.js";
 import { showToast, activeProjectId } from "./store.js";
 import { FilePicker } from "./file-picker.js";
 import { SelfChatPane } from "./self-chat.js";
+import { ArchiveSettings } from "./archive-settings.js";
+import { KingdomSettings } from "./kingdom-settings.js";
+import { AccessSettings } from "./access-settings.js";
 
 // Settings state
 export const settingsOpen = signal(false);
@@ -390,7 +393,6 @@ function ProviderEditor({ provider, onSave, onFocusChange }) {
 function TunnelEditor() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [password, setPassword] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [provider, setProvider] = useState("localtunnel");
 
@@ -401,7 +403,6 @@ function TunnelEditor() {
       setStatus(data);
       setProvider(data.provider || "localtunnel");
       setSubdomain(data.subdomain || "");
-      if (data.hasPassword) setPassword("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
     } catch { /* ignore */ }
   };
 
@@ -425,7 +426,6 @@ function TunnelEditor() {
   const saveConfig = async () => {
     try {
       const body = { provider, subdomain: subdomain || undefined };
-      if (password && password !== "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") body.password = password;
       const res = await fetch("/api/tunnel", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -445,7 +445,7 @@ function TunnelEditor() {
         <span class="settings-card-title">Tunnel</span>
         <span class="scope-label scope-global">GLOBAL</span>
       </div>
-      <p class="settings-desc">Expose the viewer over a public URL. Local/private network requests bypass auth automatically.</p>
+      <p class="settings-desc">Expose the viewer over a public URL. All tunneled access requires authentication. Stopping a tunnel keeps the viewer locked.</p>
       <div class="tunnel-status">
         <div class="tunnel-status-row">
           <span class="tunnel-indicator ${status?.active ? "active" : "inactive"}"></span>
@@ -469,8 +469,7 @@ function TunnelEditor() {
       </div>
       <${Field} label="Subdomain hint" value=${subdomain} onChange=${setSubdomain}
         placeholder="my-foundry (localtunnel only, not guaranteed)" small />
-      <${Field} label="Access password" value=${password} onChange=${setPassword} type="password"
-        placeholder="Leave empty for auto-generated token" small />
+      <p class="settings-desc">The access token is stored in the private tunnel-token file in this viewer’s configuration directory. It is never returned by these settings.</p>
 
       <div class="settings-card-actions">
         <button class="action-btn" onClick=${saveConfig}>Save Config</button>
@@ -527,10 +526,14 @@ function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
   const globalTabs = [
     { id: "defaults", label: "Defaults" },
     { id: "providers", label: "Providers" },
+    { id: "integrations", label: "Integrations" },
+    { id: "kingdom", label: "Kingdom" },
     { id: "tunnel", label: "Tunnel" },
+    { id: "archives", label: "Archives" },
   ];
   const projectTabs = [
     { id: "sources", label: "Sources" },
+    { id: "integrations", label: "Integrations" },
     { id: "overrides", label: "Overrides" },
   ];
 
@@ -569,6 +572,7 @@ function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
 // ---------------------------------------------------------------------------
 
 export function Settings() {
+  const [showChat, setShowChat] = useState(false);
   const isOpen = settingsOpen.value;
   const config = settingsConfig.value;
   const scope = settingsScope.value;
@@ -635,11 +639,15 @@ export function Settings() {
       ${Object.values(config.providers).map(p => html`
         <${ProviderEditor} key=${p.id} provider=${p} onSave=${handleProviderSave} onFocusChange=${onFocusChange} />
       `)}
-    ` : tab === "tunnel" ? html`<${TunnelEditor} />` : null
+    ` : tab === "integrations" ? html`<${AccessSettings} onSaved=${loadSettings} />`
+      : tab === "archives" ? html`<${ArchiveSettings} />`
+      : tab === "kingdom" ? html`<${KingdomSettings} />`
+      : tab === "tunnel" ? html`<${TunnelEditor} />` : null
   ) : (
     !project ? html`
       <div class="settings-empty">Select a project from the sidebar to configure its settings.</div>
-    ` : tab === "sources" ? html`
+    ` : tab === "integrations" ? html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
+      : tab === "sources" ? html`
       ${Object.values(project.sources || {}).map(s => html`
         <${SourceEditor}
           key=${s.id}
@@ -669,9 +677,10 @@ export function Settings() {
             Settings
             ${focus ? html`<span class="settings-title-focus">\u00B7 ${focus.kind}:${focus.id}</span>` : null}
           </span>
+          <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? "Back to settings" : "Show assistant"}</button>
           <button class="fullscreen-close" onClick=${close} aria-label="Close">\u00d7</button>
         </div>
-        <div class="settings-layout">
+        <div class=${`settings-layout ${showChat ? "settings-show-chat" : ""}`}>
           <${NavRail}
             scope=${scope}
             tab=${tab}

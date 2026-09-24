@@ -98,6 +98,10 @@ created → active → idle → archived
 - **archived** — artifact persisted to Foundry's durable store. Process killed. Tree retained.
 - **restored** — re-spawned from archive. Returns to active on next interaction.
 
+**Disposal is terminal for the object, not the identity.** `Thread.dispose()`, the owned `ThreadRuntime.dispose()` and `ThreadRuntimeManager.dispose(id)` all close the same Thread object: cleanup runs once, the runtime detaches, and every later `dispatch` / `dispatchBackground` / `fan` rejects. A disposed object can never be reattached; restoring a thread means creating a new Thread and runtime under the same id (the factory does this), never reviving the old instance. Status is separate: `archive()` sets `archived` and then disposes, while pause/resume only move status and never dispose. Work already in flight when a thread is disposed runs to completion and is observed, but it cannot flip the thread back to `idle` or `active`, and disposing Foundry's metadata does not cancel native work (cancellation is a runtime capability, see G5).
+
+**Every dispatch is observed once at the thread boundary.** `Thread.dispatch` emits a single `dispatch` signal on the dispatching thread's own bus for direct, background, fan and Harness-stage entry points alike, including failures (`ok: false`, `error`). Harness stages contribute correlation (`role`, `messageId`, `invocation`) but never emit their own copy, so the Librarian counts each dispatch once. A thread stays `active` until its last concurrent dispatch finishes.
+
 ### Session
 
 ```
@@ -240,6 +244,31 @@ Spawn-time base context should be **stable across the thread's lifetime**. Per-t
 - Anything the Cartographer routes based on the message content
 
 Rule of thumb: if the context would be the same at message 1 and message 50 of a thread, it's base. Otherwise it's delta.
+
+---
+
+## Memory Ownership — Private Captures, Explicit Publication
+
+Every signal a thread captures (classifications, dispatches, tool observations, corrections, compaction events) is persisted by the thread's runtime with an explicit owner. Nothing captured in one thread reaches another thread or project unless someone publishes it on purpose.
+
+**Ownership on the entry.** A `MemoryEntry` carries `owner: { threadId, projectId }` and `visibility`:
+
+| Visibility | Who can read it | How it gets that visibility |
+| --- | --- | --- |
+| `thread` | The owning thread only | Default for every captured signal and every tool write |
+| `project` | Every thread of the owning project | Deliberate: `visibility: "project"` on a tool write, or `FileMemory.publish(id, "project")` |
+| `global` | Every thread of every project | Deliberate: `visibility: "global"` on a tool write, or `FileMemory.publish(id, "global")` |
+| *(none)* | Nobody, by default | Legacy records written before ownership existed |
+
+**Ownership on the read path.** Memory-backed sources (`type: "file"` in settings) are scope-aware. The project template stack warms them unbound, which yields only `global` entries, so no thread's private data is ever baked into the template. `ThreadFactory.create` clones the template with the thread's scope; each bound source resolves the thread's project lazily on every warm and refresh, so a project assigned after creation (`project.addThread`) is honored. A source's configured `scope` caps what it exposes:
+
+- `scope: "thread"` (default): the thread's own captures plus project and global publications.
+- `scope: "project"`: project and global publications only. Never another thread's captures.
+- `scope: "global"`: global publications only. Identical content for every thread and project; use this for shared instructions and domain knowledge that must be the same everywhere.
+
+**Ownership on the tool path.** `ToolRegistry.dispatch` receives the dispatching thread's scope from the executor's tool loop and only accepts memory tools that implement `scoped()`. `MemoryToolAdapter` scopes through `FileMemory.view(scope)`: search, get, recent and delete see only what the thread may see, and writes are owned by the thread and private unless `visibility` publishes them. Without a scope (operator paths such as the viewer assist chat) the tool sees only `global` entries. Backends that store no ownership (Postgres, Muninn, Redis, SQLite) cannot honor a scope: their scoped tool refuses reads and deletes rather than exposing the whole store. Their signal sinks still receive the owner and still write unowned records; scoping those backends is open work.
+
+**Compatibility for existing data.** Entries already on disk without an owner are preserved untouched and remain readable through the operator's unscoped `FileMemory` methods, but they are hidden from every thread's source and tool view. To keep serving them, set `includeUnowned: true` on a specific source in settings; that is an explicit, per-source choice, never the default. A signal writer used outside a thread runtime (for example a bare `signals.onAny(memory.signalWriter())`) also produces unowned records with the same treatment.
 
 ---
 

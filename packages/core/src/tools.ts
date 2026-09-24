@@ -19,11 +19,36 @@
 // ---------------------------------------------------------------------------
 
 import type { Capability } from "./capability";
+import type { OwnershipScope } from "./scope";
 import type { ToolDefinition } from "./types";
 
 // ---------------------------------------------------------------------------
 // Tool result — every tool returns this wrapper
 // ---------------------------------------------------------------------------
+
+/**
+ * One executed tool call, as observed by the tool-use loop. Bounded and
+ * identity-bearing: the call id plus the dispatch id the loop received let
+ * downstream reviewers attribute the call to exactly the work that made it.
+ */
+export interface ToolCallObservation {
+  /** Provider-assigned call id, or a generated one when the provider gave none. */
+  readonly callId: string;
+  readonly tool: string;
+  /** Bounded JSON of the call input. */
+  readonly inputSummary: string;
+  /** Outcome when known. Absent means unknown: never assume success or failure. */
+  readonly ok?: boolean;
+  /** Bounded result text when ok. */
+  readonly outputSummary?: string;
+  /** Error text when not ok. */
+  readonly error?: string;
+  readonly durationMs: number;
+  /** 1-based position of this call within its dispatch. */
+  readonly sequence: number;
+  /** Original lengths of any field that was cut to its bound. */
+  readonly truncated?: { readonly input?: number; readonly output?: number; readonly error?: number };
+}
 
 export interface ToolResult<T = unknown> {
   /** Whether the operation succeeded. */
@@ -152,6 +177,9 @@ export interface ApiTool {
   /** Required capability. */
   readonly capability: Capability;
 
+  /** Bind an authority-aware adapter to the caller's runtime-owned scope. */
+  scoped?(scope: OwnershipScope): ApiTool;
+
   /** Make an HTTP request. */
   request<T = unknown>(req: ApiRequest): Promise<ToolResult<ApiResponse<T>>>;
 
@@ -271,6 +299,16 @@ export interface ScriptTool {
 // - Agent decides what to search for based on the task, not upfront config
 // - Results go through ToolResult (structured, token-estimated, truncated)
 
+/**
+ * Who may read a memory entry.
+ * - "thread": only the owning thread.
+ * - "project": every thread of the owning project (explicitly published).
+ * - "global": every thread of every project (explicitly published).
+ * Entries without a visibility are unowned legacy records: hidden from every
+ * scoped read unless a source explicitly opts in.
+ */
+export type MemoryVisibility = "thread" | "project" | "global";
+
 export interface MemoryEntry {
   id: string;
   kind: string;
@@ -278,6 +316,10 @@ export interface MemoryEntry {
   source?: string;
   timestamp: number;
   meta?: Record<string, unknown>;
+  /** Thread/project that captured this entry. */
+  owner?: OwnershipScope;
+  /** Declared read scope. Absent on unowned legacy records. */
+  visibility?: MemoryVisibility;
 }
 
 export interface MemorySearchOpts {
@@ -316,6 +358,13 @@ export interface MemoryTool {
 
   /** Delete an entry. */
   delete(id: string): Promise<ToolResult<{ deleted: boolean }>>;
+
+  /**
+   * A view of this tool restricted to one thread/project. Reads return only
+   * entries visible to that scope; writes are owned by it. Tools that cannot
+   * scope must not pretend to: the registry only trusts this method.
+   */
+  scoped?(scope: OwnershipScope): MemoryTool;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +536,11 @@ export class ToolRegistry {
                   id: { type: "string" },
                   kind: { type: "string" },
                   content: { type: "string" },
+                  visibility: {
+                    type: "string",
+                    enum: ["thread", "project", "global"],
+                    description: "Who may read it. Default: thread (private). project/global publish it deliberately.",
+                  },
                 },
                 required: ["id", "kind", "content"],
               },
@@ -571,7 +625,11 @@ export class ToolRegistry {
    * Dispatch a tool call by name. Routes "toolId_method" to the right tool.
    * Returns the serialized result string.
    */
-  async dispatch(toolName: string, input: Record<string, unknown>, opts?: { cwd?: string }): Promise<ToolResult> {
+  async dispatch(
+    toolName: string,
+    input: Record<string, unknown>,
+    opts?: { cwd?: string; scope?: OwnershipScope },
+  ): Promise<ToolResult> {
     // Parse "toolId_method" format
     const lastUnderscore = toolName.lastIndexOf("_");
     if (lastUnderscore === -1) {
@@ -603,18 +661,36 @@ export class ToolRegistry {
           if (method === "exec") return await tool.exec(input.command as string, { cwd: opts?.cwd });
           break;
 
-        case "memory":
-          if (method === "search") return await tool.search(input.query as string, { kind: input.kind as string, limit: input.limit as number });
-          if (method === "get") return await tool.get(input.id as string);
-          if (method === "write") return await tool.write({ id: input.id as string, kind: input.kind as string, content: input.content as string, timestamp: Date.now() });
+        case "memory": {
+          // A scoped dispatch may only reach a tool that can honor the scope.
+          const memory = opts?.scope ? tool.scoped?.(opts.scope) : tool;
+          if (!memory) {
+            return { ok: false, summary: `Memory tool "${tool.id}" cannot scope reads to a thread`, error: "Unscoped memory tool" };
+          }
+          if (method === "search") return await memory.search(input.query as string, { kind: input.kind as string, limit: input.limit as number });
+          if (method === "get") return await memory.get(input.id as string);
+          if (method === "write") {
+            const visibility = input.visibility as MemoryVisibility | undefined;
+            return await memory.write({
+              id: input.id as string,
+              kind: input.kind as string,
+              content: input.content as string,
+              timestamp: Date.now(),
+              ...(visibility ? { visibility } : {}),
+            });
+          }
           break;
+        }
 
         case "script":
           if (method === "evaluate") return await tool.evaluate(input.code as string, { cwd: opts?.cwd });
           break;
 
         case "api":
-          if (method === "request") return await tool.request({ url: input.url as string, method: (input.method as any) ?? "GET", body: input.body, headers: input.headers as Record<string, string> });
+          if (method === "request") {
+            const api = tool.scoped ? tool.scoped(opts?.scope ?? {}) : tool;
+            return await api.request({ url: input.url as string, method: (input.method as any) ?? "GET", body: input.body, headers: input.headers as Record<string, string> });
+          }
           break;
 
         case "browser":

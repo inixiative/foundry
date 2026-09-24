@@ -1,0 +1,21 @@
+{
+  "provenance": {
+    "kind": "selected-fields-from-real-terminal-event",
+    "capturedDate": "2026-09-06",
+    "runtime": "claude-code",
+    "version": "2.1.258",
+    "model": "haiku",
+    "probeSessionId": "8591a329-6e19-45c8-bd44-8f1521a32c5d",
+    "probe": "Two text-only JSON requests through ClaudeCodeSessionAdapter, tools=false, maxTurns=1, cwd=/tmp, in-memory bindings. Both returned HTTP 429; owned process killed in finally.",
+    "sanitization": "Only terminal type, subtype, explicit error flag, API status, terminal reason, turn count and printable result retained. Other fields omitted, not synthesized. This is not a full stream fixture or evidence of successful tool use."
+  },
+  "event": {
+    "type": "result",
+    "subtype": "success",
+    "is_error": true,
+    "terminal_reason": "api_error",
+    "api_error_status": 429,
+    "num_turns": 1,
+    "result": "You've hit your session limit · resets 9:40pm (America/Montevideo)"
+  }
+}
