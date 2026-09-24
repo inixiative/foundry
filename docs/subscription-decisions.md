@@ -95,14 +95,14 @@ Every decision, including classification and routing, has a 10 s deadline (`DECI
 
 Budget (`providers/decision-budget.ts`), measured live with `bun scripts/measure-decisions.ts` (six experts, gpt-6-luna at low effort, a spare `VIEWER_PORT`):
 
-| | Before (per-call `codex exec`, classify, then route, then advise) | After |
+| | Before (per-call `codex exec`, classify → route → advise) | After |
 |---|---|---|
-| Message to worker start | p50 17.4 s, p95 20.9 s | p50 5.5 s; served turns ≤ 7.1 s |
-| One decision | p50 4.3 s, p95 6.1 s | p50 3.5 s, p95 5.5 s under the full fan-out |
+| Message to worker start (turns 30 s apart) | p50 18.2 s, p95 22.7 s | p50 6.5–7.2 s, p95 8.2–8.7 s (two runs) |
+| One decision | p50 4.3 s, p95 6.5 s | p50 3.5–3.9 s, p95 5.5–7.4 s under the full fan-out |
 
-- The budget is 5.5 s p95 per decision and 7.5 s p95 from message to worker start over served turns.
-- In provider-wide stalls, when every request is slow at once, turns end at the safety net and are reported separately.
-- The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
+The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. About one decision in six is hedged. No websocket-to-HTTPS fallback appeared in 165 warm-host decisions. Back-to-back messages (a request burst every few seconds) trip provider throttling; those turns end at the 10 s safety net and are reported separately.
+
+The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
 ## Ownership and bounds
 

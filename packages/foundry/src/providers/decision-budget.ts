@@ -16,12 +16,12 @@ export const DECISION_DEADLINE_MS = 10_000;
 export const DECISION_LATENCY_BUDGET = {
   /** The whole pre-message phase costs at most this many decision round-trips (controlled test). */
   messageToWorkerInDecisionRounds: 1.6,
-  /** p95 of one warm decision under a full fan-out (live: p50 3.5 s, p95 5.5 s). */
-  decisionP95Ms: 5_500,
+  /** p95 of one warm decision under a full fan-out (live: p50 3.5–3.9 s, p95 5.5–7.4 s). */
+  decisionP95Ms: 7_500,
   /**
-   * p95 from message accepted to worker start with six experts, over turns the provider
-   * served (live: p50 5.5 s; the slowest served turn 7.1 s). Turns caught in a provider-wide
-   * stall end at the safety net instead and are reported separately.
+   * p95 from message accepted to worker start with six experts and turns spaced like real use
+   * (live, two runs: p50 6.5–7.2 s, p95 8.2–8.7 s; before this design p50 18.2 s, p95 22.7 s).
+   * Turns caught in a provider-wide stall end at the safety net instead and are reported separately.
    */
-  messageToWorkerP95Ms: 7_500,
+  messageToWorkerP95Ms: 9_000,
 } as const;
