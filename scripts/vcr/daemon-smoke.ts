@@ -46,13 +46,23 @@ writeFileSync(plistPath, plist);
 
 const target = `gui/${uid}/${label}`;
 let report: { exitCode: number; facts: Record<string, unknown> } | undefined;
+const bootout = () => $`launchctl bootout ${target}`.quiet().nothrow();
+process.once("SIGINT", () => { void bootout().then(() => process.exit(130)); });
 try {
-  await $`launchctl bootstrap gui/${uid} ${plistPath}`.quiet();
-  const deadline = Date.now() + 10 * 60_000;
-  while (Date.now() < deadline && !existsSync(reportPath)) await Bun.sleep(1_000);
+  const loaded = await $`launchctl bootstrap gui/${uid} ${plistPath}`.quiet().nothrow();
+  if (loaded.exitCode !== 0) console.error(`  launchctl bootstrap failed: ${loaded.stderr.toString().trim()}`);
+  else {
+    // Until the report appears, or the job has exited without one.
+    const deadline = Date.now() + 10 * 60_000;
+    while (Date.now() < deadline && !existsSync(reportPath)) {
+      await Bun.sleep(1_000);
+      const state = await $`launchctl print ${target}`.quiet().nothrow().text();
+      if (!existsSync(reportPath) && !/state = running/.test(state) && /last exit code = (?!\(never exited\))/.test(state)) { await Bun.sleep(1_000); break; }
+    }
+  }
   if (existsSync(reportPath)) report = JSON.parse(readFileSync(reportPath, "utf8"));
 } finally {
-  await $`launchctl bootout ${target}`.quiet().nothrow();
+  await bootout();
 }
 
 const log = (name: string) => existsSync(join(work, name)) ? readFileSync(join(work, name), "utf8") : "";

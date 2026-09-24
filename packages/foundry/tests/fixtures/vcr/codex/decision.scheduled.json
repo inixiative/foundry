@@ -80,7 +80,7 @@
       {
         "after": 2,
         "stream": "stdout",
-        "data": "{\"type\":\"thread.started\",\"thread_id\":\"01a0d1ce-3fe9-7ae0-836a-f5f03e2c22d0\"}"
+        "data": "{\"type\":\"thread.started\",\"thread_id\":\"01a0d1e0-e048-71f2-b538-0a468149bc03\"}"
       },
       {
         "after": 2,
@@ -89,13 +89,73 @@
       },
       {
         "after": 2,
-        "stream": "stdout",
-        "data": "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"{\\\"category\\\":\\\"feature\\\"}\"}}"
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:11.261190Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:11.956882Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:12.558976Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
       },
       {
         "after": 2,
         "stream": "stdout",
-        "data": "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":8304,\"cached_input_tokens\":5888,\"cache_write_input_tokens\":0,\"output_tokens\":9,\"reasoning_output_tokens\":0}}"
+        "data": "{\"type\":\"error\",\"message\":\"Reconnecting... 2/5 (unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a3ff5f77d8f9acbc-EZE)\"}"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:13.381074Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"error\",\"message\":\"Reconnecting... 3/5 (unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a3ff5f7d1d6ffd7a-EZE)\"}"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:14.617811Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"error\",\"message\":\"Reconnecting... 4/5 (unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a3ff5f84bd68ed09-EZE)\"}"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:16.774451Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"error\",\"message\":\"Reconnecting... 5/5 (unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a3ff5f925cc8a77a-EZE)\"}"
+      },
+      {
+        "after": 2,
+        "stream": "stderr",
+        "data": "2026-09-24T05:26:21.106127Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"error\",\"message\":\"Falling back from WebSockets to HTTPS transport. unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a3ff5fad4cd59d5e-EZE\"}}"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\"{\\\"category\\\":\\\"feature\\\"}\"}}"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":8316,\"cached_input_tokens\":5888,\"cache_write_input_tokens\":0,\"output_tokens\":9,\"reasoning_output_tokens\":0}}"
       }
     ],
     "exit": {
@@ -107,10 +167,10 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-09-24T05:05:53.112Z",
+    "recordedAt": "2026-09-24T05:26:23.629Z",
     "agentSession": "0.2.0",
     "environment": "terminal",
-    "durationMs": 3187,
+    "durationMs": 12950,
     "model": "gpt-6-luna"
   }
 }

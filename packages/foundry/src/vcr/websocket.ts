@@ -72,8 +72,7 @@ class ReplaySocket extends EventTarget implements SocketLike {
     if (this.readyState !== WebSocket.OPEN) throw Error("VCR replay: send on a socket that is not open");
     const recorded = this.transcript.sent[this.sent];
     if (recorded === undefined) throw Error(`VCR replay: websocket send ${this.sent + 1} was not recorded; re-record with \`bun run test:live\``);
-    const kind = (text: string) => { try { return (JSON.parse(text) as { action?: string; type?: string }).action ?? JSON.parse(text).type; } catch { return undefined; } };
-    if (kind(recorded) !== kind(payload(data))) throw Error(`VCR replay: websocket send ${this.sent + 1} is ${kind(payload(data))}, recorded ${kind(recorded)}`);
+    if (scrubLine(payload(data)) !== recorded) throw Error(`VCR replay: websocket send ${this.sent + 1} differs from the recording; re-record with \`bun run test:live\``);
     this.sent++;
     this.release();
   }

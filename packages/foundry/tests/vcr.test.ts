@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
+import { claudeStatusOnly } from "./helpers/vcr";
 import { join } from "node:path";
 import { VCR, ProcessCassettes, httpCassettes, webSocketCassettes, checkFreshness, findLeaks, scrubLine, scrubValue, signatureOf, compareSignatures, volatileDifferences, type Fixture, type ProcessTranscript } from "../src/vcr";
 
@@ -111,6 +112,18 @@ describe("live drift", () => {
     expect(read("m.x.pending.json").body).toEqual({ a: "2", b: true });
     expect(VCR.drift[0]!.differences).toEqual(["body added a:string, b:boolean", "body removed a:number"]);
   });
+
+  it("an outcome recorded after its transcript drifted is held back with it", async () => {
+    await new VCR(dir, { service: "svc", version: () => "1" }).queue("t", "x").queue("outcome", "x").capture("t", async () => ({ a: 1 }))
+      .then(() => undefined);
+    const first = new VCR(dir, { service: "svc", version: () => "1" }).queue("outcome", "x");
+    await first.outcome("outcome", { ok: true });
+    const vcr = new VCR(dir, { service: "svc", version: () => "1" }).queue("t", "x").queue("outcome", "x");
+    await vcr.capture("t", async () => ({ a: "changed" }));
+    await vcr.outcome("outcome", { ok: false });
+    expect(read("outcome.x.json").body).toEqual({ ok: true });
+    expect(read("outcome.x.pending.json").body).toEqual({ ok: false });
+  });
 });
 
 describe("drift classification", () => {
@@ -122,6 +135,11 @@ describe("drift classification", () => {
     expect(compareSignatures(before, noisy)).toEqual([]);
     expect(volatileDifferences(before, noisy)).toEqual(["new stdout:rate_limit_event", "new stdout:system:thinking_tokens"]);
     const changed = transcript({ ...init, model: 1 }, { type: "result", subtype: "error_max_turns" });
+    const tool = transcript(init, { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash" }] } }, result);
+    expect(compareSignatures(transcript(init, { type: "assistant", message: { content: [{ type: "text", text: "x" }] } }, result), tool))
+      .toEqual(["missing stdout:assistant:text", "new stdout:assistant:tool_use"]);
+    const login = (line: string) => signatureOf(0, { kind: "process", frames: [{ stream: "stderr", data: line, kept: true }], exit: { code: 0 } });
+    expect(compareSignatures(login("Logged in using ChatGPT"), login("Logged in using an API key"))).toEqual(["stderr:kept added text:Logged in using an API key", "stderr:kept removed text:Logged in using ChatGPT"]);
     expect(compareSignatures(before, changed)).toEqual(["new stdout:result:error_max_turns", "missing stdout:result:success", "stdout:system:init added model:number", "stdout:system:init removed model:string"]);
   });
 });
@@ -175,7 +193,34 @@ describe("process cassettes", () => {
       stdin: ['{"id":1,"method":"ping"}'], stdinEnded: false, frames: [], exit: { after: 9, code: 0, killed: false } } }));
     setMode("replay");
     const child = new ProcessCassettes(new VCR(dir, { service: "echo", version: () => "1" }).queue("session", "short"), "session").spawn(["x"], { cwd: dir, env: {} });
-    expect(() => child.stdin.write('{"id":1,"method":"other"}\n')).toThrow("is other, recorded ping");
+    expect(() => child.stdin.write('{"id":1,"method":"other"}\n')).toThrow("stdin line 1 differs from the recording (other vs ping)");
+  });
+
+  it("replay compares whole requests, plain text included, and refuses to end short", async () => {
+    const cassette = (name: string, stdin: string[]) => writeFileSync(join(dir, `session.${name}.json`), JSON.stringify({ version: "1", status: 0, body: { kind: "process", argv: ["codex", "exec"], cwd: "{{cwd}}",
+      stdin, stdinEnded: true, frames: [{ after: 2, stream: "stdout", data: '{"answer":"feature"}' }], exit: { after: 2, code: 0, killed: false } } }));
+    cassette("prompt", ["Classify: add a toggle"]); cassette("two", ["first line", "second line"]);
+    setMode("replay");
+    const vcr = new VCR(dir, { service: "codex", version: () => "1" }).queue("session", "prompt").queue("session", "prompt").queue("session", "two");
+    const cassettes = new ProcessCassettes(vcr, "session");
+    expect(() => cassettes.spawn(["codex", "exec"], { cwd: dir, env: {} }).stdin.write("Delete the production database")).toThrow("stdin line 1 differs");
+    const same = cassettes.spawn(["codex", "exec"], { cwd: dir, env: {} });
+    same.stdin.write("Classify: add a toggle"); same.stdin.end();
+    expect(await new Response(same.stdout).text()).toBe('{"answer":"feature"}\n');
+    const short = cassettes.spawn(["codex", "exec"], { cwd: dir, env: {} });
+    short.stdin.write("first line");
+    expect(() => short.stdin.end()).toThrow("stdin ended after 1 of 2 recorded lines");
+  });
+
+  it("a status probe shared by many tests is recorded once per live run, then replayed", async () => {
+    const file = join(dir, "probe.ts"); writeFileSync(file, `console.log(JSON.stringify({ n: Math.random() }))`);
+    const vcr = new VCR(dir, { service: "probe", version: () => "1" }).queue("status", "ok").queue("status", "ok");
+    const cassettes = new ProcessCassettes(vcr, "status", { argv: [process.execPath, file], recordOnce: true });
+    const first = await new Response(cassettes.statusSpawn().stdout).text();
+    await vcr.settled();
+    const second = await new Response(cassettes.statusSpawn().stdout).text();
+    expect(second).toBe(first);
+    expect(VCR.liveCalls).toBeGreaterThan(0);
   });
 
   it("a status probe keeps only what the sanitizer allows and the account never reaches disk", async () => {
@@ -212,6 +257,7 @@ describe("http and websocket cassettes", () => {
       const replayed = await httpCassettes(vcr.queue("post", "refused"), "post")("http://unused.invalid/api/v1/access/x", { method: "POST" });
       expect(replayed.status).toBe(401);
       expect(await replayed.json()).toEqual(await live.json());
+      await expect(httpCassettes(vcr.queue("post", "refused"), "post")("http://unused.invalid/api/v1/access/other", { method: "POST" })).rejects.toThrow("was recorded as POST /api/v1/access/x");
     } finally { server.stop(true); }
   });
 
@@ -247,6 +293,20 @@ describe("scrubbing and freshness", () => {
     expect(findLeaks(line)).toEqual([]);
     expect(findLeaks(JSON.stringify({ path: "/Users/someone/x", orgName: "Acme" }))).toEqual(["home path", "unredacted orgName"]);
     expect(scrubValue({ user_id: "u-1", nested: [{ access_token: "x" }] })).toEqual({ user_id: "REDACTED", nested: [{ access_token: "REDACTED" }] });
+  });
+
+  it("redacts everything under an identity key, and finds identity wherever a cassette hides it", () => {
+    const nested = { account: { uuid: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "Person", display_name: "P" }, organization: { uuid: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "Acme" }, model: "m" };
+    expect(scrubValue(nested)).toEqual({ account: { uuid: "00000000-0000-4000-8000-000000000000", name: "REDACTED", display_name: "REDACTED" },
+      organization: { uuid: "00000000-0000-4000-8000-000000000000", name: "REDACTED" }, model: "m" });
+    expect(findLeaks(JSON.stringify({ body: nested }))).toContain("unredacted name");
+    const embedded = JSON.stringify({ frames: [{ data: `Update available\n{"loggedIn":true,"orgId":"0f8fad5b-d9cb-469f-a165-70867728950e","orgName":"Acme Secret Corp"}` }] });
+    expect(findLeaks(embedded)).toEqual(expect.arrayContaining(["unredacted orgId", "unredacted orgName"]));
+  });
+
+  it("an auth status that does not parse is withheld whole, never kept as text", () => {
+    const frames = [{ after: 0, stream: "stdout" as const, data: "Update available" }, { after: 0, stream: "stdout" as const, data: '{"loggedIn":true,"orgName":"Acme"}' }];
+    expect(claudeStatusOnly(frames)).toEqual([{ after: 0, stream: "stdout", data: "VCR: unparseable auth status withheld" }]);
   });
 
   it("fails cassettes that are old, recorded on an older CLI or agent-session, leaking, or pending review", () => {

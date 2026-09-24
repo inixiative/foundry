@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { VCR, type Fixture } from "./vcr";
 import { accountHome, rehydrate, scrubLine, scrubText, type ScrubContext } from "./scrub";
 
-export type Frame = { after: number; stream: "stdout" | "stderr"; data: string; eol?: false };
+/** `kept`: a sanitizer chose to keep this line (a status probe's answer), so it is protocol, never noise. */
+export type Frame = { after: number; stream: "stdout" | "stderr"; data: string; eol?: false; kept?: true };
 export type ProcessTranscript = {
   kind: "process";
   argv: string[];
@@ -36,6 +37,8 @@ type Options = {
   sanitize?: (frames: Frame[]) => Frame[];
   /** Environment for `statusSpawn` probes; the providers compose theirs from an allowlist. */
   env?: () => Record<string, string | undefined>;
+  /** Record at most once per live run and replay that recording afterwards (status probes many tests share). */
+  recordOnce?: boolean;
   /** Model the recording ran on, stamped into the cassette. */
   model?: string | ((transcript: ProcessTranscript) => string | undefined);
 };
@@ -66,7 +69,8 @@ export class ProcessCassettes {
     this.launches.push(launch);
     const onWrite = (data: string) => { launch.stdin += data; this.writes++; };
     const onExit = () => { launch.exited = true; };
-    return this.vcr.mode === "replay" ? replay(this.vcr.load<ProcessTranscript>(path), options, onWrite, onExit)
+    const replaying = this.vcr.mode === "replay" || (this.options.recordOnce === true && VCR.written.has(path));
+    return replaying ? replay(this.vcr.load<ProcessTranscript>(path), options, onWrite, onExit)
       : record(this.vcr, path, this.options.argv ?? argv, options, this.options, onWrite, onExit);
   };
 
@@ -113,17 +117,19 @@ function record(vcr: VCR, path: string, argv: string[], options: SpawnOptions, c
   };
   const stdout = tee(child.stdout, "stdout"), stderr = tee(child.stderr, "stderr");
   // Foundry sees the real exit at once; the cassette is written after both streams drain.
+  // Tracked from spawn, so settled() waits for this cassette however the caller awaits the process.
   const exited = child.exited.then(code => {
     onExit();
     transcript.exit = { after: events, code: killed ? null : code, killed };
-    const durationMs = Date.now() - started;
-    vcr.track(Promise.all([stdout.done, stderr.done]).then(() => {
-      transcript.frames = (config.sanitize ? config.sanitize(raw) : raw).map(frame => ({ ...frame, data: scrubLine(frame.data, context) }));
-      const model = typeof config.model === "function" ? config.model(transcript) : config.model ?? observedModel(transcript);
-      return vcr.store(path, { status: killed ? 0 : code, body: transcript }, { durationMs, ...(model ? { model } : {}) });
-    }));
     return code;
   });
+  vcr.track(Promise.all([exited, stdout.done, stderr.done]).then(([code]) => {
+    const durationMs = Date.now() - started;
+    const sanitized = config.sanitize ? config.sanitize(raw).map(frame => ({ ...frame, kept: true as const })) : raw;
+    transcript.frames = sanitized.map(frame => ({ ...frame, data: scrubLine(frame.data, context) }));
+    const model = typeof config.model === "function" ? config.model(transcript) : config.model ?? observedModel(transcript);
+    return vcr.store(path, { status: killed ? 0 : code, body: transcript }, { durationMs, ...(model ? { model } : {}) });
+  }));
   return {
     stdout: stdout.readable, stderr: stderr.readable, exited,
     stdin: {
@@ -149,6 +155,13 @@ function observedModel(transcript: ProcessTranscript): string | undefined {
 }
 
 type JsonRpc = { id?: string | number; method?: string; type?: string };
+/** A stdin line as compared on replay: JSON-RPC request ids are the client's choice, everything else must match. */
+const comparable = (line: string) => {
+  const value = json(line);
+  if (!value || value.method === undefined || value.id === undefined) return line.trim();
+  const { id: _id, ...rest } = value as Record<string, unknown>;
+  return JSON.stringify(rest);
+};
 const json = (line: string): JsonRpc | undefined => { try { const value = JSON.parse(line); return value && typeof value === "object" ? value : undefined; } catch { return undefined; } };
 
 function replay(fixture: Fixture<ProcessTranscript>, options: SpawnOptions,
@@ -182,9 +195,10 @@ function replay(fixture: Fixture<ProcessTranscript>, options: SpawnOptions,
         try { controllers[frame.stream].enqueue(encoder.encode(data)); } catch { /* Reader gone. */ }
       }
       if (!closed && !transcript.exit.killed && next >= transcript.frames.length && events >= transcript.exit.after)
-        close(transcript.exit.code ?? 0);
+        close(transcript.exit.code ?? 1);
     });
   };
+  const recordedLines = transcript.stdin.flatMap(write => write.split("\n").filter(Boolean));
   const mismatch = (message: string) => { throw Error(`VCR replay (${transcript.argv.slice(0, 2).join(" ")}): ${message}; re-record with \`bun run test:live\``); };
   release();
   return {
@@ -194,19 +208,24 @@ function replay(fixture: Fixture<ProcessTranscript>, options: SpawnOptions,
         if (closed) throw Error("VCR replay: write after exit");
         const value = text(data);
         onWrite(value);
+        // Every request must be the recorded one, scrubbed the same way; only JSON-RPC request ids may differ.
         for (const line of value.split("\n").filter(Boolean)) {
-          const recorded = transcript.stdin.flatMap(write => write.split("\n").filter(Boolean))[stdinLines++];
+          const recorded = recordedLines[stdinLines++];
           if (recorded === undefined) mismatch(`stdin line ${stdinLines} was not recorded`);
           const live = json(recorded!), now = json(line);
-          if (live && now && (live.method !== now.method || live.type !== now.type))
-            mismatch(`stdin line ${stdinLines} is ${now.method ?? now.type}, recorded ${live.method ?? live.type}`);
+          if (comparable(scrubLine(line, context)) !== comparable(recorded!))
+            mismatch(`stdin line ${stdinLines} differs from the recording (${now?.method ?? now?.type ?? "text"} vs ${live?.method ?? live?.type ?? "text"})`);
           if (live?.id !== undefined && now?.id !== undefined && live.method !== undefined) ids.set(String(live.id), now.id);
         }
         events++;
         release();
       },
       flush() {},
-      end() { if (!ended) { ended = true; events++; release(); } },
+      end() {
+        if (ended) return;
+        if (stdinLines < recordedLines.length) mismatch(`stdin ended after ${stdinLines} of ${recordedLines.length} recorded lines`);
+        ended = true; events++; release();
+      },
     },
     kill() { close(transcript.exit.killed ? transcript.exit.code ?? 143 : 143); },
   };

@@ -80,7 +80,7 @@
       {
         "after": 2,
         "stream": "stdout",
-        "data": "{\"type\":\"thread.started\",\"thread_id\":\"01a0d1cd-68b1-75c1-b19f-1896210022bb\"}"
+        "data": "{\"type\":\"thread.started\",\"thread_id\":\"01a0d1df-f2bf-7c92-9f25-9f0c516c1b3f\"}"
       },
       {
         "after": 2,
@@ -95,7 +95,7 @@
       {
         "after": 2,
         "stream": "stdout",
-        "data": "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":8302,\"cached_input_tokens\":5888,\"cache_write_input_tokens\":0,\"output_tokens\":9,\"reasoning_output_tokens\":0}}"
+        "data": "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":8306,\"cached_input_tokens\":5888,\"cache_write_input_tokens\":0,\"output_tokens\":9,\"reasoning_output_tokens\":0}}"
       }
     ],
     "exit": {
@@ -107,10 +107,10 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-09-24T05:04:58.450Z",
+    "recordedAt": "2026-09-24T05:25:13.533Z",
     "agentSession": "0.2.0",
     "environment": "terminal",
-    "durationMs": 3578,
+    "durationMs": 3663,
     "model": "gpt-6-luna"
   }
 }

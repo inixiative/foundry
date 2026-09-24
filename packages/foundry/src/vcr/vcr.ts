@@ -91,6 +91,8 @@ export class VCR {
   private readonly queues = new Map<string, string[]>();
   private readonly versionFn: VersionFn;
   private readonly saving = new Set<Promise<unknown>>();
+  /** Once one recording drifted, this instance's later ones (its outcome) go to pending with it. */
+  private drifted = false;
 
   constructor(fixturesDir: string, opts: VCROptions) {
     this.fixturesDir = fixturesDir;
@@ -142,8 +144,14 @@ export class VCR {
     }
     VCR.spendLive(`${this.service} ${method}`);
     const started = Date.now();
-    const raw = await realFn();
-    return this.saveFixture<T>(fixturePath, method, this.sanitize(method, raw.body) as T, raw.status, raw.headers, { durationMs: Date.now() - started });
+    try {
+      const raw = await realFn();
+      return await this.saveFixture<T>(fixturePath, method, this.sanitize(method, raw.body) as T, raw.status, raw.headers, { durationMs: Date.now() - started });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.store(fixturePath, { status: 500, body: message }, { durationMs: Date.now() - started });
+      throw error;
+    }
   }
 
   /** Records `value` live and returns what live concluded; on replay returns the recorded conclusion.
@@ -218,11 +226,14 @@ export class VCR {
 
   private targetPath(fixturePath: string, next: Fixture): string {
     const out = process.env.FOUNDRY_VCR_OUT ? join(process.env.FOUNDRY_VCR_OUT, relativeFixture(fixturePath)) : fixturePath;
+    const pendingPath = out.replace(/\.json$/, ".pending.json");
+    if (this.drifted) return pendingPath;
     if (!existsSync(fixturePath)) return out;
     const committed = JSON.parse(readFileSync(fixturePath, "utf-8")) as Fixture;
     const differences = compareSignatures(signature(committed), signature(next));
     if (!differences.length) return out;
-    const pending = out.replace(/\.json$/, ".pending.json");
+    const pending = pendingPath;
+    this.drifted = true;
     VCR.drift.push({ cassette: fixturePath, pending, differences });
     console.warn(`VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join("\n  ")}`);
     return pending;

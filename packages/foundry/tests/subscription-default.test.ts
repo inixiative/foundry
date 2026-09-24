@@ -164,13 +164,16 @@ for (const [name, transport] of [
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
 });
 
-// Shape recorded live by `bun run test:live:daemon` (codex-cli 0.155.1, 2026-09-24): after chatgpt.com refuses
-// the responses websocket, codex exec reports its HTTPS fallback as an `error` item, then answers normally.
-test("a Codex CLI notice item (websocket-to-HTTPS fallback) is not tool use and does not fail the decision", async () => {
-  const t = codexTransport({ items: [{ id: "item_0", type: "error", message: "Falling back from WebSockets to HTTPS transport. unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses" }] });
-  const { run } = codexRun(t);
+// A controlled transport emitting the item live runs recorded (codex-cli 0.155.1, 2026-09-24): after chatgpt.com
+// refuses the responses websocket, codex exec reports its HTTPS fallback as an `error` item, then answers. The
+// fallback is intermittent, so the recorded cassettes may or may not contain it; this keeps the case covered.
+test("the Codex websocket-to-HTTPS fallback notice does not fail the decision; other error items still do", async () => {
+  const notice = { id: "item_0", type: "error", message: "Falling back from WebSockets to HTTPS transport. unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses" };
+  const { run } = codexRun(codexTransport({ items: [notice] }));
   await expect(run.provider.complete(messages)).resolves.toMatchObject({ content: "accepted-private-answer", native: { nativeOutcome: "completed" } });
   expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released" });
+  const other = codexRun(codexTransport({ items: [{ ...notice, message: "Tool shell_tool is disabled" }] }));
+  await expect(other.run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
 });
 
 test("a stalled Codex decision is killed at its deadline and its profile lock released", async () => {

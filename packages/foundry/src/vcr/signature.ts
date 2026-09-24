@@ -29,7 +29,12 @@ export function eventKind(event: unknown): string {
   const item = record.item as Record<string, unknown> | undefined;
   const params = record.params as Record<string, unknown> | undefined;
   const nested = (item?.type ?? (params?.item as Record<string, unknown> | undefined)?.type) as string | undefined;
-  const parts = [record.type, record.subtype, record.method, nested].filter((part): part is string => typeof part === "string");
+  // Claude assistant/user messages: what the turn did (text, thinking, tool_use, tool_result), not just that it spoke.
+  const message = record.message as { content?: unknown } | undefined;
+  const blocks = Array.isArray(message?.content)
+    ? [...new Set((message.content as { type?: unknown }[]).map(block => block?.type).filter((type): type is string => typeof type === "string"))].sort().join("+")
+    : undefined;
+  const parts = [record.type, record.subtype, record.method, nested, blocks || undefined].filter((part): part is string => typeof part === "string");
   if (parts.length) return parts.join(":");
   if ("id" in record && ("result" in record || "error" in record)) return "result" in record ? "rpc:result" : "rpc:error";
   return "object";
@@ -37,7 +42,7 @@ export function eventKind(event: unknown): string {
 
 const parse = (line: string): unknown => { try { return JSON.parse(line); } catch { return line; } };
 
-type Transcript = { kind: "process" | "websocket"; argv?: string[]; frames: { stream: string; data: string }[]; exit?: { code: number | null } };
+type Transcript = { kind: "process" | "websocket"; argv?: string[]; frames: { stream: string; data: string; kept?: true }[]; exit?: { code: number | null } };
 const isTranscript = (body: unknown): body is Transcript =>
   !!body && typeof body === "object" && ["process", "websocket"].includes((body as { kind?: string }).kind ?? "");
 
@@ -50,7 +55,12 @@ export function signatureOf(status: number, body: unknown): Signature {
   if (isTranscript(body)) {
     if (body.argv) shape["argv"] = new Set(body.argv.filter(arg => arg.startsWith("-")));
     for (const frame of body.frames) {
-      if (frame.stream === "stderr") { (shape["stderr"] ??= new Set()).add("text"); continue; }
+      if (frame.stream === "stderr") {
+        // A probe's kept answer (codex login status) is protocol; other stderr is CLI logging.
+        if ((frame as { kept?: true }).kept) (shape["stderr:kept"] ??= new Set()).add(`text:${frame.data}`);
+        else (shape["stderr"] ??= new Set()).add("text");
+        continue;
+      }
       const event = parse(frame.data);
       add(`${frame.stream}:${eventKind(event)}`, event);
     }
@@ -62,7 +72,7 @@ export function signatureOf(status: number, body: unknown): Signature {
 /** Event kinds whose presence and shape follow model behavior or transient service state (thinking,
  * rate-limit notices, reconnect errors, CLI logging), not the protocol. Their changes are notices. */
 export const VOLATILE_KINDS = [
-  /^stdout:system:thinking_tokens$/, /^stdout:rate_limit_event$/, /^stdout:error$/, /^stderr$/,
+  /^stdout:system:thinking_tokens$/, /^stdout:assistant:thinking$/, /^stdout:rate_limit_event$/, /^stdout:error$/, /^stderr$/,
   /:reasoning$/, /^stdout:item\.completed:error$/, /^stdout:account\/rateLimits\/updated$/, /^stdout:mcpServer\/startupStatus\/updated$/,
 ];
 const volatile = (kind: string) => VOLATILE_KINDS.some(pattern => pattern.test(kind));

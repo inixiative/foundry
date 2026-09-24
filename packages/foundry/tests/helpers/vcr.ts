@@ -33,12 +33,14 @@ export const claudeVcr = () => made(new VCR(join(FIXTURES_DIR, "claude"), { serv
 export const codexVcr = () => made(new VCR(join(FIXTURES_DIR, "codex"), { service: "codex", cli: "codex", version: () => cliVersion("codex") }));
 export const kingdomVcr = () => made(new VCR(join(FIXTURES_DIR, "kingdom"), { service: "kingdom", version: () => fetchVersion(`${LIVE.kingdomUrl}/openapi/docs`) }));
 
-/** `claude auth status --json` prints the account (email, org); keep only what Foundry reads. */
+/** `claude auth status --json` prints the account (email, org); keep only what Foundry reads. Output that does
+ * not parse is withheld whole (fail closed), never kept as text. */
 export const claudeStatusOnly = (frames: Frame[]): Frame[] => {
   const stdout = frames.filter(frame => frame.stream === "stdout").map(frame => frame.data).join("\n");
-  let data = stdout;
-  try { const status = JSON.parse(stdout); data = JSON.stringify({ loggedIn: status.loggedIn, authMethod: status.authMethod }); } catch { /* Kept as text; scrubbed. */ }
-  return [{ after: 0, stream: "stdout", data }];
+  try {
+    const status = JSON.parse(stdout) as { loggedIn?: unknown; authMethod?: unknown };
+    return [{ after: 0, stream: "stdout", data: JSON.stringify({ loggedIn: status.loggedIn, authMethod: status.authMethod }) }];
+  } catch { return [{ after: 0, stream: "stdout", data: "VCR: unparseable auth status withheld" }]; }
 };
 /** `codex login status` reports the login method on stderr; nothing else is kept. */
 export const codexLoginOnly = (frames: Frame[]): Frame[] =>
@@ -51,7 +53,7 @@ const queueAll = (vcr: VCR, method: string, names: string[] = []) => { for (cons
 export function recordedClaudeTransport(names: Names, vcr = claudeVcr()) {
   queueAll(vcr, "decision", names.decision); queueAll(vcr, "auth-status", names.status);
   const decisions = new ProcessCassettes(vcr, "decision");
-  const status = new ProcessCassettes(vcr, "auth-status", { argv: ["claude", "auth", "status", "--json"], sanitize: claudeStatusOnly, model: () => undefined, env: () => nativeTextEnvironment(process.env) });
+  const status = new ProcessCassettes(vcr, "auth-status", { argv: ["claude", "auth", "status", "--json"], sanitize: claudeStatusOnly, recordOnce: true, model: () => undefined, env: () => nativeTextEnvironment(process.env) });
   return { vcr, launches: decisions.launches as Launch[], get writes() { return decisions.writes; }, get statusChecks() { return status.launches.length; },
     spawn: decisions.spawn, statusSpawn: status.statusSpawn };
 }
@@ -60,7 +62,7 @@ export function recordedClaudeTransport(names: Names, vcr = claudeVcr()) {
 export function recordedCodexTransport(names: Names, vcr = codexVcr()) {
   queueAll(vcr, "decision", names.decision); queueAll(vcr, "login-status", names.status);
   const decisions = new ProcessCassettes(vcr, "decision", { model: LIVE.codexModel });
-  const status = new ProcessCassettes(vcr, "login-status", { argv: ["codex", "login", "status"], sanitize: codexLoginOnly, model: () => undefined, env: () => nativeTextEnvironment(process.env) });
+  const status = new ProcessCassettes(vcr, "login-status", { argv: ["codex", "login", "status"], sanitize: codexLoginOnly, recordOnce: true, model: () => undefined, env: () => nativeTextEnvironment(process.env) });
   let live = 0, peak = 0;
   return { vcr, launches: decisions.launches, get statusChecks() { return status.launches.length; }, get live() { return live; }, get peak() { return peak; },
     statusSpawn: status.statusSpawn,

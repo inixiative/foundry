@@ -24,6 +24,9 @@ export function httpCassettes(vcr: VCR, method: string): typeof fetch {
     const path = vcr.popFixturePath(method);
     if (vcr.mode === "replay") {
       const saved = vcr.load(path) as HttpFixture;
+      const now = describe(input, init);
+      if (saved.request && (saved.request.method !== now.method || saved.request.path !== now.path))
+        throw Error(`VCR replay: ${now.method} ${now.path} was recorded as ${saved.request.method} ${saved.request.path}; re-record with \`bun run test:live\``);
       const body = saved.body === undefined || saved.body === null ? null
         : typeof saved.body === "string" ? saved.body : JSON.stringify(saved.body);
       return new Response(body, { status: saved.status, headers: saved.headers });

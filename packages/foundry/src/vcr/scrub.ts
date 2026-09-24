@@ -47,8 +47,9 @@ function pathRules(context: ScrubContext): [RegExp, string][] {
   for (const home of variants(accountHome())) rules.push([new RegExp(escape(home), "g"), "~"]);
   const user = userInfo().username;
   if (user.length > 2) rules.push([new RegExp(`\\b${escape(user)}\\b`, "gi"), "user"]);
-  const host = hostname().replace(/\.local$/, "");
-  if (host.length > 2) rules.push([new RegExp(`\\b${escape(host)}(\\.local)?\\b`, "gi"), "host"]);
+  // The machine name, bare or qualified (MacBookPro, MacBookPro.lan, MacBookPro.local).
+  const host = hostname().split(".")[0]!;
+  if (host.length > 2) rules.push([new RegExp(`\\b${escape(host)}(\\.[A-Za-z0-9-]+)*\\b`, "gi"), "host"]);
   ruleCache.set(context.cwd ?? "", rules);
   return rules;
 }
@@ -59,16 +60,21 @@ export function scrubText(text: string, context: ScrubContext = {}): string {
   return out;
 }
 
+const redactIdentity = (value: string) => value === "" ? value : UUID.test(value) ? REDACTED_UUID : value.includes("@") ? REDACTED_EMAIL : "REDACTED";
+const REDACTED_VALUES = ["REDACTED", REDACTED_UUID, REDACTED_EMAIL, ""];
+
 export function scrubValue<T>(value: T, context: ScrubContext = {}): T {
-  const walk = (node: unknown, key?: string): unknown => {
+  // Under an identity or secret key every string leaf is identity, however deeply nested ({ account: { name } }).
+  const walk = (node: unknown, key?: string, sensitive = false): unknown => {
+    const hidden = sensitive || (key !== undefined && (IDENTITY_KEY.test(key) || SECRET_KEY.test(key)));
     if (typeof node === "string") {
       if (key && SECRET_KEY.test(key)) return "REDACTED";
-      if (key && IDENTITY_KEY.test(key)) return UUID.test(node) ? REDACTED_UUID : node.includes("@") ? REDACTED_EMAIL : "REDACTED";
+      if (hidden) return redactIdentity(node);
       return scrubText(node, context);
     }
-    if (Array.isArray(node)) return node.map(item => walk(item));
+    if (Array.isArray(node)) return node.map(item => walk(item, undefined, hidden));
     if (node && typeof node === "object") {
-      return Object.fromEntries(Object.entries(node).map(([childKey, child]) => [scrubText(childKey, context), walk(child, childKey)]));
+      return Object.fromEntries(Object.entries(node).map(([childKey, child]) => [scrubText(childKey, context), walk(child, childKey, hidden)]));
     }
     return node;
   };
@@ -103,18 +109,25 @@ export const LEAK_PATTERNS: [string, RegExp][] = [
   ["bearer credential", /\bBearer\s+(?!REDACTED)[A-Za-z0-9._~+/=-]{8,}/i],
 ];
 
-/** Leaks in a cassette's text, plus identity keys whose values were not redacted. */
+/** Leaks in a cassette's text, plus identity keys whose values were not redacted, wherever they sit:
+ * nested objects, JSON-in-a-string, or JSON embedded after other text in a protocol line. */
 export function findLeaks(text: string): string[] {
   const found = LEAK_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
-  try {
-    const walk = (node: unknown, key?: string): void => {
-      if (typeof node === "string" && key && (IDENTITY_KEY.test(key) || SECRET_KEY.test(key))
-        && !["REDACTED", REDACTED_UUID, REDACTED_EMAIL].includes(node) && node !== "") found.push(`unredacted ${key}`);
-      else if (typeof node === "string" && /^\s*[{[]/.test(node)) { try { walk(JSON.parse(node)); } catch { /* Plain text. */ } }
-      else if (Array.isArray(node)) node.forEach(item => walk(item));
-      else if (node && typeof node === "object") for (const [childKey, child] of Object.entries(node)) walk(child, childKey);
-    };
-    walk(JSON.parse(text));
-  } catch { /* Sidecar or non-JSON text: patterns only. */ }
+  // Any `"key": "value"` pair at any escaping depth, so text the JSON walk cannot parse is still checked.
+  for (const match of text.matchAll(/(\\*)"([A-Za-z_-]+)\1"\s*:\s*\1"((?:[^"\\]|\\(?!\1"))*)\1"/g)) {
+    const [, , key, value] = match;
+    if ((IDENTITY_KEY.test(key!) || SECRET_KEY.test(key!)) && !REDACTED_VALUES.includes(value!)) found.push(`unredacted ${key}`);
+  }
+  const walk = (node: unknown, key?: string, sensitive = false): void => {
+    const hidden = sensitive || (key !== undefined && (IDENTITY_KEY.test(key) || SECRET_KEY.test(key)));
+    if (typeof node === "string") {
+      if (hidden && !REDACTED_VALUES.includes(node)) found.push(`unredacted ${key ?? "identity"}`);
+      else for (let start = node.indexOf("{"); start !== -1; start = node.indexOf("{", start + 1)) {
+        try { walk(JSON.parse(node.slice(start))); break; } catch { /* Not JSON from here. */ }
+      }
+    } else if (Array.isArray(node)) node.forEach(item => walk(item, key, hidden));
+    else if (node && typeof node === "object") for (const [childKey, child] of Object.entries(node)) walk(child, childKey, hidden);
+  };
+  try { walk(JSON.parse(text)); } catch { /* Sidecar or non-JSON text: patterns only. */ }
   return [...new Set(found)];
 }

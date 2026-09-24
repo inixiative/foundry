@@ -10,8 +10,9 @@
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { agentSessionVersion, checkFreshness, cassettes, compareVersions, installedVersions, policyPath, readPolicy, type Fixture } from "../../packages/foundry/src/vcr";
-import { LIVE_FILES, bunTest, cleanEnvironment, display, driftOf, fixturesDir, livePath, noticesOf, pendingCassettes, snapshot } from "./shared";
+import { LIVE_FILES, bunTest, cleanEnvironment, display, driftOf, fixturesDir, livePath, noticesOf, pendingCassettes, refuseDaemonCheckout, snapshot } from "./shared";
 
+await refuseDaemonCheckout();
 const passthrough = process.argv.slice(2);
 const SLOW_MS = 8_000;
 const { path, resolved, missing } = await livePath();
@@ -21,14 +22,27 @@ if (missing.length) {
 }
 for (const [cli, install] of resolved) console.log(`  ${cli}: ${install.binary} (${install.version.join(".")})`);
 
-// A previous run's unreviewed drift is superseded by this run's recordings.
-for (const stale of pendingCassettes()) rmSync(stale);
+// A full run supersedes earlier unreviewed drift; a filtered run leaves drift it will not re-record alone.
+if (!passthrough.length) for (const stale of pendingCassettes()) rmSync(stale);
 
 const before = snapshot();
 const env = cleanEnvironment({ PATH: path, FOUNDRY_VCR_PATH: path, FOUNDRY_VCR_ENVIRONMENT: "terminal" });
 console.log("\n== live: record every scenario against the real CLIs and services");
 const recorded = await bunTest(["--timeout", "120000", ...LIVE_FILES, ...passthrough], { ...env, FOUNDRY_VCR: "record" });
-console.log("\n== replay: the same tests against the fresh cassettes");
+// A failed live run proves nothing about its recordings: hold every one it changed back for review.
+if (recorded) {
+  let held = 0;
+  for (const path of cassettes(fixturesDir)) {
+    if (path.endsWith(".pending.json")) continue;
+    const previous = before.get(path), current = readFileSync(path, "utf8");
+    if (previous === current) continue;
+    writeFileSync(path.replace(/\.json$/, ".pending.json"), current);
+    if (previous === undefined) rmSync(path); else writeFileSync(path, previous);
+    held++;
+  }
+  if (held) console.log(`\n  live failed: ${held} new recording(s) held back as .pending.json; the committed cassettes are unchanged`);
+}
+console.log("\n== replay: the same tests against the committed cassettes");
 const replayed = await bunTest([...LIVE_FILES, ...passthrough], env);
 
 // Volatile differences are worth seeing (reconnect storms, thinking) but do not hold a recording back.
@@ -54,7 +68,8 @@ if (!recorded && !replayed && !drift.length && !passthrough.length) {
     const cli = fixture.recorded?.cli;
     if (cli && fixture.version && (!policy.blessed[cli] || compareVersions(fixture.version, policy.blessed[cli]!) > 0)) policy.blessed[cli] = fixture.version;
   }
-  if (agentSessionVersion) policy.blessed["@inixiative/agent-session"] = agentSessionVersion;
+  const session = policy.blessed["@inixiative/agent-session"];
+  if (agentSessionVersion && (!session || compareVersions(agentSessionVersion, session) > 0)) policy.blessed["@inixiative/agent-session"] = agentSessionVersion;
   writeFileSync(policyPath(fixturesDir), `${JSON.stringify(policy, null, 2)}\n`);
 }
 
