@@ -1,0 +1,19 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "content": "accepted-private-answer",
+    "outcome": "completed",
+    "rpc": "resolved",
+    "terminal": "turn/completed",
+    "observedModel": "gpt-6-luna",
+    "launches": 1
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-09-24T05:25:20.994Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

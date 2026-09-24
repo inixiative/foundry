@@ -1,0 +1,21 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "content": "{\"category\":\"feature\"}",
+    "native": "completed",
+    "call": [
+      {
+        "valid": true,
+        "release": "released"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-09-24T05:26:10.377Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

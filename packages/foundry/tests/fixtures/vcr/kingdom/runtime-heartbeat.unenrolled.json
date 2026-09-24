@@ -1,0 +1,26 @@
+{
+  "version": "3c7e18fb7058",
+  "status": 401,
+  "headers": {
+    "content-type": "application/octet-stream"
+  },
+  "body": "Runtime installation unavailable",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/access/runtimeHeartbeat",
+    "headers": {
+      "authorization": "REDACTED",
+      "content-type": "application/json"
+    },
+    "body": {
+      "sessionCount": 0
+    }
+  },
+  "recorded": {
+    "service": "kingdom",
+    "recordedAt": "2026-09-24T05:05:07.500Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal",
+    "durationMs": 31
+  }
+}

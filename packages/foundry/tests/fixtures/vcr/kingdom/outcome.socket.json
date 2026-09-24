@@ -1,0 +1,23 @@
+{
+  "version": "3c7e18fb7058",
+  "status": 200,
+  "body": [
+    {
+      "type": "connected",
+      "connectionId": "string"
+    },
+    {
+      "type": "pong"
+    },
+    {
+      "type": "identity",
+      "userId": null
+    }
+  ],
+  "recorded": {
+    "service": "kingdom",
+    "recordedAt": "2026-09-24T05:05:07.503Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal"
+  }
+}

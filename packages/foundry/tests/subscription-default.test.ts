@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { defaultProfileSource } from "../src/providers/default-profiles";
 import { buildCodexTextProvider } from "../src/providers/codex-text-provider";
 import { buildSubscriptionDecisions, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
 import { codexTransport, subscriptionTransport } from "./helpers/subscription-transport";
+import { DECIDED, LIVE, decisionMessages, recordedCodexTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 import { ClaudeCodeSessionAdapter, InMemoryExternalSessionStore } from "../src/providers/session-adapter";
 
 const roots: string[] = [];
@@ -29,6 +30,8 @@ function userHome() {
   return root;
 }
 const messages = [{ role: "user" as const, content: "private-input" }];
+afterAll(settleRecordings);
+const LIVE_TIMEOUT = 90_000;
 
 test("a fresh configuration is subscription-only: Claude worker and Codex Luna decisions from the user's own logins", () => {
   const root = userHome(), cwd = join(root, "project"); mkdirSync(cwd);
@@ -118,30 +121,34 @@ test("default profiles are selected by omission, so the child never overrides CL
   }
 });
 
-function codexRun(transport: ReturnType<typeof codexTransport>, timeout = 2000) {
+function codexRun(transport: Pick<ReturnType<typeof codexTransport>, "spawn" | "statusSpawn">, timeout = 2000) {
   const root = userHome(), directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
-  return { root, run: buildCodexTextProvider({ directory, source: defaultProfileSource("codex"), runId: crypto.randomUUID(), model: "gpt-5.6-luna", maxCalls: 2, callTimeoutMs: timeout }, transport) };
+  return { root, run: buildCodexTextProvider({ directory, source: defaultProfileSource("codex"), runId: crypto.randomUUID(), model: LIVE.codexModel, maxCalls: 2, callTimeoutMs: timeout }, transport) };
 }
 
 test("Codex decisions are one ephemeral, read-only, tool-disabled exec turn with the prompt on stdin", async () => {
-  const transport = codexTransport();
-  const { root, run } = codexRun(transport);
-  const result = await run.provider.complete([{ role: "system", content: "Return JSON" }, ...messages]);
-  expect(result).toMatchObject({ content: "accepted-private-answer", model: "gpt-5.6-luna", tokens: { input: 3, output: 2 }, native: { nativeOutcome: "completed" } });
+  const transport = recordedCodexTransport({ status: ["chatgpt"], decision: ["exec-turn"] });
+  const { root, run } = codexRun(transport, 30_000);
+  const result = await run.provider.complete(decisionMessages());
+  expect(result).toMatchObject({ model: LIVE.codexModel, native: { nativeOutcome: "completed" } });
+  expect(result.content).toMatch(DECIDED);
+  expect(result.tokens!.input).toBeGreaterThan(0); expect(result.tokens!.output).toBeGreaterThan(0);
   const [launch] = transport.launches;
   expect(launch!.argv.slice(0, 2)).toEqual(["codex", "exec"]);
   for (const flag of ["--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check"]) expect(launch!.argv).toContain(flag);
   expect(launch!.argv[launch!.argv.indexOf("--sandbox") + 1]).toBe("read-only");
-  expect(launch!.argv[launch!.argv.indexOf("--model") + 1]).toBe("gpt-5.6-luna");
+  expect(launch!.argv[launch!.argv.indexOf("--model") + 1]).toBe(LIVE.codexModel);
   expect(launch!.argv).toContain("shell_tool"); expect(launch!.argv.at(-1)).toBe("-");
   expect(launch!.argv.join(" ")).not.toContain("private-input");
   expect(launch!.stdin).toContain("private-input"); expect(launch!.stdin).toContain("Foundry's internal decision middleware");
   expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
   const report = readFileSync(run.reportPath, "utf8");
-  expect(report).not.toContain("private-input"); expect(report).not.toContain("accepted-private-answer");
+  expect(report).not.toContain("private-input"); expect(report).not.toContain(result.content);
   expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released", processExit: "exited", statusProcessExit: "exited" });
-});
+  const outcome = { content: result.content, native: result.native?.nativeOutcome, call: run.snapshot().calls.map(c => ({ valid: c.valid, release: c.release })) };
+  expect(outcome).toEqual((await sameAsLive(transport.vcr, "exec-turn", outcome)).live);
+}, LIVE_TIMEOUT);
 
 for (const [name, transport] of [
   ["an API-key login", () => codexTransport({ login: "Logged in using an API key - sk-***" })],
@@ -157,6 +164,18 @@ for (const [name, transport] of [
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
 });
 
+// A controlled transport emitting the item live runs recorded (codex-cli 0.155.1, 2026-09-24): after chatgpt.com
+// refuses the responses websocket, codex exec reports its HTTPS fallback as an `error` item, then answers. The
+// fallback is intermittent, so the recorded cassettes may or may not contain it; this keeps the case covered.
+test("the Codex websocket-to-HTTPS fallback notice does not fail the decision; other error items still do", async () => {
+  const notice = { id: "item_0", type: "error", message: "Falling back from WebSockets to HTTPS transport. unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses" };
+  const { run } = codexRun(codexTransport({ items: [notice] }));
+  await expect(run.provider.complete(messages)).resolves.toMatchObject({ content: "accepted-private-answer", native: { nativeOutcome: "completed" } });
+  expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released" });
+  const other = codexRun(codexTransport({ items: [{ ...notice, message: "Tool shell_tool is disabled" }] }));
+  await expect(other.run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
+});
+
 test("a stalled Codex decision is killed at its deadline and its profile lock released", async () => {
   const t = codexTransport({ hang: true });
   const { root, run } = codexRun(t, 200);
@@ -168,19 +187,21 @@ test("a stalled Codex decision is killed at its deadline and its profile lock re
 
 test("the decision scheduler accepts a Codex decision only with settled ownership evidence", async () => {
   const root = userHome(), directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
-  const transport = codexTransport();
-  const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 3, maxQueued: 2, callTimeoutMs: 2000 };
+  const transport = recordedCodexTransport({ status: ["chatgpt"], decision: ["scheduled"] });
+  const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: LIVE.codexModel, maxCalls: 3, maxQueued: 2, callTimeoutMs: 30_000 };
   const decisions = buildSubscriptionDecisions(config, cfg => buildCodexTextProvider(cfg, transport));
   const observed: NativeEvidence[] = [];
   const owner = { threadId: "T", generation: "G", dispatchId: "D" };
-  const result = await decisions.provider.complete(messages, { threadId: "T:aux:route", nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
-  expect(result.content).toBe("accepted-private-answer");
+  const result = await decisions.provider.complete(decisionMessages(), { threadId: "T:aux:route", nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
+  expect(result.content).toMatch(DECIDED);
   expect(result.native?.owner?.providerSessionKey).toBe("T:aux:route");
   expect(observed.map(e => e.nativeOutcome)).toEqual(["unknown", "completed"]);
   await expect(decisions.provider.complete(messages, { model: "gpt-6-astra" })).rejects.toThrow("refused");
   expect(decisions.snapshot()).toMatchObject({ attempts: 1, closed: false });
   decisions.close();
-});
+  const outcome = { content: result.content, observed: observed.map(e => e.nativeOutcome), attempts: decisions.snapshot().attempts };
+  expect(outcome).toEqual((await sameAsLive(transport.vcr, "scheduled", outcome)).live);
+}, LIVE_TIMEOUT);
 
 async function startFoundry(root: string, extra: Record<string, string> = {}) {
   const probe = join(root, "network-attempt"), preload = join(root, "deny-network.ts");

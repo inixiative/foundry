@@ -20,6 +20,8 @@ const DISABLED_FEATURES = ["shell_tool", "unified_exec", "apps", "plugins", "rem
   "tool_suggest", "shell_snapshot", "skill_mcp_dependency_install", "workspace_dependencies", "in_app_browser",
   "in_app_local_automation", "personality", "mentions_v2"];
 const TEXT_ITEMS = new Set(["agent_message", "reasoning"]);
+/** codex exec reports falling back from the responses websocket (refused by chatgpt.com) as an `error` item. */
+const TRANSPORT_NOTICE = /^Falling back from WebSockets to HTTPS transport\b/;
 /** Subscription usage/rate limits: backoff, never a fallback. */
 const RATE_LIMIT = /rate.?limit|usage.?limit|too many requests|\b429\b/i;
 const MAX_OUTPUT = 1_000_000;
@@ -197,7 +199,8 @@ interface TurnOutcome {
   usage?: { input: number; output: number };
 }
 
-/** Parse `codex exec --json` events. Any tool, file, command or error item fails the decision. */
+/** Parse `codex exec --json` events. Any tool, file, command or error item fails the decision, except the
+ * CLI's websocket-to-HTTPS fallback notice. */
 async function readTurn(child: CodexTextProcess, refuse: () => void): Promise<TurnOutcome> {
   const outcome: TurnOutcome = { completed: false, violation: false };
   const violate = () => { if (!outcome.violation) { outcome.violation = true; refuse(); } };
@@ -212,6 +215,8 @@ async function readTurn(child: CodexTextProcess, refuse: () => void): Promise<Tu
       case "thread.started": if (typeof event.thread_id === "string") outcome.threadId = event.thread_id; else violate(); break;
       case "turn.started": break;
       case "item.started": case "item.updated": case "item.completed":
+        // The CLI's own transport notice, not model output or tool use. Any other error item still fails the decision.
+        if (item?.type === "error" && typeof item.message === "string" && TRANSPORT_NOTICE.test(item.message)) break;
         if (!item || !TEXT_ITEMS.has(item.type as string)) return violate();
         if (event.type === "item.completed" && item.type === "agent_message" && typeof item.text === "string") outcome.content = item.text;
         break;

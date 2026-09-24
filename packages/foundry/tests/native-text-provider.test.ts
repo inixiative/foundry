@@ -1,11 +1,16 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildNativeTextProvider, type NativeTextConfig } from "../src/providers/native-text-provider";
+import { DECIDED, LIVE, decisionMessages, recordedClaudeTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 
 const roots: string[] = [];
 afterEach(async () => { await new Promise(r => setTimeout(r, 10)); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterAll(settleRecordings);
+/** Recorded from the real `claude` CLI on the subscription login (`bun run test:live` refreshes it). */
+const recorded = (): NativeTextConfig => ({ ...config(), model: LIVE.claudeModel, expectedObservedModel: LIVE.claudeObservedModel, callTimeoutMs: 30_000 });
+const LIVE_TIMEOUT = 90_000;
 function config(): NativeTextConfig {
   const directory = mkdtempSync(join(tmpdir(), "native-text-controlled-")); roots.push(directory);
   const profileDirectory = join(directory, "profile"); mkdirSync(profileDirectory, { mode: 0o700 });
@@ -51,9 +56,10 @@ function transport(mode: "ok" | "stall" | "tool" = "ok", observedModel: string |
 }
 
 test("shared adapter enforces text-only flags and records settled release with call cap", async () => {
-  const cfg = config(), t = transport(), run = buildNativeTextProvider(cfg, t);
-  const result = await run.provider.complete([{ role: "user", content: "synthetic-private-prompt" }]);
-  expect(result.content).toBe("synthetic-output");
+  const cfg = recorded(), t = recordedClaudeTransport({ status: ["subscribed", "subscribed"], decision: ["text-only-1", "text-only-2"] });
+  const run = buildNativeTextProvider(cfg, t);
+  const result = await run.provider.complete(decisionMessages("synthetic-private-prompt"));
+  expect(result.content).toMatch(DECIDED);
   expect(run.snapshot().calls[0].valid).toBe(true);
   expect(run.snapshot().calls[0].release).toBe("released");
   expect(run.snapshot().calls[0].processExit).toBe("exited");
@@ -66,12 +72,14 @@ test("shared adapter enforces text-only flags and records settled release with c
   expect(existsSync(join(cfg.source.profileDirectory, ".foundry-auth-lock"))).toBe(false);
   const report = readFileSync(run.reportPath, "utf8");
   expect(report).not.toContain("synthetic-private-prompt");
-  expect(report).not.toContain("synthetic-output");
+  expect(report).not.toContain(result.content);
   expect(JSON.parse(report).mode).toBe("controlled-transport");
-  await run.provider.complete([{ role: "user", content: "second" }]);
+  const second = await run.provider.complete(decisionMessages("second"));
   await expect(run.provider.complete([{ role: "user", content: "third" }])).rejects.toThrow("admission");
   expect(t.writes).toBe(2);
-});
+  const outcome = { answers: [result.content, second.content], calls: run.snapshot().calls.map(c => ({ valid: c.valid, release: c.release, processExit: c.processExit })) };
+  expect(outcome).toEqual((await sameAsLive(t.vcr, "text-only", outcome)).live);
+}, LIVE_TIMEOUT);
 
 test("unavailable subscription refuses native launch", async () => {
   const t = transport(), run = buildNativeTextProvider(config(), { ...t, statusSpawn: () => statusProcess(false) });
@@ -133,14 +141,22 @@ test("deadline owns and settles a stalled status process before any model launch
 });
 
 test("missing or mismatched native model acknowledgement cannot pass", async () => {
-  for (const observedModel of [null, "other-model"]) {
-    const run = buildNativeTextProvider(config(), transport("ok", observedModel));
-    await expect(run.provider.complete([{ role: "user", content: "test" }])).rejects.toThrow("failed");
-    expect(run.snapshot().calls[0].valid).toBe(false);
-  }
-});
+  const missing = buildNativeTextProvider(config(), transport("ok", null));
+  await expect(missing.provider.complete([{ role: "user", content: "test" }])).rejects.toThrow("failed");
+  expect(missing.snapshot().calls[0].valid).toBe(false);
+  // The real CLI's acknowledgement, held against an expectation it does not meet.
+  const mismatched = buildNativeTextProvider({ ...recorded(), expectedObservedModel: "other-model" }, recordedClaudeTransport({ status: ["subscribed"], decision: ["mismatch"] }));
+  await expect(mismatched.provider.complete(decisionMessages())).rejects.toThrow("failed");
+  expect(mismatched.snapshot().calls[0].valid).toBe(false);
+}, LIVE_TIMEOUT);
 
 test("explicit canonical model acknowledgement permits a configured alias", async () => {
-  const run = buildNativeTextProvider({ ...config(), expectedObservedModel: "canonical-model" }, transport("ok", "canonical-model"));
-  await expect(run.provider.complete([{ role: "user", content: "test" }])).resolves.toMatchObject({ content: "synthetic-output" });
-});
+  const t = recordedClaudeTransport({ status: ["subscribed"], decision: ["alias"] });
+  const run = buildNativeTextProvider(recorded(), t);
+  const result = await run.provider.complete(decisionMessages());
+  expect(result.content).toMatch(DECIDED);
+  expect(result.native?.configuration?.observedModel).toBe(LIVE.claudeObservedModel);
+  expect(result.model).toBe(LIVE.claudeModel);
+  const outcome = { content: result.content, observedModel: result.native?.configuration?.observedModel };
+  expect(outcome).toEqual((await sameAsLive(t.vcr, "alias", outcome)).live);
+}, LIVE_TIMEOUT);

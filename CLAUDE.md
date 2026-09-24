@@ -19,11 +19,15 @@ Oracle (eval/scoring) lives in its own repo (`../oracle`), linked to core via a 
 ```bash
 bun run start          # Production start (reads .foundry/settings.json)
 bun run dev            # Watch mode
-bun run test           # Core + foundry tests
+bun run test           # Core + foundry tests (cassette replays, no network)
+bun run test:live      # Same tests live against this machine's subscriptions; re-records cassettes
+bun run test:live:daemon  # Live smoke inside a throwaway LaunchAgent with the daemon's environment
 bun run typecheck      # Both packages
 bun run viewer         # Dashboard only
 bun run --cwd ../foundry-lab research  # Internal research CLI
 ```
+
+Tests that touch the agent CLIs or Kingdom replay real recordings (`packages/foundry/src/vcr`). Live runs are the truth: run `test:live` whenever a CLI, `@inixiative/agent-session` or a transport changes, and treat its drift findings as bugs to review. See [live-first testing](docs/live-testing.md).
 
 ## The Five FLOW.md Roles
 

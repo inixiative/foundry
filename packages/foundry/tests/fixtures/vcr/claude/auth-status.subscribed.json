@@ -1,0 +1,37 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "auth",
+      "status",
+      "--json"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [],
+    "stdinEnded": false,
+    "frames": [
+      {
+        "after": 0,
+        "stream": "stdout",
+        "data": "{\"loggedIn\":true,\"authMethod\":\"claude.ai\"}",
+        "kept": true
+      }
+    ],
+    "exit": {
+      "after": 0,
+      "code": 0,
+      "killed": false
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-09-24T05:25:06.019Z",
+    "agentSession": "0.2.0",
+    "environment": "terminal",
+    "durationMs": 172
+  }
+}

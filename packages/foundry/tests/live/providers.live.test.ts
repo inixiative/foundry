@@ -4,7 +4,7 @@ import { GeminiProvider } from "../../src/providers/gemini";
 
 // Live provider smoke tests — real API calls, a few hundred tokens total.
 // Excluded from the default suite (which globs tests/*.test.ts only).
-// Run with: bun run test:live
+// Run with: bun run test:live:api
 // Each block skips itself when its key is absent, so this file is safe to run
 // in any environment.
 
