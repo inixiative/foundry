@@ -1,16 +1,29 @@
 import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMMessage, type LLMProvider, type NativeEvidence, type NativeOwner, type OwnedAdmissionInspection } from "@inixiative/foundry-core";
 import { createNativeTextProvider, type NativeTextConfig } from "./native-text-provider";
 import { createCodexTextProvider } from "./codex-text-provider";
+import { DECISION_PRIORITY } from "./decision-priority";
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, "runId" | "maxCalls"> {
   maxCalls: number;
   maxQueued: number;
   callTimeoutMs: number;
+  /** Decisions running at once across all threads, each its own native process. Default 1. */
+  maxConcurrent?: number;
+  /** Waiting decisions per logical thread. Default: maxQueued. */
+  maxQueuedPerThread?: number;
+  /** Load and rate-limit events (shedding, backoff); observers only. */
+  onPressure?: (event: DecisionPressure) => void;
+  /** First rate-limit backoff; doubles to 60 s. Default 5 s. */
+  rateLimitBackoffMs?: number;
 }
+export type DecisionPressure =
+  | { kind: "shed"; threadId: string; priority: number; queued: number }
+  | { kind: "rate-limited"; until: number; backoffMs: number };
 type TextRun = Pick<ReturnType<typeof createNativeTextProvider>, "provider" | "snapshot" | "close">;
 type Outcome = { admission: "not-admitted" | "attempted" | "unknown"; settlement: "settled" | "unknown" };
 type Record = { owner: NativeOwner; inspection: OwnedAdmissionInspection };
 type Pending = { messages: LLMMessage[]; opts: CompletionOpts; owner: NativeOwner; deadline: number;
+  priority: number; thread: string; seq: number;
   resolve(value: CompletionResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
 /** Decisions run on the decision profile's own runtime: Codex exec or text-only Claude. */
@@ -18,14 +31,25 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
   return buildSubscriptionDecisions(config, config.source.runtime === "codex" ? createCodexTextProvider : createNativeTextProvider);
 }
 
-export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, createRun: (config: NativeTextConfig) => TextRun) {
-  config = structuredClone(config);
+export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, createRun: (config: NativeTextConfig) => TextRun) {
+  const { onPressure, ...bounds } = options;
+  const config = structuredClone(bounds);
   if (!Number.isSafeInteger(config.maxCalls) || config.maxCalls < 1 || config.maxCalls > 10_000
-    || !Number.isSafeInteger(config.maxQueued) || config.maxQueued < 1 || config.maxQueued > 128
-    || !Number.isSafeInteger(config.callTimeoutMs) || config.callTimeoutMs < 100 || config.callTimeoutMs > 30_000)
+    || !Number.isSafeInteger(config.maxQueued) || config.maxQueued < 1 || config.maxQueued > 1_024
+    || (config.maxQueuedPerThread !== undefined && (!Number.isSafeInteger(config.maxQueuedPerThread) || config.maxQueuedPerThread < 1 || config.maxQueuedPerThread > config.maxQueued))
+    || !Number.isSafeInteger(config.callTimeoutMs) || config.callTimeoutMs < 100 || config.callTimeoutMs > 30_000
+    || (config.maxConcurrent !== undefined && (!Number.isSafeInteger(config.maxConcurrent) || config.maxConcurrent < 1 || config.maxConcurrent > 32)))
     throw Error("Invalid subscription decision bounds");
+  const maxConcurrent = config.maxConcurrent ?? 1, maxQueuedPerThread = config.maxQueuedPerThread ?? config.maxQueued;
+  // Background classes never take every slot, so a turn waiting to start finds capacity.
+  const classCap = (priority: number) => priority >= DECISION_PRIORITY.turn ? maxConcurrent
+    : Math.max(1, Math.floor(maxConcurrent * (priority >= DECISION_PRIORITY.guard ? 3 / 4 : 1 / 2)));
   const queue: Pending[] = [], records = new Map<string, Record>(), outcomes = new WeakMap<object, Outcome>();
-  let active = false, closed = false, attempts = 0, current: TextRun | undefined;
+  const initialBackoff = config.rateLimitBackoffMs ?? 5_000;
+  let active = 0, closed = false, attempts = 0, seq = 0, shed = 0, backoffUntil = 0, backoffMs = initialBackoff;
+  let backoffTimer: ReturnType<typeof setTimeout> | undefined;
+  const running = new Set<TextRun>(), runningPriorities: number[] = [], lastServed = new Map<string, number>();
+  const pressure = (event: DecisionPressure) => { try { onPressure?.(event); } catch { /* Observers cannot change scheduling. */ } };
   const reject = (message: string) => {
     const error = Error(message);
     outcomes.set(error, { admission: "not-admitted", settlement: "settled" });
@@ -45,11 +69,26 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
     const record = records.get(id);
     return record && sameNativeOwner(record.owner, owner) ? record : undefined;
   };
-  const pump = async () => {
-    if (active || closed) return;
-    const pending = queue.shift();
-    if (!pending) return;
-    active = true;
+  /** Highest priority first; within it the thread served longest ago (fairness), then arrival order. */
+  const next = (): Pending | undefined => {
+    if (!queue.length) return undefined;
+    const priority = Math.max(...queue.map(p => p.priority));
+    if (runningPriorities.filter(p => p <= priority).length >= classCap(priority)) return undefined;
+    const candidates = queue.filter(p => p.priority === priority);
+    const served = (p: Pending) => lastServed.get(p.thread) ?? -1;
+    const chosen = candidates.reduce((best, p) => served(p) < served(best) || (served(p) === served(best) && p.seq < best.seq) ? p : best);
+    queue.splice(queue.indexOf(chosen), 1);
+    return chosen;
+  };
+  const pump = () => {
+    if (Date.now() < backoffUntil) {
+      backoffTimer ??= setTimeout(() => { backoffTimer = undefined; pump(); }, backoffUntil - Date.now());
+      return;
+    }
+    for (let pending: Pending | undefined; !closed && active < maxConcurrent && (pending = next());) void start(pending);
+  };
+  const start = async (pending: Pending) => {
+    active++; runningPriorities.push(pending.priority); lastServed.set(pending.thread, ++seq);
     clearTimeout(pending.timer);
     let finalized = false;
     let run: TextRun | undefined, registered: NativeEvidence | undefined, physicalOwner: NativeOwner | undefined;
@@ -69,8 +108,9 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       check(pending);
       if (attempts >= config.maxCalls || pending.deadline - Date.now() < 100) throw reject("Subscription decision budget exhausted");
       attempts++;
-      run = current = createRun({ ...config, runId: crypto.randomUUID(), maxCalls: 1,
+      run = createRun({ ...config, runId: crypto.randomUUID(), maxCalls: 1,
         callTimeoutMs: Math.min(config.callTimeoutMs, pending.deadline - Date.now()) });
+      running.add(run);
       const result = await run.provider.complete(pending.messages, { ...opts, cwd: undefined, threadId: undefined,
         timeout: undefined, tools: false, maxTurns: 1, model: config.model,
         nativeObservation: { owner,
@@ -103,23 +143,32 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       records.set(registered.admissionId, { owner, inspection: { evidence: native, call: "settled", capacity: "settled", cleanup: "released" } });
       try { void Promise.resolve(opts.nativeObservation?.observe(native)).catch(close); } catch { close(); }
       outcomes.set(completion, { admission: "attempted", settlement: "settled" });
+      backoffMs = initialBackoff;
       pending.resolve(completion);
     } catch {
       const call = run?.snapshot().calls[0];
       const settled = !call || (call.processExit !== "pending" && call.statusProcessExit !== "pending"
         && (call.processExit === "not-started" || call.release === "released"));
-      const error = Error("Subscription decision failed; no fallback or retry");
+      const limited = settled && call?.failure === "rate-limited";
+      const error = Error(limited ? "Subscription decision rate limited; no fallback or retry" : "Subscription decision failed; no fallback or retry");
+      if (limited) {
+        backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
+        pressure({ kind: "rate-limited", until: backoffUntil, backoffMs });
+        backoffMs = Math.min(backoffMs * 2, 60_000);
+      }
       outcomes.set(error, { admission: call?.admission ? "attempted" : "not-admitted", settlement: settled ? "settled" : "unknown" });
       if (registered?.admissionId) records.set(registered.admissionId, { owner, inspection: {
         evidence: freezeEvidence({ ...registered, nativeOutcome: "unknown", localOutcome: "rejected" }),
         call: settled ? "settled" : "unknown", capacity: settled ? "settled" : "unknown", cleanup: call?.release === "released" ? "released" : "unknown",
       } });
-      if (!settled || call?.failure) close();
+      // Refusal before any native launch leaves nothing owned; anything else closes admission.
+      if (!settled || (call?.failure && call.failure !== "not-admitted" && call.failure !== "rate-limited")) close();
       pending.reject(error);
     } finally {
       if (run && !finalized) { try { run.close(); } catch { close(); } }
-      active = false; current = undefined;
-      void pump();
+      if (run) running.delete(run);
+      active--; runningPriorities.splice(runningPriorities.indexOf(pending.priority), 1);
+      pump();
     }
   };
   const provider: LLMProvider = {
@@ -131,7 +180,20 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       releaseOwnedAdmission: async (owner, id) => { const record = find(owner, id); return record ? record.inspection.cleanup === "released" ? "released" : "unknown" : "unavailable"; },
     },
     complete(messages, opts = {}) {
-      if (closed || attempts >= config.maxCalls || queue.length >= config.maxQueued) return Promise.reject(reject("Subscription decision admission closed or full"));
+      if (closed || attempts >= config.maxCalls) return Promise.reject(reject("Subscription decision admission closed or full"));
+      const priority = opts.priority ?? DECISION_PRIORITY.turn;
+      if (!Number.isFinite(priority)) return Promise.reject(reject("Subscription decision priority refused"));
+      const thread = (opts.nativeObservation?.owner?.threadId ?? opts.threadId ?? "decision").split(":aux:")[0]!;
+      // Full queues shed the oldest lower-priority wait (thread first, then global) instead of refusing a more urgent call.
+      for (const [scope, limit] of [[queue.filter(p => p.thread === thread), maxQueuedPerThread], [queue, config.maxQueued]] as const) {
+        if (scope.length < limit) continue;
+        const lowest = Math.min(...scope.map(p => p.priority));
+        const victim = lowest < priority ? scope.find(p => p.priority === lowest) : undefined;
+        if (!victim) return Promise.reject(reject("Subscription decision admission closed or full"));
+        queue.splice(queue.indexOf(victim), 1); clearTimeout(victim.timer); shed++;
+        victim.reject(reject("Subscription decision shed under load; no fallback or retry"));
+        pressure({ kind: "shed", threadId: victim.thread, priority: victim.priority, queued: queue.length });
+      }
       if ((opts.model && opts.model !== config.model) || opts.tools === true || opts.toolDefinitions?.length || opts.nativeObservation?.bridge
         || (opts.maxTurns !== undefined && opts.maxTurns !== 1) || (opts.timeout !== undefined && (!Number.isSafeInteger(opts.timeout) || (opts.timeout !== 0 && opts.timeout < 100))))
         return Promise.reject(reject("Subscription decision scope or model refused"));
@@ -139,22 +201,23 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       const owner = freezeEvidence({ ...(opts.nativeObservation?.owner ?? { threadId, generation: id, dispatchId: id }), providerSessionKey: threadId });
       const options = { ...opts, ...(opts.nativeObservation ? { nativeObservation: { ...opts.nativeObservation, owner } } : {}) };
       return new Promise((resolve, rejectCall) => {
-        const pending: Pending = { messages: structuredClone(messages), opts: options, owner,
+        const pending: Pending = { messages: structuredClone(messages), opts: options, owner, priority, thread, seq: ++seq,
           deadline: Date.now() + Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs), resolve, reject: rejectCall,
           timer: setTimeout(() => {
             const index = queue.indexOf(pending);
             if (index >= 0) { queue.splice(index, 1); rejectCall(reject("Subscription decision expired in queue")); }
           }, Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs)) };
         queue.push(pending);
-        void pump();
+        pump();
       });
     },
   };
-  /** Shutdown: close admission, stop the active run and wait (bounded) for its settlement. */
+  /** Shutdown: close admission, stop active runs and wait (bounded) for their settlement. */
   const shutdown = async (timeoutMs = 5_000) => {
-    close();
-    try { current?.close(); } catch { /* Settlement below still bounds shutdown. */ }
+    close(); clearTimeout(backoffTimer);
+    for (const run of running) { try { run.close(); } catch { /* Settlement below still bounds shutdown. */ } }
     for (const deadline = Date.now() + timeoutMs; active && Date.now() < deadline;) await new Promise(resolve => setTimeout(resolve, 20));
   };
-  return { provider, close, shutdown, snapshot: () => ({ closed, active, queued: queue.length, attempts }) };
+  return { provider, close, shutdown, snapshot: () => ({ closed, active: active > 0, running: active, queued: queue.length, attempts, shed,
+    ...(backoffUntil > Date.now() ? { backoffUntil } : {}) }) };
 }

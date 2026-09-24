@@ -19,8 +19,10 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.model` | `gpt-6-luna` for Codex | Decision model. Required for a Claude decision profile. |
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only. Codex exec does not acknowledge an observed model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
-| `subscriptionOnly.maxCalls` | `1000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
-| `subscriptionOnly.maxQueued` | `8` | Waiting decisions, separate from the active one. |
+| `subscriptionOnly.maxCalls` | `10000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
+| `subscriptionOnly.maxConcurrent` | `8` for Codex, `1` for Claude | Decisions running at once across all threads, each its own process. A Claude decision profile is limited to 1. |
+| `subscriptionOnly.maxQueued` | `256` | Waiting decisions across all threads (up to 1024). |
+| `subscriptionOnly.maxQueuedPerThread` | `32` | Waiting decisions per logical thread. |
 | `subscriptionOnly.callTimeoutMs` | `30000` | Per-decision deadline including queue and preflight time (100 to 30000). |
 
 Explicit profile sources are credential references in `nativeAuthentication`, never tokens:
@@ -45,7 +47,7 @@ Subscription mode runs every enabled non-executor agent on the decision profile.
 
 Foundry adds processes to the logins the user already uses interactively, like another terminal session would. It does not change their files or settings:
 
-- **Profile lock.** Each Foundry launch takes `.foundry-auth-lock` inside the profile directory while its process runs and removes it on exit. The lock gives one Foundry process ownership of a profile at a time, across Foundry checkouts. Interactive `claude` and `codex` sessions ignore it. After a hard crash, remove it only after confirming the recorded Foundry owner and its children are dead.
+- **Profile locks.** The Claude worker takes the exclusive `.foundry-auth-lock` inside its profile while its process runs, giving one Foundry process ownership across checkouts. Codex decision processes share their login instead: each registers `.foundry-auth-shared/<owner>.json` in `~/.codex` for its lifetime, and the last one removes the directory. Shared holders and an exclusive holder refuse each other. Every lock is released when its process exits, including on a clean shutdown, which stops live processes first. Interactive `claude` and `codex` sessions ignore these locks. After a hard crash, remove a lock only after confirming the recorded Foundry owner and its children are dead.
 - **User settings.** The Claude worker launches with `--setting-sources ""`, so the user's hooks, permissions and plugins in `~/.claude/settings.json` do not apply to Foundry's worker. Decisions launch Codex with `--ignore-user-config` and `--ignore-rules`; authentication still comes from `~/.codex`.
 - **History.** Codex decisions use `--ephemeral`, so they add no sessions to the user's Codex history or resume picker.
 - **Credentials.** Child environments drop API keys and competing profile overrides (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_*` credentials, inherited `CLAUDE_CONFIG_DIR` and `CODEX_HOME`). Nothing is copied or moved.
@@ -56,9 +58,21 @@ Each decision is one `codex exec --json --ephemeral` turn in a private empty dir
 
 Codex exec does not report which model served the turn. The requested model is enforced at launch with `--model` and user configuration ignored; there is no observed-model acknowledgement as there is for Claude.
 
+## Scheduling
+
+One process-wide scheduler serves every thread's decisions, with up to `maxConcurrent` processes at once:
+
+- **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (classifier, router, Cartographer, expert advice) run before post-action guards, which run before learning review. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
+- **Fairness.** Within a priority, the thread served longest ago goes next, so one busy thread cannot starve another.
+- **Shedding.** A full queue (per thread, then global) sheds its oldest lowest-priority wait to admit a more urgent call; only a call that cannot displace anything is refused. Shed guards report as unchecked, never as all-clear.
+- **Rate limits.** A Codex usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission.
+- **Failures.** A refusal before any native launch (expired deadline, revoked preflight) leaves nothing owned and does not close admission. Unknown exit or an unproven native result still closes further admission.
+
+The flow already fires domain assessments concurrently (up to `maxAdviseParallel`, default 5) alongside routing, each with its own 10 s deadline; a late answer is recorded as a timeout and not used. Advice is composed in configured order once every participant has answered or timed out.
+
 ## Ownership and bounds
 
-Classifier, router, expert advice, guard and learning calls share a serial scheduler. Guards retain their existing post-action semantics. The deadline includes queue and preflight time; cleanup has its own bounded wait. Revocation closes waiting admission, rejects an active result and leaves its process owned until cleanup or deadline. Unknown exit closes further admission rather than treating a kill request as released capacity. A worker authentication check with unknown exit likewise blocks further checks for that authentication instance.
+Decisions are bounded per call and per process. Guards retain their existing post-action semantics. The deadline includes queue and preflight time; cleanup has its own bounded wait. Revocation closes waiting admission, rejects an active result and leaves its process owned until cleanup or deadline. Unknown exit closes further admission rather than treating a kill request as released capacity. A worker authentication check with unknown exit likewise blocks further checks for that authentication instance.
 
 Logical thread/generation/dispatch/review-job ownership is preserved while physical native session identities remain private. Inspection and release require the exact owner and admission ID. Learning cannot inspect accepted answer content until model, tool, ownership, receipt and process-release checks pass.
 

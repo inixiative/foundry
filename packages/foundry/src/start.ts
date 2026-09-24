@@ -141,7 +141,14 @@ if (subscription) {
   console.log(`Subscription-only: worker claude-code (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`);
   if (subscription.rerouted.length) console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(", ")}`);
 }
-const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision }) : undefined;
+const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision,
+  onPressure: event => {
+    const message = event.kind === "shed"
+      ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
+      : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError("subscription-decisions", message, "warn");
+  } }) : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 

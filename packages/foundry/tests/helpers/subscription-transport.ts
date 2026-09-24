@@ -35,29 +35,37 @@ export function codexStatusProcess(login = "Logged in using ChatGPT") {
 }
 
 /** Controlled `codex exec --json` process: records argv/env/stdin and replays JSONL events. */
-export function codexTransport(options: { login?: string; response?: string; items?: unknown[]; hang?: boolean; exitCode?: number } = {}) {
+export function codexTransport(options: { login?: string; response?: string | ((prompt: string) => string); items?: unknown[]; hang?: boolean; exitCode?: number;
+  delayMs?: number; failure?: string } = {}) {
   const launches: { argv: string[]; env: Record<string, string | undefined>; cwd: string; stdin: string; exited: boolean }[] = [];
-  let statusChecks = 0;
-  return { launches, get statusChecks() { return statusChecks; },
+  let statusChecks = 0, live = 0, peak = 0;
+  return { launches, get statusChecks() { return statusChecks; }, get live() { return live; }, get peak() { return peak; },
     statusSpawn: () => { statusChecks++; return codexStatusProcess(options.login); },
     spawn: (argv: string[], config: { cwd: string; env: Record<string, string | undefined> }) => {
       const launch = { argv, ...config, stdin: "", exited: false }; launches.push(launch);
+      live++; peak = Math.max(peak, live);
       let controller!: ReadableStreamDefaultController<Uint8Array>, exit!: (code: number) => void;
       const stdout = new ReadableStream<Uint8Array>({ start(c) { controller = c; } });
       const exited = new Promise<number>(resolve => { exit = resolve; });
-      const finish = (code: number) => { if (!launch.exited) { launch.exited = true; controller.close(); exit(code); } };
+      const finish = (code: number) => { if (!launch.exited) { launch.exited = true; live--; controller.close(); exit(code); } };
       const emit = (event: unknown) => { if (!launch.exited) controller.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n")); };
       return { stdout, stderr: new ReadableStream<Uint8Array>({ start(c) { c.close(); } }), exited,
         stdin: { write(input: string) { launch.stdin += input; }, end() {
           if (options.hang) return;
-          queueMicrotask(() => {
+          setTimeout(() => {
             emit({ type: "thread.started", thread_id: crypto.randomUUID() });
             emit({ type: "turn.started" });
+            if (options.failure) {
+              emit({ type: "error", message: options.failure });
+              emit({ type: "turn.failed", error: { message: options.failure } });
+              return finish(1);
+            }
             for (const item of options.items ?? []) emit({ type: "item.completed", item });
-            emit({ type: "item.completed", item: { id: "answer", type: "agent_message", text: options.response ?? "accepted-private-answer" } });
+            const text = typeof options.response === "function" ? options.response(launch.stdin) : options.response ?? "accepted-private-answer";
+            emit({ type: "item.completed", item: { id: "answer", type: "agent_message", text } });
             emit({ type: "turn.completed", usage: { input_tokens: 3, cached_input_tokens: 0, output_tokens: 2 } });
             finish(options.exitCode ?? 0);
-          });
+          }, options.delayMs ?? 0);
         } },
         kill() { finish(143); },
       };

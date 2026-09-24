@@ -13,13 +13,16 @@ const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 export const subscriptionSettingsSchema = z.object({
   decisionSourceId: z.string().uuid().optional(), model: model.optional(), expectedObservedModel: model.optional(),
   directory: z.string().startsWith("/").optional(), maxCalls: z.number().int().min(1).max(10_000).optional(),
-  maxQueued: z.number().int().min(1).max(128).optional(), callTimeoutMs: z.number().int().min(100).max(30_000).optional(),
+  maxQueued: z.number().int().min(1).max(1_024).optional(), maxQueuedPerThread: z.number().int().min(1).max(1_024).optional(),
+  maxConcurrent: z.number().int().min(1).max(32).optional(), callTimeoutMs: z.number().int().min(100).max(30_000).optional(),
 }).strict();
 export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
 export interface SubscriptionPolicy {
-  model: string; expectedObservedModel?: string; directory: string; maxCalls: number; maxQueued: number; callTimeoutMs: number;
+  model: string; expectedObservedModel?: string; directory: string; maxCalls: number; maxQueued: number; maxQueuedPerThread: number;
+  maxConcurrent: number; callTimeoutMs: number;
 }
-export const SUBSCRIPTION_DEFAULTS = { maxCalls: 1_000, maxQueued: 8, callTimeoutMs: 30_000 } as const;
+/** Sized for many threads: each turn fans out classifier, router and every expert; tool calls add guards. */
+export const SUBSCRIPTION_DEFAULTS = { maxCalls: 10_000, maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 8, callTimeoutMs: 30_000 } as const;
 
 export interface SubscriptionResolution {
   policy: SubscriptionPolicy;
@@ -61,6 +64,8 @@ export function resolveSubscriptionPolicy(config: FoundryConfig, options: { star
   if (decision.runtime === "claude" && !settings.model) throw Error("A Claude decision profile requires an explicit subscriptionOnly.model");
   if (decision.runtime === "codex" && settings.expectedObservedModel !== undefined && settings.expectedObservedModel !== settings.model)
     throw Error("Codex decisions cannot acknowledge a different observed model");
+  // A Claude profile has one refresh owner; only Codex decisions share their login concurrently.
+  if (decision.runtime === "claude" && (settings.maxConcurrent ?? 1) !== 1) throw Error("A Claude decision profile runs one decision at a time");
   const policy: SubscriptionPolicy = {
     // The setup wizard records a Codex decision model as the subscription classifier default.
     model: settings.model ?? (decision.runtime === "codex" && config.defaults.classifierProvider === SUBSCRIPTION_DECISIONS
@@ -69,6 +74,8 @@ export function resolveSubscriptionPolicy(config: FoundryConfig, options: { star
     directory: settings.directory ?? join(options.cwd ?? process.cwd(), ".foundry", "decision-receipts"),
     maxCalls: settings.maxCalls ?? SUBSCRIPTION_DEFAULTS.maxCalls,
     maxQueued: settings.maxQueued ?? SUBSCRIPTION_DEFAULTS.maxQueued,
+    maxQueuedPerThread: Math.min(settings.maxQueuedPerThread ?? SUBSCRIPTION_DEFAULTS.maxQueuedPerThread, settings.maxQueued ?? SUBSCRIPTION_DEFAULTS.maxQueued),
+    maxConcurrent: settings.maxConcurrent ?? (decision.runtime === "codex" ? SUBSCRIPTION_DEFAULTS.maxConcurrent : 1),
     callTimeoutMs: settings.callTimeoutMs ?? SUBSCRIPTION_DEFAULTS.callTimeoutMs,
   };
   if (options.startup) {

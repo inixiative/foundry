@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mkdirSync, rmdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
@@ -58,7 +58,9 @@ export class NativeAuthentication {
   private sources = new Map<string, Readonly<NativeAuthenticationSource>>();
   private selections = new Map<string, string>();
   private revoked = new Set<string>();
-  constructor(private options: { directory: string; sources: NativeAuthenticationSource[]; defaultSourceId?: string }) {
+  /** `shared`: concurrent holders of a native profile (bounded decision processes on one login). They
+   * exclude, and are excluded by, the exclusive lock that a warm worker holds. */
+  constructor(private options: { directory: string; sources: NativeAuthenticationSource[]; defaultSourceId?: string; shared?: boolean }) {
     this.options = { ...options };
     if (!isAbsolute(options.directory)) throw Error("Authentication directory must be absolute");
     const parsed = z.array(sourceSchema).safeParse(options.sources);
@@ -108,6 +110,8 @@ export class NativeAuthentication {
     const directory = source.mode === "native-profile" ? await realpath(source.profileDirectory)
       : join(this.options.directory, source.id, hash(bindingId));
     const ownerId = crypto.randomUUID();
+    const shared = source.mode === "native-profile" && this.options.shared === true;
+    const sharedLocks = join(directory, ".foundry-auth-shared");
     let active = false;
     let released = false;
     const check = () => {
@@ -172,24 +176,45 @@ export class NativeAuthentication {
         }
         mkdirSync(directory, { recursive: true, mode: 0o700 });
         if (source.mode === "native-profile") assertProfile(directory, runtime); else assertPrivateProfile(directory);
-        try { mkdirSync(lock, { mode: 0o700 }); } catch { throw Error("Native profile is in use or unavailable; release its owner before reuse"); }
-        try {
-          for (const [path, contents] of files) writeProfileConfiguration(directory, path, contents);
-          writeFileSync(join(lock, "owner.json"), JSON.stringify({ id: ownerId, pid: process.pid, sourceId: source.id, threadId }), { mode: 0o600 });
-        } catch { try { unlinkSync(join(lock, "owner.json")); } catch {} rmdirSync(lock); throw Error("Could not write native authentication configuration"); }
+        const owner = JSON.stringify({ id: ownerId, pid: process.pid, sourceId: source.id, threadId });
+        if (shared) {
+          // Register first, then check the exclusive lock: either side always observes the other.
+          for (let attempt = 0; ; attempt++) {
+            mkdirSync(sharedLocks, { recursive: true, mode: 0o700 });
+            // A last holder may remove an empty registry between these two steps.
+            try { writeFileSync(join(sharedLocks, `${ownerId}.json`), owner, { flag: "wx", mode: 0o600 }); break; }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT" || attempt >= 2) throw error; }
+          }
+          if (existsSync(lock)) { unlinkSync(join(sharedLocks, `${ownerId}.json`)); throw Error("Native profile is in use or unavailable; release its owner before reuse"); }
+        } else {
+          try { mkdirSync(lock, { mode: 0o700 }); } catch { throw Error("Native profile is in use or unavailable; release its owner before reuse"); }
+          if (readdirSafe(sharedLocks).length) { rmdirSync(lock); throw Error("Native profile is in use or unavailable; release its owner before reuse"); }
+          try {
+            for (const [path, contents] of files) writeProfileConfiguration(directory, path, contents);
+            writeFileSync(join(lock, "owner.json"), owner, { mode: 0o600 });
+          } catch { try { unlinkSync(join(lock, "owner.json")); } catch {} rmdirSync(lock); throw Error("Could not write native authentication configuration"); }
+        }
         active = true;
         return { argv: launchArgs, env };
       },
       release: () => {
         released = true;
         if (active) {
-          const lock = join(directory, ".foundry-auth-lock");
-          const owner = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
+          const lock = shared ? join(sharedLocks, `${ownerId}.json`) : join(directory, ".foundry-auth-lock", "owner.json");
+          const owner = JSON.parse(readFileSync(lock, "utf8"));
           if (owner.id !== ownerId) throw Error("Authentication lock ownership changed; cleanup refused");
-          unlinkSync(join(lock, "owner.json")); rmdirSync(lock);
+          unlinkSync(lock);
+          if (!shared) rmdirSync(join(directory, ".foundry-auth-lock"));
+          // Remove the shared registry when this was the last holder; a concurrent registration keeps it.
+          else try { rmdirSync(sharedLocks); } catch { /* Not empty or already removed. */ }
           active = false;
         }
       },
     });
   }
+}
+
+function readdirSafe(directory: string): string[] {
+  try { return readdirSync(directory); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
 }

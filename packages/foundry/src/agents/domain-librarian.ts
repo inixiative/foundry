@@ -14,6 +14,7 @@
 // architecture, memory) subclass or instantiate with domain-specific config.
 // ---------------------------------------------------------------------------
 
+import { DECISION_PRIORITY } from "../providers/decision-priority";
 import {
   ContextLayer,
   computeHash,
@@ -752,7 +753,7 @@ export class DomainLibrarian {
     settle("unknown");
     admit("unknown");
     try {
-      const result = await this._reviewLlm.complete(messages, { ...this.reviewOptions,
+      const result = await this._reviewLlm.complete(messages, { ...this.reviewOptions, priority: DECISION_PRIORITY.review,
         ...(nativeObservation && this._reviewLlm.nativeOwnership === "required-prewrite" ? { nativeObservation } : {}) });
       try { admit(this._reviewLlm.completionLifecycle?.admission?.({ result }) ?? "unknown"); } catch { admit("unknown"); }
       // Legacy LLM providers promise a completed local result. Native facades must
@@ -912,7 +913,8 @@ export class DomainLibrarian {
 
     let content: string;
     try {
-      content = (await this._llm.complete(messages, this._llmOpts)).content;
+      // Guards observe completed actions; queued decision capacity serves blocked turns first.
+      content = (await this._llm.complete(messages, { ...this._llmOpts, priority: DECISION_PRIORITY.guard })).content;
     } catch (err) {
       // A rejected call is not a completed check. Whether a model ran, or native work is still
       // running, is only known when the provider classifies it; otherwise it is unknown.

@@ -20,6 +20,8 @@ const DISABLED_FEATURES = ["shell_tool", "unified_exec", "apps", "plugins", "rem
   "tool_suggest", "shell_snapshot", "skill_mcp_dependency_install", "workspace_dependencies", "in_app_browser",
   "in_app_local_automation", "personality", "mentions_v2"];
 const TEXT_ITEMS = new Set(["agent_message", "reasoning"]);
+/** Subscription usage/rate limits: backoff, never a fallback. */
+const RATE_LIMIT = /rate.?limit|usage.?limit|too many requests|\b429\b/i;
 const MAX_OUTPUT = 1_000_000;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -58,7 +60,8 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
   assertPrivateProfile(config.directory);
   assertProfile(source.profileDirectory, "codex");
   const directory = join(config.directory, config.runId);
-  const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
+  // Codex serves concurrent sessions on one login; decision processes share the profile.
+  const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id, shared: true });
   mkdirSync(directory, { mode: 0o700 });
   const cwd = join(directory, "fixture"); mkdirSync(cwd, { mode: 0o700 });
   const reportPath = join(directory, "codex-text.json");
@@ -95,6 +98,7 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
         release: "not-requested", processExit: "not-started", statusProcessExit: "not-started", deadline: false, valid: false };
       calls.push(call);
       let child: CodexTextProcess | undefined, statusChild: StatusProcess | undefined, release: (() => void) | undefined;
+      let rateLimited = false;
       let result: CompletionResult | undefined;
       const stop = () => { for (const proc of [child, statusChild]) { try { proc?.kill(); } catch { closed = true; } } };
       abort = stop;
@@ -132,8 +136,10 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
         call.processExit = "pending";
         void child.exited.then(() => { call.processExit = "exited"; }, () => { closed = true; });
         child.stdin.write(prompt); child.stdin.end();
+        const stderr = new Response(child.stderr).text().then(text => text.slice(-8_192), () => "");
         const outcome = await Promise.race([deadline, readTurn(child, () => { closed = true; stop(); })]);
         const code = await Promise.race([deadline, child.exited]);
+        rateLimited = !outcome.violation && RATE_LIMIT.test(`${outcome.error ?? ""}\n${await Promise.race([stderr, Bun.sleep(500).then(() => "")])}`);
         const terminal = freezeEvidence<NativeEvidence>({ ...admission, nativeSessionId: outcome.threadId, externalSessionId: outcome.threadId,
           nativeOutcome: outcome.completed && !outcome.violation ? "completed" : "failed", localOutcome: "resolved", dispatch: "attempted",
           transportOutcome: "closed", terminal: { type: outcome.completed ? "turn.completed" : "turn.failed" } });
@@ -150,7 +156,7 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
         call.valid = true;
       } catch {
         closed = true;
-        call.failure = call.deadline ? "deadline" : "provider-or-evidence";
+        call.failure = !child ? "not-admitted" : call.deadline ? "deadline" : rateLimited ? "rate-limited" : "provider-or-evidence";
       } finally {
         stop();
         const exits = [child, statusChild].filter((proc): proc is StatusProcess => proc !== undefined);
@@ -184,6 +190,8 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
 interface TurnOutcome {
   threadId?: string;
   content?: string;
+  /** Native failure text (turn.failed or error events), kept only to classify rate limits. */
+  error?: string;
   completed: boolean;
   violation: boolean;
   usage?: { input: number; output: number };
@@ -207,6 +215,11 @@ async function readTurn(child: CodexTextProcess, refuse: () => void): Promise<Tu
         if (!item || !TEXT_ITEMS.has(item.type as string)) return violate();
         if (event.type === "item.completed" && item.type === "agent_message" && typeof item.text === "string") outcome.content = item.text;
         break;
+      case "turn.failed": case "error": {
+        const error = (event.type === "error" ? event : event.error) as Record<string, unknown> | undefined;
+        if (typeof error?.message === "string") outcome.error = error.message.slice(0, 2_000);
+        break;
+      }
       case "turn.completed": {
         if (outcome.completed) return violate();
         outcome.completed = true;

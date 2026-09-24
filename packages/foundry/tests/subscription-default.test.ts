@@ -38,7 +38,8 @@ test("a fresh configuration is subscription-only: Claude worker and Codex Luna d
   const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd })!;
   expect(resolved.worker).toMatchObject({ runtime: "claude", mode: "native-profile", profileDirectory: join(root, ".claude") });
   expect(resolved.decision).toMatchObject({ runtime: "codex", mode: "native-profile", profileDirectory: join(root, ".codex") });
-  expect(resolved.policy).toEqual({ model: "gpt-6-luna", directory: join(cwd, ".foundry", "decision-receipts"), maxCalls: 1000, maxQueued: 8, callTimeoutMs: 30000 });
+  expect(resolved.policy).toEqual({ model: "gpt-6-luna", directory: join(cwd, ".foundry", "decision-receipts"), maxCalls: 10000,
+    maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 8, callTimeoutMs: 30000 });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-6-luna" });
   expect(resolved.rerouted).toEqual([]);
@@ -136,7 +137,7 @@ test("Codex decisions are one ephemeral, read-only, tool-disabled exec turn with
   expect(launch!.argv.join(" ")).not.toContain("private-input");
   expect(launch!.stdin).toContain("private-input"); expect(launch!.stdin).toContain("Foundry's internal decision middleware");
   expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-lock"))).toBe(false);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
   const report = readFileSync(run.reportPath, "utf8");
   expect(report).not.toContain("private-input"); expect(report).not.toContain("accepted-private-answer");
   expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released", processExit: "exited", statusProcessExit: "exited" });
@@ -153,7 +154,7 @@ for (const [name, transport] of [
   expect(t.launches.length).toBe(name === "an API-key login" ? 0 : 1);
   await expect(run.provider.complete(messages)).rejects.toThrow("admission closed");
   expect(t.launches.length).toBeLessThanOrEqual(1);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-lock"))).toBe(false);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
 });
 
 test("a stalled Codex decision is killed at its deadline and its profile lock released", async () => {
@@ -162,7 +163,7 @@ test("a stalled Codex decision is killed at its deadline and its profile lock re
   await expect(run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
   expect(run.snapshot().calls[0]).toMatchObject({ deadline: true, processExit: "exited", valid: false });
   expect(t.launches[0]!.exited).toBe(true);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-lock"))).toBe(false);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
 });
 
 test("the decision scheduler accepts a Codex decision only with settled ownership evidence", async () => {
@@ -245,12 +246,12 @@ test("shutdown stops live worker and decision processes so the user's profile lo
   const decisions = buildSubscriptionDecisions({ directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 3, maxQueued: 2, callTimeoutMs: 20000 },
     cfg => buildCodexTextProvider(cfg, codex));
   const pending = decisions.provider.complete(messages).then(() => undefined, (error: Error) => error);
-  for (let n = 0; !existsSync(join(root, ".codex", ".foundry-auth-lock")); n++) { if (n > 200) throw Error("decision never launched"); await Bun.sleep(5); }
+  for (let n = 0; !existsSync(join(root, ".codex", ".foundry-auth-shared")); n++) { if (n > 200) throw Error("decision never launched"); await Bun.sleep(5); }
 
   await Promise.all([adapter.releaseAll(), decisions.shutdown()]);
   expect((await pending)?.message).toContain("no fallback");
   expect(worker.launches[0]!.exited).toBe(true); expect(codex.launches[0]!.exited).toBe(true);
   expect(existsSync(join(root, ".claude", ".foundry-auth-lock"))).toBe(false);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-lock"))).toBe(false);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
   expect(decisions.snapshot()).toMatchObject({ closed: true, active: false });
 });

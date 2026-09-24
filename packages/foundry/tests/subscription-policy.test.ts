@@ -30,7 +30,7 @@ test("subscription policy resolves explicit models and sources without API acces
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({ worker: { id: f.worker.id }, decision: { id: f.decision.id }, policy: { model: "decision-model" } });
 });
 
-for (const change of ["worker-api", "review-api", "review-model", "same-profile", "gateway", "codex-worker", "expert-tools", "claude-decision-model", "codex-observed-model"] as const)
+for (const change of ["worker-api", "review-api", "review-model", "same-profile", "gateway", "codex-worker", "expert-tools", "claude-decision-model", "codex-observed-model", "claude-concurrency"] as const)
   test(`subscription startup refuses ${change} before provider construction`, () => {
     const f = fixture();
     switch (change) {
@@ -43,6 +43,7 @@ for (const change of ["worker-api", "review-api", "review-model", "same-profile"
       case "expert-tools": f.c.agents.router.tools = true; break;
       case "claude-decision-model": delete f.c.subscriptionOnly!.model; break;
       case "codex-observed-model": f.c.nativeAuthentication![1].runtime = "codex"; break;
+      case "claude-concurrency": f.c.subscriptionOnly!.maxConcurrent = 2; break;
     }
     expect(() => validateConfig(f.c)).toThrow();
   });

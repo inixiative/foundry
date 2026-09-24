@@ -106,6 +106,8 @@ export interface CompletionOpts {
   threadId?: string;
   /** Working directory for this completion (worktree path). Provider uses its own default if omitted. */
   cwd?: string;
+  /** Scheduling hint for providers that queue calls: higher runs first. Default 0. Others ignore it. */
+  priority?: number;
 }
 
 export interface CompletionResult {
