@@ -109,7 +109,7 @@ The layer's `sourceIds` contains `session-history`. Its prompt should describe t
 
 ## Standalone Archive integration (2026-09-20)
 
-The portable implementation now lives in the sibling `archive` repository under MIT. `packages/archives` is a compatibility facade backed by a pinned source tarball in `vendor/archive`. Foundry retains journal capture and viewer wiring. Kingdom consumes the same standalone package through its existing import alias.
+The portable implementation now lives in the sibling `archive` repository under MIT. Foundry installs it from npm under its existing `@inixiative/session-archive` import name (`npm:@inixiative/archive@^0.2.1`), the same alias Kingdom uses. Foundry retains journal capture and viewer wiring. 
 
 Direct BYO connection:
 

@@ -1,7 +1,6 @@
 node_modules
 dist
 *.tsbuildinfo
-bun.lock
 .foundry/
 
 # Environment files (keep .example files)

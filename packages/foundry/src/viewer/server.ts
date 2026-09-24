@@ -254,7 +254,7 @@ export function createViewer(config: ViewerConfig) {
 
   // The browser and offline verifier execute the same import-free proof module.
   app.get("/ui/delivery-evidence.js", async c => c.body(new Bun.Transpiler({ loader: "ts" }).transformSync(
-    await Bun.file(new URL("../../../core/src/delivery-evidence.ts", import.meta.url)).text()), 200,
+    await Bun.file(new URL(import.meta.resolve("@inixiative/foundry-core/delivery-evidence"))).text()), 200,
     { "Content-Type": "application/javascript" }));
   app.get("/ui/*", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)) }));
   app.get("/kingdom", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)), path: "ui/kingdom.html" }));

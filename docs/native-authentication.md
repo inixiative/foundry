@@ -81,11 +81,12 @@ Normal child exit releases `.foundry-auth-lock`. Cleanup errors remain visible a
 
 ## Package and validation
 
-Foundry uses the source-only `vendor/agent-session/agent-session.tgz` snapshot with its matching `manifest.json`. This contains the sibling package's `prewrite-v1` contract; the older published package lacked that hook. The snapshot includes only the package manifest, source and license, and does not require a sibling checkout at install time.
+Foundry depends on the published `@inixiative/agent-session` (`^0.2.0`), released through the inixiative release train's agentic lane. Version 0.2.0 carries the `prewrite-v1` admission contract and the `optional-max-turns-v1` turn-budget protocol; 0.1.0 lacked both. Its `src/` files are byte-identical to the source snapshot reviewed at agent-session `dbdb923`, which Foundry previously vendored.
+
+Install integrity comes from the committed `bun.lock`, which records the exact resolved version and the registry's `sha512` integrity. `bun install --frozen-lockfile` refuses a tarball that does not match, so a new agent-session version reaches Foundry only through a reviewed lockfile change. The lockfile does not bind the tarball to a git revision; to re-verify an installed tree file by file, regenerate the private Lab's reviewed manifest from the installed package and run its `check-native-adoption.ts` against it.
 
 ```sh
-bun install --ignore-scripts
-bun scripts/check-native-adoption.ts . vendor/agent-session/manifest.json
+bun install --frozen-lockfile --ignore-scripts
 bun test packages/foundry/tests/native-authentication.test.ts packages/foundry/tests/session-adapter.test.ts packages/foundry/tests/session-backed-provider.test.ts
 bun run typecheck
 ```
