@@ -27,6 +27,10 @@ describe("buildPlist", () => {
     expect(buildPlist({ ...options, throttleSeconds: 30 })).toContain("<integer>30</integer>");
   });
 
+  test("runs unthrottled, because the operator waits on its viewer and agent work", () => {
+    expect(buildPlist(options)).toContain("<key>ProcessType</key>\n  <string>Interactive</string>");
+  });
+
   test("carries PATH so the supervisor can find bun and git", () => {
     expect(buildPlist(options)).toContain("<string>/opt/homebrew/bin:/usr/bin</string>");
   });

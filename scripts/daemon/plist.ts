@@ -46,7 +46,7 @@ export const buildPlist = (options: PlistOptions): string => {
   <key>ThrottleInterval</key>
   <integer>${throttle}</integer>
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Interactive</string>
   <key>StandardOutPath</key>
   <string>${escape(logDir)}/foundry.out.log</string>
   <key>StandardErrorPath</key>
