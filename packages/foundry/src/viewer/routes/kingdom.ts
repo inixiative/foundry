@@ -13,7 +13,7 @@ const beginSchema = z.object({ url: z.string().transform(kastleUrl), name: z.str
 const pairSchema = z.object({ data: z.object({ deviceCode: z.string().regex(/^[A-Za-z0-9_-]{43}$/), userCode: z.string().regex(/^[A-F0-9]{12}$/), verificationUrl: z.string().url(), expiresAt: z.string().datetime() }) });
 const pollSchema = z.object({ data: z.discriminatedUnion("status", [z.object({ status: z.literal("pending") }), z.object({ status: z.literal("approved"), installationId: z.string().uuid() })]) });
 
-export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, sessionCount: () => number, activate: (connection: KingdomRuntimeConnection) => void, connected: () => boolean, handlers?: RuntimeJobRegistry) {
+export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, sessionCount: () => number, activate: (connection: KingdomRuntimeConnection | null) => void, connected: () => boolean, handlers?: RuntimeJobRegistry) {
   let pending: { url: string; secret: string; deviceCode: string; userCode: string; verificationUrl: string; expiresAt: string } | undefined;
   let busy = false, lastPoll = 0;
   const request = async (url: string, action: string, body: unknown) => {
@@ -82,5 +82,19 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     if (busy) return c.json({ error: "Connection operation in progress" }, 409);
     pending = undefined;
     return c.json(await status());
+  });
+  app.post("/api/kingdom/disconnect", async c => {
+    if (busy) return c.json({ error: "Connection operation in progress" }, 409);
+    busy = true;
+    try {
+      pending = undefined;
+      const { kingdomRuntime, ...config } = await store.load();
+      if (kingdomRuntime) {
+        await store.save(config);
+        activate(null);
+        await unlink(kingdomRuntime.credentialFile).catch(() => {});
+      }
+      return c.json(await status());
+    } finally { busy = false; }
   });
 }

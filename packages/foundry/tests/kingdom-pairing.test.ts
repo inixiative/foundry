@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { startViewer } from "../src/viewer/server";
 import { ContextStack, EventStream, Harness, InterventionLog, Thread } from "@inixiative/foundry-core";
 
-test("Foundry pairs without exposing secrets, activates immediately, and repairs revoked enrollment without unlocking work", async () => {
+test("Foundry pairs without exposing secrets, activates immediately, and repairs revoked enrollment without unlocking work, and disconnects locally", async () => {
   const root = await mkdtemp(join(tmpdir(), "foundry-pairing-"));
   const requests: { deviceCode: string; hash: string; installationId?: string }[] = [];
   const identities = new Map<string, string>();
@@ -30,6 +30,7 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
   } });
   const thread = new Thread("pairing", new ContextStack()), viewer = await startViewer({ port: 0, configDir: root, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals) });
   const base = `http://127.0.0.1:${viewer.server.port}`;
+  let credentialPath = "";
   const post = (action: string, body: unknown = {}) => fetch(`${base}/api/kingdom/${action}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   try {
     for (let index = 0; index < 2; index++) {
@@ -46,6 +47,7 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
       expect(viewer.kingdomConnection?.connected).toBe(true);
       expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
       const path = join(root, `kingdom-runtime-${id}.json`);
+      credentialPath = path;
       expect((await lstat(path)).mode & 0o777).toBe(0o600);
       expect((await lstat(root)).mode & 0o777).toBe(0o700);
       const { secret } = JSON.parse(await readFile(path, "utf8"));
@@ -70,5 +72,10 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
       expect((await (await fetch(`${base}/api/kingdom/status`)).json()).status).toBe("unavailable");
       expect((await fetch(`${base}/api/kingdom/status`, { headers: { origin: "https://evil.test" } })).status).toBe(403);
     }
+    expect((await (await post("disconnect")).json()).status).toBe("disconnected");
+    expect(viewer.kingdomConnection).toBeNull();
+    expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
+    expect(JSON.parse(await readFile(join(root, "settings.json"), "utf8"))).not.toHaveProperty("kingdomRuntime");
+    await expect(lstat(credentialPath)).rejects.toThrow();
   } finally { viewer.server.stop(true); kingdom.stop(true); await rm(root, { recursive: true, force: true }); }
 });

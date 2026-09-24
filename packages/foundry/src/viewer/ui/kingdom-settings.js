@@ -33,7 +33,8 @@ export function KingdomSettings() {
     ${!state ? html`<p>Loading connection…</p>` : (state.status === "connected" || state.status === "unavailable") && !replacing ? html`
       <p>${state.status === "connected" ? "Connected to" : "Authorization unavailable at"} ${state.url}</p><p>Runtime: <code>${state.installationId}</code></p>
       <button class="action-btn" onClick=${() => { setUrl(state.url); setReplacing(true); }}>Reconnect with Kingdom approval</button>
-      <p class="settings-desc">Manage expiry and revocation in Kingdom’s Foundry tab. Provider subscriptions and viewer access have separate permissions.</p>
+      <button class="action-btn subtle" disabled=${busy} onClick=${() => act("disconnect")}>Disconnect this Foundry</button>
+      <p class="settings-desc">Disconnecting deletes this machine’s Kingdom credential and unlocks Foundry locally. Revoke the runtime in Kingdom’s Foundry tab too. Manage expiry and revocation there; provider subscriptions and viewer access have separate permissions.</p>
     ` : state.status === "pending" ? html`
       <p>Pairing code: <strong>${state.userCode}</strong></p>
       <p>Expires ${new Date(state.expiresAt).toLocaleTimeString()}</p>
@@ -47,6 +48,7 @@ export function KingdomSettings() {
       <label class="settings-label" for="kingdom-runtime-name">Foundry name</label>
       <input id="kingdom-runtime-name" class="settings-input" value=${name} maxlength="120" onInput=${e => setName(e.target.value)} />
       <button class="action-btn" disabled=${busy || !name.trim() || !url} onClick=${() => act("pair", { url, name })}>${busy ? "Connecting…" : "Connect to Kingdom"}</button>
+      ${replacing && html`<button class="action-btn subtle" disabled=${busy} onClick=${() => setReplacing(false)}>Cancel</button>`}
     `}
   </section>`;
 }
