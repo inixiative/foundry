@@ -4057,3 +4057,4 @@ body {
 .graph-task-status { flex: none; width: 76px; color: var(--text-dim); }
 .graph-task--completed { color: var(--text-dim); text-decoration: line-through; }
 .graph-task--in_progress .graph-task-status { color: var(--accent); }
+.graph-caption--warn { color: var(--warn); }

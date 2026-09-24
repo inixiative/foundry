@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { ContextStack, EventStream, Executor, Harness, InterventionLog, Thread, type NativeEvidence } from "@inixiative/foundry-core";
 import { createViewer } from "../src/viewer/server";
 import { slim, slimTurn, taskLists, TASK_SOURCES } from "../src/viewer/turn-flow";
+import { createViewerStreams } from "../src/viewer/data-streams";
+import { ViewerThreadDirectory } from "../src/viewer/thread-directory";
+import { createWebSocketServer } from "../src/ws/handler";
 import { connectStreams } from "./helpers/data-stream";
 import { instructions, interpretation, m0Scenario } from "./helpers/m0-domain-loop";
 // @ts-expect-error native browser module
@@ -154,6 +157,94 @@ test("slim keeps record shape but drops request messages, segment text and long 
 
 test("slimTurn tolerates a turn with no trace, plan or agent message (accepted, still running)", () => {
   const turn = slimTurn({ threadId: "a", turnId: "t", turn: { id: "t", threadId: "a", status: "active", startedAt: 5 }, messages: [{ id: "m", threadId: "a", turnId: "t", actor: "user", kind: "text", content: "hi", timestamp: 5 }],
-    trace: null, injection: null, nativeHistory: [], nativeTools: [], phases: [] });
+    trace: null, injection: null, phases: [], taskUses: [] });
   expect(turn).toMatchObject({ status: "active", plan: null, delivery: null, trace: null, spans: [], tasks: [], input: { preview: "hi", chars: 2 } });
+});
+
+/** The flow family over a controllable journal: a fake store whose reads can fail, and a live review state. */
+function fakeJournal() {
+  const main = new Thread("main", new ContextStack());
+  const events = new EventStream();
+  const turns = new Map<string, { startedAt: number; status: string }>();
+  const failing = new Set<string>();
+  let review: any = { domains: { d: { status: "idle", queued: 0, queuedEvidence: [] } } };
+  let blocked: string | undefined;
+  const reads: string[] = [];
+  const store: any = {
+    recentTurnIds: (_t: string, limit: number) => [...turns].sort((a, b) => b[1].startedAt - a[1].startedAt).slice(0, limit).map(([id]) => id),
+    turnFlowRecord: (threadId: string, turnId: string) => {
+      reads.push(turnId);
+      if (failing.has(turnId)) throw new Error(`checksum mismatch ${turnId}`);
+      const t = turns.get(turnId);
+      return t && { threadId, turnId, turn: { id: turnId, threadId, status: t.status, startedAt: t.startedAt }, messages: [], trace: null, injection: null, phases: [], taskUses: [] };
+    },
+    learningHistory: () => [],
+    knowledge: () => undefined,
+  };
+  const directory = new ViewerThreadDirectory(main);
+  let socket: ReturnType<typeof createWebSocketServer>;
+  const streams = createViewerStreams({ directory, eventStream: events, deliverTo: () => {},
+    journal: { store, learningState: () => review, blocked: () => blocked } });
+  socket = createWebSocketServer({ families: streams.families });
+  const viewer = { websocket: socket.websocket };
+  const notice = (turnId: string) => events.push({ kind: "journal", threadId: "main", turnId, timestamp: Date.now() });
+  return { viewer, events, turns, failing, reads, notice, setReview: (r: any) => { review = r; }, block: (reason?: string) => { blocked = reason; }, socket };
+}
+const turnAppends = (client: ReturnType<typeof connectStreams>) => appends(client.data("flow:main"), "turn").map(p => [p.turn.turnId, p.turn.status]);
+
+test("a turn read that fails is retried, then sent as unreadable; other turns in the batch still arrive", async () => {
+  const f = fakeJournal();
+  const client = connectStreams(f.viewer);
+  await client.open("flow:main");
+  f.turns.set("good", { startedAt: 1, status: "completed" });
+  f.turns.set("bad", { startedAt: 2, status: "completed" });
+  f.failing.add("bad");
+  f.notice("good"); f.notice("bad");
+  await client.next(f2 => f2.category === "data" && f2.payload.kind === "turn" && f2.payload.turn.turnId === "good", "good turn");
+  expect(turnAppends(client)).toEqual([["good", "completed"]]);
+  // A transient failure: the retry reads it once it is readable.
+  f.failing.delete("bad");
+  await client.next(f2 => f2.category === "data" && f2.payload.kind === "turn" && f2.payload.turn.turnId === "bad", "retried turn", 5000);
+  expect(turnAppends(client)).toEqual([["good", "completed"], ["bad", "completed"]]);
+  // A persistent failure: after the attempts, the turn is reported as unreadable, not silently dropped.
+  f.failing.add("bad");
+  f.notice("bad");
+  await client.next(f2 => f2.category === "data" && f2.payload.kind === "turn" && f2.payload.turn.status === "unreadable", "unreadable turn", 8000);
+  expect(appends(client.data("flow:main"), "turn").at(-1).turn.error).toContain("checksum mismatch bad");
+  client.disconnect();
+}, 20_000);
+
+test("a later opener first delivers review changes that had no notice to the current holders", async () => {
+  const f = fakeJournal();
+  const a = connectStreams(f.viewer);
+  await a.open("flow:main");
+  expect(a.data("flow:main")[0].payload.review).toEqual({ d: { status: "idle", queued: 0, closed: false } });
+  f.setReview({ domains: { d: { status: "delayed", queued: 2, queuedEvidence: [] } } }); // no event
+  const b = connectStreams(f.viewer);
+  await b.open("flow:main");
+  expect(b.data("flow:main")[0].payload.review.d).toMatchObject({ status: "delayed", queued: 2 });
+  expect(appends(a.data("flow:main"), "knowledge").map(p => p.review.d.status)).toEqual(["delayed"]);
+  // A thread signal (queue growth rides on tool observations) re-reads the review status.
+  f.setReview({ domains: { d: { status: "pending", queued: 0, queuedEvidence: [] } } });
+  f.events.push({ kind: "signal", threadId: "main", signal: { id: "s", kind: "tool_observation", source: "t", content: {}, timestamp: 1 } as never });
+  await a.next(fr => fr.category === "data" && fr.payload.kind === "knowledge" && fr.payload.review.d.status === "pending", "pending review");
+  a.disconnect(); b.disconnect();
+});
+
+test("a turn outside a full window is not sent; quarantined learning is withheld with its reason", async () => {
+  const f = fakeJournal();
+  for (let i = 1; i <= 16; i++) f.turns.set(`t${i}`, { startedAt: 100 + i, status: "completed" });
+  f.turns.set("old", { startedAt: 1, status: "completed" });
+  f.block("Knowledge durability failure for main: bad row");
+  const client = connectStreams(f.viewer);
+  await client.open("flow:main");
+  const snapshot = client.data("flow:main")[0].payload;
+  expect(snapshot.turns.map((t: any) => t.turnId)).toEqual(Array.from({ length: 16 }, (_, i) => `t${i + 1}`));
+  expect(snapshot).toMatchObject({ learning: [], knowledge: null, review: null, learningError: "Knowledge durability failure for main: bad row" });
+  f.notice("old");
+  f.turns.set("t17", { startedAt: 200, status: "active" });
+  f.notice("t17");
+  await client.next(fr => fr.category === "data" && fr.payload.kind === "turn" && fr.payload.turn.turnId === "t17", "new turn");
+  expect(turnAppends(client)).toEqual([["t17", "active"]]);
+  client.disconnect();
 });

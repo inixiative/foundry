@@ -6,7 +6,7 @@
  *
  *   applyFlowFrame   `flow:<threadId>` snapshot/append → panel state
  *   threadGraph      thread + subagent hierarchy (meta.parentThreadId), big subtrees folded
- *   turnFlowGraph    one turn's loop: input → assessment ∥ routing → sealed plan → layers → executor → guards → delivery → learning
+ *   turnFlowGraph    one turn's loop: input → assessment ∥ routing → sealed plan → layers → executor → delivery ∥ guards ∥ tasks → learning
  *   learningLoop     per-domain lanes across turns: assessed revision → writeback → the revision a later turn assessed
  */
 import { routingRequest, expertParticipants, guardOutcomes, deliverySummary, learningEntries } from "./inspector-data.js";
@@ -15,18 +15,23 @@ import { routingRequest, expertParticipants, guardOutcomes, deliverySummary, lea
 // Stream state
 // ---------------------------------------------------------------------------
 
-export const emptyFlow = (threadId = null) => ({ threadId, journal: "loading", error: null, turns: [], learning: [], knowledge: null, review: null, limits: { turns: 16, learning: 200 } });
+export const emptyFlow = (threadId = null) => ({ threadId, journal: "loading", error: null, turns: [], learning: [], knowledge: null, review: null, learningError: null, limits: { turns: 16, learning: 200 } });
 
 /** Apply one `flow:<threadId>` frame. Returns the same object when nothing changed. */
 export function applyFlowFrame(state, frame) {
+  // The server refused the open: the thread is gone.
+  if (frame.action === "rejected") return { ...emptyFlow(state.threadId), journal: "rejected" };
   const payload = frame.payload;
   if (frame.action === "snapshot") {
     return { threadId: payload.threadId, journal: payload.journal, error: payload.error ?? null, turns: sortTurns(payload.turns ?? []),
-      learning: payload.learning ?? [], knowledge: payload.knowledge ?? null, review: payload.review ?? null, limits: payload.limits ?? state.limits };
+      learning: payload.learning ?? [], knowledge: payload.knowledge ?? null, review: payload.review ?? null, learningError: payload.learningError ?? null,
+      limits: payload.limits ?? state.limits };
   }
   if (payload.kind === "turn") {
     const rest = state.turns.filter(turn => turn.turnId !== payload.turn.turnId);
-    return { ...state, turns: sortTurns([...rest, payload.turn]).slice(-state.limits.turns) };
+    // A turn read after a failed listing proves the journal readable again.
+    return { ...state, journal: state.journal === "error" ? "available" : state.journal, error: state.journal === "error" ? null : state.error,
+      turns: sortTurns([...rest, payload.turn]).slice(-state.limits.turns) };
   }
   if (payload.kind === "learning") {
     const seen = new Set(state.learning.map(entry => entry.signal?.id));
@@ -34,11 +39,11 @@ export function applyFlowFrame(state, frame) {
     if (!fresh.length) return state;
     return { ...state, learning: [...state.learning, ...fresh].slice(-state.limits.learning) };
   }
-  if (payload.kind === "knowledge") return { ...state, knowledge: payload.knowledge ?? null, review: payload.review ?? null };
+  if (payload.kind === "knowledge") return { ...state, knowledge: payload.knowledge ?? null, review: payload.review ?? null, learningError: payload.learningError ?? null };
   return state;
 }
 
-const sortTurns = turns => turns.slice().sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+const sortTurns = turns => turns.slice().sort((a, b) => (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity));
 
 // ---------------------------------------------------------------------------
 // Shared layout
@@ -91,12 +96,22 @@ export function threadGraph(threads, { activeThreadId = null, expanded = new Set
       agents: Array.isArray(t.agents) ? t.agents.length : 0, layers: layers.map(l => ({ id: l.id, state: l.state })),
       warm: layers.filter(l => l.state === "warm" || l.state === "warming").length, prompts: promptCounts[t.threadId] ?? 0, children: [] });
   }
-  // A parent chain that loops back is cut at the node that closes it.
-  const loops = id => { const seen = new Set(); for (let at = id; at; at = byId.get(at)?.parentId) { if (seen.has(at)) return true; seen.add(at); } return false; };
+  // A parent cycle is cut once, at its smallest id, which becomes a root; the rest of the cycle and
+  // everything hanging off it keep their parents.
+  const cycleOf = id => {
+    const path = [];
+    for (let at = byId.get(id)?.parentId; at && byId.has(at); at = byId.get(at).parentId) {
+      if (at === id) return [id, ...path];
+      if (path.includes(at)) return null;
+      path.push(at);
+    }
+    return null;
+  };
   const roots = [];
   for (const node of byId.values()) {
     const parent = node.parentId ? byId.get(node.parentId) : null;
-    if (parent && parent !== node && !loops(node.id)) parent.children.push(node);
+    const cycle = parent ? cycleOf(node.id) : null;
+    if (parent && parent !== node && !(cycle && node.id === [...cycle].sort()[0])) parent.children.push(node);
     else roots.push(node);
   }
   const recency = (a, b) => (INACTIVE.has(a.status) - INACTIVE.has(b.status)) || ((b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0));
@@ -171,7 +186,7 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 
 const ROUTE_STATUS = { routed: "ok", fallback: "warn", timeout: "warn", error: "error" };
 const DECISION_STATUS = { contribute: "ok", abstain: "skip", error: "error", timeout: "warn", excluded: "skip", omitted: "warn" };
-const TURN_STATUS = { completed: "ok", failed: "error", interrupted: "warn", active: "pending" };
+const TURN_STATUS = { completed: "ok", failed: "error", interrupted: "warn", active: "pending", unreadable: "error" };
 const LEARN_STATUS = { learned: "ok", restored: "ok", abstain: "skip", delayed: "pending", requested: "pending", deferred: "pending",
   rejected: "error", invalid: "error", error: "error", expired: "error", "write-failed": "error", "reconciliation-needed": "error", timeout: "warn", stale: "warn", discarded: "warn" };
 /** Learning lifecycle bookkeeping, not an outcome of the loop. */
@@ -200,9 +215,10 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
   const nodes = [], edges = [];
   const turnTarget = { type: "turn", threadId: turn.threadId, turnId: turn.turnId };
   const add = node => { nodes.push({ target: turnTarget, ...node }); return node.id; };
-  const link = (from, to, label, status) => edges.push({ id: `${from}->${to}`, from, to, label: label ?? null, status: status ?? null });
+  const link = (from, to, label, status) => edges.push({ id: `${from}->${to}`, from, to, label: label ? short(label, 24) : null, status: status ?? null });
   const plan = turn.plan ?? null;
-  const record = { detail: { phases: turn.phases ?? [] } };
+  // The inspector's own record shape: journalled phase rows, and the guards on the turn's result meta as its fallback.
+  const record = { detail: { phases: turn.phases ?? [], messages: turn.guards ? [{ actor: "agent", meta: { phases: { guards: turn.guards } } }] : [] } };
   const spans = Array.isArray(turn.spans) ? turn.spans : [];
 
   let col = 0;
@@ -263,8 +279,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
   }
 
   // Delivered layers: what the executor was actually given, against what was assessed.
-  const delivery = deliverySummary(turn.delivery ? { delivery: turn.delivery } : null, null);
-  const layers = delivery?.layers ?? [];
+  const layers = deliverySummary(turn.delivery ? { delivery: turn.delivery } : null, null)?.layers ?? [];
   if (layers.length) {
     col++;
     const layerIds = [];
@@ -287,14 +302,26 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
   const executor = add({ id: "executor", kind: "executor", col, label: execute?.agentId ? `Executor ${short(execute.agentId, 14)}` : "Executor",
     sub: [turn.status, fmtMs(execute?.durationMs ?? (turn.endedAt ? turn.endedAt - turn.startedAt : null))].filter(Boolean).join(" · "),
     status: TURN_STATUS[turn.status] ?? "warn", detail: { status: turn.status, outcome, native: turn.outcome?.nativeOutcome, persistence: turn.outcome?.persistence,
-      duration: fmtMs(execute?.durationMs), "trace total": fmtMs(turn.trace?.durationMs), error: turn.error, "native events": turn.native?.events } });
+      duration: fmtMs(execute?.durationMs), "trace total": fmtMs(turn.trace?.durationMs), error: turn.error } });
   for (const from of last) link(from, executor, from === "plan" && plan ? `${plural(plan.layers?.length ?? 0, "layer")} · ${plural(turn.snippets ?? 0, "snippet")}` : null);
   last = [executor];
+
+  // After the executor, one column: the delivery ledger first (it continues the loop), then the executor's
+  // own task lists and the post-action guards beside it, so no edge crosses another step.
+  col++;
+  const delivery = deliverySummary(turn.delivery ? { delivery: turn.delivery } : null, null);
+  if (delivery) {
+    const drift = layers.filter(l => l.drift).length;
+    const id = add({ id: "delivery", kind: "delivery", col, label: "Delivery ledger", sub: `${plural(delivery.committed.length, "layer")} committed${drift ? ` · ${drift} drift` : ""}`,
+      status: drift ? "warn" : "ok", detail: { committed: delivery.committed.join(", ") || "none", drift: drift || null, learning: delivery.learning?.label } });
+    link(executor, id, drift ? `${drift} drift` : "delivered", drift ? "warn" : "ok");
+    last = [id];
+  }
 
   // The executor's own task lists, recorded as its plan-tool input.
   for (const list of turn.tasks ?? []) {
     const done = list.items.filter(i => i.status === "completed").length;
-    const id = add({ id: `tasks:${list.source}`, kind: "tasks", col: col + 1, label: `Tasks (${list.source})`, sub: `${done}/${list.items.length} completed`,
+    const id = add({ id: `tasks:${list.source}`, kind: "tasks", col, label: `Tasks (${list.source})`, sub: `${done}/${list.items.length} completed`,
       status: done === list.items.length ? "ok" : "pending", detail: { ...(list.goal ? { goal: list.goal } : {}), ...Object.fromEntries(list.items.map((i, n) => [`${n + 1}. ${i.status}`, i.text])) } });
     link(executor, id, "plan tool");
   }
@@ -302,7 +329,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
   // Post-action guards, one per tool observation, beside the executor.
   const guards = guardOutcomes(record) ?? [];
   if (guards.length) {
-    const gcol = col + 1;
+    const gcol = col;
     guards.slice(0, 12).forEach((g, n) => {
       const status = g.status === "pending" ? "pending" : g.status === "failed" ? "error" : (g.critical ?? 0) > 0 ? "error" : (g.findings ?? 0) > 0 ? "warn" : "ok";
       const id = add({ id: `guard:${n}`, kind: "guard", col: gcol, label: `Guard ${short(g.tool, 18)}`, sub: [g.status, g.findings === null ? null : plural(g.findings, "finding")].filter(Boolean).join(" · "),
@@ -313,18 +340,11 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
     if (guards.length > 12) link(executor, add({ id: "guard:more", kind: "more", col: gcol, label: `+${guards.length - 12} guards`, sub: "see turn detail", status: "skip" }), null);
   }
 
-  // Delivery ledger commit, then each domain's writeback from this turn's evidence.
-  if (delivery) {
-    col += 2;
-    const drift = layers.filter(l => l.drift).length;
-    const id = add({ id: "delivery", kind: "delivery", col, label: "Delivery ledger", sub: `${plural(delivery.committed.length, "layer")} committed${drift ? ` · ${drift} drift` : ""}`,
-      status: drift ? "warn" : "ok", detail: { committed: delivery.committed.join(", ") || "none", drift: drift || null, learning: delivery.learning?.label } });
-    link(executor, id, drift ? `${drift} drift` : "delivered", drift ? "warn" : "ok");
-    last = [id];
-  } else col++;
+  // Each domain's writeback from this turn's evidence.
+  // With no delivery record they sit beside the guards, fed straight from the executor.
   const writebacks = writebacksFor(learning, turn.turnId);
   if (writebacks.length) {
-    col++;
+    if (delivery) col++;
     for (const w of writebacks) {
       const id = add({ id: `learn:${w.domain}`, kind: "learning", col, domain: w.domain, label: `Writeback ${short(w.domain, 14)}`,
         sub: [w.decision, w.revision !== null ? `rev ${w.baseRevision ?? "?"}→${w.revision}` : null].filter(Boolean).join(" · "),
@@ -334,7 +354,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
     }
   }
   // Wide gaps: the decisions ride the edges and need the room.
-  const { width, height } = layoutColumns(nodes, { colGap: 112 });
+  const { width, height } = layoutColumns(nodes, { colGap: 140 });
   return { nodes, edges, width, height };
 }
 

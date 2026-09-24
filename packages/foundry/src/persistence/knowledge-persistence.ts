@@ -118,6 +118,9 @@ export class KnowledgePersistence {
     console.error(`[Recovery] ${message}`);
   }
 
+  /** Why this thread's learning is quarantined, if it is. */
+  blocked(threadId: string): string | undefined { return this.errors.get(threadId); }
+
   inspect(threadId: string, limit = 100) {
     const reconciliation = this.reconciliation.get(threadId);
     if (reconciliation) return { status: "reconciliation-needed", error: reconciliation, snapshot: this.store.knowledge(threadId), history: this.store.learningHistory(threadId, limit) };

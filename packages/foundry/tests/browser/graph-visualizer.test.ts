@@ -77,8 +77,13 @@ test("graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
 
     // Keyboard: focusing a step outside the view pans it in; Enter inspects it (its turn opens in the detail drawer).
     await page.mouse.move(0, 0);
+    // Keyboard modality (as with Tab): focus is then :focus-visible and pans the node into the canvas.
+    await page.keyboard.press("Shift");
     await page.locator(".graph-node[data-node-id='executor']").focus();
     expect(await page.locator(".graph-tooltip").innerText()).toMatch(/Executor/);
+    const canvasBox = await page.locator(".graph-canvas").boundingBox();
+    const nodeBox = await page.locator(".graph-node[data-node-id='executor'] .graph-node-box").boundingBox();
+    expect(nodeBox.x >= canvasBox.x && nodeBox.x + nodeBox.width <= canvasBox.x + canvasBox.width).toBe(true);
     await shot("1440-turn-flow-focus-executor");
     await page.keyboard.press("Enter");
     await page.locator(".detail-drawer .historical-detail-status[data-status='loaded']").waitFor();
@@ -95,12 +100,26 @@ test("graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     const zoomed = await transform();
     await page.mouse.down(); await page.mouse.move(box.x + 140, box.y + box.height - 10, { steps: 4 }); await page.mouse.up();
     await page.waitForFunction((prev: string) => document.querySelector(".graph-canvas svg > g")?.getAttribute("transform") !== prev, zoomed);
+    // The controls take real mouse clicks (the canvas's drag capture must not swallow them).
+    const panned = await transform();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    const zoomedIn = await transform();
+    expect(zoomedIn).not.toBe(panned);
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    expect(await transform()).not.toBe(zoomedIn);
+    const beforeFit = await transform();
     await page.getByRole("button", { name: "Fit to view" }).click();
-    expect(await transform()).not.toBe(zoomed);
+    expect(await transform()).not.toBe(beforeFit);
+    await shot("1440-turn-flow-fit");
+    // Having moved the view, the reader stays on t1 when a new turn arrives.
+    expect(await page.locator(".graph-turn[aria-pressed='true']").getAttribute("data-turn-id")).toBe("t1");
 
-    // A turn sent while the view is open arrives on the stream, no reload.
+    // A turn sent while the view is open arrives on the stream, no reload; the pinned selection holds.
+    const fitted = await transform();
     await s.send("a", "t3", "Continue");
     await page.locator(".graph-turn[data-turn-id='t3']").waitFor();
+    expect(await page.locator(".graph-turn[aria-pressed='true']").getAttribute("data-turn-id")).toBe("t1");
+    expect(await transform()).toBe(fitted);
     await page.locator(".graph-turn[data-turn-id='t3']").click();
     await page.locator(".graph-node[data-node-id='learn:architecture']").waitFor();
     await shot("1440-turn-flow-live-t3");

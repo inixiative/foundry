@@ -81,6 +81,8 @@ export interface TurnDetail {
   phases: StoredPhase[];
 }
 
+export type TurnFlowRecord = Omit<TurnDetail, "nativeHistory" | "nativeTools"> & { taskUses: NativeEvidence[] };
+
 /** Primitives, short primitive lists, and short lists of flat records (layer provenance
  * `{id, hash, tokens}`); never nested objects, never the injection or native payloads. */
 function isSummaryValue(value: unknown): boolean {
@@ -179,6 +181,7 @@ export class LocalSessionStore {
         id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES session_threads(id),
         status TEXT NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER, error TEXT
       );
+      CREATE INDEX IF NOT EXISTS session_turns_thread ON session_turns(thread_id, started_at);
       CREATE TABLE IF NOT EXISTS session_messages (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
         thread_id TEXT NOT NULL REFERENCES session_threads(id),
@@ -606,6 +609,28 @@ export class LocalSessionStore {
     });
     return { messages, hasMore, oldestReached: !hasMore, nextBefore: hasMore && page.length ? page[0]!.seq : null };
   }
+  /** What the graph panel reads for one turn: the turn detail without the native history, plus only the
+   * native `tool_use` records of the named tools (journalled rows, then those recorded inline on the completion). */
+  turnFlowRecord(threadId: string, turnId: string, toolNames: readonly string[]): TurnFlowRecord | undefined {
+    const turn = this.turn(turnId);
+    if (!turn || turn.threadId !== threadId) return undefined;
+    const messages = (this.query("SELECT record FROM session_messages WHERE thread_id=? AND turn_id=? ORDER BY seq").all(threadId, turnId) as Array<{ record: string }>)
+      .map(row => JSON.parse(row.record) as StoredMessage);
+    const trace = this.traceForTurn(turnId) ?? null;
+    const agent = messages.find(message => message.actor === "agent");
+    const root = trace?.root as { annotations?: { injection?: unknown } } | undefined;
+    const injection = agent?.meta?.injection ?? root?.annotations?.injection ?? null;
+    const marks = toolNames.map(() => "?").join(",");
+    const journalled = toolNames.length ? (this.query(`SELECT record FROM session_native WHERE thread_id=? AND turn_id=?
+      AND json_extract(record, '$.kind')='tool_use' AND json_extract(record, '$.toolName') IN (${marks}) ORDER BY seq`)
+      .all(threadId, turnId, ...toolNames) as { record: string }[]).map(row => JSON.parse(row.record) as NativeEvidence) : [];
+    const inline = Array.isArray(agent?.meta?.nativeHistory) ? (agent.meta.nativeHistory as NativeEvidence[])
+      .filter(e => e?.kind === "tool_use" && typeof e.toolName === "string" && toolNames.includes(e.toolName)) : [];
+    const seen = new Set(journalled.map(e => JSON.stringify(e)));
+    const taskUses = [...journalled, ...inline.filter(e => !seen.has(JSON.stringify(e)))];
+    return { threadId, turnId, turn, messages, trace, injection, phases: this.phaseHistory(threadId, { turnId }), taskUses };
+  }
+
   /** Full owned detail for one turn, fetched lazily. The injection is the recorded artifact. */
   turnDetail(threadId: string, turnId: string): TurnDetail | undefined {
     const turn = this.turn(turnId);

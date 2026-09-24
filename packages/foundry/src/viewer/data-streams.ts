@@ -3,7 +3,7 @@ import type { StreamFamily } from "../ws/types";
 import { threadToJSON } from "./http-helpers";
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from "./stream-buffer";
 import type { ViewerThreadDirectory } from "./thread-directory";
-import { FLOW_LEARNING, FLOW_TURNS, flowSnapshot, slimKnowledge, slimLearning, slimReview, slimTurn, type FlowJournal } from "./turn-flow";
+import { FLOW_TURNS, flowSnapshot, readLearning, readTurn, type FlowJournal } from "./turn-flow";
 
 /**
  * The viewer's data streams. Each panel opens exactly what it shows:
@@ -19,8 +19,8 @@ import { FLOW_LEARNING, FLOW_TURNS, flowSnapshot, slimKnowledge, slimLearning, s
  *   prompts             snapshot { prompts }                      append { prompt }  (status says pending or settled)
  *   events              snapshot { events }  (runtime-wide)       append { event }
  *   events:<threadId>   snapshot { events }  (owned by thread)    append { event }  (plus threadless errors, for toasts)
- *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, limits }  (bounded; see turn-flow.ts)
- *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review }
+ *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, learningError, limits }  (bounded; see turn-flow.ts)
+ *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review, learningError }
  */
 export type ThreadAppend = TurnAppend | { kind: "event"; event: StreamEvent };
 export type TurnTerminal = { kind: "done" | "error"; turnId: string; result: Record<string, unknown> };
@@ -30,6 +30,9 @@ export interface ThreadSnapshot { threadId: string; projectId?: string; turns: S
 const EVENT_HISTORY = 200;
 /** Journal notices arrive in bursts (every native observation); a flow stream re-reads at most this often. */
 const FLOW_SETTLE_MS = 250;
+/** An unreadable turn is re-read this many times, this far apart, before it is sent as unreadable. */
+const FLOW_READ_ATTEMPTS = 3;
+const FLOW_RETRY_MS = 2000;
 
 /** The thread an event belongs to, as the inspector's activity panel reads it. */
 export function eventThread(event: StreamEvent): string | undefined {
@@ -142,47 +145,62 @@ export function createViewerStreams(deps: {
 
   // Graph panel: a thread's recent turns as recorded flows, its learning history and knowledge revisions.
   // Journal notices name the turn that changed; each settle re-reads only those turns and sends what differs.
+  // Review status and committed revisions are re-read on every settle: some review changes (queue growth,
+  // admission) carry no journal notice of their own, only the thread's signals.
   const flow: StreamFamily = {
     matches: stream => suffix(stream, "flow:") !== null,
     authorize: stream => !!directory.get(suffix(stream, "flow:")!),
     start(stream, append) {
       const threadId = suffix(stream, "flow:")!;
-      const sentTurns = new Map<string, string>();
-      // Learning ids within the history window last read; older ids fall out with the window.
+      // What the holders have: turn text by id (the newest FLOW_TURNS, oldest first) with start times.
+      const sentTurns = new Map<string, { text: string; startedAt: number | null }>();
       let sentLearning = new Set<string>();
       let sentKnowledge = "";
       const dirtyTurns = new Set<string>();
+      const failures = new Map<string, number>();
       let learningDirty = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
-      const knowledgeNow = () => {
-        const knowledge = slimKnowledge(journal.store!.knowledge(threadId)), review = slimReview(journal.learningState?.(threadId));
-        return { knowledge, review, text: JSON.stringify({ knowledge, review }) };
+      const record = (turnId: string, text: string, startedAt: number | null) => {
+        sentTurns.delete(turnId);
+        sentTurns.set(turnId, { text, startedAt });
+        while (sentTurns.size > FLOW_TURNS) sentTurns.delete(sentTurns.keys().next().value!);
       };
+      // A turn older than everything in a full window is outside it; the holders would only drop it.
+      const outsideWindow = (turnId: string, startedAt: number | null) => sentTurns.size >= FLOW_TURNS && !sentTurns.has(turnId)
+        && startedAt !== null && [...sentTurns.values()].every(t => t.startedAt !== null && t.startedAt > startedAt);
       const settle = () => {
+        if (timer) clearTimeout(timer);
         timer = null;
         const store = journal.store;
-        if (!store) return;
-        try {
-          for (const turnId of [...dirtyTurns].slice(-FLOW_TURNS)) {
-            const detail = store.turnDetail(threadId, turnId);
-            if (!detail) continue;
-            const turn = slimTurn(detail), text = JSON.stringify(turn);
-            if (sentTurns.get(turnId) === text) continue;
-            sentTurns.delete(turnId);
-            sentTurns.set(turnId, text);
-            while (sentTurns.size > FLOW_TURNS) sentTurns.delete(sentTurns.keys().next().value!);
-            append({ kind: "turn", turn });
-          }
-          if (learningDirty) {
-            const history = store.learningHistory(threadId, FLOW_LEARNING);
-            const entries = history.filter(entry => !sentLearning.has(entry.signal.id));
-            sentLearning = new Set(history.map(entry => entry.signal.id));
-            if (entries.length) append({ kind: "learning", entries: entries.map(slimLearning) });
-            const next = knowledgeNow();
-            if (next.text !== sentKnowledge) { sentKnowledge = next.text; append({ kind: "knowledge", knowledge: next.knowledge, review: next.review }); }
-          }
-        } catch { /* An unreadable journal row is reported by the next snapshot; the next notice retries. */ }
-        finally { dirtyTurns.clear(); learningDirty = false; }
+        if (!store) { dirtyTurns.clear(); learningDirty = false; return; }
+        const retry: string[] = [];
+        for (const turnId of [...dirtyTurns].slice(-FLOW_TURNS)) {
+          const read = readTurn(store, threadId, turnId);
+          if (!read) continue;
+          if (!read.ok) {
+            // A transient read failure retries; a row that stays unreadable is shown as unreadable.
+            const count = (failures.get(turnId) ?? 0) + 1;
+            failures.set(turnId, count);
+            if (count < FLOW_READ_ATTEMPTS) { retry.push(turnId); continue; }
+          } else failures.delete(turnId);
+          const text = JSON.stringify(read.turn);
+          if (sentTurns.get(turnId)?.text === text || outsideWindow(turnId, read.turn.startedAt)) continue;
+          record(turnId, text, read.turn.startedAt);
+          append({ kind: "turn", turn: read.turn });
+        }
+        dirtyTurns.clear();
+        for (const turnId of retry) dirtyTurns.add(turnId);
+        const learning = readLearning(journal, threadId, learningDirty);
+        if (learningDirty && !learning.learningError) {
+          const entries = learning.learning.filter(entry => !sentLearning.has(entry.signal.id));
+          sentLearning = new Set(learning.learning.map(entry => entry.signal.id));
+          if (entries.length) append({ kind: "learning", entries });
+        }
+        learningDirty = !!learning.learningError && learningDirty;
+        const knowledge = { knowledge: learning.knowledge, review: learning.review, learningError: learning.learningError };
+        const text = JSON.stringify(knowledge);
+        if (text !== sentKnowledge) { sentKnowledge = text; append({ kind: "knowledge", ...knowledge }); }
+        if (dirtyTurns.size) timer = setTimeout(settle, FLOW_RETRY_MS);
       };
       const schedule = () => { timer ??= setTimeout(settle, FLOW_SETTLE_MS); };
       const unsubscribe = eventStream.subscribe(event => {
@@ -191,21 +209,20 @@ export function createViewerStreams(deps: {
           if (event.scope === "learning") learningDirty = true;
           else if (event.turnId) dirtyTurns.add(event.turnId);
           schedule();
-        } else if (event.kind === "signal" && event.signal.kind === "domain_learning") {
-          learningDirty = true;
+        } else if (event.kind === "signal") {
+          if (event.signal.kind === "domain_learning") learningDirty = true;
           schedule();
         }
       });
       return {
-        // A later opener joins a running stream: pending changes go to the holders first, so the new
-        // snapshot never records as sent a change they have not received.
+        // A later opener joins a running stream: current changes, noticed or not, go to the holders first,
+        // so the new snapshot never records as sent a change they have not received.
         snapshot() {
-          if (timer) { clearTimeout(timer); settle(); }
+          if (sentTurns.size || sentKnowledge) settle();
           const snapshot = flowSnapshot(journal, threadId);
-          for (const turn of snapshot.turns) sentTurns.set(turn.turnId, JSON.stringify(turn));
-          while (sentTurns.size > FLOW_TURNS) sentTurns.delete(sentTurns.keys().next().value!);
+          for (const turn of snapshot.turns) record(turn.turnId, JSON.stringify(turn), turn.startedAt);
           sentLearning = new Set(snapshot.learning.map(entry => entry.signal.id));
-          sentKnowledge = JSON.stringify({ knowledge: snapshot.knowledge, review: snapshot.review });
+          sentKnowledge = JSON.stringify({ knowledge: snapshot.knowledge, review: snapshot.review, learningError: snapshot.learningError });
           return snapshot;
         },
         stop() { unsubscribe(); if (timer) clearTimeout(timer); timer = null; },

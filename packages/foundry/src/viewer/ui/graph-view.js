@@ -6,7 +6,7 @@
  * Plain SVG, pan/zoom on interaction only; click inspects in the detail drawer, hover shows the record.
  */
 import { html, signal, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "./lib.js";
-import { allThreads, activeThreadId, activePanel, selectThread, openTurnDetail, promptCounts, currentTrace, holdStream, layerColor } from "./store.js";
+import { allThreads, activeThreadId, selectThread, openTurnDetail, promptCounts, currentTrace, holdStream, layerColor, toggleGraphPanel } from "./store.js";
 import { applyFlowFrame, emptyFlow, threadGraph, turnFlowGraph, learningLoop, edgePath, LOOP_LANE_H } from "./flow-graph.js";
 
 export const graphTab = signal("threads"); // "threads" | "turn" | "loop"
@@ -33,7 +33,8 @@ function useVisible(ref) {
   return onScreen && foreground;
 }
 
-/** The thread's `flow:<id>` stream, held only while `active`. A re-hold starts from a fresh snapshot. */
+/** The thread's `flow:<id>` stream, held only while `active`. A re-hold starts from a fresh snapshot.
+ * State held for another thread is never returned, even on the render before the effect resets it. */
 function useFlowStream(threadId, active) {
   const [flow, setFlow] = useState(() => emptyFlow(threadId));
   useEffect(() => {
@@ -41,7 +42,7 @@ function useFlowStream(threadId, active) {
     if (!threadId || !active) return;
     return holdStream(`flow:${threadId}`, frame => setFlow(state => applyFlowFrame(state, frame)));
   }, [threadId, active]);
-  return flow;
+  return flow.threadId === threadId ? flow : emptyFlow(threadId);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,13 +68,15 @@ function detailRows(detail) {
 }
 
 function GraphNode({ node, selected, onActivate, onHover, onFocusNode }) {
+  // Focus from a click must not move the view; only keyboard focus pans a node into sight.
+  const onFocus = e => { if (e.currentTarget.matches(":focus-visible")) onFocusNode(node); onHover(node.id); };
   const layers = node.kind === "thread" ? node.layers.filter(l => l.state === "warm" || l.state === "warming").slice(0, 24) : [];
   const activate = () => onActivate(node);
   return html`<g class="graph-node graph-node--${node.kind} graph-status--${node.status ?? (node.inactive ? "skip" : "ok")} ${selected ? "graph-node--selected" : ""}"
     transform=${`translate(${node.x},${node.y})`} tabIndex="0" role="button" data-node-id=${node.id} data-kind=${node.kind}
     aria-label=${`${node.label}${node.sub ? `: ${node.sub}` : ""}`}
     onClick=${activate} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
-    onPointerEnter=${() => onHover(node)} onPointerLeave=${() => onHover(null)} onFocus=${() => { onFocusNode(node); onHover(node); }} onBlur=${() => onHover(null)}>
+    onPointerEnter=${() => onHover(node.id)} onPointerLeave=${() => onHover(null)} onFocus=${onFocus} onBlur=${() => onHover(null)}>
     <rect class="graph-node-box" width=${node.w} height=${node.h} rx="6" />
     <rect class="graph-node-bar" width="3" height=${node.h - 12} x="5" y="6" rx="1.5" />
     <text class="graph-node-label" x="14" y="18">${fit(node.label, node.w, 6.8)}</text>
@@ -85,18 +88,27 @@ function GraphNode({ node, selected, onActivate, onHover, onFocusNode }) {
 
 const threadSub = node => [node.status, `${node.warm}/${node.layers.length} warm`, node.childCount ? `${node.childCount} sub` : null].filter(Boolean).join(" · ");
 
-function GraphCanvas({ graph, direction = "lr", fitKey, selectedId, onActivate, underlay, label }) {
+const DRAG_SLOP = 3;
+const clampK = k => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k));
+
+/** `onMove` is told the first time the reader pans or zooms, so a view can stop following live data. */
+function GraphCanvas({ graph, direction = "lr", fitKey, selectedId, onActivate, onMove, underlay, label }) {
   const box = useRef(null);
   const [view, setView] = useState({ x: PAD, y: PAD, k: 1 });
-  const [hover, setHover] = useState(null);
-  const drag = useRef(null);
+  const [hoverId, setHoverId] = useState(null);
+  const pointers = useRef(new Map());
+  const gesture = useRef(null);
   const frame = useRef(0);
   const viewRef = useRef(view);
   viewRef.current = view;
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
-  // Fit when the graph's subject changes (before paint, so the unfitted view never shows), and when the
-  // canvas is resized until the reader pans or zooms; a live update never moves the view.
+  // Fit when the graph's subject (`fitKey`) changes, before paint so the unfitted view never shows, and when
+  // the canvas is resized until the reader pans or zooms. Nodes added by a live update land in the current view.
   const moved = useRef(false);
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+  const markMoved = () => { if (!moved.current) { moved.current = true; onMoveRef.current?.(); } };
   const graphRef = useRef(graph);
   graphRef.current = graph;
   useLayoutEffect(() => {
@@ -116,41 +128,60 @@ function GraphCanvas({ graph, direction = "lr", fitKey, selectedId, onActivate, 
     if (!el) return;
     const onWheel = e => {
       e.preventDefault();
-      moved.current = true;
+      markMoved();
       const rect = el.getBoundingClientRect();
-      const px = e.clientX - rect.left, py = e.clientY - rect.top;
-      const v = viewRef.current;
-      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.k * Math.exp(-e.deltaY * 0.0015)));
-      setView({ k, x: px - (px - v.x) * (k / v.k), y: py - (py - v.y) * (k / v.k) });
+      zoomAt(viewRef.current.k * Math.exp(-e.deltaY * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** Zoom to `k` about a point of the canvas. */
+  function zoomAt(k, px, py, from = viewRef.current) {
+    const next = clampK(k);
+    setView({ k: next, x: px - (px - from.x) * (next / from.k), y: py - (py - from.y) * (next / from.k) });
+  }
+  // Pan with one pointer, pinch-zoom with two. Nodes and the controls keep their own clicks.
+  const local = e => { const rect = box.current.getBoundingClientRect(); return { x: e.clientX - rect.left, y: e.clientY - rect.top }; };
+  const begin = () => {
+    const [a, b] = [...pointers.current.values()];
+    gesture.current = b ? { view: viewRef.current, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.hypot(a.x - b.x, a.y - b.y) || 1 }
+      : a ? { view: viewRef.current, start: a, panning: false } : null;
+  };
   const onPointerDown = e => {
-    if (e.button !== 0 || e.target.closest(".graph-node")) return;
-    drag.current = { x: e.clientX, y: e.clientY, view: viewRef.current };
-    moved.current = true;
+    if (e.button !== 0 || e.target.closest(".graph-node, .graph-controls")) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, local(e));
+    begin();
   };
   const onPointerMove = e => {
-    const d = drag.current;
-    if (!d) return;
-    const next = { ...d.view, x: d.view.x + e.clientX - d.x, y: d.view.y + e.clientY - d.y };
-    // Pan repaints at most once per animation frame, and only while dragging.
+    if (!pointers.current.has(e.pointerId) || !gesture.current) return;
+    pointers.current.set(e.pointerId, local(e));
+    const g = gesture.current, [a, b] = [...pointers.current.values()];
+    let next;
+    if (b && g.dist) {
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, k = clampK(g.view.k * Math.hypot(a.x - b.x, a.y - b.y) / g.dist);
+      next = { k, x: mid.x - (g.mid.x - g.view.x) * (k / g.view.k), y: mid.y - (g.mid.y - g.view.y) * (k / g.view.k) };
+    } else if (g.start) {
+      // A click that wanders a pixel is still a click, not a pan.
+      if (!g.panning && Math.hypot(a.x - g.start.x, a.y - g.start.y) < DRAG_SLOP) return;
+      g.panning = true;
+      next = { ...g.view, x: g.view.x + a.x - g.start.x, y: g.view.y + a.y - g.start.y };
+    } else return;
+    markMoved();
+    // Pan and pinch repaint at most once per animation frame, and only while the gesture lasts.
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => setView(next));
   };
-  const onPointerUp = () => { drag.current = null; };
+  const onPointerUp = e => { pointers.current.delete(e.pointerId); begin(); };
   const zoomBy = factor => {
-    const el = box.current, v = viewRef.current;
+    const el = box.current;
     if (!el) return;
-    moved.current = true;
-    const rect = el.getBoundingClientRect(), cx = rect.width / 2, cy = rect.height / 2;
-    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.k * factor));
-    setView({ k, x: cx - (cx - v.x) * (k / v.k), y: cy - (cy - v.y) * (k / v.k) });
+    markMoved();
+    const rect = el.getBoundingClientRect();
+    zoomAt(viewRef.current.k * factor, rect.width / 2, rect.height / 2);
   };
-  const onHover = useCallback(node => setHover(node ? { node } : null), []);
+  const onHover = useCallback(id => setHoverId(id), []);
 
   // Keyboard focus on a node outside the view pans it into the centre.
   const onFocusNode = useCallback(node => {
@@ -159,15 +190,18 @@ function GraphCanvas({ graph, direction = "lr", fitKey, selectedId, onActivate, 
     const { width, height } = el.getBoundingClientRect();
     const left = v.x + node.x * v.k, top = v.y + node.y * v.k;
     if (left >= 0 && top >= 0 && left + node.w * v.k <= width && top + node.h * v.k <= height) return;
-    moved.current = true;
+    markMoved();
     setView({ ...v, x: width / 2 - (node.x + node.w / 2) * v.k, y: height / 2 - (node.y + node.h / 2) * v.k });
   }, []);
   const byId = useMemo(() => new Map(graph.nodes.map(n => [n.id, n])), [graph]);
+  // The hovered node as the graph has it now: a live update refreshes its detail, a removal hides it.
+  const hovered = hoverId ? byId.get(hoverId) : null;
+  const hover = hovered ? { node: hovered } : null;
   const rows = hover ? detailRows(hover.node.detail) : [];
   const boxWidth = box.current?.clientWidth ?? 0;
   // The tooltip sits beside its node in the current view (so it follows a pan), kept inside the canvas.
   const tip = hover ? { left: Math.max(8, Math.min(view.x + (hover.node.x + hover.node.w) * view.k + 8, boxWidth - 280)), top: Math.max(8, view.y + hover.node.y * view.k) } : null;
-  return html`<div class="graph-canvas" ref=${box} aria-label=${label}
+  return html`<div class="graph-canvas" ref=${box} role="group" aria-label=${label}
     onPointerDown=${onPointerDown} onPointerMove=${onPointerMove} onPointerUp=${onPointerUp} onPointerCancel=${onPointerUp}>
     <svg class="graph-svg" width="100%" height="100%">
       <defs>
@@ -192,7 +226,7 @@ function GraphCanvas({ graph, direction = "lr", fitKey, selectedId, onActivate, 
     <div class="graph-controls">
       <button class="graph-control" onClick=${() => zoomBy(1.25)} title="Zoom in" aria-label="Zoom in">+</button>
       <button class="graph-control" onClick=${() => zoomBy(0.8)} title="Zoom out" aria-label="Zoom out">−</button>
-      <button class="graph-control" onClick=${() => box.current && setView(fitView(graph, box.current.getBoundingClientRect(), MIN_ZOOM))} title="Fit to view" aria-label="Fit to view">fit</button>
+      <button class="graph-control" onClick=${() => { if (!box.current) return; markMoved(); setView(fitView(graph, box.current.getBoundingClientRect(), MIN_ZOOM)); }} title="Fit to view" aria-label="Fit to view">fit</button>
     </div>
     ${hover ? html`<div class="graph-tooltip" role="tooltip"
       style=${`left:${tip.left}px; top:${tip.top}px`}>
@@ -218,14 +252,14 @@ function ThreadsView() {
   if (!graph.nodes.length) return html`<div class="graph-empty">No threads in this scope.</div>`;
   return html`
     <div class="graph-caption">${graph.total} threads${graph.hidden ? ` · ${graph.hidden} folded` : ""} · subagent threads nest under their parent · click a thread to open it</div>
-    <${GraphCanvas} graph=${graph} direction="tb" fitKey=${`threads:${graph.total}`} selectedId=${activeThreadId.value} onActivate=${activate} label="Thread graph" />`;
+    <${GraphCanvas} graph=${graph} direction="tb" fitKey="threads" selectedId=${activeThreadId.value} onActivate=${activate} label="Thread graph" />`;
 }
 
 const TURN_STATUS_CLASS = { completed: "ok", failed: "error", interrupted: "warn", active: "pending" };
 
 function TurnStrip({ turns, selected, onSelect }) {
-  return html`<div class="graph-turns" role="listbox" aria-label="Turns">
-    ${turns.map((turn, i) => html`<button key=${turn.turnId} role="option" aria-selected=${turn.turnId === selected}
+  return html`<div class="graph-turns" role="group" aria-label="Turns">
+    ${turns.map((turn, i) => html`<button key=${turn.turnId} aria-pressed=${turn.turnId === selected}
       class="graph-turn graph-status--${TURN_STATUS_CLASS[turn.status] ?? "skip"} ${turn.turnId === selected ? "graph-turn--selected" : ""}"
       title=${turn.input?.preview || turn.turnId} data-turn-id=${turn.turnId} onClick=${() => onSelect(turn.turnId)}>
       <span class="graph-turn-dot"></span>${i + 1}. ${turn.input?.preview?.slice(0, 24) || turn.turnId.slice(0, 12)}
@@ -244,6 +278,7 @@ function TaskLists({ turn }) {
 
 function flowNotice(flow) {
   if (flow.journal === "loading") return "Loading recorded turns…";
+  if (flow.journal === "rejected") return "This thread is no longer available to the viewer.";
   if (flow.journal === "unavailable") return "This viewer runs without a session journal; turn flows and learning history are recorded only by the local journal.";
   if (flow.journal === "error") return `The session journal could not be read: ${flow.error}`;
   return null;
@@ -252,9 +287,11 @@ function flowNotice(flow) {
 function TurnFlowView({ flow, onInspect }) {
   const [picked, setPicked] = useState(null);
   const turns = flow.turns;
-  // The turn opened elsewhere (a message's trace) is the default, then the newest.
+  // The turn opened elsewhere (a message's trace) is the default, then the newest. The view follows new turns
+  // until the reader picks one or moves the canvas; from then on it stays on the turn being read.
   const traced = currentTrace.value?.selectedTurn?.turnId;
   const selectedId = [picked, traced, turns.at(-1)?.turnId].find(id => id && turns.some(t => t.turnId === id)) ?? null;
+  const pin = () => { if (!picked && selectedId) setPicked(selectedId); };
   const turn = turns.find(t => t.turnId === selectedId) ?? null;
   const graph = useMemo(() => turnFlowGraph(turn, { learning: flow.learning }), [turn, flow.learning]);
   const notice = flowNotice(flow);
@@ -263,7 +300,7 @@ function TurnFlowView({ flow, onInspect }) {
   return html`
     <${TurnStrip} turns=${turns} selected=${selectedId} onSelect=${setPicked} />
     <div class="graph-caption">Turn ${turn.turnId} · ${turn.status}${turn.plan?.elapsed != null ? ` · pre-message ${Math.round(turn.plan.elapsed)} ms` : ""} · click a step to inspect it</div>
-    <${GraphCanvas} graph=${graph} fitKey=${`turn:${selectedId}`} onActivate=${onInspect} label="Turn flow graph" />
+    <${GraphCanvas} graph=${graph} fitKey=${`turn:${selectedId}`} onActivate=${node => { pin(); onInspect(node); }} onMove=${pin} label="Turn flow graph" />
     <${TaskLists} turn=${turn} />`;
 }
 
@@ -282,10 +319,12 @@ function LoopView({ flow, onInspect }) {
   const graph = useMemo(() => learningLoop(flow), [flow.turns, flow.learning, flow.knowledge, flow.review]);
   const notice = flowNotice(flow);
   if (notice) return html`<div class="graph-empty">${notice}</div>`;
-  if (!graph.lanes.length) return html`<div class="graph-empty">No domain expert assessed a turn in this window and no knowledge is committed on this thread.</div>`;
+  const withheld = flow.learningError ? html`<div class="graph-caption graph-caption--warn">Learning history withheld: ${flow.learningError}</div>` : null;
+  if (!graph.lanes.length) return html`${withheld}<div class="graph-empty">No domain expert assessed a turn in this window and no knowledge is committed on this thread.</div>`;
   return html`
+    ${withheld}
     <div class="graph-caption">${graph.lanes.length} domains × ${graph.turns.length} turns · assessed revision → writeback → the later turn that worked from it${graph.earlier ? ` · ${graph.earlier} earlier outcomes outside the window` : ""}</div>
-    <${GraphCanvas} graph=${graph} fitKey=${`loop:${flow.threadId}:${graph.lanes.join(",")}`} onActivate=${onInspect} underlay=${LoopUnderlay} label="Learning loop graph" />`;
+    <${GraphCanvas} graph=${graph} fitKey=${`loop:${flow.threadId}`} onActivate=${onInspect} underlay=${LoopUnderlay} label="Learning loop graph" />`;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,13 +351,13 @@ export function GraphPanel({ onLayerClick }) {
           onClick=${() => { graphTab.value = id; }}>${label}</button>`)}
       </div>
       ${tab !== "threads" && visible && threadId ? html`<span class="graph-live" title=${`flow:${threadId} is open`}><span class="status-dot on"></span>live</span>` : null}
-      <button class="graph-tab graph-close" onClick=${() => { activePanel.value = "conversation"; }} title="Back to chat (g)">chat</button>
+      <button class="graph-tab graph-close" onClick=${toggleGraphPanel} title="Back to chat (g)">chat</button>
     </div>
     <div class="graph-body">
       ${tab === "threads" ? html`<${ThreadsView} />`
         : !threadId ? html`<div class="graph-empty">Select a thread to see its turns.</div>`
         : tab === "turn" ? html`<${TurnFlowView} key=${threadId} flow=${flow} onInspect=${inspect} />`
-        : html`<${LoopView} flow=${flow} onInspect=${inspect} />`}
+        : html`<${LoopView} key=${threadId} flow=${flow} onInspect=${inspect} />`}
     </div>
   </div>`;
 }

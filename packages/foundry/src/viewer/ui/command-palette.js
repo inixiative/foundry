@@ -4,7 +4,7 @@
  */
 
 import { html, useState, useEffect, useRef } from "./lib.js";
-import { commandPaletteOpen, helpOpen, executeAction, showToast, activePanel } from "./store.js";
+import { commandPaletteOpen, helpOpen, executeAction, showToast, toggleGraphPanel } from "./store.js";
 import { settingsOpen } from "./settings.js";
 import { allBindings } from "./hotkeys.js";
 
@@ -15,7 +15,7 @@ const COMMANDS = [
   { id: "snapshot", label: "System snapshot", icon: "📸", action: () => executeAction("system:snapshot") },
   { id: "archive", label: "Archive thread", icon: "📦", action: () => executeAction("thread:archive") },
   { id: "settings", label: "Open settings", icon: "⚙", action: () => { settingsOpen.value = true; } },
-  { id: "graph", label: "Toggle graph view", icon: "◇", action: () => { activePanel.value = activePanel.value === "graph" ? "conversation" : "graph"; } },
+  { id: "graph", label: "Toggle graph view", icon: "◇", action: toggleGraphPanel },
 ];
 
 export function CommandPalette() {

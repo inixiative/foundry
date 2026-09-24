@@ -7,7 +7,7 @@ import { html, render, useState, useEffect } from "./lib.js";
 import {
   init, connected, eventCount, toast, currentTrace, selectedEvent, dismissTraceSelection,
   selectedSpanId, loadTraces, resyncStreams, executeAction,
-  projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast, activePanel,
+  projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast, activePanel, toggleGraphPanel,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
 import { ProjectSidebar } from "./project-sidebar.js";
@@ -188,7 +188,7 @@ function App() {
       openAnalytics: () => { analyticsOpen.value = !analyticsOpen.value; },
       toggleLayers: () => {},
       toggleEvents: () => {},
-      toggleGraph: () => { activePanel.value = activePanel.value === "graph" ? "conversation" : "graph"; },
+      toggleGraph: toggleGraphPanel,
     });
     initHotkeys();
   }, []);

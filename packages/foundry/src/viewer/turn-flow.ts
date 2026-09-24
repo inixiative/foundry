@@ -1,6 +1,6 @@
 import type { NativeEvidence } from "@inixiative/foundry-core";
 import type { LearningState, ThreadKnowledgeBundle } from "../agents/thread-runtime";
-import type { LocalSessionStore, StoredLearning, TurnDetail } from "../persistence/local-session-store";
+import type { LocalSessionStore, StoredLearning, TurnFlowRecord } from "../persistence/local-session-store";
 
 /**
  * Bounded projection of the owned journal for the viewer's graph panel (`flow:<threadId>`).
@@ -85,36 +85,54 @@ export function taskLists(history: readonly NativeEvidence[]): TaskList[] {
 // ---------------------------------------------------------------------------
 
 type Span = { id?: string; parentId?: string; name?: string; kind?: string; agentId?: string; status?: string; startedAt?: number; endedAt?: number; durationMs?: number };
+/** Harness stages the turn flow draws; other spans (middleware, fan-out) stay in the trace. */
+const FLOW_SPAN_KINDS = new Set(["classify", "route", "execute"]);
 
-export function slimTurn(detail: TurnDetail) {
-  const user = detail.messages.find(message => message.actor === "user");
-  const agent = detail.messages.find(message => message.actor === "agent");
+export function slimTurn(record: TurnFlowRecord) {
+  const user = record.messages.find(message => message.actor === "user");
+  const agent = record.messages.find(message => message.actor === "agent");
   const meta = agent?.meta ?? {};
-  const injection = isObject(detail.injection) ? detail.injection : null;
+  const injection = isObject(record.injection) ? record.injection : null;
   const plan = isObject(injection?.plan) ? injection.plan : null;
-  const spans = Array.isArray(detail.trace?.spans) ? detail.trace.spans as Span[] : [];
+  const spans = Array.isArray(record.trace?.spans) ? record.trace.spans as Span[] : [];
   const outcome = Object.fromEntries(["turnStatus", "executionOutcome", "persistence", "nativeOutcome"]
     .filter(key => typeof meta[key] === "string").map(key => [key, meta[key]]));
+  // Guards recorded on the turn's own result meta: what the inspector falls back to when no guard rows were journalled.
+  const guards = isObject(meta.phases) && Array.isArray(meta.phases.guards) ? slim(meta.phases.guards) : null;
   return {
-    threadId: detail.threadId, turnId: detail.turnId,
-    status: detail.turn.status, startedAt: detail.turn.startedAt, endedAt: detail.turn.endedAt ?? null,
-    ...(detail.turn.error ? { error: clip(detail.turn.error, 200) } : {}),
+    threadId: record.threadId, turnId: record.turnId,
+    status: record.turn.status as string, startedAt: record.turn.startedAt, endedAt: record.turn.endedAt ?? null,
+    ...(record.turn.error ? { error: clip(record.turn.error, 200) } : {}),
     input: { preview: clip(user?.content ?? "", 160), chars: user?.content.length ?? 0 },
     plan: plan ? slim(Object.fromEntries(["elapsed", "sealedAt", "fresh", "confidence", "domainsConsulted", "layers", "input", "routing", "contributions", "omissions", "conflicts", "outstanding"]
       .filter(key => plan[key] !== undefined).map(key => [key, key === "input" && isObject(plan.input)
         ? { hash: plan.input.hash, capturedAt: plan.input.capturedAt } : plan[key]]))) : null,
     snippets: Array.isArray(plan?.snippets) ? plan.snippets.length : null,
-    phases: detail.phases.map(row => slim(row)),
-    trace: detail.trace ? { id: detail.trace.id, startedAt: detail.trace.startedAt, durationMs: detail.trace.durationMs ?? null } : null,
-    spans: spans.slice(0, MAX_ITEMS).map(span => ({ id: span.id, parentId: span.parentId ?? null, name: span.name, kind: span.kind,
+    phases: record.phases.map(row => slim(row)),
+    ...(guards ? { guards } : {}),
+    trace: record.trace ? { id: record.trace.id, startedAt: record.trace.startedAt, durationMs: record.trace.durationMs ?? null } : null,
+    spans: spans.filter(span => FLOW_SPAN_KINDS.has(span.kind ?? "")).slice(-MAX_ITEMS).map(span => ({ id: span.id, parentId: span.parentId ?? null, name: span.name, kind: span.kind,
       agentId: span.agentId ?? null, status: span.status, startedAt: span.startedAt ?? null, durationMs: span.durationMs ?? null })),
     delivery: isObject(meta.delivery) ? slim(meta.delivery) : null,
     outcome,
-    tasks: taskLists(detail.nativeHistory),
-    native: { events: detail.nativeHistory.length, tools: detail.nativeTools.length },
+    tasks: taskLists(record.taskUses),
   };
 }
 export type TurnFlow = ReturnType<typeof slimTurn>;
+
+/** A turn whose journal rows could not be read: shown as such, never dropped or made up. */
+export function unreadableTurn(threadId: string, turnId: string, error: unknown) {
+  return { threadId, turnId, status: "unreadable", startedAt: null, endedAt: null, error: clip(error instanceof Error ? error.message : String(error), 200),
+    input: { preview: "", chars: 0 }, plan: null, snippets: null, phases: [], trace: null, spans: [], delivery: null, outcome: {}, tasks: [] };
+}
+
+/** One turn for the flow stream. */
+export function readTurn(store: LocalSessionStore, threadId: string, turnId: string) {
+  try {
+    const record = store.turnFlowRecord(threadId, turnId, Object.keys(TASK_SOURCES));
+    return record ? { turn: slimTurn(record), ok: true } : null;
+  } catch (error) { return { turn: unreadableTurn(threadId, turnId, error), ok: false }; }
+}
 
 /** One learning outcome: what the inspector's learning entries read, without the review job's inputs or knowledge text. */
 export function slimLearning(entry: StoredLearning) {
@@ -147,22 +165,33 @@ export interface FlowJournal {
   store: LocalSessionStore | null;
   /** The thread runtime's live learning state, when a runtime owns the thread. */
   learningState?: (threadId: string) => LearningState | undefined;
+  /** Why the thread's learning is quarantined; its learning is then withheld, as the knowledge route withholds it. */
+  blocked?: (threadId: string) => string | undefined;
 }
 
-/** A thread's recent turns, learning history, committed knowledge and live review state. */
+/** Learning history, committed revisions and live review status, or why they are withheld or unreadable. */
+export function readLearning(journal: FlowJournal, threadId: string, history = true) {
+  const blocked = journal.blocked?.(threadId);
+  if (blocked) return { learning: [], knowledge: null, review: null, learningError: clip(blocked, 300) };
+  try {
+    return { learning: history ? journal.store!.learningHistory(threadId, FLOW_LEARNING).map(slimLearning) : [],
+      knowledge: slimKnowledge(journal.store!.knowledge(threadId)), review: slimReview(journal.learningState?.(threadId)), learningError: null };
+  } catch (error) {
+    return { learning: [], knowledge: null, review: null, learningError: clip(error instanceof Error ? error.message : String(error), 300) };
+  }
+}
+
+/** A thread's recent turns, learning history, committed knowledge and live review state. One unreadable turn or
+ * learning row is reported in place; the rest of the thread still shows. */
 export function flowSnapshot(journal: FlowJournal, threadId: string) {
   const { store } = journal;
   const limits = { turns: FLOW_TURNS, learning: FLOW_LEARNING };
-  if (!store) return { threadId, journal: "unavailable" as const, turns: [], learning: [], knowledge: null, review: null, limits };
-  try {
-    const turns = store.recentTurnIds(threadId, FLOW_TURNS).reverse().flatMap(id => {
-      const detail = store.turnDetail(threadId, id);
-      return detail ? [slimTurn(detail)] : [];
-    });
-    return { threadId, journal: "available" as const, turns, learning: store.learningHistory(threadId, FLOW_LEARNING).map(slimLearning),
-      knowledge: slimKnowledge(store.knowledge(threadId)), review: slimReview(journal.learningState?.(threadId)), limits };
-  } catch (error) {
-    // A journal that cannot be read (checksum mismatch, closed store) is reported, not retried in a loop.
-    return { threadId, journal: "error" as const, error: clip(error instanceof Error ? error.message : String(error), 300), turns: [], learning: [], knowledge: null, review: null, limits };
+  if (!store) return { threadId, journal: "unavailable" as const, turns: [], learning: [], knowledge: null, review: null, learningError: null, limits };
+  let ids: string[];
+  try { ids = store.recentTurnIds(threadId, FLOW_TURNS).reverse(); }
+  catch (error) {
+    return { threadId, journal: "error" as const, error: clip(error instanceof Error ? error.message : String(error), 300), turns: [], learning: [], knowledge: null, review: null, learningError: null, limits };
   }
+  const turns = ids.flatMap(id => { const read = readTurn(store, threadId, id); return read ? [read.turn] : []; });
+  return { threadId, journal: "available" as const, turns, ...readLearning(journal, threadId), limits };
 }

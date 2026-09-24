@@ -9,7 +9,7 @@ const thread = (threadId: string, meta: Record<string, unknown> = {}, layers: Ar
 
 const overlaps = (nodes: any[]) => nodes.some((a, i) => nodes.some((b, j) => i < j && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h));
 
-test("thread graph: subagent threads nest under their parent; a missing parent or a parent loop makes a root", () => {
+test("thread graph: subagent threads nest under their parent; a missing parent makes a root, a loop is cut once", () => {
   const g = threadGraph([
     thread("main", { description: "Main", lastActiveAt: 10 }, [{ id: "docs", state: "warm" }, { id: "memory", state: "cold" }]),
     thread("sub-1", { parentThreadId: "main", status: "active" }),
@@ -18,8 +18,8 @@ test("thread graph: subagent threads nest under their parent; a missing parent o
     thread("loop-a", { parentThreadId: "loop-b" }), thread("loop-b", { parentThreadId: "loop-a" }),
   ], { activeThreadId: "sub-1", promptCounts: { main: 2 } });
   const byId = new Map(g.nodes.map((n: any) => [n.id, n]));
-  expect(g.edges.map((e: any) => `${e.from}->${e.to}`).sort()).toEqual(["main->sub-1", "sub-1->sub-2"]);
-  expect(["main", "orphan", "loop-a", "loop-b"].every(id => byId.get(id).depth === 0)).toBe(true);
+  expect(g.edges.map((e: any) => `${e.from}->${e.to}`).sort()).toEqual(["loop-a->loop-b", "main->sub-1", "sub-1->sub-2"]);
+  expect(["main", "orphan", "loop-a"].every(id => byId.get(id).depth === 0)).toBe(true);
   expect(byId.get("sub-2")).toMatchObject({ depth: 2, parentId: "sub-1" });
   expect(byId.get("sub-1")).toMatchObject({ active: true, childCount: 1, status: "active" });
   expect(byId.get("main")).toMatchObject({ label: "Main", warm: 1, agents: 1, prompts: 2 });
@@ -81,11 +81,16 @@ test("turn flow: input → harness stages → routing ∥ domains → sealed pha
   const g = turnFlowGraph(turn, { learning });
   const byId = new Map(g.nodes.map((n: any) => [n.id, n]));
   expect(g.nodes.map((n: any) => n.id)).toEqual(["input", "span:classify", "routing", "domain:architecture", "domain:security", "plan",
-    "layer:architecture", "layer:thread-knowledge:architecture", "executor", "tasks:TodoWrite", "guard:0", "delivery", "learn:architecture", "learn:security"]);
+    "layer:architecture", "layer:thread-knowledge:architecture", "executor", "delivery", "tasks:TodoWrite", "guard:0", "learn:architecture", "learn:security"]);
   // Columns strictly advance along the loop.
   const col = (id: string) => byId.get(id).col;
   expect(col("input") < col("span:classify") && col("span:classify") < col("routing") && col("routing") === col("domain:security")).toBe(true);
-  expect(col("plan") < col("layer:architecture") && col("layer:architecture") < col("executor") && col("executor") < col("guard:0") && col("guard:0") < col("delivery") && col("delivery") < col("learn:architecture")).toBe(true);
+  expect(col("plan") < col("layer:architecture") && col("layer:architecture") < col("executor") && col("executor") < col("delivery") && col("delivery") < col("learn:architecture")).toBe(true);
+  // The ledger heads the column after the executor, with the guards and tasks below it: the executor→ledger
+  // edge (and its drift label) never runs through another step.
+  expect(col("guard:0")).toBe(col("delivery"));
+  expect(col("tasks:TodoWrite")).toBe(col("delivery"));
+  expect(byId.get("delivery").y).toBeLessThan(byId.get("guard:0").y);
   // Recorded decisions drive status; nothing absent is filled in.
   expect(byId.get("routing")).toMatchObject({ status: "warn", sub: "fallback · 900 ms" });
   expect(byId.get("domain:architecture")).toMatchObject({ status: "ok", sub: "contribute · rev 2" });
@@ -192,4 +197,31 @@ test("layout and edges: columns never overlap; paths leave the source's right ed
   // An arc leaves the top centre of its source and lands on the top centre of its target.
   expect(edgePath(a, b, "lr", true).d).toMatch(/^M50,0 C50,-14 250,-14 250,100$/);
   expect(domainLayer({ delivery: { layers: [{ id: "thread-knowledge:x", domain: "x" }] } }, "x")).toBe("thread-knowledge:x");
+});
+
+test("turn flow: guards recorded only on the turn's result meta still show; an unreadable turn is an error, not a gap; labels are clipped", () => {
+  const legacy = { ...turn, phases: turn.phases.filter(p => p.phase !== "guard-outcome"),
+    guards: [{ observation: { tool: "Edit", callId: "c9" }, status: "reported", findings: 0, outcomes: [] }] };
+  const g = turnFlowGraph(legacy, { learning: [] });
+  expect(g.nodes.find((n: any) => n.id === "guard:0")).toMatchObject({ label: "Guard Edit", status: "ok" });
+  const unreadable = turnFlowGraph({ threadId: "a", turnId: "u", status: "unreadable", startedAt: null, error: "checksum", input: { preview: "", chars: 0 }, phases: [], spans: [], tasks: [] });
+  expect(unreadable.nodes.map((n: any) => n.id)).toEqual(["input", "executor"]);
+  expect(unreadable.nodes[1].status).toBe("error");
+  const long = turnFlowGraph({ ...turn, phases: [{ id: "r", turnId: "t1", phase: "route", record: { routing: { status: "routed", domains: Array.from({ length: 12 }, (_, i) => `d${i}`), confidence: 0.123456789 } } }] });
+  expect(long.edges.every((e: any) => !e.label || e.label.length <= 24)).toBe(true);
+});
+
+test("thread graph: a parent cycle is cut once, at its smallest id; the rest keep their parents", () => {
+  const g = threadGraph([thread("b", { parentThreadId: "a" }), thread("a", { parentThreadId: "c" }), thread("c", { parentThreadId: "b" }), thread("d", { parentThreadId: "c" })]);
+  expect(g.edges.map((e: any) => `${e.from}->${e.to}`).sort()).toEqual(["a->b", "b->c", "c->d"]);
+  expect(g.nodes.filter((n: any) => n.depth === 0).map((n: any) => n.id)).toEqual(["a"]);
+});
+
+test("flow frames: a rejected open empties the view; a turn after a listing error makes it available again", () => {
+  const rejected = applyFlowFrame({ ...emptyFlow("a"), journal: "available", turns: [{ turnId: "t" }] }, { action: "rejected", stream: "flow:a" });
+  expect(rejected).toMatchObject({ threadId: "a", journal: "rejected", turns: [] });
+  const recovered = applyFlowFrame({ ...emptyFlow("a"), journal: "error", error: "x" }, { action: "append", payload: { kind: "turn", turn: { turnId: "t", startedAt: 1 } } });
+  expect(recovered).toMatchObject({ journal: "available", error: null });
+  const blocked = applyFlowFrame(emptyFlow("a"), { action: "append", payload: { kind: "knowledge", knowledge: null, review: null, learningError: "quarantined" } });
+  expect(blocked.learningError).toBe("quarantined");
 });

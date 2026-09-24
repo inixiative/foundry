@@ -173,25 +173,30 @@ function applyFrame(frame, touched) {
   else if (family === "threads") applyThreadsFrame(frame);
   else if (family === "prompts") applyPromptsFrame(frame);
   else if (family === "events") applyEventsFrame(frame);
-  else for (const onFrame of heldStreams.get(frame.stream) ?? []) onFrame(frame);
+  else heldStreams.get(frame.stream)?.(frame);
 }
 
 // Streams a panel holds for itself, with the handler that applies their frames (in the same
 // per-animation-frame batch as the store's own). One holder per stream: a second open of a held
-// stream shares the server subscription and gets no snapshot of its own.
+// stream would share the server subscription and never get a snapshot of its own.
 const heldStreams = new Map();
 
-/** Open `stream` for a panel while it shows it. Returns the release. */
+/** Open `stream` for a panel while it shows it; `onFrame` gets its frames, and `{ action: "rejected" }`
+ * if the server refuses it. Returns the release. */
 export function holdStream(stream, onFrame) {
-  if (!heldStreams.has(stream)) heldStreams.set(stream, new Set());
-  heldStreams.get(stream).add(onFrame);
+  if (heldStreams.has(stream)) throw new Error(`${stream} is already held`);
+  heldStreams.set(stream, onFrame);
   socket.open(stream);
   return () => {
-    const handlers = heldStreams.get(stream);
-    if (!handlers?.delete(onFrame)) return;
-    if (!handlers.size) heldStreams.delete(stream);
+    if (heldStreams.get(stream) !== onFrame) return;
+    heldStreams.delete(stream);
     socket.close(stream);
   };
+}
+
+/** Center panel: chat or the graph panel. */
+export function toggleGraphPanel() {
+  activePanel.value = activePanel.value === "graph" ? "conversation" : "graph";
 }
 
 function applyThreadFrame(threadId, frame, touched) {
@@ -317,6 +322,7 @@ function connectStreams() {
     onRejected: stream => {
       // A project that no longer exists scopes nothing; fall back to the unscoped list.
       if (stream === threadsStream && activeProjectId.value) activeProjectId.value = null;
+      heldStreams.get(stream)?.({ action: "rejected", stream });
       if (!stream.startsWith("thread:")) return;
       const threadId = stream.slice("thread:".length);
       if (stream === activeStream) activeStream = null;

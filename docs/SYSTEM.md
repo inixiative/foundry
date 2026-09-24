@@ -495,7 +495,7 @@ open re-checks the Kingdom runtime, and losing Kingdom authorization closes ever
 | `threads`, `threads:<projectId>` | thread list for the scope | changed or removed threads |
 | `prompts` | pending prompts | new and settled prompts |
 | `events`, `events:<threadId>` | recent events (runtime-wide or the thread's) | new events (runtime errors always) |
-| `flow:<threadId>` | the thread's recent turns as recorded flows (phase rows, sealed plan, spans, delivery, task lists), learning history, committed revisions, live review status; bounded, provider payloads reduced to counts | a changed turn, new learning outcomes, changed knowledge; re-read at most every 250 ms from the journal notices |
+| `flow:<threadId>` | the thread's recent turns as recorded flows (phase rows, sealed plan, spans, delivery, task lists), learning history, committed revisions, live review status; bounded, provider payloads reduced to counts | a changed turn, new learning outcomes, changed knowledge or review status; re-read at most every 250 ms after a journal notice or thread signal (an unreadable turn is retried, then sent as `unreadable`; quarantined learning is withheld with its reason) |
 
 The viewer's graph panel (center panel → Graph, or `g`) holds `flow:<threadId>` only while a flow
 view is on screen: the thread graph (subagent threads under their parent), one turn's loop
