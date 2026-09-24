@@ -10,6 +10,7 @@ import { ThreadRuntimeManager } from "../../src/agents/thread-runtime";
 import { ThreadFactory, buildAgents } from "../../src/agents/thread-factory";
 import { starterConfig, ConfigStore } from "../../src/viewer/config";
 import { createViewer } from "../../src/viewer/server";
+import { postStreamedTurn } from "../helpers/data-stream";
 import { matchesNativeToolRecord } from "../../../../scripts/native-retrieval-guard";
 
 const req=createRequire(new URL("../../package.json",import.meta.url));
@@ -64,11 +65,12 @@ async function fixture(mode:"success"|"inventory"|"registration"|"sql"|"binding"
   if(mode==="registration")(viewer.localStore as any).registerNative=()=>{throw Error("REGISTRATION_DENIED");};
   if(mode==="sql")(viewer.localStore as any).db.exec("CREATE TEMP TRIGGER reject_app_trace BEFORE INSERT ON session_traces BEGIN SELECT RAISE(ABORT, 'APP_COMMIT_FAILED'); END");
   return {...viewer,provider,bindings,requests,counts:()=>({writes,spawns}),
-    async post(stream=false){sent++;const response=await viewer.app.request(`/api/messages${stream?"/stream":""}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:`logical-${sent}`,threadId:"main",message:"Controlled"})});const text=await response.text();return {status:response.status,body:stream?JSON.parse(text.trim().split("\n\n").at(-1)!.replace(/^data: /,"")):JSON.parse(text)};},
+    async post(stream=false){sent++;const turn={id:`logical-${sent}`,threadId:"main",message:"Controlled"};if(stream)return postStreamedTurn(viewer,turn);
+      const response=await viewer.app.request("/api/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(turn)});return {status:response.status,body:await response.json() as any};},
     async close(){await task?.catch(()=>{});for(const c of clients)await c.close();for(const kill of kills)kill();runtime.disposeAll();viewer.localStore?.close();await rm(dir,{recursive:true,force:true});}};
 }
 
-test("actual app-server class: native config creates SDK path; HTTP/SSE retain item joins and immutable warm history",async()=>{
+test("actual app-server class: native config creates SDK path; HTTP/streamed retain item joins and immutable warm history",async()=>{
   const f=await fixture();try{
     const first=await f.post();expect(first.body.error).toBeUndefined();expect(first.status).toBe(200);expect(first.body.output).toBe("COMPLETE");
     expect(first.body.meta.native.configuration).toMatchObject({engine:"app-server",requestedModel:"requested-model",observedModel:"observed-model",requestedEffort:"xhigh",observedEffort:"xhigh"});
@@ -91,7 +93,7 @@ test("exact owned release preserves binding; new process resumes with refreshed 
     expect(first.body.meta.native.bridge.id).not.toBe(second.body.meta.native.bridge.id);expect(JSON.stringify(f.localStore!.traceForTurn("logical-1"))).toBe(old);
   }finally{await f.close();}
 });
-for(const stream of [false,true])test(`native success survives SQL failure (${stream?"SSE":"HTTP"})`,async()=>{
+for(const stream of [false,true])test(`native success survives SQL failure (${stream?"streamed":"HTTP"})`,async()=>{
   const f=await fixture("sql");try{const r=await f.post(stream);expect(r.body.output).toBe("COMPLETE");expect(r.body.meta.native.nativeOutcome).toBe("completed");expect(r.body.meta.persistence).toBe("failed");expect(r.body.meta.persistenceError).toContain("APP_COMMIT_FAILED");expect(r.body.meta.partialOutput).toBeUndefined();expect(f.counts().writes).toBe(1);}finally{await f.close();}
 });
 test("app-server adapter refuses auxiliary policy and unknown engine without fallback",async()=>{

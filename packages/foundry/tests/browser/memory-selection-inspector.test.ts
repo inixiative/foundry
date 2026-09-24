@@ -41,12 +41,12 @@ async function run(reportName: string, channel: string, body: (page: any, server
     fixture = await completionFixture();
     runtime = fixture.make();
     const app = runtime;
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => app.app.fetch(req) });
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch, websocket: app.websocket });
     browser = await chromium.launch({ channel, headless: true });
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     page.on("pageerror", (e: Error) => errors.push(`pageerror: ${e.message}`));
-    // Only errors that implicate the UI modules count. The fixture app has no websocket endpoint
-    // and answers some background polls with 400; the storage browser test ignores that noise too.
+    // Only errors that implicate the UI modules count. The fixture app answers some background
+    // polls with 400; the storage browser test ignores that noise too.
     page.on("console", (m: any) => {
       if (m.type() !== "error") return;
       const text = m.text();

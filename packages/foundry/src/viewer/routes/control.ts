@@ -63,6 +63,8 @@ export interface ControlRoutesDeps {
   selfChatDir?: string;
   /** Tool registry — when present, self-chat runs with the same tools as the executor. */
   assistTools?: ToolRegistry;
+  /** Thread-list streams re-check membership (a removed project's threads become unowned). */
+  threadsChanged: () => void;
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void {
@@ -360,6 +362,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     await configStore.load();
     await configStore.deleteItem("projects", id);
     if (projectRegistry) projectRegistry.remove(id);
+    deps.threadsChanged();
     return c.json({ ok: true });
   });
 

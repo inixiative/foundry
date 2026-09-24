@@ -9,6 +9,7 @@ import { ConfigStore, starterConfig } from "../src/viewer/config";
 import { createViewer } from "../src/viewer/server";
 import { mergeMessageHistory } from "../src/viewer/ui/conversation-state.js";
 import { traceInjection } from "../src/viewer/ui/inspector-data.js";
+import { connectStreams } from "./helpers/data-stream";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close(); });
@@ -37,14 +38,22 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
 }
 
 type Runtime = Awaited<ReturnType<ReturnType<typeof fixture>["make"]>>;
+/** Send through the plain HTTP route, or the send route with output read from the thread data stream. */
 async function send(runtime: Runtime, id: string, streaming = true, threadId = "main") {
-  const response = await runtime.app.request(`/api/messages${streaming ? "/stream" : ""}`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, threadId, message: id }),
+  if (!streaming) {
+    const response = await runtime.app.request("/api/messages", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, threadId, message: id }),
+    });
+    return { status: response.status, body: await response.json(), deltas: [] as string[] };
+  }
+  const client = connectStreams(runtime);
+  await client.open(`thread:${threadId}`);
+  const response = await runtime.app.request("/api/messages/send", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, threadId, message: id, clientId:client.socket.data.clientId }),
   });
-  if (!streaming) return { status: response.status, body: await response.json(), events: [] };
-  const events = (await response.text()).split("\n\n").filter(frame => frame.startsWith("data: "))
-    .map(frame => JSON.parse(frame.slice(6)));
-  return { status: response.status, body: events.find(event => event.type === "error"), events };
+  expect(response.status).toBe(202);
+  const terminal = await client.terminal(threadId, id).finally(client.disconnect);
+  return { status: response.status, body: terminal.type === "error" ? terminal : undefined, deltas: client.deltas(threadId, id) };
 }
 
 const failingProvider: LLMProvider = {
@@ -57,7 +66,7 @@ const failingProvider: LLMProvider = {
 };
 
 for (const streaming of [false, true]) {
-  test(`pre-provider ${streaming ? "SSE" : "HTTP"} failure records explicit unavailable input without calling provider`, async () => {
+  test(`pre-provider ${streaming ? "streamed" : "HTTP"} failure records explicit unavailable input without calling provider`, async () => {
     let calls = 0;
     const runtime = await fixture({ id: "mock", complete: async () => { calls++; throw new Error("must not call"); } }).make();
     runtime.thread.middleware.use("fail-before-provider", async () => { throw new Error("preparation failed"); });
@@ -74,8 +83,8 @@ for (const streaming of [false, true]) {
 test("factory provider failure retains boundary input, partial output and historical inspector data after viewer reconstruction", async () => {
   const { make } = fixture(failingProvider);
   const first = await make();
-  const { body, events } = await send(first, "partial-turn");
-  expect(events.filter(event => event.type === "delta").map(event => event.text)).toEqual(["partial:partial-turn"]);
+  const { body, deltas } = await send(first, "partial-turn");
+  expect(deltas).toEqual(["partial:partial-turn"]);
   expect(body.meta).toMatchObject({ partialOutput: "partial:partial-turn", inputEvidence: "provider-boundary-recorded",
     deliveryAcknowledgment: "unavailable", nativeOutcome: "unknown", persistence: "committed" });
   expect(body.meta.injection.providerMessages.at(-1)).toEqual({ role: "user", content: "partial-turn" });
@@ -152,7 +161,7 @@ test("a failed later execute stage cannot inherit the earlier stage's prepared i
   expect(traceInjection(trace)).toBeUndefined();
 });
 
-test("disconnecting the SSE reader does not lose partial failure evidence or replay execution", async () => {
+test("disconnecting the stream reader does not lose partial failure evidence or replay execution", async () => {
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   let calls = 0;
@@ -164,20 +173,18 @@ test("disconnecting the SSE reader does not lose partial failure evidence or rep
   const finished = new Promise<void>(resolve => { terminal = resolve; });
   const unsubscribe = runtime.events.subscribe(event => { if (event.kind === "error") terminal(); });
   cleanup.push(unsubscribe);
-  const response = await runtime.app.request("/api/messages/stream", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "disconnect", message: "disconnect", threadId: "main" }),
+  const client = connectStreams(runtime);
+  await client.open("thread:main");
+  const response = await runtime.app.request("/api/messages/send", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "disconnect", message: "disconnect", threadId: "main", clientId:client.socket.data.clientId }),
   });
-  const reader = response.body!.getReader();
-  let received = "";
+  expect(response.status).toBe(202);
   try {
-    while (!received.includes('"type":"delta"')) {
-      const { done, value } = await reader.read();
-      if (done) throw new Error("stream ended before partial output");
-      received += new TextDecoder().decode(value);
-    }
-    await reader.cancel();
-  } finally { release(); reader.releaseLock(); }
+    await client.next(frame => frame.payload?.kind === "delta", "partial output");
+    client.disconnect();
+  } finally { release(); }
   await finished;
+  expect(client.frames().some(frame => frame.payload?.kind === "error")).toBe(false);
   const history = await (await runtime.app.request("/api/messages?threadId=main")).json();
   expect(history.messages[1]).toMatchObject({ error: "failure after disconnect", meta: { persistence: "committed", partialOutput: "before disconnect" } });
   expect(calls).toBe(1);
@@ -213,7 +220,7 @@ test("journal failure rolls back trace and response, exposes unsaved evidence an
   expect((await send(second, "write-failure", false)).status).toBe(409);
 });
 
-test("an error event observer cannot suppress the failed SSE terminal or durable original error", async () => {
+test("an error event observer cannot suppress the failed streamed terminal or durable original error", async () => {
   const runtime = await fixture(failingProvider).make();
   runtime.events.pushError = () => { throw new Error("observer broke"); };
   const { body } = await send(runtime, "observer");

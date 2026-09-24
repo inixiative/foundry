@@ -112,9 +112,7 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     const sql = (store as unknown as { db: Database }).db;
     sql.exec(`CREATE TEMP TRIGGER reject_unsaved BEFORE INSERT ON session_messages WHEN NEW.actor='agent' AND NEW.record LIKE '%CONTROLLED_UNSAVED_RESULT%' BEGIN SELECT RAISE(ABORT, 'CONTROLLED-COMMIT-REJECTION'); END`);
     // ---- owned temporary server ----
-    const unsub = new Map<object, () => void>();
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req, s) { if (new URL(req.url).pathname === "/ws") return s.upgrade(req) ? undefined : new Response("Upgrade required", { status: 400 }); return viewer.app.fetch(req); },
-      websocket: { open(ws) { unsub.set(ws, events.subscribe(e => ws.send(JSON.stringify(e)))); }, message() {}, close(ws) { unsub.get(ws)?.(); unsub.delete(ws); } } });
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: viewer.fetch, websocket: viewer.websocket });
     cleanup.unshift(["server", () => server.stop(true)]);
     const origin = `http://127.0.0.1:${server.port}`;
 
@@ -263,17 +261,20 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     await p2.goto(`${origin}/#thread=release-notes`); await p2.waitForFunction(() => document.querySelectorAll(".chat-msg").length >= 100);
     const backOnMain = { visible: await count(p2, ".chat-msg"), unique: await p2.evaluate(() => new Set(JSON.parse(localStorage.getItem("foundry:msgs:release-notes")!).map((m: any) => `${m.turnId}:${m.actor}`)).size), sideUntouched: await p2.evaluate(() => JSON.parse(localStorage.getItem("foundry:msgs:release-notes-side") ?? "[]").every((m: any) => m.threadId === "release-notes-side")) };
     check("delayed older page issued for release-notes lands in that thread only, after a switch to the side thread and back, without duplicates", sideView.visible === 50 && backOnMain.visible === 100 && backOnMain.unique === 100 && backOnMain.sideUntouched, { sideView, backOnMain });
-    // inactive-thread reconciliation by an owned journal event while the side thread is active
+    // inactive-thread work while the side thread is active: the inactive thread's stream is closed, so
+    // nothing is fetched for it then; returning to it reconciles one bounded index page into its own cache
     await p2.goto(`${origin}/#thread=release-notes-side`); await p2.waitForFunction(() => document.querySelectorAll(".chat-msg").length >= 50);
-    const observed = p2.waitForRequest((req: any) => req.url().includes("/api/threads/release-notes/history") && !req.url().includes("before="), { timeout: WAIT });
+    await new Promise(res => setTimeout(res, 600)); // let reconciles scheduled while release-notes was active settle
+    const indexFetches: string[] = []; p2.on("request", (req: any) => { if (req.url().includes("/api/threads/release-notes/history") && !req.url().includes("before=")) indexFetches.push(req.url()); });
     const lateTurn = seedTurn(main, 900, "LATE_INACTIVE_MARKER");
     events.push({ kind: "journal", threadId: "release-notes", projectId: "release-notes-qa", turnId: lateTurn, timestamp: Date.now() });
-    const reconcileRequest = await observed.then(() => true).catch(() => false);
+    await new Promise(res => setTimeout(res, 600));
+    const whileInactive = indexFetches.length;
     const stillSide = await count(p2, ".chat-msg");
     await p2.goto(`${origin}/#thread=release-notes`); await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).first().waitFor();
-    const afterEvent = { reconcileRequest, stillSide, lateVisible: await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).count(), visible: await count(p2, ".chat-msg"), olderControl: await count(p2, ".chat-history-older") };
+    const afterEvent = { whileInactive, onReturn: indexFetches.length - whileInactive, stillSide, lateVisible: await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).count(), visible: await count(p2, ".chat-msg"), olderControl: await count(p2, ".chat-history-older") };
     await shot(p2, "1440-inactive-reconcile"); await fresh.close();
-    check("owned journal event for the inactive thread triggers one bounded index fetch into its own cache; the row shows on return with paging intact", afterEvent.reconcileRequest && afterEvent.stillSide === 50 && afterEvent.lateVisible >= 1 && afterEvent.visible === 102 && afterEvent.olderControl === 1, afterEvent);
+    check("work on an inactive thread fetches nothing while its stream is closed; on return one bounded index fetch lands in its own cache with paging intact", afterEvent.whileInactive === 0 && afterEvent.onReturn >= 1 && afterEvent.stillSide === 50 && afterEvent.lateVisible >= 1 && afterEvent.visible === 102 && afterEvent.olderControl === 1, afterEvent);
     await desk.close();
     // mobile 390
     const mob = await browser.newContext({ viewport: { width: 390, height: 844 } }); const m = await mob.newPage(); attach(m, "390");

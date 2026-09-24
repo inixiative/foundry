@@ -41,7 +41,6 @@ async function fixture(name: string) {
   const requests: Array<{ path: string; at: number }> = [];
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 60, async fetch(request, server) {
     const url = new URL(request.url);
-    if (url.pathname === "/ws") return server.upgrade(request) ? undefined : new Response("Upgrade required", { status: 400 });
     const knowledgeMatch = url.pathname.match(/^\/api\/threads\/([^/]+)\/knowledge$/);
     if (knowledgeMatch && knowledge.has(knowledgeMatch[1])) {
       const entry: Record<string, unknown> = { path: url.pathname, at: Date.now() };
@@ -56,8 +55,8 @@ async function fixture(name: string) {
       const body = await history.get(url.searchParams.get("threadId")!)!();
       return body instanceof Response ? body : Response.json(body);
     }
-    return viewer.app.fetch(request);
-  }, websocket: { open() {}, message() {}, close() {} } });
+    return viewer.fetch(request, server);
+  }, websocket: viewer.websocket });
   const origin = `http://127.0.0.1:${server.port}`;
   setupCleanup.unshift(["server", () => server.stop(true)]);
   const browser = await chromium.launch({ channel: "chrome", headless: true });

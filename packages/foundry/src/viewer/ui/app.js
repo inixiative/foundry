@@ -6,7 +6,7 @@
 import { html, render, useState, useEffect } from "./lib.js";
 import {
   init, connected, eventCount, toast, currentTrace, selectedEvent, dismissTraceSelection,
-  selectedSpanId, loadTraces, loadThreads, executeAction,
+  selectedSpanId, loadTraces, resyncStreams, executeAction,
   projectSidebarOpen, detailDrawerOpen, compactPanel, dismissToast,
 } from "./store.js";
 import { initHotkeys, registerDefaults } from "./hotkeys.js";
@@ -171,7 +171,7 @@ function App() {
       togglePause: () => executeAction("thread:pause"),
       inspect: () => executeAction("thread:inspect"),
       override: () => { /* TODO: open override form */ },
-      refresh: () => { loadTraces(); loadThreads(); },
+      refresh: () => { loadTraces(); resyncStreams(); },
       openSettings: () => { settingsOpen.value = !settingsOpen.value; },
       openAnalytics: () => { analyticsOpen.value = !analyticsOpen.value; },
       toggleLayers: () => {},

@@ -232,7 +232,7 @@ export function mergeMessageHistory(local, server) {
 }
 
 /**
- * Which thread's durable state an owned WebSocket event may have changed.
+ * Which thread's durable state an owned event (from its thread data stream) may have changed.
  * Completed or failed work changes the message journal; learning decisions
  * change knowledge inspection. Context/token-level events change neither, so
  * they never trigger a history fetch.
@@ -284,39 +284,4 @@ export function reconcileThreadMessages(cache, server, threadId) {
   });
   if (next.length === local.length && next.every((message, i) => stableMessageKey(message) === stableMessageKey(local[i]))) return local;
   return next;
-}
-
-/** A closed transport is not evidence that the model completed its turn. */
-export async function readMessageStream(body, onEvent) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let terminal = false;
-  function frame(text) {
-    const data = text.split(/\r?\n/).filter(line => line.startsWith("data:"))
-      .map(line => line.slice(5).replace(/^ /, "")).join("\n");
-    if (!data) return;
-    const event = JSON.parse(data);
-    onEvent(event);
-    terminal = event.type === "done" || event.type === "error";
-  }
-  try {
-    while (!terminal) {
-      const { done, value } = await reader.read();
-      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-      const frames = buffer.split(/\r?\n\r?\n/);
-      buffer = frames.pop() ?? "";
-      for (const text of frames) {
-        frame(text);
-        if (terminal) break;
-      }
-      if (done && !terminal) {
-        if (buffer.trim()) frame(buffer);
-        if (!terminal) throw new Error("Response stream ended before completion; server outcome is unconfirmed");
-      }
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
 }

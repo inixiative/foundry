@@ -64,14 +64,7 @@ async function fixture(name: string, withNative = false) {
   const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(thread.signals), configStore, configDir, threadFactory: factory });
   setupCleanup.unshift(["store", () => viewer.localStore?.close()]);
   viewer.directory.restore([{ id: "side", meta: { ...thread.meta, description: "Side thread" } }]);
-  const unsubscribe = new Map<object, () => void>();
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req, server) {
-    if (new URL(req.url).pathname === "/ws") return server.upgrade(req) ? undefined : new Response("Upgrade required", { status: 400 });
-    return viewer.app.fetch(req);
-  }, websocket: {
-    open(ws) { unsubscribe.set(ws, events.subscribe(event => ws.send(JSON.stringify(event)))); },
-    message() {}, close(ws) { unsubscribe.get(ws)?.(); unsubscribe.delete(ws); },
-  } });
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: viewer.fetch, websocket: viewer.websocket });
   const origin = `http://127.0.0.1:${server.port}`;
   setupCleanup.unshift(["server", () => server.stop(true)]);
   const send = async (threadId: string, id: string) => {
@@ -135,21 +128,24 @@ test("an open native inspector receives late journal terminal without changing h
   }finally{await f.close();}
 },30_000);
 
-test("pre-dispatch failure notifies an inactive owner and becomes visible without re-execution", async () => {
+test("pre-dispatch failure on an inactive thread is fetched on return and visible without re-execution", async () => {
   const f=await fixture("observer-inactive-predispatch");
   try {
     const empty=new Thread("no-executor",new ContextStack());f.viewer.directory.add(empty);
     const page=await f.page();let ownedRefresh=0;
-    page.on("request",(request:any)=>{const url=new URL(request.url());if(url.pathname==="/api/messages"&&url.searchParams.get("threadId")==="no-executor")ownedRefresh++;});
+    page.on("request",(request:any)=>{const url=new URL(request.url());if(url.pathname==="/api/threads/no-executor/history"||(url.pathname==="/api/messages"&&url.searchParams.get("threadId")==="no-executor"))ownedRefresh++;});
     await page.goto(`${f.origin}/#thread=no-executor`);await page.locator(".status-text").filter({hasText:/^connected$/}).waitFor();
     await page.waitForFunction(()=>localStorage.getItem("foundry:msgs:no-executor")!==null);
     await page.evaluate(()=>{location.hash="#thread=main";});await page.locator(".chat-input").waitFor();
     ownedRefresh=0;
     const response=await fetch(`${f.origin}/api/messages`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:"before-provider",threadId:"no-executor",message:"Controlled refusal"})});
     expect(response.status).toBe(500);
+    // Its stream is closed while inactive: nothing is fetched for it until the operator returns.
+    await Bun.sleep(600);
+    expect(ownedRefresh).toBe(0);
+    await page.evaluate(()=>{location.hash="#thread=no-executor";});
     for(let n=0;n<60&&ownedRefresh===0;n++)await Bun.sleep(50);
     expect(ownedRefresh).toBeGreaterThan(0);
-    await page.evaluate(()=>{location.hash="#thread=no-executor";});
     await page.locator(".chat-agent").waitFor();expect(f.inputs).toHaveLength(0);
     expect(f.viewer.localStore!.messages("no-executor")).toHaveLength(2);f.report.passed=true;
   }finally{await f.close();}

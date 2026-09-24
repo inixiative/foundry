@@ -7,6 +7,7 @@ import { ContextStack, EventStream, Harness, InterventionLog, Thread } from "@in
 import { LocalSessionStore } from "../src/persistence/local-session-store";
 import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
 import { ConfigStore } from "../src/viewer/config";
+import { withStreams } from "./helpers/data-stream";
 
 // G6 history index: a bounded summary index with stable cursors that reaches the
 // oldest record, plus lazily fetched owned turn detail. `/api/messages` is unchanged.
@@ -46,8 +47,8 @@ function setup(withStore = true) {
   const localStore = withStore ? new LocalSessionStore(join(dir, "sessions.sqlite")) : null;
   if (localStore) cleanup.push(() => localStore.close());
   const app = new Hono();
-  registerRuntimeRoutes(app, { harness, eventStream: new EventStream(), interventions: new InterventionLog(main.signals),
-    db: null, configStore: new ConfigStore(dir), localStore });
+  registerRuntimeRoutes(app, withStreams({ harness, eventStream: new EventStream(), interventions: new InterventionLog(main.signals),
+    db: null, configStore: new ConfigStore(dir), localStore }));
   return { app, localStore, main, other };
 }
 

@@ -24,6 +24,12 @@ import {
   type TunnelInfo,
 } from "./tunnel";
 import { authenticatedRequest, sameOrigin } from "./request-auth";
+import { createViewerStreams } from "./data-streams";
+import { createWebSocketServer } from "../ws/handler";
+import { closeAllConnections } from "../ws/lifecycle";
+import type { WSData } from "../ws/types";
+import { makeUnrefInterval } from "../ws/unref-interval";
+import type { Server } from "bun";
 import { registerDeviceRoutes } from "./routes/devices";
 import { registerControlRoutes } from "./routes/control";
 import { registerRuntimeRoutes } from "./routes/runtime";
@@ -119,6 +125,14 @@ export function createViewer(config: ViewerConfig) {
   const localStore = config.localStore === undefined
     ? new LocalSessionStore(join(config.configDir ?? ".foundry", "sessions.sqlite")) : config.localStore;
   const directory = new ViewerThreadDirectory(harness.thread, config.projectRegistry, config.threadFactory);
+  const kingdomLost = () => !!kingdomConnection && !kingdomConnection.connected;
+  const revoke = () => closeAllConnections(socket.registry, 1008, "Kingdom runtime unavailable");
+  // `socket` is created below, once its stream families exist; delivery only happens after both do.
+  const streams = createViewerStreams({ directory, eventStream, actionQueue: config.actionQueue,
+    deliverTo: (clientId, stream, payload) => {
+      if (kingdomLost()) { revoke(); return; }
+      socket.streams.appendTo(clientId, stream, payload);
+    } });
   if (localStore) {
     localStore.recoverInterrupted();
     for (const warning of directory.restore(localStore.threads())) log.warn(`[Recovery] ${warning}`);
@@ -138,7 +152,7 @@ export function createViewer(config: ViewerConfig) {
   });
   const actions = new ActionHandler({ harness, eventStream, interventions,
     resolveThread: id => directory.get(id),
-    onThreadChange: thread => localStore?.saveThread(thread),
+    onThreadChange: thread => { localStore?.saveThread(thread); streams.threadsChanged(thread.id); },
   });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
   registerKingdomRoutes(app, configStore, config.configDir ?? ".foundry", () => directory.all().length, connection => { kingdomConnection?.stop(); kingdomConnection = connection; }, () => kingdomConnection?.connected ?? false, runtimeJobs);
@@ -177,6 +191,7 @@ export function createViewer(config: ViewerConfig) {
     deviceIdentityPath: config.deviceIdentityPath,
     localStore,
     directory,
+    streams,
   });
 
   registerControlRoutes(app, {
@@ -192,6 +207,7 @@ export function createViewer(config: ViewerConfig) {
     port,
     selfChatDir: config.configDir ?? ".foundry",
     assistTools: config.assistTools,
+    threadsChanged: () => streams.threadsChanged(),
   });
 
   const redisUrl = process.env.REDIS_URL;
@@ -240,7 +256,45 @@ export function createViewer(config: ViewerConfig) {
   app.get("/kingdom", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)), path: "ui/kingdom.html" }));
   app.get("/", serveStatic({ root: fileURLToPath(new URL("./", import.meta.url)), path: "ui/index.html" }));
 
-  return { app, port, actions, configStore, analyticsStore, analyticsReady, tunnelHolder, localStore, directory, get kingdomConnection() { return kingdomConnection; } };
+  // Data-stream socket. The connection is authorized at upgrade exactly like HTTP
+  // (loopback, or tunnel bearer/cookie); each open re-checks the Kingdom runtime,
+  // and losing Kingdom authorization closes every socket.
+  const socket = createWebSocketServer({
+    families: streams.families.map(family => ({ ...family,
+      start: (stream: string, append: (payload: unknown) => void) => family.start(stream, payload => {
+        if (kingdomLost()) { revoke(); return; }
+        append(payload);
+      }) })),
+    // Losing Kingdom authorization closes the socket; the client reconnects (and is refused at upgrade until it returns).
+    admit: async () => {
+      if (!kingdomConnection) return true;
+      try { await kingdomConnection.check(); return true; } catch { revoke(); return false; }
+    },
+  });
+  const kingdomWatch = makeUnrefInterval({ intervalMs: 15_000, tick: () => {
+    if (kingdomConnection && socket.registry.byId.size) void kingdomConnection.check().catch(revoke);
+  } });
+
+  /** Serve HTTP and the `/ws` upgrade; pass as Bun.serve's fetch with `websocket`. */
+  const handleRequest = async (req: Request, server: Server<WSData>): Promise<Response | undefined> => {
+    const url = new URL(req.url);
+    if (url.pathname !== "/ws") return app.fetch(req, server);
+    const activeTunnel = tunnelHolder.tunnel;
+    if (!sameOrigin(req, activeTunnel?.url ?? undefined)) return new Response("Origin not allowed", { status: 403 });
+    if (activeTunnel ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined)
+      : !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+      return new Response("Unauthorized", { status: 401 });
+    if (kingdomConnection) {
+      try { await kingdomConnection.check(); }
+      catch { return new Response("Kingdom runtime unavailable", { status: 503 }); }
+    }
+    return socket.accept(req, server);
+  };
+
+  return { app, fetch: handleRequest, websocket: socket.websocket, socket, streams, port, actions, configStore, analyticsStore, analyticsReady, tunnelHolder, localStore, directory,
+    startSocket() { socket.startStaleSweep(); kingdomWatch.start(); },
+    stopSocket() { kingdomWatch.stop(); socket.shutdown(); },
+    get kingdomConnection() { return kingdomConnection; } };
 }
 
 /** Start the viewer server. */
@@ -253,8 +307,7 @@ export async function startViewer(config: ViewerConfig) {
     configDir: config.configDir,
   } };
   const viewer = createViewer({ ...config, configStore: initialStore });
-  const { app, port, actions, configStore, analyticsStore, tunnelHolder, localStore } = viewer;
-  const wsCleanup = new Map<object, () => void>();
+  const { port, actions, analyticsStore, tunnelHolder, localStore } = viewer;
 
   if (config.actionQueue) {
     config.actionQueue.onPrompt((prompt) => {
@@ -266,65 +319,21 @@ export async function startViewer(config: ViewerConfig) {
     });
   }
 
-  let server: ReturnType<typeof Bun.serve>;
+  let server: ReturnType<typeof Bun.serve<WSData>>;
   try {
     await viewer.kingdomConnection?.start().catch(() => log.warn("[Kingdom] Runtime unavailable; reconnect at /kingdom"));
-    server = Bun.serve({
-    port,
-    hostname: "127.0.0.1",
-    idleTimeout: 240,
-    async fetch(req, server) {
-      const url = new URL(req.url);
-
-      if (url.pathname === "/ws") {
-        const activeTunnel = tunnelHolder.tunnel;
-        if (!sameOrigin(req, activeTunnel?.url ?? undefined)) return new Response("Origin not allowed", { status: 403 });
-        if (activeTunnel ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined)
-          : !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
-          return new Response("Unauthorized", { status: 401 });
-
-        if (viewer.kingdomConnection) {
-          try { await viewer.kingdomConnection.check(); }
-          catch { return new Response("Kingdom runtime unavailable", { status: 503 }); }
-        }
-        if (server.upgrade(req, { data: undefined })) return undefined;
-        return new Response("WebSocket upgrade failed", { status: 400 });
-      }
-
-      return app.fetch(req, server);
-    },
-    websocket: {
-      open(ws) {
-        const timer = setInterval(() => {
-          void viewer.kingdomConnection?.check().catch(() => ws.close(1008, "Kingdom runtime unavailable"));
-        }, 15000);
-        timer?.unref();
-        const unsub = config.eventStream.subscribe((event) => {
-          if (viewer.kingdomConnection && !viewer.kingdomConnection.connected) { ws.close(1008, "Kingdom runtime unavailable"); return; }
-          ws.send(JSON.stringify(event));
-        });
-        wsCleanup.set(ws, () => { if (timer) clearInterval(timer); unsub(); });
-      },
-      message() {},
-      close(ws) {
-        const unsub = wsCleanup.get(ws);
-        if (unsub) unsub();
-        wsCleanup.delete(ws);
-      },
-    },
-  });
-
+    server = Bun.serve<WSData>({ port, hostname: "127.0.0.1", idleTimeout: 240, fetch: viewer.fetch, websocket: viewer.websocket });
   } catch (error) {
     viewer.kingdomConnection?.stop();
     localStore?.close();
     throw error;
   }
+  viewer.startSocket();
   const stopServer = server.stop.bind(server);
   server.stop = (closeActiveConnections?: boolean) => {
     viewer.kingdomConnection?.stop();
     void tunnelHolder.tunnel?.stop();
-    for (const cleanup of wsCleanup.values()) cleanup();
-    wsCleanup.clear();
+    viewer.stopSocket();
     return stopServer(closeActiveConnections);
   };
 

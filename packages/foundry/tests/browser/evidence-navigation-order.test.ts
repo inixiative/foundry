@@ -27,11 +27,11 @@ test("late or superseded historical detail never publishes, re-opens or toasts; 
     expect((await scenario.send("a", "a-two")).status).toBe(200);
     expect((await scenario.send("b", "b-one", "Perform the migration")).status).toBe(200);
     await scenario.settled("a"); await scenario.settled("b");
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, websocket: scenario.current.websocket, async fetch(request, server) {
       const m = /^\/api\/threads\/(a|b)\/turns\/([^/]+)\/detail$/.exec(new URL(request.url).pathname);
       const h = m ? holds.get(m[2]!) : undefined;
       if (h) { h.requested.resolve(); await h.gate.promise; if (h.fail) return new Response(JSON.stringify({ error: "controlled failure" }), { status: 500, headers: { "content-type": "application/json" } }); }
-      return scenario!.current.app.fetch(request);
+      return scenario!.current.fetch(request, server);
     } });
     const origin = `http://127.0.0.1:${server.port}`;
     browser = await chromium.launch({ channel: "chrome", headless: true });

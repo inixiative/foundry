@@ -39,23 +39,25 @@ export function liveThreadStatus(messages) {
   return null;
 }
 
-/** Full owned snapshots, never concatenated with deltas. Cursor is scoped to a server epoch.
- * Request generations are checked by the caller before allowing an epoch change. */
-export function acceptLiveSnapshot(previous, incoming, threadId, projectId) {
-  if (!incoming || incoming.threadId !== threadId || incoming.projectId !== projectId
-    || typeof incoming.epoch !== 'string' || !Number.isSafeInteger(incoming.cursor) || incoming.cursor < 0
-    || !Array.isArray(incoming.buffers) || incoming.buffers.length > 256) return previous;
-  const ids=new Set();
-  for(const b of incoming.buffers) {
-    if(!b || b.threadId!==threadId || b.projectId!==projectId || b.epoch!==incoming.epoch || typeof b.messageId!=='string'
-      || ids.has(b.messageId) || !Number.isSafeInteger(b.revision) || b.revision<0 || b.revision>incoming.cursor
-      || !['accepted','running','completed','failed'].includes(b.status) || !Array.isArray(b.activity) || b.activity.length>64
-      || typeof b.content!=='string' || (b.terminal?.id&&b.terminal.id!==b.messageId)) return previous;
-    ids.add(b.messageId);
+/** A thread's live turns (turnId → turn) after one frame of its `thread:<id>` data stream.
+ * A snapshot replaces every turn; `turn` replaces one; `delta` extends one turn's content;
+ * `activity` upserts one activity row. Returns the same map when the frame changes nothing. */
+export function applyTurnFrame(turns, frame) {
+  const payload = frame.payload;
+  if (frame.action === 'snapshot') return new Map(payload.turns.map(turn => [turn.messageId, turn]));
+  if (payload.kind === 'turn') return new Map(turns).set(payload.turn.messageId, payload.turn);
+  const turn = turns.get(payload.turnId);
+  if (!turn) return turns;
+  // The server keeps the content's last 32 KiB; so does every viewer.
+  if (payload.kind === 'delta') return new Map(turns).set(turn.messageId, { ...turn, content: (turn.content + payload.text).slice(-32768), status: 'running' });
+  if (payload.kind === 'activity') {
+    const i = turn.activity.findIndex(row => row.id === payload.row.id);
+    const activity = i < 0 ? [...turn.activity, payload.row] : turn.activity.map((row, j) => j === i ? payload.row : row);
+    return new Map(turns).set(turn.messageId, { ...turn, activity });
   }
-  if(previous?.epoch===incoming.epoch && incoming.cursor<previous.cursor)return previous;
-  return incoming;
+  return turns;
 }
+
 export function mergeLiveSnapshot(messages, snapshot) {
   if (!snapshot) return messages;
   const next = messages.slice(), seen = new Set();

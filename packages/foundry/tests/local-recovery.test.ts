@@ -8,6 +8,7 @@ import { LocalSessionStore } from "../src/persistence/local-session-store";
 import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
 import { ConfigStore } from "../src/viewer/config";
 import { createViewer } from "../src/viewer/server";
+import { connectStreams, withStreams } from "./helpers/data-stream";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { for (const fn of cleanup.splice(0).reverse()) fn(); });
@@ -27,10 +28,22 @@ function setup() {
     } }));
     const harness = new Harness(thread); harness.setDefaultExecutor("worker");
     const localStore = new LocalSessionStore(path);
-    const app = new Hono();
-    registerRuntimeRoutes(app, { harness, eventStream: new EventStream(), interventions: new InterventionLog(thread.signals),
+    const app = new Hono(), eventStream = new EventStream();
+    const deps = withStreams({ harness, eventStream, interventions: new InterventionLog(thread.signals),
       db: null, configStore: new ConfigStore(dir), localStore });
-    return { app, localStore, thread, calls: () => calls };
+    registerRuntimeRoutes(app, deps);
+    const socket = deps.socket;
+    /** POST the send route and read the turn's terminal from the thread data stream. */
+    const stream = async (id: string, message: string) => {
+      const client = connectStreams(socket);
+      await client.open("thread:main");
+      const response = await app.request("/api/messages/send", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, threadId: "main", message, clientId:client.socket.data.clientId }) });
+      expect(response.status).toBe(202);
+      const terminal = await client.terminal("main", id).finally(client.disconnect);
+      return terminal;
+    };
+    return { app, localStore, thread, stream, calls: () => calls };
   };
   return { make };
 }
@@ -63,12 +76,10 @@ test("G4: retrying an accepted turn ID cannot repeat native execution", async ()
   expect(runtime.calls()).toBe(1);
 });
 
-test("G4: SSE completion and failures remain visible in durable history", async () => {
+test("G4: streamed completion and failures remain visible in durable history", async () => {
   const { make } = setup(); const runtime = make();
   cleanup.push(() => { runtime.localStore.close(); runtime.thread.dispose(); });
-  const response = await runtime.app.request("/api/messages/stream", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "stream-turn", threadId: "main", message: "Stream input" }) });
-  expect(await response.text()).toContain('"type":"done"');
+  expect((await runtime.stream("stream-turn", "Stream input")).type).toBe("done");
   const failed = await runtime.app.request("/api/messages", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: "failed-turn", threadId: "main", message: "FAIL" }) });
   expect(failed.status).toBe(500);
@@ -79,15 +90,11 @@ test("G4: SSE completion and failures remain visible in durable history", async 
 });
 
 for (const streaming of [false, true]) {
-  test(`G4: ${streaming ? "SSE" : "HTTP"} failure preserves exact input and trace after restart`, async () => {
+  test(`G4: ${streaming ? "streamed" : "HTTP"} failure preserves exact input and trace after restart`, async () => {
     const { make } = setup(); const first = make();
-    const response = await first.app.request(`/api/messages${streaming ? "/stream" : ""}`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: "failure-evidence", threadId: "main", message: "FAIL" }),
-    });
-    const body = streaming
-      ? (await response.text()).split("\n\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6))).find(event => event.type === "error")
-      : await response.json();
+    const body: any = streaming ? await first.stream("failure-evidence", "FAIL")
+      : await (await first.app.request("/api/messages", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "failure-evidence", threadId: "main", message: "FAIL" }) })).json();
     expect(body.traceId).toBeString();
     expect(body.meta.injection.providerMessages).toEqual([{ role: "user", content: "FAIL" }]);
     expect(body.meta.turnStatus).toBe("failed");

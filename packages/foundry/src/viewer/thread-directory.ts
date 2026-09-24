@@ -27,6 +27,17 @@ export class ViewerThreadDirectory {
     return [...all.values()];
   }
 
+  /** Thread-list scope: a project's threads, or (no project) the threads no project owns. Undefined for an unknown project. */
+  scope(projectId?: string): Thread[] | undefined {
+    if (projectId) {
+      const project = this.projects?.get(projectId);
+      return project ? [...project.threads.values()] : undefined;
+    }
+    const owned = new Set<string>();
+    for (const project of this.projects?.all.values() ?? []) for (const id of project.threads.keys()) owned.add(id);
+    return this.all().filter(thread => !owned.has(thread.id));
+  }
+
   add(thread: Thread): void {
     const existing = this.get(thread.id);
     if (existing && existing !== thread) throw new Error(`Thread already registered: ${thread.id}`);

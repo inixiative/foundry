@@ -73,17 +73,16 @@ test('production local rejection remains failed through exact late terminal and 
   const dir = await mkdtemp(resolve('.foundry/qa/lw-terminal-provider-'));
   const f = await liveWatchFixture(dir);
   try {
-    const response = await f.send('local');
+    const turn = f.send('local');
     await until(() => f.attempts.length === 1, 'original admitted');
     const a = f.attempts[0]; a.rejectObservation();
-    const text = await response.text();
-    expect(text).toContain('CONTROLLED_LOCAL_OBSERVATION_EXPIRED');
-    expect((await f.snapshot()).buffers[0]).toMatchObject({ status: 'failed', native: { outcome: 'unknown', rpc: 'pending' } });
+    expect(JSON.stringify(await turn.done)).toContain('CONTROLLED_LOCAL_OBSERVATION_EXPIRED');
+    expect((await f.snapshot()).turns[0]).toMatchObject({ status: 'failed', native: { outcome: 'unknown', rpc: 'pending' } });
     a.observeTerminal();
-    expect((await f.snapshot()).buffers[0]).toMatchObject({ status: 'failed', native: { outcome: 'completed', rpc: 'pending' } });
+    expect((await f.snapshot()).turns[0]).toMatchObject({ status: 'failed', native: { outcome: 'completed', rpc: 'pending' } });
     expect(f.exits).toHaveLength(0);
     a.finish();
-    expect((await f.snapshot()).buffers[0]).toMatchObject({ status: 'failed', native: { outcome: 'completed', rpc: 'resolved' } });
+    expect((await f.snapshot()).turns[0]).toMatchObject({ status: 'failed', native: { outcome: 'completed', rpc: 'resolved' } });
     expect(f.attempts).toHaveLength(1);
     expect(a.native.localOutcome).toBe('rejected');
   } finally { await f.close(); console.log(`Retained provider lifecycle: ${dir}`); }

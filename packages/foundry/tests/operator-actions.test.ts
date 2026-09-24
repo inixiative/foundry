@@ -89,7 +89,7 @@ test("production action route preserves thread scope for layer commands", async 
   const app = new Hono();
   registerControlRoutes(app, { harness: new Harness(main), actions,
     configStore: new ConfigStore("/tmp/unused-operator-config"), aiAssist: null, analyticsStore: null,
-    actionQueue: null, tunnelHolder: { tunnel: null }, port: 0 });
+    actionQueue: null, tunnelHolder: { tunnel: null }, port: 0, threadsChanged: () => {} });
   const response = await app.request("/api/actions", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ kind: "layer:warm", target: "domain", threadId: selected.id }) });
   expect(response.status).toBe(200);

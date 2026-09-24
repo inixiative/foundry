@@ -10,6 +10,7 @@ import { SessionBackedProvider } from "../../src/providers/session-backed";
 import { ThreadFactory, buildAgents } from "../../src/agents/thread-factory";
 import { starterConfig, ConfigStore } from "../../src/viewer/config";
 import { createViewer } from "../../src/viewer/server";
+import { postStreamedTurn } from "../helpers/data-stream";
 import { LocalSessionStore } from "../../src/persistence/local-session-store";
 
 async function fixture(engine:"claude"|"mcp", mode:"success"|"failed"|"rpc-error"|"unknown"="success", seedUnknown=false) {
@@ -60,8 +61,10 @@ async function fixture(engine:"claude"|"mcp", mode:"success"|"failed"|"rpc-error
   }
   const viewer=createViewer({harness,eventStream:events,interventions:new InterventionLog(thread.signals),configStore,configDir:dir,threadFactory:factory});
   registered=()=>viewer.localStore!.nativeHistory("main",`logical-${writes}`).some(e=>e.dispatch==="not-dispatched"&&e.owner?.dispatchId&&e.owner?.projectId==="P");
-  const post=async(stream=false,id=`logical-${writes+1}`)=>{const response=await viewer.app.request(`/api/messages${stream?"/stream":""}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,threadId:"main",message:"Read controlled sentinel"})});
-    const text=await response.text();return {status:response.status,body:stream?JSON.parse(text.trim().split("\n\n").at(-1)!.replace(/^data: /,"")):JSON.parse(text)};};
+  const post=async(stream=false,id=`logical-${writes+1}`)=>{const turn={id,threadId:"main",message:"Read controlled sentinel"};
+    if(stream)return postStreamedTurn(viewer,turn);
+    const response=await viewer.app.request("/api/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(turn)});
+    return {status:response.status,body:await response.json() as any};};
   return {...viewer,thread,provider,bindings,seen,post,late:()=>late?.(),counts:()=>({writes,spawns}),sql:(viewer.localStore as unknown as{db:Database}).db,
     close:async()=>{if(!closed){closed=true;output?.close();finish?.(0);}viewer.localStore?.close();thread.dispose();await rm(dir,{recursive:true,force:true});}};
 }
@@ -89,7 +92,7 @@ for(const engine of ["claude","mcp"] as const) {
   }finally{await f.close();}});
 }
 for(const engine of ["claude","mcp"] as const) for(const stream of [false,true]) {
-  test(`${engine} ${stream?"SSE":"HTTP"}: prewrite registration, tools, terminal, durable output and two admissions`,async()=>{
+  test(`${engine} ${stream?"streamed":"HTTP"}: prewrite registration, tools, terminal, durable output and two admissions`,async()=>{
     const f=await fixture(engine);try {
       const one=await f.post(stream);expect(one.body.output).toBe("PUBLIC_OUTPUT");expect(one.body.meta.native.nativeOutcome).toBe("completed");
       const first=f.localStore!.messages("main").find(m=>m.actor==="agent")!;
@@ -99,7 +102,7 @@ for(const engine of ["claude","mcp"] as const) for(const stream of [false,true])
       expect(f.localStore!.messages("main").filter(m=>m.actor==="agent")[0].meta?.native).toEqual(first.meta?.native);
     } finally {await f.close();}
   });
-  test(`${engine} ${stream?"SSE":"HTTP"}: SQL failure after success retains completed output without another send`,async()=>{
+  test(`${engine} ${stream?"streamed":"HTTP"}: SQL failure after success retains completed output without another send`,async()=>{
     const f=await fixture(engine);try {
       f.sql.exec("CREATE TEMP TRIGGER reject_output BEFORE INSERT ON session_messages WHEN NEW.actor='agent' BEGIN SELECT RAISE(ABORT,'SQL_COMMIT_ERROR'); END");
       const result=await f.post(stream);expect(result.body.output).toBe("PUBLIC_OUTPUT");expect(result.body.meta.persistence).toBe("failed");expect(result.body.meta.nativeOutcome).toBe("completed");
@@ -107,7 +110,7 @@ for(const engine of ["claude","mcp"] as const) for(const stream of [false,true])
       expect((await f.post(stream,"logical-1")).status).toBe(409);
     } finally {await f.close();}
   });
-  test(`${engine} ${stream?"SSE":"HTTP"}: guard failure after execution preserves normal output and original error`,async()=>{
+  test(`${engine} ${stream?"streamed":"HTTP"}: guard failure after execution preserves normal output and original error`,async()=>{
     const f=await fixture(engine);try {
       f.thread.middleware.use("after-success",async(_ctx,next)=>{await next();throw Error("POST_EXECUTION_GUARD");});
       const result=await f.post(stream);expect(result.body.output).toBe("PUBLIC_OUTPUT");expect(result.body.meta.postExecutionError).toBe("POST_EXECUTION_GUARD");expect(result.body.meta.nativeOutcome).toBe("completed");

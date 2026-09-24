@@ -6,6 +6,7 @@ import { ThreadRuntimeManager } from "../../src/agents/thread-runtime";
 import { ProjectRegistry } from "../../src/agents/project";
 import { registerRuntimeRoutes } from "../../src/viewer/routes/runtime";
 import { ConfigStore, starterConfig } from "../../src/viewer/config";
+import { withStreams } from "../helpers/data-stream";
 
 function setup() {
   const stack = new ContextStack([]);
@@ -19,8 +20,8 @@ function setup() {
   const registry = new ProjectRegistry();
   const project = registry.register({ id: "project", path: "/qa/sample-project", label: "Sample project", tags: [], runtime: "claude-code" });
   const app = new Hono();
-  registerRuntimeRoutes(app, { harness: new Harness(main), eventStream: events, interventions: new InterventionLog(main.signals),
-    threadFactory: factory, projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-gate-unused-config") });
+  registerRuntimeRoutes(app, withStreams({ harness: new Harness(main), eventStream: events, interventions: new InterventionLog(main.signals),
+    threadFactory: factory, projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-gate-unused-config") }));
   const post = (path: string, body: unknown) => app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return { runtime, project, post };
 }

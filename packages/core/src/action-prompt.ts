@@ -82,6 +82,7 @@ export class ActionQueue {
   private _prompts = new Map<string, ActionPrompt>();
   private _waiters = new Map<string, { resolve: (r: ActionResolution) => void; timer?: ReturnType<typeof setTimeout> }>();
   private _listeners: PromptListener[] = [];
+  private _settleListeners: PromptListener[] = [];
   private _policies: PromptPolicy[] = [];
 
   /** Register a listener for new prompts (e.g. viewer push, badge update). */
@@ -90,6 +91,20 @@ export class ActionQueue {
     return () => {
       this._listeners = this._listeners.filter((l) => l !== fn);
     };
+  }
+
+  /** Register a listener for pending prompts leaving the queue (resolved or expired). */
+  onSettle(fn: PromptListener): () => void {
+    this._settleListeners.push(fn);
+    return () => {
+      this._settleListeners = this._settleListeners.filter((l) => l !== fn);
+    };
+  }
+
+  private _settled(prompt: ActionPrompt): void {
+    for (const fn of this._settleListeners) {
+      try { fn(prompt); } catch { /* listener errors don't block */ }
+    }
   }
 
   /** Register an auto-resolver policy. Checked before the prompt blocks. */
@@ -154,6 +169,7 @@ export class ActionQueue {
           prompt.resolution = resolution;
           this._waiters.delete(id);
           resolve(resolution);
+          this._settled(prompt);
         }, opts.timeoutMs);
       }
 
@@ -188,6 +204,7 @@ export class ActionQueue {
       waiter.resolve(resolution);
       this._waiters.delete(promptId);
     }
+    this._settled(prompt);
 
     return true;
   }

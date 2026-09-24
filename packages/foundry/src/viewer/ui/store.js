@@ -1,14 +1,15 @@
 /**
- * Foundry UI store — WebSocket connection, state management via signals.
+ * Foundry UI store — data-stream socket, state management via signals.
  *
  * All state lives in signals. Components subscribe automatically.
- * WebSocket updates are batched per animation frame for performance.
+ * Data-stream frames are applied once per animation frame.
  */
 
 import { signal, computed, batch, effect } from "./lib.js";
-import { acceptLiveSnapshot, mergeLiveSnapshot } from './live-state.js';
-import { mergeMessageHistory, updateTurnMessage, readMessageStream, terminalMessagePatch, persistBrowserMessages,
+import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
+import { mergeMessageHistory, updateTurnMessage, terminalMessagePatch, persistBrowserMessages,
   reconcileThreadMessages, reconcileTargets, selectedDetailTarget } from "./conversation-state.js";
+import { createDataStreamSocket } from "./data-stream-socket.js";
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -50,8 +51,12 @@ export const detailDrawerOpen = signal(true);   // right panel collapsed state
 export const compactPanel = signal("conversation");
 
 // Action prompts — pending agent→human interactions
-export const prompts = signal([]);       // ActionPrompt[]
-export const promptCounts = signal({});  // { threadId: count }
+export const prompts = signal([]);       // pending ActionPrompt[]
+export const promptCounts = computed(() => { // { threadId: count }
+  const counts = {};
+  for (const prompt of prompts.value) counts[prompt.threadId] = (counts[prompt.threadId] ?? 0) + 1;
+  return counts;
+});
 
 // Worktrees — detected git worktrees for thread assignment
 export const worktrees = signal([]);   // GitWorktree[] from GET /api/worktrees
@@ -113,81 +118,231 @@ export function layerColor(layerId) {
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket — batched updates per frame
+// Data streams — one socket; each panel opens exactly the stream it shows:
+//   thread:<id>                     the active thread's live turns, turn terminals and
+//                                   journal changes (also held for this tab's in-flight sends)
+//   events | events:<id>            activity panel: runtime-wide, or the active thread's
+//   threads | threads:<projectId>   thread list for the active scope
+//   prompts                         pending agent→human prompts
+// A reconnect re-opens every held stream; each answers with a fresh snapshot.
 // ---------------------------------------------------------------------------
 
-let ws = null;
-let pendingEvents = [];
+let socket = null;
+// This tab's id on the socket, stable across reconnects: the server addresses a send's full result to it.
+const clientId = crypto.randomUUID();
+let pendingFrames = [];
 let frameScheduled = false;
-let wasConnected = false; // track for live reload on server restart
+let activeStream = null, eventsStream = null, threadsStream = null;
+const liveTurns = new Map();    // threadId → Map(turnId → live turn) while its stream is held
+const pendingSends = new Map(); // turnId → threadId: sends from this tab awaiting their terminal
 
-function flushEvents() {
+function liveView(threadId) {
+  const turns = liveTurns.get(threadId);
+  return turns ? { buffers: [...turns.values()] } : undefined;
+}
+
+function releaseStream(stream) {
+  socket.close(stream);
+  if (!socket.holds(stream) && stream.startsWith("thread:")) liveTurns.delete(stream.slice("thread:".length));
+}
+
+function queueFrame(frame) {
+  pendingFrames.push(frame);
+  if (frameScheduled) return;
+  frameScheduled = true;
+  requestAnimationFrame(flushFrames);
+}
+
+function flushFrames() {
   frameScheduled = false;
-  if (pendingEvents.length === 0) return;
-
-  const events = pendingEvents;
-  pendingEvents = [];
-
-  batch(() => {
-    eventCount.value += events.length;
-
-    // Prepend to live events, cap at 200
-    const current = liveEvents.value;
-    const next = [...events.map(ev => ({
-      ...ev,
-      _time: new Date().toLocaleTimeString(),
-    })), ...current];
-    liveEvents.value = next.length > 200 ? next.slice(0, 200) : next;
-  });
-
-  // Debounced data refresh
-  scheduleRefresh();
-  scheduleReconcile(events);
-  for(const event of events)if(event.kind==='live'&&event.threadId===activeThreadId.value) requestLive(event.threadId);
+  const frames = pendingFrames;
+  pendingFrames = [];
+  const touched = new Set();
+  batch(() => { for (const frame of frames) applyFrame(frame, touched); });
+  for (const threadId of touched) refreshLiveRows(threadId);
 }
 
-const liveSnapshots=new Map(),liveRequests=new Map(),liveTimers=new Map();
-let liveRequestSequence=0;
-function requestLive(threadId) {
-  if(!threadId||liveTimers.has(threadId))return;
-  liveTimers.set(threadId,setTimeout(()=>{liveTimers.delete(threadId);loadLive(threadId);},80));
+function applyFrame(frame, touched) {
+  // Released earlier in this same flush (a settled send): its remaining frames are stale.
+  if (!socket.holds(frame.stream)) return;
+  const split = frame.stream.indexOf(":");
+  const family = split < 0 ? frame.stream : frame.stream.slice(0, split);
+  const key = split < 0 ? null : frame.stream.slice(split + 1);
+  if (family === "thread") applyThreadFrame(key, frame, touched);
+  else if (family === "threads") applyThreadsFrame(frame);
+  else if (family === "prompts") applyPromptsFrame(frame);
+  else if (family === "events") applyEventsFrame(frame);
 }
-async function loadLive(threadId) {
-  const request=++liveRequestSequence;liveRequests.set(threadId,request);
-  try {
-    const response=await authFetch(`/api/messages/live?watch=1&threadId=${encodeURIComponent(threadId)}`,{cache:'no-store'});
-    if(!response.ok)throw Error(`Live state unavailable (${response.status})`);
-    const snapshot=await response.json();if(liveRequests.get(threadId)!==request)return;
-    const thread=allThreads.value.find(t=>t.threadId===threadId);
-    if(!thread)return;
-    const accepted=acceptLiveSnapshot(liveSnapshots.get(threadId),snapshot,threadId,thread.meta?.projectId??thread.projectId);
-    if(accepted!==snapshot)return;
-    liveSnapshots.set(threadId,accepted);
-    if(liveSnapshots.size>8)liveSnapshots.delete(liveSnapshots.keys().next().value);
-    _persistLocal(threadId,mergeLiveSnapshot((_threadMessages[threadId]??[]).map(m=>({...m,connectionStatus:undefined})),accepted));
-    if(accepted.buffers.some(b=>b.completedAt))requestReconcile(threadId);
-  }catch {
-    if(liveRequests.get(threadId)!==request)return;
-    const rows=_threadMessages[threadId];if(rows)_persistLocal(threadId,rows.map(m=>m.live&&m.streaming?{...m,connectionStatus:'unconfirmed'}:m));
+
+function applyThreadFrame(threadId, frame, touched) {
+  const payload = frame.payload;
+  if (frame.action === "append" && payload.kind === "event") { scheduleReconcile([payload.event]); return; }
+  if (frame.action === "append" && (payload.kind === "done" || payload.kind === "error")) {
+    // This tab's own send: the full terminal, with evidence the bounded live turn never carries.
+    // Its row may be ahead of live turns applied earlier in this flush: merge them first.
+    if (touched.delete(threadId)) refreshLiveRows(threadId);
+    const row = (_threadMessages[threadId] ?? []).find(m => m.actor === "agent" && m.turnId === payload.turnId);
+    _updateAgentMessage(threadId, payload.turnId, terminalMessagePatch({ type: payload.kind, ...payload.result }, row?.content ?? ""));
+    settleSend(payload.turnId);
+    return;
+  }
+  const previous = liveTurns.get(threadId) ?? new Map();
+  const next = applyTurnFrame(previous, frame);
+  if (next === previous) return;
+  if (frame.action === "snapshot") {
+    // A send accepted after the open this snapshot answers may be missing from it; the stream will say more.
+    for (const [turnId, turn] of previous) if (turn.seededAt > frame.requestedAt && !next.has(turnId)) next.set(turnId, turn);
+  }
+  liveTurns.set(threadId, next);
+  touched.add(threadId);
+  const completed = frame.action === "snapshot" ? [...next.values()].some(turn => turn.completedAt) : payload.kind === "turn" && payload.turn.completedAt;
+  if (completed) requestReconcile(threadId);
+}
+
+/** Merge the thread's live turns into its rows; a turn the stream reports is positively observed.
+ * A thread whose history has not loaded yet is left alone: its first load merges the live turns,
+ * and must not be raced by a live-only cache that would displace the browser copy. */
+function refreshLiveRows(threadId) {
+  const turns = liveTurns.get(threadId);
+  const rows = _threadMessages[threadId];
+  if (!turns || !rows) return;
+  _persistLocal(threadId, rows.map(m => m.actor === "agent" && m.connectionStatus && turns.has(m.turnId) ? { ...m, connectionStatus: undefined } : m));
+  for (const [turnId, owner] of pendingSends) {
+    if (owner !== threadId) continue;
+    const row = _threadMessages[threadId]?.find(m => m.actor === "agent" && m.turnId === turnId);
+    if (!row?.streaming) settleSend(turnId);
   }
 }
 
-let refreshTimer = null;
-function scheduleRefresh() {
-  if (refreshTimer) return;
-  refreshTimer = setTimeout(() => {
-    refreshTimer = null;
-    loadTraces();
-    loadThreads();
-    loadPrompts();
-  }, 500);
+function settleSend(turnId) {
+  const threadId = pendingSends.get(turnId);
+  if (threadId === undefined) return;
+  pendingSends.delete(turnId);
+  inflight.value = Math.max(0, inflight.value - 1);
+  releaseStream(`thread:${threadId}`);
+  loadTraces();
+  loadTokenUsage();
+}
+
+function applyThreadsFrame(frame) {
+  if (frame.stream !== threadsStream) return;
+  const payload = frame.payload;
+  if (frame.action === "snapshot") { adoptThreadList(payload.threads); return; }
+  if (payload.removed) {
+    allThreads.value = allThreads.value.filter(thread => thread.threadId !== payload.removed);
+    if (activeThreadId.value === payload.removed) selectThread(allThreads.value[0]?.threadId ?? null);
+    return;
+  }
+  const list = allThreads.value;
+  const i = list.findIndex(thread => thread.threadId === payload.thread.threadId);
+  allThreads.value = i < 0 ? [...list, payload.thread] : list.map((thread, j) => j === i ? payload.thread : thread);
+  if (payload.thread.threadId === activeThreadId.value) threadData.value = payload.thread;
+}
+
+function adoptThreadList(threads) {
+  allThreads.value = threads;
+  if (!threads.some(thread => thread.threadId === activeThreadId.value)) selectThread(threads[0]?.threadId ?? null);
+  const active = activeThreadId.value;
+  threadData.value = active ? threads.find(thread => thread.threadId === active) ?? null : null;
+  // Always load messages for the active thread if we don't have them yet
+  if (active && messages.value.length === 0 && !_threadMessages[active]) _loadThreadMessages(active);
+}
+
+function applyPromptsFrame(frame) {
+  if (frame.action === "snapshot") { prompts.value = frame.payload.prompts; return; }
+  const prompt = frame.payload.prompt;
+  const rest = prompts.value.filter(p => p.id !== prompt.id);
+  prompts.value = prompt.status === "pending" ? [...rest, prompt] : rest;
+}
+
+const eventTime = event => new Date(event.timestamp ?? event.signal?.timestamp ?? event.event?.timestamp
+  ?? event.dispatch?.timestamp ?? event.context?.timestamp ?? Date.now()).toLocaleTimeString();
+
+function applyEventsFrame(frame) {
+  if (frame.stream !== eventsStream) return;
+  if (frame.action === "snapshot") {
+    liveEvents.value = frame.payload.events.slice().reverse().map(event => ({ ...event, _time: eventTime(event) }));
+    return;
+  }
+  const event = frame.payload.event;
+  eventCount.value += 1;
+  // Surface error events from the backend as toasts
+  if (event.kind === "error") showToast(`[${event.source}] ${event.message}`, event.severity === "warn" ? "warn" : "error");
+  const next = [{ ...event, _time: new Date().toLocaleTimeString() }, ...liveEvents.value];
+  liveEvents.value = next.length > 200 ? next.slice(0, 200) : next;
+}
+
+/** Re-open every held stream for fresh snapshots. */
+export function resyncStreams() {
+  socket?.resync();
+}
+
+function connectStreams() {
+  // Browser sends cookies on the upgrade (same-origin); in tunnel mode the /auth session cookie authorizes it.
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  socket = createDataStreamSocket(`${wsProto}//${location.host}/ws?client=${clientId}`, {
+    reconnectDelayMs: 2000,
+    onData: queueFrame,
+    onStatus: status => {
+      connected.value = status === "open";
+      if (status === "open") return;
+      // Live work on a dropped connection is unconfirmed until a fresh snapshot says otherwise.
+      for (const threadId of liveTurns.keys()) {
+        const rows = _threadMessages[threadId];
+        if (rows) _persistLocal(threadId, rows.map(m => m.live && m.streaming ? { ...m, connectionStatus: "unconfirmed" } : m));
+      }
+    },
+    onReconnect: () => requestReconcile(activeThreadId.value, 0),
+    // A rejection means the stream's subject is gone (losing authorization closes the socket instead).
+    onRejected: stream => {
+      // A project that no longer exists scopes nothing; fall back to the unscoped list.
+      if (stream === threadsStream && activeProjectId.value) activeProjectId.value = null;
+      if (!stream.startsWith("thread:")) return;
+      const threadId = stream.slice("thread:".length);
+      if (stream === activeStream) activeStream = null;
+      liveTurns.delete(threadId);
+      // Sends on a thread that no longer exists will not report here; their outcome is unconfirmed.
+      for (const [turnId, owner] of [...pendingSends]) {
+        if (owner !== threadId) continue;
+        _updateAgentMessage(threadId, turnId, { streaming: false, connectionStatus: "unconfirmed" });
+        pendingSends.delete(turnId);
+        inflight.value = Math.max(0, inflight.value - 1);
+      }
+    },
+  });
+  socket.connect();
+  socket.open("prompts");
+  effect(() => {
+    const projectId = activeProjectId.value;
+    const next = projectId ? `threads:${projectId}` : "threads";
+    if (next === threadsStream) return;
+    if (threadsStream) socket.close(threadsStream);
+    threadsStream = next;
+    socket.open(next);
+  });
+  effect(() => {
+    const threadId = activeThreadId.value;
+    const nextThread = threadId ? `thread:${threadId}` : null;
+    const nextEvents = threadId ? `events:${threadId}` : "events";
+    if (nextThread !== activeStream) {
+      if (activeStream) releaseStream(activeStream);
+      activeStream = nextThread;
+      if (nextThread) socket.open(nextThread);
+    }
+    if (nextEvents !== eventsStream) {
+      if (eventsStream) socket.close(eventsStream);
+      eventsStream = nextEvents;
+      liveEvents.value = [];
+      socket.open(nextEvents);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Observer reconciliation — owned events name a thread whose durable history
-// or learning state changed. One bounded history fetch per thread per burst;
-// token-level and context events never fetch. Caches of inactive threads are
-// reconciled in place and only the active thread is mirrored to `messages`.
+// Observer reconciliation — owned events on a held thread stream name a thread
+// whose durable history or learning state changed. One bounded history fetch per
+// thread per burst. A thread whose stream is not held reconciles when selected;
+// a reconciled cache is written in place and only the active thread is mirrored to `messages`.
 // ---------------------------------------------------------------------------
 
 const reconcileTimers = new Map();
@@ -359,37 +514,6 @@ export async function loadKnowledge(threadId) {
   knowledgeInspection.value = { threadId, ...outcome, loadedAt: Date.now(), pending: false, superseded: knowledgeSuperseded, requestId };
 }
 
-export function connect() {
-  // Browser sends cookies on WS upgrade automatically (same-origin).
-  // For tunnel mode, the session cookie set by /auth handles auth.
-  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${wsProto}//${location.host}/ws`);
-  ws.onopen = () => {
-    wasConnected = true;
-    connected.value = true;
-    requestLive(activeThreadId.value);
-    requestReconcile(activeThreadId.value,0);
-  };
-  ws.onclose = () => {
-    connected.value = false;
-    const tid=activeThreadId.value, rows=_threadMessages[tid];
-    if(rows)_persistLocal(tid,rows.map(m=>m.live&&m.streaming?{...m,connectionStatus:'unconfirmed'}:m));
-    setTimeout(connect, 2000);
-  };
-  ws.onmessage = (e) => {
-    const event = JSON.parse(e.data);
-    // Surface error events from the backend as toasts
-    if (event.kind === "error") {
-      showToast(`[${event.source}] ${event.message}`, event.severity === "warn" ? "warn" : "error");
-    }
-    pendingEvents.push(event);
-    if (!frameScheduled) {
-      frameScheduled = true;
-      requestAnimationFrame(flushEvents);
-    }
-  };
-}
-
 // ---------------------------------------------------------------------------
 // API calls
 // ---------------------------------------------------------------------------
@@ -508,78 +632,6 @@ async function _loadTurnDetail(threadId, turnId, traceId, requestId) {
   }
 }
 
-async function loadActivity() {
-  try {
-    const res = await authFetch("/api/events?limit=200");
-    if (!res.ok) return;
-    const history = await res.json();
-    const key = event => JSON.stringify(Object.fromEntries(Object.entries(event).filter(([name]) => name !== "_time")));
-    const seen = new Set(liveEvents.value.map(key));
-    const earlier = history.reverse().filter(event => !seen.has(key(event))).map(event => ({
-      ...event,
-      _time: new Date(event.timestamp ?? event.signal?.timestamp ?? event.event?.timestamp ?? event.dispatch?.timestamp ?? event.context?.timestamp ?? Date.now()).toLocaleTimeString(),
-    }));
-    liveEvents.value = [...liveEvents.value, ...earlier].slice(0, 200);
-  } catch { /* Live connection remains available when history cannot be loaded. */ }
-}
-
-export async function loadThreads() {
-  try {
-    const projectId = activeProjectId.value;
-    const url = projectId
-      ? `/api/threads?project=${encodeURIComponent(projectId)}`
-      : "/api/threads";
-    const res = await authFetch(url);
-    if (!res.ok) { showToast(`Failed to load threads: ${res.status}`, "error"); return; }
-    const data = await res.json();
-
-    // New format: { threads: [...] } or legacy { threadId, meta, ... }
-    if (data.threads) {
-      if (activeProjectId.value !== projectId) return;
-      allThreads.value = data.threads;
-      if (!data.threads.some(thread => thread.threadId === activeThreadId.value)) {
-        selectThread(data.threads[0]?.threadId ?? null);
-      }
-      const active = activeThreadId.value;
-      const match = active ? data.threads.find(t => t.threadId === active) : null;
-      threadData.value = match ?? null;
-      // Always load messages for active thread if we don't have them yet
-      if (active && messages.value.length === 0 && !_threadMessages[active]) {
-        _loadThreadMessages(active);
-      }
-    } else {
-      // Legacy single-thread format
-      threadData.value = data;
-      allThreads.value = [data];
-      if (!activeThreadId.value && data.threadId) {
-        activeThreadId.value = data.threadId;
-      }
-      const active = activeThreadId.value;
-      if (active && messages.value.length === 0 && !_threadMessages[active]) {
-        _loadThreadMessages(active);
-      }
-    }
-  } catch (err) {
-    if (connected.value) showToast(`Threads unavailable: ${err.message}`, "warn");
-  }
-}
-
-export async function loadPrompts() {
-  try {
-    const res = await authFetch("/api/prompts");
-    if (!res.ok) return;
-    const data = await res.json();
-    prompts.value = data.prompts ?? [];
-  } catch { /* silent */ }
-
-  try {
-    const res = await authFetch("/api/prompts/count");
-    if (!res.ok) return;
-    const data = await res.json();
-    promptCounts.value = data.byThread ?? {};
-  } catch { /* silent */ }
-}
-
 export async function resolvePrompt(promptId, action, input) {
   try {
     const res = await fetch(`/api/prompts/${encodeURIComponent(promptId)}/resolve`, {
@@ -589,7 +641,6 @@ export async function resolvePrompt(promptId, action, input) {
     });
     if (res.ok) {
       showToast(`Prompt resolved: ${action}`, "ok");
-      loadPrompts();
       return true;
     }
     const err = await res.json();
@@ -732,7 +783,6 @@ export async function createThread({ description, tags, worktreePath, branch } =
     if (res.ok) {
       const created = await res.json();
       showToast(`Thread created: ${created.threadId}`, "ok");
-      loadThreads();
       return created;
     }
     const err = await res.json().catch(() => ({}));
@@ -798,8 +848,7 @@ export async function forkThread(messageIndex) {
 
     // Pre-populate new thread's messages so switching is instant
     _persistLocal(newThread.threadId, forkedMessages.map(msg => ({ ...msg, browserStorage: undefined })));
-
-    await loadThreads();
+    // The thread list stream already carries the fork.
     selectThread(newThread.threadId);
   } catch (err) {
     showToast(`Fork failed: ${err.message}`, "error");
@@ -815,7 +864,6 @@ export async function updateThreadWorktree(threadId, worktreePath, branch) {
     });
     if (res.ok) {
       showToast("Worktree updated", "ok");
-      loadThreads();
       return true;
     }
     const err = await res.json().catch(() => ({}));
@@ -892,17 +940,16 @@ export function selectThread(threadId) {
     threadData.value = allThreads.value.find(t => t.threadId === threadId) ?? null;
   });
   if (threadId && !_threadMessages[threadId]) _loadThreadMessages(threadId);
-  // A cached thread may have received work while inactive: reconcile it late,
-  // into its own cache only, even if the user switches again before it returns.
+  // A cached thread may have received work while inactive (its stream was closed):
+  // reconcile it into its own cache only, even if the user switches again before it returns.
   else if (threadId) requestReconcile(threadId, 0);
-  requestLive(threadId);
 }
 
 /** Keep write outcomes with the thread's live messages, including while inactive. */
 function _persistLocal(threadId, msgs) {
   // A sender may just have applied its full terminal. Merge only the watch-owned
   // projection in that case; failed persistence does not revoke local completion.
-  const observed = mergeLiveSnapshot(msgs, liveSnapshots.get(threadId));
+  const observed = mergeLiveSnapshot(msgs, liveView(threadId));
   const next = persistBrowserMessages(observed, value => localStorage.setItem(`foundry:msgs:${threadId}`, value));
   _threadMessages[threadId] = next;
   if (activeThreadId.value === threadId) messages.value = next;
@@ -982,72 +1029,57 @@ export async function sendMessage(text) {
   if (!text.trim()) return;
 
   // Bind this send to the thread that was active at submit time.
-  // If the user navigates away during the request, the response still
-  // routes back to this thread (not whatever is active when it returns).
+  // If the user navigates away during the turn, its output still
+  // routes back to this thread (not whatever is active when it arrives).
   const tid = activeThreadId.value;
   if (!tid) return; // no active thread — nothing to bind to
 
   const turnId = `turn_${crypto.randomUUID()}`;
   _appendToThread(tid, { actor: "user", turnId, content: text, timestamp: Date.now() });
+  // Seed a pending agent message the thread stream progressively fills.
+  _appendToThread(tid, { actor: "agent", turnId, content: "", timestamp: Date.now(), streaming: true });
 
-  // Track in-flight (non-blocking — user can keep typing)
+  // Track in-flight (non-blocking — user can keep typing). The thread stream is
+  // held until this turn's terminal arrives, even across a thread switch.
   inflight.value++;
-
-  // Fire streaming API call in background — don't await in caller
-  _streamMessageInBackground(text, tid, turnId);
+  pendingSends.set(turnId, tid);
+  socket.open(`thread:${tid}`);
+  _sendInBackground(text, tid, turnId);
 }
 
-async function _streamMessageInBackground(text, tid, turnId) {
-  // Seed a pending agent message we'll progressively fill as deltas arrive.
-  _appendToThread(tid, {
-    actor: "agent",
-    turnId,
-    content: "",
-    timestamp: Date.now(),
-    streaming: true,
-  });
+const SEND_OPEN_WAIT_MS = 5000;
 
-  let acc = "";
+async function _sendInBackground(text, tid, turnId) {
+  // Hold the thread stream on the server before the turn can finish, so its full result reaches this tab.
+  await socket.opened(`thread:${tid}`, SEND_OPEN_WAIT_MS);
+  let res;
   try {
-    const res = await fetch("/api/messages/stream", {
+    res = await authFetch("/api/messages/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: turnId, message: text, threadId: tid }),
+      // The full result (with its evidence) comes back only to this tab, on its thread stream.
+      body: JSON.stringify({ id: turnId, message: text, threadId: tid, clientId }),
     });
-
-    if (!res.ok || !res.body) {
-      // A failed HTTP journal write can still carry the completed executor result.
-      const outcome = await res.json().catch(() => null);
-      if (outcome?.meta) {
-        _updateAgentMessage(tid, turnId, terminalMessagePatch(outcome, acc));
-        return;
-      }
-      const errText = res.ok ? "no stream body" : `${res.status}`;
-      _updateAgentMessage(tid, turnId, { content: `Connection error: ${errText}`, streaming: false, error: true });
-      return;
-    }
-
-    await readMessageStream(res.body, ev => {
-        if(ev.type==='delta'&&liveSnapshots.get(tid)?.buffers.some(b=>b.messageId===turnId)) {requestLive(tid);return;}
-        if (ev.type === "delta") {
-          acc += ev.text;
-          _updateAgentMessage(tid, turnId, { content: acc });
-        } else if (ev.type === "done" || ev.type === "error") {
-          _updateAgentMessage(tid, turnId, terminalMessagePatch(ev, acc));
-        }
-    });
-
-    Promise.all([loadTraces(), loadThreads(), loadTokenUsage()]);
   } catch (err) {
-    _updateAgentMessage(tid, turnId, {
-      content: acc || `Connection error: ${err.message}`,
-      connectionStatus: "unconfirmed",
-      streaming: false,
-      error: true,
-    });
-  } finally {
-    inflight.value = Math.max(0, inflight.value - 1);
+    // The request may or may not have reached the server.
+    _updateAgentMessage(tid, turnId, { content: `Connection error: ${err.message}`, connectionStatus: "unconfirmed", streaming: false, error: true });
+    settleSend(turnId);
+    return;
   }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    _updateAgentMessage(tid, turnId, { content: `Send failed: ${body?.error ?? res.status}`, streaming: false, error: true });
+    settleSend(turnId);
+    return;
+  }
+  // Accepted; output arrives on the thread stream. Seed the turn so a later
+  // snapshot that no longer has it reads as unconfirmed rather than running.
+  const turns = liveTurns.get(tid) ?? new Map();
+  if (!pendingSends.has(turnId) || turns.has(turnId)) return;
+  const projectId = allThreads.value.find(thread => thread.threadId === tid)?.meta?.projectId;
+  liveTurns.set(tid, new Map(turns).set(turnId, { messageId: turnId, threadId: tid, projectId, content: "", startedAt: Date.now(),
+    status: "accepted", activity: [], truncated: false, nativeDetail: "unavailable", seededAt: Date.now() }));
+  refreshLiveRows(tid);
 }
 
 export async function executeAction(kind, target, payload) {
@@ -1061,8 +1093,6 @@ export async function executeAction(kind, target, payload) {
     });
     const result = await res.json();
     showToast(result.message, result.ok ? "ok" : "error");
-    // Refresh state after action
-    loadThreads();
     return result;
   } catch (err) {
     showToast(`Action failed: ${err.message}`, "error");
@@ -1163,25 +1193,18 @@ export function init() {
   // Restore view state from URL hash before loading data
   restoreFromHash();
 
-  connect();
-  loadActivity();
+  connectStreams();
   loadTraces();
-  loadThreads();
   loadDefinitions();
   loadProjects();
   loadWorktrees();
-  loadPrompts();
   loadTokenUsage();
-  // Fallback polling
+  // Polling for state that has no data stream
   setInterval(loadTraces, 15000);
-  setInterval(loadThreads, 20000);
   setInterval(loadDefinitions, 30000);
   setInterval(loadProjects, 30000);
   setInterval(loadWorktrees, 30000);
-  setInterval(loadPrompts, 5000); // prompts poll faster — they're time-sensitive
   setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
-  // One bounded selected-thread recovery poll covers missed invalidation/upgrade races.
-  setInterval(()=>{if(!document.hidden)requestLive(activeThreadId.value);},2000);
 
   // Sync view state → URL hash on any change
   effect(() => {
@@ -1196,16 +1219,6 @@ export function init() {
 
   // Persistence happens at each mutation with its originating thread ID.
   // Combining selected-thread and message signals here can cross-write history.
-
-  // Reload threads when active project changes
-  let prevProject = activeProjectId.value;
-  effect(() => {
-    const cur = activeProjectId.value;
-    if (cur !== prevProject) {
-      prevProject = cur;
-      loadThreads();
-    }
-  });
 
   // Handle back/forward navigation
   window.addEventListener("hashchange", () => {

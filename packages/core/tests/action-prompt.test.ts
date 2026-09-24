@@ -385,4 +385,18 @@ describe("ActionQueue", () => {
     expect(prompts[0].urgency).toBe("critical");
     expect(prompts[0].meta?.cost).toBe(4.50);
   });
+  test("settle listeners observe resolution and expiry, not policy auto-resolution", async () => {
+    const q = makeQueue();
+    const settled: ActionPrompt[] = [];
+    const off = q.onSettle(p => settled.push({ ...p }));
+    const resolved = q.prompt({ kind: "approval", message: "resolve me", agentId: "a", threadId: "t" });
+    const expired = q.prompt({ kind: "approval", message: "expire me", agentId: "a", threadId: "t", timeoutMs: 5 });
+    q.resolve(q.pending().find(p => p.message === "resolve me")!.id, "approved");
+    await resolved; await expired;
+    expect(settled.map(p => [p.message, p.status])).toEqual([["resolve me", "approved"], ["expire me", "expired"]]);
+    q.addPolicy(() => ({ by: "policy" as const, action: "approved", timestamp: Date.now() }));
+    await q.prompt({ kind: "approval", message: "auto", agentId: "a", threadId: "t" });
+    off();
+    expect(settled).toHaveLength(2);
+  });
 });

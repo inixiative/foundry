@@ -16,7 +16,6 @@ export interface SessionEvent {
  * Every observable event in the system, tagged by origin.
  */
 export type StreamEvent =
-  | { kind: "live"; threadId: string; projectId?: string; turnId: string; epoch: string; revision: number }
   | { kind: "journal"; threadId: string; turnId: string | null; projectId?: string; timestamp: number; scope?: "phase" | "learning"; outcome?: "durable" | "failed" }
   | { kind: "layer"; threadId: string; event: LifecycleEvent }
   | { kind: "dispatch"; threadId: string; dispatch: Dispatch }

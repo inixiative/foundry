@@ -4,6 +4,7 @@ import { ContextStack, EventStream, Executor, Harness, InterventionLog, Thread,
   type CompletionOpts, type LLMMessage, type LLMProvider } from "@inixiative/foundry-core";
 import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
 import { ConfigStore } from "../src/viewer/config";
+import { withStreams } from "./helpers/data-stream";
 
 function setup(id: string, description: string, complete: LLMProvider["complete"]) {
   const stack = new ContextStack();
@@ -12,9 +13,9 @@ function setup(id: string, description: string, complete: LLMProvider["complete"
   const harness = new Harness(thread);
   harness.setDefaultExecutor("worker");
   const app = new Hono();
-  registerRuntimeRoutes(app, { harness, eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals), configStore: new ConfigStore("/tmp/unused-naming-config"),
-    namingProvider: { id: "namer", complete } });
+  registerRuntimeRoutes(app, withStreams({ harness, eventStream: new EventStream(),
+    interventions: new InterventionLog(thread.signals), db: null, configStore: new ConfigStore("/tmp/unused-naming-config"),
+    namingProvider: { id: "namer", complete } }));
   const send = async () => {
     const response = await app.request("/api/messages", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: "Implement the requested change", threadId: id }) });

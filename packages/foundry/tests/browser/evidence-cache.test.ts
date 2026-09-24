@@ -43,7 +43,7 @@ test("browser-only failure evidence survives quota fallback and reload, distinct
     expect(store.recoverInterrupted()).toBe(1);
     const interruptedAgent = store.messages("evidence", 1000).find(m => m.turnId === "turn-interrupted" && m.actor === "agent")!;
     expect(interruptedAgent.meta?.turnStatus).toBe("interrupted");
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => viewer.app.fetch(request) });
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: viewer.fetch, websocket: viewer.websocket });
     cleanup.unshift(["server", () => server.stop(true)]);
     const origin = `http://127.0.0.1:${server.port}`;
     const browser = await chromium.launch({ channel: "chrome", headless: true });

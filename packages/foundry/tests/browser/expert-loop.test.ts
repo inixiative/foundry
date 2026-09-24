@@ -33,7 +33,7 @@ test("expert loop: before work, after post-hooks (pending, commit, abstention), 
   let browser: any = null;
   try {
     scenario = await m0Scenario({ learning: { timeoutMs: 10, hardTimeoutMs: 60_000 }, review });
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => scenario!.current.app.fetch(request) });
+    server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, server) => scenario!.current.fetch(request, server), websocket: scenario.current.websocket });
     const origin = `http://127.0.0.1:${server.port}`;
     browser = await chromium.launch({ channel: "chrome", headless: true });
     const attach = (p: any, label: string) => { p.setDefaultTimeout(15_000); p.on("pageerror", (e: Error) => report.errors.push(`${label} pageerror: ${e.message}`));

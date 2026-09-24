@@ -8,6 +8,7 @@ import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
 import type { SessionAdapter } from '../../src/providers/session-adapter';
+import { connectStreams } from './data-stream';
 
 export async function until(check:()=>unknown|Promise<unknown>, label:string) {
   const end=performance.now()+8000; while(!await check()){if(performance.now()>end)throw Error(label);await Bun.sleep(10);}
@@ -44,10 +45,16 @@ export async function liveWatchFixture(dir:string) {
   thread.describe('Watched work');other.describe('Unrelated sentinel');projects.get('P')!.addThread(thread);projects.get('P')!.addThread(other);
   const harness=new Harness(thread);harness.setDefaultExecutor('worker');const configStore=new ConfigStore(dir);await configStore.save(config);
   const viewer=createViewer({harness,eventStream:events,interventions:new InterventionLog(thread.signals),threadFactory:factory,projectRegistry:projects,configStore,configDir:dir,tokenTracker:new TokenTracker()});
-  const send=(id:string,stream=true)=>{const p=Promise.resolve(viewer.app.request(`/api/messages${stream?'/stream':''}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,threadId:thread.id,message:'Do the work'})}));requests.push(p);return p;};
+  /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
+  const send=(id:string,stream=true)=>{const client=connectStreams(viewer);
+    const response=client.open(`thread:${thread.id}`).then(()=>viewer.app.request(`/api/messages${stream?'/send':''}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,threadId:thread.id,message:'Do the work',...(stream?{clientId:client.socket.data.clientId}:{})})}));
+    const done=response.then(r=>stream?client.terminal(thread.id,id):r.json() as Promise<any>).finally(()=>client.disconnect());
+    requests.push(done.catch(()=>{}));return {response,done,client};};
   return {viewer,manager,events,thread,other,provider,attempts,sessions,exits,send,
     holdConstruction(){startHold=new Promise<void>(r=>releaseStart=r);},releaseConstruction(){releaseStart();},
-    async snapshot(){return (await viewer.app.request(`/api/messages/live?watch=1&threadId=${thread.id}`)).json() as Promise<any>;},
+    /** A fresh `thread:<id>` snapshot, exactly as a (re)opening viewer receives it. */
+    async snapshot(threadId=thread.id){const client=connectStreams(viewer);await client.open(`thread:${threadId}`);
+      const frame=client.data(`thread:${threadId}`).find(f=>f.action==='snapshot');client.disconnect();return frame!.payload;},
     async close(){closing=true;releaseStart();for(const a of attempts)if(!a.done)a.finish();await Promise.allSettled(requests);await until(()=>attempts.every(a=>a.done)&&thread.activeDispatches===0,'original controlled settlement');
       const turns=new Set(viewer.localStore!.messages(thread.id).map(m=>m.turnId));
       const history=[...turns].flatMap(id=>viewer.localStore!.nativeHistory(thread.id,id));for(const a of attempts){const e=history.find(e=>e.admissionId===a.native.admissionId&&e.owner);if(!e?.owner)throw Error('Missing original cleanup owner');

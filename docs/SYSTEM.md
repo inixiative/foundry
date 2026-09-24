@@ -478,7 +478,23 @@ First-class cost tracking and usage analytics panel:
 | `/api/analytics` | GET | Aggregated cost/usage analytics |
 | `/api/analytics/calls` | GET | Paginated LLM call log |
 | `/api/analytics/budget` | GET | Budget status and utilization |
-| `/ws` | WebSocket | Live event stream |
+| `/api/messages/send` | POST | Accept a turn (202); its output arrives on `thread:<id>` |
+| `/ws` | WebSocket | Data streams, scoped per panel (below) |
+
+### Data streams (`/ws`)
+
+A client opens only the streams it shows: `{ action: 'open', stream }` → `{ type: 'opened' }`, a
+`{ category: 'data', action: 'snapshot' }`, then `append` frames until `{ action: 'close' }` or the
+socket closes. No sequence numbers or replay: after a reconnect the client re-opens its streams and
+gets fresh snapshots. The upgrade is authorized like HTTP (loopback, or tunnel bearer/cookie); each
+open re-checks the Kingdom runtime, and losing Kingdom authorization closes every socket.
+
+| Stream | Snapshot | Appends |
+|--------|----------|---------|
+| `thread:<id>` | live turns (bounded) | turn state, text deltas, activity rows, journal/learning notices; the full result to the sending connection only |
+| `threads`, `threads:<projectId>` | thread list for the scope | changed or removed threads |
+| `prompts` | pending prompts | new and settled prompts |
+| `events`, `events:<threadId>` | recent events (runtime-wide or the thread's) | new events (runtime errors always) |
 
 ### ActionHandler
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mergeMessageHistory, updateTurnMessage, readMessageStream } from "../src/viewer/ui/conversation-state.js";
+import { mergeMessageHistory, updateTurnMessage } from "../src/viewer/ui/conversation-state.js";
 
 test("interleaved stream patches update only the owning turn", () => {
   const initial = [
@@ -57,29 +57,4 @@ test("recovered overlapping turns retain request-response grouping despite rever
 test("unconfirmed browser partials keep their text but do not remain falsely streaming", () => {
   const recovered = mergeMessageHistory([{ actor: "agent", turnId: "lost", content: "partial evidence", streaming: true }], []);
   expect(recovered[0]).toMatchObject({ content: "partial evidence", streaming: false, connectionStatus: "unconfirmed", storage: "browser-only" });
-});
-
-function stream(chunks: string[]) {
-  return new ReadableStream({ start(controller) {
-    for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
-    controller.close();
-  } });
-}
-
-test("stream parser handles split CRLF frames and stops at its own terminal event", async () => {
-  const events: any[] = [];
-  await readMessageStream(stream(['data: {"type":"del', 'ta","text":"A"}\r\n\r', '\ndata: {"type":"done","content":"A"}\r\n\r\n',
-    'data: {"type":"delta","text":"late"}\n\n']), (event: any) => events.push(event));
-  expect(events.map(e => e.type)).toEqual(["delta", "done"]);
-});
-
-test("stream EOF without a terminal event is an explicit connection failure", async () => {
-  await expect(readMessageStream(stream(['data: {"type":"delta","text":"partial"}\n\n']), () => {})).rejects.toThrow("before completion");
-  await expect(readMessageStream(stream(['data: not-json\n\n']), () => {})).rejects.toThrow();
-});
-
-test("server error is terminal and a final unseparated frame is accepted", async () => {
-  const events: any[] = [];
-  await readMessageStream(stream(['data: {"type":"error","error":"failed"}']), (event: any) => events.push(event));
-  expect(events).toEqual([{ type: "error", error: "failed" }]);
 });

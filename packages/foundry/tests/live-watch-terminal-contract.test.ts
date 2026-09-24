@@ -12,13 +12,7 @@ function runningSnapshot() {
   buffer.append("EARLIER_RUNNING_PREVIEW");
   return {
     buffer,
-    snapshot: {
-      epoch: registry.epoch,
-      cursor: registry.cursor,
-      threadId: "thread-A",
-      projectId: "project-A",
-      buffers: registry.forThread("thread-A"),
-    },
+    snapshot: { buffers: registry.forThread("thread-A") },
     current: () => ({ buffers: registry.forThread("thread-A") }),
   };
 }

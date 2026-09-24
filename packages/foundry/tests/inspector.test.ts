@@ -5,17 +5,18 @@ import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
 import { ConfigStore } from "../src/viewer/config";
 import { threadToJSON } from "../src/viewer/http-helpers";
 import { eventsForThread, traceInjection, traceSpans } from "../src/viewer/ui/inspector-data.js";
+import { withStreams } from "./helpers/data-stream";
 
 test("layer inspection returns contents without touching cache access time and rejects another thread", async () => {
   const layer = new ContextLayer({ id: "docs", prompt: "Read the domain" });
   layer.set("Domain evidence");
   const thread = new Thread("selected", new ContextStack([layer]));
   const app = new Hono();
-  registerRuntimeRoutes(app, {
+  registerRuntimeRoutes(app, withStreams({
     harness: new Harness(thread), eventStream: new EventStream(),
     interventions: new InterventionLog(thread.signals), db: null,
     configStore: new ConfigStore("/tmp/foundry-inspector-unused-settings.json"),
-  });
+  }));
   const before = layer.lastAccessed;
   threadToJSON(thread);
   const response = await app.request("/api/threads/selected/layers/docs");

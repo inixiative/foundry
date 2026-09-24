@@ -21,6 +21,7 @@ import { ProjectRegistry } from "../src/agents/project";
 import { MemoryToolAdapter } from "../src/tools/memory-adapter";
 import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
 import { ConfigStore, type FoundryConfig } from "../src/viewer/config";
+import { withStreams } from "./helpers/data-stream";
 
 // Private memory source ownership (CORE-003, before G3).
 //
@@ -232,10 +233,10 @@ test("the no-factory route fallback binds the new thread's memory to its own sco
     expect(main.stack.getLayer("memory")!.content).toContain("PRIVATE-MAIN");
 
     const app = new Hono();
-    registerRuntimeRoutes(app, {
+    registerRuntimeRoutes(app, withStreams({
       harness: new Harness(main), eventStream: new EventStream(), interventions: new InterventionLog(main.signals),
       projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-ownership-unused-config"),
-    });
+    }));
     const response = await app.request("/api/threads", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: "fallback", projectId: "P" }),

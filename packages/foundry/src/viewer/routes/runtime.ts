@@ -17,7 +17,8 @@ import { serializeTrace } from "../../persistence/trace-record";
 import { listWorktrees } from "../../git";
 import type { ConfigStore } from "../config";
 import { threadToJSON, traceToJSON, validateId } from "../http-helpers";
-import { StreamBufferRegistry } from "../stream-buffer";
+import type { ViewerStreams } from "../data-streams";
+import type { StreamBuffer } from "../stream-buffer";
 import { registryForViewer } from "../../models/registry";
 import type { LocalSessionStore } from "../../persistence/local-session-store";
 import { ViewerThreadDirectory } from "../thread-directory";
@@ -36,6 +37,8 @@ export interface RuntimeRoutesDeps {
   namingProvider?: LLMProvider;
   localStore?: LocalSessionStore | null;
   directory?: ViewerThreadDirectory;
+  /** Data streams that carry live turns and thread-list changes to the viewer socket. */
+  streams: ViewerStreams;
 }
 
 // Only track live attempts; the thread's persisted description is authoritative.
@@ -135,6 +138,8 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
   const namingProvider = deps.namingProvider;
   const localStore = deps.localStore;
   const directory = deps.directory ?? new ViewerThreadDirectory(harness.thread, projectRegistry, threadFactory);
+  const streams = deps.streams;
+  const streamBuffers = streams.turns;
   const generation = newId("native-runtime");
   const journalChanged = (thread: Thread, turnId: string) => {
     try { eventStream.push({ kind: "journal", threadId: thread.id, projectId: thread.meta.projectId, turnId, timestamp: Date.now() }); return true; }
@@ -253,8 +258,13 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     try { eventStream.pushError("harness", `Execution failed: ${message}`); }
     catch (error) { console.warn("[Viewer] error observer failed:", error); }
   };
-  const streamBuffers = new StreamBufferRegistry(buffer => { const s=buffer.snapshot();
-    eventStream.push({kind:'live',threadId:s.threadId,projectId:s.projectId,turnId:s.messageId,epoch:s.epoch,revision:streamBuffers.cursor}); });
+  // A streamed send's full result goes to the requesting connection on its thread stream, ahead of the
+  // bounded live turn's own terminal, so that viewer holds the full result first. Other viewers see
+  // only the bounded turn. An observer failure cannot replace executor/commit evidence.
+  const publishTerminal = (threadId: string, clientId: string | undefined, turnId: string, kind: "done" | "error", result: Record<string, unknown>) => {
+    try { streams.publishTerminal(threadId, clientId, { kind, turnId, result }); }
+    catch (error) { console.warn("[Viewer] thread stream publish failed:", error); }
+  };
   const threadHarnesses = new Map<string, Harness>([[harness.thread.id, harness]]);
 
   const harnessForThread = (threadId: string): Harness | null => {
@@ -352,6 +362,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     });
 
     const buffer=streamBuffers.open(turnId,threadId,activeHarness.thread.meta.projectId);
+    streams.threadsChanged(threadId);
     let attemptTrace: Trace | undefined;
     let result: HarnessResult;
     try {
@@ -359,14 +370,16 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const completed = completedAfterFailure(activeHarness, turnId, msg, attemptTrace);
-      if (completed) { buffer.complete(completed);return c.json({ ...completed, payload, error: msg }, 500); }
+      if (completed) { buffer.complete(completed); streams.threadsChanged(threadId); return c.json({ ...completed, payload, error: msg }, 500); }
       const evidence = recordFailure(activeHarness, turnId, msg, attemptTrace);
       buffer.fail(msg,{id:turnId,error:msg,...evidence});
       observeFailure(msg);
+      streams.threadsChanged(threadId);
       return c.json({ error: `Execution failed: ${msg}`, id: turnId, payload, ...evidence }, 500);
     }
     const completed = completeResult(activeHarness.thread, turnId, result);
     buffer.complete(completed);
+    streams.threadsChanged(threadId);
     if (completed.meta.persistence === "failed") {
       return c.json({ ...completed, payload, error: `Completed result was not saved: ${completed.meta.persistenceError}` }, 500);
     }
@@ -408,7 +421,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     // Auto-name the thread after first message (fire-and-forget)
     if (namingProvider) {
       void autoNameThread(activeHarness.thread, payload, namingProvider)
-        .then(() => localStore?.saveThread(activeHarness.thread))
+        .then(() => { localStore?.saveThread(activeHarness.thread); streams.threadsChanged(threadId); })
         .catch(err => console.warn("[Viewer] title persistence failed", err));
     }
 
@@ -420,15 +433,85 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     });
   });
 
-  // -- Streaming message endpoint (SSE) --
+  // -- Send endpoint --
   //
-  // Emits incremental `data: {"type":"delta","text":...}` events as tokens
-  // arrive from the executor, then a terminal `data: {"type":"done",...}`
-  // with output and explicit persistence status. "done" means execution returned,
-  // not necessarily that its journal commit succeeded. The server-side buffer
-  // is independent of the HTTP connection, so if the client disconnects
-  // mid-stream the turn continues and attempts to persist its outcome.
-  app.post("/api/messages/stream", async (c) => {
+  // Accepts a turn once it is durably begun and answers 202. Its output (deltas,
+  // live activity and the bounded turn terminal) is delivered on the
+  // `thread:<threadId>` data stream; the full terminal `{ kind: "done" | "error",
+  // result }` with explicit persistence status goes to the `clientId` named in
+  // the request. "done" means execution returned, not necessarily that its journal
+  // commit succeeded. The turn is independent of any connection: with nobody
+  // watching it still runs and attempts to persist its outcome.
+  const runStreamedTurn = async (activeHarness: Harness, threadId: string, turnId: string, payload: string, buffer: StreamBuffer, clientId?: string) => {
+    let attemptTrace: Trace | undefined;
+    try {
+      for await (const ev of activeHarness.sendStream({ id: turnId, payload }, { nativeObservation: nativeObservation(activeHarness.thread), onTrace: trace => { attemptTrace = trace; } })) {
+        if (ev.kind === "delta") {
+          buffer.append(ev.text);
+          continue;
+        }
+        const result = ev.result;
+        const completed = completeResult(activeHarness.thread, turnId, result);
+        publishTerminal(threadId, clientId, turnId, "done", { threadId, ...completed });
+        buffer.complete(completed);
+        if (completed.meta.persistence === "failed") return;
+        const agentContent = completed.content;
+        const agentMsgId = newId("msg");
+        const agentMeta = completed.meta;
+
+        // Optional remote mirror follows the local response/artifact transaction.
+        enqueueJob("persistMessage", {
+          id: agentMsgId,
+          threadId,
+          turnId,
+          actor: "agent",
+          kind: "text",
+          content: agentContent,
+          traceId: result.trace.id,
+          meta: agentMeta,
+        }).catch(() => {
+          db?.writeMessage({
+            id: agentMsgId,
+            threadId,
+            turnId,
+            actor: "agent",
+            kind: "text",
+            content: agentContent,
+            traceId: result.trace.id,
+            meta: agentMeta,
+          }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+        });
+
+        enqueueJob("persistTrace", {
+          traceId: result.trace.id,
+          messageId: turnId,
+          trace: serializeTrace(result.trace),
+        }).catch(() => {
+          db?.writeTrace(result.trace)
+            .catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
+        });
+
+        if (namingProvider) {
+          void autoNameThread(activeHarness.thread, payload, namingProvider)
+            .then(() => { localStore?.saveThread(activeHarness.thread); streams.threadsChanged(threadId); })
+            .catch(err => console.warn("[Viewer] title persistence failed", err));
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const completed = completedAfterFailure(activeHarness, turnId, msg, attemptTrace);
+      if (completed) { publishTerminal(threadId, clientId, turnId, "done", { threadId, ...completed }); buffer.complete(completed); return; }
+      const evidence = recordFailure(activeHarness, turnId, msg, attemptTrace, buffer.content);
+      publishTerminal(threadId, clientId, turnId, "error", { id: turnId, threadId, error: msg, ...evidence });
+      buffer.fail(msg,{id:turnId,error:msg,...evidence});
+      observeFailure(msg);
+    } finally {
+      streamBuffers.drop(turnId);
+      streams.threadsChanged(threadId);
+    }
+  };
+
+  app.post("/api/messages/send", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const payload = typeof body.message === "string"
       ? body.message
@@ -468,114 +551,12 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
         .catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
     });
 
-    const buffer = streamBuffers.open(turnId, threadId,activeHarness.thread.meta.projectId);
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        const write = (obj: unknown) => {
-          try {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
-          } catch { /* client gone — buffer keeps running */ }
-        };
-        const heartbeat = setInterval(() => {
-          write({ type: "heartbeat", id: turnId, threadId, timestamp: Date.now() });
-        }, 5_000);
-
-        write({ type: "start", id: turnId, threadId });
-
-        let attemptTrace: Trace | undefined;
-        try {
-          for await (const ev of activeHarness.sendStream({ id: turnId, payload }, { nativeObservation: nativeObservation(activeHarness.thread), onTrace: trace => { attemptTrace = trace; } })) {
-            if (ev.kind === "delta") {
-              buffer.append(ev.text);
-              write({ type: "delta", text: ev.text });
-            } else {
-              const result = ev.result;
-              const completed = completeResult(activeHarness.thread, turnId, result);
-              buffer.complete(completed);
-              write({ type: "done", threadId, ...completed });
-              if (completed.meta.persistence === "failed") return;
-              const agentContent = completed.content;
-              const agentMsgId = newId("msg");
-              const agentMeta = completed.meta;
-
-              // Optional remote mirror follows the local response/artifact transaction.
-              enqueueJob("persistMessage", {
-                id: agentMsgId,
-                threadId,
-                turnId,
-                actor: "agent",
-                kind: "text",
-                content: agentContent,
-                traceId: result.trace.id,
-                meta: agentMeta,
-              }).catch(() => {
-                db?.writeMessage({
-                  id: agentMsgId,
-                  threadId,
-                  turnId,
-                  actor: "agent",
-                  kind: "text",
-                  content: agentContent,
-                  traceId: result.trace.id,
-                  meta: agentMeta,
-                }).catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
-              });
-
-              enqueueJob("persistTrace", {
-                traceId: result.trace.id,
-                messageId: turnId,
-                trace: serializeTrace(result.trace),
-              }).catch(() => {
-                db?.writeTrace(result.trace)
-                  .catch((err) => console.warn("[Viewer] background op failed:", err.message ?? err));
-              });
-
-              if (namingProvider) {
-                void autoNameThread(activeHarness.thread, payload, namingProvider)
-                  .then(() => localStore?.saveThread(activeHarness.thread))
-                  .catch(err => console.warn("[Viewer] title persistence failed", err));
-              }
-
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const completed = completedAfterFailure(activeHarness, turnId, msg, attemptTrace);
-          if (completed) { buffer.complete(completed); write({ type: "done", threadId, ...completed }); return; }
-          const evidence = recordFailure(activeHarness, turnId, msg, attemptTrace, buffer.content);
-          buffer.fail(msg,{id:turnId,error:msg,...evidence});
-          observeFailure(msg);
-          write({ type: "error", id: turnId, threadId, error: msg, ...evidence });
-        } finally {
-          clearInterval(heartbeat);
-          streamBuffers.drop(turnId);
-          try { controller.close(); } catch { /* already closed */ }
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
-    });
-  });
-
-  // Live buffers for a thread — used by the UI on reconnect to recover
-  // mid-stream state (show partial content that's been accumulated so far).
-  app.get("/api/messages/live", (c) => {
-    const threadId = c.req.query("threadId");
-    if (!threadId || !directory.get(threadId)) return c.json({ error:'thread not found' },404);
-    // Existing checkpoint callers use nonempty buffers as a work/occupancy signal.
-    // Only watch clients request the completed grace records for history reconciliation.
-    const snapshots=streamBuffers.forThread(threadId);
-    const buffers=c.req.query('watch')==='1'?snapshots:snapshots.filter(b=>streamBuffers.get(b.messageId)?.unresolved);
-    return c.json({ epoch:streamBuffers.epoch,cursor:streamBuffers.cursor,threadId,projectId:directory.get(threadId)!.meta.projectId,buffers });
+    const buffer = streamBuffers.open(turnId, threadId, activeHarness.thread.meta.projectId);
+    streams.threadsChanged(threadId);
+    // The requesting client (a tab's socket id, optional) receives the full result on its `thread:<threadId>` stream.
+    const clientId = typeof body.clientId === "string" ? body.clientId : undefined;
+    void runStreamedTurn(activeHarness, threadId, turnId, payload, buffer, clientId);
+    return c.json({ id: turnId, threadId, status: "accepted" }, 202);
   });
 
   app.get("/api/traces", async (c) => {
@@ -720,27 +701,12 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
 
   app.get("/api/threads", (c) => {
     const projectId = c.req.query("project");
-
-    if (projectId && projectRegistry) {
-      const project = projectRegistry.get(projectId);
-      if (project) {
-        const threads = [...project.threads.values()].map(threadToJSON);
-        return c.json({ threads, projectId });
-      }
-    }
+    const projectThreads = projectId ? directory.scope(projectId) : undefined;
+    if (projectThreads) return c.json({ threads: projectThreads.map(threadToJSON), projectId });
 
     // Global scope = threads not owned by any project (orphan threads only).
     // Project-scoped threads show under their project view; don't double-count.
-    const projectThreadIds = new Set<string>();
-    if (projectRegistry) {
-      for (const [, project] of projectRegistry.all) {
-        for (const [id] of project.threads) projectThreadIds.add(id);
-      }
-    }
-
-    const allThreads = directory.all().filter(thread => !projectThreadIds.has(thread.id)).map(threadToJSON);
-
-    return c.json({ threads: allThreads });
+    return c.json({ threads: directory.scope()!.map(threadToJSON) });
   });
 
   // -- Worktrees (read-only detection of existing git worktrees) --
@@ -808,6 +774,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
 
     thread.start();
     localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
 
     db?.prisma.threadState.create({
       data: { id, description, tags, status: "idle" },
@@ -843,6 +810,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     }
 
     localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
 
     return c.json(threadToJSON(thread));
   });
@@ -931,6 +899,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
 
     newThread.start();
     directory.add(newThread);
+    streams.threadsChanged(newThread.id);
 
     // Copy messages from DB
     if (db) {

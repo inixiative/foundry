@@ -9,6 +9,7 @@ import { ThreadRuntimeManager } from "../src/agents/thread-runtime";
 import { ProjectRegistry } from "../src/agents/project";
 import { ConfigStore, starterConfig } from "../src/viewer/config";
 import { registerRuntimeRoutes } from "../src/viewer/routes/runtime";
+import { withStreams } from "./helpers/data-stream";
 
 for (const operation of ["create", "fork"] as const) {
   test(`HTTP ${operation} resolves saved project experts before runtime ownership is captured`, async () => {
@@ -54,9 +55,9 @@ for (const operation of ["create", "fork"] as const) {
       expect(capturedOwner(source.id).projectId).toBe(project.id);
       expect(runtime.get(source.id)!.domainLibrarians.size).toBe(0);
       const app = new Hono();
-      registerRuntimeRoutes(app, { harness: new Harness(main), eventStream: events,
+      registerRuntimeRoutes(app, withStreams({ harness: new Harness(main), eventStream: events,
         interventions: new InterventionLog(main.signals), threadFactory: factory,
-        projectRegistry: registry, db: null, configStore: store });
+        projectRegistry: registry, db: null, configStore: store }));
       const response = await app.request(operation === "create" ? "/api/threads" : "/api/threads/source/fork", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(operation === "create" ? { id: "created", projectId: project.id } : { copyCount: 1 }),

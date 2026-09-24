@@ -7,26 +7,23 @@ import { completionFixture } from "../helpers/completion-persistence-fixture";
 // Explicit browser check; uses the installed QA runtime, no project dependency changes.
 const { chromium } = createRequire(import.meta.url)(process.env.FOUNDRY_QA_PLAYWRIGHT ?? "playwright");
 
-test("actual conversation handles completed-but-unsaved HTTP and SSE results through reload", async () => {
+test("actual conversation keeps a completed-but-unsaved result it sent through reload", async () => {
   const reportDir = resolve(".foundry/qa", `completion-browser-${new Date().toISOString().replaceAll(":", "-")}`);
   mkdirSync(reportDir, { recursive: true });
   const results: unknown[] = [];
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
-    for (const transport of ["HTTP", "SSE"]) {
+    // This tab sends and reads its full terminal from its thread stream.
+    for (const transport of ["send"]) {
       const fixture = await completionFixture();
       const runtime = fixture.make();
       // Owned test listener only; no existing Foundry instance is changed.
-      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => runtime.app.fetch(request) });
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: runtime.fetch, websocket: runtime.websocket });
       const context = await browser.newContext({ viewport: { width: 1100, height: 900 } });
       const page = await context.newPage();
       const errors: string[] = [];
       page.on("pageerror", (error: Error) => errors.push(error.message));
       try {
-        if (transport === "HTTP") {
-          // Deliver the production HTTP route's response to the real UI receiver.
-          await page.route("**/api/messages/stream", (route: any) => route.continue({ url: route.request().url().replace("/stream", "") }));
-        }
         await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
         await page.locator(".chat-input").waitFor();
         await page.locator(".chat-input").fill(`Complete once via ${transport}`);
@@ -52,12 +49,15 @@ test("actual conversation handles completed-but-unsaved HTTP and SSE results thr
         await page.getByText(/Execution completed; result was not saved to local journal/).waitFor();
         expect(await page.getByText("Partial output (unconfirmed)", { exact: true }).count()).toBe(0);
         // Supply a later unresolved journal row to exercise actual browser reconciliation.
-        // This is a history response fixture, not a server restart or native assertion.
-        await page.route("**/api/messages?threadId=main", (route: any) => route.fulfill({ json: { messages: [
+        // This is a history response fixture (index and full routes), not a server restart or native assertion.
+        const journal = [
           { actor: "user", turnId: message.turnId, content: `Complete once via ${transport}`, timestamp: message.timestamp - 1 },
           { actor: "agent", turnId: message.turnId, content: "Journal outcome unresolved", timestamp: message.timestamp,
             kind: "error", meta: { turnStatus: "interrupted", persistence: "committed", inputEvidence: "unavailable", nativeOutcome: "unknown" } },
-        ] } }));
+        ];
+        await page.route("**/api/messages?threadId=main", (route: any) => route.fulfill({ json: { messages: journal } }));
+        await page.route("**/api/threads/main/history*", (route: any) => route.fulfill({ json: { threadId: "main", source: "journal",
+          messages: journal, hasMore: false, oldestReached: true, nextCursor: null } }));
         await page.reload();
         await output.waitFor();
         await page.getByText(/Server journal: interrupted/).waitFor();

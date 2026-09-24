@@ -353,6 +353,7 @@ describe("control routes", () => {
       tunnelHolder: { tunnel: null },
       port: 4400,
       selfChatDir: configDir,
+      threadsChanged: () => {},
     });
   });
 
@@ -599,6 +600,7 @@ describe("control routes", () => {
       port: 4400,
       selfChatDir: configDir,
       assistTools: tools,
+      threadsChanged: () => {},
     });
 
     const res = await scriptedApp.fetch(

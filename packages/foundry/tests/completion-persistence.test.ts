@@ -1,25 +1,34 @@
 import { expect, test } from "bun:test";
 import { completionFixture } from "./helpers/completion-persistence-fixture";
-import { mergeMessageHistory, readMessageStream } from "../src/viewer/ui/conversation-state.js";
+import { mergeMessageHistory } from "../src/viewer/ui/conversation-state.js";
+import { connectStreams } from "./helpers/data-stream";
 
 for (const streaming of [false, true]) {
-  test(`${streaming ? "SSE" : "HTTP"} completion commit failure preserves output, original error and browser reconciliation`, async () => {
+  test(`${streaming ? "streamed" : "HTTP"} completion commit failure preserves output, original error and browser reconciliation`, async () => {
     const fixture = await completionFixture();
     try {
       const first = fixture.make();
-      const request = () => first.app.request(`/api/messages${streaming ? "/stream" : ""}`, {
+      const client = connectStreams(first);
+      const request = () => first.app.request(`/api/messages${streaming ? "/send" : ""}`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: "unsaved", threadId: "main", message: "Complete once" }),
+        body: JSON.stringify({ id: "unsaved", threadId: "main", message: "Complete once", clientId:client.socket.data.clientId }),
       });
+      await client.open("thread:main");
       const response = await request();
       let body: any;
       if (streaming) {
-        const events: any[] = [];
-        await readMessageStream(response.body!, (event: any) => events.push(event));
-        body = events.at(-1);
+        expect(response.status).toBe(202);
+        body = await client.terminal("main", "unsaved");
         expect(body.type).toBe("done");
-        expect(events.some(event => event.type === "error")).toBe(false);
       } else { expect(response.status).toBe(500); body = await response.json(); }
+      // The requester alone gets the full result (streamed, or in the HTTP body); the thread
+      // stream's own terminal is the bounded turn, without provider input or trace.
+      const bounded = client.data("thread:main").find(frame => frame.payload?.kind === "turn" && frame.payload.turn.status === "completed")!.payload.turn;
+      expect(bounded).toMatchObject({ content: fixture.output, terminal: { meta: { persistence: "failed", executionOutcome: "completed" } } });
+      expect(JSON.stringify(bounded)).not.toContain("providerMessages");
+      expect(client.frames().filter(frame => frame.payload?.kind === "done")).toHaveLength(streaming ? 1 : 0);
+      expect(client.frames().some(frame => frame.payload?.kind === "error")).toBe(false);
+      client.disconnect();
       expect(first.failureWrites()).toBe(0);
       expect(body.output).toBe(fixture.output);
       expect(body.meta).toMatchObject({ executionOutcome: "completed", turnStatus: "completed-unsaved", persistence: "failed",

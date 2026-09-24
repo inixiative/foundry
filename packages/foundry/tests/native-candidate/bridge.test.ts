@@ -11,6 +11,7 @@ import { ThreadFactory, buildAgents } from "../../src/agents/thread-factory";
 import { ThreadRuntimeManager } from "../../src/agents/thread-runtime";
 import { starterConfig, ConfigStore } from "../../src/viewer/config";
 import { createViewer } from "../../src/viewer/server";
+import { postStreamedTurn } from "../helpers/data-stream";
 import { matchesNativeToolRecord } from "../../../../scripts/native-retrieval-guard";
 import { FixtureLifecycle, throwFixtureFailures } from "./fixture-lifecycle";
 
@@ -136,7 +137,9 @@ async function fixture(engine:"claude"|"mcp", mode:"success"|"rpc-error"|"write-
   return {...viewer,thread,provider,bindings,replies,events,lifecycle,dir,counts:()=>({writes,spawns}),argv:()=>nativeArgs,
     resources:()=>({controlledExited:spawns>0&&closed,proxyPid:transport?.pid??null,runtimeDisposed:runtime.get("main")===undefined,bridges:bridges.map(b=>b.status?.())}),
     async settle(){await work;late?.();for(let i=0;i<1000&&!viewer.localStore!.nativeHistory("main","logical-1").some(e=>e.nativeOutcome==="completed");i++)await Bun.sleep(1);},
-    async post(stream=false,id=`logical-${writes+1}`){const r=await lifecycle.step("http-dispatch",()=>viewer.app.request(`/api/messages${stream?"/stream":""}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id,threadId:"main",message:"Controlled"})}),1800);const t=await lifecycle.step("http-body",()=>r.text(),1800);return {status:r.status,body:stream?JSON.parse(t.trim().split("\n\n").at(-1)!.replace(/^data: /,"")):JSON.parse(t)};},
+    async post(stream=false,id=`logical-${writes+1}`){const turn={id,threadId:"main",message:"Controlled"};
+      if(stream)return lifecycle.step("http-dispatch",()=>postStreamedTurn(viewer,turn),3600);
+      const r=await lifecycle.step("http-dispatch",()=>viewer.app.request("/api/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(turn)}),1800);const t=await lifecycle.step("http-body",()=>r.text(),1800);return {status:r.status,body:JSON.parse(t)};},
     async close(){const errors=await lifecycle.cleanup();await writeReport(errors);throwFixtureFailures(undefined,errors);}};
   }catch(error){const errors=await lifecycle.cleanup();await writeReport(errors);throwFixtureFailures(error,errors);throw error;}
 }
@@ -150,13 +153,12 @@ async function browserEvidence(engine: "claude"|"mcp", fault?: "fresh-observatio
   const pages:any[]=[];
   const bodyDeadline=performance.now()+20000;
   const step=<T>(name:string,action:()=>Promise<T>|T)=>lifecycle.step(name,action,Math.max(1,Math.min(4000,bodyDeadline-performance.now())));
-  const unsubs=new Map<object,()=>void>();
-  lifecycle.own("observer-server",20,()=>{for(const unsub of unsubs.values())unsub();unsubs.clear();server?.stop(true);});
+  lifecycle.own("observer-server",20,()=>{server?.stop(true);});
   try {
     const {chromium}=await step("browser-module",()=>req(process.env.FOUNDRY_QA_PLAYWRIGHT!));
     f=await lifecycle.acquire("fixture-setup",30,()=>fixture(engine),owned=>owned.close());
     const owned=f;
-    server=Bun.serve({hostname:"127.0.0.1",port:0,fetch(r,s){if(new URL(r.url).pathname==="/ws")return s.upgrade(r,{data:undefined})?undefined:new Response(null,{status:400});return owned.app.fetch(r);},websocket:{open(ws){unsubs.set(ws,owned.events.subscribe(e=>ws.send(JSON.stringify(e))));},message(){},close(ws){unsubs.get(ws)?.();unsubs.delete(ws);}}});
+    server=Bun.serve({hostname:"127.0.0.1",port:0,fetch:owned.fetch,websocket:owned.websocket});
     const origin=`http://127.0.0.1:${server.port}`;
     browser=await lifecycle.acquire("browser-launch",10,()=>chromium.launch({channel:"chrome",headless:true,timeout:4000}),(owned:any)=>owned.close());
     const page:any=await step("old-page",()=>browser.newPage());pages.push(page);page.setDefaultTimeout(4000);page.setDefaultNavigationTimeout(4000);
@@ -197,7 +199,7 @@ async function browserEvidence(engine: "claude"|"mcp", fault?: "fresh-observatio
 }
 if(process.env.FOUNDRY_QA_PLAYWRIGHT)for(const engine of ["claude","mcp"] as const)test(`${engine} actual viewer: old and fresh inspector reconcile tool evidence without another native write`,()=>browserEvidence(engine),30000);
 for(const engine of ["claude","mcp"] as const)for(const stream of [false,true]) {
-  test(`${engine} ${stream?"SSE":"HTTP"}: installed class, one configured bridge/process and two prewritten owned admissions`,async()=>{
+  test(`${engine} ${stream?"streamed":"HTTP"}: installed class, one configured bridge/process and two prewritten owned admissions`,async()=>{
     const f=await fixture(engine);try {
       const first=await f.post(stream);expect(first.body.output).toBe("COMPLETE");expect(first.body.meta.native.nativeOutcome).toBe("completed");
       const old=f.localStore!.nativeTools("main","logical-1");expect(old).toHaveLength(1);expect(old[0].record.result).toContain("OWN_FACT");expect(old[0].persistence).toBe("committed");
@@ -215,7 +217,7 @@ for(const engine of ["claude","mcp"] as const)for(const stream of [false,true]) 
       expect(history.messages.filter((m:any)=>m.actor==="agent").every((m:any)=>m.meta.nativeTools.length===1)).toBe(true);
     }finally{await f.close();}
   });
-  test(`${engine} ${stream?"SSE":"HTTP"}: tool and completed-output SQL failures remain independent of native success`,async()=>{
+  test(`${engine} ${stream?"streamed":"HTTP"}: tool and completed-output SQL failures remain independent of native success`,async()=>{
     const f=await fixture(engine);try{
       const db=(f.localStore as any).db;
       db.exec("CREATE TEMP TRIGGER deny_tool BEFORE INSERT ON session_native_tools BEGIN SELECT RAISE(ABORT,'TOOL_WRITE'); END");
@@ -299,7 +301,7 @@ for(const engine of ["claude","mcp"] as const){
     const f=await fixture(engine,"write-failed");try{const r=await f.post();expect(r.status).toBe(500);expect(f.replies).toHaveLength(0);expect(f.localStore!.nativeTools("main")).toHaveLength(0);expect(f.counts().writes).toBe(1);await f.post(false,"refused");expect(f.counts()).toEqual({spawns:1,writes:1});}finally{await f.close();}
   });
 }
-for(const stream of [false,true])for(const mode of ["tool-error","tool-transport-error","non-text","foreign-duplicate"] as const)test(`MCP ${stream?"SSE":"HTTP"} ${mode}: typed tool outcome stays separate from completed turn`,async()=>{
+for(const stream of [false,true])for(const mode of ["tool-error","tool-transport-error","non-text","foreign-duplicate"] as const)test(`MCP ${stream?"streamed":"HTTP"} ${mode}: typed tool outcome stays separate from completed turn`,async()=>{
   const f=await fixture("mcp",mode);try{
     const r=await f.post(stream);expect(r.body.output).toBe("COMPLETE");expect(r.body.meta.native.nativeOutcome).toBe("completed");
     const native=f.localStore!.nativeHistory("main","logical-1"),begins=native.filter(e=>e.kind==="tool_use"),ends=native.filter(e=>e.kind==="tool_result");
