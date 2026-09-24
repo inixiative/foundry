@@ -148,6 +148,14 @@ const decisions = subscription ? createSubscriptionDecisions({ ...subscription.p
       : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
     console.warn(`[subscription-decisions] ${message}`);
     eventStream.pushError("subscription-decisions", message, "warn");
+  },
+  onPrimedEvent: event => {
+    if (event.type === "process-started") console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
+    if (event.type !== "process-recycled" && event.type !== "violation") return;
+    const message = event.type === "violation" ? `Decision violated the text-only policy (${event.detail}); process recycled`
+      : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError("subscription-decisions", message, "warn");
   } }) : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;

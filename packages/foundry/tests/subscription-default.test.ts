@@ -7,10 +7,10 @@ import { ConfigStore, defaultConfig, starterConfig, validateConfig } from "../sr
 import { resolveSubscriptionPolicy } from "../src/providers/subscription-policy";
 import { NativeAuthentication } from "../src/providers/native-authentication";
 import { defaultProfileSource } from "../src/providers/default-profiles";
-import { buildCodexTextProvider } from "../src/providers/codex-text-provider";
+import { createPrimedDecisionHost } from "../src/providers/primed-decisions";
 import { buildSubscriptionDecisions, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
-import { codexTransport, subscriptionTransport } from "./helpers/subscription-transport";
-import { DECIDED, LIVE, decisionMessages, recordedCodexTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
+import { appServerTransport, subscriptionTransport } from "./helpers/subscription-transport";
+import { settleRecordings } from "./helpers/vcr";
 import { ClaudeCodeSessionAdapter, InMemoryExternalSessionStore } from "../src/providers/session-adapter";
 
 const roots: string[] = [];
@@ -121,87 +121,132 @@ test("default profiles are selected by omission, so the child never overrides CL
   }
 });
 
-function codexRun(transport: Pick<ReturnType<typeof codexTransport>, "spawn" | "statusSpawn">, timeout = 2000) {
+/** The production scheduler over a primed host whose app-server is a controlled double. */
+function primedDecisions(transport: ReturnType<typeof appServerTransport>, bounds: Partial<SubscriptionDecisionConfig> = {}) {
   const root = userHome(), directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
-  return { root, run: buildCodexTextProvider({ directory, source: defaultProfileSource("codex"), runId: crypto.randomUUID(), model: LIVE.codexModel, maxCalls: 2, callTimeoutMs: timeout }, transport) };
+  const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 20, maxQueued: 8, callTimeoutMs: 2000, ...bounds };
+  const primed = createPrimedDecisionHost({ source: config.source, directory, model: config.model, maxConcurrent: config.maxConcurrent ?? 1,
+    callTimeoutMs: config.callTimeoutMs, spawn: transport.spawn });
+  const decisions = buildSubscriptionDecisions(config, primed.createRun);
+  return { root, primed, decisions, async close() { await decisions.shutdown(); await primed.close(); } };
 }
 
-test("Codex decisions are one ephemeral, read-only, tool-disabled exec turn with the prompt on stdin", async () => {
-  const transport = recordedCodexTransport({ status: ["chatgpt"], decision: ["exec-turn"] });
-  const { root, run } = codexRun(transport, 30_000);
-  const result = await run.provider.complete(decisionMessages());
-  expect(result).toMatchObject({ model: LIVE.codexModel, native: { nativeOutcome: "completed" } });
-  expect(result.content).toMatch(DECIDED);
-  expect(result.tokens!.input).toBeGreaterThan(0); expect(result.tokens!.output).toBeGreaterThan(0);
-  const [launch] = transport.launches;
-  expect(launch!.argv.slice(0, 2)).toEqual(["codex", "exec"]);
-  for (const flag of ["--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check"]) expect(launch!.argv).toContain(flag);
-  expect(launch!.argv[launch!.argv.indexOf("--sandbox") + 1]).toBe("read-only");
-  expect(launch!.argv[launch!.argv.indexOf("--model") + 1]).toBe(LIVE.codexModel);
-  expect(launch!.argv).toContain("shell_tool"); expect(launch!.argv.at(-1)).toBe("-");
-  expect(launch!.argv.join(" ")).not.toContain("private-input");
-  expect(launch!.stdin).toContain("private-input"); expect(launch!.stdin).toContain("Foundry's internal decision middleware");
-  expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
+test("Codex decisions run on one warm, tool-free app-server with the prompt never on argv", async () => {
+  const transport = appServerTransport();
+  const { root, primed, decisions, close } = primedDecisions(transport);
+  try {
+    const result = await decisions.provider.complete([{ role: "system", content: "Return JSON" }, ...messages], { threadId: "T:aux:route" });
+    expect(result).toMatchObject({ content: "accepted-private-answer", model: "gpt-5.6-luna", tokens: { input: 2, cacheRead: 1, output: 2 }, native: { nativeOutcome: "completed" } });
+    const [launch] = transport.launches;
+    expect(launch!.argv.slice(0, 2)).toEqual(["codex", "app-server"]);
+    expect(launch!.argv).toContain("shell_tool");
+    expect(launch!.argv.filter((_, i) => launch!.argv[i - 1] === "-c")).toEqual(['approval_policy="never"', 'web_search="disabled"']);
+    expect(launch!.argv.join(" ")).not.toContain("private-input");
+    expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
+    const start = transport.requests.find(r => r.method === "thread/start")!.params;
+    expect(start).toMatchObject({ model: "gpt-5.6-luna", sandbox: "read-only", approvalPolicy: "never", ephemeral: true, developerInstructions: "Return JSON",
+      config: { "mcp_servers.node_repl.enabled": false, notify: [] } });
+    expect(start.baseInstructions).toContain("Foundry's internal decision middleware");
+    expect(transport.turns).toEqual(["private-input"]);
+    // The warm process holds a shared registration on the login while it lives.
+    expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(true);
+    const receipts = readFileSync(primed.receiptsPath, "utf8");
+    expect(receipts).not.toContain("private-input"); expect(receipts).not.toContain("accepted-private-answer");
+    expect(JSON.parse(receipts.trim().split("\n")[0]!)).toMatchObject({ transport: "primed", valid: true, settled: true, release: "released", prime: "cold" });
+  } finally { await close(); }
+  expect(transport.launches[0]!.exited).toBe(true);
   expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
-  const report = readFileSync(run.reportPath, "utf8");
-  expect(report).not.toContain("private-input"); expect(report).not.toContain(result.content);
-  expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released", processExit: "exited", statusProcessExit: "exited" });
-  const outcome = { content: result.content, native: result.native?.nativeOutcome, call: run.snapshot().calls.map(c => ({ valid: c.valid, release: c.release })) };
-  expect(outcome).toEqual((await sameAsLive(transport.vcr, "exec-turn", outcome)).live);
-}, LIVE_TIMEOUT);
+});
 
-for (const [name, transport] of [
-  ["an API-key login", () => codexTransport({ login: "Logged in using an API key - sk-***" })],
-  ["a tool item", () => codexTransport({ items: [{ id: "cmd", type: "command_execution", command: "ls" }] })],
-  ["a non-zero exit", () => codexTransport({ exitCode: 1 })],
-] as const) test(`Codex decisions refuse ${name} with no fallback, retry or further admission`, async () => {
+test("each middleware role keeps its own primed session and re-primes only when its stable context changes", async () => {
+  const transport = appServerTransport();
+  const { decisions, close } = primedDecisions(transport);
+  const cache = "## Domain cache (api)\nroutes live under src/api\n";
+  const advise = (message: string, content = cache) => decisions.provider.complete([{ role: "system", content: "ADVISE" },
+    { role: "user", content: `${content}\n## Message\n${message}` }], { threadId: "T:aux:domain:api", stablePrefix: content });
+  try {
+    await advise("one"); await advise("two");
+    await decisions.provider.complete([{ role: "system", content: "GUARD" }, { role: "user", content: `${cache}\n## Tool observation\nls` }],
+      { threadId: "T:aux:domain:api", stablePrefix: cache });
+    await advise("three", "## Domain cache (api)\nroutes moved to src/http\n");
+    const primers = transport.requests.filter(r => r.method === "turn/start" && String(r.params.input[0].text).includes("standing context"));
+    // advice primed once, guard (other instructions, same aux id) separately, then advice again after the cache changed.
+    expect(primers.map(r => String(r.params.input[0].text).split("\n")[1])).toEqual(["routes live under src/api", "routes live under src/api", "routes moved to src/http"]);
+    expect(transport.requests.filter(r => r.method === "thread/fork")).toHaveLength(4);
+    // Only the per-cycle part is sent as the decision input.
+    expect(transport.turns).toEqual(["\n## Message\none", "\n## Message\ntwo", "\n## Tool observation\nls", "\n## Message\nthree"]);
+  } finally { await close(); }
+});
+
+for (const [name, transport, closes] of [
+  ["an API-key login", () => appServerTransport({ login: "apiKey" }), false],
+  ["a tool item", () => appServerTransport({ items: [{ id: "cmd", type: "commandExecution", command: "ls" }] }), true],
+] as const) test(`Codex decisions refuse ${name} with no fallback or retry`, async () => {
   const t = transport();
-  const { root, run } = codexRun(t);
-  await expect(run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
-  expect(t.launches.length).toBe(name === "an API-key login" ? 0 : 1);
-  await expect(run.provider.complete(messages)).rejects.toThrow("admission closed");
-  expect(t.launches.length).toBeLessThanOrEqual(1);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
+  const { decisions, close } = primedDecisions(t);
+  try {
+    await expect(decisions.provider.complete(messages)).rejects.toThrow("Subscription decision failed; no fallback or retry");
+    expect(t.turns.length).toBe(name === "an API-key login" ? 0 : 1);
+    expect(decisions.snapshot().closed).toBe(closes);
+  } finally { await close(); }
 });
 
-// A controlled transport emitting the item live runs recorded (codex-cli 0.155.1, 2026-09-24): after chatgpt.com
-// refuses the responses websocket, codex exec reports its HTTPS fallback as an `error` item, then answers. The
-// fallback is intermittent, so the recorded cassettes may or may not contain it; this keeps the case covered.
-test("the Codex websocket-to-HTTPS fallback notice does not fail the decision; other error items still do", async () => {
-  const notice = { id: "item_0", type: "error", message: "Falling back from WebSockets to HTTPS transport. unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses" };
-  const { run } = codexRun(codexTransport({ items: [notice] }));
-  await expect(run.provider.complete(messages)).resolves.toMatchObject({ content: "accepted-private-answer", native: { nativeOutcome: "completed" } });
-  expect(run.snapshot().calls[0]).toMatchObject({ valid: true, release: "released" });
-  const other = codexRun(codexTransport({ items: [{ ...notice, message: "Tool shell_tool is disabled" }] }));
-  await expect(other.run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
+test("a stalled Codex decision is interrupted at its deadline; settled, it leaves admission open", async () => {
+  const t = appServerTransport({ hang: true });
+  const { decisions, close } = primedDecisions(t, { callTimeoutMs: 200 });
+  try {
+    await expect(decisions.provider.complete(messages)).rejects.toThrow("no fallback or retry");
+    expect(t.requests.filter(r => r.method === "turn/interrupt")).toHaveLength(1);
+    expect(decisions.snapshot()).toMatchObject({ closed: false, active: false });
+    expect(t.launches[0]!.exited).toBe(false);
+  } finally { await close(); }
 });
 
-test("a stalled Codex decision is killed at its deadline and its profile lock released", async () => {
-  const t = codexTransport({ hang: true });
-  const { root, run } = codexRun(t, 200);
-  await expect(run.provider.complete(messages)).rejects.toThrow("Codex text call failed");
-  expect(run.snapshot().calls[0]).toMatchObject({ deadline: true, processExit: "exited", valid: false });
-  expect(t.launches[0]!.exited).toBe(true);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
+test("an unacknowledged interrupt recycles the process before the decision reports settled", async () => {
+  const t = appServerTransport({ hang: true, ignoreInterrupt: true });
+  const { decisions, close } = primedDecisions(t, { callTimeoutMs: 200 });
+  try {
+    await expect(decisions.provider.complete(messages)).rejects.toThrow("no fallback or retry");
+    expect(t.launches[0]!.exited).toBe(true);
+    expect(decisions.snapshot().closed).toBe(false);
+  } finally { await close(); }
+});
+
+test("a substituted model is refused even though the turn completed", async () => {
+  const t = appServerTransport({ model: "other-model" });
+  const { decisions, close } = primedDecisions(t);
+  try {
+    await expect(decisions.provider.complete(messages)).rejects.toThrow("no fallback or retry");
+    expect(decisions.snapshot().closed).toBe(true);
+  } finally { await close(); }
 });
 
 test("the decision scheduler accepts a Codex decision only with settled ownership evidence", async () => {
-  const root = userHome(), directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
-  const transport = recordedCodexTransport({ status: ["chatgpt"], decision: ["scheduled"] });
-  const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: LIVE.codexModel, maxCalls: 3, maxQueued: 2, callTimeoutMs: 30_000 };
-  const decisions = buildSubscriptionDecisions(config, cfg => buildCodexTextProvider(cfg, transport));
-  const observed: NativeEvidence[] = [];
-  const owner = { threadId: "T", generation: "G", dispatchId: "D" };
-  const result = await decisions.provider.complete(decisionMessages(), { threadId: "T:aux:route", nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
-  expect(result.content).toMatch(DECIDED);
-  expect(result.native?.owner?.providerSessionKey).toBe("T:aux:route");
-  expect(observed.map(e => e.nativeOutcome)).toEqual(["unknown", "completed"]);
-  await expect(decisions.provider.complete(messages, { model: "gpt-6-astra" })).rejects.toThrow("refused");
-  expect(decisions.snapshot()).toMatchObject({ attempts: 1, closed: false });
-  decisions.close();
-  const outcome = { content: result.content, observed: observed.map(e => e.nativeOutcome), attempts: decisions.snapshot().attempts };
-  expect(outcome).toEqual((await sameAsLive(transport.vcr, "scheduled", outcome)).live);
-}, LIVE_TIMEOUT);
+  const transport = appServerTransport();
+  const { decisions, close } = primedDecisions(transport, { maxCalls: 3, maxQueued: 2 });
+  try {
+    const observed: NativeEvidence[] = [];
+    const owner = { threadId: "T", generation: "G", dispatchId: "D" };
+    const result = await decisions.provider.complete(messages, { threadId: "T:aux:route", nativeObservation: { owner, register(e) { observed.push(e); }, observe(e) { observed.push(e); } } });
+    expect(result.content).toBe("accepted-private-answer");
+    expect(result.native?.owner?.providerSessionKey).toBe("T:aux:route");
+    expect(observed.map(e => e.nativeOutcome)).toEqual(["unknown", "completed"]);
+    expect(observed[0]!.admissionId).toBe(observed[1]!.admissionId);
+    await expect(decisions.provider.complete(messages, { model: "gpt-6-astra" })).rejects.toThrow("refused");
+    expect(decisions.snapshot()).toMatchObject({ attempts: 1, closed: false });
+  } finally { await close(); }
+});
+
+test("a refused registration dispatches nothing and leaves admission open", async () => {
+  const transport = appServerTransport();
+  const { decisions, close } = primedDecisions(transport);
+  try {
+    await expect(decisions.provider.complete(messages, { threadId: "T:aux:route", nativeObservation: { owner: { threadId: "T", generation: "G", dispatchId: "D" },
+      register() { throw Error("journal refused"); }, observe() {} } })).rejects.toThrow("no fallback or retry");
+    expect(transport.turns).toHaveLength(0);
+    expect(decisions.snapshot().closed).toBe(false);
+  } finally { await close(); }
+});
 
 async function startFoundry(root: string, extra: Record<string, string> = {}) {
   const probe = join(root, "network-attempt"), preload = join(root, "deny-network.ts");
@@ -263,13 +308,15 @@ test("shutdown stops live worker and decision processes so the user's profile lo
   expect(existsSync(join(root, ".claude", ".foundry-auth-lock"))).toBe(true);
 
   const directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
-  const codex = codexTransport({ hang: true });
+  const codex = appServerTransport({ hang: true });
+  const primed = createPrimedDecisionHost({ source: defaultProfileSource("codex"), directory, model: "gpt-5.6-luna", maxConcurrent: 1, callTimeoutMs: 20000, spawn: codex.spawn });
   const decisions = buildSubscriptionDecisions({ directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 3, maxQueued: 2, callTimeoutMs: 20000 },
-    cfg => buildCodexTextProvider(cfg, codex));
+    primed.createRun);
   const pending = decisions.provider.complete(messages).then(() => undefined, (error: Error) => error);
-  for (let n = 0; !existsSync(join(root, ".codex", ".foundry-auth-shared")); n++) { if (n > 200) throw Error("decision never launched"); await Bun.sleep(5); }
+  for (let n = 0; !codex.turns.length; n++) { if (n > 200) throw Error("decision never launched"); await Bun.sleep(5); }
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(true);
 
-  await Promise.all([adapter.releaseAll(), decisions.shutdown()]);
+  await Promise.all([adapter.releaseAll(), decisions.shutdown().then(() => primed.close())]);
   expect((await pending)?.message).toContain("no fallback");
   expect(worker.launches[0]!.exited).toBe(true); expect(codex.launches[0]!.exited).toBe(true);
   expect(existsSync(join(root, ".claude", ".foundry-auth-lock"))).toBe(false);

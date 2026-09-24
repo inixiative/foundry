@@ -38,8 +38,14 @@ export interface NativeTextCall {
   valid: boolean;
   /** Numeric counters only; the raw provider usage object is not retained here. */
   usage?: Omit<TokenCounts, "providerUsage">;
-  /** not-admitted: refused before any native launch, so nothing remains owned. */
-  failure?: "provider-or-evidence" | "deadline" | "not-admitted" | "rate-limited";
+  /** not-admitted: refused before any native write, so nothing remains owned.
+   * native-failed: the runtime settled the turn as failed (primed decisions). */
+  failure?: "provider-or-evidence" | "deadline" | "not-admitted" | "rate-limited" | "native-failed";
+  /** "primed": no per-call process; the warm host proves settlement (turn terminal or process exit). */
+  transport?: "primed";
+  /** Primed calls: the native turn reached a terminal or its process exit was observed. */
+  settled?: boolean;
+  prime?: "warm" | "cold";
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");

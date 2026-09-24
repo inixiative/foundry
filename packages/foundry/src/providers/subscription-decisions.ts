@@ -1,6 +1,7 @@
 import { freezeEvidence, sameNativeOwner, type CompletionOpts, type CompletionResult, type LLMMessage, type LLMProvider, type NativeEvidence, type NativeOwner, type OwnedAdmissionInspection } from "@inixiative/foundry-core";
 import { createNativeTextProvider, type NativeTextConfig } from "./native-text-provider";
-import { createCodexTextProvider } from "./codex-text-provider";
+import { createPrimedDecisionHost } from "./primed-decisions";
+import type { PrimedEvent } from "@inixiative/agent-session";
 import { DECISION_PRIORITY } from "./decision-priority";
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, "runId" | "maxCalls"> {
@@ -15,6 +16,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, "runI
   onPressure?: (event: DecisionPressure) => void;
   /** First rate-limit backoff; doubles to 60 s. Default 5 s. */
   rateLimitBackoffMs?: number;
+  /** Codex decisions: warm-host events (priming, eviction, recycles, limits); observers only. */
+  onPrimedEvent?: (event: PrimedEvent) => void;
 }
 export type DecisionPressure =
   | { kind: "shed"; threadId: string; priority: number; queued: number }
@@ -26,9 +29,24 @@ type Pending = { messages: LLMMessage[]; opts: CompletionOpts; owner: NativeOwne
   priority: number; thread: string; seq: number;
   resolve(value: CompletionResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-/** Decisions run on the decision profile's own runtime: Codex exec or text-only Claude. */
+/**
+ * Decisions run on the decision profile's own runtime. Codex decisions run on one
+ * warm app-server with a primed session per middleware role (agent-session
+ * CodexPrimedSessions); the scheduler below keeps priority and fairness and its
+ * concurrency is turns on that process. A Claude decision profile keeps the
+ * bounded text-only provider.
+ */
 export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
-  return buildSubscriptionDecisions(config, config.source.runtime === "codex" ? createCodexTextProvider : createNativeTextProvider);
+  const { onPrimedEvent, ...options } = config;
+  if (config.source.runtime !== "codex") return buildSubscriptionDecisions(options, createNativeTextProvider);
+  const primed = createPrimedDecisionHost({ source: config.source, directory: config.directory, model: config.model,
+    maxConcurrent: config.maxConcurrent ?? 1, callTimeoutMs: config.callTimeoutMs, onEvent: onPrimedEvent });
+  const decisions = buildSubscriptionDecisions(options, primed.createRun);
+  return { ...decisions,
+    close: () => { decisions.close(); void primed.close(); },
+    /** Shutdown also stops the warm process and deletes its primed threads. */
+    shutdown: async (timeoutMs?: number) => { await decisions.shutdown(timeoutMs); await primed.close(); },
+    snapshot: () => ({ ...decisions.snapshot(), primed: primed.host.snapshot() }) };
 }
 
 export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, createRun: (config: NativeTextConfig) => TextRun) {
@@ -134,7 +152,9 @@ export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, 
       });
       check(pending);
       const call = run.snapshot().calls[0];
-      if (!call?.valid || call.release !== "released" || call.processExit !== "exited" || call.statusProcessExit !== "exited"
+      // Per-call processes prove release by their exit; a primed call by its settled turn on the warm host.
+      const released = call?.transport === "primed" ? call.settled === true : call?.processExit === "exited" && call.statusProcessExit === "exited";
+      if (!call?.valid || call.release !== "released" || !released
         || !registered?.admissionId || !result.native || !sameNativeOwner(result.native.owner, physicalOwner)
         || result.native.admissionId !== registered.admissionId) throw Error("Subscription decision acceptance unproved");
       try { run.close(); finalized = true; } catch { close(); throw Error("Subscription receipt finalization failed"); }
@@ -147,8 +167,8 @@ export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, 
       pending.resolve(completion);
     } catch {
       const call = run?.snapshot().calls[0];
-      const settled = !call || (call.processExit !== "pending" && call.statusProcessExit !== "pending"
-        && (call.processExit === "not-started" || call.release === "released"));
+      const settled = !call || (call.transport === "primed" ? call.settled === true
+        : call.processExit !== "pending" && call.statusProcessExit !== "pending" && (call.processExit === "not-started" || call.release === "released"));
       const limited = settled && call?.failure === "rate-limited";
       const error = Error(limited ? "Subscription decision rate limited; no fallback or retry" : "Subscription decision failed; no fallback or retry");
       if (limited) {
@@ -161,8 +181,10 @@ export function buildSubscriptionDecisions(options: SubscriptionDecisionConfig, 
         evidence: freezeEvidence({ ...registered, nativeOutcome: "unknown", localOutcome: "rejected" }),
         call: settled ? "settled" : "unknown", capacity: settled ? "settled" : "unknown", cleanup: call?.release === "released" ? "released" : "unknown",
       } });
-      // Refusal before any native launch leaves nothing owned; anything else closes admission.
-      if (!settled || (call?.failure && call.failure !== "not-admitted" && call.failure !== "rate-limited")) close();
+      // Refusal before any native write leaves nothing owned. A primed turn that settled (a native failure, or a
+      // deadline whose interrupt was acknowledged) leaves nothing owned either. Anything else closes admission.
+      const settledFailures = call?.transport === "primed" ? ["not-admitted", "rate-limited", "deadline", "native-failed"] : ["not-admitted", "rate-limited"];
+      if (!settled || (call?.failure && !settledFailures.includes(call.failure))) close();
       pending.reject(error);
     } finally {
       if (run && !finalized) { try { run.close(); } catch { close(); } }

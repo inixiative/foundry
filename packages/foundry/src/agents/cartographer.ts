@@ -363,6 +363,8 @@ export class Cartographer {
     const mapContent = JSON.stringify(this._map.entries, null, 2);
     const atlasSection = this._atlasSection();
 
+    // The topology map and atlas change only when layers or the atlas change: a stable, primable prefix.
+    const stablePrefix = `## Available context (topology map)\n${mapContent}\n${atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}\n` : ""}`;
     const messages: LLMMessage[] = [
       { role: "system", content: this._routePrompt },
       {
@@ -383,7 +385,7 @@ export class Cartographer {
       messages: Object.freeze(messages.map((m) => Object.freeze({ role: m.role, content: m.content }))) }));
 
     try {
-      const result = await this._llm.complete(messages, this._llmOpts);
+      const result = await this._llm.complete(messages, { ...this._llmOpts, stablePrefix });
       const parsed = parseJSON<RouteResult>(result.content);
       return {
         layers: parsed.layers ?? [],

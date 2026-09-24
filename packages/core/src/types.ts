@@ -108,6 +108,12 @@ export interface CompletionOpts {
   cwd?: string;
   /** Scheduling hint for providers that queue calls: higher runs first. Default 0. Others ignore it. */
   priority?: number;
+  /**
+   * Leading text of the final user message that stays the same across calls
+   * (owned layer content). Session providers may prime it once and reuse the
+   * cached prefix; others ignore it. Messages are sent unchanged either way.
+   */
+  stablePrefix?: string;
 }
 
 export interface CompletionResult {
