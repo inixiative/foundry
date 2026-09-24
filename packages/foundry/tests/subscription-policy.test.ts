@@ -137,13 +137,22 @@ for (const throwsOnKill of [false, true]) test(`unknown status exit closes admis
   const auth = new SubscriptionAuthentication(f.root, f.worker, () => {
     launches++;
     return { ...subscriptionStatusProcess(), exited, kill() { kills++; if (throwsOnKill) throw Error("Controlled termination failure"); } };
-  });
+  }, 2_000);
   try {
-    const first = auth.prepare("first", "claude");
-    await expect(auth.prepare("concurrent", "claude")).rejects.toThrow("no API fallback");
-    await expect(first).rejects.toThrow("no API fallback");
+    const shared = await Promise.allSettled([auth.prepare("first", "claude"), auth.prepare("concurrent", "claude")]);
+    for (const outcome of shared) expect(outcome.status === "rejected" && String(outcome.reason)).toContain("no API fallback");
     await expect(auth.prepare("later", "claude")).rejects.toThrow("no API fallback");
     expect(launches).toBe(1); expect(kills).toBe(1);
     expect(existsSync(join(f.worker.profileDirectory, ".foundry-auth-lock"))).toBe(false);
   } finally { settle(143); }
 }, 8000);
+
+test("concurrent worker launches share one subscription status check and reuse the verified result", async () => {
+  const f = fixture();
+  let checks = 0;
+  const auth = new SubscriptionAuthentication(f.root, f.worker, () => { checks++; return subscriptionStatusProcess(); });
+  const [first, second] = await Promise.all([auth.prepare("thread-a", "claude"), auth.prepare("thread-b", "claude")]);
+  const third = await auth.prepare("thread-c", "claude");
+  expect(checks).toBe(1);
+  for (const launch of [first, second, third]) launch.release();
+});
