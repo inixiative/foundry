@@ -1,6 +1,5 @@
-import { MODEL_REGISTRY, type FoundryProviderInfo } from "../models/registry";
+import { MODEL_REGISTRY, registryModel, type FoundryProviderInfo, type ModelReasoning } from "../models/registry";
 import { OpenAIProvider, openAiApiRoot } from "./openai";
-import { XAIProvider } from "./xai";
 import type { LLMProvider } from "@inixiative/foundry-core";
 
 export interface RegisteredProviderConfig {
@@ -13,9 +12,6 @@ export interface RegisteredProviderConfig {
   id?: string;
   headers?: Record<string, string>;
 }
-
-/** Hosts that reject `reasoning_effort: "none"` because thinking cannot be switched off. */
-const ALWAYS_REASONING = new Set(["kimi"]);
 
 /** Local hosts require a bearer the server ignores; the OpenAI client library refuses an empty one. */
 const LOCAL_PLACEHOLDER_KEY = "local";
@@ -43,16 +39,13 @@ export function providerApiRoot(providerId: string, baseUrl?: string): string {
   return root;
 }
 
-/** True when the registry says this model takes a reasoning effort. */
-export function providerReasoningModels(providerId: string): (model: string) => boolean {
-  const models = new Map(registeredProvider(providerId).models.map((model) => [model.id, model.capabilities]));
-  return (model: string) => models.get(model)?.includes("reasoning") ?? false;
+/** The registry's reasoning request shape for this provider's models. */
+export function providerReasoning(providerId: string): (model: string) => ModelReasoning | undefined {
+  registeredProvider(providerId);
+  return (model: string) => registryModel(providerId, model)?.reasoning;
 }
 
-/**
- * Build a client for any registered OpenAI-compatible provider. One adapter,
- * one table — xAI is the exception and gets its own class.
- */
+/** Build a client for any registered OpenAI-compatible provider: one adapter, one table. */
 export function createRegisteredProvider(providerId: string, config: RegisteredProviderConfig = {}): LLMProvider {
   const provider = registeredProvider(providerId);
   if (!["openai", "openai-compatible", "xai"].includes(provider.type))
@@ -64,13 +57,10 @@ export function createRegisteredProvider(providerId: string, config: RegisteredP
     apiKey: config.apiKey?.trim() || LOCAL_PLACEHOLDER_KEY,
     apiRoot: providerApiRoot(providerId, config.baseUrl),
     defaultModel: config.defaultModel ?? provider.models[0]!.id,
-    reasoningModels: providerReasoningModels(providerId),
+    reasoning: providerReasoning(providerId),
     headers: { ...(providerId === "openrouter" ? OPENROUTER_HEADERS : {}), ...config.headers },
   };
-  const id = config.id ?? providerId;
-  return provider.type === "xai"
-    ? new XAIProvider(options, id)
-    : new OpenAIProvider({ ...options, explicitNoReasoning: !ALWAYS_REASONING.has(providerId) }, id);
+  return new OpenAIProvider(options, config.id ?? providerId);
 }
 
 /** Read a registered provider's credential from the environment. */

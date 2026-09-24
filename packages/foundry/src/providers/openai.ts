@@ -1,4 +1,5 @@
 import { HttpCompletionSettlement } from "./http-settlement";
+import { DECISION_MODEL, registryModel, type ModelReasoning } from "../models/registry";
 import type {
   LLMProvider,
   LLMMessage,
@@ -11,7 +12,7 @@ import type {
 
 export interface OpenAIConfig {
   apiKey: string;
-  /** Defaults to "gpt-5.6-luna". */
+  /** Defaults to the registry decision model. */
   defaultModel?: string;
   /** Override base URL for Cursor, Azure, local proxies, etc. Normalized to a versioned root. */
   baseUrl?: string;
@@ -21,14 +22,14 @@ export interface OpenAIConfig {
   organization?: string;
   /** Extra headers sent on every request (compatible hosts that require attribution). */
   headers?: Record<string, string>;
-  /** Which model ids take `reasoning_effort`. Defaults to the OpenAI gpt-5.6 family. */
-  reasoningModels?: (model: string) => boolean;
-  /** Send `reasoning_effort: "none"` when the caller asked for no thinking. Off for hosts that reject it. */
-  explicitNoReasoning?: boolean;
+  /**
+   * Reasoning request shape per model id. Defaults to the registry's OpenAI
+   * entries — the map is authoritative; model names are not parsed.
+   */
+  reasoning?: (model: string) => ModelReasoning | undefined;
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
-const OPENAI_REASONING_MODELS = (model: string) => /^gpt-5\.6(?:-|$)/.test(model);
 
 /**
  * Resolve the versioned API root for an OpenAI-compatible host.
@@ -42,14 +43,13 @@ export function openAiApiRoot(baseUrl: string): string {
 }
 
 /**
- * OpenAI Chat Completions adapter.
- * Covers GPT-4o, Codex, o-series, and any OpenAI-compatible API
- * (Cursor, Azure, Together, Groq, local LLMs via LiteLLM/Ollama).
+ * OpenAI Chat Completions adapter, and the single adapter for the whole
+ * OpenAI-compatible family. Per-model differences — which effort parameter,
+ * which levels, which output field — come from the registry, never from the
+ * model id's shape. `createRegisteredProvider` is the usual way in.
  *
- * Set baseUrl to point at any compatible endpoint:
- *   - Cursor: uses OpenAI-compatible format
- *   - Azure: "https://{resource}.openai.azure.com/openai/deployments/{deployment}"
- *   - Local: "http://localhost:11434/v1" (Ollama)
+ * Azure is not covered: its deployment paths and api-version query carry no
+ * version segment for `openAiApiRoot` to find.
  */
 export class OpenAIProvider implements LLMProvider {
   readonly id: string;
@@ -61,18 +61,16 @@ export class OpenAIProvider implements LLMProvider {
   private _apiRoot: string;
   private _organization: string | undefined;
   private _extraHeaders: Record<string, string>;
-  protected _isReasoningModel: (model: string) => boolean;
-  private _explicitNoReasoning: boolean;
+  protected _reasoningFor: (model: string) => ModelReasoning | undefined;
 
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? "openai";
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gpt-5.6-luna";
+    this._defaultModel = config.defaultModel ?? DECISION_MODEL;
     this._apiRoot = config.apiRoot?.trim() || openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
     this._extraHeaders = config.headers ?? {};
-    this._isReasoningModel = config.reasoningModels ?? OPENAI_REASONING_MODELS;
-    this._explicitNoReasoning = config.explicitNoReasoning ?? true;
+    this._reasoningFor = config.reasoning ?? ((model) => registryModel("openai", model)?.reasoning);
   }
 
   /** Versioned API root this adapter posts to. */
@@ -93,15 +91,17 @@ export class OpenAIProvider implements LLMProvider {
       model,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
-    const reasoningModel = this._isReasoningModel(model);
-    if (reasoningModel) {
-      const effort = typeof opts?.thinking === "string" ? opts.thinking : "none";
-      if (effort !== "none" || this._explicitNoReasoning) body.reasoning_effort = effort;
+    const reasoning = this._reasoningFor(model);
+    if (reasoning) {
+      const asked = typeof opts?.thinking === "string" ? (opts.thinking as ModelReasoning["fallback"]) : undefined;
+      const effort = asked && reasoning.efforts.includes(asked) ? asked : reasoning.fallback;
+      if (reasoning.param === "reasoning.effort") body.reasoning = { effort };
+      else body.reasoning_effort = effort;
     }
-    if (opts?.maxTokens !== undefined) body[reasoningModel ? "max_completion_tokens" : "max_tokens"] = opts.maxTokens;
+    if (opts?.maxTokens !== undefined) body[reasoning?.outputField ?? "max_tokens"] = opts.maxTokens;
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
     if (opts?.topP !== undefined) body.top_p = opts.topP;
-    if (opts?.stop) body.stop = opts.stop;
+    if (opts?.stop && !reasoning?.rejectsStop) body.stop = opts.stop;
     return body;
   }
 

@@ -37,9 +37,9 @@ test("a fresh configuration is subscription-only: Claude worker and Codex Luna d
   const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd })!;
   expect(resolved.worker).toMatchObject({ runtime: "claude", mode: "native-profile", profileDirectory: join(root, ".claude") });
   expect(resolved.decision).toMatchObject({ runtime: "codex", mode: "native-profile", profileDirectory: join(root, ".codex") });
-  expect(resolved.policy).toEqual({ model: "gpt-5.6-luna", directory: join(cwd, ".foundry", "decision-receipts"), maxCalls: 1000, maxQueued: 8, callTimeoutMs: 30000 });
+  expect(resolved.policy).toEqual({ model: "gpt-6-luna", directory: join(cwd, ".foundry", "decision-receipts"), maxCalls: 1000, maxQueued: 8, callTimeoutMs: 30000 });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
-  expect(resolved.config.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-5.6-luna" });
+  expect(resolved.config.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-6-luna" });
   expect(resolved.rerouted).toEqual([]);
 });
 
@@ -92,9 +92,9 @@ test("saved decision roles run on subscription decisions without rewriting the s
   const resolved = resolveSubscriptionPolicy(config)!;
   expect(JSON.stringify(config)).toBe(before);
   expect(resolved.rerouted).toEqual(["librarian (claude-code/opus)", "P/classifier (openai/gpt-5.6-luna)"]);
-  expect(resolved.config.agents.librarian).toMatchObject({ provider: "subscription-decisions", model: "gpt-5.6-luna" });
+  expect(resolved.config.agents.librarian).toMatchObject({ provider: "subscription-decisions", model: "gpt-6-luna" });
   expect(resolved.config.agents.artificer).toMatchObject({ provider: "claude-code", model: "opus" });
-  expect(resolved.config.projects.P!.agents!.classifier).toMatchObject({ provider: "subscription-decisions", model: "gpt-5.6-luna" });
+  expect(resolved.config.projects.P!.agents!.classifier).toMatchObject({ provider: "subscription-decisions", model: "gpt-6-luna" });
   config.agents.librarian.thinking = "high";
   expect(() => validateConfig(config)).toThrow("sampling override");
 });
@@ -204,7 +204,7 @@ test("a fresh install starts subscription-only with no settings, API provider or
       if (attempt >= 200 || foundry.child.exitCode !== null) throw Error(`Fresh subscription startup did not become ready: ${foundry.output}`);
       await Bun.sleep(25);
     }
-    expect(foundry.output).toContain(`Subscription-only: worker claude-code (${join(root, ".claude")}), decisions codex gpt-5.6-luna (${join(root, ".codex")}); no API providers`);
+    expect(foundry.output).toContain(`Subscription-only: worker claude-code (${join(root, ".claude")}), decisions codex gpt-6-luna (${join(root, ".codex")}); no API providers`);
     expect(foundry.output).toContain("Librarian (subscription-decisions)");
     expect(foundry.output).not.toContain("openai-decisions");
     expect(foundry.output).not.toContain("Decision roles use subscription decisions");
@@ -212,7 +212,7 @@ test("a fresh install starts subscription-only with no settings, API provider or
     expect((await fetch(`http://127.0.0.1:${port}/api/health`)).status).toBe(200);
     const saved = JSON.parse(readFileSync(join(foundry.cwd, ".foundry", "settings.json"), "utf8"));
     expect(saved.apiTokens).toBeUndefined();
-    expect(saved.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-5.6-luna" });
+    expect(saved.defaults).toMatchObject({ provider: "claude-code", classifierProvider: "subscription-decisions", classifierModel: "gpt-6-luna" });
     expect(existsSync(foundry.probe)).toBe(false);
     expect(statSync(join(foundry.cwd, ".foundry", "decision-receipts")).mode & 0o777).toBe(0o700);
   } finally { await foundry.stop(); }
@@ -226,6 +226,6 @@ test("API tokens opted in without a key refuse startup instead of falling back t
   const code = await foundry.child.exited;
   await foundry.stop();
   expect(code).not.toBe(0);
-  expect(foundry.output).toContain("Foundry decisions require enabled OpenAI access and OPENAI_API_KEY");
+  expect(foundry.output).toContain("Foundry decisions require OPENAI_API_KEY for openai/gpt-6-luna");
   expect(foundry.output).not.toContain("Subscription-only");
 }, 10000);

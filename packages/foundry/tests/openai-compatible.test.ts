@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openAiApiRoot, OpenAIProvider } from "../src/providers/openai";
-import { XAIProvider } from "../src/providers/xai";
-import { createRegisteredProvider, providerApiKey, providerApiRoot, providerReasoningModels } from "../src/providers/openai-compatible";
-import { MODEL_REGISTRY } from "../src/models/registry";
+import { createRegisteredProvider, providerApiKey, providerApiRoot, providerReasoning } from "../src/providers/openai-compatible";
+import { MODEL_REGISTRY, registryModel } from "../src/models/registry";
 
 function captureRequest() {
   const calls: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
@@ -75,36 +74,38 @@ describe("registered OpenAI-compatible providers", () => {
     expect(() => createRegisteredProvider("typesafe", { apiKey: "k" })).toThrow("not OpenAI-compatible");
   });
 
-  test("reasoning effort follows the registry tag, not a hardcoded model prefix", async () => {
+  test("reasoning shape comes from the registry map, not from the model name", async () => {
     const { calls, restore } = captureRequest();
     try {
-      expect(providerReasoningModels("deepseek")("deepseek-flash")).toBe(true);
-      expect(providerReasoningModels("openrouter")("meta-llama/llama-3.3-70b-instruct")).toBe(false);
+      expect(providerReasoning("deepseek")("deepseek-flash")).toMatchObject({ param: "reasoning_effort" });
+      expect(providerReasoning("openrouter")("meta-llama/llama-3.3-70b-instruct")).toBeUndefined();
       await createRegisteredProvider("deepseek", { apiKey: "k" }).complete([{ role: "user", content: "hi" }], { maxTokens: 32 });
       await createRegisteredProvider("openrouter", { apiKey: "k" }).complete([{ role: "user", content: "hi" }], { maxTokens: 32 });
-      expect(calls[0].body.reasoning_effort).toBe("none");
-      expect(calls[0].body.max_completion_tokens).toBe(32);
+      expect(calls[0].body.reasoning_effort).toBe("low");
+      expect(calls[0].body.max_tokens).toBe(32);
       expect(calls[1].body.reasoning_effort).toBeUndefined();
       expect(calls[1].body.max_tokens).toBe(32);
       expect(calls[1].headers["HTTP-Referer"]).toBeString();
     } finally { restore(); }
   });
 
-  test("Kimi never claims no-thinking because K3 cannot switch it off", async () => {
+  test("a model whose ladder has no \"none\" is never asked for no thinking", async () => {
     const { calls, restore } = captureRequest();
     try {
-      await createRegisteredProvider("kimi", { apiKey: "k" }).complete([{ role: "user", content: "hi" }]);
-      await createRegisteredProvider("kimi", { apiKey: "k" }).complete([{ role: "user", content: "hi" }], { thinking: "high" });
-      expect(calls[0].body.reasoning_effort).toBeUndefined();
-      expect(calls[1].body.reasoning_effort).toBe("high");
+      expect(registryModel("kimi", "kimi-k3")!.reasoning!.efforts).not.toContain("none");
+      const kimi = createRegisteredProvider("kimi", { apiKey: "k" });
+      await kimi.complete([{ role: "user", content: "hi" }]);
+      await kimi.complete([{ role: "user", content: "hi" }], { thinking: "none" });
+      await kimi.complete([{ role: "user", content: "hi" }], { thinking: "high" });
+      expect(calls.map(call => call.body.reasoning_effort)).toEqual(["medium", "medium", "high"]);
     } finally { restore(); }
   });
 
-  test("xAI gets its own adapter: nested reasoning effort, no stop, no max_completion_tokens", async () => {
+  test("Grok's nested effort, dropped stop and max_tokens come from the map, not a subclass", async () => {
     const { calls, restore } = captureRequest();
     try {
       const grok = createRegisteredProvider("xai", { apiKey: "k" });
-      expect(grok).toBeInstanceOf(XAIProvider);
+      expect(grok).toBeInstanceOf(OpenAIProvider);
       await grok.complete([{ role: "user", content: "hi" }], { model: "grok-4.7", thinking: "high", maxTokens: 64, stop: ["END"] });
       await grok.complete([{ role: "user", content: "hi" }], { model: "grok-build-0.1", maxTokens: 64, stop: ["END"] });
       expect(calls[0].url).toBe("https://api.x.ai/v1/chat/completions");
@@ -115,6 +116,16 @@ describe("registered OpenAI-compatible providers", () => {
       expect(calls[0].body.stop).toBeUndefined();
       expect(calls[1].body.reasoning).toBeUndefined();
       expect(calls[1].body.stop).toEqual(["END"]);
+    } finally { restore(); }
+  });
+
+  test("an unregistered model id gets no reasoning parameters at all", async () => {
+    const { calls, restore } = captureRequest();
+    try {
+      await new OpenAIProvider({ apiKey: "k" }).complete([{ role: "user", content: "hi" }], { model: "gpt-4o", maxTokens: 64, thinking: "high" });
+      expect(calls[0].body.reasoning_effort).toBeUndefined();
+      expect(calls[0].body.reasoning).toBeUndefined();
+      expect(calls[0].body.max_tokens).toBe(64);
     } finally { restore(); }
   });
 

@@ -37,7 +37,7 @@ test("the team example loads through production configuration with four separate
       for (const source of layer.sourceIds) expect(effective.sources[source]?.enabled).toBe(true);
     }
     expect(report.profiles.find(profile => profile.role === "execution")?.provider).toBe("claude-code");
-    expect(report.profiles.filter(profile => profile.role !== "execution").every(profile => profile.provider === "subscription-decisions" && profile.model === "gpt-5.6-luna")).toBe(true);
+    expect(report.profiles.filter(profile => profile.role !== "execution").every(profile => profile.provider === "subscription-decisions" && profile.model === "gpt-6-luna")).toBe(true);
     process.env.HOME = join(directory, "absent");
     expect((await inspectReadiness(config, local)).issues.map(item => item.code)).toEqual(["subscription-profile-unavailable", "subscription-profile-unavailable"]);
   } finally { process.env.HOME = home; await rm(directory, { recursive: true, force: true }); }
@@ -110,7 +110,9 @@ test("readiness refuses wrong-runtime sources and missing or non-executable help
 
 test("keyless providers read as ready: a local Ollama has no credential to be missing", async () => {
   const config = defaultConfig();
-  config.defaults = { provider: "ollama", model: "llama3.2:3b" };
+  // Subscription mode pins the worker to claude-code; a local API provider is the apiTokens path.
+  config.apiTokens = true;
+  config.defaults = { provider: "ollama", model: "llama3.2:3b", classifierProvider: "ollama", classifierModel: "llama3.2:3b" };
   const report = await inspectReadiness(config, { environment: {}, which: () => null });
   expect(report.issues.some(item => item.code === "provider-credential-missing")).toBe(false);
   expect(report.issues.some(item => item.code === "native-cli-missing")).toBe(false);
@@ -120,7 +122,7 @@ test("keyless providers read as ready: a local Ollama has no credential to be mi
   const subscription = await inspectReadiness(config, { environment: {}, which: () => "/controlled/cli" });
   expect(subscription.issues.some(item => item.code === "provider-credential-missing")).toBe(false);
 
-  config.defaults = { provider: "openai", model: "gpt-5.6-luna" };
+  config.defaults = { provider: "openai", model: "gpt-6-luna", classifierProvider: "openai", classifierModel: "gpt-6-luna" };
   const keyed = await inspectReadiness(config, { environment: {}, which: () => "/controlled/cli" });
   expect(keyed.issues.some(item => item.code === "provider-credential-missing")).toBe(true);
 });

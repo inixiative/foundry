@@ -9,23 +9,20 @@ import {
   modelOptionsByTier,
   providersWithCapability,
   registryForViewer,
+  registryModel,
   type ModelCapability,
 } from "../src/models/registry";
 
 describe("model registry", () => {
   test("includes current target OpenAI and Claude Code models", () => {
     expect(MODEL_REGISTRY.openai.models.map((model) => model.id)).toEqual([
-      "gpt-6-astra",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
+      "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
     ]);
 
     expect(MODEL_REGISTRY.codex.models.map((model) => model.id)).toEqual([
-      "gpt-6-astra",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
+      "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
     ]);
     expect(MODEL_REGISTRY["claude-code"].models.map((model) => model.id)).toContain("fable");
     expect(MODEL_REGISTRY.anthropic.models.map((model) => model.id)).toContain("claude-fable-5-1");
@@ -37,6 +34,7 @@ describe("model registry", () => {
     expect(config.defaults).toMatchObject({
       provider: "claude-code",
       model: "fable",
+      classifierModel: "gpt-6-luna",
     });
     expect(config.providers.openai.models.some((model) => model.id === "gpt-6-astra")).toBe(true);
     expect(config.providers.codex.models.some((model) => model.id === "gpt-6-astra")).toBe(true);
@@ -47,7 +45,7 @@ describe("model registry", () => {
     const fastModels = modelOptionsByTier(["fast"]);
     const executionModels = modelOptionsByTier(["standard", "powerful"]);
 
-    expect(fastModels.some((model) => model.model === "gpt-5.6-luna")).toBe(true);
+    expect(fastModels.some((model) => model.model === "gpt-6-luna")).toBe(true);
     expect(executionModels.some((model) => model.model === "gpt-6-astra")).toBe(true);
     expect(executionModels.some((model) => model.provider === "codex" && model.model === "gpt-6-astra")).toBe(true);
     expect(executionModels.some((model) => model.provider === "claude-code" && model.model === "fable")).toBe(true);
@@ -129,5 +127,44 @@ describe("capability tags", () => {
     expect(ollama).toMatchObject({ credential: "local", envKey: "" });
     expect(ollama?.models[0]?.capabilities).toContain("judgment");
     expect(viewer.providers.find(provider => provider.id === "typesafe")?.models[0]?.runtimeKind).toBe("typed-decision");
+  });
+});
+
+describe("the map, not the model name, decides request shape", () => {
+  test("the reasoning capability and the reasoning shape always agree", () => {
+    for (const provider of Object.values(MODEL_REGISTRY)) {
+      for (const model of provider.models) {
+        expect(model.capabilities.includes("reasoning")).toBe(model.reasoning !== undefined);
+        if (!model.reasoning) continue;
+        expect(model.reasoning.efforts).toContain(model.reasoning.fallback);
+        expect(model.reasoning.efforts.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test("models of one generation do not share one effort ladder", () => {
+    // gpt-6-astra rejects "none"; its siblings accept it. A name prefix cannot express that.
+    expect(registryModel("openai", "gpt-6-astra")!.reasoning!.efforts).not.toContain("none");
+    expect(registryModel("openai", "gpt-6-luna")!.reasoning!.efforts).toContain("none");
+    expect(registryModel("openai", "gpt-5.5")!.reasoning!.efforts).not.toContain("max");
+    expect(registryModel("xai", "grok-4.7")!.reasoning!.param).toBe("reasoning.effort");
+    expect(registryModel("openai", "gpt-6-luna")!.reasoning!.param).toBe("reasoning_effort");
+  });
+
+  test("the GPT-6 family is registered on both paths with the credential kinds kept apart", () => {
+    for (const id of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
+      expect(registryModel("codex", id)!.runtimeKind).toBe("native-harness");
+      expect(registryModel("openai", id)!.runtimeKind).toBe("api");
+    }
+    expect(MODEL_REGISTRY.codex.credential).toBe("subscription");
+    expect(MODEL_REGISTRY.codex.envKey).toBeUndefined();
+    expect(MODEL_REGISTRY.openai.credential).toBe("api-key");
+  });
+
+  test("shut-down model ids are not served to users", () => {
+    // Google lists these under "Previous models (Shut down)".
+    for (const id of ["gemini-3.1-flash-lite-preview", "gemini-3-pro-preview", "gemini-2.0-flash"])
+      expect(registryModel("gemini", id)).toBeUndefined();
+    expect(registryModel("gemini", "gemini-3.1-flash-lite")).toBeDefined();
   });
 });

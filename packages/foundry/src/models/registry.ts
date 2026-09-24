@@ -43,6 +43,27 @@ export const MODEL_CAPABILITIES: readonly ModelCapability[] = [
 /** How the provider is paid for. `envKey` is present exactly when this is "api-key". */
 export type ProviderCredential = "api-key" | "subscription" | "local";
 
+/** Effort levels hosts publish. A superset of CompletionOpts.thinking. */
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+/**
+ * How one model takes its reasoning controls. This is the map that replaced a
+ * model-name regex: naming is not behaviour, and the next generation's names
+ * are not knowable in advance.
+ */
+export interface ModelReasoning {
+  /** OpenAI's flat `reasoning_effort`, or xAI's nested `reasoning: { effort }`. */
+  param: "reasoning_effort" | "reasoning.effort";
+  /** Accepted levels. Without "none", thinking cannot be switched off. */
+  efforts: readonly ReasoningEffort[];
+  /** Sent when the caller asks for nothing, or asks for a level this model rejects. */
+  fallback: ReasoningEffort;
+  /** OpenAI reasoning models cap output with max_completion_tokens, not max_tokens. */
+  outputField?: "max_completion_tokens";
+  /** xAI reasoning models reject `stop` and the penalty parameters. */
+  rejectsStop?: boolean;
+}
+
 export interface FoundryModelInfo {
   id: string;
   label: string;
@@ -52,10 +73,32 @@ export interface FoundryModelInfo {
   maxOutputTokens?: number;
   runtimeKind: RuntimeKind;
   nativeAlias?: boolean;
-  /** Always includes "judgment". */
+  /** Always includes "judgment". Includes "reasoning" exactly when `reasoning` is set. */
   capabilities: ModelCapability[];
+  /** Request shape for reasoning. Absent = plain chat completions with max_tokens. */
+  reasoning?: ModelReasoning;
   notes?: string;
 }
+
+/** OpenAI's API reasoning models: effort can be switched off, output caps differ. */
+const OPENAI_REASONING: ModelReasoning = {
+  param: "reasoning_effort",
+  efforts: ["none", "low", "medium", "high", "xhigh", "max"],
+  fallback: "none",
+  outputField: "max_completion_tokens",
+};
+/** Codex CLI catalogue (~/.codex/models_cache.json): no "none", medium by default. */
+const CODEX_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "medium" };
+const CODEX_REASONING_ULTRA: ModelReasoning = { ...CODEX_REASONING, efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] };
+/** Anthropic: adaptive thinking, steered by output_config.effort. */
+const CLAUDE_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "high" };
+/** Grok nests effort and cannot be switched off; reasoning models reject stop. */
+const GROK_REASONING: ModelReasoning = { param: "reasoning.effort", efforts: ["low", "medium", "high"], fallback: "high", rejectsStop: true };
+const GROK_REASONING_XHIGH: ModelReasoning = { ...GROK_REASONING, efforts: ["low", "medium", "high", "xhigh"] };
+/** Hosts whose thinking is a plain on/off effort with no "none" and no output-field change. */
+const EFFORT_ONLY: ModelReasoning = { param: "reasoning_effort", efforts: ["low", "medium", "high"], fallback: "medium" };
+/** DeepSeek publishes its own ladder, including "none" and "max". */
+const DEEPSEEK_REASONING: ModelReasoning = { param: "reasoning_effort", efforts: ["none", "low", "high", "max"], fallback: "none" };
 
 export interface FoundryProviderInfo {
   id: string;
@@ -81,7 +124,14 @@ export interface ModelSweepOption {
   label: string;
 }
 
-export const MODEL_REGISTRY_UPDATED_AT = "2026-09-23";
+export const MODEL_REGISTRY_UPDATED_AT = "2026-09-24";
+
+/**
+ * Decision default: the cheapest current model tagged `judgment`. Held here
+ * rather than in an adapter so one map answers "what runs decisions".
+ */
+export const DECISION_PROVIDER = "openai";
+export const DECISION_MODEL = "gpt-6-luna";
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
 const FAST = ["judgment", "learning-review", "tool-use"] as ModelCapability[];
@@ -110,6 +160,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: "native-harness",
         nativeAlias: true,
         capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
         notes: "Claude Code alias for claude-fable-5-1.",
       },
       {
@@ -121,6 +172,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: "native-harness",
         nativeAlias: true,
         capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
       },
       {
         id: "sonnet",
@@ -131,6 +183,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: "native-harness",
         nativeAlias: true,
         capabilities: STANDARD_REASONING,
+        reasoning: CLAUDE_REASONING,
       },
       {
         id: "haiku",
@@ -141,6 +194,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: "native-harness",
         nativeAlias: true,
         capabilities: FAST_REASONING,
+        reasoning: { ...CLAUDE_REASONING, efforts: ["low", "medium", "high"] },
       },
     ],
   },
@@ -153,43 +207,16 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     credential: "api-key",
     enabledByDefault: true,
     models: [
-      {
-        id: "claude-fable-5-1",
-        label: "Claude Fable 5.1",
-        tier: "powerful",
-        costTier: "high",
-        contextWindow: 1_000_000,
-        maxOutputTokens: 128_000,
-        runtimeKind: "api",
-        capabilities: POWERFUL_REASONING,
-      },
-      {
-        id: "claude-opus-5",
-        label: "Claude Opus 5",
-        tier: "powerful",
-        costTier: "high",
-        contextWindow: 1_000_000,
-        runtimeKind: "api",
-        capabilities: POWERFUL_REASONING,
-      },
-      {
-        id: "claude-sonnet-5",
-        label: "Claude Sonnet 5",
-        tier: "standard",
-        costTier: "medium",
-        contextWindow: 1_000_000,
-        runtimeKind: "api",
-        capabilities: STANDARD_REASONING,
-      },
-      {
-        id: "claude-haiku-4-5",
-        label: "Claude Haiku 4.5",
-        tier: "fast",
-        costTier: "low",
-        contextWindow: 200_000,
-        runtimeKind: "api",
-        capabilities: FAST_REASONING,
-      },
+      { id: "claude-fable-5-1", label: "Claude Fable 5.1", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: CLAUDE_REASONING, notes: "Thinking is always on; steer with effort." },
+      { id: "claude-opus-5", label: "Claude Opus 5", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: CLAUDE_REASONING },
+      { id: "claude-sonnet-5", label: "Claude Sonnet 5", tier: "standard", costTier: "medium", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: CLAUDE_REASONING },
+      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", tier: "fast", costTier: "low", contextWindow: 200_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: { ...CLAUDE_REASONING, efforts: ["low", "medium", "high"] }, notes: "Takes a thinking budget, not an effort ladder." },
+      // Previous generation, still served.
+      { id: "claude-fable-5", label: "Claude Fable 5", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: CLAUDE_REASONING },
+      { id: "claude-opus-4-8", label: "Claude Opus 4.8", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: CLAUDE_REASONING },
+      { id: "claude-opus-4-7", label: "Claude Opus 4.7", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: CLAUDE_REASONING },
+      { id: "claude-opus-4-6", label: "Claude Opus 4.6", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: { ...CLAUDE_REASONING, efforts: ["low", "medium", "high", "max"] } },
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", tier: "standard", costTier: "medium", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: { ...CLAUDE_REASONING, efforts: ["low", "medium", "high", "max"] } },
     ],
   },
   codex: {
@@ -200,10 +227,16 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     credential: "subscription",
     enabledByDefault: true,
     models: [
-      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "native-harness", capabilities: POWERFUL_REASONING },
-      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "native-harness", capabilities: POWERFUL_REASONING },
-      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard", costTier: "medium", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "native-harness", capabilities: STANDARD_REASONING },
-      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast", costTier: "low", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "native-harness", capabilities: FAST_REASONING },
+      // Slugs, effort ladders and the 272k session window come from the local
+      // Codex catalogue (~/.codex/models_cache.json); the same models carry a
+      // 1,050,000 window on the platform API, which the openai entry records.
+      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful", costTier: "high", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: POWERFUL_REASONING, reasoning: CODEX_REASONING_ULTRA, notes: "The Codex CLI default." },
+      { id: "gpt-6-sol", label: "GPT-6 Sol", tier: "powerful", costTier: "high", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: POWERFUL_REASONING, reasoning: CODEX_REASONING_ULTRA, notes: "Workhorse for coding and everyday work." },
+      { id: "gpt-6-luna", label: "GPT-6 Luna", tier: "fast", costTier: "low", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: FAST_REASONING, reasoning: CODEX_REASONING, notes: "Foundry's decision model." },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful", costTier: "high", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: POWERFUL_REASONING, reasoning: CODEX_REASONING_ULTRA },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard", costTier: "medium", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: STANDARD_REASONING, reasoning: CODEX_REASONING_ULTRA },
+      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast", costTier: "low", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: FAST_REASONING, reasoning: CODEX_REASONING },
+      { id: "gpt-5.5", label: "GPT-5.5", tier: "standard", costTier: "medium", contextWindow: 272_000, runtimeKind: "native-harness", capabilities: STANDARD_REASONING, reasoning: { ...CODEX_REASONING, efforts: ["low", "medium", "high", "xhigh"], fallback: "xhigh" } },
     ],
   },
   openai: {
@@ -216,10 +249,13 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.openai.com/v1",
     enabledByDefault: true,
     models: [
-      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
-      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
-      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard", costTier: "medium", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING },
-      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast", costTier: "low", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: FAST_REASONING },
+      { id: "gpt-6-astra", label: "GPT-6 Astra", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: { ...OPENAI_REASONING, efforts: ["low", "medium", "high", "xhigh", "max"], fallback: "low" }, notes: "Rejects effort \"none\" with a 400; tool calling needs the Responses API." },
+      { id: "gpt-6-sol", label: "GPT-6 Sol", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: OPENAI_REASONING },
+      { id: "gpt-6-luna", label: "GPT-6 Luna", tier: "fast", costTier: "low", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: OPENAI_REASONING, notes: "Foundry's decision model." },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", tier: "powerful", costTier: "high", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: OPENAI_REASONING },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tier: "standard", costTier: "medium", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: OPENAI_REASONING },
+      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tier: "fast", costTier: "low", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: OPENAI_REASONING },
+      { id: "gpt-5.5", label: "GPT-5.5", tier: "standard", costTier: "medium", contextWindow: 1_050_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: { ...OPENAI_REASONING, efforts: ["none", "low", "medium", "high", "xhigh"] } },
     ],
   },
   gemini: {
@@ -231,9 +267,13 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     credential: "api-key",
     enabledByDefault: true,
     models: [
-      { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite", tier: "fast", costTier: "low", contextWindow: 1_000_000, runtimeKind: "api", capabilities: FAST },
-      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", tier: "standard", costTier: "medium", contextWindow: 1_000_000, runtimeKind: "api", capabilities: STANDARD },
-      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful", costTier: "high", contextWindow: 1_000_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
+      // The Pro and Flash lines carry different version numbers; Pro has no GA
+      // successor to 3.1 yet. thinking_level takes low/medium/high, not minimal.
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", tier: "powerful", costTier: "high", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
+      { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash", tier: "standard", costTier: "medium", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", tier: "fast", costTier: "low", contextWindow: 1_048_576, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
     ],
   },
   xai: {
@@ -246,11 +286,11 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.x.ai/v1",
     enabledByDefault: true,
     models: [
-      { id: "grok-4.7", label: "Grok 4.7", tier: "powerful", costTier: "high", contextWindow: 500_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, notes: "Reasoning effort low/medium/high/xhigh; cannot be disabled." },
-      { id: "grok-4.6", label: "Grok 4.6", tier: "powerful", costTier: "high", contextWindow: 500_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
-      { id: "grok-4.5", label: "Grok 4.5", tier: "standard", costTier: "medium", contextWindow: 500_000, runtimeKind: "api", capabilities: STANDARD_REASONING, notes: "xhigh effort is served as high." },
+      { id: "grok-4.7", label: "Grok 4.7", tier: "powerful", costTier: "high", contextWindow: 500_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: GROK_REASONING_XHIGH, notes: "Reasoning effort low/medium/high/xhigh; cannot be disabled." },
+      { id: "grok-4.6", label: "Grok 4.6", tier: "powerful", costTier: "high", contextWindow: 500_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: GROK_REASONING_XHIGH },
+      { id: "grok-4.5", label: "Grok 4.5", tier: "standard", costTier: "medium", contextWindow: 500_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: GROK_REASONING, notes: "xhigh effort is served as high." },
       { id: "grok-4.3", label: "Grok 4.3", tier: "standard", costTier: "medium", contextWindow: 1_000_000, runtimeKind: "api", capabilities: STANDARD },
-      { id: "grok-4.20-0309-reasoning", label: "Grok 4.20 (reasoning)", tier: "powerful", costTier: "high", contextWindow: 1_000_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
+      { id: "grok-4.20-0309-reasoning", label: "Grok 4.20 (reasoning)", tier: "powerful", costTier: "high", contextWindow: 1_000_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: GROK_REASONING },
       { id: "grok-4.20-0309-non-reasoning", label: "Grok 4.20 (non-reasoning)", tier: "fast", costTier: "low", contextWindow: 1_000_000, runtimeKind: "api", capabilities: FAST },
       { id: "grok-build-0.1", label: "Grok Build 0.1", tier: "fast", costTier: "low", contextWindow: 256_000, runtimeKind: "api", capabilities: FAST },
     ],
@@ -265,8 +305,8 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.deepseek.com",
     enabledByDefault: true,
     models: [
-      { id: "deepseek-flash", label: "DeepSeek Flash (V4.1)", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 393_216, runtimeKind: "api", capabilities: FAST_REASONING, notes: "Thinking on by default; the legacy deepseek-v4-flash ids route here." },
-      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 393_216, runtimeKind: "api", capabilities: POWERFUL_REASONING },
+      { id: "deepseek-flash", label: "DeepSeek Flash (V4.1)", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 393_216, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: { ...DEEPSEEK_REASONING, fallback: "low" }, notes: "Thinking on by default; the legacy deepseek-v4-flash ids route here." },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 393_216, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: DEEPSEEK_REASONING },
     ],
   },
   kimi: {
@@ -279,9 +319,10 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.moonshot.ai/v1",
     enabledByDefault: true,
     models: [
-      { id: "kimi-k3", label: "Kimi K3", tier: "powerful", costTier: "high", contextWindow: 1_048_576, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: POWERFUL_REASONING, notes: "Thinking is always on and cannot be disabled." },
-      { id: "kimi-k2.6", label: "Kimi K2.6", tier: "standard", costTier: "medium", contextWindow: 262_144, runtimeKind: "api", capabilities: STANDARD_REASONING, notes: "Thinking requires temperature 1.0; non-thinking requires 0.6." },
+      { id: "kimi-k3", label: "Kimi K3", tier: "powerful", costTier: "high", contextWindow: 1_048_576, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY, notes: "Thinking is always on and cannot be disabled." },
+      { id: "kimi-k2.6", label: "Kimi K2.6", tier: "standard", costTier: "medium", contextWindow: 262_144, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY, notes: "Thinking requires temperature 1.0; non-thinking requires 0.6." },
       { id: "kimi-k2.7-code", label: "Kimi K2.7 Code", tier: "standard", costTier: "medium", contextWindow: 262_144, runtimeKind: "api", capabilities: STANDARD, notes: "tool_choice required is unsupported." },
+      { id: "kimi-k2.7-code-highspeed", label: "Kimi K2.7 Code (high speed)", tier: "fast", costTier: "medium", contextWindow: 262_144, runtimeKind: "api", capabilities: FAST },
     ],
   },
   glm: {
@@ -294,11 +335,18 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.z.ai/api/paas/v4",
     enabledByDefault: true,
     models: [
-      { id: "glm-4.6", label: "GLM-4.6", tier: "standard", costTier: "medium", contextWindow: 204_800, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, notes: "Thinking is opt-in via the thinking parameter." },
-      { id: "glm-4.7", label: "GLM-4.7", tier: "standard", costTier: "medium", maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING },
-      { id: "glm-4.7-flash", label: "GLM-4.7 Flash", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, notes: "Free on Z.ai's pricing page." },
-      { id: "glm-5.3", label: "GLM-5.3", tier: "powerful", costTier: "high", maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING },
-      { id: "glm-5.3-flash", label: "GLM-5.3 Flash", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING },
+      { id: "glm-4.6", label: "GLM-4.6", tier: "standard", costTier: "medium", contextWindow: 204_800, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY, notes: "Thinking is opt-in via the thinking parameter." },
+      { id: "glm-4.7", label: "GLM-4.7", tier: "standard", costTier: "medium", contextWindow: 200_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-4.7-flash", label: "GLM-4.7 Flash", tier: "fast", costTier: "low", contextWindow: 200_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY, notes: "Free on Z.ai's pricing page." },
+      { id: "glm-5.3", label: "GLM-5.3", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-5.3-flash", label: "GLM-5.3 Flash", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      // The 4.x and 5.x lines run in parallel; neither is sunset.
+      { id: "glm-5.2", label: "GLM-5.2", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-5.1", label: "GLM-5.1", tier: "standard", costTier: "medium", contextWindow: 200_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-5", label: "GLM-5", tier: "standard", costTier: "medium", contextWindow: 200_000, maxOutputTokens: 128_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-4.5", label: "GLM-4.5", tier: "standard", costTier: "medium", contextWindow: 128_000, maxOutputTokens: 96_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-4.5-air", label: "GLM-4.5 Air", tier: "fast", costTier: "low", contextWindow: 128_000, maxOutputTokens: 96_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "glm-4.5-flash", label: "GLM-4.5 Flash", tier: "fast", costTier: "low", contextWindow: 128_000, maxOutputTokens: 96_000, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
     ],
   },
   qwen: {
@@ -314,9 +362,17 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     enabledByDefault: true,
     models: [
-      { id: "qwen-flash", label: "Qwen Flash", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 32_768, runtimeKind: "api", capabilities: FAST },
-      { id: "qwen3.8-flash", label: "Qwen3.8 Flash", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: FAST_REASONING },
-      { id: "qwen3.8-max", label: "Qwen3.8 Max", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: POWERFUL_REASONING },
+      // Alibaba's own grouping: 3.8 and 3.7-plus/flash are "recommended"; 3.7-max
+      // and the 3.6 line are "legacy"; the undotted names are older still.
+      { id: "qwen3.8-max", label: "Qwen3.8 Max", tier: "powerful", costTier: "high", contextWindow: 1_000_000, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.8-flash", label: "Qwen3.8 Flash", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.7-plus", label: "Qwen3.7 Plus", tier: "standard", costTier: "medium", runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.7-flash", label: "Qwen3.7 Flash", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.7-max", label: "Qwen3.7 Max", tier: "powerful", costTier: "high", contextWindow: 991_808, maxOutputTokens: 131_072, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.6-plus", label: "Qwen3.6 Plus", tier: "standard", costTier: "medium", contextWindow: 1_000_000, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen3.6-flash", label: "Qwen3.6 Flash", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 65_536, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "qwen-plus", label: "Qwen Plus (legacy)", tier: "standard", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 32_768, runtimeKind: "api", capabilities: STANDARD },
+      { id: "qwen-flash", label: "Qwen Flash (legacy)", tier: "fast", costTier: "low", contextWindow: 1_000_000, maxOutputTokens: 32_768, runtimeKind: "api", capabilities: FAST },
     ],
   },
   openrouter: {
@@ -348,8 +404,8 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: "https://api.groq.com/openai/v1",
     enabledByDefault: true,
     models: [
-      { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B", tier: "fast", costTier: "low", contextWindow: 131_072, runtimeKind: "api", capabilities: FAST_REASONING },
-      { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B", tier: "standard", costTier: "low", contextWindow: 131_072, runtimeKind: "api", capabilities: STANDARD_REASONING },
+      { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B", tier: "fast", costTier: "low", contextWindow: 131_072, runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
+      { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B", tier: "standard", costTier: "low", contextWindow: 131_072, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY },
     ],
   },
   together: {
@@ -399,7 +455,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       { id: "llama4:16x17b", label: "Llama 4 Scout", tier: "standard", costTier: "low", contextWindow: 10_000_000, runtimeKind: "api", capabilities: STANDARD },
       { id: "llama4:128x17b", label: "Llama 4 Maverick", tier: "powerful", costTier: "low", contextWindow: 1_000_000, runtimeKind: "api", capabilities: POWERFUL },
       { id: "qwen3:8b", label: "Qwen3 8B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST },
-      { id: "gpt-oss:20b", label: "GPT-OSS 20B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING },
+      { id: "gpt-oss:20b", label: "GPT-OSS 20B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST_REASONING, reasoning: EFFORT_ONLY },
     ],
   },
   vllm: {
@@ -435,8 +491,8 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       { id: "ministral-3b-2512", label: "Ministral 3 3B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST },
       { id: "ministral-8b-2512", label: "Ministral 3 8B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST },
       { id: "ministral-14b-2512", label: "Ministral 3 14B", tier: "fast", costTier: "low", runtimeKind: "api", capabilities: FAST },
-      { id: "mistral-small-2603", label: "Mistral Small 4", tier: "standard", costTier: "low", contextWindow: 256_000, runtimeKind: "api", capabilities: STANDARD_REASONING, notes: "Unifies instruct, reasoning and coding." },
-      { id: "mistral-medium-3-5", label: "Mistral Medium 3.5", tier: "powerful", costTier: "medium", contextWindow: 256_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, notes: "Takes reasoning_effort." },
+      { id: "mistral-small-2603", label: "Mistral Small 4", tier: "standard", costTier: "low", contextWindow: 256_000, runtimeKind: "api", capabilities: STANDARD_REASONING, reasoning: EFFORT_ONLY, notes: "Unifies instruct, reasoning and coding." },
+      { id: "mistral-medium-3-5", label: "Mistral Medium 3.5", tier: "powerful", costTier: "medium", contextWindow: 256_000, runtimeKind: "api", capabilities: POWERFUL_REASONING, reasoning: EFFORT_ONLY, notes: "Takes reasoning_effort." },
       { id: "mistral-large-2512", label: "Mistral Large 3", tier: "powerful", costTier: "high", contextWindow: 256_000, runtimeKind: "api", capabilities: POWERFUL },
     ],
   },

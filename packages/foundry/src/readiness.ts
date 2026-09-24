@@ -8,6 +8,7 @@ import { type FoundryConfig, validateConfig } from "./viewer/config";
 import { resolveProjectView } from "./viewer/config-resolve";
 import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionResolution } from "./providers/subscription-policy";
 import { assertProfile } from "./providers/private-profile";
+import { resolveDecisionModel } from "./providers/decision-provider";
 
 export interface ReadinessIssue { severity: "error" | "warning"; scope: string; code: string; message: string }
 export interface ReadinessProfile { scope: string; agentId: string; role: string; provider: string; model: string; domain?: string; layerId?: string }
@@ -36,6 +37,7 @@ export async function inspectReadiness(config: FoundryConfig, options: {
     try { assertProfile(source.profileDirectory, source.runtime); }
     catch { issue("error", source.runtime, "subscription-profile-unavailable", `Log in with the ${source.runtime} CLI; its profile must be an owned directory with private credential files.`); }
   }
+  const decisionProvider = resolveDecisionModel(config).provider;
   const checkedProviders = new Set<string>();
   const checkProvider = (id: string, scope: string) => {
     if (checkedProviders.has(id)) return; checkedProviders.add(id);
@@ -44,8 +46,8 @@ export async function inspectReadiness(config: FoundryConfig, options: {
       return;
     }
     if (!config.providers[id]?.enabled) issue("error", scope, "provider-disabled", "A requested provider is absent or disabled.");
-    if (id !== config.defaults.provider && !(!subscription && id === "openai" && config.providers.openai?.enabled))
-      issue("error", scope, "provider-not-constructed", "Production startup constructs the default provider and the configured OpenAI decision provider. This requested provider needs an explicit runtime integration.");
+    if (id !== config.defaults.provider && !(!subscription && id === decisionProvider && config.providers[id]?.enabled))
+      issue("error", scope, "provider-not-constructed", "Production startup constructs the default provider and the configured decision provider. This requested provider needs an explicit runtime integration.");
     const provider = MODEL_REGISTRY[id];
     if (!provider) { issue("error", scope, "provider-unregistered", "The requested provider has no registered runtime."); return; }
     // Subscription and local providers have no key to set; only an api-key provider can be missing one.

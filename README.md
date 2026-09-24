@@ -49,7 +49,7 @@ Setup is interactive — picks your LLM provider and model, creates `.foundry/se
 
 Provider choices come from the shared registry: Anthropic, OpenAI, Google Gemini, Claude Code CLI and Codex. See [team readiness and the current roadmap](docs/TEAM-READINESS.md) before enabling a shared team instance.
 
-Foundry is subscription-only by default: the Claude Code worker and GPT-5.6 Luna decisions (through the Codex CLI) use the logins already on the machine, so no API key is needed. Log in with `claude` and `codex login` first. API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
+Foundry is subscription-only by default: the Claude Code worker and GPT-6 Luna decisions (through the Codex CLI) use the logins already on the machine, so no API key is needed. Log in with `claude` and `codex login` first. API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
 
 ### Environment variables
 

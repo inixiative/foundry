@@ -67,9 +67,9 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 
 ## Model Routing
 
-**Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-5.6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
+**Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
 
-Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) and every decision role runs GPT-5.6 Luna through the Codex CLI's ChatGPT login (`~/.codex`), with no API provider constructed and no paid fallback. API-key providers require `apiTokens: true`. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
+Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) and every decision role runs GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`), with no API provider constructed and no paid fallback. API-key providers require `apiTokens: true`. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
 
 ## Design Principles
 
@@ -85,7 +85,7 @@ Foundry is subscription-only by default: the Artificer runs on the Claude Code l
 - Don't treat layers as parts of a shared context window. Each is independent.
 - Don't create hardcoded Warden subclasses. They're config-driven from settings.
 - Don't put behavioral opinions in core. Core is the engine.
-- Don't use Claude/Sonnet for classifiers or routers. Use GPT-5.6 Luna.
+- Don't use Claude/Sonnet for classifiers or routers. Use GPT-6 Luna.
 - Use Claude Code's native auto-compaction policy (`providers/claude-context-budget.ts`). Don't implement a separate summarizer or compression loop; Foundry layer caches remain independent.
 - Don't add backwards-compat shims for removed features.
 - Don't confuse the singular Librarian (signal reconciliation, sole thread-state writer) with the Wardens (domain-specific advise + guard).

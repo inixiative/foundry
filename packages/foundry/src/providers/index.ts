@@ -22,12 +22,11 @@ export {
   openAiApiRoot,
   type OpenAIConfig,
 } from "./openai";
-export { XAIProvider, type XAIConfig } from "./xai";
 export {
   createRegisteredProvider,
   providerApiRoot,
   providerApiKey,
-  providerReasoningModels,
+  providerReasoning,
   registeredProvider,
   type RegisteredProviderConfig,
 } from "./openai-compatible";

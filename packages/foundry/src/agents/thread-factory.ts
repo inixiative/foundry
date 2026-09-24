@@ -1,4 +1,5 @@
 import type { TokenCounts } from "@inixiative/foundry-core";
+import { DECISION_MODEL } from "../models/registry";
 import { FoundryCredentials } from '../providers/credentials';
 import { fileURLToPath } from "node:url";
 import { createNativeToolProjector } from "./native-tool-projection";
@@ -620,7 +621,7 @@ export function resolveAgentOpts(
   const isLightweight = agentCfg.kind === "classifier" || agentCfg.kind === "router";
 
   return {
-    model: agentCfg.model || (isLightweight ? config.defaults.classifierModel ?? "gpt-5.6-luna" : config.defaults.model),
+    model: agentCfg.model || (isLightweight ? config.defaults.classifierModel ?? DECISION_MODEL : config.defaults.model),
     temperature: agentCfg.temperature ?? 0,
     maxTokens: isLightweight ? 256 : 16384,
     tools: agentCfg.tools ?? !isLightweight,
