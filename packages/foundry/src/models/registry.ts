@@ -2,46 +2,8 @@ import type { ProviderConfig } from "../viewer/config";
 
 export type ModelTier = "fast" | "standard" | "powerful";
 export type CostTier = "low" | "medium" | "high";
-export type ProviderType =
-  | "anthropic"
-  | "openai"
-  | "openai-compatible"
-  | "gemini"
-  | "claude-code"
-  | "codex"
-  | "xai"
-  | "typesafe"
-  | "custom";
-export type RuntimeKind = "api" | "native-harness" | "typed-decision";
-
-/**
- * What a model is worth using for. Every model is a judgment client — that is
- * not a provider category, it is a tag every entry carries. The other tags name
- * work Foundry already distinguishes:
- *
- * - judgment        classifier/router/decider agent kinds and the decision
- *                   provider: which archive, which middleware, which domain.
- * - execution       the executor kind (Artificer): tools on, multi-turn.
- * - domain-advising the `domain-advising` flow role: read an owned domain layer
- *                   and advise/guard from it.
- * - learning-review the background `learning.review` pass over finished work.
- * - tool-use        CompletionOpts.tools / toolDefinitions.
- * - reasoning       CompletionOpts.thinking (reasoning effort / think budget).
- */
-export type ModelCapability =
-  | "judgment"
-  | "execution"
-  | "domain-advising"
-  | "learning-review"
-  | "tool-use"
-  | "reasoning";
-
-export const MODEL_CAPABILITIES: readonly ModelCapability[] = [
-  "judgment", "execution", "domain-advising", "learning-review", "tool-use", "reasoning",
-] as const;
-
-/** How the provider is paid for. `envKey` is present exactly when this is "api-key". */
-export type ProviderCredential = "api-key" | "subscription" | "local";
+export type ProviderType = "anthropic" | "openai" | "gemini" | "claude-code" | "codex" | "custom";
+export type RuntimeKind = "api" | "native-harness";
 
 export interface FoundryModelInfo {
   id: string;
@@ -52,8 +14,6 @@ export interface FoundryModelInfo {
   maxOutputTokens?: number;
   runtimeKind: RuntimeKind;
   nativeAlias?: boolean;
-  /** Always includes "judgment". */
-  capabilities: ModelCapability[];
   notes?: string;
 }
 
@@ -63,14 +23,6 @@ export interface FoundryProviderInfo {
   label: string;
   description: string;
   envKey?: string;
-  credential: ProviderCredential;
-  /**
-   * Versioned API root for OpenAI-compatible hosts, used verbatim: requests go
-   * to `${apiRoot}/chat/completions`. Hosts disagree about the version segment
-   * (/v1, /api/paas/v4, /compatible-mode/v1, none at all), so this is not
-   * normalized. A user's `providers[id].baseUrl` override is.
-   */
-  apiRoot?: string;
   enabledByDefault: boolean;
   models: FoundryModelInfo[];
 }
