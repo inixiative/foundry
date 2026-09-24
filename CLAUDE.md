@@ -108,5 +108,5 @@ The viewer dashboard reads and writes this config. `ConfigStore` handles persist
 - **Testing**: `bun test` (bun's built-in test runner)
 - **Jobs**: BullMQ (Redis-backed background jobs)
 - **Database**: PostgreSQL (via postgres.js) for persistent memory/traces
-- **Providers**: Anthropic, OpenAI, Gemini, Claude Code CLI, Voyage (embeddings)
+- **Providers**: Anthropic, OpenAI, Gemini, Claude Code CLI, Codex CLI, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
 - **MCP**: Model Context Protocol server for mid-session bridge

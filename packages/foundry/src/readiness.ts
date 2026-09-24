@@ -48,7 +48,8 @@ export async function inspectReadiness(config: FoundryConfig, options: {
       issue("error", scope, "provider-not-constructed", "Production startup constructs the default provider and the configured OpenAI decision provider. This requested provider needs an explicit runtime integration.");
     const provider = MODEL_REGISTRY[id];
     if (!provider) { issue("error", scope, "provider-unregistered", "The requested provider has no registered runtime."); return; }
-    if (provider.envKey && !environment[provider.envKey]) issue("error", scope, "provider-credential-missing", `Set ${provider.envKey} through the existing secret mechanism.`);
+    // Subscription and local providers have no key to set; only an api-key provider can be missing one.
+    if (provider.credential === "api-key" && !environment[provider.envKey ?? ""]) issue("error", scope, "provider-credential-missing", `Set ${provider.envKey} through the existing secret mechanism.`);
     if (["claude-code", "codex"].includes(id) && !which(id === "claude-code" ? "claude" : "codex"))
       issue("error", scope, "native-cli-missing", "Install the requested native CLI on PATH before starting Foundry.");
   };

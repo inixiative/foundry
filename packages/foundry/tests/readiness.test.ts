@@ -107,3 +107,20 @@ test("readiness refuses wrong-runtime sources and missing or non-executable help
     expect((await inspectReadiness(config, local)).configurationReady).toBe(false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("keyless providers read as ready: a local Ollama has no credential to be missing", async () => {
+  const config = defaultConfig();
+  config.defaults = { provider: "ollama", model: "llama3.2:3b" };
+  const report = await inspectReadiness(config, { environment: {}, which: () => null });
+  expect(report.issues.some(item => item.code === "provider-credential-missing")).toBe(false);
+  expect(report.issues.some(item => item.code === "native-cli-missing")).toBe(false);
+  expect(report.issues.some(item => item.severity === "error")).toBe(false);
+
+  config.defaults = { provider: "claude-code", model: "fable" };
+  const subscription = await inspectReadiness(config, { environment: {}, which: () => "/controlled/cli" });
+  expect(subscription.issues.some(item => item.code === "provider-credential-missing")).toBe(false);
+
+  config.defaults = { provider: "openai", model: "gpt-5.6-luna" };
+  const keyed = await inspectReadiness(config, { environment: {}, which: () => "/controlled/cli" });
+  expect(keyed.issues.some(item => item.code === "provider-credential-missing")).toBe(true);
+});

@@ -5,6 +5,13 @@ Foundry exposes `TypeSafeDecisionClient` and `createTypeSafeMiddleware` through
 dispatches that need it. Starting Foundry does not enable Jev or replace the
 native coding harness or its configured decision provider.
 
+Jev is in `MODEL_REGISTRY` as the `typesafe` provider (`jev-latest`,
+`runtimeKind: "typed-decision"`, capability `judgment`, disabled by default).
+The registry entry describes it; it does not construct it. `TypeSafeDecisionClient`
+is not an `LLMProvider` — `evaluate` takes typed questions and returns typed
+answers, not chat completions — so it cannot back a chat agent, and
+`createRegisteredProvider` refuses it.
+
 Jev is useful for bounded judgments: choosing a domain, scoring urgency, or
 detecting a topic change. It accepts typed questions rather than chat prompts.
 Batch independent questions about the same state, then combine their answers

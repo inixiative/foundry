@@ -9,7 +9,7 @@ import type { ClaudeContextBudget } from "../providers/claude-context-budget";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { newId, validateMemorySelection, type Harness, type LLMProvider, type MemorySelectionPolicy } from "@inixiative/foundry-core";
-import { providerConfigsFromRegistry } from "../models/registry";
+import { providerConfigsFromRegistry, type ModelCapability, type ProviderType } from "../models/registry";
 import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectView } from "./config-resolve";
 import { validateLearningSettings, type LearningSettings } from "../agents/learning-config";
 
@@ -164,12 +164,12 @@ export interface ProviderConfig {
   /** Claude Code native compaction policy; defaults to 200k / 80%. */
   contextBudget?: ClaudeContextBudget | false;
   id: string;
-  type: "anthropic" | "openai" | "gemini" | "claude-code" | "codex" | "custom";
+  type: ProviderType;
   /** Display label. */
   label: string;
   /** Available models for this provider. */
   models: ModelConfig[];
-  /** Base URL override (e.g. for Cursor, Ollama, Azure). */
+  /** API root override. Seeded from the registry; edit for a proxy, a mainland endpoint, or a local port. */
   baseUrl?: string;
   /** Whether this provider is enabled. */
   enabled: boolean;
@@ -184,6 +184,8 @@ export interface ModelConfig {
   costTier?: "low" | "medium" | "high";
   /** Context window size. */
   contextWindow?: number;
+  /** What this model is worth using for. Always includes "judgment". */
+  capabilities?: ModelCapability[];
 }
 
 /**
