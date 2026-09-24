@@ -65,7 +65,7 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
   const calls: NativeTextCall[] = [];
   const configuration = { requestedModel: config.model, requestedMaxTurns: 1, turnBudgetEnforcement: "launch-option" as const,
     tokenBudget: "unavailable" as const, effortBudget: "unavailable" as const };
-  let busy = false, closed = false;
+  let busy = false, closed = false, abort: (() => void) | undefined;
   const persist = () => {
     try {
       writeFileSync(`${reportPath}.tmp`, JSON.stringify({ schema: 1, runId: config.runId, runtime: "codex",
@@ -97,6 +97,7 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
       let child: CodexTextProcess | undefined, statusChild: StatusProcess | undefined, release: (() => void) | undefined;
       let result: CompletionResult | undefined;
       const stop = () => { for (const proc of [child, statusChild]) { try { proc?.kill(); } catch { closed = true; } } };
+      abort = stop;
       let deadlineReject!: (error: Error) => void;
       const deadline = new Promise<never>((_, reject) => { deadlineReject = reject; });
       void deadline.catch(() => {});
@@ -168,7 +169,7 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
         clearTimeout(timer);
         call.finishedAt = Date.now();
         if (!call.valid && call.release === "not-requested") call.release = child ? "unknown" : "released";
-        busy = false;
+        busy = false; abort = undefined;
         persist();
       }
       if (!call.valid || !result) throw Object.assign(Error("Codex text call failed; inspect retained ownership and release evidence"), { evidencePath: reportPath, callId: id });
@@ -176,7 +177,8 @@ export function buildCodexTextProvider(config: NativeTextConfig, controlled?: { 
     },
   };
   return { provider, reportPath, snapshot: () => freezeEvidence({ closed, calls }),
-    close: () => { closed = true; persist(); } };
+    /** Closes admission and stops an in-flight process; its exit releases the profile lock. */
+    close: () => { closed = true; abort?.(); persist(); } };
 }
 
 interface TurnOutcome {

@@ -25,7 +25,7 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
     || !Number.isSafeInteger(config.callTimeoutMs) || config.callTimeoutMs < 100 || config.callTimeoutMs > 30_000)
     throw Error("Invalid subscription decision bounds");
   const queue: Pending[] = [], records = new Map<string, Record>(), outcomes = new WeakMap<object, Outcome>();
-  let active = false, closed = false, attempts = 0;
+  let active = false, closed = false, attempts = 0, current: TextRun | undefined;
   const reject = (message: string) => {
     const error = Error(message);
     outcomes.set(error, { admission: "not-admitted", settlement: "settled" });
@@ -69,7 +69,7 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       check(pending);
       if (attempts >= config.maxCalls || pending.deadline - Date.now() < 100) throw reject("Subscription decision budget exhausted");
       attempts++;
-      run = createRun({ ...config, runId: crypto.randomUUID(), maxCalls: 1,
+      run = current = createRun({ ...config, runId: crypto.randomUUID(), maxCalls: 1,
         callTimeoutMs: Math.min(config.callTimeoutMs, pending.deadline - Date.now()) });
       const result = await run.provider.complete(pending.messages, { ...opts, cwd: undefined, threadId: undefined,
         timeout: undefined, tools: false, maxTurns: 1, model: config.model,
@@ -118,7 +118,7 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       pending.reject(error);
     } finally {
       if (run && !finalized) { try { run.close(); } catch { close(); } }
-      active = false;
+      active = false; current = undefined;
       void pump();
     }
   };
@@ -150,5 +150,11 @@ export function buildSubscriptionDecisions(config: SubscriptionDecisionConfig, c
       });
     },
   };
-  return { provider, close, snapshot: () => ({ closed, active, queued: queue.length, attempts }) };
+  /** Shutdown: close admission, stop the active run and wait (bounded) for its settlement. */
+  const shutdown = async (timeoutMs = 5_000) => {
+    close();
+    try { current?.close(); } catch { /* Settlement below still bounds shutdown. */ }
+    for (const deadline = Date.now() + timeoutMs; active && Date.now() < deadline;) await new Promise(resolve => setTimeout(resolve, 20));
+  };
+  return { provider, close, shutdown, snapshot: () => ({ closed, active, queued: queue.length, attempts }) };
 }

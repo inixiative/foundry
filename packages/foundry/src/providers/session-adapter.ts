@@ -272,6 +272,8 @@ export interface SessionAdapter {
   observedConfiguration?(session: HarnessSession): readonly ConfigurationEvidence[] | undefined;
   /** Caller must establish idle native work first. Resolves released only after owned process exit. */
   releaseIdleSession?(session: HarnessSession): Promise<"released" | "unknown">;
+  /** Shutdown: stop every live native process this adapter launched; exit releases its profile lock. */
+  releaseAll?(): Promise<void>;
 
   /** Remove the mapping (e.g. on thread archive). */
   clearSession(threadId: string): Promise<void>;
@@ -440,6 +442,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   private _constructions = new WeakMap<HarnessSession, ConstructionBinding>();
   private _configurations = new WeakMap<HarnessSession, readonly ConfigurationEvidence[]>();
   private _ownedExits = new WeakMap<HarnessSession, () => Promise<number> | undefined>();
+  private _live = new Set<HarnessSession>();
   private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
   private _defaults: ClaudeCodeSessionAdapterConfig["defaults"];
   private _signals: ThreadSignalBindings;
@@ -496,7 +499,8 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       let child: ReturnType<typeof defaultSpawn>;
       try { child = (opts.tools === false ? restrictedSpawn : defaultSpawn)(opts.nativeBridge ? withNativeBridge(launch?.argv ?? cmd, "claude", opts.nativeBridge) : launch?.argv ?? cmd, { ...options, env: launch?.env ?? options.env }); }
       catch (error) { auth?.release(); throw error; }
-      ownedExit = child.exited.then(code => { auth?.release(); return code; });
+      ownedExit = child.exited.then(code => { auth?.release(); this._live.delete(session); return code; });
+      this._live.add(session);
       void ownedExit.catch(() => {});
       if (opts.nativeBridge) void child.exited.then(() => opts.nativeBridge!.close()).catch(() => {});
       return child;
@@ -589,6 +593,10 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     return facts === undefined ? undefined : Object.freeze([...facts]);
   }
 
+  async releaseAll(): Promise<void> {
+    await Promise.all([...this._live].map(session => this.releaseIdleSession(session)));
+  }
+
   async releaseIdleSession(session: HarnessSession): Promise<"released" | "unknown"> {
     const exited = this._ownedExits.get(session)?.();
     if (!exited) return "unknown";
@@ -639,6 +647,7 @@ export class CodexSessionAdapter implements SessionAdapter {
   private _constructions = new WeakMap<HarnessSession, ConstructionBinding>();
   private _configurations = new WeakMap<HarnessSession, readonly ConfigurationEvidence[]>();
   private _ownedExits = new WeakMap<HarnessSession, () => Promise<number> | undefined>();
+  private _live = new Set<HarnessSession>();
   private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
   private _defaults: CodexSessionAdapterConfig["defaults"];
   private _signals: ThreadSignalBindings;
@@ -695,7 +704,8 @@ export class CodexSessionAdapter implements SessionAdapter {
         try { child = defaultSpawn(opts.nativeBridge && this._engine === "mcp" ? withNativeBridge(launch?.argv ?? cmd, "codex", opts.nativeBridge) : launch?.argv ?? cmd, { ...options, env: launch?.env ?? options.env }); }
         catch (error) { auth?.release(); throw error; }
         spawned = true;
-        ownedExit = child.exited.then(code => { auth?.release(); return code; });
+        ownedExit = child.exited.then(code => { auth?.release(); this._live.delete(session); return code; });
+        this._live.add(session);
         void ownedExit.catch(() => {});
         if (opts.nativeBridge) void child.exited.then(() => opts.nativeBridge!.close()).catch(() => {});
         return child;
@@ -770,6 +780,10 @@ export class CodexSessionAdapter implements SessionAdapter {
 
   async clearSession(threadId: string): Promise<void> {
     return this._store.clear(this._authentication?.bindingId(threadId, "codex") ?? threadId, this.runtime);
+  }
+
+  async releaseAll(): Promise<void> {
+    await Promise.all([...this._live].map(session => this.releaseIdleSession(session)));
   }
 
   async releaseIdleSession(session: HarnessSession): Promise<"released" | "unknown"> {

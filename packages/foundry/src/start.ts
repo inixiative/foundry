@@ -613,7 +613,8 @@ console.log("Ready. Send messages through the harness API or viewer.");
 
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
-  decisions?.close();
+  // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
+  await Promise.race([Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown()]), Bun.sleep(5_000)]);
   runtimeManager.disposeAll();
   viewer.server.stop();
   viewer.localStore?.close();

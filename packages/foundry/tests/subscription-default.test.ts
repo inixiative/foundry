@@ -9,7 +9,8 @@ import { NativeAuthentication } from "../src/providers/native-authentication";
 import { defaultProfileSource } from "../src/providers/default-profiles";
 import { buildCodexTextProvider } from "../src/providers/codex-text-provider";
 import { buildSubscriptionDecisions, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
-import { codexTransport } from "./helpers/subscription-transport";
+import { codexTransport, subscriptionTransport } from "./helpers/subscription-transport";
+import { ClaudeCodeSessionAdapter, InMemoryExternalSessionStore } from "../src/providers/session-adapter";
 
 const roots: string[] = [];
 const home = process.env.HOME;
@@ -229,3 +230,27 @@ test("API tokens opted in without a key refuse startup instead of falling back t
   expect(foundry.output).toContain("Foundry decisions require enabled OpenAI access and OPENAI_API_KEY");
   expect(foundry.output).not.toContain("Subscription-only");
 }, 10000);
+
+test("shutdown stops live worker and decision processes so the user's profile locks are released", async () => {
+  const root = userHome(), source = defaultProfileSource("claude"), worker = subscriptionTransport();
+  const adapter = new ClaudeCodeSessionAdapter({ store: new InMemoryExternalSessionStore(),
+    authentication: new NativeAuthentication({ directory: join(root, "auth"), sources: [source], defaultSourceId: source.id }),
+    defaults: { spawn: worker.spawn } });
+  const session = await adapter.createSession({ threadId: "main", cwd: root });
+  await session.start();
+  expect(existsSync(join(root, ".claude", ".foundry-auth-lock"))).toBe(true);
+
+  const directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
+  const codex = codexTransport({ hang: true });
+  const decisions = buildSubscriptionDecisions({ directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna", maxCalls: 3, maxQueued: 2, callTimeoutMs: 20000 },
+    cfg => buildCodexTextProvider(cfg, codex));
+  const pending = decisions.provider.complete(messages).then(() => undefined, (error: Error) => error);
+  for (let n = 0; !existsSync(join(root, ".codex", ".foundry-auth-lock")); n++) { if (n > 200) throw Error("decision never launched"); await Bun.sleep(5); }
+
+  await Promise.all([adapter.releaseAll(), decisions.shutdown()]);
+  expect((await pending)?.message).toContain("no fallback");
+  expect(worker.launches[0]!.exited).toBe(true); expect(codex.launches[0]!.exited).toBe(true);
+  expect(existsSync(join(root, ".claude", ".foundry-auth-lock"))).toBe(false);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-lock"))).toBe(false);
+  expect(decisions.snapshot()).toMatchObject({ closed: true, active: false });
+});
