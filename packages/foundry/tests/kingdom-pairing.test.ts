@@ -4,13 +4,17 @@ import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startViewer } from "../src/viewer/server";
+import { startFakeKingdom, waitFor } from "./helpers/fake-kingdom";
 import { ContextStack, EventStream, Harness, InterventionLog, Thread } from "@inixiative/foundry-core";
 
 test("Foundry pairs without exposing secrets, activates immediately, and repairs revoked enrollment without unlocking work, and disconnects locally", async () => {
   const root = await mkdtemp(join(tmpdir(), "foundry-pairing-"));
   const requests: { deviceCode: string; hash: string; installationId?: string }[] = [];
   const identities = new Map<string, string>();
-  const kingdom = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
+  const kingdom = startFakeKingdom({ identify: token => {
+    const installationId = identities.get(createHash("sha256").update(token).digest("hex"));
+    return installationId ? { installationId } : undefined;
+  }, async http(request) {
     const action = new URL(request.url).pathname.split("/").at(-1);
     const body = await request.json() as Record<string, string>;
     if (action === "pairRuntime") {
@@ -24,9 +28,8 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
       return Response.json({ data: pairing?.installationId ? { status: "approved", installationId: pairing.installationId } : { status: "pending" } });
     }
     const token = request.headers.get("authorization")?.replace("Bearer ", "") ?? "";
-    const id = identities.get(createHash("sha256").update(token).digest("hex"));
-    if (!id) return new Response("revoked", { status: 401 });
-    return Response.json({ data: { installationId: id, kastleId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    if (!identities.get(createHash("sha256").update(token).digest("hex"))) return new Response("revoked", { status: 401 });
+    return Response.json({ data: null });
   } });
   const thread = new Thread("pairing", new ContextStack()), viewer = await startViewer({ port: 0, configDir: root, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals) });
   const base = `http://127.0.0.1:${viewer.server.port}`;
@@ -35,11 +38,11 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
   try {
     for (let index = 0; index < 2; index++) {
       const staleSettings = await (await fetch(`${base}/api/settings`)).json();
-      const start = await post("pair", { url: `http://127.0.0.1:${kingdom.port}`, name: "Test Foundry" });
+      const start = await post("pair", { url: kingdom.url, name: "Test Foundry" });
       expect(start.status).toBe(200);
       const pairing = await start.json();
       expect(pairing.status).toBe("pending"); expect(pairing).not.toHaveProperty("secret"); expect(pairing).not.toHaveProperty("deviceCode");
-      expect((await post("pair", { url: `http://127.0.0.1:${kingdom.port}`, name: "Duplicate" })).status).toBe(409);
+      expect((await post("pair", { url: kingdom.url, name: "Duplicate" })).status).toBe(409);
       const request = requests.at(-1)!, id = crypto.randomUUID();
       request.installationId = id; identities.set(request.hash, id);
       const done = await post("poll");
@@ -58,7 +61,7 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
         expect(saved.status).toBe(200);
         expect(JSON.parse(await readFile(join(root, "settings.json"), "utf8")).kingdomRuntime.installationId).toBe(id);
         const oldCredential = await readFile(path, "utf8");
-        expect((await post("pair", { url: `http://127.0.0.1:${kingdom.port}`, name: "Failed replacement" })).status).toBe(200);
+        expect((await post("pair", { url: kingdom.url, name: "Failed replacement" })).status).toBe(200);
         requests.at(-1)!.installationId = crypto.randomUUID();
         expect((await post("poll")).status).toBe(503);
         expect(await readFile(path, "utf8")).toBe(oldCredential);
@@ -67,6 +70,8 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
         expect((await (await post("cancel")).json()).status).toBe("connected");
       }
       identities.delete(request.hash);
+      kingdom.revoke(id);
+      await waitFor(() => viewer.kingdomConnection?.connected === false);
       expect((await fetch(`${base}/api/tunnel`)).status).toBe(503);
       expect((await fetch(`${base}/kingdom`)).status).toBe(200);
       expect((await (await fetch(`${base}/api/kingdom/status`)).json()).status).toBe("unavailable");
@@ -77,5 +82,5 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
     expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
     expect(JSON.parse(await readFile(join(root, "settings.json"), "utf8"))).not.toHaveProperty("kingdomRuntime");
     await expect(lstat(credentialPath)).rejects.toThrow();
-  } finally { viewer.server.stop(true); kingdom.stop(true); await rm(root, { recursive: true, force: true }); }
+  } finally { viewer.server.stop(true); kingdom.stop(); await rm(root, { recursive: true, force: true }); }
 });

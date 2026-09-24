@@ -3,8 +3,8 @@ import type { RuntimeJob } from "./runtime-job-contracts";
 import type { KingdomRuntimeSettings } from "./kingdom-runtime-connection";
 import { connectionCheckJobHandler } from "./connection-check-job";
 
-/** Enrolled runtime identity returned by `runtimeHeartbeat`. */
-export type RuntimeIdentity = { installationId: string; kastleId: string; userId?: string; expiresAt: string };
+/** Enrolled runtime identity Kingdom announces when the runtime socket authenticates. */
+export type RuntimeIdentity = { installationId: string; userId: string; expiresAt: string };
 
 /** Kastle access call a handler may make. Handler actions are the handler's own; the worker never enumerates them. */
 export type RuntimeJobRequest = (action: string, body: unknown) => Promise<unknown>;
@@ -27,7 +27,7 @@ export interface RuntimeJobHandler<Payload = unknown> {
   readonly ignoresExpiry?: boolean;
   /** Per-action request timeouts in ms; actions absent here use the worker default. */
   readonly requestTimeoutMs?: Readonly<Record<string, number>>;
-  /** Fields merged into the runtime heartbeat body. */
+  /** Fields merged into the runtime status frame sent over the Kingdom socket. */
   heartbeatBody?(): Record<string, unknown>;
   /** Throws when the enrolled identity no longer matches this handler's configuration. */
   verifyIdentity?(identity: RuntimeIdentity): void;
