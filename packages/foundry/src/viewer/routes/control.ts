@@ -14,11 +14,7 @@ import type { AIAssist, AssistRequest } from "../ai-assist";
 import type { AnalyticsStore, RollupPeriod } from "../analytics";
 import {
   createProject,
-  defaultProjectAgents,
-  defaultProjectLayers,
-  defaultProjectSources,
-  projectAgentOverride,
-  projectLayerOverride,
+  projectSources,
   type ConfigStore,
   type FoundryConfig,
   type McpSettingsConfig,
@@ -335,21 +331,15 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
 
     await configStore.load();
-    const cfg = configStore.config;
 
-    // Seed project with default agents, layers, and sources based on global model defaults
-    const { provider, model, classifierProvider, classifierModel } = cfg.defaults;
-
+    // Agents and layers are inherited from global by id; the project only brings its own sources.
     const projectConfig = createProject(body.path, {
       label: typeof body.label === "string" ? body.label : undefined,
       tags: Array.isArray(body.tags)
         ? body.tags.filter((tag): tag is string => typeof tag === "string")
         : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
-      agents: Object.fromEntries(Object.entries(defaultProjectAgents(provider, model, classifierProvider, classifierModel))
-        .map(([id, agent]) => [id, projectAgentOverride(agent)])),
-      layers: Object.fromEntries(Object.entries(defaultProjectLayers()).map(([id, layer]) => [id, projectLayerOverride(layer)])),
-      sources: defaultProjectSources(body.path),
+      sources: projectSources(body.path),
     });
 
     await configStore.patch("projects", { [projectConfig.id]: projectConfig });

@@ -60,15 +60,15 @@ export interface FoundryConfig {
 
   /**
    * Global agent templates (keyed by agent ID).
-   * Projects inherit these as starting points. On a fresh install this is empty —
-   * agents are created per-project via defaultProjectAgents().
+   * Projects inherit these by id; a project override of the same id wins.
+   * A fresh install is seeded from defaultProjectAgents().
    */
   agents: Record<string, AgentSettingsConfig>;
 
   /**
    * Global layer templates (keyed by layer ID).
-   * Projects inherit these as starting points. On a fresh install this is empty —
-   * layers are created per-project via defaultProjectLayers().
+   * Projects inherit these by id; a project override of the same id wins.
+   * A fresh install is seeded from defaultProjectLayers().
    */
   layers: Record<string, LayerSettingsConfig>;
 
@@ -583,32 +583,7 @@ export function defaultProjectAgents(
   };
 }
 
-const owned = <T>(list: T[] | undefined): ListPatch<T> | undefined => list && { replace: list };
-
-const ownedCondition = ({ categories, tags, routes }: InvocationCondition): InvocationConditionOverride =>
-  ({ categories: owned(categories), tags: owned(tags), routes: owned(routes) });
-
-/** A full agent definition as a project override that owns each of its lists. */
-export function projectAgentOverride(
-  { visibleLayers, ownedLayers, guardTriggers, peers, browser, condition, ...scalars }: AgentSettingsConfig,
-): AgentSettingsOverride {
-  return {
-    ...scalars,
-    visibleLayers: owned(visibleLayers),
-    ownedLayers: owned(ownedLayers),
-    guardTriggers: owned(guardTriggers),
-    peers: owned(peers),
-    browser: browser && { ...browser, allowedUrls: owned(browser.allowedUrls), blockedUrls: owned(browser.blockedUrls) },
-    condition: condition && ownedCondition(condition),
-  };
-}
-
-/** A full layer definition as a project override that owns each of its lists. */
-export function projectLayerOverride({ sourceIds, writers, condition, ...scalars }: LayerSettingsConfig): LayerSettingsOverride {
-  return { ...scalars, sourceIds: owned(sourceIds), writers: owned(writers), condition: condition && ownedCondition(condition) };
-}
-
-/** Default project layers — created when a project is added. */
+/** Default global layers. The `project` layer reads each project's own sources (see projectSources). */
 export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
   return {
     system: {
@@ -632,10 +607,28 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       staleness: 30_000,
       enabled: true,
     },
+    project: PROJECT_LAYER,
   };
 }
 
-/** Default project sources — paths relative to project root. */
+/** Reads the active project's own docs and agent conventions; empty outside a project. */
+export const PROJECT_LAYER: LayerSettingsConfig = {
+  id: "project",
+  prompt: "This project's own documentation and agent conventions.",
+  sourceIds: ["project-docs", "project-ai"],
+  staleness: 300_000,
+  enabled: true,
+};
+
+/** A project's own sources: the only settings a project gets when added; everything else is inherited. */
+export function projectSources(projectPath: string): Record<string, DataSourceConfig> {
+  const dirs = { "project-docs": ["docs", "Project docs"], "project-ai": ["AI", "Project agent conventions"] } as const;
+  return Object.fromEntries(Object.entries(dirs)
+    .filter(([, [dir]]) => existsSync(join(projectPath, dir)))
+    .map(([id, [dir, label]]) => [id, { id, type: "markdown", label, uri: join(projectPath, dir), enabled: true }]));
+}
+
+/** Default global sources for a fresh install rooted at projectPath. */
 export function defaultProjectSources(projectPath: string): Record<string, DataSourceConfig> {
   return {
     "system-prompt": {
