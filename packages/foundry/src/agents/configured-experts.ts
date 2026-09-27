@@ -2,6 +2,7 @@ import type { CompletionOpts, ContextLayer, LLMProvider } from "@inixiative/foun
 import type { AgentSettingsConfig, FoundryConfig } from "../viewer/config";
 import { resolveLearningSettings, validateLearningSettings } from "./learning-config";
 import type { LearningConfig, ThreadDomainConfig } from "./thread-runtime";
+import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from "./domain-librarian";
 
 export interface ConfiguredExpert {
   readonly agentId: string;
@@ -33,7 +34,7 @@ export function configuredExperts(config: FoundryConfig): { experts: ConfiguredE
     if (!Array.isArray(agent.ownedLayers) || agent.ownedLayers.length !== 1) throw Error(`Expert ${id} must own exactly one domain layer`);
     const layerId = agent.ownedLayers[0], layer = config.layers[layerId];
     if (!layer || layer.id !== layerId || !identity(layerId) || layer.domain !== agent.domain || layer.segment === "thread-knowledge"
-      || layerId === "thread-state" || layerId.startsWith("thread-knowledge:")) throw Error(`Expert ${id} has an invalid domain layer mapping`);
+      || layerId === "thread-state" || isThreadKnowledgeLayerId(layerId)) throw Error(`Expert ${id} has an invalid domain layer mapping`);
     if (domains.has(agent.domain)) throw Error(`Duplicate expert domain: ${agent.domain}`);
     if (owners.has(layerId)) throw Error(`Duplicate expert layer writer: ${layerId}`);
     domains.set(agent.domain, id); owners.set(layerId, id);
@@ -142,7 +143,7 @@ export function resolveThreadDomains(config: FoundryConfig, available: ReadonlyM
   const seenDomains = new Set<string>(), seenLayers = new Set<string>();
   for (const dc of result) {
     if (!identity(dc.domain) || seenDomains.has(dc.domain) || seenLayers.has(dc.layerId)) throw Error(`Ambiguous runtime expert ownership: ${dc.domain}`);
-    if (available.has(`thread-knowledge:${dc.domain}`)) throw Error(`Generated expert layer already exists: ${dc.domain}`);
+    if (available.has(threadKnowledgeLayerId(dc.domain))) throw Error(`Generated expert layer already exists: ${dc.domain}`);
     seenDomains.add(dc.domain); seenLayers.add(dc.layerId);
   }
   for (const diagnostic of diagnostics) options.warn?.(diagnostic);

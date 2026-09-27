@@ -22,6 +22,7 @@ import type { ThreadRuntimeManager } from "../agents/thread-runtime";
 import { bindLiveAuthority, type AuthorityRefusal, type LiveAuthority, type LiveThreadRegistry } from "./authority";
 import { KastleAccessTool } from "../tools/kastle-access";
 import { readOperationSchema } from "../providers/kastle-access-client";
+import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from "../agents/domain-librarian";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -286,7 +287,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       const configured = stack.layers.filter((l) => l.isWarm && !isThreadKnowledge(l)
         && (l.id.includes("convention") || l.id.includes("pattern") || l.id.includes("rule") || l.id.includes(domain))
         && (l.id.includes(domain) || l.content.toLowerCase().includes(domain.toLowerCase())));
-      const generated = stack.layers.filter((l) => l.isWarm && isThreadKnowledge(l) && l.id === `thread-knowledge:${domain}`);
+      const generated = stack.layers.filter((l) => l.isWarm && isThreadKnowledge(l) && l.id === threadKnowledgeLayerId(domain));
       if (configured.length === 0 && generated.length === 0) {
         const fallback = findMatchingLayers(stack, `${domain} convention pattern rule`);
         if (fallback.length === 0) return { status: "missing", text: `No conventions found for "${domain}". This domain may not have established conventions yet.` };
@@ -442,7 +443,7 @@ function refusalText(reason: AuthorityRefusal, phase: "before" | "after"): strin
 }
 
 function isThreadKnowledge(layer: ContextLayer): boolean {
-  return layer.id.startsWith("thread-knowledge:");
+  return isThreadKnowledgeLayerId(layer.id);
 }
 
 function partOf(layer: ContextLayer): string {

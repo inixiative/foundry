@@ -3,13 +3,17 @@
  * Daemon entrypoint. Updates before launching — nothing is running yet at that
  * point, so there is no in-flight job to interrupt — then hands off to start.ts
  * and keeps watching, because a daemon left running for days would otherwise
- * never see main move.
+ * never see main move. Local services come up first; a boot that fails on
+ * changed settings restores the last settings that booted.
  */
 import { dirname, resolve } from "node:path";
 import { applyUpdate, RESTART_EXIT_CODE } from "./update";
 import { startUpdateWatcher } from "./watch";
+import { ensureServices } from "./services";
+import { recordBooted, restoreAfterFailedBoot } from "./last-good";
 
 const repoRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
+const configDir = `${repoRoot}/.foundry`;
 
 const log = (message: string) => console.log(`[${new Date().toISOString()}] daemon: ${message}`);
 
@@ -40,5 +44,16 @@ if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
     log,
   });
 
+const services = await ensureServices(repoRoot);
+if (services.started.length) log(`services up: ${services.started.join(", ")}`);
+if (services.detail) log(`services not started — ${services.detail}`);
+
 log(`starting viewer on port ${process.env.VIEWER_PORT ?? "4400"}`);
-await import(`${repoRoot}/packages/foundry/src/start.ts`);
+try {
+  await import(`${repoRoot}/packages/foundry/src/start.ts`);
+} catch (error) {
+  const rejected = await restoreAfterFailedBoot(configDir);
+  if (rejected) log(`boot failed on changed settings; set them aside at ${rejected} and restored the last settings that booted`);
+  throw error;
+}
+await recordBooted(configDir);

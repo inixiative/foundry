@@ -92,8 +92,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
 
   app.get("/api/definitions", async (c) => {
     await configStore.load();
-    configStore.syncFromHarness(harness);
-    const cfg = configStore.config;
+    const cfg = configStore.withRuntime(harness);
 
     const instantiatedLayers = new Set(harness.thread.stack.layers.map((layer) => layer.id));
     const instantiatedAgents = new Set([...harness.thread.agents.keys()]);
@@ -143,9 +142,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   });
 
   app.get("/api/settings", async (c) => {
-    await configStore.load();
-    configStore.syncFromHarness(harness);
-    return c.json(configStore.config);
+    return c.json(await configStore.load());
   });
 
   app.put("/api/settings", async (c) => {
@@ -185,9 +182,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
     const body = await c.req.json<AssistRequest>();
     await configStore.load();
-    configStore.syncFromHarness(harness);
     try {
-      const result = await aiAssist.analyze(configStore.config, body);
+      const result = await aiAssist.analyze(configStore.withRuntime(harness), body);
       return c.json(result);
     } catch (err) {
       return c.json({ error: `AI assist failed: ${err instanceof Error ? err.message : String(err)}` }, 500);

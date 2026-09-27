@@ -30,6 +30,7 @@ import {
   type ReviewResult,
   type ReviewJob,
   type ThreadKnowledgeSnapshot,
+  threadKnowledgeLayerId,
 } from "./domain-librarian";
 import { FlowOrchestrator, type FlowTimingConfig, type HydrationResult, type InjectionPlan } from "./flow-orchestrator";
 import { ReactiveMiddleware, lowConfidenceRule } from "./reactive";
@@ -574,7 +575,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // It lives on this thread's stack only, next to the configured cache,
       // and is never part of the project template.
       const threadKnowledgeLayer = new ContextLayer({
-        id: `thread-knowledge:${dc.domain}`,
+        id: threadKnowledgeLayerId(dc.domain),
         owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
         prompt: `What the ${dc.domain} domain has learned about this thread (generated, thread-private).`,
         segment: "thread-knowledge",

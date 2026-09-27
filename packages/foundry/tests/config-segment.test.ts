@@ -102,7 +102,7 @@ test("an invalid persisted project segment fails load loudly and leaves the file
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("syncFromHarness copies a present construction segment for a new layer, never overwrites an existing definition, never adds an absent field", async () => {
+test("withRuntime shows runtime-only layers with their construction segment, never overwrites a definition, and never changes settings", async () => {
   const dir = await mkdtemp(join(tmpdir(), "g6-config-segment-sync-"));
   try {
     const store = new ConfigStore(dir);
@@ -110,13 +110,23 @@ test("syncFromHarness copies a present construction segment for a new layer, nev
     const declared = new ContextLayer({ id: "custom", prompt: "Use the fact", segment: "thread-knowledge" });
     const plain = new ContextLayer({ id: "plain", prompt: "Plain" });
     const conflicting = new ContextLayer({ id: "configured", prompt: "Runtime prompt", segment: "thread-knowledge" }); // must not overwrite
-    store.syncFromHarness(new Harness(new Thread("owned", new ContextStack([declared, plain, conflicting]))));
-    expect(store.config.layers.custom).toMatchObject({ id: "custom", prompt: "Use the fact", segment: "thread-knowledge" });
-    expect("segment" in store.config.layers.plain).toBe(false);
-    expect(store.config.layers.configured).toMatchObject({ prompt: "Use the fact", segment: "domain-knowledge" });
-    await store.save(store.config);
-    const restored = await new ConfigStore(dir).load();
-    const built = Object.fromEntries(buildLayers(restored, { sourceResolver: () => null }).map(l => [l.id, l.segment]));
-    expect(built).toEqual({ configured: "domain-knowledge", custom: "thread-knowledge", plain: undefined });
+    const view = store.withRuntime(new Harness(new Thread("owned", new ContextStack([declared, plain, conflicting]))));
+    expect(view.layers.custom).toMatchObject({ id: "custom", prompt: "Use the fact", segment: "thread-knowledge" });
+    expect("segment" in view.layers.plain!).toBe(false);
+    expect(view.layers.configured).toMatchObject({ prompt: "Use the fact", segment: "domain-knowledge" });
+    expect(Object.keys(store.config.layers)).toEqual(["configured"]);
+    await store.patch("defaults", { model: "controlled" });
+    expect(Object.keys((await new ConfigStore(dir).load()).layers)).toEqual(["configured"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("settings reject a configured thread-knowledge layer, which would collide with generated ones at boot", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "g6-config-reserved-"));
+  try {
+    const store = new ConfigStore(dir);
+    await store.save(starterConfig("controlled", "controlled"));
+    await expect(store.patch("layers", { "thread-knowledge:docs": layer("thread-knowledge", "generated") }))
+      .rejects.toThrow("thread-knowledge layers are generated per thread");
+    expect(Object.keys((await new ConfigStore(dir).load()).layers)).toEqual([]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

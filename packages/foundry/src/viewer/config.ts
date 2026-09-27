@@ -12,6 +12,7 @@ import { newId, validateMemorySelection, type Harness, type LLMProvider, type Me
 import { providerConfigsFromRegistry, type ModelCapability, type ProviderType } from "../models/registry";
 import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectView } from "./config-resolve";
 import { validateLearningSettings, type LearningSettings } from "../agents/learning-config";
+import { isThreadKnowledgeLayerId } from "../agents/domain-librarian";
 
 // ---------------------------------------------------------------------------
 // Settings config model — serializable representation of system configuration
@@ -691,7 +692,9 @@ function mergeProviderConfigs(
  */
 /** A layer's content segment must be absent or exactly one of the two bounded values. Applied
  * to global definitions and every project override before any live or persisted publication. */
-function validateLayerSegment(owner: string, id: string, layer: unknown): void {
+function validateLayerDefinition(owner: string, id: string, layer: unknown): void {
+  if (isThreadKnowledgeLayerId(id))
+    throw new Error(`invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`);
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== "domain-knowledge" && segment !== "thread-knowledge")
     throw new Error(`invalid layer ${JSON.stringify(id)} in ${owner}: segment must be "domain-knowledge" or "thread-knowledge"`);
@@ -725,10 +728,10 @@ export function validateConfig(config: FoundryConfig): void {
     if (config.defaults.nativeAuthenticationId && !["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Native authentication requires a native runtime provider");
   }
   validateLearningSettings(config.learning);
-  for (const [id, layer] of Object.entries(config.layers ?? {})) validateLayerSegment("global layers", id, layer);
+  for (const [id, layer] of Object.entries(config.layers ?? {})) validateLayerDefinition("global layers", id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
     for (const [id, layer] of Object.entries((project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {}))
-      validateLayerSegment(`project ${JSON.stringify(pid)} layers`, id, layer);
+      validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
       if (!src || src.selection === undefined || src.selection === false) continue;
@@ -839,16 +842,18 @@ export class ConfigStore {
   }
 
   /**
-   * Sync current runtime state into config.
-   * Reads agents, layers, etc. from the harness and updates config to match.
+   * The saved config plus definitions that exist only at runtime, for inspection.
+   * A copy: runtime state never becomes settings.
    */
-  syncFromHarness(harness: Harness): void {
+  withRuntime(harness: Harness): FoundryConfig {
     const thread = harness.thread;
+    const agents = { ...this._config.agents };
+    const layers = { ...this._config.layers };
 
-    // Sync agents
+    // Runtime-only agents
     for (const [id, agent] of thread.agents) {
-      if (!this._config.agents[id]) {
-        this._config.agents[id] = {
+      if (!agents[id]) {
+        agents[id] = {
           id,
           kind: agent.constructor.name.toLowerCase().replace("agent", ""),
           prompt: agent.prompt ?? "",
@@ -863,12 +868,12 @@ export class ConfigStore {
       }
     }
 
-    // Sync layers
+    // Runtime-only layers
     for (const layer of thread.stack.layers) {
-      if (!this._config.layers[layer.id]) {
+      if (!layers[layer.id]) {
         // A newly discovered layer carries its construction segment when it has one;
         // an existing configured definition is never overwritten and no absent field is added.
-        this._config.layers[layer.id] = {
+        layers[layer.id] = {
           id: layer.id,
           prompt: layer.prompt ?? "",
           sourceIds: layer.sources.map((s) => s.id),
@@ -878,6 +883,7 @@ export class ConfigStore {
         };
       }
     }
+    return { ...this._config, agents, layers };
   }
 
   /**
