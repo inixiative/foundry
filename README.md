@@ -83,6 +83,14 @@ curl -X POST http://localhost:4400/api/messages \
   -d '{"message": "What is the project structure?"}'
 ```
 
+### Daemon
+
+`bun run daemon:install` runs Foundry as a LaunchAgent. Before boot it starts the docker-compose services your `DATABASE_URL`, `REDIS_URL` and `MUNINN_URL` point at on this machine.
+
+The daemon runs a release, not your working checkout: an exported commit with its own install under `.foundry/releases/<sha>`. With `"daemon": { "autoUpdate": "apply" }` in settings, it builds `origin/main` as a candidate (at startup and every `updateCheckSeconds`, default 300) and restarts onto it once no job is running. A candidate that boots becomes stable; one that fails to boot is marked failed, never retried, and the daemon relaunches on stable. `"check"` only logs that `origin/main` moved. Release state is in `.foundry/releases/state.json`.
+
+A boot of stable that fails on changed settings sets them aside as `.foundry/settings.rejected-<ts>.json` and restores the last settings that booted.
+
 ## Testing
 
 ```bash

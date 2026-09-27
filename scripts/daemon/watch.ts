@@ -1,15 +1,16 @@
 /**
  * Periodic update check for a daemon that is already running.
  *
- * The supervisor only updates at startup, so a daemon left running for days
- * never sees main move. This watches for that, and restarts the same way the
- * supervisor does: exit 75, let launchd relaunch into the new code.
+ * The supervisor only stages updates at startup, so a daemon left running for
+ * days never sees main move. This stages the candidate while running, then
+ * exits 75 once no job is in flight so launchd relaunches onto it.
  */
-import { applyUpdate, readAutoUpdate, RESTART_EXIT_CODE } from "./update";
+import { readState, RESTART_EXIT_CODE, stageUpdate } from "./update";
 import { runtimeJobsInFlight } from "./idle";
 
 export interface WatchOptions {
   repoRoot: string;
+  configDir: string;
   intervalMs: number;
   /** Holds the runtime-jobs directory; absent when this Foundry is not enrolled. */
   runtimeDirectory?: string;
@@ -18,9 +19,7 @@ export interface WatchOptions {
   log?: (message: string) => void;
 }
 
-/**
- * launchd's ThrottleInterval is the floor; dependency installs dominate the rest.
- */
+/** The candidate is built before the restart, so this covers launchd's ThrottleInterval and the boot. */
 const EXPECTED_BACK_WITHIN_MS = 60_000;
 
 export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
@@ -31,16 +30,13 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
     if (checking) return;
     checking = true;
     try {
-      if ((await readAutoUpdate(options.repoRoot)) !== "apply") return;
-      if (await runtimeJobsInFlight(options.runtimeDirectory)) return;
+      const result = await stageUpdate(options.repoRoot, options.configDir);
+      if (result.action === "failed") log(`update skipped — ${result.detail}`);
+      if (result.action === "staged") log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
+      const { candidate } = await readState(options.configDir);
+      if (!candidate || (await runtimeJobsInFlight(options.runtimeDirectory))) return;
 
-      const result = await applyUpdate(options.repoRoot);
-      if (result.action !== "applied") {
-        if (result.action === "failed") log(`update skipped — ${result.detail}`);
-        return;
-      }
-
-      log(`pulled ${result.behind} commit(s) from origin/main; restarting`);
+      log(`restarting onto candidate ${candidate.slice(0, 8)}`);
       try {
         await options.closeForUpdate?.(EXPECTED_BACK_WITHIN_MS);
       } catch (error) {
