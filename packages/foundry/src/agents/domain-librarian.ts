@@ -218,6 +218,10 @@ const DEFAULT_MAX_HISTORY = 200;
 const DEFAULT_MAX_EVIDENCE = 200;
 const EVIDENCE_KINDS = new Set(["dispatch", "tool_observation", "signal", "restore"]);
 
+/** Generated, thread-private expert layer ids. The prefix is reserved: settings never define one. */
+export const threadKnowledgeLayerId = (domain: string): string => `thread-knowledge:${domain}`;
+export const isThreadKnowledgeLayerId = (id: string): boolean => id.startsWith("thread-knowledge:");
+
 /**
  * One domain's versioned understanding of one thread. Generated, thread-private
  * writeback, kept separate from the domain's configured cache. Content lives
@@ -599,7 +603,7 @@ export class DomainLibrarian {
     this._threadKnowledge = new ThreadKnowledge(
       config.domain,
       config.threadKnowledgeLayer ?? new ContextLayer({
-        id: `thread-knowledge:${config.domain}`,
+        id: threadKnowledgeLayerId(config.domain),
         prompt: `What the ${config.domain} domain has learned about this thread (generated, thread-private).`,
         segment: "thread-knowledge",
       }),
