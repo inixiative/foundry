@@ -240,6 +240,8 @@ export {
   defaultProjectAgents,
   defaultProjectLayers,
   defaultProjectSources,
+  projectSources,
+  PROJECT_LAYER,
   createProject,
   type FoundryConfig,
   type ListPatch,

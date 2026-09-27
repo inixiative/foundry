@@ -60,15 +60,15 @@ export interface FoundryConfig {
 
   /**
    * Global agent templates (keyed by agent ID).
-   * Projects inherit these as starting points. On a fresh install this is empty —
-   * agents are created per-project via defaultProjectAgents().
+   * Projects inherit these by id; a project override of the same id wins.
+   * A fresh install is seeded from defaultProjectAgents().
    */
   agents: Record<string, AgentSettingsConfig>;
 
   /**
    * Global layer templates (keyed by layer ID).
-   * Projects inherit these as starting points. On a fresh install this is empty —
-   * layers are created per-project via defaultProjectLayers().
+   * Projects inherit these by id; a project override of the same id wins.
+   * A fresh install is seeded from defaultProjectLayers().
    */
   layers: Record<string, LayerSettingsConfig>;
 
@@ -583,7 +583,7 @@ export function defaultProjectAgents(
   };
 }
 
-/** Default project layers — created when a project is added. */
+/** Default global layers. The `project` layer reads each project's own sources (see projectSources). */
 export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
   return {
     system: {
@@ -607,10 +607,28 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       staleness: 30_000,
       enabled: true,
     },
+    project: PROJECT_LAYER,
   };
 }
 
-/** Default project sources — paths relative to project root. */
+/** Reads the active project's own docs and agent conventions; empty outside a project. */
+export const PROJECT_LAYER: LayerSettingsConfig = {
+  id: "project",
+  prompt: "This project's own documentation and agent conventions.",
+  sourceIds: ["project-docs", "project-ai"],
+  staleness: 300_000,
+  enabled: true,
+};
+
+/** A project's own sources: the only settings a project gets when added; everything else is inherited. */
+export function projectSources(projectPath: string): Record<string, DataSourceConfig> {
+  const dirs = { "project-docs": ["docs", "Project docs"], "project-ai": ["AI", "Project agent conventions"] } as const;
+  return Object.fromEntries(Object.entries(dirs)
+    .filter(([, [dir]]) => existsSync(join(projectPath, dir)))
+    .map(([id, [dir, label]]) => [id, { id, type: "markdown", label, uri: join(projectPath, dir), enabled: true }]));
+}
+
+/** Default global sources for a fresh install rooted at projectPath. */
 export function defaultProjectSources(projectPath: string): Record<string, DataSourceConfig> {
   return {
     "system-prompt": {

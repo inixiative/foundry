@@ -63,6 +63,7 @@ import {
   defaultProjectAgents,
   defaultProjectLayers,
   defaultProjectSources,
+  projectSources,
   starterConfig,
   type FoundryConfig,
 } from "./viewer/config";
@@ -106,6 +107,7 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
   if (!hasEntries(config.projects)) {
     const project = createProject(projectPath, {
       label: "Foundry",
+      sources: projectSources(projectPath),
     });
     config.projects = { [project.id]: project };
     changed = true;
