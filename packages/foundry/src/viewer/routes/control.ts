@@ -17,6 +17,8 @@ import {
   defaultProjectAgents,
   defaultProjectLayers,
   defaultProjectSources,
+  projectAgentOverride,
+  projectLayerOverride,
   type ConfigStore,
   type FoundryConfig,
   type McpSettingsConfig,
@@ -344,8 +346,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
         ? body.tags.filter((tag): tag is string => typeof tag === "string")
         : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
-      agents: defaultProjectAgents(provider, model, classifierProvider, classifierModel) as any,
-      layers: defaultProjectLayers() as any,
+      agents: Object.fromEntries(Object.entries(defaultProjectAgents(provider, model, classifierProvider, classifierModel))
+        .map(([id, agent]) => [id, projectAgentOverride(agent)])),
+      layers: Object.fromEntries(Object.entries(defaultProjectLayers()).map(([id, layer]) => [id, projectLayerOverride(layer)])),
       sources: defaultProjectSources(body.path),
     });
 

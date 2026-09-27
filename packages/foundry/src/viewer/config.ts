@@ -583,6 +583,31 @@ export function defaultProjectAgents(
   };
 }
 
+const owned = <T>(list: T[] | undefined): ListPatch<T> | undefined => list && { replace: list };
+
+const ownedCondition = ({ categories, tags, routes }: InvocationCondition): InvocationConditionOverride =>
+  ({ categories: owned(categories), tags: owned(tags), routes: owned(routes) });
+
+/** A full agent definition as a project override that owns each of its lists. */
+export function projectAgentOverride(
+  { visibleLayers, ownedLayers, guardTriggers, peers, browser, condition, ...scalars }: AgentSettingsConfig,
+): AgentSettingsOverride {
+  return {
+    ...scalars,
+    visibleLayers: owned(visibleLayers),
+    ownedLayers: owned(ownedLayers),
+    guardTriggers: owned(guardTriggers),
+    peers: owned(peers),
+    browser: browser && { ...browser, allowedUrls: owned(browser.allowedUrls), blockedUrls: owned(browser.blockedUrls) },
+    condition: condition && ownedCondition(condition),
+  };
+}
+
+/** A full layer definition as a project override that owns each of its lists. */
+export function projectLayerOverride({ sourceIds, writers, condition, ...scalars }: LayerSettingsConfig): LayerSettingsOverride {
+  return { ...scalars, sourceIds: owned(sourceIds), writers: owned(writers), condition: condition && ownedCondition(condition) };
+}
+
 /** Default project layers — created when a project is added. */
 export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
   return {
