@@ -24,7 +24,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "foundry-access-"));
   const secret = `kastle_${"x".repeat(43)}`, credentialFile = join(directory, "access.json");
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
-  const connectionId = crypto.randomUUID(), signetId = crypto.randomUUID(), resourceId = crypto.randomUUID();
+  const integrationId = crypto.randomUUID(), signetId = crypto.randomUUID(), resourceId = crypto.randomUUID();
   const requests: Array<{ action: string; body: any; authorized: boolean }> = [];
   let revoked = false, wrongGrant = false, oversize = false, redirect = false, failExecution = false;
   let onExecute: (() => Promise<void>) | undefined;
@@ -35,7 +35,7 @@ async function fixture() {
     if (revoked) return new Response("PRIVATE_PROVIDER_ERROR", { status: 401 });
     if (oversize) return new Response("x".repeat(1_048_577));
     if (action === "describe") return Response.json({ data: {
-      signetId, connectionId: wrongGrant ? crypto.randomUUID() : connectionId, integrationId: crypto.randomUUID(), name: "Team integration",
+      signetId, integrationId: wrongGrant ? crypto.randomUUID() : integrationId, name: "Team integration",
       expiresAt: new Date(Date.now() + 60000).toISOString(), remainingRequests: 4,
       operations: [{ key: "issues.read", name: "Read issue", resources: [{ id: resourceId, name: "Fixture issue", kind: "issue" }] },
         { key: "issues.write", name: "Write issue", resources: [{ id: resourceId, name: "Fixture issue", kind: "issue" }] }],
@@ -47,7 +47,7 @@ async function fixture() {
     }
     return new Response(null, { status: 404 });
   } });
-  const source: KastleAccessSource = { id: crypto.randomUUID(), name: "Team issues", connectionId, signetId, credentialFile, url: server.url.origin, projectIds: [projectId] };
+  const source: KastleAccessSource = { id: crypto.randomUUID(), name: "Team issues", integrationId, signetId, credentialFile, url: server.url.origin, projectIds: [projectId] };
   const tools = new ToolRegistry(); registerKastleAccess(tools, [source]);
   const call = (url: string, body: unknown = {}, owner = scope) => tools.dispatch("kastle_request", { url, method: "POST", body }, { scope: owner });
   const read = () => call("read", { accessId: source.id, operation: "issues.read", resourceId });
@@ -64,7 +64,7 @@ test("project discovery exposes only local references; scoped reads retain serve
   const f = await fixture();
   try {
     const listed = await f.call("connections");
-    expect((listed.data as any).body).toEqual([{ id: f.source.id, name: "Team issues", connectionId: f.source.connectionId }]);
+    expect((listed.data as any).body).toEqual([{ id: f.source.id, name: "Team issues", integrationId: f.source.integrationId }]);
     expect(JSON.stringify(listed)).not.toContain(f.source.credentialFile); expect(f.requests).toHaveLength(0);
     const described = await f.call("describe", { accessId: f.source.id });
     expect((described.data as any).body.operations.map((op: any) => op.key)).toEqual(["issues.read"]);
@@ -75,7 +75,7 @@ test("project discovery exposes only local references; scoped reads retain serve
     expect(calls[0]!.body.requestId).not.toBe(calls[1]!.body.requestId);
     expect((read.data as any).body.requestId).toBe(calls[0]!.body.requestId);
     expect((again.data as any).body.executionId).toMatch(/^[a-f0-9-]{36}$/);
-    expect(calls[0]!.body).toMatchObject({ connectionId: f.source.connectionId, signetId: f.source.signetId, input: { resourceId: f.resourceId, limit: 20 } });
+    expect(calls[0]!.body).toMatchObject({ integrationId: f.source.integrationId, signetId: f.source.signetId, input: { resourceId: f.resourceId, limit: 20 } });
     expect(f.requests.every(request => request.authorized)).toBe(true);
   } finally { await f.close(); }
 });

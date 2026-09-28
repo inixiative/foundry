@@ -21,7 +21,7 @@ Merge this into the Foundry instance's settings, replacing the illustrative IDs 
     "name": "Team Linear issues",
     "url": "https://kastle.example",
     "credentialFile": "/private/absolute/path/team-linear-access.json",
-    "connectionId": "2617c05a-f3c2-4f7d-9b29-603d1666908a",
+    "integrationId": "2617c05a-f3c2-4f7d-9b29-603d1666908a",
     "signetId": "2a4f86c4-bede-49b5-a8c0-ef6b53cc216d",
     "projectIds": ["661d4d35-22f0-472d-a660-c573a90761eb"]
   }]
@@ -65,3 +65,9 @@ MCP and a future CLI wrapper should use the same Kastle authorization layer. The
 September 10 validation: `bun run test` passed 323 core and 1,433 Foundry tests (8 opt-in skips, zero failures); `bun run check` and the new test file's strict TypeScript check passed. `bun run kingdom:test` passed 17 access-package, 1 frontend and 70 API tests (one native inference probe skipped). Logs: `/tmp/foundry-access-all.log`, `/tmp/foundry-access-types-final.log`, `/tmp/kingdom-foundry-access-tests.log`.
 
 The subsequent frontend pass passed 323 core and 1,436 Foundry tests (8 skips, zero failures), package typechecks and the route test's strict TypeScript check. Browser inspection verified grant saving, access/resource discovery, narrow layout and the assistant toggle using synthetic local data. Desktop column bounds were checked at 1440px. The temporary preview and its credentials were cleaned up. Logs: `/tmp/foundry-access-ui-all.log`, `/tmp/foundry-access-ui-types-final.log`.
+
+## Integration identity contract
+
+Kingdom access sources and Signet proposals use `integrationId`; inference selections use `integrationIds`, and run envelopes return `integrationId`. Replace the former remote `connectionId`/`connectionIds` settings with the reviewed Integration IDs before using the updated server. Ambiguous or legacy source configurations are rejected; credentials and existing authority are not silently migrated. Pending old Signet proposals should be reviewed and recreated with the correct Integration identity.
+
+Foundry's local native-profile `connectionId` remains a separate internal identity. A resolved Kastle gateway maps the selected envelope's `integrationId` into that local field; this does not establish subscription-account ownership. WebSocket connection IDs and Archive routing contracts are unchanged.

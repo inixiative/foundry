@@ -10,15 +10,15 @@ export const kastleAccessSourceSchema = z.object({
     try { return kastleUrl(value); }
     catch { context.addIssue({ code: "custom", message: "Use an HTTPS origin or loopback HTTP origin." }); return z.NEVER; }
   }),
-  credentialFile: z.string().refine(isAbsolute), connectionId: z.string().uuid(), signetId: z.string().uuid(),
+  credentialFile: z.string().refine(isAbsolute), integrationId: z.string().uuid(), signetId: z.string().uuid(),
   projectIds: z.array(z.string().min(1)).min(1), threadIds: z.array(z.string().min(1)).min(1).optional(),
 }).strict();
 export type KastleAccessSource = z.infer<typeof kastleAccessSourceSchema>;
 export const accessCredentialSchema = z.object({ secret: z.string().regex(/^kastle_[a-zA-Z0-9_-]{43}$/) }).strict();
 const descriptionSchema = z.object({
-  signetId: z.string().uuid(), connectionId: z.string().uuid(), integrationId: z.string().uuid(), name: z.string(),
+  signetId: z.string().uuid(), integrationId: z.string().uuid(), name: z.string(),
   expiresAt: z.string().datetime().nullable(), lifecycle: z.enum(["request", "task", "ongoing"]).optional(), taskId: z.string().uuid().nullable().optional(), remainingRequests: z.number().int().nonnegative(),
-  operations: z.array(z.object({ key: z.string(), name: z.string(), resources: z.array(z.object({ id: z.string().uuid(), name: z.string(), kind: z.string(), connectionId: z.string().uuid().optional() })) })),
+  operations: z.array(z.object({ key: z.string(), name: z.string(), resources: z.array(z.object({ id: z.string().uuid(), name: z.string(), kind: z.string(), integrationId: z.string().uuid().optional() })) })),
 });
 export const readOperationSchema = z.string().max(80).regex(/^[a-z][a-z.]*\.read$/);
 
@@ -60,7 +60,7 @@ export class KastleAccessClient {
   }
   async describe() {
     const description = descriptionSchema.parse(await this.post("describe", {}));
-    if (description.connectionId !== this.source.connectionId || description.signetId !== this.source.signetId)
+    if (description.integrationId !== this.source.integrationId || description.signetId !== this.source.signetId)
       throw Error("Kastle access credential belongs to another grant");
     if (description.expiresAt && Date.parse(description.expiresAt) <= Date.now()) throw Error("Kastle access expired");
     return { ...description, operations: description.operations.filter(operation => readOperationSchema.safeParse(operation.key).success) };
@@ -76,7 +76,7 @@ export class KastleAccessClient {
     if (!description.operations.some(operation => operation.key === input.operation && operation.resources.some(resource => resource.id === input.resourceId)))
       throw Error("Kastle operation or resource unavailable");
     return z.object({ executionId: z.string().uuid(), result: z.unknown() }).parse(await this.post("execute", {
-      requestId: input.requestId, runId: input.runId, connectionId: description.operations.flatMap(operation => operation.resources).find(resource => resource.id === input.resourceId)?.connectionId ?? this.source.connectionId, signetId: this.source.signetId,
+      requestId: input.requestId, runId: input.runId, integrationId: description.operations.flatMap(operation => operation.resources).find(resource => resource.id === input.resourceId)?.integrationId ?? this.source.integrationId, signetId: this.source.signetId,
       ...(description.taskId ? { taskId: description.taskId } : {}),
       operation: readOperationSchema.parse(input.operation), input: { resourceId: input.resourceId, limit: input.limit },
     }, onDispatch));

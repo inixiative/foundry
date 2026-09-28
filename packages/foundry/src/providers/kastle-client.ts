@@ -2,11 +2,11 @@ import { z } from "zod";
 
 export const kastleSelectionSchema = z.object({
   model: z.string().min(1).optional(), effort: z.string().min(1).optional(), poolId: z.string().uuid().optional(),
-  capacityIds: z.array(z.string().uuid()).optional(), connectionIds: z.array(z.string().uuid()).optional(),
+  capacityIds: z.array(z.string().uuid()).optional(), integrationIds: z.array(z.string().uuid()).optional(),
   category: z.string().optional(), projectId: z.string().uuid().optional(), tagIds: z.array(z.string().uuid()).optional(), inferredTags: z.array(z.string()).optional(),
 }).strict();
 export const kastleEnvelopeSchema = z.object({
-  id: z.string().uuid(), kastleId: z.string().uuid(), installationId: z.string().uuid(), runId: z.string().uuid(), connectionId: z.string().uuid(), capacityId: z.string().uuid(),
+  id: z.string().uuid(), kastleId: z.string().uuid(), installationId: z.string().uuid(), runId: z.string().uuid(), integrationId: z.string().uuid(), capacityId: z.string().uuid(),
   model: z.string(), effort: z.string(), runtime: z.enum(["claude", "codex"]), expiresAt: z.string().datetime(), gatewayPath: z.string(),
 }).strict();
 export type KastleSelection = z.infer<typeof kastleSelectionSchema>;

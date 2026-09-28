@@ -12,7 +12,7 @@ async function fixture() {
   config.projects[projectId] = { id: projectId, label: "Team", path: dir };
   await store.save(config);
   const app = new Hono(); registerAccessRoutes(app, store);
-  const source = { id: crypto.randomUUID(), name: "Team issues", url: "http://127.0.0.1:1", credentialFile: join(dir, "access.json"), connectionId: crypto.randomUUID(), signetId: crypto.randomUUID(), projectIds: [projectId] };
+  const source = { id: crypto.randomUUID(), name: "Team issues", url: "http://127.0.0.1:1", credentialFile: join(dir, "access.json"), integrationId: crypto.randomUUID(), signetId: crypto.randomUUID(), projectIds: [projectId] };
   const get = async () => (await app.request("/api/access/sources")).json();
   const put = (body: unknown) => app.request(`/api/access/sources/${source.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return { dir, store, config, projectId, app, source, get, put, async close() { await rm(dir, { recursive: true, force: true }); } };
@@ -56,7 +56,7 @@ test("explicit checks use only the saved origin and private token, expose metada
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     calls++; expect(new URL(request.url).pathname).toBe("/api/v1/access/describe"); expect(await request.json()).toEqual({});
     if (rejected) return new Response("PRIVATE_TOKEN_FAILURE", { status: 401 });
-    return Response.json({ data: { signetId: f.source.signetId, connectionId: f.source.connectionId, integrationId: crypto.randomUUID(), name: "Team issues", expiresAt: new Date(Date.now() + 60000).toISOString(), remainingRequests: 3,
+    return Response.json({ data: { signetId: f.source.signetId, integrationId: f.source.integrationId, name: "Team issues", expiresAt: new Date(Date.now() + 60000).toISOString(), remainingRequests: 3,
       operations: [{ key: "issues.read", name: "Read issue", resources: [{ id: crypto.randomUUID(), name: "Issue", kind: "issue" }] }] } });
   } });
   try {

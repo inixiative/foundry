@@ -93,7 +93,7 @@ export class KastleAuthentication {
       }
       if (Date.parse(envelope.expiresAt) <= Date.now()) throw Error("Persisted Kastle run expired; start a new run");
       const manager = new NativeAuthentication({ directory: join(directory, "profiles"), defaultSourceId: envelope.id, sources: [{
-        id: envelope.id, connectionId: envelope.connectionId, runtime, mode: "gateway", baseUrl: `${source.url}${envelope.gatewayPath}`,
+        id: envelope.id, connectionId: envelope.integrationId, runtime, mode: "gateway", baseUrl: `${source.url}${envelope.gatewayPath}`,
         credential: { type: "command", command: process.execPath, args: [fileURLToPath(new URL("./kastle-token-helper.ts", import.meta.url)), credentialFile], refreshIntervalMs: 60000 },
       }] });
       this.bindings.set(`${runtime}:${threadId}`, { fingerprint, manager, envelope });
