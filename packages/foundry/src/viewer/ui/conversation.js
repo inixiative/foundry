@@ -194,12 +194,14 @@ function ChatInput() {
   const [text, setText] = useState("");
   const inputRef = useRef(null);
 
-  const handleSubmit = () => {
-    if (!text.trim()) return;
-    inputHistory.push(text.trim());
+  const handleSubmit = async () => {
+    const sent = text.trim();
+    if (!sent) return;
+    inputHistory.push(sent);
     historyIdx = -1;
-    sendMessage(text.trim());
     setText("");
+    // Unsent text comes back unless something new was typed meanwhile.
+    if (!(await sendMessage(sent))) setText(current => current || sent);
   };
 
   const handleKeyDown = (e) => {
