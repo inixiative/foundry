@@ -10,7 +10,8 @@
     "./adapters": "./src/adapters/index.ts",
     "./viewer": "./src/viewer/index.ts",
     "./jobs": "./src/jobs/index.ts",
-    "./tools": "./src/tools/index.ts"
+    "./tools": "./src/tools/index.ts",
+    "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
