@@ -292,6 +292,12 @@ export interface ConfigurationEvidence {
   readonly observedAt: number;
 }
 
+/** Recovery metadata only: without it a crashed owner's lock just stays for manual release. */
+function adoptChild(auth: NativeAuthenticationLaunch | undefined, child: unknown) {
+  const pid = (child as { pid?: unknown }).pid;
+  if (typeof pid === "number") try { auth?.adopt?.(pid); } catch { /* Lock stays manual. */ }
+}
+
 function configurationFact(raw: unknown): ConfigurationEvidence | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
@@ -515,6 +521,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
           : (opts.tools === false ? restrictedSpawn : defaultSpawn)(opts.nativeBridge ? withNativeBridge(launch?.argv ?? cmd, "claude", opts.nativeBridge) : launch?.argv ?? cmd, { ...options, env: launch?.env ?? options.env });
       }
       catch (error) { auth?.release(); throw error; }
+      adoptChild(auth, child);
       ownedExit = child.exited.then(code => { auth?.release(); this._live.delete(session); return code; });
       this._live.add(session);
       void ownedExit.catch(() => {});
@@ -721,6 +728,7 @@ export class CodexSessionAdapter implements SessionAdapter {
         let child: ReturnType<typeof defaultSpawn>;
         try { child = defaultSpawn(opts.nativeBridge && this._engine === "mcp" ? withNativeBridge(launch?.argv ?? cmd, "codex", opts.nativeBridge) : launch?.argv ?? cmd, { ...options, env: launch?.env ?? options.env }); }
         catch (error) { auth?.release(); throw error; }
+        adoptChild(auth, child);
         spawned = true;
         ownedExit = child.exited.then(code => { auth?.release(); this._live.delete(session); return code; });
         this._live.add(session);

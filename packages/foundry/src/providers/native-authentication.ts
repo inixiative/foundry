@@ -38,6 +38,8 @@ export interface NativeAuthenticationLaunch {
   readonly mode: NativeAuthenticationSource["mode"];
   check(): void;
   launch(argv: string[], env: Record<string, string | undefined>): { argv: string[]; env: Record<string, string | undefined> };
+  /** Records the launched native child, so a lock left by a crashed owner can be reclaimed once both are dead. */
+  adopt?(pid: number): void;
   release(): void;
 }
 
@@ -176,6 +178,7 @@ export class NativeAuthentication {
         }
         mkdirSync(directory, { recursive: true, mode: 0o700 });
         if (source.mode === "native-profile") assertProfile(directory, runtime); else assertPrivateProfile(directory);
+        reclaimDeadOwners(lock, sharedLocks);
         const owner = JSON.stringify({ id: ownerId, pid: process.pid, sourceId: source.id, threadId });
         if (shared) {
           // Register first, then check the exclusive lock: either side always observes the other.
@@ -197,6 +200,13 @@ export class NativeAuthentication {
         active = true;
         return { argv: launchArgs, env };
       },
+      adopt: (pid: number) => {
+        if (!active) return;
+        const file = shared ? join(sharedLocks, `${ownerId}.json`) : join(directory, ".foundry-auth-lock", "owner.json");
+        const owner = JSON.parse(readFileSync(file, "utf8"));
+        if (owner.id !== ownerId) throw Error("Authentication lock ownership changed; adoption refused");
+        writeFileSync(file, JSON.stringify({ ...owner, childPid: pid }), { mode: 0o600 });
+      },
       release: () => {
         released = true;
         if (active) {
@@ -212,6 +222,25 @@ export class NativeAuthentication {
       },
     });
   }
+}
+
+function dead(pid: unknown): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  try { process.kill(pid, 0); return false; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "ESRCH"; }
+}
+
+/** Only an owner that recorded its native child, with both gone, is reclaimed; anything else still needs a person. */
+function deadOwner(file: string): boolean {
+  try { const owner = JSON.parse(readFileSync(file, "utf8")); return dead(owner.pid) && dead(owner.childPid); }
+  catch { return false; }
+}
+
+function reclaimDeadOwners(lock: string, sharedLocks: string) {
+  const owner = join(lock, "owner.json");
+  if (deadOwner(owner)) try { unlinkSync(owner); rmdirSync(lock); } catch { /* Another launch reclaimed it first. */ }
+  for (const entry of readdirSafe(sharedLocks))
+    if (entry.endsWith(".json") && deadOwner(join(sharedLocks, entry))) try { unlinkSync(join(sharedLocks, entry)); } catch { /* Already reclaimed. */ }
 }
 
 function readdirSafe(directory: string): string[] {
