@@ -38,3 +38,7 @@ The latest paired receipt was retained at `/tmp/foundry-vz-probe/pair-receipt.js
 This proves an offline VM can be created and stopped on the owned machine. It does not prove kernel exploit resistance, a live model runtime, an approved immutable runtime image, authenticated profile handling, cgroup isolation, output saturation behavior, a selective network allowlist, fixed MCP tunneling, cross-role network rejection in an online topology, or signed registry freshness. It must not satisfy all checks in `oracleWorkerCheckSpecification`.
 
 The proposed model pilot still needs two independently authenticated role workers with an initial 4 GiB each, plus an external guardian/broker. The 512 MiB offline canary allocation is not a model runtime sizing claim. No operator login is needed until that runnable boundary is implemented and its non-model controls pass. See [the dedicated worker design](../../docs/dedicated-native-worker.md).
+
+## Controlled online-policy prototype
+
+See [gateway policy and remaining integration work](GATEWAY.md) for the separate controlled routing prototype. It does not add networking to this offline VM controller or establish live readiness.
