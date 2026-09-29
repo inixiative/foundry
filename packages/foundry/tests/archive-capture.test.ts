@@ -19,7 +19,7 @@ test('Foundry publishes and retrieves evidence directly from a standalone Archiv
     const t = thread(); journal.saveThread(t); journal.beginTurn(t, 'turn-direct', 'Review migration evidence');
     const captured = local.capture(captureThread(journal, local.sourceId, t.id));
     await publishArchive(local, captured.id, { kind: 'archive', projectId: 'project-a', url: hosted.server.url.href,
-      keepIds: [], tokenEnv: 'ARCHIVE_DIRECT_TEST_TOKEN' });
+      tokenEnv: 'ARCHIVE_DIRECT_TEST_TOKEN' });
     const source = new ArchiveContextSource('direct', hosted.server.url.href, { kind: 'archive', projectId: 'project-a',
       tokenEnv: 'ARCHIVE_DIRECT_TEST_TOKEN', budget: 2048 });
     expect(await source.bind({ projectId: 'other' }).load()).toBe('');
@@ -55,7 +55,7 @@ test('publication carries one explicit destination and only acknowledges a commi
   const journal = new LocalSessionStore(':memory:'), archives = new LocalArchiveStore(':memory:');
   const t = thread(); journal.saveThread(t); journal.beginTurn(t, 'turn-a', 'Publish fixture');
   const captured = archives.capture(captureThread(journal, archives.sourceId, t.id));
-  const destination = { projectId: 'project-a', url: 'https://example.invalid/', kastleId: crypto.randomUUID(), keepIds: [], tokenEnv: 'ARCHIVE_TEST_TOKEN' };
+  const destination = { kind: 'kingdom' as const, projectId: 'project-a', url: 'https://example.invalid/', tokenEnv: 'ARCHIVE_TEST_TOKEN' };
   process.env.ARCHIVE_TEST_TOKEN = 'kastle_runtime_fixture';
   const calls: any[] = [];
   const transport = (async (url: any, init: any) => {
@@ -66,14 +66,14 @@ test('publication carries one explicit destination and only acknowledges a commi
     await publishArchive(archives, captured.id, destination, transport);
     expect(calls[0].url).toBe('https://example.invalid/api/v1/archive/ingest');
     expect(calls[0].init.redirect).toBe('error');
-    expect(JSON.parse(calls[0].init.body).kastleId).toBe(destination.kastleId);
+    expect(Object.keys(JSON.parse(calls[0].init.body))).toEqual(['previousDigest', 'snapshot']);
     expect((await publishArchive(archives, captured.id, destination, transport)).unchanged).toBe(true);
     expect(calls).toHaveLength(1);
-    await publishArchive(archives, captured.id, { ...destination, keepIds: [crypto.randomUUID()] }, transport);
+    await publishArchive(archives, captured.id, { ...destination, spaceId: crypto.randomUUID() }, transport);
     expect(calls).toHaveLength(2);
     await expect(publishArchive(archives, captured.id, { ...destination, projectId: 'other' }, transport)).rejects.toThrow('outside');
     await expect(publishArchive(archives, captured.id, { ...destination, url: 'http://remote.invalid' }, transport)).rejects.toThrow('HTTPS');
-    await expect(publishArchive(archives, captured.id, { ...destination, kastleId: crypto.randomUUID() },
+    await expect(publishArchive(archives, captured.id, { ...destination, organizationId: crypto.randomUUID() },
       (async () => Response.json({ error: 'denied' }, { status: 403 })) as typeof fetch)).rejects.toThrow('403');
   } finally { delete process.env.ARCHIVE_TEST_TOKEN; archives.close(); journal.close(); }
 });
@@ -82,7 +82,7 @@ test('context retrieval is bound to a local project and does not reuse an earlie
   process.env.ARCHIVE_CONTEXT_TEST_TOKEN = 'kastle_runtime_fixture';
   let calls = 0;
   const source = new ArchiveContextSource('archive-source', 'https://example.invalid/', { projectId: 'project-a',
-    kastleId: crypto.randomUUID(), tokenEnv: 'ARCHIVE_CONTEXT_TEST_TOKEN', budget: 2048 }, undefined, (async () => {
+    kind: 'kingdom', tokenEnv: 'ARCHIVE_CONTEXT_TEST_TOKEN', budget: 2048 }, undefined, (async () => {
       calls++;
       return calls === 1 ? Response.json({ data: { archives: [{ archiveId: crypto.randomUUID(), revision: 1, digest: 'digest', title: 'Archive',
         chunks: [{ entryId: 'entry', sourceRef: 'message:entry', start: 0, end: 7, text: 'History' }] }] } })
@@ -121,7 +121,7 @@ test('an upload with a lost acknowledgment is replayed before newer captured con
   const journal = new LocalSessionStore(':memory:'), archives = new LocalArchiveStore(':memory:');
   const t = thread(); journal.saveThread(t); journal.beginTurn(t, 'turn-a', 'First');
   const first = archives.capture(captureThread(journal, archives.sourceId, t.id));
-  const destination = { projectId: 'project-a', url: 'https://example.invalid/', kastleId: crypto.randomUUID(), keepIds: [], tokenEnv: 'ARCHIVE_RETRY_TEST_TOKEN' };
+  const destination = { kind: 'kingdom' as const, projectId: 'project-a', url: 'https://example.invalid/', tokenEnv: 'ARCHIVE_RETRY_TEST_TOKEN' };
   process.env.ARCHIVE_RETRY_TEST_TOKEN = 'kastle_runtime_fixture';
   let lost = true, head: string | null = null;
   const received: string[] = [];

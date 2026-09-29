@@ -15,22 +15,29 @@ const common = {
     .optional(),
   credential: credentialReferenceSchema.optional(),
 };
+/** Kingdom derives the owner from the runtime credential; these narrow it to a space or organization it manages. */
+export const kingdomOwnerFields = {
+  ownerModel: z.enum(['User', 'OrganizationUser', 'Organization', 'Space', 'SpaceUser']).optional(),
+  organizationId: z.uuid().optional(),
+  spaceId: z.uuid().optional(),
+};
 export const archiveDestinationSchema = z
   .union([
     z.strictObject({
       ...common,
       kind: z.literal('archive'),
-      keepIds: z.array(z.string()).max(0).default([]),
+      keepIds: z.array(z.string()).max(0).optional(),
     }),
     z.strictObject({
       ...common,
-      kind: z.literal('kingdom').optional(),
-      kastleId: z.uuid(),
+      kind: z.literal('kingdom'),
+      /** A hosted Archive that Kingdom forwards to; omitted, Kingdom stores the archive itself. */
       connectionId: z
         .string()
         .regex(/^[a-z0-9-]+$/)
+        .max(120)
         .optional(),
-      keepIds: z.array(z.uuid()).max(50).default([]),
+      ...kingdomOwnerFields,
     }),
   ])
   .superRefine((value, ctx) => {
@@ -38,8 +45,6 @@ export const archiveDestinationSchema = z
       ctx.addIssue({ code: 'custom', message: 'Choose exactly one credential source' });
     if (value.kind === 'archive' && value.credential?.type === 'kingdom-runtime')
       ctx.addIssue({ code: 'custom', message: 'Runtime credentials require a Kingdom destination' });
-    if (value.kind !== 'archive' && value.connectionId && value.keepIds.length)
-      ctx.addIssue({ code: 'custom', message: 'Remote archives do not support Kingdom Keeps' });
   });
 export type ArchiveDestination = z.infer<typeof archiveDestinationSchema>;
 
@@ -53,12 +58,18 @@ export function readDestinations(file: string): ArchiveDestination[] {
 }
 export function destinationIdentity(destination: ArchiveDestination) {
   const url = destinationUrl(destination.url);
-  // Preserve existing Foundry/Kingdom upload receipt identities.
+  // Standalone receipts keep their earlier identity.
   return JSON.stringify([
     url.origin,
     new URL(destination.url).pathname,
-    destination.kind === 'archive' ? 'standalone' : destination.kastleId,
-    ...(destination.kind !== 'archive' && destination.connectionId ? [destination.connectionId] : []),
+    destination.kind === 'archive'
+      ? 'standalone'
+      : [
+          destination.connectionId ?? 'kingdom',
+          destination.ownerModel ?? null,
+          destination.organizationId ?? null,
+          destination.spaceId ?? null,
+        ],
   ]);
 }
 export function connectDestination(file: string, input: unknown) {
@@ -78,7 +89,7 @@ export function connectDestination(file: string, input: unknown) {
   chmodSync(file, 0o600);
   return {
     configured: true,
-    kind: destination.kind ?? 'kingdom',
+    kind: destination.kind,
     projectId: destination.projectId,
     url: destination.url,
     tokenEnv: destination.tokenEnv,

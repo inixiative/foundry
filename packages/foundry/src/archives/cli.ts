@@ -25,11 +25,12 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       url: { type: 'string' },
       kind: { type: 'string' },
       'project-id': { type: 'string' },
-      'kastle-id': { type: 'string' },
       'connection-id': { type: 'string' },
+      'owner-model': { type: 'string' },
+      'organization-id': { type: 'string' },
+      'space-id': { type: 'string' },
       'credential-id': { type: 'string' },
       'token-env': { type: 'string' },
-      'keep-id': { type: 'string', multiple: true },
       'kingdom-identity': { type: 'boolean' },
       query: { type: 'string' },
       id: { type: 'string' },
@@ -49,7 +50,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (v.help) {
     console.log(
-      'Foundry credentials: connect --kingdom-identity [--connection-id ID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.',
+      'Foundry credentials: connect --kingdom-identity [--connection-id ID] [--owner-model M --organization-id UUID --space-id UUID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.',
     );
     return runCli(['--help']);
   }
@@ -79,9 +80,10 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       projectId: v['project-id'],
       ...(kind === 'kingdom'
         ? {
-            kastleId: v['kastle-id'] ?? identity?.kastleId,
             connectionId: v['connection-id'],
-            keepIds: v['keep-id'] ?? [],
+            ownerModel: v['owner-model'],
+            organizationId: v['organization-id'],
+            spaceId: v['space-id'],
           }
         : {}),
       ...(identity

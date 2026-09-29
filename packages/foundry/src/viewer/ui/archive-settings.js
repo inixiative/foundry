@@ -30,8 +30,9 @@ export function ArchiveSettings() {
   };
   const load = async () => {
     try {
-      setConnections((await request('connections')).connections);
-      setError('');
+      const result = await request('connections');
+      setConnections(result.connections);
+      setError(result.configurationError || '');
     } catch (error) {
       setError(error.message);
     }
@@ -58,8 +59,10 @@ export function ArchiveSettings() {
       const result = await request('context', {
         projectId: connection.projectId,
         url: connection.url,
-        kastleId: connection.kastleId,
         connectionId: connection.connectionId ?? null,
+        ownerModel: connection.ownerModel ?? null,
+        organizationId: connection.organizationId ?? null,
+        spaceId: connection.spaceId ?? null,
         query,
       });
       setEvidence(result.evidence || 'No matching evidence.');
@@ -76,12 +79,11 @@ export function ArchiveSettings() {
           ? {
               kind: 'kingdom',
               url: kingdom.url,
-              kastleId: kingdom.kastleId,
               ...(connectionId ? { connectionId } : {}),
               credential: { type: 'kingdom-runtime' },
             }
           : { kind: 'archive', url, ...(mode === 'managed' ? { secret } : { tokenEnv }) };
-      await request('connect', { ...destination, projectId, keepIds: [] });
+      await request('connect', { ...destination, projectId });
       setSecret('');
       await load();
     } catch (error) {
@@ -95,7 +97,7 @@ export function ArchiveSettings() {
     ${connections.map(
       (
         connection,
-      ) => html`<div key=${connection.projectId + ':' + connection.url + ':' + (connection.connectionId || '')}>
+      ) => html`<div key=${[connection.projectId, connection.url, connection.connectionId, connection.ownerModel, connection.organizationId, connection.spaceId].join(':')}>
       <strong>${connection.projectId}</strong> — ${connection.status}
       <p>${connection.url}${connection.connectionId ? ` · ${connection.connectionId}` : ''}</p>
       <p>${connection.credential?.type === 'kingdom-runtime' ? 'Foundry Kingdom identity' : connection.credential?.type === 'managed' ? 'Foundry managed credential' : 'Environment credential'}</p>
