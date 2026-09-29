@@ -5,7 +5,6 @@ export interface CredentialScope {
   service: string;
   url: string;
   projectId: string;
-  kastleId?: string;
 }
 
 export interface CredentialResolver {

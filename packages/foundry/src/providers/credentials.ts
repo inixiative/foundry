@@ -14,7 +14,6 @@ const scopeSchema = z.strictObject({
   service: z.string().min(1),
   url: z.string(),
   projectId: z.string().min(1),
-  kastleId: z.uuid().optional(),
 });
 const recordSchema = z.strictObject({
   scope: scopeSchema,
@@ -55,12 +54,12 @@ export class FoundryCredentials implements CredentialResolver {
     if (!response.ok) throw Error('Kingdom enrollment unavailable');
     const { data } = z
       .object({
-        data: z.object({ installationId: z.uuid(), kastleId: z.uuid(), expiresAt: z.iso.datetime() }),
+        data: z.object({ installationId: z.uuid(), expiresAt: z.iso.datetime() }),
       })
       .parse(await response.json());
     if (data.installationId !== settings.installationId || Date.parse(data.expiresAt) <= Date.now())
       throw Error('Kingdom identity mismatch');
-    return { url: settings.url, kastleId: data.kastleId };
+    return { url: settings.url };
   }
   async resolve(reference: CredentialReference, scope: CredentialScope): Promise<string> {
     const parsed = credentialReferenceSchema.parse(reference),
@@ -70,20 +69,15 @@ export class FoundryCredentials implements CredentialResolver {
       if (
         record.scope.service !== requested.service ||
         record.scope.url !== requested.url ||
-        record.scope.projectId !== requested.projectId ||
-        record.scope.kastleId !== requested.kastleId
+        record.scope.projectId !== requested.projectId
       )
         throw Error('Credential is outside the requested scope');
       return record.secret;
     }
     const settings = kingdomRuntimeSchema.parse(await this.runtime?.());
-    if (
-      requested.service !== 'archive' ||
-      !requested.kastleId ||
-      destinationUrl(settings.url).href !== requested.url
-    )
+    if (requested.service !== 'archive' || destinationUrl(settings.url).href !== requested.url)
       throw Error('Kingdom credential is outside the requested scope');
-    // Kingdom checks current installation expiry, revocation and Kastle membership on every request.
+    // Kingdom checks current installation expiry, revocation and owner authority on every request.
     return installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile)).secret;
   }
 }

@@ -5,6 +5,7 @@ export {
   type RuntimeJobContext,
   type RuntimeJobRequest,
   type RuntimeIdentity,
+  type RuntimeOwner,
 } from "../providers/runtime-job-handler";
 export { runtimeJobSchema, type RuntimeJob } from "../providers/runtime-job-contracts";
 export { RuntimeJobWorker } from "../providers/runtime-job-worker";

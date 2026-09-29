@@ -15,7 +15,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
     if (!identity) return new Response("denied", { status: 401 });
     if (new URL(request.url).pathname === "/api/v1/access/pollRuntimeJob") return Response.json({ data: null });
     bodies.push(await request.json() as { sessionCount: number });
-    return Response.json({ data: { installationId: identity, kastleId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    return Response.json({ data: { installationId: identity, userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
   } });
   const viewers: Awaited<ReturnType<typeof startViewer>>[] = [];
   try {
@@ -51,7 +51,7 @@ test("connection identity mismatch and non-private credentials fail without retu
   const directory = await mkdtemp(join(tmpdir(), "kingdom-credential-"));
   const credentialFile = join(directory, "runtime.json"), secret = `kastle_runtime_${"a".repeat(43)}`;
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
-  const transport = (async () => Response.json({ data: { installationId: crypto.randomUUID(), kastleId: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60000).toISOString() } })) as typeof fetch;
+  const transport = (async () => Response.json({ data: { installationId: crypto.randomUUID(), userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } })) as typeof fetch;
   const connection = new KingdomRuntimeConnection({ url: "https://kingdom.test", installationId: crypto.randomUUID(), credentialFile }, () => 0, transport);
   try {
     await expect(connection.check()).rejects.toThrow("Kingdom runtime unavailable");

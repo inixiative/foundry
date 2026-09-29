@@ -299,7 +299,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   const kingdom = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
     if (!allowed) return new Response("denied", { status: 401 });
     if (new URL(request.url).pathname === "/api/v1/access/pollRuntimeJob") return Response.json({ data: null });
-    return Response.json({ data: { installationId: id, kastleId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    return Response.json({ data: { installationId: id, userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
   } });
   const id = crypto.randomUUID(), credentialFile = join(root, "runtime.json");
   await writeFile(credentialFile, JSON.stringify({ secret: `kastle_runtime_${"0".repeat(43)}` }), { mode: 0o600 });

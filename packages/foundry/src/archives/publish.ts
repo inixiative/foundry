@@ -11,16 +11,27 @@ import { FoundryCredentials } from '../providers/credentials';
 
 export { type ArchiveDestination, archiveDestinationSchema } from './config';
 
+/** Identifies the Kingdom owner and forwarding connection; standalone Archive needs neither. */
+export function kingdomFields(destination: ArchiveDestination) {
+  if (destination.kind === 'archive') return {};
+  const { ownerModel, organizationId, spaceId, connectionId } = destination;
+  return Object.fromEntries(
+    Object.entries({ ownerModel, organizationId, spaceId, connectionId }).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
+}
+
 export async function verifyArchiveDestination(
   destination: ArchiveDestination,
   credentials: CredentialResolver,
   transport: typeof fetch = fetch,
 ) {
-  if (destination.kind !== 'archive' && destination.connectionId) {
+  if (destination.kind === 'kingdom' && destination.connectionId) {
     const listed = await archiveRequest(
       { ...destination, connectionId: undefined },
       'remote/connections',
-      { kastleId: destination.kastleId },
+      kingdomFields({ ...destination, connectionId: undefined }),
       transport,
       credentials,
     );
@@ -40,9 +51,7 @@ export async function verifyArchiveDestination(
       query: '',
       budget: 16,
       limit: 1,
-      ...(destination.kind === 'archive'
-        ? { projectId: destination.projectId }
-        : { kastleId: destination.kastleId }),
+      ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
     },
     transport,
     credentials,
@@ -63,28 +72,18 @@ export async function archiveRequest(
         service: 'archive',
         url: destination.url,
         projectId: destination.projectId,
-        kastleId: destination.kind === 'archive' ? undefined : destination.kastleId,
       })
     : process.env[destination.tokenEnv!];
-  if (!token || (destination.kind !== 'archive' && !token.startsWith('kastle_runtime_')))
+  if (!token || (destination.kind === 'kingdom' && !token.startsWith('kastle_runtime_')))
     throw new Error('Archive runtime credential unavailable');
-  const response = await transport(
-    new URL(
-      `api/v1/archive/${destination.kind !== 'archive' && destination.connectionId ? 'remote/' : ''}${action}`,
-      url,
-    ),
-    {
-      method: 'POST',
-      redirect: 'error',
-      signal: AbortSignal.timeout(30_000),
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(
-        destination.kind !== 'archive' && destination.connectionId
-          ? { ...(body as object), connectionId: destination.connectionId }
-          : body,
-      ),
-    },
-  );
+  const path = destination.kind === 'kingdom' && destination.connectionId ? `remote/${action}` : action;
+  const response = await transport(new URL(`api/v1/archive/${path}`, url), {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(30_000),
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error(`Archive request rejected (${response.status}); local archive retained`);
   return response.json() as Promise<{ data: any }>;
 }
@@ -101,19 +100,14 @@ export async function publishArchive(
   if (!archive || archive.snapshot.projectId !== destination.projectId)
     throw new Error('Archive is outside destination project');
   const receiptKey = destinationIdentity(destination);
-  const keepIds = [...new Set(destination.keepIds)].sort();
   let sent = false;
   for (let attempt = 0; attempt < 8; attempt++) {
     const latest = store.read(id)!;
     const previousDigest = store.receipt(id, receiptKey);
     let pending = store.pending(id, receiptKey);
     if (!pending) {
-      if (
-        previousDigest === latest.digest &&
-        store.receipt(id, `${receiptKey}:keeps`) === JSON.stringify(keepIds)
-      )
-        return { unchanged: !sent };
-      store.enqueue(id, receiptKey, { revision: latest.revision, keepIds });
+      if (previousDigest === latest.digest) return { unchanged: !sent };
+      store.enqueue(id, receiptKey, { revision: latest.revision, keepIds: [] });
       pending = store.pending(id, receiptKey)!;
     }
     const queued = store.read(id, pending.revision);
@@ -123,12 +117,7 @@ export async function publishArchive(
       destination,
       'ingest',
       {
-        ...(destination.kind === 'archive'
-          ? {}
-          : {
-              kastleId: destination.kastleId,
-              ...(destination.connectionId ? {} : { keepIds: pending.keepIds }),
-            }),
+        ...kingdomFields(destination),
         previousDigest,
         snapshot: queued.snapshot,
       },
@@ -136,7 +125,7 @@ export async function publishArchive(
       credentials,
     );
     if (body.data?.digest !== queued.digest) throw new Error('Archive acknowledgement mismatch');
-    store.delivered(id, receiptKey, queued.digest, JSON.stringify(pending.keepIds));
+    store.delivered(id, receiptKey, queued.digest, '[]');
     sent = true;
   }
   throw new Error('Archive changed repeatedly during publication; retry sync');
@@ -151,9 +140,9 @@ export function routingPreview(store: LocalArchiveStore, destinations: ArchiveDe
     destinations: destinations
       .filter((d) => d.projectId === archive.projectId)
       .map((d) => ({
-        kind: d.kind ?? 'kingdom',
+        kind: d.kind,
         url: d.url,
-        ...(d.kind === 'archive' ? {} : { kastleId: d.kastleId }),
+        ...kingdomFields(d),
       })),
   }));
 }
@@ -199,9 +188,7 @@ export async function searchRemotes(
           {
             query,
             budget,
-            ...(destination.kind === 'archive'
-              ? { projectId: destination.projectId }
-              : { kastleId: destination.kastleId }),
+            ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
           },
           fetch,
           credentials,

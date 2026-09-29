@@ -8,7 +8,7 @@ import { startArchiveServer } from '@inixiative/session-archive/server';
 import { FoundryCredentials } from '../src/providers/credentials';
 import { writePrivateJson } from '../src/providers/kastle-credential-file';
 import { ArchiveContextSource } from '../src/archives/context-source';
-import { archiveRequest, publishArchive } from '../src/archives/publish';
+import { archiveRequest, kingdomFields, publishArchive } from '../src/archives/publish';
 import { registerArchiveRoutes } from '../src/archives/routes';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { captureThread } from '../src/archives/capture';
@@ -46,8 +46,7 @@ test('managed credentials enforce scope, private files, rotation and revocation 
 test('native Kingdom credentials stay on the enrolled origin and fail when the server revokes access', async () => {
   const dir = temporary();
   const credentialFile = join(dir, 'runtime.json');
-  const installationId = crypto.randomUUID(),
-    kastleId = crypto.randomUUID();
+  const installationId = crypto.randomUUID();
   const secret = 'kastle_runtime_' + 'a'.repeat(43);
   await writePrivateJson(credentialFile, { secret });
   const credentials = new FoundryCredentials(dir, () => ({
@@ -59,9 +58,7 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
     kind: 'kingdom' as const,
     url: 'https://kingdom.example/',
     projectId: 'inixiative',
-    kastleId,
     connectionId: 'inixiative',
-    keepIds: [],
     credential: { type: 'kingdom-runtime' as const },
   };
   let calls = 0;
@@ -83,22 +80,21 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
       ),
     ).rejects.toThrow('scope');
     expect(calls).toBe(0);
-    await archiveRequest(destination, 'search', { kastleId }, transport, credentials);
-    await expect(archiveRequest(destination, 'search', { kastleId }, transport, credentials)).rejects.toThrow(
+    await archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials);
+    await expect(archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials)).rejects.toThrow(
       '401',
     );
     await expect(credentials.resolve({ type: 'kingdom-runtime' }, scope)).rejects.toThrow('scope');
     const identity = await credentials.kingdomIdentity((async () =>
       Response.json({
-        data: { installationId, kastleId, expiresAt: new Date(Date.now() + 60000).toISOString() },
+        data: { installationId, expiresAt: new Date(Date.now() + 60000).toISOString() },
       })) as typeof fetch);
-    expect(identity.kastleId).toBe(kastleId);
+    expect(identity).toEqual({ url: 'https://kingdom.example' });
     await expect(
       credentials.kingdomIdentity((async () =>
         Response.json({
           data: {
             installationId: crypto.randomUUID(),
-            kastleId,
             expiresAt: new Date(Date.now() + 60000).toISOString(),
           },
         })) as typeof fetch),
@@ -121,7 +117,7 @@ test('viewer stores only a credential reference and uses it for publication and 
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-  const destination = { kind: 'archive', url: hosted.server.url.href, projectId: 'personal', keepIds: [] };
+  const destination = { kind: 'archive', url: hosted.server.url.href, projectId: 'personal' };
   try {
     expect((await post({ ...destination, secret: 'incorrect' })).status).toBe(400);
     expect(readdirSync(join(dir, 'credentials'))).toHaveLength(0);

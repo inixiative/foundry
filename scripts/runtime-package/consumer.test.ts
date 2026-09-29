@@ -77,7 +77,7 @@ test("consumer handler runs through controlled worker; unknown kind still refuse
     expect(executed).toBe(1);
     worker.stop();
     const before = actions.length; await worker.check(); expect(actions.length).toBe(before);
-    const identity: RuntimeIdentity = { installationId: settings.installationId, kastleId: id(), expiresAt: new Date().toISOString() };
+    const identity: RuntimeIdentity = { installationId: settings.installationId, userId: null, owner: { ownerModel: "Organization", organizationId: id() }, expiresAt: new Date().toISOString() };
     expect(identity.installationId).toBe(settings.installationId);
     const connection = new KingdomRuntimeConnection(settings, () => 0, transport, registry);
     expect(connection.connected).toBe(false); connection.stop();

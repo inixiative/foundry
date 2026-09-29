@@ -11,7 +11,11 @@ export const kingdomRuntimeSchema = z.object({
   credentialFile: z.string().refine(isAbsolute, "Credential path must be absolute"),
 }).strict();
 export type KingdomRuntimeSettings = z.input<typeof kingdomRuntimeSchema>;
-const identitySchema = z.object({ data: z.object({ installationId: z.string().uuid(), kastleId: z.string().uuid(), userId: z.string().uuid().optional(), expiresAt: z.string().datetime() }) });
+const ownerId = z.string().uuid().nullable().optional();
+const identitySchema = z.object({ data: z.object({
+  installationId: z.string().uuid(), userId: z.string().uuid().nullable(), expiresAt: z.string().datetime(),
+  owner: z.object({ ownerModel: z.string(), userId: ownerId, organizationId: ownerId, spaceId: ownerId }),
+}) });
 
 export class KingdomRuntimeConnection {
   private settings: z.output<typeof kingdomRuntimeSchema>;

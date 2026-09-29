@@ -402,7 +402,7 @@ export interface InvocationConditionOverride {
 export interface DataSourceConfig {
   id: string;
   type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline" | "supermemory" | "archive";
-  archive?: { projectId: string; kind?: "archive" | "kingdom"; kastleId?: string; keepId?: string; connectionId?: string; tokenEnv?: string; credential?: CredentialReference; budget?: number };
+  archive?: { projectId: string; kind: "archive" | "kingdom"; connectionId?: string; ownerModel?: "User" | "OrganizationUser" | "Organization" | "Space" | "SpaceUser"; organizationId?: string; spaceId?: string; tokenEnv?: string; credential?: CredentialReference; budget?: number };
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;

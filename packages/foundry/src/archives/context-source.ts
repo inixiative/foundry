@@ -3,14 +3,13 @@ import { tokenCount } from '@inixiative/session-archive';
 import { z } from 'zod';
 import type { CredentialResolver } from '@inixiative/foundry-core';
 import { credentialReferenceSchema, FoundryCredentials } from '../providers/credentials';
-import { archiveRequest } from './publish';
+import { type ArchiveDestination, kingdomOwnerFields } from './config';
+import { archiveRequest, kingdomFields } from './publish';
 
 export const archiveContextSchema = z
   .strictObject({
     projectId: z.string().min(1),
-    kind: z.enum(['archive', 'kingdom']).optional(),
-    kastleId: z.uuid().optional(),
-    keepId: z.uuid().optional(),
+    kind: z.enum(['archive', 'kingdom']),
     tokenEnv: z
       .string()
       .regex(/^[A-Z][A-Z0-9_]+$/)
@@ -19,20 +18,23 @@ export const archiveContextSchema = z
     connectionId: z
       .string()
       .regex(/^[a-z0-9-]+$/)
+      .max(120)
       .optional(),
+    ...kingdomOwnerFields,
     budget: z.number().int().min(128).max(16000).default(2048),
   })
   .superRefine((value, ctx) => {
     if (Boolean(value.tokenEnv) === Boolean(value.credential))
       ctx.addIssue({ code: 'custom', message: 'Choose exactly one credential source' });
-    if (value.kind === 'archive' && (value.credential?.type === 'kingdom-runtime' || value.connectionId))
-      ctx.addIssue({ code: 'custom', message: 'Runtime credentials and connections require Kingdom' });
-    if (value.connectionId && value.keepId)
-      ctx.addIssue({ code: 'custom', message: 'Remote archives do not support Keeps' });
-    if (value.kind !== 'archive' && !value.kastleId)
-      ctx.addIssue({ code: 'custom', message: 'Kingdom archive sources require kastleId' });
-    if (value.kind === 'archive' && (value.kastleId || value.keepId))
-      ctx.addIssue({ code: 'custom', message: 'Standalone sources do not use Kastles or Keeps' });
+    if (
+      value.kind === 'archive' &&
+      (value.credential?.type === 'kingdom-runtime' ||
+        value.connectionId ||
+        value.ownerModel ||
+        value.organizationId ||
+        value.spaceId)
+    )
+      ctx.addIssue({ code: 'custom', message: 'Runtime credentials, connections and owners require Kingdom' });
   });
 const resultSchema = z.object({
   data: z.object({
@@ -71,21 +73,13 @@ export class ArchiveContextSource implements ContextSource {
   }
   async load(hint?: SourceLoadHint): Promise<string> {
     if (!this.owner?.projectId || this.owner.projectId !== this.config.projectId) return '';
+    const destination = { ...this.config, url: this.url } as ArchiveDestination;
     const result = resultSchema.parse(
       await archiveRequest(
-        {
-          ...this.config,
-          url: this.url,
-          keepIds: [],
-          ...(this.config.kind === 'archive'
-            ? { kind: 'archive' as const }
-            : { kastleId: this.config.kastleId! }),
-        },
+        destination,
         'search',
         {
-          ...(this.config.kind === 'archive'
-            ? { projectId: this.config.projectId }
-            : { kastleId: this.config.kastleId, keepId: this.config.keepId }),
+          ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
           query: hint?.focus?.slice(0, 1000) ?? '',
           budget: this.config.budget,
         },

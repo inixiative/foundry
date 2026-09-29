@@ -1,11 +1,10 @@
 import type { Hono } from 'hono';
-import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { EventStream } from '@inixiative/foundry-core';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
 import type { LocalSessionStore } from '../persistence/local-session-store';
-import { connectDestination } from './config';
+import { type ArchiveDestination, connectDestination, readDestinations } from './config';
 import { FoundryCredentials } from '../providers/credentials';
 import type { CredentialReference } from '@inixiative/foundry-core';
 import { ConfigStore } from '../viewer/config';
@@ -15,6 +14,7 @@ import {
   archiveDestinationSchema,
   publishArchive,
   archiveRequest,
+  kingdomFields,
   verifyArchiveDestination,
 } from './publish';
 
@@ -29,12 +29,18 @@ export function registerArchiveRoutes(
     async () => (await new ConfigStore(configDir).load()).kingdomRuntime,
   );
   const configPath = join(configDir, 'archives.json');
-  let destinations = existsSync(configPath)
-    ? z
-        .array(archiveDestinationSchema)
-        .max(100)
-        .parse(JSON.parse(readFileSync(configPath, 'utf8')))
-    : [];
+  let destinations: ArchiveDestination[] = [];
+  let configurationError: string | undefined;
+  const loadDestinations = () => {
+    try {
+      destinations = readDestinations(configPath);
+      configurationError = undefined;
+    } catch {
+      destinations = [];
+      configurationError = `${configPath} is invalid, so no archives publish. Fix or remove it, then reconnect; Kingdom destinations no longer take kastleId or keepIds.`;
+    }
+  };
+  loadDestinations();
   const store = new LocalArchiveStore(join(configDir, 'archives', 'archives.sqlite'));
   app.use('/api/archives/*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
@@ -89,15 +95,9 @@ export function registerArchiveRoutes(
     try {
       const identity = await credentials.kingdomIdentity(fetch, journal.threads().length);
       const result = await archiveRequest(
-        {
-          ...identity,
-          kind: 'kingdom',
-          projectId: 'discovery',
-          keepIds: [],
-          credential: { type: 'kingdom-runtime' },
-        },
+        { ...identity, kind: 'kingdom', projectId: 'discovery', credential: { type: 'kingdom-runtime' } },
         'remote/connections',
-        { kastleId: identity.kastleId },
+        {},
         fetch,
         credentials,
       );
@@ -108,6 +108,7 @@ export function registerArchiveRoutes(
   });
   app.get('/api/archives/connections', async (c) =>
     c.json({
+      configurationError,
       connections: await Promise.all(
         destinations.map(async (destination) => {
           try {
@@ -120,7 +121,7 @@ export function registerArchiveRoutes(
                 limit: 1,
                 ...(destination.kind === 'archive'
                   ? { projectId: destination.projectId }
-                  : { kastleId: destination.kastleId }),
+                  : kingdomFields(destination)),
               },
               fetch,
               credentials,
@@ -138,8 +139,10 @@ export function registerArchiveRoutes(
       .strictObject({
         projectId: z.string().min(1),
         url: z.string(),
-        kastleId: z.uuid().optional(),
         connectionId: z.string().nullable().optional(),
+        ownerModel: z.string().nullable().optional(),
+        organizationId: z.string().nullable().optional(),
+        spaceId: z.string().nullable().optional(),
         query: z.string().max(1000).default(''),
       })
       .safeParse(await c.req.json());
@@ -148,9 +151,10 @@ export function registerArchiveRoutes(
       (d) =>
         d.projectId === parsed.data.projectId &&
         d.url === parsed.data.url &&
-        (!parsed.data.kastleId || (d.kind !== 'archive' && d.kastleId === parsed.data.kastleId)) &&
-        (parsed.data.connectionId === undefined ||
-          (d.kind === 'archive' ? null : (d.connectionId ?? null)) === parsed.data.connectionId),
+        (['connectionId', 'ownerModel', 'organizationId', 'spaceId'] as const).every(
+          (key) =>
+            parsed.data[key] === undefined || (d.kind === 'archive' ? null : (d[key] ?? null)) === parsed.data[key],
+        ),
     );
     const destination = matches.length === 1 ? matches[0] : undefined;
     if (!destination) return c.json({ error: 'Archive connection unavailable' }, 404);
@@ -161,10 +165,9 @@ export function registerArchiveRoutes(
         {
           kind: destination.kind,
           projectId: destination.projectId,
-          kastleId: destination.kind === 'archive' ? undefined : destination.kastleId,
           tokenEnv: destination.tokenEnv,
           credential: destination.credential,
-          connectionId: destination.kind === 'archive' ? undefined : destination.connectionId,
+          ...kingdomFields(destination),
           budget: 2048,
         },
         undefined,
@@ -203,7 +206,7 @@ export function registerArchiveRoutes(
       await verifyArchiveDestination(destination, credentials);
       const configured = connectDestination(configPath, destination);
       committed = true;
-      destinations = z.array(archiveDestinationSchema).parse(JSON.parse(readFileSync(configPath, 'utf8')));
+      loadDestinations();
       for (const archive of store.list())
         if (archive.projectId === destination.projectId) void publish(archive.id);
       return c.json({ ...configured, status: 'connected' });
@@ -222,6 +225,7 @@ export function registerArchiveRoutes(
       archives: store.list(),
       captureErrors: Object.fromEntries(capture.errors),
       publicationErrors: Object.fromEntries(publicationErrors),
+      configurationError,
     }),
   );
   app.get('/api/archives/:id', (c) => {
