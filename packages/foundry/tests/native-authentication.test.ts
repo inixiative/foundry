@@ -67,6 +67,27 @@ describe("Foundry native authentication", () => {
     expect(existsSync(join(profile, ".foundry-auth-lock"))).toBe(true);
     b.release(); expect(existsSync(join(profile, ".foundry-auth-lock"))).toBe(false);
   });
+  test("reclaims a crashed owner's lock only when the owner and its recorded native child are both dead", async () => {
+    const directory = root(), profile = join(directory, "native"); mkdirSync(profile, { mode: 0o700 });
+    const source: NativeAuthenticationSource = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude", mode: "native-profile", profileDirectory: profile };
+    const auth = new NativeAuthentication({ directory, sources: [source], defaultSourceId: source.id });
+    const lock = join(profile, ".foundry-auth-lock");
+    const deadPid = () => { const child = Bun.spawnSync(["true"]); return child.pid; };
+    const live = Bun.spawn(["sleep", "30"]); cleanups.push(() => live.kill());
+    const crashed = (owner: object) => { mkdirSync(lock, { mode: 0o700 }); writeFileSync(join(lock, "owner.json"), JSON.stringify({ id: "crashed", ...owner })); };
+    const attempt = async () => track(await auth.prepare(crypto.randomUUID(), "claude")).launch(["claude"], {});
+    crashed({ pid: deadPid() });
+    await expect(attempt()).rejects.toThrow("in use");
+    rmSync(lock, { recursive: true });
+    crashed({ pid: deadPid(), childPid: live.pid });
+    await expect(attempt()).rejects.toThrow("in use");
+    rmSync(lock, { recursive: true });
+    crashed({ pid: deadPid(), childPid: deadPid() });
+    const owner = track(await auth.prepare("thread", "claude"));
+    owner.launch(["claude"], {});
+    owner.adopt!(live.pid);
+    expect(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"))).toMatchObject({ pid: process.pid, childPid: live.pid, threadId: "thread" });
+  });
   test("refuses two processes for the same persisted gateway profile", async () => {
     const source = gateway("claude"); token("FOUNDRY_TEST_AUTH_A", "test-token");
     const auth = new NativeAuthentication({ directory: root(), sources: [source], defaultSourceId: source.id });

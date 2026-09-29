@@ -77,7 +77,7 @@ A Kingdom token is independently revocable only where a gateway checks Kingdom's
 
 ## Ownership recovery
 
-Normal child exit releases `.foundry-auth-lock`. Cleanup errors remain visible as an unknown release result; Foundry does not report successful release when it cannot verify ownership. After a hard crash, verify that the recorded Foundry owner **and its native children** are dead before removing only that stale lock. Never delete a live owner's lock or a whole native credential directory. Automatic stale-lock recovery is intentionally absent.
+Normal child exit releases `.foundry-auth-lock`. Cleanup errors remain visible as an unknown release result; Foundry does not report successful release when it cannot verify ownership. The owner records its native child's PID once spawned. A later launch reclaims a lock only when both the recorded owner and that child are dead; a reused PID reads as alive, so mistakes fall on the side of refusing. A lock without a recorded child (a crash between lock and spawn, or one written by an older release) is never reclaimed automatically: verify that the recorded Foundry owner **and its native children** are dead before removing only that stale lock. Never delete a live owner's lock or a whole native credential directory.
 
 ## Package and validation
 
