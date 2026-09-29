@@ -26,7 +26,7 @@ test("Foundry pairs without exposing secrets, activates immediately, and repairs
     const token = request.headers.get("authorization")?.replace("Bearer ", "") ?? "";
     const id = identities.get(createHash("sha256").update(token).digest("hex"));
     if (!id) return new Response("revoked", { status: 401 });
-    return Response.json({ data: { installationId: id, kastleId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    return Response.json({ data: { installationId: id, userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
   } });
   const thread = new Thread("pairing", new ContextStack()), viewer = await startViewer({ port: 0, configDir: root, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals) });
   const base = `http://127.0.0.1:${viewer.server.port}`;
