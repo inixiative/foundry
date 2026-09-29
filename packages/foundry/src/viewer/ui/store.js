@@ -264,7 +264,18 @@ function applyThreadsFrame(frame) {
   if (payload.thread.threadId === activeThreadId.value) threadData.value = payload.thread;
 }
 
+// First load only: an empty global scope opens the first project that has threads.
+let initialScopeOpen = true, globalListed = false, projectsListed = false;
+function settleInitialScope() {
+  if (!initialScopeOpen || !globalListed || !projectsListed) return;
+  initialScopeOpen = false;
+  if (activeProjectId.value || activeThreadId.value) return;
+  const project = projects.value.find(p => p.threadCount > 0);
+  if (project) activeProjectId.value = project.id;
+}
+
 function adoptThreadList(threads) {
+  if (threadsStream === "threads") { globalListed = true; settleInitialScope(); }
   allThreads.value = threads;
   if (!threads.some(thread => thread.threadId === activeThreadId.value)) selectThread(threads[0]?.threadId ?? null);
   const active = activeThreadId.value;
@@ -753,6 +764,8 @@ export async function loadProjects() {
     const data = await res.json();
     projects.value = data.projects ?? [];
     projectTags.value = data.tags ?? [];
+    projectsListed = true;
+    settleInitialScope();
   } catch (err) {
     if (connected.value) showToast(`Projects unavailable: ${err.message}`, "warn");
   }
@@ -1051,14 +1064,32 @@ function _updateAgentMessage(threadId, turnId, patch) {
   _persistLocal(threadId, next);
 }
 
+// One scope thread per burst of sends made before any thread is selected.
+let _scopeThread = null;
+
+/** No thread selected: start one in the active scope (project, or global) and select it. */
+async function threadForSend() {
+  if (activeThreadId.value) return activeThreadId.value;
+  _scopeThread ??= createThread().finally(() => { _scopeThread = null; });
+  const created = await _scopeThread;
+  if (!created) return null;
+  const tid = created.threadId;
+  if (!allThreads.value.some(thread => thread.threadId === tid)) allThreads.value = [...allThreads.value, created];
+  // A new thread has no history to load; a first load would race this send's rows.
+  _threadMessages[tid] ??= [];
+  selectThread(tid);
+  return tid;
+}
+
+/** Resolves false when the message could not be bound to a thread. */
 export async function sendMessage(text) {
-  if (!text.trim()) return;
+  if (!text.trim()) return false;
 
   // Bind this send to the thread that was active at submit time.
   // If the user navigates away during the turn, its output still
   // routes back to this thread (not whatever is active when it arrives).
-  const tid = activeThreadId.value;
-  if (!tid) return; // no active thread — nothing to bind to
+  const tid = await threadForSend();
+  if (!tid) return false;
 
   const turnId = `turn_${crypto.randomUUID()}`;
   _appendToThread(tid, { actor: "user", turnId, content: text, timestamp: Date.now() });
@@ -1071,6 +1102,7 @@ export async function sendMessage(text) {
   pendingSends.set(turnId, tid);
   socket.open(`thread:${tid}`);
   _sendInBackground(text, tid, turnId);
+  return true;
 }
 
 const SEND_OPEN_WAIT_MS = 5000;
