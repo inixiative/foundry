@@ -80,12 +80,16 @@ export async function signetProof(url: string, action: string, keyFile: string, 
 }
 export class SignetClient {
   constructor(private url: string, private credentialFile: string, private signetId: string) { this.url = kastleUrl(url); }
-  private async credentials(force = false, signal = requestSignal()) {
+  private async credentials(force = false, signal = requestSignal(), allowRenewal = true) {
     signal.throwIfAborted();
     const credential = signetCredentialSchema.parse(await abortable(readPrivateJson(this.credentialFile), signal));
     signal.throwIfAborted();
     if (credential.url !== this.url || credential.signetId !== this.signetId) throw Error("Signet credential audience mismatch");
     if (Date.parse(credential.idleExpiresAt) <= Date.now()) throw Error("Signet enrollment idle timeout; use signet reenroll with your Foundry identity");
+    if (!allowRenewal) {
+      if (Date.parse(credential.expiresAt) <= Date.now()) throw Error("Task settlement requires an unexpired existing access token");
+      return credential;
+    }
     if (!force && Date.parse(credential.expiresAt) > Date.now() + 30000) return credential;
     if (Date.parse(credential.renewalExpiresAt) <= Date.now()) throw Error("Signet enrollment expired; request renewed approval");
     const existing = refreshing.get(this.credentialFile); if (existing) return abortable(existing, signal);
@@ -105,11 +109,11 @@ export class SignetClient {
   async renew(options: SignetRequestOptions = {}): Promise<void> {
     const signal = requestSignal(options.signal); await this.credentials(true, signal); signal.throwIfAborted();
   }
-  async post(action: "describe" | "execute" | "closeTask" | "runtimeJobStep" | "medicalQuestionStep" | "verifyAuthority", body: unknown, onDispatch?: () => void, options: SignetRequestOptions = {}) {
-    if (!["describe", "execute", "closeTask", "runtimeJobStep", "medicalQuestionStep", "verifyAuthority"].includes(action)) throw Error("Unsupported Signet action");
+  async post(action: "describe" | "execute" | "closeTask" | "runtimeJobStep" | "medicalQuestionStep" | "verifyAuthority" | "settleTask", body: unknown, onDispatch?: () => void, options: SignetRequestOptions = {}) {
+    if (!["describe", "execute", "closeTask", "runtimeJobStep", "medicalQuestionStep", "verifyAuthority", "settleTask"].includes(action)) throw Error("Unsupported Signet action");
     const signal = requestSignal(options.signal);
     signal.throwIfAborted();
-    const credential = await this.credentials(false, signal);
+    const credential = await this.credentials(false, signal, action !== "settleTask");
     signal.throwIfAborted();
     const proof = await signetProof(this.url, action, credential.keyFile, credential.accessToken, { signal });
     signal.throwIfAborted();
