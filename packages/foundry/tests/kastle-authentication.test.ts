@@ -12,14 +12,14 @@ const secret = (prefix: string) => `${prefix}${"x".repeat(43)}`;
 
 test("Kastle resolves once, persists source identity, and delegates only one-run renewal authority", async () => {
   const directory = await mkdtemp(join(tmpdir(), "foundry-kastle-")); cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const kastleId = crypto.randomUUID(), bindingId = crypto.randomUUID();
+  const kastleId = crypto.randomUUID(), bindingId = crypto.randomUUID(), integrationId = crypto.randomUUID();
   const calls: string[] = [];
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const action = new URL(request.url).pathname.split("/").pop()!; calls.push(action);
     expect(request.headers.get("authorization")).toBe(`Bearer ${secret("kastle_runtime_")}`);
     if (action === "resolveRun") {
       const body = await request.json() as { runId: string };
-      return Response.json({ data: { id: bindingId, kastleId, installationId: crypto.randomUUID(), runId: body.runId, capacityId: crypto.randomUUID(), connectionId: crypto.randomUUID(), model: "bound-model", effort: "low", runtime: "claude", expiresAt: new Date(Date.now() + 3600000).toISOString(), gatewayPath: `/api/v1/access/gateway/${bindingId}` } });
+      return Response.json({ data: { id: bindingId, kastleId, installationId: crypto.randomUUID(), runId: body.runId, capacityId: crypto.randomUUID(), integrationId, model: "bound-model", effort: "low", runtime: "claude", expiresAt: new Date(Date.now() + 3600000).toISOString(), gatewayPath: `/api/v1/access/gateway/${bindingId}` } });
     }
     return Response.json({ data: { secret: secret("kastle_refresh_"), expiresAt: new Date(Date.now() + 3600000).toISOString() } });
   } });
@@ -29,6 +29,7 @@ test("Kastle resolves once, persists source identity, and delegates only one-run
   const auth = new KastleAuthentication(options);
   const [a, b] = await Promise.all([auth.prepare("thread", "claude"), auth.prepare("thread", "claude")]);
   expect(calls).toEqual(["resolveRun", "delegateRun"]); expect(a.bindingId).toBe(b.bindingId);
+  expect(a.connectionId).toBe(integrationId); // Local profile identity receives the selected remote Integration.
   expect(a.model).toBe("bound-model"); expect(a.effort).toBe("low");
   const child = a.launch(["claude"], {});
   expect(() => b.launch(["claude"], {})).toThrow("in use");
@@ -71,7 +72,7 @@ test("a transient resolution failure can retry the same durable run intent", asy
     if (new URL(request.url).pathname.endsWith("resolveRun")) {
       const body = await request.json() as { runId: string }; runIds.push(body.runId);
       if (runIds.length === 1) return new Response("temporary failure", { status: 503 });
-      return Response.json({ data: { id: bindingId, kastleId, installationId: crypto.randomUUID(), runId: body.runId, capacityId: crypto.randomUUID(), connectionId: crypto.randomUUID(), model: "model", effort: "low", runtime: "claude", expiresAt: new Date(Date.now() + 3600000).toISOString(), gatewayPath: `/api/v1/access/gateway/${bindingId}` } });
+      return Response.json({ data: { id: bindingId, kastleId, installationId: crypto.randomUUID(), runId: body.runId, capacityId: crypto.randomUUID(), integrationId: crypto.randomUUID(), model: "model", effort: "low", runtime: "claude", expiresAt: new Date(Date.now() + 3600000).toISOString(), gatewayPath: `/api/v1/access/gateway/${bindingId}` } });
     }
     return Response.json({ data: { secret: secret("kastle_refresh_"), expiresAt: new Date(Date.now() + 3600000).toISOString() } });
   } }); cleanups.push(async () => server.stop(true));

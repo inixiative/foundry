@@ -31,7 +31,7 @@ export class KastleAccessTool implements ApiTool {
       let body: unknown;
       if (req.url === "connections") {
         z.object({}).strict().parse(req.body ?? {});
-        body = sources.map(({ id, name, connectionId }) => ({ id, name, connectionId }));
+        body = sources.map(({ id, name, integrationId }) => ({ id, name, integrationId }));
       } else {
         const input = (req.url === "describe" ? describeInput : req.url === "read" ? readInput : req.url === "close" ? closeInput : z.never()).parse(req.body);
         const source = sources.find(source => source.id === input.accessId);

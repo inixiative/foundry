@@ -9,7 +9,7 @@ async function request(path, method = "GET", body) {
   if (!response.ok) throw Error(value.error || "Access settings are unavailable.");
   return value;
 }
-const emptyGrant = projectId => ({ id: crypto.randomUUID(), name: "", url: "", credentialFile: "", connectionId: "", signetId: "", projectIds: projectId ? [projectId] : [] });
+const emptyGrant = projectId => ({ id: crypto.randomUUID(), name: "", url: "", credentialFile: "", integrationId: "", signetId: "", projectIds: projectId ? [projectId] : [] });
 
 export function AccessSettings({ projectId, onSaved }) {
   const [data, setData] = useState(null), [draft, setDraft] = useState(null);
@@ -77,7 +77,7 @@ export function AccessSettings({ projectId, onSaved }) {
         <label class="settings-field">Name<input class="settings-input" required maxlength="120" value=${draft.name} onInput=${event => update("name", event.target.value)} /></label>
         <label class="settings-field">Kastle origin<input class="settings-input mono" required type="url" placeholder="https://kastle.example" value=${draft.url} onInput=${event => update("url", event.target.value)} /></label>
         <div class="settings-row">
-          <label class="settings-field">Connection ID<input class="settings-input mono" required value=${draft.connectionId} onInput=${event => update("connectionId", event.target.value.trim())} /></label>
+          <label class="settings-field">Integration ID<input class="settings-input mono" required value=${draft.integrationId} onInput=${event => update("integrationId", event.target.value.trim())} /></label>
           <label class="settings-field">Signet ID<input class="settings-input mono" required value=${draft.signetId} onInput=${event => update("signetId", event.target.value.trim())} /></label>
         </div>
         <label class="settings-field">Kastle token file<input class="settings-input mono" required placeholder="/private/path/access.json" value=${draft.credentialFile} onInput=${event => update("credentialFile", event.target.value)} /></label>
@@ -94,7 +94,7 @@ export function AccessSettings({ projectId, onSaved }) {
     ${sources.map(source => html`<article key=${source.id} class="settings-card access-grant">
       <div class="settings-card-header"><h3 class="settings-card-title">${source.name}</h3><span class=${`access-badge ${source.credentialStatus === "available" ? "" : "needs-attention"}`}>${source.credentialStatus === "available" ? "Kastle token file available" : "Kastle token file needs attention"}</span></div>
       <p class="settings-desc">${source.url}</p>
-      <dl class="access-details"><dt>Connection</dt><dd>${source.connectionId}</dd><dt>Signet</dt><dd>${source.signetId}</dd><dt>Projects</dt><dd>${source.projectIds.map(id => data.projects.find(project => project.id === id)?.name || id).join(", ")}</dd><dt>Task scope</dt><dd>${source.threadIds ? `${source.threadIds.length} selected tasks` : "All tasks in allowed projects"}</dd></dl>
+      <dl class="access-details"><dt>Integration</dt><dd>${source.integrationId}</dd><dt>Signet</dt><dd>${source.signetId}</dd><dt>Projects</dt><dd>${source.projectIds.map(id => data.projects.find(project => project.id === id)?.name || id).join(", ")}</dd><dt>Task scope</dt><dd>${source.threadIds ? `${source.threadIds.length} selected tasks` : "All tasks in allowed projects"}</dd></dl>
       <p class="settings-desc">Local file status does not confirm server access. Check access to verify the saved grant and list its resources.</p>
       <div class="settings-card-actions"><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => check(source.id)}>${checking === source.id ? "Checking…" : "Check access"}</button><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => edit(source)}>Edit</button><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => setRemoveId(source.id)}>Remove</button></div>
       ${removeId === source.id && html`<div class="access-notice"><p>Remove this local grant? This takes effect after restart and does not revoke its token in Kastle.</p><button class="action-btn" disabled=${disabled} onClick=${() => remove(source.id)}>Remove grant</button> <button class="action-btn" disabled=${disabled} onClick=${() => setRemoveId(null)}>Keep grant</button></div>`}
