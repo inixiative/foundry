@@ -1241,6 +1241,20 @@ body {
 .chat-send-btn:hover { opacity: 0.9; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
 
+.chat-input-actions { display: flex; flex-direction: column; gap: 4px; }
+.chat-input-actions .chat-send-btn { flex: 1; }
+.chat-voice-btn {
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.chat-voice-btn:hover { border-color: var(--accent); }
+.chat-voice-on { border-color: var(--accent); color: var(--accent); }
+
 /* ---- Prompt cards (conversation panel) ---- */
 
 .prompt-list {

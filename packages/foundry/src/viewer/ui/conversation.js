@@ -10,11 +10,12 @@ import { html, useState, useRef, useEffect } from "./lib.js";
 import {
   messages, sending, inflight, sendMessage, selectedSpanId, loadTraceDetail,
   prompts, resolvePrompt, allThreads, tokenUsage, revertThread, forkThread,
-  threadData, layerColor, threadContextTokens, activeThreadId, historyPaging, loadOlderMessages,
+  threadData, layerColor, threadContextTokens, activeThreadId, historyPaging, loadOlderMessages, showToast,
 } from "./store.js";
 import { failurePresentation } from "./inspector-data.js";
 import { liveThreadStatus, liveWorkLabel } from './live-state.js';
 import { isUnsavedCompletion, browserStorageNotice, browserStorageSummary } from "./conversation-state.js";
+import { dictationSupported, speechSupported, startDictation, speakReplies, toggleSpeakReplies } from "./voice.js";
 
 // ---------------------------------------------------------------------------
 // Token bar — session usage + budget at top of conversation
@@ -193,10 +194,29 @@ let historyIdx = -1;
 function ChatInput() {
   const [text, setText] = useState("");
   const inputRef = useRef(null);
+  const stopDictation = useRef(null);
+  const [listening, setListening] = useState(false);
+  useEffect(() => () => stopDictation.current?.(), []);
+
+  const toggleDictation = () => {
+    if (stopDictation.current) return stopDictation.current();
+    // Speech lands after whatever was already typed.
+    const base = text.trimEnd();
+    stopDictation.current = startDictation({
+      onText: (heard) => setText(base && heard ? `${base} ${heard}` : base || heard),
+      onEnd: (error) => {
+        stopDictation.current = null;
+        setListening(false);
+        if (error) showToast(`Dictation stopped: ${error}`, "warn");
+      },
+    });
+    setListening(true);
+  };
 
   const handleSubmit = async () => {
     const sent = text.trim();
     if (!sent) return;
+    stopDictation.current?.();
     inputHistory.push(sent);
     historyIdx = -1;
     setText("");
@@ -240,11 +260,17 @@ function ChatInput() {
         onKeyDown=${handleKeyDown}
         rows="4"
       ></textarea>
-      <button
-        class="chat-send-btn"
-        onClick=${handleSubmit}
-        disabled=${!text.trim()}
-      >Send</button>
+      <div class="chat-input-actions">
+        ${dictationSupported ? html`<button class="chat-voice-btn ${listening ? "chat-voice-on" : ""}" onClick=${toggleDictation}
+          title=${listening ? "Stop dictation" : "Dictate"} aria-pressed=${listening}>${listening ? "■" : "🎙"}</button>` : null}
+        ${speechSupported ? html`<button class="chat-voice-btn ${speakReplies.value ? "chat-voice-on" : ""}" onClick=${toggleSpeakReplies}
+          title=${speakReplies.value ? "Stop reading replies aloud" : "Read replies aloud"} aria-pressed=${speakReplies.value}>${speakReplies.value ? "🔊" : "🔈"}</button>` : null}
+        <button
+          class="chat-send-btn"
+          onClick=${handleSubmit}
+          disabled=${!text.trim()}
+        >Send</button>
+      </div>
     </div>
   `;
 }
