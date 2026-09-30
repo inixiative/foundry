@@ -18,7 +18,7 @@ for (const errorName of ["QuotaExceededError", "SecurityError"]) {
       if (committed) sql.exec("DROP TRIGGER reject_completed_message");
       runtime.directory.restore([{ id: "other", meta: { description: "Other thread" } }]);
       const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: runtime.fetch, websocket: runtime.websocket });
-      const browser = await chromium.launch({ channel: "chrome", headless: true });
+      const browser = await chromium.launch({ headless: true });
       const context = await browser.newContext({ viewport: { width: 1100, height: 950 } });
       const page = await context.newPage();
       page.setDefaultTimeout(8_000);

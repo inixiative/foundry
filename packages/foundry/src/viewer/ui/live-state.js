@@ -61,12 +61,15 @@ export function applyTurnFrame(turns, frame) {
 export function mergeLiveSnapshot(messages, snapshot) {
   if (!snapshot) return messages;
   const next = messages.slice(), seen = new Set();
+  const oldest = messages.reduce((min, m) => Number.isFinite(m.timestamp) && m.timestamp < min ? m.timestamp : min, Infinity);
   for (const b of snapshot.buffers) {
     seen.add(b.messageId);
     const i = next.findIndex(m => m.actor === 'agent' && m.turnId === b.messageId);
     const old = i < 0 ? {} : next[i];
     if (old.threadId && old.threadId !== b.threadId) continue;
     const done = b.status === 'completed' || b.status === 'failed';
+    // A saved turn older than every loaded row belongs to an unloaded history page, not the tail.
+    if (i < 0 && done && b.terminal?.meta?.persistence === 'committed' && Number.isFinite(oldest) && b.startedAt < oldest) continue;
     if (hasFullTerminal(old)) {
       // Preserve ALL full result fields and local terminal truth, including an
       // unsaved answer/error. Still attach the latest owned public/native view;
