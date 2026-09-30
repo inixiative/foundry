@@ -210,7 +210,7 @@ export async function liveWatchFixture(dir: string) {
   /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
   const send = (id: string, stream = true) => {
     const client = connectStreams(viewer);
-    const response = client.open(`thread:${thread.id}`).then(() =>
+    const response = Promise.resolve(client.open(`thread:${thread.id}`)).then(() =>
       viewer.app.request(`/api/messages${stream ? '/send' : ''}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

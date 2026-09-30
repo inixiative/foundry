@@ -8,6 +8,10 @@ import { RuntimeJobRegistry } from '../src/providers/runtime-job-handler';
 import { lockRuntimeJob } from '../src/providers/runtime-job-lock';
 import { RuntimeJobWorker } from '../src/providers/runtime-job-worker';
 
+const stubFetch = (
+  respond: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+): typeof fetch => Object.assign(respond, { preconnect: fetch.preconnect });
+
 const connectionJob = () => ({
   id: crypto.randomUUID(),
   installationId: crypto.randomUUID(),
@@ -29,11 +33,11 @@ test('local Archive failure retries receipt persistence before reporting complet
   const { directory, credentialFile } = await privateRuntime();
   const job = connectionJob();
   let reports = 0;
-  const transport = (async (url: string | URL | Request) => {
+  const transport = stubFetch(async (url: string | URL | Request) => {
     const path = new URL(String(url)).pathname;
     if (path.endsWith('reportRuntimeJob')) reports++;
     return Response.json({ data: path.endsWith('pollRuntimeJob') ? job : {} });
-  }) as typeof fetch;
+  });
   const worker = new RuntimeJobWorker(
     { url: 'https://kingdom.example', installationId: job.installationId, credentialFile },
     transport,
@@ -95,10 +99,10 @@ test('worker refuses a foreign installation and broad or substituted job capabil
   const { directory, credentialFile } = await privateRuntime();
   const job = connectionJob();
   let calls = 0;
-  const transport = (async () => {
+  const transport = stubFetch(async () => {
     calls++;
     return Response.json({ data: job });
-  }) as typeof fetch;
+  });
   try {
     const worker = new RuntimeJobWorker(
       { url: 'https://kingdom.example', installationId: crypto.randomUUID(), credentialFile },
@@ -110,7 +114,7 @@ test('worker refuses a foreign installation and broad or substituted job capabil
     const foreignKind = { ...job, kind: 'shell', command: 'do not execute' };
     const another = new RuntimeJobWorker(
       { url: 'https://kingdom.example', installationId: job.installationId, credentialFile },
-      (async () => Response.json({ data: foreignKind })) as typeof fetch,
+      stubFetch(async () => Response.json({ data: foreignKind })),
     );
     await expect(another.check()).rejects.toThrow();
     another.stop();
@@ -131,11 +135,11 @@ test('an unregistered kind fails closed and a registered handler owns its payloa
     external: { note: 'payload' },
   };
   const paths: string[] = [];
-  const transport = (async (url: string | URL | Request) => {
+  const transport = stubFetch(async (url: string | URL | Request) => {
     const path = new URL(String(url)).pathname;
     paths.push(path);
     return Response.json({ data: path.endsWith('pollRuntimeJob') ? expired : {} });
-  }) as typeof fetch;
+  });
   try {
     const closed = new RuntimeJobWorker(
       { url: 'https://kingdom.example', installationId, credentialFile },

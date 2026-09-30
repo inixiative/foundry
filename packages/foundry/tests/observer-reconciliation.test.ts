@@ -2,6 +2,13 @@ import { expect, test } from 'bun:test';
 import { reconcileTargets, reconcileThreadMessages } from '../src/viewer/ui/conversation-state.js';
 import { deliverySummary, knowledgeInspectionSummary } from '../src/viewer/ui/inspector-data.js';
 
+/** A delivery summary the test expects to exist, with its learning barrier. */
+const delivered = (...args: Parameters<typeof deliverySummary>) => {
+  const summary = deliverySummary(...args);
+  if (!summary?.learning) throw new Error('expected a delivery summary with learning');
+  return { ...summary, learning: summary.learning };
+};
+
 // Written RED before the implementation. These are the pure helpers the store and
 // drawer use to show externally admitted work and to inspect historical versus
 // current learning without replaying work or rewriting prior inputs.
@@ -130,7 +137,7 @@ test('historical delivery metadata is read from the trace, else from the matchin
     layers: [{ id: 'conventions', deliveredHash: 'h1', assessedHash: 'h1', drift: false }],
     committed: [{ id: 'conventions', hash: 'h1' }],
   };
-  const fromMessage = deliverySummary({ id: 't' }, { traceId: 't', meta: { delivery: pending } });
+  const fromMessage = delivered({ id: 't' }, { traceId: 't', meta: { delivery: pending } });
   expect(fromMessage.source).toBe('message');
   expect(fromMessage.learning).toMatchObject({ outcome: 'pending', waitedMs: 0, historical: true });
   expect(fromMessage.learning.pending).toEqual([{ domain: 'conventions', reviews: 1 }]);
@@ -138,7 +145,7 @@ test('historical delivery metadata is read from the trace, else from the matchin
   expect(fromMessage.learning.label).toMatch(/0 ?ms/);
   expect(fromMessage.learning.label).not.toMatch(/current/i);
   expect(fromMessage.layers[0]).toMatchObject({ id: 'conventions', drift: false });
-  const fromTrace = deliverySummary(
+  const fromTrace = delivered(
     {
       id: 't',
       delivery: {
@@ -156,7 +163,7 @@ test('historical delivery metadata is read from the trace, else from the matchin
 });
 
 test('an unfamiliar recorded barrier outcome is shown as recorded, not assumed pending or complete', () => {
-  const summary = deliverySummary(
+  const summary = delivered(
     { id: 't' },
     {
       traceId: 't',

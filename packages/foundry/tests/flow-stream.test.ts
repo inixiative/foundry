@@ -15,7 +15,6 @@ import { createViewerStreams } from '../src/viewer/data-streams';
 import { createViewer } from '../src/viewer/server';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
 import { slim, slimTurn, TASK_SOURCES, taskLists } from '../src/viewer/turn-flow';
-// @ts-expect-error native browser module
 import {
   applyFlowFrame,
   emptyFlow,

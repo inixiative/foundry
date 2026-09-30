@@ -145,9 +145,11 @@ test('concurrent helper invocations renew once and cache only the scoped access 
     }),
     { mode: 0o600 },
   );
-  expect(await Promise.all([kingdomToken(file), kingdomToken(file), kingdomToken(file)])).toEqual(
-    Array(3).fill(secret('kingdom_run_')),
-  );
+  expect(await Promise.all([kingdomToken(file), kingdomToken(file), kingdomToken(file)])).toEqual([
+    secret('kingdom_run_'),
+    secret('kingdom_run_'),
+    secret('kingdom_run_'),
+  ]);
   expect(calls).toBe(1);
   expect(await readFile(file, 'utf8')).not.toContain('kingdom_runtime_');
 });

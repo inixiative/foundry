@@ -1,4 +1,5 @@
 {
   "extends": "@inixiative/config/tsconfig/base.json",
-  "include": ["src", "tests"]
+  "include": ["src", "tests"],
+  "exclude": ["tests/browser"]
 }

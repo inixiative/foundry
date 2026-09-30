@@ -59,7 +59,6 @@ function setup(opts: SetupOpts = {}) {
       model: 'mock',
       prompt: 'Execute',
       temperature: 0,
-      maxTokens: 256,
       visibleLayers: [],
       peers: [],
       maxDepth: 1,
@@ -453,7 +452,7 @@ describe('per-domain thread knowledge and causal learning', () => {
       /thread/,
     );
     const tampered = structuredClone(snapshot);
-    tampered.domains.security.content = 'TAMPERED';
+    (tampered.domains.security as { content: string }).content = 'TAMPERED';
     expect(() => owned2.restoreKnowledge(tampered)).toThrow(/hash/);
     const badRevision = structuredClone(snapshot);
     (badRevision.domains.security as { revision: number }).revision = -1;

@@ -15,7 +15,6 @@ import {
 import { ProjectRegistry } from '../src/agents/project';
 import { createViewer, startViewer } from '../src/viewer/server';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
-// @ts-expect-error native browser module
 import { applyTurnFrame } from '../src/viewer/ui/live-state.js';
 import { createWebSocketServer } from '../src/ws/handler';
 import { getConnectionStats } from '../src/ws/lifecycle';

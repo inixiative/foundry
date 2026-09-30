@@ -27,8 +27,8 @@ describe('AnthropicProvider (live)', () => {
 
       expect(result.content.toLowerCase()).toContain('pong');
       expect(result.model).toContain('haiku');
-      expect(result.tokens.input).toBeGreaterThan(0);
-      expect(result.tokens.output).toBeGreaterThan(0);
+      expect(result.tokens?.input).toBeGreaterThan(0);
+      expect(result.tokens?.output).toBeGreaterThan(0);
       expect(result.finishReason).toBe('end_turn');
     },
     30_000,
@@ -88,7 +88,7 @@ describe('GeminiProvider (live)', () => {
       ]);
 
       expect(result.content.toLowerCase()).toContain('pong');
-      expect(result.tokens.output).toBeGreaterThan(0);
+      expect(result.tokens?.output).toBeGreaterThan(0);
     },
     30_000,
   );

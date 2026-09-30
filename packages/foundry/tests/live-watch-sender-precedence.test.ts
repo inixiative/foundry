@@ -2,14 +2,12 @@ import { expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
-// @ts-expect-error native browser module
 import {
   persistBrowserMessages,
   reconcileThreadMessages,
   terminalMessagePatch,
   updateTurnMessage,
 } from '../src/viewer/ui/conversation-state.js';
-// @ts-expect-error native browser module
 import { liveThreadStatus, liveWorkLabel, mergeLiveSnapshot } from '../src/viewer/ui/live-state.js';
 import { liveWatchFixture, until } from './helpers/live-watch-fixture';
 

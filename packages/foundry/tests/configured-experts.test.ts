@@ -24,6 +24,7 @@ import { SessionBackedProvider } from '../src/providers/session-backed';
 import { DOCS_ADVISE_PROMPT } from '../src/setup/scan-docs';
 import {
   type AgentSettingsConfig,
+  type AgentSettingsOverride,
   ConfigStore,
   type FoundryConfig,
   starterConfig,
@@ -49,6 +50,16 @@ const expert = (
   maxDepth: 1,
   enabled: true,
 });
+/** An agent's scalar settings, as a project override carries them; list fields become patches. */
+const scalarFields = ({
+  visibleLayers,
+  ownedLayers,
+  guardTriggers,
+  peers,
+  browser,
+  condition,
+  ...scalars
+}: AgentSettingsConfig): AgentSettingsOverride => scalars;
 function config() {
   const c = starterConfig('central', 'central-model');
   c.agents = {
@@ -313,7 +324,7 @@ test('project-only/override/disabled definitions use resolved sources and profil
     agents: {
       'compatibility-expert': { enabled: false },
       'testing-expert': {
-        ...expert('testing'),
+        ...scalarFields(expert('testing')),
         browser: undefined,
         condition: undefined,
         visibleLayers: { replace: ['testing-reference'] },

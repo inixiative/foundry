@@ -2,8 +2,19 @@ import { expect, test } from 'bun:test';
 import {
   browserStorageNotice,
   browserStorageSummary,
-  persistBrowserMessages,
+  persistBrowserMessages as persistRows,
 } from '../src/viewer/ui/conversation-state.js';
+
+/** The fields these tests read from a persisted browser row. */
+type BrowserRow = {
+  id?: string;
+  content: string;
+  storage?: string;
+  browserStorage: { status: string; error?: string };
+  meta: { turnStatus?: string; browserFailureEvidence: { observedToolOutput: string } };
+};
+const persistBrowserMessages = (rows: object[], write: (value: string) => void): BrowserRow[] =>
+  persistRows(rows, write);
 
 // G6 cache policy: durable index rows are an optional browser cache; transient
 // browser-only evidence (completed-unsaved, legacy, streaming) is what must survive.

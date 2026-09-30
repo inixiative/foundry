@@ -13,77 +13,77 @@ import {
 
 describe('stripAnsi', () => {
   test('removes color codes', () => {
-    expect(stripAnsi('\x1b[32mgreen\x1b[0m')).toBe('green');
+    expect(stripAnsi('\x1b[32mgreen\x1b[0m', '')).toBe('green');
   });
 
   test('removes bold/underline', () => {
-    expect(stripAnsi('\x1b[1mbold\x1b[0m \x1b[4munderline\x1b[0m')).toBe('bold underline');
+    expect(stripAnsi('\x1b[1mbold\x1b[0m \x1b[4munderline\x1b[0m', '')).toBe('bold underline');
   });
 
   test('passes through clean strings', () => {
-    expect(stripAnsi('hello world')).toBe('hello world');
+    expect(stripAnsi('hello world', '')).toBe('hello world');
   });
 
   test('handles empty string', () => {
-    expect(stripAnsi('')).toBe('');
+    expect(stripAnsi('', '')).toBe('');
   });
 });
 
 describe('collapseBlankLines', () => {
   test('collapses triple newlines to double', () => {
-    expect(collapseBlankLines('a\n\n\nb')).toBe('a\n\nb');
+    expect(collapseBlankLines('a\n\n\nb', '')).toBe('a\n\nb');
   });
 
   test('collapses many blank lines', () => {
-    expect(collapseBlankLines('a\n\n\n\n\n\nb')).toBe('a\n\nb');
+    expect(collapseBlankLines('a\n\n\n\n\n\nb', '')).toBe('a\n\nb');
   });
 
   test('leaves single/double newlines alone', () => {
-    expect(collapseBlankLines('a\n\nb')).toBe('a\n\nb');
-    expect(collapseBlankLines('a\nb')).toBe('a\nb');
+    expect(collapseBlankLines('a\n\nb', '')).toBe('a\n\nb');
+    expect(collapseBlankLines('a\nb', '')).toBe('a\nb');
   });
 });
 
 describe('collapseWhitespace', () => {
   test('collapses multiple spaces', () => {
-    expect(collapseWhitespace('a   b   c')).toBe('a b c');
+    expect(collapseWhitespace('a   b   c', '')).toBe('a b c');
   });
 
   test('collapses tabs', () => {
-    expect(collapseWhitespace('a\t\tb')).toBe('a b');
+    expect(collapseWhitespace('a\t\tb', '')).toBe('a b');
   });
 
   test('trims trailing whitespace per line', () => {
-    expect(collapseWhitespace('hello   \nworld   ')).toBe('hello\nworld');
+    expect(collapseWhitespace('hello   \nworld   ', '')).toBe('hello\nworld');
   });
 });
 
 describe('stripProgress', () => {
   test('removes spinner lines', () => {
     const input = '⠋ Loading...\n⠙ Loading...\nDone!';
-    expect(stripProgress(input)).toBe('Done!');
+    expect(stripProgress(input, '')).toBe('Done!');
   });
 
   test('removes progress bars', () => {
     const input = '50% [████████░░░░░░░░]\nCompleted.';
-    expect(stripProgress(input)).toBe('Completed.');
+    expect(stripProgress(input, '')).toBe('Completed.');
   });
 
   test('removes downloading... lines', () => {
     const input = 'downloading...\ninstalling...\nReady.';
-    expect(stripProgress(input)).toBe('Ready.');
+    expect(stripProgress(input, '')).toBe('Ready.');
   });
 
   test('keeps normal output', () => {
     const input = 'src/index.ts\nsrc/utils.ts';
-    expect(stripProgress(input)).toBe(input);
+    expect(stripProgress(input, '')).toBe(input);
   });
 });
 
 describe('dedup', () => {
   test('collapses consecutive identical lines', () => {
     const input = 'warning: x\nwarning: x\nwarning: x\ndone';
-    const result = dedup(input);
+    const result = dedup(input, '');
     expect(result).toContain('warning: x');
     expect(result).toContain('repeated 2 more times');
     expect(result).toContain('done');
@@ -91,12 +91,12 @@ describe('dedup', () => {
 
   test('does not collapse non-consecutive duplicates', () => {
     const input = 'a\nb\na';
-    expect(dedup(input)).toBe('a\nb\na');
+    expect(dedup(input, '')).toBe('a\nb\na');
   });
 
   test('handles no duplicates', () => {
     const input = 'a\nb\nc';
-    expect(dedup(input)).toBe(input);
+    expect(dedup(input, '')).toBe(input);
   });
 });
 

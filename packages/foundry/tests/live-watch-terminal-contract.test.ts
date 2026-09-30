@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
-// @ts-expect-error Native browser JavaScript has no declaration file.
 import { terminalMessagePatch } from '../src/viewer/ui/conversation-state.js';
 // Exercise the browser's actual projection and sender terminal conversion.
-// @ts-expect-error Native browser JavaScript has no declaration file.
 import { liveThreadStatus, mergeLiveSnapshot } from '../src/viewer/ui/live-state.js';
 
 function runningSnapshot() {

@@ -1,8 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-// @ts-expect-error Production viewer modules are JavaScript.
+import type { StreamEvent } from '@inixiative/foundry-core';
 import { selectedDetailTarget } from '../src/viewer/ui/conversation-state.js';
-// @ts-expect-error Production viewer modules are JavaScript.
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
 import { abstain, gate, learned, m0Scenario, until } from './helpers/m0-domain-loop';
 
@@ -55,8 +54,11 @@ test('guard reference correlation refuses contradicted thread and original tool/
       ],
     },
   };
-  const result = (row: unknown) =>
-    guardOutcomes({ detail: { phases: [row, outcome] } })[0].outcomes[0];
+  const result = (row: unknown) => {
+    const guards = guardOutcomes({ detail: { phases: [row, outcome] } });
+    if (!guards) throw new Error('the trace recorded no guard outcomes');
+    return guards[0].outcomes[0];
+  };
   expect(result(request).reference).toBe('resolved');
   for (const row of [
     { ...request, threadId: 'foreign' },
@@ -73,14 +75,15 @@ test('guard reference correlation refuses contradicted thread and original tool/
 test('pending and settled review journal changes notify only the original owner without private request payloads', async () => {
   const held = gate<string>();
   const f = await m0Scenario({ review: () => held.promise });
-  const events = async (): Promise<any[]> =>
-    (await f.current.app.request('/api/events?limit=200')).json();
+  const learningJournal = async () =>
+    ((await (await f.current.app.request('/api/events?limit=200')).json()) as StreamEvent[]).filter(
+      (e): e is Extract<StreamEvent, { kind: 'journal' }> =>
+        e.kind === 'journal' && e.scope === 'learning',
+    );
   try {
     await f.send('a', 'connected-original', 'Continue');
     await until(() => f.calls.filter((c) => c.phase === 'post').length === 2, 'original reviews');
-    const requested = (await events()).filter(
-      (e) => e.kind === 'journal' && e.scope === 'learning',
-    );
+    const requested = await learningJournal();
     expect(requested.length).toBeGreaterThanOrEqual(2);
     expect(
       requested.every(
@@ -91,9 +94,7 @@ test('pending and settled review journal changes notify only the original owner 
     const count = requested.length;
     held.resolve(abstain);
     await f.settled();
-    expect(
-      (await events()).filter((e) => e.kind === 'journal' && e.scope === 'learning').length,
-    ).toBeGreaterThan(count);
+    expect((await learningJournal()).length).toBeGreaterThan(count);
     expect(f.calls.filter((c) => c.phase === 'post')).toHaveLength(2);
   } finally {
     held.resolve(abstain);

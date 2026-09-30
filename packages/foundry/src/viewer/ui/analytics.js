@@ -13,6 +13,7 @@ import { showToast } from './store.js';
 // ---------------------------------------------------------------------------
 
 export const analyticsOpen = signal(false);
+const analyticsData = signal(null);
 const analyticsTab = signal('overview'); // overview | threads | calls | models
 
 // ---------------------------------------------------------------------------

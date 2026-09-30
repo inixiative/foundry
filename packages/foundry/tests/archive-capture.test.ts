@@ -7,6 +7,10 @@ import { ArchiveContextSource } from '../src/archives/context-source';
 import { publishArchive } from '../src/archives/publish';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 
+/** A zero-argument fetch stub; `typeof fetch` also carries Bun's `preconnect`. */
+const stubFetch = (respond: () => Promise<Response>): typeof fetch =>
+  Object.assign(respond, { preconnect: fetch.preconnect });
+
 const thread = () => ({
   id: 'archive-thread',
   meta: {
@@ -145,7 +149,7 @@ test('publication carries one explicit destination and only acknowledges a commi
         archives,
         captured.id,
         { ...destination, organizationId: crypto.randomUUID() },
-        (async () => Response.json({ error: 'denied' }, { status: 403 })) as typeof fetch,
+        stubFetch(async () => Response.json({ error: 'denied' }, { status: 403 })),
       ),
     ).rejects.toThrow('403');
   } finally {
@@ -168,7 +172,7 @@ test('context retrieval is bound to a local project and does not reuse an earlie
       budget: 2048,
     },
     undefined,
-    (async () => {
+    stubFetch(async () => {
       calls++;
       return calls === 1
         ? Response.json({
@@ -193,7 +197,7 @@ test('context retrieval is bound to a local project and does not reuse an earlie
             },
           })
         : Response.json({}, { status: 401 });
-    }) as typeof fetch,
+    }),
   );
   try {
     expect(await source.load()).toBe('');
@@ -265,8 +269,9 @@ test('an upload with a lost acknowledgment is replayed before newer captured con
     tokenEnv: 'ARCHIVE_RETRY_TEST_TOKEN',
   };
   process.env.ARCHIVE_RETRY_TEST_TOKEN = 'kingdom_runtime_fixture';
-  let lost = true,
-    head: string | null = null;
+  let lost = true;
+  // Widened: the transport closure assigns it, which control-flow narrowing cannot see.
+  let head = null as string | null;
   const received: string[] = [];
   const { snapshotDigest } = await import('@inixiative/session-archive');
   const transport = (async (_url: unknown, init: RequestInit) => {

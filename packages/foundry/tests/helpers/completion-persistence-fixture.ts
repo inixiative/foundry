@@ -41,7 +41,6 @@ export async function completionFixture() {
       model: 'mock',
       prompt: 'Execute',
       temperature: 0,
-      maxTokens: 256,
       visibleLayers: [],
       peers: [],
       maxDepth: 1,

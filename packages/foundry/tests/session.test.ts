@@ -124,7 +124,7 @@ describe('SessionManager', () => {
       const child = await sm.resolve('child-1', parent);
       expect(sm.parentOf('child-1')).toBe(parent);
       expect(sm.childrenOf('main').length).toBe(1);
-      expect(sm.childrenOf('main')[0]).toBe(child);
+      expect<Thread | undefined>(sm.childrenOf('main')[0]).toBe(child);
     });
   });
 

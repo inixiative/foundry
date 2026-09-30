@@ -320,7 +320,6 @@ test('older journal rows without captures read back as not recorded; nothing is 
   closes.push(() => reopened.close());
   const [row] = reopened.learningHistory('legacy', 10);
   expect((row!.signal.content as any).request).toBeUndefined();
-  // @ts-expect-error The browser's plain-JS inspector has no declaration file.
   const { learningEntries } = await import('../src/viewer/ui/inspector-data.js');
   expect(learningEntries([row])[0]!.request).toEqual({ state: 'not-recorded' });
 });

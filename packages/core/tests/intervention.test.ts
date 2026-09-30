@@ -6,7 +6,9 @@ describe('InterventionLog', () => {
   test('records intervention and emits correction signal', async () => {
     const signals = new SignalBus();
     const emitted: Signal[] = [];
-    signals.on('correction', (s) => emitted.push(s));
+    signals.on('correction', (s) => {
+      emitted.push(s);
+    });
 
     const log = new InterventionLog(signals);
     const intervention = await log.intervene(

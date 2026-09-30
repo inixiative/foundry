@@ -1,0 +1,5 @@
+{
+  "extends": "@inixiative/config/tsconfig/base.json",
+  "compilerOptions": { "lib": ["ESNext", "DOM"] },
+  "include": ["packages/foundry/tests/browser", "scripts/gloss-browser-qa.ts"]
+}

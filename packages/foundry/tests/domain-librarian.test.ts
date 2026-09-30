@@ -214,7 +214,9 @@ describe('DomainLibrarian', () => {
       const lib = makeConventionLibrarian(llm, signals);
 
       const emitted: any[] = [];
-      signals.onAny((s) => emitted.push(s));
+      signals.onAny((s) => {
+        emitted.push(s);
+      });
 
       await lib.guard({
         tool: 'file_write',
@@ -241,7 +243,9 @@ describe('DomainLibrarian', () => {
       const lib = makeConventionLibrarian(llm, signals);
 
       const emitted: any[] = [];
-      signals.onAny((s) => emitted.push(s));
+      signals.onAny((s) => {
+        emitted.push(s);
+      });
 
       await lib.guard({
         tool: 'file_write',
