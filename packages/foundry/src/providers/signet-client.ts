@@ -1,15 +1,16 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { kastleUrl } from "./kastle-client";
-import { readPrivateJson, writePrivateJson } from "./kastle-credential-file";
+import { kingdomUrl } from "./kingdom-client";
+import { readPrivateJson, writePrivateJson } from "./kingdom-credential-file";
+import { accessSecretPattern } from "./kingdom-secrets";
 
 const publicKeySchema = z.object({ kty: z.literal("EC"), crv: z.literal("P-256"), x: z.string().regex(/^[A-Za-z0-9_-]{43}$/), y: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 export const signetKeySchema = publicKeySchema.extend({ d: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 export const signetCredentialSchema = z.object({
-  url: z.string().transform(kastleUrl), signetId: z.string().uuid(), enrollmentId: z.string().uuid(),
+  url: z.string().transform(kingdomUrl), signetId: z.string().uuid(), enrollmentId: z.string().uuid(),
   lifecycle: z.enum(["request", "task", "ongoing"]), taskId: z.string().uuid().nullable(), keyFile: z.string().refine(isAbsolute), renewalCredential: z.string().regex(/^signet_renew_[A-Za-z0-9_-]{43}$/),
-  accessToken: z.string().regex(/^kastle_[A-Za-z0-9_-]{43}$/), expiresAt: z.string().datetime(), renewalExpiresAt: z.string().datetime(), idleExpiresAt: z.string().datetime(), tokenType: z.literal("DPoP"),
+  accessToken: z.string().regex(accessSecretPattern), expiresAt: z.string().datetime(), renewalExpiresAt: z.string().datetime(), idleExpiresAt: z.string().datetime(), tokenType: z.literal("DPoP"),
 }).strict();
 export const deliveredSignetSchema = signetCredentialSchema.omit({ url: true, keyFile: true });
 const renewalResponseSchema = deliveredSignetSchema.omit({ signetId: true, renewalCredential: true });
@@ -42,7 +43,7 @@ export async function signetPost(url: string, action: string, body: unknown, hea
   const serialized = JSON.stringify(body);
   onDispatch?.();
   signal.throwIfAborted();
-  const pendingResponse = fetch(`${kastleUrl(url)}/api/v1/access/${action}`, {
+  const pendingResponse = fetch(`${kingdomUrl(url)}/api/v1/access/${action}`, {
     method: "POST", redirect: "error", signal,
     headers: { "content-type": "application/json", ...headers }, body: serialized,
   });
@@ -74,12 +75,12 @@ export async function signetProof(url: string, action: string, keyFile: string, 
   signal.throwIfAborted();
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
   const header = encode({ alg: "ES256", typ: "dpop+jwt", jwk: signetPublicKey(key) });
-  const payload = encode({ htu: `${kastleUrl(url)}/api/v1/access/${action}`, htm: "POST", nonce, iat: Math.floor(Date.now() / 1000), jti: crypto.randomUUID(), ...(token ? { ath: createHash("sha256").update(token).digest("base64url") } : {}) });
+  const payload = encode({ htu: `${kingdomUrl(url)}/api/v1/access/${action}`, htm: "POST", nonce, iat: Math.floor(Date.now() / 1000), jti: crypto.randomUUID(), ...(token ? { ath: createHash("sha256").update(token).digest("base64url") } : {}) });
   const input = `${header}.${payload}`;
   return `${input}.${sign("sha256", Buffer.from(input), { key: createPrivateKey({ key, format: "jwk" }), dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
 }
 export class SignetClient {
-  constructor(private url: string, private credentialFile: string, private signetId: string) { this.url = kastleUrl(url); }
+  constructor(private url: string, private credentialFile: string, private signetId: string) { this.url = kingdomUrl(url); }
   private async credentials(force = false, signal = requestSignal(), allowRenewal = true) {
     signal.throwIfAborted();
     const credential = signetCredentialSchema.parse(await abortable(readPrivateJson(this.credentialFile), signal));

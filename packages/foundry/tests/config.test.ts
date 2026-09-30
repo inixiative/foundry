@@ -310,11 +310,11 @@ describe("ConfigStore persistence", () => {
     const projectId = crypto.randomUUID();
     await store.update((draft) => {
       draft.projects[projectId] = { id: projectId, label: "Team", path: dir };
-      draft.kastleAccess = [{ id: crypto.randomUUID(), name: "Team issues", url: "http://127.0.0.1:1", credentialFile: join(dir, "access.json"),
+      draft.kingdomAccess = [{ id: crypto.randomUUID(), name: "Team issues", url: "http://127.0.0.1:1", credentialFile: join(dir, "access.json"),
         integrationId: crypto.randomUUID(), signetId: crypto.randomUUID(), projectIds: [projectId] }];
     });
     const referenced = store.config;
-    await expect(store.deleteItem("projects", projectId)).rejects.toThrow("Kastle access references an unavailable project");
+    await expect(store.deleteItem("projects", projectId)).rejects.toThrow("Kingdom access references an unavailable project");
     expect(store.config).toBe(referenced);
     expect(store.config.projects[projectId]).toBeDefined();
     expect((await new ConfigStore(dir).load()).projects[projectId]).toBeDefined();

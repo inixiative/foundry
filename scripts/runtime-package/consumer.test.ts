@@ -40,7 +40,7 @@ test("consumer handler runs through controlled worker; unknown kind still refuse
   const directory = await mkdtemp(join(tmpdir(), "runtime-package-consumer-"));
   try {
     const settings: KingdomRuntimeSettings = { url: "https://kingdom.invalid", installationId: id(), credentialFile: join(directory, "installation.json") };
-    await writeFile(settings.credentialFile, JSON.stringify({ secret: "kastle_runtime_" + "a".repeat(43) }), { mode: 0o600 });
+    await writeFile(settings.credentialFile, JSON.stringify({ secret: "kingdom_runtime_" + "a".repeat(43) }), { mode: 0o600 });
     let executed = 0;
     const handler: RuntimeJobHandler<{ value: string }> = {
       kind: "consumerExample",

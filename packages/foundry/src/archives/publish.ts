@@ -10,6 +10,7 @@ import {
 import type { LocalArchiveStore } from '@inixiative/session-archive/local';
 import type { CredentialReference, CredentialResolver } from '@inixiative/foundry-core';
 import { FoundryCredentials } from '../providers/credentials';
+import { RUNTIME_SECRET_PREFIX } from '../providers/kingdom-secrets';
 
 export { type ArchiveDestination, archiveDestinationSchema } from './config';
 
@@ -130,7 +131,7 @@ export async function archiveRequest(
         projectId: destination.projectId,
       })
     : process.env[destination.tokenEnv!];
-  if (!token || (destination.kind === 'kingdom' && !token.startsWith('kastle_runtime_')))
+  if (!token || (destination.kind === 'kingdom' && !token.startsWith(RUNTIME_SECRET_PREFIX)))
     throw new Error('Archive runtime credential unavailable');
   const path = destination.kind === 'kingdom' && destination.connectionId ? `remote/${action}` : action;
   const response = await transport(new URL(`api/v1/archive/${path}`, url), {

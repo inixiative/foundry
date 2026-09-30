@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writePrivateJson } from "../src/providers/kastle-credential-file";
+import { writePrivateJson } from "../src/providers/kingdom-credential-file";
 import { generateSignetKey, SignetClient, signetPost } from "../src/providers/signet-client";
 
 const url = "https://kingdom.example";
@@ -23,7 +23,7 @@ async function fixture(expired = false) {
   const credential = {
     url, signetId: crypto.randomUUID(), enrollmentId: crypto.randomUUID(),
     lifecycle: "ongoing", taskId: null, keyFile,
-    renewalCredential: "signet_renew_" + "r".repeat(43), accessToken: "kastle_" + "t".repeat(43),
+    renewalCredential: "signet_renew_" + "r".repeat(43), accessToken: "kingdom_" + "t".repeat(43),
     expiresAt: new Date(Date.now() + (expired ? -1000 : 300000)).toISOString(),
     renewalExpiresAt: new Date(Date.now() + 3600000).toISOString(),
     idleExpiresAt: new Date(Date.now() + 3600000).toISOString(), tokenType: "DPoP",
@@ -31,7 +31,7 @@ async function fixture(expired = false) {
   await writePrivateJson(credentialFile, credential);
   return { client: new SignetClient(url, credentialFile, credential.signetId), credentialFile, credential,
     renewal: { enrollmentId: credential.enrollmentId, lifecycle: credential.lifecycle, taskId: null,
-      accessToken: "kastle_" + "u".repeat(43), expiresAt: new Date(Date.now() + 300000).toISOString(),
+      accessToken: "kingdom_" + "u".repeat(43), expiresAt: new Date(Date.now() + 300000).toISOString(),
       renewalExpiresAt: credential.renewalExpiresAt, idleExpiresAt: credential.idleExpiresAt, tokenType: "DPoP" } };
 }
 

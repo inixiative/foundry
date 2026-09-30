@@ -2,7 +2,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { assertPrivateProfile } from "./private-profile";
-import { writePrivateJson } from "./kastle-credential-file";
+import { writePrivateJson } from "./kingdom-credential-file";
 import { lockRuntimeJob } from "./runtime-job-lock";
 export async function lockNativeCycle(profileDirectory: string): Promise<((cleanupConfirmed: boolean) => void) | null> {
   assertPrivateProfile(profileDirectory);

@@ -12,7 +12,7 @@ const connectionJob = () => ({ id: crypto.randomUUID(), installationId: crypto.r
 const privateRuntime = async () => {
   const directory = await mkdtemp(join(tmpdir(), "runtime-jobs-"));
   const credentialFile = join(directory, "runtime.json");
-  await writeFile(credentialFile, JSON.stringify({ secret: `kastle_runtime_${"a".repeat(43)}` }), { mode: 0o600 });
+  await writeFile(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"a".repeat(43)}` }), { mode: 0o600 });
   return { directory, credentialFile };
 };
 
@@ -34,7 +34,7 @@ test("local Archive failure retries receipt persistence before reporting complet
     await worker.check();
     expect(reports).toBe(1);
     const store = new LocalArchiveStore(join(directory, "archives", "archives.sqlite"));
-    try { expect(store.list()).toHaveLength(1); expect(JSON.stringify(store.read(store.list()[0].id))).not.toContain("kastle_runtime_"); }
+    try { expect(store.list()).toHaveLength(1); expect(JSON.stringify(store.read(store.list()[0].id))).not.toContain("kingdom_runtime_"); }
     finally { store.close(); }
   } finally { worker.stop(); await rm(directory, { recursive: true, force: true }); }
 });

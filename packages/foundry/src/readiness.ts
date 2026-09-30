@@ -3,8 +3,8 @@ import { constants } from "node:fs";
 import { join } from "node:path";
 import { configuredExperts } from "./agents/configured-experts";
 import { MODEL_REGISTRY } from "./models/registry";
-import { installationCredentialSchema, readPrivateJson } from "./providers/kastle-credential-file";
-import { accessCredentialSchema } from "./providers/kastle-access-client";
+import { installationCredentialSchema, readPrivateJson } from "./providers/kingdom-credential-file";
+import { accessCredentialSchema } from "./providers/kingdom-access-client";
 import { type FoundryConfig, validateConfig } from "./viewer/config";
 import { resolveProjectView } from "./viewer/config-resolve";
 import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionResolution } from "./providers/subscription-policy";
@@ -72,10 +72,10 @@ export async function inspectReadiness(config: FoundryConfig, options: {
       issue("error", scope, "native-cli-missing", "Install the requested native CLI on PATH before starting Foundry.");
   };
   checkProvider(config.defaults.provider, "global");
-  for (const source of config.kastleAccess ?? []) {
+  for (const source of config.kingdomAccess ?? []) {
     try { accessCredentialSchema.parse(await readPrivateJson(source.credentialFile)); }
     catch { issue("error", source.id, "integration-credential-unavailable", "The integration access token must be in an owned private regular file. Inference installation and run tokens cannot authorize integration reads."); }
-    issue("warning", source.id, "integration-access-unverified", "The local grant is configured. Kastle must verify its current Signet, connection, resources and allowance when used.");
+    issue("warning", source.id, "integration-access-unverified", "The local grant is configured. Kingdom must verify its current Signet, connection, resources and allowance when used.");
   }
   const scopes: Array<readonly [string, FoundryConfig]> = [["global", config]];
   for (const id of Object.keys(config.projects)) {
@@ -102,19 +102,19 @@ export async function inspectReadiness(config: FoundryConfig, options: {
       issue("warning", scope, "no-executor", "This project has no enabled executor.");
     if (scope !== "global") {
       const overrides = config.projects[scope]!.defaults;
-      if (overrides && ["kastleId", "nativeAuthenticationId"].some(key => key in overrides && overrides[key as keyof typeof overrides] !== config.defaults[key as keyof typeof config.defaults]))
-        issue("error", scope, "project-authentication-override", "Authentication is configured on the Foundry instance. Use explicit thread assignments or a separate instance for a different default Kastle/source.");
+      if (overrides && ["kingdomOwnerKey", "nativeAuthenticationId"].some(key => key in overrides && overrides[key as keyof typeof overrides] !== config.defaults[key as keyof typeof config.defaults]))
+        issue("error", scope, "project-authentication-override", "Authentication is configured on the Foundry instance. Use explicit thread assignments or a separate instance for a different default Kingdom owner/source.");
     }
   }
   if (!Object.keys(config.projects).length) issue("warning", "global", "no-projects", "Add a project and configure its executor and domain experts.");
-  const selectedKastles = new Set([config.defaults.kastleId, ...Object.values(config.kastleAssignments ?? {}).map(item => item.kastleId)].filter((id): id is string => !!id));
-  for (const source of config.kastles ?? []) {
-    if (!selectedKastles.has(source.id)) continue;
+  const selectedOwners = new Set([config.defaults.kingdomOwnerKey, ...Object.values(config.kingdomInferenceAssignments ?? {}).map(item => item.ownerKey)].filter((id): id is string => !!id));
+  for (const source of config.kingdomInference ?? []) {
+    if (!selectedOwners.has(source.id)) continue;
     try {
       const value = await readPrivateJson(source.credentialFile);
       installationCredentialSchema.parse(value);
-    } catch { issue("error", source.id, "kastle-credential-unavailable", "The installation file must contain a runtime secret and be an owned private regular file. Re-enroll if necessary."); }
-    issue("warning", source.id, "kastle-access-unverified", "Local credentials do not prove server authorization, model capacity, renewal policy or budget headroom. Verify with a bounded Kastle pilot.");
+    } catch { issue("error", source.id, "kingdom-credential-unavailable", "The installation file must contain a runtime secret and be an owned private regular file. Re-enroll if necessary."); }
+    issue("warning", source.id, "kingdom-access-unverified", "Local credentials do not prove server authorization, model capacity, renewal policy or budget headroom. Verify with a bounded Kingdom pilot.");
   }
   const selectedNative = new Set([config.defaults.nativeAuthenticationId, ...Object.values(config.nativeAuthenticationSelections ?? {})]);
   for (const source of config.nativeAuthentication ?? []) {

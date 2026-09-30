@@ -2,9 +2,9 @@ import { lockRuntimeJob } from "./runtime-job-lock";
 import { lstat, mkdir } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { z } from "zod";
-import { installationCredentialSchema, readPrivateJson } from "./kastle-credential-file";
+import { installationCredentialSchema, readPrivateJson } from "./kingdom-credential-file";
 import type { KingdomRuntimeSettings } from "./kingdom-runtime-connection";
-import { kastleUrl } from "./kastle-client";
+import { kingdomUrl } from "./kingdom-client";
 import { SignetHttpError } from "./signet-client";
 import { runtimeJobSchema } from "./runtime-job-contracts";
 import { RuntimeJobRegistry } from "./runtime-job-handler";
@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT_MS = 20000;
 export class RuntimeJobWorker {
   private busy = false;
   private stopped = false;
-  constructor(private settings: KingdomRuntimeSettings, private transport: typeof fetch = fetch, private handlers: RuntimeJobRegistry = new RuntimeJobRegistry()) { this.settings = { ...settings, url: kastleUrl(settings.url) }; }
+  constructor(private settings: KingdomRuntimeSettings, private transport: typeof fetch = fetch, private handlers: RuntimeJobRegistry = new RuntimeJobRegistry()) { this.settings = { ...settings, url: kingdomUrl(settings.url) }; }
   stop() { this.stopped = true; }
   private async send(action: string, body: unknown, timeoutMs: number): Promise<unknown> {
     if (this.stopped) throw Error("Worker stopped");

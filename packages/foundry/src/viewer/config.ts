@@ -2,8 +2,8 @@ import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionSet
 import { DECISION_MODEL } from "../providers/decision-provider";
 import type { CredentialReference } from '@inixiative/foundry-core';
 import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
-import { KastleAuthentication, type KastleSource, type KastleAssignment } from "../providers/kastle-authentication";
-import { validateKastleAccess, type KastleAccessSource } from "../providers/kastle-access-client";
+import { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "../providers/kingdom-authentication";
+import { validateKingdomAccess, type KingdomAccessSource } from "../providers/kingdom-access-client";
 import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
 import type { ClaudeContextBudget } from "../providers/claude-context-budget";
 import { randomUUID } from "node:crypto";
@@ -35,10 +35,10 @@ export interface FoundryConfig {
   subscriptionOnly?: SubscriptionSettings;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
-  kastles?: KastleSource[];
+  kingdomInference?: KingdomInferenceSource[];
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
-  kastleAccess?: KastleAccessSource[];
-  kastleAssignments?: Record<string, KastleAssignment>;
+  kingdomAccess?: KingdomAccessSource[];
+  kingdomInferenceAssignments?: Record<string, KingdomInferenceAssignment>;
   /** Explicit thread-to-source UUID assignments, applied on Foundry startup. */
   nativeAuthenticationSelections?: Record<string, string>;
   /** Background domain review phase; does not override classifier/router or executor profiles. */
@@ -48,7 +48,7 @@ export interface FoundryConfig {
     provider: string;
     model: string;
     nativeAuthenticationId?: string;
-    kastleId?: string;
+    kingdomOwnerKey?: string;
     /** Explicit native selection; MCP stays default. Applies on construction only. */
     codexEngine?: "mcp" | "app-server";
     codexEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -716,14 +716,14 @@ export function validateConfig(config: FoundryConfig): void {
   if (config.kingdomRuntime) kingdomRuntimeSchema.parse(config.kingdomRuntime);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");
-  for (const source of validateKastleAccess(config.kastleAccess ?? [])) {
+  for (const source of validateKingdomAccess(config.kingdomAccess ?? [])) {
     if (source.projectIds.some(id => !config.projects[id] || config.projects[id]!.enabled === false))
-      throw Error("Kastle access references an unavailable project");
+      throw Error("Kingdom access references an unavailable project");
   }
-  if (config.kastles || config.defaults.kastleId || config.kastleAssignments) {
-    if (config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length) throw Error("Choose Kastle bindings or local native sources for this Foundry instance");
-    if (!["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Kastle bindings require a native runtime provider");
-    new KastleAuthentication({ directory: join(process.cwd(), ".foundry", "kastle"), sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments });
+  if (config.kingdomInference || config.defaults.kingdomOwnerKey || config.kingdomInferenceAssignments) {
+    if (config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length) throw Error("Choose Kingdom bindings or local native sources for this Foundry instance");
+    if (!["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Kingdom bindings require a native runtime provider");
+    new KingdomAuthentication({ directory: join(process.cwd(), ".foundry", "kingdom"), sources: config.kingdomInference ?? [], defaultOwnerKey: config.defaults.kingdomOwnerKey, assignments: config.kingdomInferenceAssignments });
   }
   if (config.nativeAuthentication || config.defaults.nativeAuthenticationId || config.nativeAuthenticationSelections) {
     const authentication = new NativeAuthentication({ directory: join(process.cwd(), ".foundry", "runtime-profiles"),
