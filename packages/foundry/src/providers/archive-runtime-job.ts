@@ -8,7 +8,7 @@ export async function archiveRuntimeJob(directory: string, job: RuntimeJob, stat
   await mkdir(join(directory, "archives"), { recursive: true, mode: 0o700 });
   const store = new LocalArchiveStore(join(directory, "archives", "archives.sqlite"));
   try {
-    const { allergies: _allergies, ...evidence } = state.outcome ?? {};
+    const evidence = state.outcome ?? {};
     store.capture(archiveSnapshotSchema.parse({ schemaVersion: 1, sourceId: store.sourceId, source: "foundry", sessionId: job.id,
       title,
       tags: ["Agentic", "Signet"], goalIds: [], runIds: [job.id], capturedAt: Date.now(),

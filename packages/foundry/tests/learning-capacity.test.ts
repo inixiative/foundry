@@ -9,7 +9,6 @@ import { OpenAIProvider } from "../src/providers/openai";
 import { AnthropicProvider } from "../src/providers/anthropic";
 import { GeminiProvider } from "../src/providers/gemini";
 import { SessionBackedProvider } from "../src/providers/session-backed";
-import { GatedProvider } from "../src/providers/gated";
 import { resolveLearningSettings } from "../src/agents/learning-config";
 
 const closes: Array<() => void> = [];
@@ -134,11 +133,11 @@ test("a rejected audit write is blocked and cannot be presented as durable defer
 });
 
 for (const Provider of [OpenAIProvider, AnthropicProvider, GeminiProvider]) {
-  test(`${Provider.name} owns completed HTTP-error evidence; arbitrary and foreign errors remain unknown through wrappers`, async () => {
+  test(`${Provider.name} owns completed HTTP-error evidence; arbitrary and foreign errors remain unknown through the scoped wrapper`, async () => {
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { return new Response("completed 503", { status: 503 }); } });
     closes.push(() => server.stop(true));
     const provider = new Provider({ apiKey: "test-only", baseUrl: `http://127.0.0.1:${server.port}` });
-    const wrapped = scopedProvider(new GatedProvider({ provider, gate: { policy: {}, require: async () => {} } as any, threadId: "T" }), { threadId: "T" });
+    const wrapped = scopedProvider(provider, { threadId: "T" });
     let failure: unknown;
     try { await wrapped.complete([{ role: "user", content: "controlled" }]); } catch (error) { failure = error; }
     expect(wrapped.completionLifecycle?.settlement({ error: failure })).toBe("settled");

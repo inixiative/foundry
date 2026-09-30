@@ -122,7 +122,6 @@ export class ClaudeCodeProvider implements LLMProvider {
     // Permission mode
     const permissionMap: Record<string, string> = {
       bypass: "bypassPermissions",
-      supervised: "default",
       restricted: "plan",
     };
     const permMode = permissionMap[opts?.permissions ?? "bypass"] ?? "bypassPermissions";

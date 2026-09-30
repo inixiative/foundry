@@ -32,8 +32,6 @@ export {
 } from "./openai-compatible";
 export { GeminiProvider, GeminiEmbeddingProvider, type GeminiConfig } from "./gemini";
 
-// Gated provider (capability-checked wrapper)
-export { GatedProvider, type GatedProviderConfig } from "./gated";
 export { SessionBackedProvider, formatMessagesForNativeSession, type SessionBackedProviderConfig } from "./session-backed";
 
 // HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session

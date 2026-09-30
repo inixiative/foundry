@@ -274,8 +274,8 @@ export interface AgentSettingsConfig {
   tools?: boolean;
   /** Extended thinking / reasoning effort. "none" | "low" | "medium" | "high" | number (budget tokens). */
   thinking?: "none" | "low" | "medium" | "high" | number;
-  /** Permission level for code execution runtimes. Default: "bypass" for unattended, "supervised" for interactive. */
-  permissions?: "bypass" | "supervised" | "restricted";
+  /** Permission level for code execution runtimes. Default: "bypass". */
+  permissions?: "bypass" | "restricted";
   /**
    * Execution environment for this agent's tool calls.
    * Default: "bash" (via Claude Code provider).

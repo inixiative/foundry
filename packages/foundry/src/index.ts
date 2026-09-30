@@ -147,11 +147,6 @@ export {
   type MuninnConfig,
 } from "./adapters/muninn-memory";
 
-// Gated Provider (capability-checked LLM wrapper)
-export {
-  GatedProvider,
-  type GatedProviderConfig,
-} from "./providers/gated";
 export {
   SessionBackedProvider,
   formatMessagesForNativeSession,

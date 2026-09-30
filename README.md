@@ -18,7 +18,7 @@ Foundry is a framework for building agent systems where you control the context,
 
 - **Context layers** — stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Classify → Route → Execute pipeline** — incoming messages are classified, routed to the right executor with the right context slice, and traced end-to-end.
-- **Capability gate** — agents request permission before dangerous operations. Three preset policies (unattended, supervised, restricted). Prompts surface in the viewer for human approval.
+- **Capability gate** — agents request permission before dangerous operations. Policies map each capability to allow, prompt or deny. Prompts surface in the viewer for human approval.
 - **Multi-thread hierarchy** — spawn child threads with inherited or isolated context. Herald observes across threads and detects duplication, contradiction, convergence.
 - **Viewer dashboard** — three-panel operator UI. Thread tree with prompt badges, live event stream, trace inspector, layer bands, intervention corrections. Not a log viewer — a control surface.
 
@@ -63,7 +63,6 @@ GEMINI_API_KEY=AI...
 DATABASE_URL=postgresql://...   # Postgres persistence
 REDIS_URL=redis://...           # Redis adapter
 VIEWER_PORT=4400                # Dashboard port (default: 4400)
-FOUNDRY_MODE=supervised         # supervised (default) or unattended
 ```
 
 ## Running
@@ -119,10 +118,10 @@ const context = stack.assemble({ maxTokens: 8000 });
 ### Capability gate
 
 ```typescript
-import { ActionQueue, CapabilityGate, SUPERVISED_POLICY } from "@inixiative/foundry-core";
+import { ActionQueue, CapabilityGate } from "@inixiative/foundry-core";
 
 const queue = new ActionQueue();
-const gate = new CapabilityGate(queue, SUPERVISED_POLICY);
+const gate = new CapabilityGate({ defaults: "prompt", capabilities: { "file:read": "allow" } }, queue);
 
 // This blocks until a human approves in the viewer
 await gate.require("file:write", {

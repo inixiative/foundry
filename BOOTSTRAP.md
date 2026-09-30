@@ -164,7 +164,6 @@ executor-verify
     Keep navigation minimal — each page load costs tokens.
   visibleLayers: [system, project-context]
   invocation: on-demand
-  permissions: supervised
 
 executor-sandbox
   kind: executor
