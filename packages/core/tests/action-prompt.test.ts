@@ -399,4 +399,26 @@ describe("ActionQueue", () => {
     off();
     expect(settled).toHaveLength(2);
   });
+  test("a listener that resolves synchronously settles the waiting prompt", async () => {
+    const q = makeQueue();
+    const later: string[] = [];
+    q.onPrompt(p => { q.resolve(p.id, "approved"); });
+    q.onPrompt(p => later.push(p.id));
+    const outcome = await Promise.race([
+      q.prompt({ kind: "approval", message: "auto-approve", agentId: "a", threadId: "t", timeoutMs: 50 }),
+      Bun.sleep(25).then(() => "blocked" as const),
+    ]);
+    expect(outcome).not.toBe("blocked");
+    expect((outcome as ActionResolution).action).toBe("approved");
+    expect(q.forThread("t")[0].status).toBe("approved");
+    expect(later).toHaveLength(0);
+  });
+  test("a synchronous resolution is not overwritten by the timeout", async () => {
+    const q = makeQueue();
+    q.onPrompt(p => { q.resolve(p.id, "rejected"); });
+    const resolution = await q.prompt({ kind: "approval", message: "reject", agentId: "a", threadId: "t", timeoutMs: 5 });
+    await Bun.sleep(15);
+    expect(resolution.action).toBe("rejected");
+    expect(q.forThread("t")[0].status).toBe("rejected");
+  });
 });

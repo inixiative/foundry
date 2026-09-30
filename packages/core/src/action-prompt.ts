@@ -149,17 +149,13 @@ export class ActionQueue {
       }
     }
 
-    // Notify listeners (viewer badge, event stream, etc.)
-    for (const fn of this._listeners) {
-      try { fn(prompt); } catch { /* listener errors don't block */ }
-    }
-
-    // Block until resolved
-    return new Promise<ActionResolution>((resolve) => {
+    // Register the waiter before notifying: a listener may resolve synchronously.
+    const settled = new Promise<ActionResolution>((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       if (opts.timeoutMs) {
         timer = setTimeout(() => {
+          if (prompt.status !== "pending") return;
           const resolution: ActionResolution = {
             by: "timeout",
             action: "rejected",
@@ -175,6 +171,14 @@ export class ActionQueue {
 
       this._waiters.set(id, { resolve, timer });
     });
+
+    // Notify listeners (viewer badge, event stream, etc.)
+    for (const fn of this._listeners) {
+      if (prompt.status !== "pending") break;
+      try { fn(prompt); } catch { /* listener errors don't block */ }
+    }
+
+    return settled;
   }
 
   /**
