@@ -41,11 +41,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/bun": "latest",
     "@types/node": "^25.5.2",
     "pino": "^10.3.1",
-    "playwright": "^1.63.0",
-    "typescript": "^5.7.0"
+    "playwright": "^1.63.0"
   },
   "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core — providers, session adapters, planner, viewer and jobs",
   "license": "SEE LICENSE IN LICENSE",
