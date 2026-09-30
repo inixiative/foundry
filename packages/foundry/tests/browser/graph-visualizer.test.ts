@@ -39,7 +39,7 @@ test("graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     await s.send("a", "t2", "Continue");
     await s.settled("a");
 
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(15_000);
     page.on("pageerror", (e: Error) => errors.push(`pageerror: ${e.message}`));

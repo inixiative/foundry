@@ -35,7 +35,7 @@ test("expert loop: before work, after post-hooks (pending, commit, abstention), 
     scenario = await m0Scenario({ learning: { timeoutMs: 10, hardTimeoutMs: 60_000 }, review });
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, server) => scenario!.current.fetch(request, server), websocket: scenario.current.websocket });
     const origin = `http://127.0.0.1:${server.port}`;
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ headless: true });
     const attach = (p: any, label: string) => { p.setDefaultTimeout(15_000); p.on("pageerror", (e: Error) => report.errors.push(`${label} pageerror: ${e.message}`));
       p.on("response", (r: any) => { if (r.status() >= 400) report.failedResponses.push({ label, status: r.status(), url: r.url().replace(origin, "").slice(0, 100) }); }); };
     const shot = async (p: any, name: string) => { await p.screenshot({ path: join(out, `${name}.png`) }); report.screenshots.push(name); };
@@ -121,7 +121,8 @@ test("expert loop: before work, after post-hooks (pending, commit, abstention), 
     // ---- original turn 1 has NOT acquired newer knowledge ----
     await openTrace(page, "t1");
     const p1a = await participant(page, "architecture"), p1t = await participant(page, "testing");
-    const t1Drawer = await drawer(page).innerText();
+    // Post-review for the selected turn shows current understanding beside the frozen preparation; exclude it.
+    const t1Drawer = await drawer(page).evaluate((el: Element) => { const c = el.cloneNode(true) as Element; c.querySelectorAll(".selected-review-history").forEach(n => n.remove()); return c.textContent ?? ""; });
     await shot(page, "1440-turn1-participants-immutable");
     check("turn 1 historical preparation is immutable: both experts at revision 0 with empty thread understanding; no interpretation text anywhere in the historical view", p1a.revision === "0" && p1t.revision === "0" && !p1a.threadKnowledge.includes(A) && !p1t.threadKnowledge.includes(T) && !t1Drawer.includes(A) && !t1Drawer.includes(T), { p1a: { ...p1a, threadKnowledge: p1a.threadKnowledge.slice(0, 80) }, p1t: { ...p1t, threadKnowledge: p1t.threadKnowledge.slice(0, 80) } });
     // ---- turn 3: both at revision 1 ----

@@ -17,3 +17,5 @@ jobs:
       - run: bun run typecheck
       # Replay-only; the freshness check fails stale, unblessed, leaking or unreviewed cassettes.
       - run: bun run test
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:browser

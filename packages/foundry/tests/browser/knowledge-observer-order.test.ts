@@ -50,16 +50,19 @@ async function fixture(name: string) {
       entry.revision = body instanceof Response ? `status ${body.status}` : (body as any)?.snapshot?.domains?.conventions?.revision;
       return body instanceof Response ? body : Response.json(body);
     }
-    if (url.pathname === "/api/messages" && request.method === "GET" && history.has(url.searchParams.get("threadId") ?? "")) {
-      requests.push({ path: `${url.pathname}?threadId=${url.searchParams.get("threadId")}`, at: Date.now() });
-      const body = await history.get(url.searchParams.get("threadId")!)!();
+    // The store reads the history index route first; /api/messages is its fallback.
+    const historyThread = url.pathname.match(/^\/api\/threads\/([^/]+)\/history$/)?.[1]
+      ?? (url.pathname === "/api/messages" ? url.searchParams.get("threadId") : null);
+    if (request.method === "GET" && historyThread && history.has(historyThread)) {
+      requests.push({ path: `${url.pathname}?threadId=${historyThread}`, at: Date.now() });
+      const body = await history.get(historyThread)!();
       return body instanceof Response ? body : Response.json(body);
     }
     return viewer.fetch(request, server);
   }, websocket: viewer.websocket });
   const origin = `http://127.0.0.1:${server.port}`;
   setupCleanup.unshift(["server", () => server.stop(true)]);
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({ headless: true });
   setupCleanup.unshift(["browser", () => browser.close()]);
   const errors: string[] = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -75,7 +78,7 @@ async function fixture(name: string) {
   });
   page.on("response", async (response: any) => {
     const url = response.url();
-    if (!/\/knowledge$|\/api\/messages\?/.test(url)) return;
+    if (!/\/knowledge$|\/api\/messages\?|\/history\?/.test(url)) return;
     let revision: unknown;
     try { const body = await response.json(); revision = body?.snapshot?.domains?.conventions?.revision ?? body?.messages?.length ?? body?.status; } catch {}
     report.responses.push({ url: url.replace(origin, ""), status: response.status(), revision, at: Date.now() });

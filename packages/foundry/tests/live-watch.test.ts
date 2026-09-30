@@ -124,3 +124,14 @@ test('plain external POST has the same live turn; its full result stays in its H
    expect(frames.some(x=>x.payload?.kind==='turn'&&x.payload.turn.status==='completed')).toBe(true);expect(frames.some(x=>x.payload?.kind==='done')).toBe(false);
  }finally{await f.close();await turn?.done;}
 });
+
+test('a saved turn older than every loaded row stays in its unloaded page; newer or unsaved turns still merge',()=>{
+ const r=new StreamBufferRegistry(),saved=r.open('OLD','T'),unsaved=r.open('UNSAVED','T');
+ saved.complete({content:'old',meta:{executionOutcome:'completed',persistence:'committed'}});
+ unsaved.complete({content:'unsaved',meta:{executionOutcome:'completed',persistence:'failed'}});
+ const snapshot={buffers:r.forThread('T')},later=Date.now()+60_000;
+ const page=[{actor:'user',turnId:'NEW',content:'q',timestamp:later},{actor:'agent',turnId:'NEW',content:'a',timestamp:later}];
+ expect(mergeLiveSnapshot(page,snapshot).map((m:any)=>m.turnId)).toEqual(['NEW','NEW','UNSAVED']);
+ const earlier=page.map(m=>({...m,timestamp:0}));
+ expect(mergeLiveSnapshot(earlier,snapshot).map((m:any)=>m.turnId)).toEqual(['NEW','NEW','OLD','UNSAVED']);
+});
