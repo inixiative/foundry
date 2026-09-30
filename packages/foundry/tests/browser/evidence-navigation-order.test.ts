@@ -34,7 +34,7 @@ test("late or superseded historical detail never publishes, re-opens or toasts; 
       return scenario!.current.fetch(request, server);
     } });
     const origin = `http://127.0.0.1:${server.port}`;
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     page.on("pageerror", (e: Error) => report.errors.push(e.message));
     const store = (fn: string) => page.evaluate(`(async () => { const store = await import(location.origin + "/ui/store.js"); return (${fn})(store); })()`);

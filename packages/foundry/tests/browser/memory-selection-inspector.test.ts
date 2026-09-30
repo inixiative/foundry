@@ -27,7 +27,7 @@ const layer = {
 
 type Fixture = Awaited<ReturnType<typeof completionFixture>>;
 
-async function run(reportName: string, channel: string, body: (page: any, server: ReturnType<typeof Bun.serve>) => Promise<void>) {
+async function run(reportName: string, channel: string | undefined, body: (page: any, server: ReturnType<typeof Bun.serve>) => Promise<void>) {
   const reportDir = resolve(".foundry/qa", `${reportName}-${new Date().toISOString().replaceAll(":", "-")}`);
   mkdirSync(reportDir, { recursive: true });
   const errors: string[] = [];
@@ -74,7 +74,7 @@ async function run(reportName: string, channel: string, body: (page: any, server
 }
 
 test("viewer page loads the edited drawer and runs selectionSummary in the browser without errors", async () => {
-  const report = await run("memory-selection-browser", "chrome", async (page, server) => {
+  const report = await run("memory-selection-browser", undefined, async (page, server) => {
     await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
     await page.waitForFunction(async () => (await import("/ui/store.js")).inflight.value === 0);
     const result = await page.evaluate(async (snapshot: any) => {

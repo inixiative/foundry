@@ -149,7 +149,7 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     check("oldest turn detail carries the recorded injection and artifact links", detail.status === 200 && report.payload.oldestDetail.injectionText && report.payload.oldestDetail.artifacts.includes("trace"), report.payload.oldestDetail);
 
     // ---- browser ----
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await chromium.launch({ headless: true });
     cleanup.unshift(["browser", () => browser.close()]);
     const shot = async (p: any, name: string) => { await p.screenshot({ path: join(out, `${name}.png`), fullPage: false }); report.screenshots.push(name); };
     // Every failed response is recorded with its URL so console errors are attributed from evidence, not assumed.
@@ -259,8 +259,10 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     const sideView = { visible: await count(p2, ".chat-msg"), mainRowsWhileOnSide: await p2.locator(".chat-msg").filter({ hasText: "Seeded question" }).filter({ hasText: /on release-notes-side|release-notes-side/ }).count() };
     await new Promise(res => setTimeout(res, 2000));
     await p2.goto(`${origin}/#thread=release-notes`); await p2.waitForFunction(() => document.querySelectorAll(".chat-msg").length >= 100);
-    const backOnMain = { visible: await count(p2, ".chat-msg"), unique: await p2.evaluate(() => new Set(JSON.parse(localStorage.getItem("foundry:msgs:release-notes")!).map((m: any) => `${m.turnId}:${m.actor}`)).size), sideUntouched: await p2.evaluate(() => JSON.parse(localStorage.getItem("foundry:msgs:release-notes-side") ?? "[]").every((m: any) => m.threadId === "release-notes-side")) };
-    check("delayed older page issued for release-notes lands in that thread only, after a switch to the side thread and back, without duplicates", sideView.visible === 50 && backOnMain.visible === 100 && backOnMain.unique === 100 && backOnMain.sideUntouched, { sideView, backOnMain });
+    // The server's live buffer still holds the unsaved completion, so a fresh context shows it too.
+    const liveUnsaved = () => p2.locator(".chat-agent").filter({ hasText: "CONTROLLED_UNSAVED_RESULT" }).count();
+    const backOnMain = { visible: await count(p2, ".chat-msg"), liveUnsaved: await liveUnsaved(), unique: await p2.evaluate(() => new Set(JSON.parse(localStorage.getItem("foundry:msgs:release-notes")!).map((m: any) => `${m.turnId}:${m.actor}`)).size), sideUntouched: await p2.evaluate(() => JSON.parse(localStorage.getItem("foundry:msgs:release-notes-side") ?? "[]").every((m: any) => m.threadId === "release-notes-side")) };
+    check("delayed older page issued for release-notes lands in that thread only, after a switch to the side thread and back, without duplicates", sideView.visible === 50 && backOnMain.liveUnsaved <= 1 && backOnMain.visible === 100 + backOnMain.liveUnsaved && backOnMain.unique === backOnMain.visible && backOnMain.sideUntouched, { sideView, backOnMain });
     // inactive-thread work while the side thread is active: the inactive thread's stream is closed, so
     // nothing is fetched for it then; returning to it reconciles one bounded index page into its own cache
     await p2.goto(`${origin}/#thread=release-notes-side`); await p2.waitForFunction(() => document.querySelectorAll(".chat-msg").length >= 50);
@@ -272,9 +274,9 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     const whileInactive = indexFetches.length;
     const stillSide = await count(p2, ".chat-msg");
     await p2.goto(`${origin}/#thread=release-notes`); await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).first().waitFor();
-    const afterEvent = { whileInactive, onReturn: indexFetches.length - whileInactive, stillSide, lateVisible: await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).count(), visible: await count(p2, ".chat-msg"), olderControl: await count(p2, ".chat-history-older") };
+    const afterEvent = { whileInactive, onReturn: indexFetches.length - whileInactive, stillSide, lateVisible: await p2.getByText("LATE_INACTIVE_MARKER", { exact: false }).count(), visible: await count(p2, ".chat-msg"), liveUnsaved: await liveUnsaved(), olderControl: await count(p2, ".chat-history-older") };
     await shot(p2, "1440-inactive-reconcile"); await fresh.close();
-    check("work on an inactive thread fetches nothing while its stream is closed; on return one bounded index fetch lands in its own cache with paging intact", afterEvent.whileInactive === 0 && afterEvent.onReturn >= 1 && afterEvent.stillSide === 50 && afterEvent.lateVisible >= 1 && afterEvent.visible === 102 && afterEvent.olderControl === 1, afterEvent);
+    check("work on an inactive thread fetches nothing while its stream is closed; on return one bounded index fetch lands in its own cache with paging intact", afterEvent.whileInactive === 0 && afterEvent.onReturn >= 1 && afterEvent.stillSide === 50 && afterEvent.lateVisible >= 1 && afterEvent.liveUnsaved <= 1 && afterEvent.visible === 102 + afterEvent.liveUnsaved && afterEvent.olderControl === 1, afterEvent);
     await desk.close();
     // mobile 390
     const mob = await browser.newContext({ viewport: { width: 390, height: 844 } }); const m = await mob.newPage(); attach(m, "390");
