@@ -74,7 +74,7 @@ async function fixture(name: string, withNative = false) {
     if (response.status !== 200) throw new Error(`POST /api/messages ${threadId}/${id} returned ${response.status}: ${body.slice(0, 600)}`);
     return JSON.parse(body);
   };
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({ headless: true });
   setupCleanup.unshift(["browser", () => browser.close()]);
   const report: any = { passed: false, output, checks: [], errors: [] as string[],
     scope: "Production HTTP/SQLite/WebSocket viewer with controlled reviewer and executor; not native evidence." };
@@ -255,8 +255,11 @@ test("Turn Context shows historical pending learning that stays fixed after comm
     await observer.waitForTimeout(500);
     const after = await panel.innerText();
     expect(after).toMatch(/\blearning\b[^\n]*\bpending\b|\bpending\b[^\n]*\blearning\b/i);
-    expect(after).not.toContain(fact);
-    expect(after).not.toMatch(/learned/i);
+    // Post-review sits beside the frozen preparation and shows current understanding, labeled as such.
+    const historical = await panel.evaluate((el: Element) => { const c = el.cloneNode(true) as Element; c.querySelectorAll(".selected-review-history").forEach(n => n.remove()); return c.textContent ?? ""; });
+    expect(historical).not.toContain(fact);
+    expect(historical).not.toMatch(/learned/i);
+    expect(await panel.locator(".selected-review-current").innerText()).toContain(fact);
     f.report.checks.push({ case: "historical-record-unchanged-after-commit", passed: true });
     // Current knowledge inspection in the thread view.
     await observer.getByRole("button", { name: "Clear", exact: true }).click();
