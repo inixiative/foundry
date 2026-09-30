@@ -3,17 +3,15 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { accessCredentialSchema, KastleAccessClient, KastleAccessHttpError, kastleAccessSourceSchema } from "../../providers/kastle-access-client";
 import { readPrivateJson } from "../../providers/kastle-credential-file";
-import type { ConfigStore, FoundryConfig } from "../config";
+import { ConfigRevisionError, type ConfigStore, type FoundryConfig } from "../config";
 
 const revision = (config: FoundryConfig) => createHash("sha256").update(JSON.stringify({ sources: config.kastleAccess ?? [], projects: config.projects })).digest("hex");
 const revisionSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
 /** Operator configuration only. Saved changes are not installed into live native sessions. */
 export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
-  let mutation = Promise.resolve<unknown>(undefined);
-  const serialize = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = mutation.then(work, work); mutation = next.catch(() => {}); return next;
-  };
+  // The store serializes writes; checking the scoped revision inside update makes check-and-write atomic.
+  const expectRevision = (config: FoundryConfig, expected: string) => { if (revision(config) !== expected) throw new ConfigRevisionError(); };
   app.use("/api/access/*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.get("/api/access/sources", async c => {
     try {
@@ -30,29 +28,37 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
   app.put("/api/access/sources/:id", async c => {
     const parsed = z.object({ revision: revisionSchema, source: kastleAccessSourceSchema }).strict().safeParse(await c.req.json().catch(() => null));
     if (!parsed.success || parsed.data.source.id !== c.req.param("id")) return c.json({ error: "Check the grant fields, UUIDs, project selection and absolute credential file path." }, 400);
-    return serialize(async () => {
-      try {
-        const config = await store.load();
-        if (parsed.data.revision !== revision(config)) return c.json({ error: "Settings changed elsewhere. Reload before saving." }, 409);
-        const sources = [...(config.kastleAccess ?? [])], index = sources.findIndex(source => source.id === parsed.data.source.id);
+    try {
+      await store.load();
+      const next = await store.update(draft => {
+        expectRevision(draft, parsed.data.revision);
+        const sources = draft.kastleAccess ?? [], index = sources.findIndex(source => source.id === parsed.data.source.id);
         if (index < 0) sources.push(parsed.data.source); else sources[index] = parsed.data.source;
-        const next = { ...config, kastleAccess: sources }; await store.save(next);
-        return c.json({ revision: revision(next), applyMode: "restart" });
-      } catch { return c.json({ error: "Grant could not be saved. Select an enabled project and check the configuration." }, 400); }
-    });
+        draft.kastleAccess = sources;
+      });
+      return c.json({ revision: revision(next), applyMode: "restart" });
+    } catch (error) {
+      if (error instanceof ConfigRevisionError) return c.json({ error: "Settings changed elsewhere. Reload before saving." }, 409);
+      return c.json({ error: "Grant could not be saved. Select an enabled project and check the configuration." }, 400);
+    }
   });
   app.delete("/api/access/sources/:id", async c => {
     const parsed = z.object({ revision: revisionSchema }).strict().safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "A current settings revision is required." }, 400);
-    return serialize(async () => {
-      try {
-        const config = await store.load();
-        if (parsed.data.revision !== revision(config)) return c.json({ error: "Settings changed elsewhere. Reload before removing." }, 409);
-        if (!config.kastleAccess?.some(source => source.id === c.req.param("id"))) return c.json({ error: "Grant not found." }, 404);
-        const next = { ...config, kastleAccess: config.kastleAccess.filter(source => source.id !== c.req.param("id")) }; await store.save(next);
-        return c.json({ revision: revision(next), applyMode: "restart" });
-      } catch { return c.json({ error: "Grant could not be removed." }, 400); }
-    });
+    const missing = Error("Grant not found.");
+    try {
+      await store.load();
+      const next = await store.update(draft => {
+        expectRevision(draft, parsed.data.revision);
+        if (!draft.kastleAccess?.some(source => source.id === c.req.param("id"))) throw missing;
+        draft.kastleAccess = draft.kastleAccess.filter(source => source.id !== c.req.param("id"));
+      });
+      return c.json({ revision: revision(next), applyMode: "restart" });
+    } catch (error) {
+      if (error instanceof ConfigRevisionError) return c.json({ error: "Settings changed elsewhere. Reload before removing." }, 409);
+      if (error === missing) return c.json({ error: missing.message }, 404);
+      return c.json({ error: "Grant could not be removed." }, 400);
+    }
   });
   app.post("/api/access/sources/:id/check", async c => {
     try {

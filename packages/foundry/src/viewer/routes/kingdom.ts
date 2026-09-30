@@ -68,9 +68,8 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
       const connection = new KingdomRuntimeConnection(settings, sessionCount, fetch, handlers);
       try {
         await connection.start();
-        const config = await store.load();
-        
-        await store.save({ ...config, kingdomRuntime: settings });
+        await store.load();
+        await store.update(draft => { draft.kingdomRuntime = settings; });
         activate(connection);
       } catch (error) { connection.stop(); await unlink(credentialFile).catch(() => {}); throw error; }
       pending = undefined;
@@ -88,9 +87,9 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     busy = true;
     try {
       pending = undefined;
-      const { kingdomRuntime, ...config } = await store.load();
+      const { kingdomRuntime } = await store.load();
       if (kingdomRuntime) {
-        await store.save(config);
+        await store.update(draft => { delete draft.kingdomRuntime; });
         activate(null);
         await unlink(kingdomRuntime.credentialFile).catch(() => {});
       }

@@ -469,7 +469,7 @@ First-class cost tracking and usage analytics panel:
 | `/api/threads` | GET | Thread state, agents, layers |
 | `/api/events` | GET | Event stream (filterable) |
 | `/api/actions` | POST | Operator commands (pause, inspect, etc.) |
-| `/api/settings` | GET/PUT | Full config read/write |
+| `/api/settings` | GET/PUT | Full config read/write; GET and writes return `X-Config-Revision`, and a write sending it back is rejected with 409 if stale |
 | `/api/settings/:section` | PATCH | Partial config update |
 | `/api/settings/:section/:id` | DELETE | Remove config item |
 | `/api/assist` | POST | AI config analysis |

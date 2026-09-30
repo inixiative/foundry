@@ -7,12 +7,13 @@ import type {
   TokenTracker,
   ToolRegistry,
 } from "@inixiative/foundry-core";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { fromSettingsConfig, type ProjectRegistry } from "../../agents/project";
 import type { ActionHandler, OperatorAction } from "../actions";
 import type { AIAssist, AssistRequest } from "../ai-assist";
 import type { AnalyticsStore, RollupPeriod } from "../analytics";
 import {
+  ConfigRevisionError,
   createProject,
   projectSources,
   type ConfigStore,
@@ -25,6 +26,18 @@ import { FoundryTunnel, type TunnelInfo } from "../tunnel";
 import { SESSION_COOKIE, sessionValue } from "../request-auth";
 import { FoundrySelfChatStore, type SelfChatFocus } from "../foundry-self-chat";
 import { registerAccessRoutes } from "./access";
+
+/** Optional optimistic-concurrency token for settings writes; GET and writes echo the committed revision. */
+const REVISION_HEADER = "X-Config-Revision";
+
+async function writeSettings(c: Context, configStore: ConfigStore, work: (expected?: number) => Promise<unknown>, body: () => unknown) {
+  const raw = c.req.header(REVISION_HEADER);
+  if (raw !== undefined && !/^\d+$/.test(raw)) return c.json({ error: `${REVISION_HEADER} must be a revision number` }, 400);
+  try { await work(raw === undefined ? undefined : Number(raw)); }
+  catch (err) { return c.json({ error: (err as Error).message }, err instanceof ConfigRevisionError ? 409 : 400); }
+  c.header(REVISION_HEADER, String(configStore.revision));
+  return c.json(body());
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -142,37 +155,36 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   });
 
   app.get("/api/settings", async (c) => {
-    return c.json(await configStore.load());
+    await configStore.load();
+    c.header(REVISION_HEADER, String(configStore.revision));
+    return c.json(configStore.config);
   });
 
   app.put("/api/settings", async (c) => {
     const body = await c.req.json<FoundryConfig>();
     await configStore.load();
-    try { await configStore.save({ ...body, kingdomRuntime: configStore.config.kingdomRuntime }); }
-    catch (err) { return c.json({ error: (err as Error).message }, 400); }
-    return c.json({ ok: true });
+    return writeSettings(c, configStore,
+      (expected) => configStore.update((current) => ({ ...body, kingdomRuntime: current.kingdomRuntime }), expected),
+      () => ({ ok: true }));
   });
 
   app.patch("/api/settings/:section", async (c) => {
     const section = c.req.param("section");
     const body = await c.req.json<Record<string, unknown>>();
     await configStore.load();
-    try { return c.json(await configStore.patch(section, body)); }
-    catch (err) { return c.json({ error: (err as Error).message }, 400); }
+    return writeSettings(c, configStore, (expected) => configStore.patch(section, body, expected), () => configStore.config);
   });
 
   app.delete("/api/settings/:section/:id", async (c) => {
     const section = c.req.param("section");
     const id = c.req.param("id");
     await configStore.load();
-    const updated = await configStore.deleteItem(section, id);
-    return c.json(updated);
+    return writeSettings(c, configStore, (expected) => configStore.deleteItem(section, id, expected), () => configStore.config);
   });
 
   app.post("/api/setup/complete", async (c) => {
-    const config = await configStore.load();
-    config.setupComplete = true;
-    await configStore.save(config);
+    await configStore.load();
+    await configStore.update((draft) => { draft.setupComplete = true; });
     return c.json({ ok: true });
   });
 
@@ -349,7 +361,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.delete("/api/projects/:id", async (c) => {
     const id = c.req.param("id");
     await configStore.load();
-    await configStore.deleteItem("projects", id);
+    try { await configStore.deleteItem("projects", id); }
+    catch (err) { return c.json({ error: (err as Error).message }, 400); }
     if (projectRegistry) projectRegistry.remove(id);
     deps.threadsChanged();
     return c.json({ ok: true });
@@ -370,27 +383,18 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const section = c.req.param("section");
     const body = await c.req.json<Record<string, unknown>>();
     await configStore.load();
-    const cfg = configStore.config;
-    const current = cfg.projects[id];
-    if (!current) return c.json({ error: "project not found" }, 404);
-    // Mutate a copy: the live configuration changes only after the store validates the patch.
-    const project = structuredClone(current);
-
-    if (section === "sources") {
-      project.sources = { ...project.sources, ...body } as Record<string, any>;
-    } else if (section === "defaults") {
-      project.defaults = { ...project.defaults, ...body } as any;
-    } else if (section === "agents") {
-      project.agents = { ...project.agents, ...body } as Record<string, any>;
-    } else if (section === "layers") {
-      project.layers = { ...project.layers, ...body } as Record<string, any>;
-    } else {
+    if (!configStore.config.projects[id]) return c.json({ error: "project not found" }, 404);
+    if (section !== "sources" && section !== "defaults" && section !== "agents" && section !== "layers")
       return c.json({ error: `unknown section: ${section}` }, 400);
-    }
 
-    try { await configStore.patch("projects", { [id]: project }); }
-    catch (err) { return c.json({ error: (err as Error).message }, 400); }
-    return c.json({ ok: true, project });
+    try {
+      const next = await configStore.update((draft) => {
+        const project = draft.projects[id];
+        if (!project) throw Error("project not found");
+        project[section] = { ...project[section], ...body } as any;
+      });
+      return c.json({ ok: true, project: next.projects[id] });
+    } catch (err) { return c.json({ error: (err as Error).message }, 400); }
   });
 
   app.get("/api/projects/:id/resolved/layers", async (c) => {
@@ -635,8 +639,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       c.header("Set-Cookie", `${SESSION_COOKIE}=${sessionValue(tunnel.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure}`);
       try {
         await tunnel.start();
-        cfg.tunnel = { ...tunnelCfg, enabled: true };
-        await configStore.save(cfg);
+        await configStore.update((draft) => { draft.tunnel = { ...(draft.tunnel ?? tunnelCfg), enabled: true }; });
         return c.json({ active: true, url: tunnel.info!.url });
       } catch {
         await tunnel.stop();
@@ -653,25 +656,26 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (!tunnel) return c.json({ error: "No tunnel running" }, 400);
       await tunnel.stop();
       const cfg = await configStore.load();
-      if (cfg.tunnel) { cfg.tunnel.enabled = false; await configStore.save(cfg); }
+      if (cfg.tunnel) await configStore.update((draft) => { if (draft.tunnel) draft.tunnel.enabled = false; });
       return c.json({ active: false });
     } finally { changingTunnel = false; }
   });
 
   app.patch("/api/tunnel", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const cfg = await configStore.load();
-    const current = cfg.tunnel ?? { enabled: false };
+    await configStore.load();
 
     if ("password" in body) return c.json({ error: "Use the private tunnel-token file for credentials" }, 400);
     if (body.provider !== undefined && !["localtunnel", "cloudflared"].includes(String(body.provider)))
       return c.json({ error: "Unknown tunnel provider" }, 400);
-    if (body.provider === "localtunnel" || body.provider === "cloudflared") current.provider = body.provider;
-    if (typeof body.subdomain === "string") current.subdomain = body.subdomain || undefined;
 
-    cfg.tunnel = current;
-    await configStore.save(cfg);
-    return c.json({ ok: true, tunnel: current });
+    const next = await configStore.update((draft) => {
+      const current = draft.tunnel ?? { enabled: false };
+      if (body.provider === "localtunnel" || body.provider === "cloudflared") current.provider = body.provider;
+      if (typeof body.subdomain === "string") current.subdomain = body.subdomain || undefined;
+      draft.tunnel = current;
+    });
+    return c.json({ ok: true, tunnel: next.tunnel });
   });
 
   // -- MCP server management --
@@ -687,30 +691,29 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   });
 
   app.post("/api/mcp/enable", async (c) => {
-    const cfg = await configStore.load();
-    cfg.mcp = { ...cfg.mcp, enabled: true, transport: cfg.mcp?.transport ?? "stdio" };
-    await configStore.save(cfg);
-    return c.json({ ok: true, mcp: cfg.mcp });
+    await configStore.load();
+    const next = await configStore.update((draft) => {
+      draft.mcp = { ...draft.mcp, enabled: true, transport: draft.mcp?.transport ?? "stdio" };
+    });
+    return c.json({ ok: true, mcp: next.mcp });
   });
 
   app.post("/api/mcp/disable", async (c) => {
-    const cfg = await configStore.load();
-    if (cfg.mcp) cfg.mcp.enabled = false;
-    await configStore.save(cfg);
+    await configStore.load();
+    await configStore.update((draft) => { if (draft.mcp) draft.mcp.enabled = false; });
     return c.json({ ok: true });
   });
 
   app.patch("/api/mcp", async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const cfg = await configStore.load();
-    const current: McpSettingsConfig = cfg.mcp ?? { enabled: false };
-
-    if (typeof body.transport === "string") current.transport = body.transport as "stdio" | "sse";
-    if (typeof body.enabled === "boolean") current.enabled = body.enabled;
-
-    cfg.mcp = current;
-    await configStore.save(cfg);
-    return c.json({ ok: true, mcp: current });
+    await configStore.load();
+    const next = await configStore.update((draft) => {
+      const current: McpSettingsConfig = draft.mcp ?? { enabled: false };
+      if (typeof body.transport === "string") current.transport = body.transport as "stdio" | "sse";
+      if (typeof body.enabled === "boolean") current.enabled = body.enabled;
+      draft.mcp = current;
+    });
+    return c.json({ ok: true, mcp: next.mcp });
   });
 
   /**
@@ -747,11 +750,12 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     writeFileSync(mcpJsonPath, JSON.stringify(mcpJson, null, 2));
 
     // Track installation in config
-    cfg.mcp = cfg.mcp ?? { enabled: true };
-    cfg.mcp.enabled = true;
-    cfg.mcp.installedProjects = cfg.mcp.installedProjects ?? {};
-    cfg.mcp.installedProjects[projectId] = mcpJsonPath;
-    await configStore.save(cfg);
+    await configStore.update((draft) => {
+      const mcp = draft.mcp ?? { enabled: true };
+      mcp.enabled = true;
+      mcp.installedProjects = { ...mcp.installedProjects, [projectId]: mcpJsonPath };
+      draft.mcp = mcp;
+    });
 
     return c.json({
       ok: true,
@@ -774,8 +778,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
 
     if (cfg.mcp?.installedProjects) {
-      delete cfg.mcp.installedProjects[projectId];
-      await configStore.save(cfg);
+      await configStore.update((draft) => { delete draft.mcp?.installedProjects?.[projectId]; });
     }
 
     return c.json({ ok: true, projectId });

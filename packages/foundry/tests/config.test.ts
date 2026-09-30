@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConfigStore, defaultConfig, type FoundryConfig } from "../src/viewer/config";
+import { ConfigRevisionError, ConfigStore, defaultConfig, type FoundryConfig } from "../src/viewer/config";
 
 function buildConfig(): FoundryConfig {
   const config = defaultConfig();
@@ -242,5 +242,102 @@ describe("ConfigStore project resolution", () => {
     expect(loaded.providers.openai.baseUrl).toBe("https://example.test/v1");
     expect(loaded.providers.openai.models.map((model) => model.id)).toContain("gpt-6-astra");
     expect(loaded.providers.codex.models.map((model) => model.id)).toContain("gpt-6-astra");
+  });
+});
+
+describe("ConfigStore persistence", () => {
+  let dir: string;
+  let store: ConfigStore;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "foundry-config-store-"));
+    store = new ConfigStore(dir);
+    await store.save(buildConfig());
+  });
+
+  afterEach(() => {
+    chmodSync(dir, 0o700);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a failed write leaves live and persisted config unchanged", async () => {
+    const live = store.config, disk = readFileSync(join(dir, "settings.json"), "utf8"), revision = store.revision;
+    chmodSync(dir, 0o500);
+    await expect(store.patch("defaults", { model: "unwritten" })).rejects.toThrow();
+    await expect(store.update((draft) => { draft.layers.system.prompt = "unwritten"; })).rejects.toThrow();
+    chmodSync(dir, 0o700);
+    expect(store.config).toBe(live);
+    expect(store.config.defaults.model).not.toBe("unwritten");
+    expect(store.config.layers.system.prompt).toBe("System layer");
+    expect(store.revision).toBe(revision);
+    expect(readFileSync(join(dir, "settings.json"), "utf8")).toBe(disk);
+    expect(readdirSync(dir)).toEqual(["settings.json"]);
+  });
+
+  test("concurrent mutations apply in order against the latest committed config", async () => {
+    const revision = store.revision;
+    await Promise.all([
+      store.patch("layers", { a: { ...store.config.layers.system, id: "a" } }),
+      store.update((draft) => { draft.layers.b = { ...draft.layers.system, id: "b" }; }),
+      store.patch("defaults", { model: "concurrent" }),
+    ]);
+    expect(Object.keys(store.config.layers)).toEqual(["system", "docs", "a", "b"]);
+    expect(store.config.defaults.model).toBe("concurrent");
+    expect(store.revision).toBe(revision + 3);
+    const reloaded = await new ConfigStore(dir).load();
+    expect(Object.keys(reloaded.layers)).toEqual(["system", "docs", "a", "b"]);
+    expect(reloaded.defaults.model).toBe("concurrent");
+  });
+
+  test("update works on a copy: callers' references never see uncommitted or later changes", async () => {
+    const before = store.config;
+    await store.update((draft) => { draft.layers.system.prompt = "changed"; });
+    expect(before.layers.system.prompt).toBe("System layer");
+    expect(store.config.layers.system.prompt).toBe("changed");
+    const config = buildConfig();
+    await store.save(config);
+    config.layers.system.prompt = "caller edit";
+    expect(store.config.layers.system.prompt).toBe("System layer");
+  });
+
+  test("deleteItem validates the result and does not mutate prior references", async () => {
+    const before = store.config;
+    await store.deleteItem("layers", "docs");
+    expect(before.layers.docs).toBeDefined();
+    expect(store.config.layers.docs).toBeUndefined();
+    expect((await new ConfigStore(dir).load()).layers.docs).toBeUndefined();
+
+    const projectId = crypto.randomUUID();
+    await store.update((draft) => {
+      draft.projects[projectId] = { id: projectId, label: "Team", path: dir };
+      draft.kastleAccess = [{ id: crypto.randomUUID(), name: "Team issues", url: "http://127.0.0.1:1", credentialFile: join(dir, "access.json"),
+        integrationId: crypto.randomUUID(), signetId: crypto.randomUUID(), projectIds: [projectId] }];
+    });
+    const referenced = store.config;
+    await expect(store.deleteItem("projects", projectId)).rejects.toThrow("Kastle access references an unavailable project");
+    expect(store.config).toBe(referenced);
+    expect(store.config.projects[projectId]).toBeDefined();
+    expect((await new ConfigStore(dir).load()).projects[projectId]).toBeDefined();
+  });
+
+  test("a stale expected revision is rejected without writing", async () => {
+    const stale = store.revision;
+    await store.patch("defaults", { model: "first" }, stale);
+    await expect(store.patch("defaults", { model: "second" }, stale)).rejects.toBeInstanceOf(ConfigRevisionError);
+    await expect(store.deleteItem("layers", "docs", stale)).rejects.toBeInstanceOf(ConfigRevisionError);
+    expect(store.config.defaults.model).toBe("first");
+    expect(store.config.layers.docs).toBeDefined();
+    await store.patch("defaults", { model: "second" }, store.revision);
+    expect(store.config.defaults.model).toBe("second");
+  });
+
+  test("load advances the revision only when settings changed on disk", async () => {
+    const revision = store.revision;
+    await store.load();
+    expect(store.revision).toBe(revision);
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...store.config, defaults: { ...store.config.defaults, model: "external" } }));
+    await store.load();
+    expect(store.config.defaults.model).toBe("external");
+    expect(store.revision).toBe(revision + 1);
   });
 });
