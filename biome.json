@@ -1,0 +1,6 @@
+{
+  "extends": ["@inixiative/config/biome/base.json"],
+  "files": {
+    "includes": ["!packages/foundry/src/viewer/ui/vendor", "!packages/foundry/tests/fixtures/vcr"]
+  }
+}
