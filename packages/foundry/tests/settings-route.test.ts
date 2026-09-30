@@ -12,7 +12,7 @@ import {
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
 import { ActionHandler } from '../src/viewer/actions';
-import { ConfigStore, starterConfig } from '../src/viewer/config';
+import { ConfigStore, type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { registerControlRoutes } from '../src/viewer/routes/control';
 
 test('reading settings and writing them back never persists runtime-generated layers', async () => {
@@ -46,10 +46,12 @@ test('reading settings and writing them back never persists runtime-generated la
       threadsChanged: () => {},
     });
 
-    const definitions = await (await app.request('/api/definitions')).json();
-    expect(definitions.layers.map((l: { id: string }) => l.id)).toContain('thread-knowledge:docs');
+    const definitions = (await (await app.request('/api/definitions')).json()) as {
+      layers: { id: string }[];
+    };
+    expect(definitions.layers.map((l) => l.id)).toContain('thread-knowledge:docs');
 
-    const settings = await (await app.request('/api/settings')).json();
+    const settings = (await (await app.request('/api/settings')).json()) as FoundryConfig;
     expect(Object.keys(settings.layers)).toEqual([]);
     const put = await app.request('/api/settings', {
       method: 'PUT',
@@ -107,7 +109,7 @@ test('settings writes accept an optional expected revision and reject stale ones
     const read = await app.request('/api/settings');
     const revision = read.headers.get('x-config-revision')!;
     expect(revision).toBe(String(store.revision));
-    const settings = await read.json();
+    const settings = (await read.json()) as { revision?: unknown };
     expect(settings.revision).toBeUndefined();
 
     const first = await patch('first', revision);

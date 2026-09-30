@@ -12,11 +12,19 @@ import {
   type LLMProvider,
 } from '@inixiative/foundry-core';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
+import type { StoredMessage } from '../src/persistence/local-session-store';
+import type { PersistedTraceRecord } from '../src/persistence/trace-record';
 import { ConfigStore, starterConfig } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
 import { mergeMessageHistory } from '../src/viewer/ui/conversation-state.js';
 import { traceInjection } from '../src/viewer/ui/inspector-data.js';
 import { connectStreams } from './helpers/data-stream';
+
+/** A stored trace as the traces route returns it; `root` is the failed root span. */
+type TraceBody = PersistedTraceRecord & {
+  root: { annotations: { failure: Record<string, unknown> } };
+};
+type HistoryBody = { messages: StoredMessage[] };
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -36,7 +44,6 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
         model: 'mock',
         prompt: 'Execute',
         temperature: 0,
-        maxTokens: 256,
         visibleLayers: [],
         peers: [],
         maxDepth: 1,
@@ -133,7 +140,9 @@ for (const streaming of [false, true]) {
       persistence: 'committed',
     });
     expect(body.meta.injection).toBeUndefined();
-    const trace = await (await runtime.app.request(`/api/traces/${body.traceId}`)).json();
+    const trace = (await (
+      await runtime.app.request(`/api/traces/${body.traceId}`)
+    ).json()) as TraceBody;
     expect(trace.root).toMatchObject({
       input: 'pre-provider',
       status: 'error',
@@ -159,10 +168,14 @@ test('factory provider failure retains boundary input, partial output and histor
     role: 'user',
     content: 'partial-turn',
   });
-  const originalTrace = await (await first.app.request(`/api/traces/${body.traceId}`)).json();
+  const originalTrace = (await (
+    await first.app.request(`/api/traces/${body.traceId}`)
+  ).json()) as TraceBody;
   first.close();
   const second = await make();
-  const history = await (await second.app.request('/api/messages?threadId=main')).json();
+  const history = (await (
+    await second.app.request('/api/messages?threadId=main')
+  ).json()) as HistoryBody;
   const messages = mergeMessageHistory([], history.messages);
   expect(messages[1]).toMatchObject({
     traceId: body.traceId,
@@ -170,7 +183,9 @@ test('factory provider failure retains boundary input, partial output and histor
     streaming: false,
     storage: 'server',
   });
-  const trace = await (await second.app.request(`/api/traces/${body.traceId}`)).json();
+  const trace = (await (
+    await second.app.request(`/api/traces/${body.traceId}`)
+  ).json()) as TraceBody;
   expect(trace).toEqual(originalTrace);
   expect(traceInjection(trace)).toEqual(body.meta.injection);
   expect(trace.root.annotations.failure.partialOutput).toBe('partial:partial-turn');
@@ -312,7 +327,9 @@ test('disconnecting the stream reader does not lose partial failure evidence or 
   }
   await finished;
   expect(client.frames().some((frame) => frame.payload?.kind === 'error')).toBe(false);
-  const history = await (await runtime.app.request('/api/messages?threadId=main')).json();
+  const history = (await (
+    await runtime.app.request('/api/messages?threadId=main')
+  ).json()) as HistoryBody;
   expect(history.messages[1]).toMatchObject({
     error: 'failure after disconnect',
     meta: { persistence: 'committed', partialOutput: 'before disconnect' },
@@ -340,7 +357,9 @@ test('journal failure rolls back trace and response, exposes unsaved evidence an
   expect(first.localStore!.turn('write-failure')?.status).toBe('active');
   expect(first.localStore!.messages('main')).toHaveLength(1);
   expect(first.localStore!.traceForTurn('write-failure')).toBeUndefined();
-  const trace = await (await first.app.request(`/api/traces/${body.traceId}`)).json();
+  const trace = (await (
+    await first.app.request(`/api/traces/${body.traceId}`)
+  ).json()) as TraceBody;
   expect(trace.root.annotations.failure.persistence).toBe('failed');
   const cached = [
     {
@@ -354,7 +373,9 @@ test('journal failure rolls back trace and response, exposes unsaved evidence an
   first.close();
   const second = await make();
   expect(second.localStore!.turn('write-failure')?.status).toBe('interrupted');
-  const history = await (await second.app.request('/api/messages?threadId=main')).json();
+  const history = (await (
+    await second.app.request('/api/messages?threadId=main')
+  ).json()) as HistoryBody;
   const recovered = mergeMessageHistory(cached, history.messages).find(
     (message: any) => message.actor === 'agent',
   );

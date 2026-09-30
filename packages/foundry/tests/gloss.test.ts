@@ -260,6 +260,7 @@ describe('project routes', () => {
     expect((await req('read?file=..%2Foutside.ts')).status).toBe(400);
     expect((await req('settings', 'PUT', { enabled: true, display: 'margin' })).status).toBe(200);
     expect((await req('status')).status).toBe(200);
-    expect((await (await req('status')).json()).settings.enabled).toBe(true);
+    const status = (await (await req('status')).json()) as { settings: { enabled: boolean } };
+    expect(status.settings.enabled).toBe(true);
   });
 });

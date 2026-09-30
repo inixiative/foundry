@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test';
-// @ts-expect-error native browser module
 import {
   applyFlowFrame,
   domainLayer,

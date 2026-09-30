@@ -95,7 +95,6 @@ function setup(scripts: Record<string, Step[]>) {
       model: 'mock',
       prompt: 'Execute',
       temperature: 0,
-      maxTokens: 256,
       visibleLayers: [],
       peers: [],
       maxDepth: 1,
@@ -145,8 +144,10 @@ function setup(scripts: Record<string, Step[]>) {
   return { factory, runtime, reviews, tools };
 }
 
-const reviewFor = (reviews: Array<{ request: string; tools: string[] }>, request: string) =>
-  reviews.find((r) => r.request.startsWith(request));
+const reviewFor = (
+  reviews: Array<{ request: string; tools: string[]; user: string }>,
+  request: string,
+) => reviews.find((r) => r.request.startsWith(request));
 
 describe('tool evidence correlation', () => {
   test('two overlapping executor turns each review only the tools they executed, whatever the completion order', async () => {
@@ -452,7 +453,7 @@ describe('tool evidence correlation', () => {
     expect(seen[0].source).toBe('thread:a');
 
     const dispatches = thread.signals.recent('dispatch');
-    expect((dispatches.at(-1)!.content as { dispatchId: string }).dispatchId).toBe(
+    expect((dispatches.at(-1)!.content as { dispatchId: unknown }).dispatchId).toBe(
       content.dispatchId,
     );
     expect(result.output).toBe('done-P');

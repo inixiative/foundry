@@ -63,7 +63,7 @@ test("G2: a project-created thread executes in that project's directory", async 
   try {
     const response = await post('/api/threads', { id: 'created', projectId: project.id });
     expect(response.status).toBe(201);
-    expect((await response.json()).meta.cwd).toBe(project.path);
+    expect(((await response.json()) as { meta: { cwd: string } }).meta.cwd).toBe(project.path);
     expect(project.threads.get('created')!.meta.cwd).toBe(project.path);
   } finally {
     runtime.disposeAll();

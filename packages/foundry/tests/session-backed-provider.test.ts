@@ -236,5 +236,5 @@ test('warm native authentication refusal is classified as not admitted without a
   }
   expect(error).toBeInstanceOf(Error);
   expect(adapter.sessions[0].sent).toHaveLength(1);
-  expect(provider.completionLifecycle.admission({ error })).toBe('not-admitted');
+  expect(provider.completionLifecycle.admission?.({ error })).toBe('not-admitted');
 });

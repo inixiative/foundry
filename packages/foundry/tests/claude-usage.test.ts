@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { AnthropicProvider } from '../src/providers/anthropic';
 import { ClaudeCodeProvider } from '../src/providers/claude-code';
 
+const stubFetch = (
+  respond: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+): typeof fetch => Object.assign(respond, { preconnect: fetch.preconnect });
+
 const usage = {
   input_tokens: 10,
   output_tokens: 20,
@@ -52,10 +56,12 @@ describe('Claude provider usage', () => {
     const originalFetch = globalThis.fetch;
     const provider = new AnthropicProvider({ apiKey: 'test-key' });
     try {
-      globalThis.fetch = (async () =>
-        new Response(
-          JSON.stringify({ content: [], model: 'test-model', usage, stop_reason: 'end_turn' }),
-        )) as typeof fetch;
+      globalThis.fetch = stubFetch(
+        async () =>
+          new Response(
+            JSON.stringify({ content: [], model: 'test-model', usage, stop_reason: 'end_turn' }),
+          ),
+      );
       expect((await provider.complete([{ role: 'user', content: 'test' }])).tokens).toEqual(
         expected,
       );
@@ -72,15 +78,17 @@ describe('Claude provider usage', () => {
         'event: message_delta\n',
         `data: ${JSON.stringify({ usage: { output_tokens: 0 }, delta: { stop_reason: 'end_turn' } })}\n\n`,
       ];
-      globalThis.fetch = (async () =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
-              controller.close();
-            },
-          }),
-        )) as typeof fetch;
+      globalThis.fetch = stubFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+                controller.close();
+              },
+            }),
+          ),
+      );
       const events = await Array.fromAsync(provider.stream([{ role: 'user', content: 'test' }]));
       expect(events.find((e) => e.type === 'usage')?.tokens).toEqual({
         input: 0,

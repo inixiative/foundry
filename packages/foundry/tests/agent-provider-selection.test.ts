@@ -45,7 +45,7 @@ test('configured providers execute their own cloned agents with separate auxilia
   harness.setRouter('router');
   harness.setDefaultExecutor('artificer');
   try {
-    const result = await harness.send('Inspect the work plan');
+    const result = await harness.send({ id: 'turn', payload: 'Inspect the work plan' });
     expect(result.result.output).toBe('ASTRA_EXECUTED');
     expect(calls.filter((c) => c.provider === 'codex')).toEqual([
       { provider: 'codex', threadId: 'lead', model: 'gpt-6-astra' },

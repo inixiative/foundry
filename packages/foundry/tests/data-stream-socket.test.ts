@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-// @ts-expect-error native browser module
 import { createDataStreamSocket } from '../src/viewer/ui/data-stream-socket.js';
 
 // Adapted from the template's packages/ui/src/lib/ws/createApiWebsocket.test.ts.

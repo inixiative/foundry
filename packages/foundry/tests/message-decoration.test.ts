@@ -665,8 +665,8 @@ describe('production runtime delivery', () => {
       thread.dispatch('worker', 'Go'),
       sleep(300).then(() => 'blocked' as const),
     ]);
-    expect(outcome).not.toBe('blocked');
-    const plan = (outcome as { meta: { injection: { plan: InjectionPlan } } }).meta.injection.plan;
+    if (outcome === 'blocked') throw new Error('dispatch blocked');
+    const plan = (outcome.meta as { injection: { plan: InjectionPlan } }).injection.plan;
     expect(plan.routing.status).toBe('timeout');
     expect(plan.snippets).toEqual(['ADVICE-security']);
     expect(runtime.get('stalled-router')!.flowOrchestrator.outstandingCalls).toBe(1);

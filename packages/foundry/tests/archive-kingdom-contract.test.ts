@@ -160,12 +160,12 @@ test('destinations with unknown fields are rejected and surfaced without crashin
     const app = new Hono();
     const registered = registerArchiveRoutes(app, journal, new EventStream(), f.dir);
     try {
-      const listed = await (await app.request('/api/archives/connections')).json();
+      type Listing = { configurationError?: string; connections?: unknown[] };
+      const listed = (await (await app.request('/api/archives/connections')).json()) as Listing;
       expect(listed.connections).toEqual([]);
       expect(listed.configurationError).toContain('archives.json');
-      expect((await (await app.request('/api/archives')).json()).configurationError).toContain(
-        'archives.json',
-      );
+      const archives = (await (await app.request('/api/archives')).json()) as Listing;
+      expect(archives.configurationError).toContain('archives.json');
     } finally {
       registered.store.close();
     }

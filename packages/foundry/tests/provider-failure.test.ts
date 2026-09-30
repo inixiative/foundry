@@ -72,7 +72,6 @@ for (const streaming of [false, true]) {
         model: 'mock',
         prompt: 'Execute',
         temperature: 0,
-        maxTokens: 100,
         visibleLayers: [],
         peers: [],
         maxDepth: 1,

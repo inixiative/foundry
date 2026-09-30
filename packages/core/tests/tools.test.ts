@@ -8,8 +8,9 @@ const fakeScript: ScriptTool = {
   id: 'script',
   kind: 'script',
   capability: 'exec:process',
-  async evaluate() {
-    return { ok: true, data: { result: 42, logs: [], durationMs: 1 }, summary: 'ok' };
+  async evaluate<T>() {
+    // The fake always evaluates to 42, whatever result type the caller names.
+    return { ok: true, data: { result: 42 as T, logs: [], durationMs: 1 }, summary: 'ok' };
   },
 };
 

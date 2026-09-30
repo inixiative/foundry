@@ -54,7 +54,7 @@ test("knowledge and learning event commit per domain without capturing another d
   expect(Object.keys(store.knowledge('a')!.domains)).toEqual(['security', 'docs']);
   expect(store.learningHistory('a')).toHaveLength(2);
   const snapshot = store.knowledge('a')!;
-  snapshot.domains.security.evidence[0].id = 'mutation';
+  (snapshot.domains.security.evidence[0] as { id: string }).id = 'mutation';
   expect(store.knowledge('a')!.domains.security.evidence[0].id).toBe('evidence-security');
 });
 
@@ -75,8 +75,10 @@ test('duplicate event is idempotent and revision conflict rolls back both record
 
 test('rejected learning is journaled without promoting a concurrent uncommitted revision', () => {
   const { store, thread, bundle, signal } = setup();
-  const rejected = signal('security');
-  rejected.content = { domain: 'security', decision: 'rejected' };
+  const rejected: Signal = {
+    ...signal('security'),
+    content: { domain: 'security', decision: 'rejected' },
+  };
   store.saveKnowledge(thread, bundle(), rejected);
   expect(store.knowledge('a')).toBeUndefined();
   expect(store.learningHistory('a')).toHaveLength(1);
@@ -90,7 +92,7 @@ test('thread IDs cannot transfer an existing journal to another project', () => 
   );
   expect(store.threads()[0].meta.projectId).toBe('P');
   const foreign = bundle();
-  foreign.domains.security.projectId = 'Q';
+  foreign.domains.security = { ...foreign.domains.security, projectId: 'Q' };
   expect(() => store.saveKnowledge(thread, foreign, signal('security', 'foreign-child'))).toThrow(
     'owner',
   );

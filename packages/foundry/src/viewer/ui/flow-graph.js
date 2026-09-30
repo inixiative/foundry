@@ -21,6 +21,7 @@ import {
 // Stream state
 // ---------------------------------------------------------------------------
 
+/** @param {string | null} [threadId] */
 export const emptyFlow = (threadId = null) => ({
   threadId,
   journal: 'loading',
@@ -139,6 +140,8 @@ const INACTIVE = new Set(['archived', 'completed', 'done']);
  * Threads and their subagent threads as a top-down tree. A thread whose parent is not in view is a root.
  * A node shows at most `maxChildren` children unless expanded; the rest fold into one "+N more" node,
  * as does everything past `maxNodes`.
+ * @param {unknown[] | null | undefined} threads
+ * @param {{ activeThreadId?: string | null, expanded?: Set<string>, maxChildren?: number, maxNodes?: number, promptCounts?: Record<string, number> }} [options]
  */
 export function threadGraph(
   threads,
@@ -386,7 +389,11 @@ function writebacksFor(learning, turnId) {
   return [...latest.values()];
 }
 
-/** One turn's recorded loop as a left-to-right graph. Edges carry the decision that connects two steps. */
+/**
+ * One turn's recorded loop as a left-to-right graph. Edges carry the decision that connects two steps.
+ * @param {unknown} turn
+ * @param {{ learning?: unknown[] }} [options]
+ */
 export function turnFlowGraph(turn, { learning = [] } = {}) {
   if (!turn) return { nodes: [], edges: [], width: 0, height: 0 };
   const nodes = [],

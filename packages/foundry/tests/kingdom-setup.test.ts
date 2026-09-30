@@ -41,7 +41,7 @@ function mockKingdom(
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
-    async fetch(request) {
+    async fetch(request): Promise<Response> {
       const path = new URL(request.url).pathname,
         body = (await request.json().catch(() => ({}))) as any;
       const action = path.replace(/^\/api\/v1\//, '');

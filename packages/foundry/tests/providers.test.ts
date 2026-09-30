@@ -18,6 +18,11 @@ import {
 // assembledToMessages
 // ---------------------------------------------------------------------------
 
+/** A test double for the global fetch; Bun's fetch type also carries preconnect. */
+const fakeFetch = (
+  impl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+): typeof fetch => Object.assign(impl, { preconnect: fetch.preconnect });
+
 describe('assembledToMessages', () => {
   test('converts full assembled context to messages', () => {
     const assembled: AssembledContext = {
@@ -121,7 +126,7 @@ describe('AnthropicProvider', () => {
   test('throws on API error', async () => {
     // Mock fetch to return an error
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response('Unauthorized', { status: 401 });
+    globalThis.fetch = fakeFetch(async () => new Response('Unauthorized', { status: 401 }));
 
     const provider = new AnthropicProvider({ apiKey: 'bad-key' });
 
@@ -137,10 +142,10 @@ describe('AnthropicProvider', () => {
   test('sends correct request format', async () => {
     let capturedBody: any;
     let capturedHeaders: any;
-    let capturedUrl: string;
+    let capturedUrl = '';
 
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (url: any, init: any) => {
+    globalThis.fetch = fakeFetch(async (url: any, init: any) => {
       capturedUrl = url;
       capturedHeaders = init.headers;
       capturedBody = JSON.parse(init.body);
@@ -152,7 +157,7 @@ describe('AnthropicProvider', () => {
           stop_reason: 'end_turn',
         }),
       );
-    };
+    });
 
     const provider = new AnthropicProvider({
       apiKey: 'sk-test',
@@ -191,7 +196,7 @@ describe('AnthropicProvider', () => {
   test('respects baseUrl override', async () => {
     let capturedUrl: string = '';
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (url: any, init: any) => {
+    globalThis.fetch = fakeFetch(async (url: any, init: any) => {
       capturedUrl = url;
       return new Response(
         JSON.stringify({
@@ -201,7 +206,7 @@ describe('AnthropicProvider', () => {
           stop_reason: 'end_turn',
         }),
       );
-    };
+    });
 
     const provider = new AnthropicProvider({
       apiKey: 'key',
@@ -228,7 +233,7 @@ describe('OpenAIProvider', () => {
     let capturedHeaders: any;
 
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (_url: any, init: any) => {
+    globalThis.fetch = fakeFetch(async (_url: any, init: any) => {
       capturedHeaders = init.headers;
       capturedBody = JSON.parse(init.body);
       return new Response(
@@ -238,7 +243,7 @@ describe('OpenAIProvider', () => {
           usage: { prompt_tokens: 10, completion_tokens: 5 },
         }),
       );
-    };
+    });
 
     const provider = new OpenAIProvider({ apiKey: 'sk-test' });
 
@@ -263,7 +268,7 @@ describe('OpenAIProvider', () => {
 
   test('throws on API error', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response('Rate limited', { status: 429 });
+    globalThis.fetch = fakeFetch(async () => new Response('Rate limited', { status: 429 }));
 
     const provider = new OpenAIProvider({ apiKey: 'key' });
 
@@ -304,7 +309,7 @@ describe('GeminiProvider', () => {
     let capturedHeaders: any;
 
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (url: any, init: any) => {
+    globalThis.fetch = fakeFetch(async (url: any, init: any) => {
       capturedUrl = url;
       capturedHeaders = init.headers;
       capturedBody = JSON.parse(init.body);
@@ -322,7 +327,7 @@ describe('GeminiProvider', () => {
           },
         }),
       );
-    };
+    });
 
     const provider = new GeminiProvider({
       apiKey: 'gem-key',
@@ -360,14 +365,14 @@ describe('GeminiProvider', () => {
   test('maps assistant role to model', async () => {
     let capturedBody: any;
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (_url: any, init: any) => {
+    globalThis.fetch = fakeFetch(async (_url: any, init: any) => {
       capturedBody = JSON.parse(init.body);
       return new Response(
         JSON.stringify({
           candidates: [{ content: { parts: [{ text: '' }] }, finishReason: 'STOP' }],
         }),
       );
-    };
+    });
 
     const provider = new GeminiProvider({ apiKey: 'key' });
 

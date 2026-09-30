@@ -163,13 +163,17 @@ describe('VCR (ported)', () => {
     })
       .queue('fetch', 's')
       .queue('list', 'l');
-    expect(
-      await vcr.captureResponse('fetch', async () => ({
-        status: 201,
-        body: { secret: 'x', visible: 'kept' },
-      })),
-    ).toEqual({ status: 201, body: { secret: 'REDACTED', visible: 'kept', transformed: true } });
-    expect(await vcr.capture('list', async () => [{ id: 1 }, { id: 2 }])).toEqual([
+    // The transforms reshape what the typed call returns, so compare the runtime value.
+    const response: unknown = await vcr.captureResponse('fetch', async () => ({
+      status: 201,
+      body: { secret: 'x', visible: 'kept' },
+    }));
+    expect(response).toEqual({
+      status: 201,
+      body: { secret: 'REDACTED', visible: 'kept', transformed: true },
+    });
+    const list: unknown = await vcr.capture('list', async () => [{ id: 1 }, { id: 2 }]);
+    expect(list).toEqual([
       { id: 1, seen: true },
       { id: 2, seen: true },
     ]);

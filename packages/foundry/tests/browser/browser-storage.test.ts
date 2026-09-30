@@ -5,6 +5,9 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { completionFixture } from '../helpers/completion-persistence-fixture';
 
+/** The viewer's store module as the page serves it at /ui/store.js. */
+type ViewerStore = typeof import('../../src/viewer/ui/store.js');
+
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
@@ -21,7 +24,19 @@ for (const errorName of ['QuotaExceededError', 'SecurityError']) {
       const runtime = fixture.make();
       const sql = (runtime.localStore as unknown as { db: Database }).db;
       if (committed) sql.exec('DROP TRIGGER reject_completed_message');
-      runtime.directory.restore([{ id: 'other', meta: { description: 'Other thread' } }]);
+      const now = Date.now();
+      runtime.directory.restore([
+        {
+          id: 'other',
+          meta: {
+            description: 'Other thread',
+            tags: [],
+            status: 'idle',
+            createdAt: now,
+            lastActiveAt: now,
+          },
+        },
+      ]);
       const server = Bun.serve({
         hostname: '127.0.0.1',
         port: 0,
@@ -83,13 +98,18 @@ for (const errorName of ['QuotaExceededError', 'SecurityError']) {
         await output.waitFor();
         const warning = page.locator('.chat-agent .chat-storage-warning').first();
         await warning.waitFor();
-        await page.waitForFunction(async () => (await import('/ui/store.js')).inflight.value === 0);
+        await page.waitForFunction(
+          async () =>
+            ((await import('/ui/store.js' as string)) as ViewerStore).inflight.value === 0,
+        );
         const expected = committed ? 'saved on the server' : 'only in this tab';
         expect(await warning.innerText()).toContain(expected);
         if (!committed) expect(await warning.innerText()).toContain('reload or close');
         else expect(await warning.innerText()).not.toContain('only in this tab');
         const state = await page.evaluate(async () =>
-          (await import('/ui/store.js')).messages.value.find((m: any) => m.actor === 'agent'),
+          ((await import('/ui/store.js' as string)) as ViewerStore).messages.value.find(
+            (m: any) => m.actor === 'agent',
+          ),
         );
         expect(state.output ?? state.content).toBe(fixture.output);
         expect(state.meta.persistence).toBe(committed ? 'committed' : 'failed');
@@ -106,7 +126,9 @@ for (const errorName of ['QuotaExceededError', 'SecurityError']) {
         await page.setViewportSize({ width: 1200, height: 950 });
         await page.getByText('Other thread', { exact: true }).first().click();
         await page.waitForFunction(
-          async () => (await import('/ui/store.js')).activeThreadId.value === 'other',
+          async () =>
+            ((await import('/ui/store.js' as string)) as ViewerStore).activeThreadId.value ===
+            'other',
         );
         expect(await page.locator('.chat-storage-warning').count()).toBe(0);
         await page.locator('.tree-label[title="main"]').click();
@@ -124,7 +146,10 @@ for (const errorName of ['QuotaExceededError', 'SecurityError']) {
         // The original journal row stays unresolved. This distinct request has
         // its own turn ID and input; ordinary cache writes also save the old result.
         await submit('A separate request; never replay the previous turn');
-        await page.waitForFunction(async () => (await import('/ui/store.js')).inflight.value === 0);
+        await page.waitForFunction(
+          async () =>
+            ((await import('/ui/store.js' as string)) as ViewerStore).inflight.value === 0,
+        );
         expect(await page.locator('.chat-storage-warning').count()).toBe(0);
         const restored = await page.evaluate(() =>
           JSON.parse(localStorage.getItem('foundry:msgs:main') || '[]').find(

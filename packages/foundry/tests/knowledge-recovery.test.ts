@@ -17,6 +17,14 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { ConfigStore, starterConfig } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
 
+/** The knowledge route's body: the fields these tests read. */
+type KnowledgeBody = {
+  status: string;
+  error?: string;
+  snapshot: { domains: Record<string, { content: string }> };
+  history: { signal: { content: { evidence: { messageId: string } } } }[];
+};
+
 const cleanup: Array<() => void> = [];
 afterEach(() => {
   for (const fn of cleanup.splice(0).reverse()) fn();
@@ -35,7 +43,6 @@ function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
         model: 'mock',
         prompt: 'Work',
         temperature: 0,
-        maxTokens: 256,
         visibleLayers: [],
         peers: [],
         maxDepth: 1,
@@ -127,13 +134,17 @@ test('committed private learning survives production viewer reconstruction and r
   const first = await make();
   expect((await send(first, 'main', 'first-turn')).status).toBe(200);
   await first.runtime.get('main')!.learningSettled();
-  const before = await (await first.app.request('/api/threads/main/knowledge')).json();
+  const before = (await (
+    await first.app.request('/api/threads/main/knowledge')
+  ).json()) as KnowledgeBody;
   expect(before.snapshot.domains.security.content).toBe('DURABLE-PRIVATE-SENTINEL');
   expect(before.history[0].signal.content.evidence.messageId).toBe('first-turn');
   first.close();
 
   const second = await make();
-  const after = await (await second.app.request('/api/threads/main/knowledge')).json();
+  const after = (await (
+    await second.app.request('/api/threads/main/knowledge')
+  ).json()) as KnowledgeBody;
   expect(after.snapshot).toEqual(before.snapshot);
   expect(after.history).toEqual(before.history);
   expect((await send(second, 'main', 'after-restart')).status).toBe(200);
@@ -193,7 +204,9 @@ test('failed knowledge writes quarantine the owning thread instead of continuing
   // The successful work result is separate from its asynchronous learning outcome.
   await Bun.sleep(10);
   expect(viewer.main.disposed).toBe(true);
-  const state = await (await viewer.app.request('/api/threads/main/knowledge')).json();
+  const state = (await (
+    await viewer.app.request('/api/threads/main/knowledge')
+  ).json()) as KnowledgeBody;
   expect(state.status).toBe('blocked');
   expect(state.error).toContain('simulated disk full');
   expect((await send(viewer, 'main', 'must-not-run')).status).toBe(409);
@@ -222,7 +235,9 @@ for (const corruption of ['checksum', 'owner'] as const) {
     else db.query("UPDATE session_knowledge SET record=? WHERE thread_id='main'").run(record);
     db.close();
     const second = await make();
-    const state = await (await second.app.request('/api/threads/main/knowledge')).json();
+    const state = (await (
+      await second.app.request('/api/threads/main/knowledge')
+    ).json()) as KnowledgeBody;
     expect(state.status).toBe('blocked');
     expect(second.main.disposed).toBe(true);
     expect((await send(second, 'main', 'cannot-use-corruption')).status).toBe(409);

@@ -32,7 +32,7 @@ import type { FoundryConfig } from '../src/viewer/config';
 
 function config(): FoundryConfig {
   return {
-    defaults: { provider: 'mock', model: 'mock-model', temperature: 0, maxTokens: 1024 },
+    defaults: { provider: 'mock', model: 'mock-model' },
     providers: {},
     agents: {
       'executor-answer': {
@@ -42,7 +42,6 @@ function config(): FoundryConfig {
         provider: 'mock',
         model: 'mock-model',
         temperature: 0,
-        maxTokens: 1024,
         visibleLayers: [],
         peers: [],
         maxDepth: 1,
@@ -55,7 +54,6 @@ function config(): FoundryConfig {
         prompt: 'System layer',
         sourceIds: ['system-src'],
         staleness: 0,
-        maxTokens: 0,
         enabled: true,
       },
       docs: {
@@ -63,7 +61,6 @@ function config(): FoundryConfig {
         prompt: 'Docs layer',
         sourceIds: ['docs-src'],
         staleness: 0,
-        maxTokens: 0,
         enabled: true,
       },
     },
@@ -160,7 +157,7 @@ describe('ThreadRuntimeManager', () => {
     expect(ra.flowOrchestrator).not.toBe(rb.flowOrchestrator);
     expect(ra.cartographer).not.toBe(rb.cartographer);
     expect(ra.domainLibrarians.get('docs')).not.toBe(rb.domainLibrarians.get('docs'));
-    expect(ra.domainLibrarians.get('docs')!.cache).toBe(a.stack.getLayer('docs'));
+    expect(a.stack.getLayer('docs')).toBe(ra.domainLibrarians.get('docs')!.cache);
 
     expect(a.stack.getLayer('thread-state')).toBe(ra.librarian.layer);
     expect(b.stack.getLayer('thread-state')).toBe(rb.librarian.layer);

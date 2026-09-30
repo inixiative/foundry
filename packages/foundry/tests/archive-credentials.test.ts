@@ -21,6 +21,10 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { FoundryCredentials } from '../src/providers/credentials';
 import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 
+/** A zero-argument fetch stub; `typeof fetch` also carries Bun's `preconnect`. */
+const stubFetch = (respond: () => Promise<Response>): typeof fetch =>
+  Object.assign(respond, { preconnect: fetch.preconnect });
+
 const temporary = () => mkdtempSync(join(tmpdir(), 'foundry-credentials-'));
 const scope = { service: 'archive', url: 'https://archive.example/', projectId: 'personal' };
 test('managed credentials enforce scope, private files, rotation and revocation without environment variables', async () => {
@@ -95,19 +99,25 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
       archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials),
     ).rejects.toThrow('401');
     await expect(credentials.resolve({ type: 'kingdom-runtime' }, scope)).rejects.toThrow('scope');
-    const identity = await credentials.kingdomIdentity((async () =>
-      Response.json({
-        data: { installationId, expiresAt: new Date(Date.now() + 60000).toISOString() },
-      })) as typeof fetch);
+    const identity = await credentials.kingdomIdentity(
+      stubFetch(async () =>
+        Response.json({
+          data: { installationId, expiresAt: new Date(Date.now() + 60000).toISOString() },
+        }),
+      ),
+    );
     expect(identity).toEqual({ url: 'https://kingdom.example' });
     await expect(
-      credentials.kingdomIdentity((async () =>
-        Response.json({
-          data: {
-            installationId: crypto.randomUUID(),
-            expiresAt: new Date(Date.now() + 60000).toISOString(),
-          },
-        })) as typeof fetch),
+      credentials.kingdomIdentity(
+        stubFetch(async () =>
+          Response.json({
+            data: {
+              installationId: crypto.randomUUID(),
+              expiresAt: new Date(Date.now() + 60000).toISOString(),
+            },
+          }),
+        ),
+      ),
     ).rejects.toThrow('mismatch');
   } finally {
     rmSync(dir, { recursive: true, force: true });

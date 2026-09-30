@@ -4,7 +4,6 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-// @ts-expect-error untyped viewer module (plain JS)
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
 import { durabilityFixture, untilSettled } from './phase-history-durability.test';
 

@@ -93,18 +93,21 @@ test('connection identity mismatch and non-private credentials fail without retu
   const credentialFile = join(directory, 'runtime.json'),
     secret = `kingdom_runtime_${'a'.repeat(43)}`;
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
-  const transport = (async () =>
-    Response.json({
-      data: {
-        installationId: crypto.randomUUID(),
-        userId: null,
-        owner: {
-          ownerModel: 'Organization',
-          organizationId: '11111111-1111-4111-8111-111111111111',
+  const transport = Object.assign(
+    async () =>
+      Response.json({
+        data: {
+          installationId: crypto.randomUUID(),
+          userId: null,
+          owner: {
+            ownerModel: 'Organization',
+            organizationId: '11111111-1111-4111-8111-111111111111',
+          },
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
         },
-        expiresAt: new Date(Date.now() + 60000).toISOString(),
-      },
-    })) as typeof fetch;
+      }),
+    { preconnect: fetch.preconnect },
+  );
   const connection = new KingdomRuntimeConnection(
     { url: 'https://kingdom.test', installationId: crypto.randomUUID(), credentialFile },
     () => 0,

@@ -11,8 +11,12 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 const transport = (fn: (url: string, init: RequestInit) => Promise<Response> | Response) => {
-  const spy = spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
-    Promise.resolve(fn(String(input), init!)),
+  const spy = spyOn(globalThis, 'fetch').mockImplementation(
+    Object.assign(
+      (input: string | URL | Request, init?: RequestInit) =>
+        Promise.resolve(fn(String(input), init!)),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
   );
   cleanup.push(() => spy.mockRestore());
   return spy;
@@ -112,7 +116,7 @@ test('canceling nonce acquisition refuses a late proof and never dispatches busi
   const rejected = pending.catch((error) => error);
   await entered.promise;
   controller.abort(new Error('nonce stopped'));
-  expect((await rejected).message).toBe('nonce stopped');
+  expect(((await rejected) as Error).message).toBe('nonce stopped');
   release.resolve(nonce());
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(spy).toHaveBeenCalledTimes(1);
@@ -157,7 +161,7 @@ test('abort interrupts a stalled response body and cancels its reader', async ()
   const rejected = pending.catch((error) => error);
   await reading.promise;
   controller.abort(new Error('body stopped'));
-  expect((await rejected).message).toBe('body stopped');
+  expect(((await rejected) as Error).message).toBe('body stopped');
   expect(canceled).toBe(true);
 });
 
@@ -183,7 +187,7 @@ test('first caller cancellation leaves one shared renewal for another caller', a
   await renewing.promise;
   const second = f.client.post('describe', {});
   controller.abort(new Error('first stopped'));
-  expect((await rejected).message).toBe('first stopped');
+  expect(((await rejected) as Error).message).toBe('first stopped');
   release.resolve(data(f.renewal));
   expect(await second).toEqual({ observed: true });
   expect(renewals).toBe(1);

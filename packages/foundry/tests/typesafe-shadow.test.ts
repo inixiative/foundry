@@ -52,7 +52,7 @@ function harness(yes = 0.95, confidence = 0.9, choice = 'hydrate-auth') {
 
 test('yes gate precedes dynamic Choice; reports shadow evidence without executing an action', async () => {
   const h = harness();
-  let seenContext;
+  let seenContext: unknown;
   const runner = new TypeSafeShadowRunner({
     client: h.client,
     catalog: (ctx) => {

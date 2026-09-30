@@ -21,7 +21,6 @@ import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
-// @ts-expect-error untyped viewer module (plain JS)
 import {
   expertParticipants,
   guardOutcomes,

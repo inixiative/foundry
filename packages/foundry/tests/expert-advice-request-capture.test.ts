@@ -10,7 +10,6 @@ import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type FlowTimingConfig } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
-// @ts-expect-error untyped viewer module (plain JS); the package tsconfig resolves it, the strict single-file command has no declaration for it
 import { expertParticipants, participantRequest } from '../src/viewer/ui/inspector-data.js';
 
 // Author cases for advice-phase request capture (Fable, CORE-006 LI). Controlled providers only; no model.

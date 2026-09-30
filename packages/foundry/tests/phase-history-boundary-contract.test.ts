@@ -4,7 +4,6 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-// @ts-expect-error The production inspector is plain JavaScript.
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
 import { abstain, m0Scenario } from './helpers/m0-domain-loop';
 
@@ -124,16 +123,12 @@ test('guard history joins the referenced input and preserves another same-domain
       ],
     },
   });
-  const outcomes = actual.flatMap((entry: { outcomes: unknown[] }) => entry.outcomes);
-  expect(
-    outcomes.find((entry: { status: string }) => entry.status === 'completed')?.request.messages[0]
-      .content,
-  ).toBe('ORIGINAL_REQUEST');
-  expect(outcomes.filter((entry: { status: string }) => entry.status === 'pending')).toHaveLength(
-    1,
+  const outcomes = (actual ?? []).flatMap((entry) => entry.outcomes);
+  expect(outcomes.find((entry) => entry.status === 'completed')?.request.messages[0].content).toBe(
+    'ORIGINAL_REQUEST',
   );
-  expect(
-    outcomes.find((entry: { status: string }) => entry.status === 'pending')?.request.messages[0]
-      .content,
-  ).toBe('SECOND_REQUEST');
+  expect(outcomes.filter((entry) => entry.status === 'pending')).toHaveLength(1);
+  expect(outcomes.find((entry) => entry.status === 'pending')?.request.messages[0].content).toBe(
+    'SECOND_REQUEST',
+  );
 });

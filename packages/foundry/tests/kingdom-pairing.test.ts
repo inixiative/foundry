@@ -84,7 +84,7 @@ test('Foundry pairs without exposing secrets, activates immediately, and repairs
         name: 'Test Foundry',
       });
       expect(start.status).toBe(200);
-      const pairing = await start.json();
+      const pairing = (await start.json()) as { status: string };
       expect(pairing.status).toBe('pending');
       expect(pairing).not.toHaveProperty('secret');
       expect(pairing).not.toHaveProperty('deviceCode');
@@ -97,7 +97,7 @@ test('Foundry pairs without exposing secrets, activates immediately, and repairs
       identities.set(request.hash, id);
       const done = await post('poll');
       expect(done.status).toBe(200);
-      expect((await done.json()).installationId).toBe(id);
+      expect(((await done.json()) as { installationId: string }).installationId).toBe(id);
       expect(viewer.kingdomConnection?.connected).toBe(true);
       expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
       const path = join(root, `kingdom-runtime-${id}.json`);
@@ -135,18 +135,24 @@ test('Foundry pairs without exposing secrets, activates immediately, and repairs
             .installationId,
         ).toBe(id);
         expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-        expect((await (await post('cancel')).json()).status).toBe('connected');
+        expect(((await (await post('cancel')).json()) as { status: string }).status).toBe(
+          'connected',
+        );
       }
       identities.delete(request.hash);
       expect((await fetch(`${base}/api/tunnel`)).status).toBe(503);
       expect((await fetch(`${base}/kingdom`)).status).toBe(200);
-      expect((await (await fetch(`${base}/api/kingdom/status`)).json()).status).toBe('unavailable');
+      expect(
+        ((await (await fetch(`${base}/api/kingdom/status`)).json()) as { status: string }).status,
+      ).toBe('unavailable');
       expect(
         (await fetch(`${base}/api/kingdom/status`, { headers: { origin: 'https://evil.test' } }))
           .status,
       ).toBe(403);
     }
-    expect((await (await post('disconnect')).json()).status).toBe('disconnected');
+    expect(((await (await post('disconnect')).json()) as { status: string }).status).toBe(
+      'disconnected',
+    );
     expect(viewer.kingdomConnection).toBeNull();
     expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
     expect(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8'))).not.toHaveProperty(
