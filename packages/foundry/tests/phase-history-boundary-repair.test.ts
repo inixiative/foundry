@@ -14,7 +14,6 @@ const closes: Array<() => void> = [];
 afterEach(() => {
   for (const close of closes.splice(0).reverse()) close();
 });
-const GUARD = '## Response protocol (guard phase)';
 
 test('appendPhase: exact replay with null correlations is idempotent; any contradicted association is refused and the original row is untouched', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase-identity-'));

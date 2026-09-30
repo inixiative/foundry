@@ -119,10 +119,9 @@ export function decompose(content: string): DecomposedSections | null {
   const sections: Record<string, string> = {};
   const regex = /<!-- foundry:(\w+) -->\n([\s\S]*?)<!-- \/foundry:\1 -->/g;
 
-  let match: RegExpExecArray | null;
   let found = false;
 
-  while ((match = regex.exec(content)) !== null) {
+  for (const match of content.matchAll(regex)) {
     found = true;
     sections[match[1]] = match[2].trim();
   }

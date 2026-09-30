@@ -162,7 +162,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   expect(domainLib.threadKnowledge.revision).toBe(1);
   expect(domainLib.threadKnowledge.content).toContain('OWN_V1');
   const turnId = 'turn-1';
-  const result = await turn(turnId, 'Add preferred names');
+  await turn(turnId, 'Add preferred names');
   expect(toolEmitted).toBe(2);
   // The manager's one controlled auxiliary provider serves routing, advice and guard; each recorded request must equal the matching actual call of turn 2.
   const auxiliaryCall = (marker: string) => {

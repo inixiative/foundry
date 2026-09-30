@@ -25,20 +25,6 @@ function makeContext(overrides?: Partial<HookContext>): HookContext {
   };
 }
 
-function makeHandler(
-  id: string,
-  points: HookPoint[],
-  result: HookResult,
-  opts?: { priority?: number },
-): HookHandler {
-  return {
-    id,
-    points,
-    priority: opts?.priority,
-    handler: async (_ctx: HookContext) => result,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // HookRegistry
 // ---------------------------------------------------------------------------

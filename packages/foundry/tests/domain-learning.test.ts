@@ -127,7 +127,7 @@ function setup(opts: SetupOpts = {}) {
 }
 
 const planOf = (result: { meta?: Record<string, unknown> }) =>
-  (result.meta?.injection as { plan?: InjectionPlan } | undefined)?.plan!;
+  (result.meta as { injection: { plan: InjectionPlan } }).injection.plan;
 
 describe('per-domain thread knowledge and causal learning', () => {
   test('fixed-context comparison retains advice but admits no learning reviews', async () => {

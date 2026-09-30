@@ -1,4 +1,4 @@
-import { lstatSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDefaultProfile } from './default-profiles';
 
@@ -67,11 +67,8 @@ export function writeProfileConfiguration(directory: string, path: string, conte
   try {
     writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
     renameSync(temporary, path);
-  } finally {
-    try {
-      unlinkSync(temporary);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
   }
 }

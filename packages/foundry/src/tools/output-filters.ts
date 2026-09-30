@@ -25,9 +25,7 @@ import type { OutputFilter } from '@inixiative/foundry-core';
 // -- Individual filters --
 
 /** Strip ANSI escape codes (colors, cursor movement, etc.) */
-export const stripAnsi: OutputFilter = (stdout) =>
-  // eslint-disable-next-line no-control-regex
-  stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+export const stripAnsi: OutputFilter = (stdout) => Bun.stripANSI(stdout);
 
 /** Collapse repeated blank lines into one. */
 export const collapseBlankLines: OutputFilter = (stdout) => stdout.replace(/\n{3,}/g, '\n\n');

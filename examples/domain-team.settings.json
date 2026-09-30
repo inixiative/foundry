@@ -150,32 +150,32 @@
         }
       ]
     },
-    "openai": {
-      "id": "openai",
-      "type": "openai",
+    "gemini": {
+      "id": "gemini",
+      "type": "gemini",
       "label": "Google Gemini",
       "enabled": true,
       "models": [
         {
-          "id": "gpt-6-luna",
+          "id": "gemini-3.1-flash-lite",
           "label": "Gemini 3.1 Flash Lite",
           "tier": "fast",
           "costTier": "low",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         },
         {
-          "id": "gemini-3-flash-preview",
-          "label": "Gemini 3 Flash",
+          "id": "gemini-3.8-flash",
+          "label": "Gemini 3.8 Flash",
           "tier": "standard",
           "costTier": "medium",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         },
         {
           "id": "gemini-3.1-pro-preview",
           "label": "Gemini 3.1 Pro",
           "tier": "powerful",
           "costTier": "high",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         }
       ]
     }

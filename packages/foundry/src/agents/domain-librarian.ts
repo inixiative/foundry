@@ -1027,7 +1027,7 @@ export class DomainLibrarian {
       };
     try {
       parsed = parseJSON(raw);
-    } catch (err) {
+    } catch {
       return { decision: 'invalid', facts: [], reason: 'unparseable reviewer answer' };
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))

@@ -39,17 +39,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-let signalCounter = 0;
-function makeSignal(kind: string, content: unknown = {}): Signal {
-  return {
-    id: `sig-${++signalCounter}`,
-    kind,
-    source: 'test',
-    content,
-    timestamp: Date.now(),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Thread Fan-Out Race Conditions
 // ---------------------------------------------------------------------------
@@ -545,12 +534,9 @@ describe('SessionManager concurrency', () => {
 
   test('blueprint race: two dispatches to same unresolved blueprint', async () => {
     const sm = new SessionManager();
-    let createCount = 0;
-
     sm.addBlueprint({
       match: 'shared-thread',
       create: async (destId) => {
-        createCount++;
         await delay(10); // Simulate async thread creation
         const thread = makeThread(destId);
         thread.register(

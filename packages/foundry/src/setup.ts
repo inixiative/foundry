@@ -868,7 +868,7 @@ async function setupPrompts(projectName: string, projectDesc: string): Promise<P
   const runtimes =
     Object.keys(overrides).length > 0 ? Object.keys(overrides) : Object.keys(RUNTIME_OUTPUT_FILES);
   const written = await writeComposed(process.cwd(), prompts, runtimes);
-  for (const [rt, path] of written) {
+  for (const [rt] of written) {
     console.log(`  Composed ${RUNTIME_OUTPUT_FILES[rt]} from prompts`);
   }
 

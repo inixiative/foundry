@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe('FileMemory', () => {
   test("creates directory if it doesn't exist", () => {
-    const mem = new FileMemory(TEST_DIR);
+    new FileMemory(TEST_DIR);
     expect(existsSync(TEST_DIR)).toBe(true);
   });
 
@@ -463,7 +463,7 @@ describe('FileMemory ownership', () => {
 describe('fileSource', () => {
   test('reads file content', async () => {
     const path = join(TEST_DIR, 'test.txt');
-    const mem = new FileMemory(TEST_DIR); // ensure dir exists
+    new FileMemory(TEST_DIR); // ensure dir exists
     await Bun.write(path, 'file content here');
 
     const src = fileSource('test', path);
