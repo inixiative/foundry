@@ -133,7 +133,7 @@ describe('Harness', () => {
   });
 
   test('works without classifier', async () => {
-    const { harness, thread, stack } = makeHarness();
+    const { thread } = makeHarness();
     const h = new Harness(thread);
     h.setRouter('router');
     h.setDefaultExecutor('executor-answer');
@@ -189,7 +189,7 @@ describe('Harness', () => {
   });
 
   test('trace history is bounded', async () => {
-    const { thread, stack } = makeHarness();
+    const { thread } = makeHarness();
     const h = new Harness(thread, { maxTraces: 3 });
     h.setDefaultExecutor('executor-answer');
 

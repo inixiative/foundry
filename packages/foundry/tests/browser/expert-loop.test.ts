@@ -352,7 +352,7 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
     // Post-review for the selected turn shows current understanding beside the frozen preparation; exclude it.
     const t1Drawer = await drawer(page).evaluate((el: Element) => {
       const c = el.cloneNode(true) as Element;
-      c.querySelectorAll('.selected-review-history').forEach((n) => n.remove());
+      for (const n of c.querySelectorAll('.selected-review-history')) n.remove();
       return c.textContent ?? '';
     });
     await shot(page, '1440-turn1-participants-immutable');

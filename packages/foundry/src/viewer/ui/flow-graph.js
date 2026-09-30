@@ -105,14 +105,13 @@ export function layoutColumns(
   order.forEach((col, index) => {
     const list = columns.get(col);
     const own = list.length * nodeH + (list.length - 1) * rowGap;
-    list.forEach((node, row) =>
+    for (const [row, node] of list.entries())
       Object.assign(node, {
         x: index * (nodeW + colGap),
         y: (height - own) / 2 + row * (nodeH + rowGap),
         w: nodeW,
         h: nodeH,
-      }),
-    );
+      });
   });
   return {
     width: Math.max(nodeW, order.length * nodeW + Math.max(0, order.length - 1) * colGap),

@@ -81,8 +81,12 @@ const isTranscript = (body: unknown): body is Transcript =>
 
 export function signatureOf(status: number, body: unknown): Signature {
   const shape: Record<string, Set<string>> = {};
+  const kindSet = (kind: string) => {
+    shape[kind] ??= new Set();
+    return shape[kind];
+  };
   const add = (kind: string, value: unknown) => {
-    const set = (shape[kind] ??= new Set());
+    const set = kindSet(kind);
     for (const path of paths(value)) set.add(path);
   };
   if (isTranscript(body)) {
@@ -90,9 +94,8 @@ export function signatureOf(status: number, body: unknown): Signature {
     for (const frame of body.frames) {
       if (frame.stream === 'stderr') {
         // A probe's kept answer (codex login status) is protocol; other stderr is CLI logging.
-        if ((frame as { kept?: true }).kept)
-          (shape['stderr:kept'] ??= new Set()).add(`text:${frame.data}`);
-        else (shape['stderr'] ??= new Set()).add('text');
+        if ((frame as { kept?: true }).kept) kindSet('stderr:kept').add(`text:${frame.data}`);
+        else kindSet('stderr').add('text');
         continue;
       }
       const event = parse(frame.data);

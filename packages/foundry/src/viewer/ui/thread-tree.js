@@ -317,7 +317,6 @@ function AddThreadForm({ onDone }) {
 export const creatingType = { value: null }; // "layer" | "agent" | null
 
 export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAgent }) {
-  const data = threadData.value;
   const events = eventsForThread(liveEvents.value, activeThreadId.value);
   const selectedThread = activeThreadId.value;
   const [addingThread, setAddingThread] = useState(false);

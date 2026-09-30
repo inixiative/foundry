@@ -361,7 +361,7 @@ test('actual factory classification, routing, advice, guard and learning use the
     warn() {},
     learning: { timeoutMs: 1000, hardTimeoutMs: 3000 },
   });
-  const persistence = new KnowledgePersistence(manager, journal, events, []);
+  new KnowledgePersistence(manager, journal, events, []);
   const deps = { provider: central, providers };
   const factory = new ThreadFactory({
     stack,

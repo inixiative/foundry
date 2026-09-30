@@ -389,14 +389,15 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
       let closing: Promise<void> | undefined;
       const close = () => {
         closed = true;
-        return (closing ??= (async () => {
+        closing ??= (async () => {
           await bridge.close();
           if (pending) {
             cleanupFailures++;
             throw Error('Fixture operation remains owned; cleanup unproved');
           }
           rmSync(cwd, { recursive: true, force: true });
-        })());
+        })();
+        return closing;
       };
       const unbind = thread.onDispose(() => {
         void close().catch(() => {});

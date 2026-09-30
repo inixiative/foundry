@@ -120,9 +120,9 @@ async function run(
       fixture: Boolean(fixture),
     };
     writeFileSync(`${reportDir}/report.json`, JSON.stringify(report, null, 2));
-    if (report.cleanupFailures.length)
-      throw new Error(`cleanup failures: ${report.cleanupFailures.join('; ')}`);
   }
+  if (report.cleanupFailures.length)
+    throw new Error(`cleanup failures: ${report.cleanupFailures.join('; ')}`);
   return report;
 }
 

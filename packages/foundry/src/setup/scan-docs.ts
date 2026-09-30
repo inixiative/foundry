@@ -294,13 +294,6 @@ function emitConfigSnippet(
     enabled: true,
   };
 
-  // Size the layer budget to the content. Inline needs room for everything;
-  // topology is ~44 tokens/file so a 2× headroom over fileCount suffices.
-  const maxTokens =
-    strategy === 'inline'
-      ? Math.min(Math.max(chosen.approxTokens + 500, 1_000), 32_000)
-      : Math.max(chosen.fileCount * 80, 1_000);
-
   const layer: LayerSettingsConfig = {
     id: layerId,
     domain: 'docs',

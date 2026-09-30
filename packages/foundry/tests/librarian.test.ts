@@ -16,16 +16,6 @@ function makeSignal(kind: string, content: any, source = 'test'): Signal {
   };
 }
 
-function setup() {
-  const signals = new SignalBus();
-  const stack = new ContextStack([
-    new ContextLayer({ id: 'auth-conventions' }),
-    new ContextLayer({ id: 'security-patterns' }),
-  ]);
-  const librarian = new Librarian({ signals, stack });
-  return { signals, stack, librarian };
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

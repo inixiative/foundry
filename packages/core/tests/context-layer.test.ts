@@ -16,13 +16,6 @@ function failingSource(id: string, error: string): ContextSource {
   };
 }
 
-function slowSource(id: string, content: string, ms: number): ContextSource {
-  return {
-    id,
-    load: () => new Promise((resolve) => setTimeout(() => resolve(content), ms)),
-  };
-}
-
 // -- Tests --
 
 describe('computeHash', () => {

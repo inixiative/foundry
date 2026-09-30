@@ -480,34 +480,11 @@ export class Harness {
     const requestedAgents = new Set<string>();
     const requestedLayers = new Set<string>();
     const stageResults = new Map<string, ExecutionResult>();
-    const data = new Map<string, unknown>();
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
     let clarification: ClarificationResult | undefined;
     let lastExecuteAgentId: string | undefined;
-
-    // Build request context for middleware
-    const reqCtx: RequestContext = {
-      get classification() {
-        return classification;
-      },
-      get route() {
-        return route;
-      },
-      requestAgent: (id) => requestedAgents.add(id),
-      requestLayer: (id) => requestedLayers.add(id),
-      get requestedAgents() {
-        return requestedAgents;
-      },
-      get requestedLayers() {
-        return requestedLayers;
-      },
-      get stageResults() {
-        return stageResults;
-      },
-      data,
-    };
 
     try {
       // Decision stages (classify, route) read the same frozen input concurrently: neither waits for

@@ -285,11 +285,10 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
           'Integration reads require an active native admission for attribution. No request was dispatched.',
         );
       let outcome: Outcome | undefined;
-      let failure: unknown;
       try {
         outcome = await run(args);
-      } catch (err) {
-        failure = err;
+      } catch {
+        // Undisclosed: a missing outcome reports an owned backend error below.
       }
       const after = authority.check();
       if (after) return complete('refused', refusalText(after, 'after'), after);

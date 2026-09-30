@@ -22,8 +22,7 @@ test('failed acquisition retains a reachable host while its child exit remains u
     let buffer = '';
     socket.on('data', (chunk) => {
       buffer += chunk.toString();
-      let end: number;
-      while ((end = buffer.indexOf('\n')) >= 0) {
+      for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
         const message = JSON.parse(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
         if (message.type === 'kill') {

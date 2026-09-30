@@ -64,8 +64,6 @@ describe('Foundry MCP Server', () => {
   });
 
   it('foundry_query finds matching layers by keyword', async () => {
-    const server = createFoundryMcpServer({ thread });
-
     // Access the tool handler directly through the server's internal tool registry
     // We test the underlying logic via the findMatchingLayers helper
     const stack = thread.stack;

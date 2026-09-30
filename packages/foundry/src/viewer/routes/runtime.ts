@@ -140,7 +140,7 @@ async function autoNameThread(
     if (
       name &&
       name.length < 80 &&
-      !/[\r\n\x00-\x1f]/.test(name) &&
+      ![...name].some((char) => char.charCodeAt(0) < 0x20) &&
       !thread.disposed &&
       thread.meta.description === originalDescription
     ) {
@@ -899,7 +899,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
         href: `/api/traces/${encodeURIComponent(detail.trace.id)}`,
       });
     if (detail.injection) artifacts.push({ kind: 'injection', id: turnId, href: `${base}/detail` });
-    for (const [index, evidence] of detail.nativeHistory.entries())
+    for (const index of detail.nativeHistory.keys())
       artifacts.push({ kind: 'native-event', id: `${turnId}#${index}` });
     for (const tool of detail.nativeTools)
       artifacts.push({ kind: 'native-tool', id: tool.record.id });

@@ -620,7 +620,7 @@ test('selection survives restart: a fresh memory over the same directory yields 
 test("a forked thread does not inherit the parent's private selection but does see project publications", async () => {
   const { factory, runtime, memory, captured } = await setup();
   try {
-    const parent = factory.create('parent', { projectId: 'P' });
+    factory.create('parent', { projectId: 'P' });
     await memory
       .view({ threadId: 'parent', projectId: 'P' })
       .write({ id: 'priv', kind: 'convention', content: 'PARENT-PRIVATE', timestamp: 1 });
