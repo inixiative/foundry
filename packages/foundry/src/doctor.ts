@@ -7,7 +7,7 @@ import { ConfigStore } from "./viewer/config";
 /** Inspect existing settings without starting servers, agents or authentication flows. */
 async function main() {
   const flags = process.argv.slice(2), offline = flags.includes("--offline"), args = flags.filter(arg => arg !== "--offline");
-  if (args.includes("--help")) { console.log("Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Sends one Kingdom heartbeat and one search per archive destination; --offline skips them."); return; }
+  if (args.includes("--help")) { console.log("Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Authenticates one Kingdom runtime socket and sends one search per archive destination; --offline skips them."); return; }
   if (args.length > 1 || args[0]?.startsWith("--")) throw Error("Invalid arguments");
   const directory = resolve(args[0] ?? ".foundry");
   if (!(await stat(resolve(directory, "settings.json"))).isFile()) throw Error("Missing settings");

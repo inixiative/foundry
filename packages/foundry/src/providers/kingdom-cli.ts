@@ -22,7 +22,7 @@ export interface PairKingdomOptions {
   launch?: (url: string) => void;
 }
 
-/** Device-code pairing for terminals: same persistence as Settings → Kingdom, validated with one heartbeat. */
+/** Device-code pairing for terminals: same persistence as Settings → Kingdom, validated with one runtime socket authentication. */
 export async function pairKingdom(options: PairKingdomOptions) {
   const { configDir, transport = fetch, log = console.error, sleep = Bun.sleep } = options;
   const store = new ConfigStore(configDir);
@@ -53,7 +53,7 @@ export async function pairKingdom(options: PairKingdomOptions) {
   }
 }
 
-/** Heartbeat-checked binding state, in the viewer's vocabulary. */
+/** Socket-checked binding state, in the viewer's vocabulary. */
 export async function kingdomStatus(configDir: string, transport: typeof fetch = fetch) {
   const { kingdomRuntime } = await new ConfigStore(configDir).load();
   if (!kingdomRuntime) return { status: "disconnected" as const };

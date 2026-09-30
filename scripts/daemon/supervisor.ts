@@ -35,6 +35,13 @@ if (update.action === "failed") log(`update skipped — ${update.detail}`);
 
 const settings = await readSettings();
 const credentialFile = settings?.kingdomRuntime?.credentialFile;
+// The runtime socket lives in the booted release's module instance, not this checkout's.
+let bootedDir: string | undefined;
+const closeForUpdate = async (expectedBackWithinMs: number) => {
+  if (!bootedDir) return;
+  const { closeKingdomRuntimeForUpdate } = await import(`${bootedDir}/packages/foundry/src/providers/kingdom-runtime-connection.ts`);
+  await closeKingdomRuntimeForUpdate(expectedBackWithinMs);
+};
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
@@ -42,6 +49,7 @@ if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
     configDir,
     intervalMs: checkSeconds * 1000,
     runtimeDirectory: credentialFile ? dirname(resolve(credentialFile)) : undefined,
+    closeForUpdate,
     log,
   });
 
@@ -51,6 +59,7 @@ if (services.detail) log(`services not started — ${services.detail}`);
 
 const release = await selectRelease(repoRoot, configDir);
 log(`starting ${release.trial ? "candidate" : "stable"} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? "4400"}`);
+bootedDir = release.dir;
 try {
   await import(`${release.dir}/packages/foundry/src/start.ts`);
 } catch (error) {

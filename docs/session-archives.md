@@ -52,19 +52,19 @@ From nothing to a paired Kingdom and a destination per registered project (`sett
 
 ```sh
 bun run kingdom pair --url https://kingdom-prod-api-prod.up.railway.app   # prints the approval URL + code, opens it on macOS
-bun run kingdom status        # connected | unavailable | disconnected (one heartbeat)
+bun run kingdom status        # connected | unavailable | disconnected (one runtime socket authentication)
 bun run kingdom disconnect    # deletes the local credential; revoke the runtime in Kingdom too
 bun run archive setup         # guided: pair if needed, then choose a destination per project
 bun run doctor                # includes Kingdom state and per-project archive state
 ```
 
-`kingdom pair` is the terminal form of Settings → Kingdom: same device-code flow, same `<configDir>/kingdom-runtime-<installationId>.json` (0600) and `kingdomRuntime` setting, polled at Kingdom's interval and checked with one heartbeat. Without `--url` it uses `KINGDOM_URL`, the saved binding, then hosted production. It refuses to replace an existing binding without `--replace`; `--no-open` skips the browser; `--config-dir` defaults to `FOUNDRY_CONFIG_DIR` or `.foundry`.
+`kingdom pair` is the terminal form of Settings → Kingdom: same device-code flow, same `<configDir>/kingdom-runtime-<installationId>.json` (0600) and `kingdomRuntime` setting, polled at Kingdom's interval and checked with one runtime socket authentication. Without `--url` it uses `KINGDOM_URL`, the saved binding, then hosted production. It refuses to replace an existing binding without `--replace`; `--no-open` skips the browser; `--config-dir` defaults to `FOUNDRY_CONFIG_DIR` or `.foundry`.
 
 `archive setup` with no destination flags runs the guided flow (the flag form below is unchanged). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item. For each project with no destination it lists the Kingdom connections carrying that project ID (`remote/connections`, as Settings → Archives does), plus Kingdom-stored archives, a direct Archive server (URL + hidden token, saved as a managed credential) or skip. Every choice is verified before `archives.json` is written.
 
 Non-interactive (`--yes`, or no TTY): `--kingdom-url URL` pairs if not connected (approval is still in the browser); `--project ID` (repeatable) narrows the projects; a project connects to `--connection ID`, else its only matching Kingdom connection, else `--archive-url URL` with the token read from `--archive-token-env VAR` (default `ARCHIVE_TOKEN`); `--connection kingdom` selects Kingdom-stored archives. Several matches without `--connection` are skipped, never guessed. Output is JSON with per-project `configured | connected | skipped | failed`.
 
-A running viewer holds settings and archive routing in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`. `bun run daemon:start` restarts the daemon. `doctor` sends one heartbeat and one search per destination; `--offline` skips them.
+A running viewer holds settings and archive routing in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`. `bun run daemon:start` restarts the daemon. `doctor` authenticates one runtime socket and sends one search per destination; `--offline` skips them.
 
 ## Publish to Kingdom
 

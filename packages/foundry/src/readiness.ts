@@ -34,7 +34,7 @@ export async function inspectReadiness(config: FoundryConfig, options: {
   which?: (binary: string) => string | null;
   /** Enables archive destination inspection (`<configDir>/archives.json`). */
   configDir?: string;
-  /** Enables one Kingdom heartbeat and one search per archive destination. */
+  /** Enables one Kingdom runtime socket authentication and one search per archive destination. */
   transport?: typeof fetch;
 } = {}): Promise<ReadinessReport> {
   const saved = config;

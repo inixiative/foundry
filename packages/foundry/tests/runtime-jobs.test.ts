@@ -101,3 +101,26 @@ test("an unregistered kind fails closed and a registered handler owns its payloa
     worker.stop();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("a claim request during a run is not dropped: the worker claims again once the run settles", async () => {
+  const { directory, credentialFile } = await privateRuntime();
+  let polls = 0, release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const transport = (async (url: string | URL | Request) => {
+    if (new URL(String(url)).pathname.endsWith("pollRuntimeJob") && ++polls === 1) await gate;
+    return Response.json({ data: null });
+  }) as typeof fetch;
+  const worker = new RuntimeJobWorker({ url: "https://kingdom.example", installationId: crypto.randomUUID(), credentialFile }, transport);
+  try {
+    const first = worker.check();
+    await Bun.sleep(10);
+    const second = worker.check();
+    const third = worker.check();
+    expect(polls).toBe(1);
+    release();
+    await Promise.all([first, second, third]);
+    expect(polls).toBe(2);
+    await worker.check();
+    expect(polls).toBe(3);
+  } finally { worker.stop(); await rm(directory, { recursive: true, force: true }); }
+});
