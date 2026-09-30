@@ -46,6 +46,26 @@ Use `--store /absolute/path/archives.sqlite` to select the store. Each store mai
 
 Imports stream individual JSONL files up to 1 GB, with at most 64 million characters in a raw record; normalized snapshots are limited to 64 MB, 50,000 records, and 2 million characters per entry. Oversized sessions fail explicitly and remain in their source file. Directory watching for external CLI history is not implemented. Foundry journal capture is automatic; historical CLI import is explicit.
 
+## Guided setup
+
+From nothing to a paired Kingdom and a destination per registered project (`settings.json` → `projects`):
+
+```sh
+bun run kingdom pair --url https://kingdom-prod-api-prod.up.railway.app   # prints the approval URL + code, opens it on macOS
+bun run kingdom status        # connected | unavailable | disconnected (one heartbeat)
+bun run kingdom disconnect    # deletes the local credential; revoke the runtime in Kingdom too
+bun run archive setup         # guided: pair if needed, then choose a destination per project
+bun run doctor                # includes Kingdom state and per-project archive state
+```
+
+`kingdom pair` is the terminal form of Settings → Kingdom: same device-code flow, same `<configDir>/kingdom-runtime-<installationId>.json` (0600) and `kingdomRuntime` setting, polled at Kingdom's interval and checked with one heartbeat. Without `--url` it uses `KINGDOM_URL`, the saved binding, then hosted production. It refuses to replace an existing binding without `--replace`; `--no-open` skips the browser; `--config-dir` defaults to `FOUNDRY_CONFIG_DIR` or `.foundry`.
+
+`archive setup` with no destination flags runs the guided flow (the flag form below is unchanged). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item. For each project with no destination it lists the Kingdom connections carrying that project ID (`remote/connections`, as Settings → Archives does), plus Kingdom-stored archives, a direct Archive server (URL + hidden token, saved as a managed credential) or skip. Every choice is verified before `archives.json` is written.
+
+Non-interactive (`--yes`, or no TTY): `--kingdom-url URL` pairs if not connected (approval is still in the browser); `--project ID` (repeatable) narrows the projects; a project connects to `--connection ID`, else its only matching Kingdom connection, else `--archive-url URL` with the token read from `--archive-token-env VAR` (default `ARCHIVE_TOKEN`); `--connection kingdom` selects Kingdom-stored archives. Several matches without `--connection` are skipped, never guessed. Output is JSON with per-project `configured | connected | skipped | failed`.
+
+A running viewer holds settings and archive routing in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`. `bun run daemon:start` restarts the daemon. `doctor` sends one heartbeat and one search per destination; `--offline` skips them.
+
 ## Publish to Kingdom
 
 Pair a runtime with Kingdom. Kingdom takes the archive owner from its `kastle_runtime_…` credential; `ownerModel`, `organizationId` and `spaceId` narrow it to an organization or space that owner manages. Put the credential in an environment variable available to Foundry, or use the enrolled identity (see Foundry credentials below); archive config never stores the secret.
@@ -140,7 +160,7 @@ In **Settings → Archives**, choose **Foundry managed credential** for a direct
 
 Core exports `CredentialReference`, `CredentialScope` and `CredentialResolver`. Foundry supplies the resolver; standalone Archive has no dependency on Foundry Core or enrollment. Inference provider keys and native Claude/Codex subscription credentials are not Archive credentials.
 
-For **Connected Kingdom identity**, first connect in **Settings → Kingdom**. Archive lists the hosted destinations Kingdom has bound to the enrolled owner (`remote/connections`). Choose one, or Kingdom-stored archives. Requests reuse Foundry's existing installation credential, only for the archive service and only on the enrolled Kingdom origin. Kingdom checks current installation validity and owner authority for every request; hosted-server tokens remain on Kingdom. With a `connectionId`, requests go to Kingdom's `remote/…` actions, and an external destination must have an explicit matching `projectId` in `ARCHIVE_REMOTE_BINDINGS` to accept publication. External archives do not support per-session shares.
+For **Connected Kingdom identity**, first connect in **Settings → Kingdom** (or `bun run kingdom pair`). Archive lists the hosted destinations Kingdom has bound to the enrolled owner (`remote/connections`). Choose one, or Kingdom-stored archives. Requests reuse Foundry's existing installation credential, only for the archive service and only on the enrolled Kingdom origin. Kingdom checks current installation validity and owner authority for every request; hosted-server tokens remain on Kingdom. With a `connectionId`, requests go to Kingdom's `remote/…` actions, and an external destination must have an explicit matching `projectId` in `ARCHIVE_REMOTE_BINDINGS` to accept publication. External archives do not support per-session shares.
 
 A direct project source can use the same credential reference:
 

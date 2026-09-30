@@ -5,9 +5,11 @@ import { runCli } from '@inixiative/session-archive/cli';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
 import { FoundryCredentials } from '../providers/credentials';
 import { ConfigStore } from '../viewer/config';
-import { archiveDestinationSchema, connectDestination, readDestinations } from './config';
+import { archiveDestinationSchema, readDestinations } from './config';
+import { runArchiveSetup } from './setup';
+import { createTerminalPrompts } from '../setup/prompts';
 import {
-  verifyArchiveDestination,
+  saveArchiveConnection,
   publishArchive,
   routingPreview,
   searchRemotes,
@@ -38,6 +40,14 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       remote: { type: 'boolean' },
       watch: { type: 'boolean' },
       help: { type: 'boolean' },
+      'kingdom-url': { type: 'string' },
+      name: { type: 'string' },
+      project: { type: 'string', multiple: true },
+      connection: { type: 'string' },
+      'archive-url': { type: 'string' },
+      'archive-token-env': { type: 'string' },
+      yes: { type: 'boolean' },
+      'no-open': { type: 'boolean' },
     },
   });
   const command = positionals[0];
@@ -50,7 +60,8 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (v.help) {
     console.log(
-      'Foundry credentials: connect --kingdom-identity [--connection-id ID] [--owner-model M --organization-id UUID --space-id UUID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.',
+      'Foundry credentials: connect --kingdom-identity [--connection-id ID] [--owner-model M --organization-id UUID --space-id UUID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.\n' +
+        'Guided setup: setup [--kingdom-url URL] [--name NAME] [--project ID]... [--connection ID|kingdom] [--archive-url URL --archive-token-env VAR] [--yes] [--no-open]; pairs Kingdom if needed and connects each registered project without a destination.',
     );
     return runCli(['--help']);
   }
@@ -63,6 +74,31 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       ...(!v.store ? ['--store', storePath] : []),
       ...(!v.config ? ['--config', config] : []),
     ]);
+  }
+  if (
+    command === 'setup' &&
+    !['url', 'kind', 'project-id', 'kingdom-identity', 'credential-id', 'token-env'].some((key) => v[key] !== undefined)
+  ) {
+    const prompts = !v.yes && process.stdin.isTTY ? createTerminalPrompts() : undefined;
+    try {
+      const result = await runArchiveSetup({
+        configDir: dirname(resolve(config)),
+        archivesPath: config,
+        prompts,
+        kingdomUrl: v['kingdom-url'] as string | undefined,
+        name: v.name as string | undefined,
+        projects: v.project as string[] | undefined,
+        connection: v.connection as string | undefined,
+        archiveUrl: v['archive-url'] as string | undefined,
+        archiveTokenEnv: v['archive-token-env'] as string | undefined,
+        open: !v['no-open'],
+      });
+      output(result);
+      if (result.projects.some((project) => project.status === 'failed')) process.exitCode = 1;
+    } finally {
+      prompts?.close();
+    }
+    return;
   }
   if (command === 'connect' || command === 'setup') {
     if (
@@ -92,8 +128,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
           ? { credential: { type: 'managed', id: v['credential-id'] } }
           : { tokenEnv: v['token-env'] ?? 'ARCHIVE_TOKEN' }),
     });
-    await verifyArchiveDestination(destination, credentials);
-    output(connectDestination(config, destination));
+    output(await saveArchiveConnection(config, destination, credentials));
     return;
   }
   if (command === 'search') {
@@ -140,7 +175,11 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   }
 }
 if (import.meta.main)
-  runFoundryArchiveCli().catch(() => {
-    console.error('Archive command failed; check configuration and credential access.');
+  runFoundryArchiveCli().catch((error) => {
+    console.error(
+      Bun.argv[2] === 'setup' && error instanceof Error && error.name === 'Error'
+        ? error.message
+        : 'Archive command failed; check configuration and credential access.',
+    );
     process.exitCode = 1;
   });

@@ -121,7 +121,7 @@ export function ArchiveSettings() {
       ${
         mode === 'kingdom'
           ? html`
-        <p>${kingdom ? kingdom.url : 'Connect Foundry in Settings → Kingdom to use your enrolled identity.'}</p>
+        <p>${kingdom ? kingdom.url : html`<a href="/kingdom">Pair with Kingdom first</a> to use your enrolled identity, then refresh.`}</p>
         <button type="button" disabled=${busy} onClick=${discover}>Refresh Kingdom archives</button>
         ${
           kingdom &&

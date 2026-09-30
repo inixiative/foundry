@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "archive": "bun run packages/foundry/src/archives/cli.ts",
+    "kingdom": "bun run packages/foundry/src/providers/kingdom-cli.ts",
     "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./scripts/daemon/",
     "test:core": "bun test ./packages/core/tests/",
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
