@@ -97,7 +97,7 @@ export interface CompletionOpts {
    */
   thinking?: "none" | "low" | "medium" | "high" | number;
   /** Permission level for code execution runtimes (claude-code, codex). */
-  permissions?: "bypass" | "supervised" | "restricted";
+  permissions?: "bypass" | "restricted";
   /** Per-call timeout in ms. Provider uses its own default if omitted. */
   timeout?: number;
   /** Enable prompt caching where supported. */

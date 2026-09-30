@@ -60,7 +60,7 @@ Cassettes live at `packages/foundry/tests/fixtures/vcr/<service>/<method>.<name>
 Nothing is written unscrubbed:
 
 - **Paths.** The working directory becomes `{{cwd}}`, the temp directory becomes `{{tmp}}` and the account home becomes `~`. The username and hostname are replaced.
-- **Secrets.** Tokens are replaced wherever they appear: `sk-…`, `sk-ant-…`, `kastle_…`, JWTs, GitHub and Slack tokens, and bearer credentials.
+- **Secrets.** Tokens are replaced wherever they appear: `sk-…`, `sk-ant-…`, `kingdom_…`, JWTs, GitHub and Slack tokens, and bearer credentials.
 - **Identity.** Emails are replaced. Values under identity or secret keys are redacted, including every value nested under such a key (`account: { name }`): email, org/account/user ids and names, plan and subscription type, installation id, authorization, tokens, cookies. A redacted UUID keeps its UUID format.
 - **Status output.** `claude auth status --json` prints the account (email, org id and name, plan). Only `loggedIn` and `authMethod` are kept, and output that does not parse is withheld whole. `codex login status` keeps only its `Logged in using …` line.
 

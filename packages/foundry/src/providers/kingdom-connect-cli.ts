@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
 import { mkdir, lstat } from "node:fs/promises";
-import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kastle-credential-file";
+import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kingdom-credential-file";
 import { KingdomRuntimeConnection, kingdomRuntimeSchema } from "./kingdom-runtime-connection";
 import { ConfigStore } from "../viewer/config";
 

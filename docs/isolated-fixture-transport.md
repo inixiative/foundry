@@ -15,7 +15,7 @@ Read-only inspection on 2026-09-21 covered `claude --version`, `--help`, install
 Installed version: `2.1.260`; binary SHA-256: `3c269f66801028823e24a63ced9fdd3988cb86cf85fccd9f03f87e463b9d3e3c`.
 
 - Safe and restricted modes retain managed settings. Empty setting sources still load flag and policy settings.
-- `disableAllHooks` in ordinary flag settings retains policy hooks; managed plugin hooks can remain. This also affects the existing safe-mode native-text paths used by Oracle, medical execution and subscription decisions. It does not prove any such hook is configured or executed here.
+- `disableAllHooks` in ordinary flag settings retains policy hooks; managed plugin hooks can remain. This also affects the existing safe-mode native-text paths used by Oracle and subscription decisions. It does not prove any such hook is configured or executed here.
 - Strict MCP refuses conflicting enterprise MCP configuration rather than silently replacing it. Bare mode excludes subscription OAuth; it is not a substitute.
 - The SDK `get_settings` request is processed after startup hooks. Remote policy may be fetched asynchronously and later refreshed; a digest does not freeze effective policy.
 - The parent managed-settings input is subordinate and restrictive-filtered. It cannot provide an overriding no-hooks guarantee. Doctor shares common initialization and is not pre-execution attestation.

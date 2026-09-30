@@ -67,20 +67,20 @@ test("readiness distinguishes missing native binaries and API credentials", asyn
   expect(report.issues.some(item => item.code === "provider-credential-missing")).toBe(true);
   expect(report.issues.some(item => item.code === "provider-not-constructed")).toBe(false);
 });
-test("Kastle inspection enforces the same private-file schema as launch and never claims live access", async () => {
+test("Kingdom inspection enforces the same private-file schema as launch and never claims live access", async () => {
   const directory = await mkdtemp(join(tmpdir(), "foundry-readiness-"));
   try {
-    const file = join(directory, "installation.json"), secret = `kastle_runtime_${"a".repeat(43)}`;
-    const config = team(), id = crypto.randomUUID();
-    config.kastles = [{ id, url: "http://127.0.0.1:1", credentialFile: file, selection: { model: "exact-model", effort: "low" } }]; config.defaults.kastleId = id; config.apiTokens = true;
+    const file = join(directory, "installation.json"), secret = `kingdom_runtime_${"a".repeat(43)}`;
+    const config = team(), id = `User:${crypto.randomUUID()}::`;
+    config.kingdomInference = [{ id, url: "http://127.0.0.1:1", credentialFile: file, selection: { model: "exact-model", effort: "low" } }]; config.defaults.kingdomOwnerKey = id; config.apiTokens = true;
     await writeFile(file, JSON.stringify({ secret }), { mode: 0o600 });
     const before = await readFile(file, "utf8"), inventory = await readdir(directory);
     const report = await inspectReadiness(config, local);
-    expect(report.configurationReady).toBe(true); expect(report.issues.some(item => item.code === "kastle-access-unverified")).toBe(true);
+    expect(report.configurationReady).toBe(true); expect(report.issues.some(item => item.code === "kingdom-access-unverified")).toBe(true);
     expect(JSON.stringify(report)).not.toContain(secret); expect(await readFile(file, "utf8")).toBe(before); expect(await readdir(directory)).toEqual(inventory);
     await writeFile(file, JSON.stringify({ secret, unexpected: true }));
     expect((await inspectReadiness(config, local)).configurationReady).toBe(false);
-    config.projects.P!.defaults = { kastleId: crypto.randomUUID() };
+    config.projects.P!.defaults = { kingdomOwnerKey: `Organization::${crypto.randomUUID()}:` };
     expect((await inspectReadiness(config, local)).issues.some(item => item.code === "project-authentication-override")).toBe(true);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

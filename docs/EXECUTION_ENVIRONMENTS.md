@@ -31,8 +31,7 @@ The default. Agent generates shell commands executed on the host system.
 ```json
 {
   "id": "executor-fix",
-  "executionEnv": "bash",
-  "permissions": "supervised"
+  "executionEnv": "bash"
 }
 ```
 
@@ -112,8 +111,7 @@ Instead of piping data through bash, the agent writes real code.
 ```json
 {
   "id": "executor-data",
-  "executionEnv": "typescript",
-  "permissions": "supervised"
+  "executionEnv": "typescript"
 }
 ```
 
@@ -251,8 +249,7 @@ or the agent itself decides which environment fits.
   "browser": {
     "mode": "hybrid",
     "screenshots": true
-  },
-  "permissions": "supervised"
+  }
 }
 ```
 
@@ -308,7 +305,6 @@ or the agent itself decides which environment fits.
       "prompt": "Verify the implementation by checking the running app in the browser.",
       "provider": "claude-code",
       "model": "sonnet",
-      "permissions": "supervised",
       "enabled": true
     },
     "executor-sandbox": {

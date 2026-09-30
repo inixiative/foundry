@@ -4,7 +4,7 @@ import { resolveSubscriptionPolicy } from "./providers/subscription-policy";
 import { SubscriptionAuthentication } from "./providers/subscription-authentication";
 import { nativeTextEnvironment } from "./providers/native-text-environment";
 import { createDecisionProvider, resolveDecisionModel } from "./providers/decision-provider";
-import { KastleAuthentication } from "./providers/kastle-authentication";
+import { KingdomAuthentication } from "./providers/kingdom-authentication";
 import { NativeAuthentication } from "./providers/native-authentication";
 /**
  * Foundry — production entrypoint.
@@ -22,9 +22,6 @@ import {
   InterventionLog,
   TokenTracker,
   ActionQueue,
-  CapabilityGate,
-  SUPERVISED_POLICY,
-  UNATTENDED_POLICY,
   ProjectRegistry,
   ThreadFactory,
   ThreadRuntimeManager,
@@ -38,7 +35,7 @@ import { resolveLearningSettings } from "./agents/learning-config";
 import { runStartupSelfTest, startupSelfTestEnabled } from "./startup-self-test";
 import { FileMemory, PostgresMemory } from "./adapters";
 import { MemoryToolAdapter } from "./tools/memory-adapter";
-import { registerKastleAccess } from "./tools/kastle-access";
+import { registerKingdomAccess } from "./tools/kingdom-access";
 import { BashShell } from "./tools/bash-shell";
 import { BunScript } from "./tools/bun-script";
 import { rtk as rtkFilter } from "./tools/output-filters";
@@ -47,7 +44,6 @@ import {
   OpenAIProvider,
   GeminiProvider,
   ClaudeCodeProvider,
-  GatedProvider,
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
   FileExternalSessionStore,
@@ -185,8 +181,8 @@ function createProvider(config: FoundryConfig): {
 } {
   const providerId = config.defaults.provider;
   const sessionStore = FileExternalSessionStore.forProject(process.cwd());
-  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
-    ? new KastleAuthentication({ directory: `${process.cwd()}/.foundry/kastle`, sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments })
+  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kingdomOwnerKey || Object.keys(config.kingdomInferenceAssignments ?? {}).length
+    ? new KingdomAuthentication({ directory: `${process.cwd()}/.foundry/kingdom`, sources: config.kingdomInference ?? [], defaultOwnerKey: config.defaults.kingdomOwnerKey, assignments: config.kingdomInferenceAssignments })
     : config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length ? new NativeAuthentication({
     directory: `${process.cwd()}/.foundry/runtime-profiles`, sources: config.nativeAuthentication ?? [],
     defaultSourceId: config.defaults.nativeAuthenticationId,
@@ -283,23 +279,14 @@ function createProvider(config: FoundryConfig): {
 }
 
 const providerSetup = createProvider(config);
-const rawProvider = providerSetup.provider;
+const provider = providerSetup.provider;
 let sessionAdapter: SessionAdapter | undefined = providerSetup.sessionAdapter;
 
 // ---------------------------------------------------------------------------
-// Capability gate + action queue
+// Action queue
 // ---------------------------------------------------------------------------
 
 const actionQueue = new ActionQueue();
-
-const supervised = (process.env.FOUNDRY_MODE || "supervised") === "supervised";
-const gate = new CapabilityGate(supervised ? SUPERVISED_POLICY : UNATTENDED_POLICY, actionQueue);
-
-const provider: LLMProvider = supervised
-  ? new GatedProvider({ provider: rawProvider, gate, threadId: "main" })
-  : rawProvider;
-
-console.log(`Mode: ${supervised ? "supervised" : "unattended"} (${supervised ? "writes prompt for approval" : "auto-allow all"})`);
 
 // ---------------------------------------------------------------------------
 // Token tracker
@@ -329,7 +316,7 @@ const sourceResolver = createSourceResolver({ memory, configDir: FOUNDRY_DIR });
 // ---------------------------------------------------------------------------
 
 const tools = new ToolRegistry();
-registerKastleAccess(tools, config.kastleAccess);
+registerKingdomAccess(tools, config.kingdomAccess);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -380,10 +367,10 @@ const atlasRoot =
 const runtimeManager = new ThreadRuntimeManager({
   config,
   llm: flowLlm,
-  providers: new Map([[rawProvider.id, rawProvider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]),
+  providers: new Map([[provider.id, provider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]),
   // Review uses its explicit phase profile, otherwise the configured flow policy.
   // No provider is constructed and no live binding/settings are changed by this resolver.
-  learning: resolveLearningSettings(config.learning, new Map([[rawProvider.id, rawProvider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]), flowLlm,
+  learning: resolveLearningSettings(config.learning, new Map([[provider.id, provider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]), flowLlm,
     decisionModel),
   eventStream,
   atlasRoot,
@@ -401,9 +388,9 @@ const runtimeManager = new ThreadRuntimeManager({
 
 const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents, runtime: runtimeManager, nativeTools: tools,
   configuration: { config, layers: { sourceResolver }, agents: { provider, tokenTracker, tools,
-    // Preserve the central gate while refusing an unavailable explicit project
-    // provider; only these providers have actually been constructed above.
-    providers: new Map([...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm], [rawProvider.id, provider]]),
+    // Refuse an unavailable explicit project provider; only these providers
+    // have actually been constructed above.
+    providers: new Map([...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm], [provider.id, provider]]),
   } },
 });
 
@@ -614,7 +601,7 @@ console.log();
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-await runStartupSelfTest({ enabled: selfTestRequested, provider: decisions?.provider ?? rawProvider, model: decisions ? decisionModel : config.defaults.model, cwd: process.cwd(),
+await runStartupSelfTest({ enabled: selfTestRequested, provider: decisions?.provider ?? provider, model: decisions ? decisionModel : config.defaults.model, cwd: process.cwd(),
   log: console.log, warn: console.warn, error: console.error });
 
 console.log();

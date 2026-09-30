@@ -42,7 +42,6 @@
     "archive:viewer": "bun run packages/foundry/src/archives/viewer.ts",
     "signet": "bun run packages/foundry/src/providers/signet-cli.ts",
     "runtime:worker": "bun run packages/foundry/src/providers/runtime-worker-cli.ts",
-    "medical:profile": "bun run packages/foundry/src/providers/medical-profile-cli.ts",
     "oracle:profile": "bun packages/foundry/src/providers/oracle-profile-cli.ts"
   },
   "devDependencies": {
