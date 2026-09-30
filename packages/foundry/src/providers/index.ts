@@ -80,8 +80,8 @@ export {
 
 export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthenticationLaunch } from "./native-authentication";
 
-export { KastleAuthentication, type KastleSource, type KastleAssignment } from "./kastle-authentication";
-export { KastleClient, type KastleSelection, type KastleRunEnvelope } from "./kastle-client";
+export { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "./kingdom-authentication";
+export { KingdomClient, type KingdomSelection, type KingdomRunEnvelope } from "./kingdom-client";
 
 // Typed Jev decisions and opt-in dispatch middleware.
 export { TypeSafeDecisionClient, TypeSafeError, type TypeSafeClientOptions, type TypeSafeContent, type TypeSafeValue, type TypeSafeQuestion, type TypeSafeQuestions, type TypeSafeAnswer, type TypeSafeResult } from "./typesafe";

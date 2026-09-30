@@ -21,7 +21,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
   try {
     for (let index = 0; index < 2; index++) {
       const directory = await mkdtemp(join(root, "viewer-"));
-      const id = crypto.randomUUID(), token = `kastle_runtime_${String(index).repeat(43)}`;
+      const id = crypto.randomUUID(), token = `kingdom_runtime_${String(index).repeat(43)}`;
       const credentialFile = join(directory, "runtime.json");
       await writeFile(credentialFile, JSON.stringify({ secret: token }), { mode: 0o600 });
       allowed.set(`Bearer ${token}`, id);
@@ -35,7 +35,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
     expect((await get(0)).status).toBe(200);
     expect((await get(1)).status).toBe(200);
     expect(bodies.every(body => body.sessionCount === 1)).toBe(true);
-    allowed.delete(`Bearer kastle_runtime_${"0".repeat(43)}`);
+    allowed.delete(`Bearer kingdom_runtime_${"0".repeat(43)}`);
     expect((await get(0)).status).toBe(503);
     expect(viewers[0].kingdomConnection?.connected).toBe(false);
     expect((await get(1)).status).toBe(200);
@@ -49,7 +49,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
 
 test("connection identity mismatch and non-private credentials fail without returning secrets", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kingdom-credential-"));
-  const credentialFile = join(directory, "runtime.json"), secret = `kastle_runtime_${"a".repeat(43)}`;
+  const credentialFile = join(directory, "runtime.json"), secret = `kingdom_runtime_${"a".repeat(43)}`;
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
   const transport = (async () => Response.json({ data: { installationId: crypto.randomUUID(), userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } })) as typeof fetch;
   const connection = new KingdomRuntimeConnection({ url: "https://kingdom.test", installationId: crypto.randomUUID(), credentialFile }, () => 0, transport);

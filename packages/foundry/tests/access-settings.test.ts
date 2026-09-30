@@ -24,7 +24,7 @@ test("grant editing preserves unrelated settings, reports missing private files,
     let settings = await f.get(); expect(settings.sources).toEqual([]);
     expect((await f.put({ revision: settings.revision, source: f.source })).status).toBe(200);
     settings = await f.get(); expect(settings.applyMode).toBe("restart"); expect(settings.sources[0].credentialStatus).toBe("unavailable");
-    const secret = `kastle_${"x".repeat(43)}`; await writeFile(f.source.credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
+    const secret = `kingdom_${"x".repeat(43)}`; await writeFile(f.source.credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
     const response = await f.app.request("/api/access/sources"); expect(response.headers.get("cache-control")).toBe("no-store");
     settings = await response.json(); expect(settings.sources[0].credentialStatus).toBe("available"); expect(JSON.stringify(settings)).not.toContain(secret);
     expect((await f.store.load()).defaults).toEqual(f.config.defaults);
@@ -61,7 +61,7 @@ test("explicit checks use only the saved origin and private token, expose metada
   } });
   try {
     f.source.url = server.url.origin;
-    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kastle_${"x".repeat(43)}` }), { mode: 0o600 });
+    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kingdom_${"x".repeat(43)}` }), { mode: 0o600 });
     await f.put({ revision: (await f.get()).revision, source: f.source }); await f.get(); expect(calls).toBe(0);
     const check = () => f.app.request(`/api/access/sources/${f.source.id}/check`, { method: "POST", body: JSON.stringify({ url: "https://ignored.example" }) });
     const result = await (await check()).json(); expect(result.status).toBe("available"); expect(result.description.remainingRequests).toBe(3);
