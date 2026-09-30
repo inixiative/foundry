@@ -809,7 +809,7 @@ Every branching point in the system, who decides, and how.
 - ClaudeCodeRuntime with `.foundry-context.md` injection and PostToolUse hook scripts
 - ClaudeCodeProvider (currently `-p` mode, needs evolution)
 - Herald cross-thread pattern detection
-- Capability gate with policy system (UNATTENDED, SUPERVISED, RESTRICTED) and ActionQueue for human-in-the-loop prompts
+- Capability gate with per-capability allow/prompt/deny policies and ActionQueue for human-in-the-loop prompts
 
 ### Built
 - **MCP server** — 5 tools (query, conventions, memory, threads, signal). Mid-session bridge for on-demand context. `packages/foundry/src/mcp/`

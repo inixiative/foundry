@@ -118,8 +118,6 @@ export {
   // Capability gate
   CapabilityGate,
   CapabilityDeniedError,
-  UNATTENDED_POLICY,
-  SUPERVISED_POLICY,
   RESTRICTED_POLICY,
   type Capability,
   type BuiltinCapability,

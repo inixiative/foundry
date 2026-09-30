@@ -3,8 +3,6 @@ import { ActionQueue } from "../src/action-prompt";
 import {
   CapabilityGate,
   CapabilityDeniedError,
-  UNATTENDED_POLICY,
-  SUPERVISED_POLICY,
   RESTRICTED_POLICY,
   type PermissionPolicy,
 } from "../src/capability";
@@ -21,16 +19,20 @@ function makeGate(policy: PermissionPolicy): { gate: CapabilityGate; queue: Acti
 
 const ctx = { agentId: "agent-1", threadId: "t1" };
 
+const ALLOW_ALL: PermissionPolicy = { defaults: "allow", capabilities: {} };
+const PROMPTING: PermissionPolicy = {
+  defaults: "prompt",
+  capabilities: { "file:read": "allow", "data:read": "allow", "net:fetch": "allow", "llm:call": "allow" },
+};
+
 // ---------------------------------------------------------------------------
 // CapabilityGate
 // ---------------------------------------------------------------------------
 
 describe("CapabilityGate", () => {
-  // -- UNATTENDED_POLICY --
-
-  describe("UNATTENDED_POLICY", () => {
+  describe("allow-all policy", () => {
     test("allows everything", async () => {
-      const { gate } = makeGate(UNATTENDED_POLICY);
+      const { gate } = makeGate(ALLOW_ALL);
 
       const r1 = await gate.check("file:write", ctx);
       expect(r1.action).toBe("approved");
@@ -43,16 +45,14 @@ describe("CapabilityGate", () => {
     });
 
     test("require does not throw", async () => {
-      const { gate } = makeGate(UNATTENDED_POLICY);
+      const { gate } = makeGate(ALLOW_ALL);
       await expect(gate.require("exec:shell", ctx)).resolves.toBeUndefined();
     });
   });
 
-  // -- SUPERVISED_POLICY --
-
-  describe("SUPERVISED_POLICY", () => {
+  describe("prompting policy", () => {
     test("allows reads without prompting", async () => {
-      const { gate } = makeGate(SUPERVISED_POLICY);
+      const { gate } = makeGate(PROMPTING);
 
       const r = await gate.check("file:read", ctx);
       expect(r.action).toBe("approved");
@@ -60,14 +60,14 @@ describe("CapabilityGate", () => {
     });
 
     test("allows cheap llm calls", async () => {
-      const { gate } = makeGate(SUPERVISED_POLICY);
+      const { gate } = makeGate(PROMPTING);
 
       const r = await gate.check("llm:call", ctx);
       expect(r.action).toBe("approved");
     });
 
     test("prompts for writes", async () => {
-      const { gate, queue } = makeGate(SUPERVISED_POLICY);
+      const { gate, queue } = makeGate(PROMPTING);
 
       const promise = gate.check("file:write", ctx);
 
@@ -84,7 +84,7 @@ describe("CapabilityGate", () => {
     });
 
     test("prompts for shell exec", async () => {
-      const { gate, queue } = makeGate(SUPERVISED_POLICY);
+      const { gate, queue } = makeGate(PROMPTING);
 
       const promise = gate.check("exec:shell", ctx);
 
@@ -100,7 +100,7 @@ describe("CapabilityGate", () => {
     });
 
     test("require throws on rejection", async () => {
-      const { gate, queue } = makeGate(SUPERVISED_POLICY);
+      const { gate, queue } = makeGate(PROMPTING);
 
       const promise = gate.require("file:delete", ctx);
 
@@ -228,7 +228,7 @@ describe("CapabilityGate", () => {
   // -- Runtime policy changes --
 
   test("setPolicy updates behavior", async () => {
-    const { gate } = makeGate(UNATTENDED_POLICY);
+    const { gate } = makeGate(ALLOW_ALL);
 
     const r1 = await gate.check("exec:shell", ctx);
     expect(r1.action).toBe("approved");
@@ -242,17 +242,17 @@ describe("CapabilityGate", () => {
   // -- levelFor (sync check) --
 
   test("levelFor returns permission level without prompting", () => {
-    const { gate } = makeGate(SUPERVISED_POLICY);
+    const { gate } = makeGate(PROMPTING);
 
     expect(gate.levelFor("file:read")).toBe("allow");
-    expect(gate.levelFor("file:write")).toBe("prompt"); // default for supervised
+    expect(gate.levelFor("file:write")).toBe("prompt");
     expect(gate.levelFor("llm:call")).toBe("allow");
   });
 
   // -- Prompt message --
 
   test("prompt includes agent and capability in message", async () => {
-    const { gate, queue } = makeGate(SUPERVISED_POLICY);
+    const { gate, queue } = makeGate(PROMPTING);
 
     const promise = gate.check("file:write", {
       agentId: "writer-bot",
@@ -273,7 +273,7 @@ describe("CapabilityGate", () => {
   // -- Urgency mapping --
 
   test("delete capabilities get high urgency", async () => {
-    const { gate, queue } = makeGate(SUPERVISED_POLICY);
+    const { gate, queue } = makeGate(PROMPTING);
 
     const promise = gate.check("data:delete", ctx);
     await Bun.sleep(5);

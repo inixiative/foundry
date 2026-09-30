@@ -71,23 +71,6 @@ export interface PermissionPolicy {
   protectedPaths?: string[];
 }
 
-/** Convenience: everything allowed, no prompts. */
-export const UNATTENDED_POLICY: PermissionPolicy = {
-  defaults: "allow",
-  capabilities: {},
-};
-
-/** Convenience: prompt for writes/deletes/exec/expensive, allow reads. */
-export const SUPERVISED_POLICY: PermissionPolicy = {
-  defaults: "prompt",
-  capabilities: {
-    "file:read": "allow",
-    "data:read": "allow",
-    "net:fetch": "allow",
-    "llm:call": "allow",
-  },
-};
-
 /** Convenience: deny dangerous ops, allow reads and cheap LLM. */
 export const RESTRICTED_POLICY: PermissionPolicy = {
   defaults: "deny",
@@ -161,7 +144,7 @@ export class CapabilityGate {
 
   get policy(): PermissionPolicy { return this._policy; }
 
-  /** Update policy at runtime (e.g. operator toggles supervised mode). */
+  /** Update policy at runtime. */
   setPolicy(policy: PermissionPolicy): void {
     this._policy = policy;
   }

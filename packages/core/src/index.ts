@@ -187,8 +187,6 @@ export {
 export {
   CapabilityGate,
   CapabilityDeniedError,
-  UNATTENDED_POLICY,
-  SUPERVISED_POLICY,
   RESTRICTED_POLICY,
   BROWSER_POLICY,
   type Capability,
