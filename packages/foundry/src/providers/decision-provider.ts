@@ -1,22 +1,12 @@
 import type { LLMProvider } from "@inixiative/foundry-core";
-import { DECISION_MODEL, DECISION_PROVIDER, MODEL_REGISTRY, modelHasCapability, registryModel } from "../models/registry";
+import { MODEL_REGISTRY, modelHasCapability, registryModel, resolveDecisionModel } from "../models/registry";
 import { createRegisteredProvider, providerApiKey } from "./openai-compatible";
 import type { FoundryConfig } from "../viewer/config";
 
-/** Re-exported: the defaults used when the configuration names no constructible classifier provider. */
-export { DECISION_MODEL, DECISION_PROVIDER } from "../models/registry";
+/** Re-exported: the registry defaults and the resolver now live in core. */
+export { DECISION_MODEL, DECISION_PROVIDER, resolveDecisionModel } from "../models/registry";
 
 export type DecisionDefaults = Pick<FoundryConfig, "defaults" | "providers">;
-
-/** What the API-token path would construct, before any credential is read. */
-export function resolveDecisionModel(config: DecisionDefaults): { provider: string; model: string } {
-  const configured = config.defaults.classifierProvider;
-  // A classifier provider outside the registry — the subscription decision
-  // profile — belongs to the native path, which constructs its own client.
-  const provider = configured && MODEL_REGISTRY[configured] ? configured : DECISION_PROVIDER;
-  const model = (provider === configured && config.defaults.classifierModel) || DECISION_MODEL;
-  return { provider, model };
-}
 
 /**
  * Decisions run on any registered model tagged `judgment`. There is no judgment

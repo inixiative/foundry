@@ -269,3 +269,29 @@ export type { CredentialReference, CredentialScope, CredentialResolver } from ".
 export { evidenceDigest, assemblyDigest, boundaryReceipt, verifyExpertDelivery } from "./delivery-evidence";
 export type { ProviderBoundaryReceipt, DeliveryOwner, ExpertDeliveryProof } from "./delivery-evidence";
 export { type TokenCounts, totalTokenCount, sumTokenCounts } from "./token-counts";
+
+export {
+  MODEL_CAPABILITIES,
+  MODEL_REGISTRY,
+  MODEL_REGISTRY_UPDATED_AT,
+  DECISION_MODEL,
+  DECISION_PROVIDER,
+  modelCapabilities,
+  modelHasCapability,
+  modelOptionsByCapability,
+  providersWithCapability,
+  registryModel,
+  resolveDecisionModel,
+  type ModelTier,
+  type CostTier,
+  type ProviderType,
+  type RuntimeKind,
+  type ModelCapability,
+  type ProviderCredential,
+  type ReasoningEffort,
+  type ModelReasoning,
+  type FoundryModelInfo,
+  type FoundryProviderInfo,
+  type ModelSweepOption,
+  type DecisionModelDefaults,
+} from "./model-registry";

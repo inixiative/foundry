@@ -10,7 +10,7 @@ packages/
   foundry/    @inixiative/foundry         — opinionated framework (agents, tools, viewer, jobs)
 ```
 
-**Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker). No behavioral opinions, no specific agent implementations, no external service deps. If it makes a decision about *how* to use the primitives, it belongs in foundry.
+**Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker) and the model registry (`model-registry.ts`: the capability vocabulary, the provider/model table and its lookups) — data and pure functions, so Oracle can reason about model fitness on a core-only dependency. No behavioral opinions, no specific agent implementations, no external service deps. Every adapter (`openai.ts`, `openai-compatible.ts`, `anthropic.ts`, `gemini.ts`, `claude-code.ts`, `codex.ts`) stays in foundry, because adapters do HTTP and process handling. If it makes a decision about *how* to use the primitives, it belongs in foundry.
 
 Oracle (eval/scoring) lives in its own repo (`../oracle`), linked to core via a `file:` dependency. It depends on core only, not foundry. Its roles: **Oracle** (scores), **Steward** (chain of custody), **Prospector** (mines session transcripts + merged PRs into fixtures and correction signal — see `oracle mine`).
 
@@ -113,5 +113,5 @@ The viewer dashboard reads and writes this config. `ConfigStore` handles persist
 - **Testing**: `bun test` (bun's built-in test runner)
 - **Jobs**: BullMQ (Redis-backed background jobs)
 - **Database**: PostgreSQL (via postgres.js) for persistent memory/traces
-- **Providers**: Anthropic, OpenAI, Gemini, Claude Code CLI, Codex CLI, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
+- **Providers**: Anthropic, OpenAI, Gemini, Claude Code CLI, Codex CLI, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
 - **MCP**: Model Context Protocol server for mid-session bridge
