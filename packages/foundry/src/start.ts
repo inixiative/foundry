@@ -129,7 +129,7 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
 
   console.log("Starter config generated — setup wizard will open in the viewer.");
 } else {
-  config = await configStore.load();
+  config = structuredClone(await configStore.load());
   if (ensureRunnableLocalConfig(config)) {
     await configStore.save(config);
     console.log("Updated starter config with default local agents, layers, and project.");

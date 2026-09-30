@@ -6,7 +6,9 @@ import { KastleAuthentication, type KastleSource, type KastleAssignment } from "
 import { validateKastleAccess, type KastleAccessSource } from "../providers/kastle-access-client";
 import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
 import type { ClaudeContextBudget } from "../providers/claude-context-budget";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, existsSync } from "node:fs";
+import { rename, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { newId, validateMemorySelection, type Harness, type LLMProvider, type MemorySelectionPolicy } from "@inixiative/foundry-core";
 import { providerConfigsFromRegistry, type ModelCapability, type ProviderType } from "../models/registry";
@@ -743,10 +745,19 @@ export function validateConfig(config: FoundryConfig): void {
   for (const [pid, project] of Object.entries(config.projects ?? {})) check(`project ${JSON.stringify(pid)} sources`, project?.sources as Record<string, DataSourceConfig> | undefined);
 }
 
+/** A mutation named a settings revision that is no longer current. */
+export class ConfigRevisionError extends Error {
+  constructor() { super("Settings changed elsewhere. Reload before saving."); }
+}
+
+type ConfigDraft = (draft: FoundryConfig) => FoundryConfig | void;
+
 export class ConfigStore {
   private _dir: string;
   private _config: FoundryConfig;
   private _loaded = false;
+  private _revision = 0;
+  private _queue: Promise<unknown> = Promise.resolve();
 
   constructor(dir: string) {
     this._dir = resolve(dir);
@@ -758,87 +769,94 @@ export class ConfigStore {
 
   get directory(): string { return this._dir; }
 
+  /** Increments whenever the committed config changes. */
+  get revision(): number { return this._revision; }
+
   /** Load config from disk, merging with defaults. */
-  async load(): Promise<FoundryConfig> {
-    const path = join(this._dir, "settings.json");
-    const file = Bun.file(path);
-    if (await file.exists()) {
-      const saved = await file.json() as Partial<FoundryConfig>;
-      const defaults = defaultConfig();
-      // Merge saved over defaults into a candidate; validate before it becomes live.
-      // An invalid persisted policy fails loudly, keeps the last working live
-      // configuration, and leaves the file untouched for the operator to repair.
-      const candidate: FoundryConfig = {
-        ...defaults,
-        ...saved,
-        providers: mergeProviderConfigs(defaults.providers, saved.providers),
-        projects: { ...saved.projects },
-      };
-      try { validateConfig(candidate); }
-      catch (err) { throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`); }
-      this._config = candidate;
-    }
-    this._loaded = true;
-    return this._config;
+  load(): Promise<FoundryConfig> {
+    return this._serialize(async () => {
+      const path = join(this._dir, "settings.json");
+      const file = Bun.file(path);
+      if (await file.exists()) {
+        const saved = await file.json() as Partial<FoundryConfig>;
+        const defaults = defaultConfig();
+        // Merge saved over defaults into a candidate; validate before it becomes live.
+        // An invalid persisted policy fails loudly, keeps the last working live
+        // configuration, and leaves the file untouched for the operator to repair.
+        const candidate: FoundryConfig = {
+          ...defaults,
+          ...saved,
+          providers: mergeProviderConfigs(defaults.providers, saved.providers),
+          projects: { ...saved.projects },
+        };
+        try { validateConfig(candidate); }
+        catch (err) { throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`); }
+        if (JSON.stringify(candidate) !== JSON.stringify(this._config)) this._revision++;
+        this._config = candidate;
+      }
+      this._loaded = true;
+      return this._config;
+    });
   }
 
-  /** Get current config. */
+  /** Current committed config. Read-only: change it through update/save/patch/deleteItem. */
   get config(): FoundryConfig {
     return this._config;
   }
 
-  /** Update the full config and persist. */
-  async save(config: FoundryConfig): Promise<void> {
-    validateConfig(config);
-    this._config = config;
-    await this._write();
+  /**
+   * Apply `fn` to a deep copy of the latest committed config. Mutations run one at a time;
+   * the result becomes live only after it validates and is persisted.
+   */
+  update(fn: ConfigDraft, expectedRevision?: number): Promise<FoundryConfig> {
+    return this._serialize(async () => {
+      this._expect(expectedRevision);
+      const draft = structuredClone(this._config);
+      return this._commit(fn(draft) ?? draft);
+    });
+  }
+
+  /** Replace the full config and persist. */
+  async save(config: FoundryConfig, expectedRevision?: number): Promise<void> {
+    await this.update(() => structuredClone(config), expectedRevision);
   }
 
   /** Patch a section of the config. */
-  async patch(section: string, data: Record<string, unknown>): Promise<FoundryConfig> {
-    // Build the candidate on a copy; live and persisted settings change only after validation.
-    const next: FoundryConfig = { ...this._config };
-    if (section === "defaults") {
-      next.defaults = { ...this._config.defaults, ...data } as FoundryConfig["defaults"];
-    } else if (section === "providers") {
-      next.providers = { ...this._config.providers, ...data } as FoundryConfig["providers"];
-    } else if (section === "agents") {
-      next.agents = { ...this._config.agents, ...data } as FoundryConfig["agents"];
-    } else if (section === "layers") {
-      next.layers = { ...this._config.layers, ...data } as FoundryConfig["layers"];
-    } else if (section === "sources") {
-      next.sources = { ...this._config.sources, ...data } as FoundryConfig["sources"];
-    } else if (section === "projects") {
-      next.projects = { ...this._config.projects, ...data } as FoundryConfig["projects"];
-    } else if (section === "mcp") {
-      next.mcp = { ...this._config.mcp, ...data } as McpSettingsConfig;
-    } else if (section === "learning") {
-      next.learning = { ...this._config.learning, ...data } as LearningSettings;
-    } else if (section === "apiTokens") {
-      // Explicit opt-in to API-key providers; absent or false is subscription-only.
-      if (data.enabled === true) next.apiTokens = true; else delete next.apiTokens;
-    }
-    validateConfig(next);
-    this._config = next;
-    await this._write();
-    return this._config;
+  patch(section: string, data: Record<string, unknown>, expectedRevision?: number): Promise<FoundryConfig> {
+    const patch = structuredClone(data);
+    return this.update((next) => {
+      if (section === "defaults") {
+        next.defaults = { ...next.defaults, ...patch } as FoundryConfig["defaults"];
+      } else if (section === "providers") {
+        next.providers = { ...next.providers, ...patch } as FoundryConfig["providers"];
+      } else if (section === "agents") {
+        next.agents = { ...next.agents, ...patch } as FoundryConfig["agents"];
+      } else if (section === "layers") {
+        next.layers = { ...next.layers, ...patch } as FoundryConfig["layers"];
+      } else if (section === "sources") {
+        next.sources = { ...next.sources, ...patch } as FoundryConfig["sources"];
+      } else if (section === "projects") {
+        next.projects = { ...next.projects, ...patch } as FoundryConfig["projects"];
+      } else if (section === "mcp") {
+        next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
+      } else if (section === "learning") {
+        next.learning = { ...next.learning, ...patch } as LearningSettings;
+      } else if (section === "apiTokens") {
+        // Explicit opt-in to API-key providers; absent or false is subscription-only.
+        if (patch.enabled === true) next.apiTokens = true; else delete next.apiTokens;
+      }
+    }, expectedRevision);
   }
 
   /** Delete an item from a section. */
-  async deleteItem(section: string, id: string): Promise<FoundryConfig> {
-    const sectionMap: Record<string, Record<string, unknown>> = {
-      providers: this._config.providers,
-      agents: this._config.agents,
-      layers: this._config.layers,
-      sources: this._config.sources,
-      projects: this._config.projects,
-    };
-    const map = sectionMap[section];
-    if (map && id in map) {
-      delete map[id];
-      await this._write();
-    }
-    return this._config;
+  deleteItem(section: string, id: string, expectedRevision?: number): Promise<FoundryConfig> {
+    return this._serialize(async () => {
+      this._expect(expectedRevision);
+      if (!(id in (deletableSection(this._config, section) ?? {}))) return this._config;
+      const draft = structuredClone(this._config);
+      delete deletableSection(draft, section)![id];
+      return this._commit(draft);
+    });
   }
 
   /**
@@ -904,8 +922,30 @@ export class ConfigStore {
     return this.resolveProjectView(projectId)?.layers ?? null;
   }
 
-  private async _write(): Promise<void> {
-    const path = join(this._dir, "settings.json");
-    await Bun.write(path, JSON.stringify(this._config, null, 2));
+  private _serialize<T>(work: () => Promise<T>): Promise<T> {
+    const next = this._queue.then(work, work);
+    this._queue = next.catch(() => {});
+    return next;
   }
+
+  private _expect(revision: number | undefined): void {
+    if (revision !== undefined && revision !== this._revision) throw new ConfigRevisionError();
+  }
+
+  private async _commit(candidate: FoundryConfig): Promise<FoundryConfig> {
+    validateConfig(candidate);
+    const path = join(this._dir, "settings.json");
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, JSON.stringify(candidate, null, 2), { mode: 0o600, flag: "wx" });
+      await rename(temporary, path);
+    } finally { await rm(temporary, { force: true }); }
+    this._config = candidate;
+    this._revision++;
+    return candidate;
+  }
+}
+
+function deletableSection(config: FoundryConfig, section: string): Record<string, unknown> | undefined {
+  if (section === "providers" || section === "agents" || section === "layers" || section === "sources" || section === "projects") return config[section];
 }
