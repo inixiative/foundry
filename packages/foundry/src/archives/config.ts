@@ -26,7 +26,6 @@ export const archiveDestinationSchema = z
     z.strictObject({
       ...common,
       kind: z.literal('archive'),
-      keepIds: z.array(z.string()).max(0).optional(),
     }),
     z.strictObject({
       ...common,

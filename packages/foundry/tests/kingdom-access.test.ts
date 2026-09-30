@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { ContextStack, Thread, ToolRegistry } from "@inixiative/foundry-core";
-import { registerKastleAccess } from "../src/tools/kastle-access";
-import { type KastleAccessSource } from "../src/providers/kastle-access-client";
+import { registerKingdomAccess } from "../src/tools/kingdom-access";
+import { type KingdomAccessSource } from "../src/providers/kingdom-access-client";
 import { defaultConfig, ConfigStore, validateConfig } from "../src/viewer/config";
 import { inspectReadiness } from "../src/readiness";
 import { createFoundryMcp } from "../src/mcp/server";
@@ -22,7 +22,7 @@ const scope = { projectId, threadId: crypto.randomUUID() };
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "foundry-access-"));
-  const secret = `kastle_${"x".repeat(43)}`, credentialFile = join(directory, "access.json");
+  const secret = `kingdom_${"x".repeat(43)}`, credentialFile = join(directory, "access.json");
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
   const integrationId = crypto.randomUUID(), signetId = crypto.randomUUID(), resourceId = crypto.randomUUID();
   const requests: Array<{ action: string; body: any; authorized: boolean }> = [];
@@ -47,9 +47,9 @@ async function fixture() {
     }
     return new Response(null, { status: 404 });
   } });
-  const source: KastleAccessSource = { id: crypto.randomUUID(), name: "Team issues", integrationId, signetId, credentialFile, url: server.url.origin, projectIds: [projectId] };
-  const tools = new ToolRegistry(); registerKastleAccess(tools, [source]);
-  const call = (url: string, body: unknown = {}, owner = scope) => tools.dispatch("kastle_request", { url, method: "POST", body }, { scope: owner });
+  const source: KingdomAccessSource = { id: crypto.randomUUID(), name: "Team issues", integrationId, signetId, credentialFile, url: server.url.origin, projectIds: [projectId] };
+  const tools = new ToolRegistry(); registerKingdomAccess(tools, [source]);
+  const call = (url: string, body: unknown = {}, owner = scope) => tools.dispatch("kingdom_request", { url, method: "POST", body }, { scope: owner });
   const read = () => call("read", { accessId: source.id, operation: "issues.read", resourceId });
   return { directory, source, tools, resourceId, requests, call, read,
     state(options: { revoked?: boolean; wrongGrant?: boolean; oversize?: boolean; redirect?: boolean; failExecution?: boolean; onExecute?: () => Promise<void> }) {
@@ -83,7 +83,7 @@ test("project discovery exposes only local references; scoped reads retain serve
 test("foreign, missing and model-forged scopes cannot discover or use a grant; callers cannot override transport", async () => {
   const f = await fixture();
   try {
-    expect((await f.tools.dispatch("kastle_request", { url: "connections" })).ok).toBe(false);
+    expect((await f.tools.dispatch("kingdom_request", { url: "connections" })).ok).toBe(false);
     const foreign = { ...scope, projectId: otherProjectId };
     expect((await f.call("connections", {}, foreign)).data).toMatchObject({ body: [] });
     expect((await f.call("describe", { accessId: f.source.id }, foreign)).ok).toBe(false);
@@ -93,9 +93,9 @@ test("foreign, missing and model-forged scopes cannot discover or use a grant; c
       { url: "read", body: { accessId: f.source.id, operation: "issues.write", resourceId: f.resourceId } },
       { url: "describe", body: { accessId: f.source.id, projectId } },
       { url: "read", body: { accessId: f.source.id, operation: "issues.read", resourceId: f.resourceId, limit: 51 } },
-    ]) expect((await f.tools.dispatch("kastle_request", { method: "POST", ...input }, { scope })).ok).toBe(false);
+    ]) expect((await f.tools.dispatch("kingdom_request", { method: "POST", ...input }, { scope })).ok).toBe(false);
     expect(f.requests).toHaveLength(0);
-    registerKastleAccess(f.tools, [{ ...f.source, threadIds: [crypto.randomUUID()] }]);
+    registerKingdomAccess(f.tools, [{ ...f.source, threadIds: [crypto.randomUUID()] }]);
     expect((await f.call("connections")).data).toMatchObject({ body: [] });
   } finally { await f.close(); }
 });
@@ -117,12 +117,12 @@ test("private credentials, response bounds, redirect refusal and uncertain failu
   try {
     await chmod(f.source.credentialFile, 0o644); expect((await f.read()).ok).toBe(false); expect(f.requests).toHaveLength(0);
     await chmod(f.source.credentialFile, 0o600);
-    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kastle_runtime_${"x".repeat(43)}` }));
+    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"x".repeat(43)}` }));
     expect((await f.read()).ok).toBe(false); expect(f.requests).toHaveLength(0);
-    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kastle_${"x".repeat(43)}` }));
+    await writeFile(f.source.credentialFile, JSON.stringify({ secret: `kingdom_${"x".repeat(43)}` }));
     for (const state of [{ redirect: true }, { oversize: true }, { failExecution: true }]) {
       f.state(state); const failure = await f.read(); expect(failure.ok).toBe(false);
-      expect(JSON.stringify(failure)).not.toMatch(/PRIVATE|kastle_x|access\.json|credential-trap/);
+      expect(JSON.stringify(failure)).not.toMatch(/PRIVATE|kingdom_x|access\.json|credential-trap/);
     }
     expect(f.requests.filter(request => request.action === "execute")).toHaveLength(1);
   } finally { await f.close(); }
@@ -144,14 +144,14 @@ test("concurrent thread calls keep distinct owners and stable per-thread UUID ru
 test("configuration and doctor validate access independently from inference without making requests", async () => {
   const f = await fixture();
   try {
-    const config = defaultConfig(); config.projects[projectId] = { id: projectId, path: "/controlled/project" }; config.kastleAccess = [f.source];
+    const config = defaultConfig(); config.projects[projectId] = { id: projectId, path: "/controlled/project" }; config.kingdomAccess = [f.source];
     const store = new ConfigStore(join(f.directory, "state")); await store.save(config);
-    expect((await store.load()).kastleAccess).toEqual([f.source]);
+    expect((await store.load()).kingdomAccess).toEqual([f.source]);
     const report = await inspectReadiness(config, { environment: {}, which: () => "/controlled/cli" });
     expect(report.issues.some(issue => issue.code === "integration-access-unverified")).toBe(true); expect(f.requests).toHaveLength(0);
-    expect(() => validateConfig({ ...config, kastleAccess: [{ ...f.source, projectIds: [otherProjectId] }] })).toThrow("unavailable project");
-    expect(() => validateConfig({ ...config, kastleAccess: [f.source, f.source] })).toThrow("Duplicate");
-    expect(() => validateConfig({ ...config, kastleAccess: [{ ...f.source, secret: "inline" } as any] })).toThrow();
+    expect(() => validateConfig({ ...config, kingdomAccess: [{ ...f.source, projectIds: [otherProjectId] }] })).toThrow("unavailable project");
+    expect(() => validateConfig({ ...config, kingdomAccess: [f.source, f.source] })).toThrow("Duplicate");
+    expect(() => validateConfig({ ...config, kingdomAccess: [{ ...f.source, secret: "inline" } as any] })).toThrow();
   } finally { await f.close(); }
 });
 
@@ -206,7 +206,7 @@ test("the native launch bridge transports integration reads and persists their o
     const delivered = JSON.parse(records[0]!.record.result);
     expect(delivered.requestId).toBe(f.requests.find(request => request.action === "execute")!.body.requestId);
     expect(delivered.executionId).toMatch(/^[a-f0-9-]{36}$/);
-    expect(JSON.stringify(records)).not.toMatch(/kastle_x|access\.json/);
+    expect(JSON.stringify(records)).not.toMatch(/kingdom_x|access\.json/);
     lease.observe({ ...admission, nativeOutcome: "completed" });
   } finally { await client.close(); await lease.close(); runtime.disposeAll(); store.close(); await f.close(); }
 });

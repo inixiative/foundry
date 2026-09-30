@@ -302,7 +302,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
     return Response.json({ data: { installationId: id, userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
   } });
   const id = crypto.randomUUID(), credentialFile = join(root, "runtime.json");
-  await writeFile(credentialFile, JSON.stringify({ secret: `kastle_runtime_${"0".repeat(43)}` }), { mode: 0o600 });
+  await writeFile(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"0".repeat(43)}` }), { mode: 0o600 });
   const thread = new Thread("kingdom-main", new ContextStack()), events = new EventStream();
   const viewer = await startViewer({ port: 0, configDir: root, analyticsDir: join(root, "analytics"), localStore: null,
     harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(thread.signals),

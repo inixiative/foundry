@@ -8,7 +8,7 @@ import { connectionCheckJobHandler } from "./connection-check-job";
 export type RuntimeOwner = { ownerModel: string; userId?: string | null; organizationId?: string | null; spaceId?: string | null };
 export type RuntimeIdentity = { installationId: string; userId: string | null; owner: RuntimeOwner; expiresAt: string };
 
-/** Kastle access call a handler may make. Handler actions are the handler's own; the worker never enumerates them. */
+/** Kingdom access call a handler may make. Handler actions are the handler's own; the worker never enumerates them. */
 export type RuntimeJobRequest = (action: string, body: unknown) => Promise<unknown>;
 
 export interface RuntimeJobContext {

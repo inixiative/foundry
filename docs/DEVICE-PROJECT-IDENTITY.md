@@ -21,7 +21,7 @@ Foundry should expose the user's devices and the projects on each device, with a
 
 ## Identity and ownership
 
-- A device receives a random stable ID when enrolled, a display name, its owner and allowed Kastle scope. Hostnames and hardware serial numbers are not identities.
+- A device receives a random stable ID when enrolled, a display name, its owner and allowed Kingdom owner scope. Hostnames and hardware serial numbers are not identities.
 - An existing Foundry project keeps its ID. A separate project-link record relates existing project IDs across devices; linking never rewrites grant allowlists, session ownership or history.
 - A checkout identifies one device-local repository/worktree. Its path, branch, commit, dirty state and observation time belong to that checkout, not the shared project.
 - Matching normalized Git remotes can suggest links. Explicit linking establishes the relationship. Repository URL alone cannot establish identity: this handoff deliberately contains four separate histories in one private repository.
@@ -37,7 +37,7 @@ Start with local inventory and manually linked enrollment. Do not crawl entire h
 
 ## Access, capacity and handoff
 
-Reuse Kingdom's credential encryption manager for server-held credential envelopes and versioned rotation. Keep device private keys in a device-local protected store. Enrollment/revocation should bind device identity to existing Kastle authorization. Discovery never exports upstream credentials or implies deployment permission.
+Reuse Kingdom's credential encryption manager for server-held credential envelopes and versioned rotation. Keep device private keys in a device-local protected store. Enrollment/revocation should bind device identity to existing Kingdom authorization. Discovery never exports upstream credentials or implies deployment permission.
 
 Keep capacity admission and usage settlement in their existing owners. Device presence is not capacity; an online device may have no valid provider access or available allowance. A lost heartbeat cannot release an unsettled run's reservation.
 
