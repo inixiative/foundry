@@ -33,7 +33,7 @@
         "@inixiative/agent-session": "^0.2.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.4",
-        "@inixiative/session-archive": "npm:@inixiative/archive@^0.3.0",
+        "@inixiative/session-archive": "npm:@inixiative/archive@^0.5.1",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@prisma/client": "^6.6.0",
         "bullmq": "^5.73.0",
@@ -88,7 +88,7 @@
 
     "@inixiative/gloss": ["@inixiative/gloss@0.0.4", "", { "peerDependencies": { "typescript": ">=5.9.0" }, "bin": { "gloss": "dist/cli.js" } }, "sha512-X1Y+Y0KT8aCr/IqxR5rPjjmjD0WIiXxdmL0hKOQUhBT1CiCFHOz8KZLtzPppVAPt4zx3xE+XySmnwjrgxD4rug=="],
 
-    "@inixiative/session-archive": ["@inixiative/archive@0.3.0", "", { "dependencies": { "js-tiktoken": "1.0.21", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-o6/j6V/zY0eQ/6lJv4gAGcZmo+orTe0MRbK1f73O3BDzeJr5eBvw7D+GtmnIGGN+CfdNuOtsYl7pgxUeW7/zvA=="],
+    "@inixiative/session-archive": ["@inixiative/archive@0.5.1", "", { "dependencies": { "js-tiktoken": "1.0.21", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-ysh5+qnMBrHp448B4URiM0QXKx1bKOZmeatKNa/lVA4AuUqcyuYAGBR6jgIE5B6HsEuoGKRQMpl+Q9Q6mj1ZMA=="],
 
     "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
 
