@@ -17,14 +17,14 @@
 // ---------------------------------------------------------------------------
 
 import {
+  type CompletionOpts,
   ContextLayer,
   type ContextStack,
+  type LLMMessage,
+  type LLMProvider,
   type Signal,
   type SignalBus,
-  type LLMProvider,
-  type LLMMessage,
-  type CompletionOpts,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,7 +56,7 @@ export interface TopologyMap {
 /** Routing result — which layers the message needs. */
 /** The exact routing input one call supplied to its provider, frozen at the call boundary. */
 export interface RouteRequestEvidence {
-  readonly phase: "route";
+  readonly phase: 'route';
   readonly providerId: string;
   readonly messages: readonly LLMMessage[];
   readonly capturedAt: number;
@@ -81,7 +81,7 @@ export interface RouteResult {
    * How the route was produced. A keyword fallback after a model failure is
    * not a model decision and must never be presented as one.
    */
-  source?: "model" | "keyword-fallback" | "empty-map";
+  source?: 'model' | 'keyword-fallback' | 'empty-map';
   /** Why a fallback was taken, when it was. */
   reason?: string;
 }
@@ -109,7 +109,7 @@ export interface AtlasConceptEntry {
 export interface AtlasIndex {
   concepts: AtlasConceptEntry[];
   /** Where the index came from: the atlas CLI or a MAP.md fallback. */
-  source: "graph" | "map-md";
+  source: 'graph' | 'map-md';
   loadedAt: number;
 }
 
@@ -164,13 +164,15 @@ export class Cartographer {
     this._atlasRoot = config.atlasRoot;
     this._map = { entries: [], lastBuilt: 0, mapTokens: 0 };
 
-    this._routePrompt = config.routePrompt ??
+    this._routePrompt =
+      config.routePrompt ??
       `You are a context router. Given a message, a topology map of available context, and (when present) the codebase concept map, decide which layers the message needs. Concepts (e.g. "feature:auth") tell you which part of the codebase a message touches — use them to pick the matching domains and layers. Route precisely — load what's needed, skip what isn't. Respond with JSON: { "layers": string[], "domains": string[], "concepts": string[], "confidence": number }`;
 
     // Create the map layer — always warm, holds the serialized topology map
     this._mapLayer = new ContextLayer({
-      id: "__topology-map",
-      prompt: "Topology map of all available context. Used by the Cartographer for routing decisions.",
+      id: '__topology-map',
+      prompt:
+        'Topology map of all available context. Used by the Cartographer for routing decisions.',
     });
 
     // Subscribe to signals that trigger map rebuilds
@@ -224,10 +226,10 @@ export class Cartographer {
     try {
       // --no-install: only use the repo's own atlas devDep — never fall back
       // to npm, where "atlas" is an unrelated package.
-      const proc = Bun.spawn(["bunx", "--no-install", "atlas", "graph", "--json"], {
+      const proc = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
         cwd: root,
-        stdout: "pipe",
-        stderr: "pipe",
+        stdout: 'pipe',
+        stderr: 'pipe',
       });
       const stdout = await new Response(proc.stdout).text();
       if ((await proc.exited) !== 0) return null;
@@ -244,7 +246,7 @@ export class Cartographer {
       }));
       if (concepts.length === 0) return null;
 
-      return { concepts, source: "graph", loadedAt: Date.now() };
+      return { concepts, source: 'graph', loadedAt: Date.now() };
     } catch {
       return null;
     }
@@ -253,7 +255,7 @@ export class Cartographer {
   /** Fallback: pull concept ids out of a committed MAP.md (class:name tokens). */
   private async _loadAtlasMapMd(root: string): Promise<AtlasIndex | null> {
     try {
-      const file = Bun.file(`${root.replace(/\/$/, "")}/MAP.md`);
+      const file = Bun.file(`${root.replace(/\/$/, '')}/MAP.md`);
       if (!(await file.exists())) return null;
       const text = await file.text();
 
@@ -264,7 +266,7 @@ export class Cartographer {
       if (ids.size === 0) return null;
 
       const concepts = [...ids].sort().map((id) => ({ id, files: 0, consumers: 0 }));
-      return { concepts, source: "map-md", loadedAt: Date.now() };
+      return { concepts, source: 'map-md', loadedAt: Date.now() };
     } catch {
       return null;
     }
@@ -274,11 +276,9 @@ export class Cartographer {
   private _atlasSection(): string | null {
     if (!this._atlas) return null;
     const lines = this._atlas.concepts.map((c) =>
-      c.files || c.consumers
-        ? `${c.id} (${c.files} files, ${c.consumers} consumers)`
-        : c.id
+      c.files || c.consumers ? `${c.id} (${c.files} files, ${c.consumers} consumers)` : c.id,
     );
-    return lines.join("\n");
+    return lines.join('\n');
   }
 
   // -----------------------------------------------------------------------
@@ -291,11 +291,14 @@ export class Cartographer {
    */
   buildMap(): TopologyMap {
     const layers = this._stack.layers;
-    const domainGroups = new Map<string, { layers: string[]; totalTokens: number; oldestWarm: number | null }>();
+    const domainGroups = new Map<
+      string,
+      { layers: string[]; totalTokens: number; oldestWarm: number | null }
+    >();
 
     for (const layer of layers) {
       // Skip the Librarian's thread-state layer (not routable context)
-      if (layer.id === "thread-state") continue;
+      if (layer.id === 'thread-state') continue;
 
       const domain = layer.definition?.domain ?? this._inferDomain(layer.id);
       if (!domainGroups.has(domain)) {
@@ -320,7 +323,7 @@ export class Cartographer {
         domain,
         layers: group.layers,
         approxTokens: group.totalTokens,
-        staleness: group.oldestWarm ? formatAge(now - group.oldestWarm) : "unknown",
+        staleness: group.oldestWarm ? formatAge(now - group.oldestWarm) : 'unknown',
       });
     }
 
@@ -335,7 +338,7 @@ export class Cartographer {
     this._mapLayer.set(
       atlasSection
         ? `${JSON.stringify(this._map.entries, null, 2)}\n\n## Codebase concepts (atlas)\n${atlasSection}`
-        : JSON.stringify(this._map.entries, null, 2)
+        : JSON.stringify(this._map.entries, null, 2),
     );
 
     return this._map;
@@ -357,30 +360,44 @@ export class Cartographer {
 
     // If still empty after build, nothing to route
     if (this._map.entries.length === 0) {
-      return { layers: [], domains: [], confidence: 0, source: "empty-map", reason: "no layers in the topology map" };
+      return {
+        layers: [],
+        domains: [],
+        confidence: 0,
+        source: 'empty-map',
+        reason: 'no layers in the topology map',
+      };
     }
 
     const mapContent = JSON.stringify(this._map.entries, null, 2);
     const atlasSection = this._atlasSection();
 
     const messages: LLMMessage[] = [
-      { role: "system", content: this._routePrompt },
+      { role: 'system', content: this._routePrompt },
       {
-        role: "user",
+        role: 'user',
         content: [
-          "## Available context (topology map)",
+          '## Available context (topology map)',
           mapContent,
-          atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}` : "",
-          threadState ? `\n## Current thread state\n${threadState}` : "",
+          atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}` : '',
+          threadState ? `\n## Current thread state\n${threadState}` : '',
           `\n## Message to route\n${message}`,
           `\nWhich layers does this message need? Respond with JSON only.`,
-        ].join("\n"),
+        ].join('\n'),
       },
     ];
 
     // The exact input, frozen before the provider sees it. Empty-map returns above make no call.
-    opts?.observeRequest?.(Object.freeze({ phase: "route" as const, providerId: this._llm.id, capturedAt: Date.now(),
-      messages: Object.freeze(messages.map((m) => Object.freeze({ role: m.role, content: m.content }))) }));
+    opts?.observeRequest?.(
+      Object.freeze({
+        phase: 'route' as const,
+        providerId: this._llm.id,
+        capturedAt: Date.now(),
+        messages: Object.freeze(
+          messages.map((m) => Object.freeze({ role: m.role, content: m.content })),
+        ),
+      }),
+    );
 
     try {
       const result = await this._llm.complete(messages, this._llmOpts);
@@ -390,13 +407,13 @@ export class Cartographer {
         domains: parsed.domains ?? [],
         concepts: parsed.concepts ?? [],
         confidence: parsed.confidence ?? 0.5,
-        source: "model",
+        source: 'model',
       };
     } catch (err) {
       // Model failure → keyword matching against the map, labelled as such.
       return {
         ...this._keywordFallback(message),
-        source: "keyword-fallback",
+        source: 'keyword-fallback',
         reason: (err as Error)?.message ?? String(err),
       };
     }
@@ -425,7 +442,7 @@ export class Cartographer {
     // Match concept names: "feature:auth" hits on "auth"
     if (this._atlas) {
       for (const concept of this._atlas.concepts) {
-        const name = concept.id.split(":").pop() ?? concept.id;
+        const name = concept.id.split(':').pop() ?? concept.id;
         const words = name.toLowerCase().split(/[-_\s]+/);
         if (words.some((w) => w.length > 2 && lower.includes(w))) {
           concepts.push(concept.id);
@@ -453,8 +470,8 @@ export class Cartographer {
       }
     }
     // Infer from layer ID: "auth-conventions" → "auth", "security-patterns" → "security"
-    const parts = layerId.split("-");
-    return parts[0] || "general";
+    const parts = layerId.split('-');
+    return parts[0] || 'general';
   }
 
   // -----------------------------------------------------------------------
@@ -464,9 +481,9 @@ export class Cartographer {
   private _shouldRebuild(signal: Signal): boolean {
     // Rebuild map when layers change
     return (
-      signal.kind === "context_loaded" ||
-      signal.kind === "context_evicted" ||
-      signal.kind === "architecture_observation"
+      signal.kind === 'context_loaded' ||
+      signal.kind === 'context_evicted' ||
+      signal.kind === 'architecture_observation'
     );
   }
 

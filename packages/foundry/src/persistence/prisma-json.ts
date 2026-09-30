@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from '@prisma/client';
 
 export type PrismaJsonValue = Prisma.InputJsonValue | typeof Prisma.JsonNull;
 export type OptionalPrismaJsonValue = PrismaJsonValue | undefined;

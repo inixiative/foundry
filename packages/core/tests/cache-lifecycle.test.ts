@@ -1,26 +1,26 @@
-import { describe, test, expect } from "bun:test";
-import { ContextLayer, type ContextSource } from "../src/context-layer";
-import { ContextStack } from "../src/context-stack";
-import { CacheLifecycle, type LifecycleRule } from "../src/cache-lifecycle";
+import { describe, expect, test } from 'bun:test';
+import { CacheLifecycle, type LifecycleRule } from '../src/cache-lifecycle';
+import { ContextLayer, type ContextSource } from '../src/context-layer';
+import { ContextStack } from '../src/context-stack';
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
 }
 
-describe("CacheLifecycle", () => {
-  test("start observes layer state changes", async () => {
+describe('CacheLifecycle', () => {
+  test('start observes layer state changes', async () => {
     const layer = new ContextLayer({
-      id: "test",
-      sources: [source("s", "hello")],
+      id: 'test',
+      sources: [source('s', 'hello')],
     });
     const stack = new ContextStack([layer]);
     const lifecycle = new CacheLifecycle(stack);
 
     const events: string[] = [];
-    lifecycle.on("layer:warming", (e) => {
+    lifecycle.on('layer:warming', (e) => {
       events.push(e.type);
     });
-    lifecycle.on("layer:warm", (e) => {
+    lifecycle.on('layer:warm', (e) => {
       events.push(e.type);
     });
 
@@ -29,23 +29,23 @@ describe("CacheLifecycle", () => {
 
     // Events are queued via microtask, wait for them
     await new Promise((r) => setTimeout(r, 50));
-    expect(events).toContain("layer:warming");
-    expect(events).toContain("layer:warm");
+    expect(events).toContain('layer:warming');
+    expect(events).toContain('layer:warm');
   });
 
-  test("rules fire when triggers match", async () => {
+  test('rules fire when triggers match', async () => {
     const layer = new ContextLayer({
-      id: "test",
+      id: 'test',
       staleness: 1,
-      sources: [source("s", "hello")],
+      sources: [source('s', 'hello')],
     });
     const stack = new ContextStack([layer]);
     const lifecycle = new CacheLifecycle(stack);
 
     let ruleRan = false;
     lifecycle.addRule({
-      id: "auto-warm",
-      triggers: ["stale"],
+      id: 'auto-warm',
+      triggers: ['stale'],
       async action(layer, state, stack) {
         ruleRan = true;
         await layer.warm();
@@ -62,23 +62,23 @@ describe("CacheLifecycle", () => {
     expect(ruleRan).toBe(true);
   });
 
-  test("rules only fire for specified layerIds", async () => {
+  test('rules only fire for specified layerIds', async () => {
     const a = new ContextLayer({
-      id: "a",
-      sources: [source("s", "hello")],
+      id: 'a',
+      sources: [source('s', 'hello')],
     });
     const b = new ContextLayer({
-      id: "b",
-      sources: [source("s", "world")],
+      id: 'b',
+      sources: [source('s', 'world')],
     });
     const stack = new ContextStack([a, b]);
     const lifecycle = new CacheLifecycle(stack);
 
     const triggered: string[] = [];
     lifecycle.addRule({
-      id: "specific",
-      triggers: ["warm"],
-      layerIds: ["a"],
+      id: 'specific',
+      triggers: ['warm'],
+      layerIds: ['a'],
       async action(layer) {
         triggered.push(layer.id);
       },
@@ -89,27 +89,27 @@ describe("CacheLifecycle", () => {
     await b.warm();
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(triggered).toEqual(["a"]);
+    expect(triggered).toEqual(['a']);
   });
 
-  test("removeRule stops rule from firing", async () => {
+  test('removeRule stops rule from firing', async () => {
     const layer = new ContextLayer({
-      id: "test",
-      sources: [source("s", "hello")],
+      id: 'test',
+      sources: [source('s', 'hello')],
     });
     const stack = new ContextStack([layer]);
     const lifecycle = new CacheLifecycle(stack);
 
     let ruleRan = false;
     lifecycle.addRule({
-      id: "to-remove",
-      triggers: ["warm"],
+      id: 'to-remove',
+      triggers: ['warm'],
       async action() {
         ruleRan = true;
       },
     });
 
-    lifecycle.removeRule("to-remove");
+    lifecycle.removeRule('to-remove');
     lifecycle.start();
     await layer.warm();
     await new Promise((r) => setTimeout(r, 50));
@@ -117,16 +117,16 @@ describe("CacheLifecycle", () => {
     expect(ruleRan).toBe(false);
   });
 
-  test("stop unsubscribes from layers", async () => {
+  test('stop unsubscribes from layers', async () => {
     const layer = new ContextLayer({
-      id: "test",
-      sources: [source("s", "hello")],
+      id: 'test',
+      sources: [source('s', 'hello')],
     });
     const stack = new ContextStack([layer]);
     const lifecycle = new CacheLifecycle(stack);
 
     const events: string[] = [];
-    lifecycle.on("layer:warm", (e) => {
+    lifecycle.on('layer:warm', (e) => {
       events.push(e.type);
     });
 
@@ -138,12 +138,12 @@ describe("CacheLifecycle", () => {
     expect(events).toEqual([]);
   });
 
-  test("auto-observes layers added after start", async () => {
+  test('auto-observes layers added after start', async () => {
     const stack = new ContextStack();
     const lifecycle = new CacheLifecycle(stack);
 
     const events: string[] = [];
-    lifecycle.on("layer:warm", (e) => {
+    lifecycle.on('layer:warm', (e) => {
       events.push(e.layerId);
     });
 
@@ -151,34 +151,34 @@ describe("CacheLifecycle", () => {
 
     // Add layer AFTER start
     const layer = new ContextLayer({
-      id: "late",
-      sources: [source("s", "hello")],
+      id: 'late',
+      sources: [source('s', 'hello')],
     });
     stack.addLayer(layer);
     await layer.warm();
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(events).toContain("late");
+    expect(events).toContain('late');
   });
 
-  test("rule errors emit rule:error event", async () => {
+  test('rule errors emit rule:error event', async () => {
     const layer = new ContextLayer({
-      id: "test",
-      sources: [source("s", "hello")],
+      id: 'test',
+      sources: [source('s', 'hello')],
     });
     const stack = new ContextStack([layer]);
     const lifecycle = new CacheLifecycle(stack);
 
     lifecycle.addRule({
-      id: "bad-rule",
-      triggers: ["warm"],
+      id: 'bad-rule',
+      triggers: ['warm'],
       async action() {
-        throw new Error("rule failed");
+        throw new Error('rule failed');
       },
     });
 
     const errors: string[] = [];
-    lifecycle.on("rule:error", (e) => {
+    lifecycle.on('rule:error', (e) => {
       errors.push((e.meta as any).ruleId);
     });
 
@@ -186,6 +186,6 @@ describe("CacheLifecycle", () => {
     await layer.warm();
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(errors).toEqual(["bad-rule"]);
+    expect(errors).toEqual(['bad-rule']);
   });
 });

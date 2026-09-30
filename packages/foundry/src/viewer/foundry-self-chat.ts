@@ -1,8 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 export interface SelfChatMessage {
-  role: "user" | "assistant" | "system";
+  role: 'user' | 'assistant' | 'system';
   content: string;
   ts: number;
   focus?: SelfChatFocus;
@@ -10,10 +10,10 @@ export interface SelfChatMessage {
 }
 
 export interface SelfChatFocus {
-  scope?: "global" | "project";
+  scope?: 'global' | 'project';
   projectId?: string;
   tab?: string;
-  focusKind?: "source" | "agent" | "layer" | "provider" | null;
+  focusKind?: 'source' | 'agent' | 'layer' | 'provider' | null;
   focusId?: string | null;
 }
 
@@ -30,14 +30,18 @@ export class FoundrySelfChatStore {
     this._file = file;
   }
 
-  get file(): string { return this._file; }
-  get messages(): SelfChatMessage[] { return this._messages; }
+  get file(): string {
+    return this._file;
+  }
+  get messages(): SelfChatMessage[] {
+    return this._messages;
+  }
 
   async load(): Promise<void> {
     if (this._loaded) return;
     this._loaded = true;
     try {
-      const raw = await readFile(this._file, "utf8");
+      const raw = await readFile(this._file, 'utf8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) this._messages = parsed;
     } catch {

@@ -21,7 +21,15 @@ export function totalTokenCount(tokens: TokenCounts): number {
 export function sumTokenCounts(entries: Iterable<TokenCounts>): TokenCounts {
   const total: TokenCounts = { input: 0, output: 0 };
   for (const entry of entries) {
-    for (const key of ["input", "output", "cacheRead", "cacheWrite", "cacheWrite5m", "cacheWrite1h", "thinking"] as const) {
+    for (const key of [
+      'input',
+      'output',
+      'cacheRead',
+      'cacheWrite',
+      'cacheWrite5m',
+      'cacheWrite1h',
+      'thinking',
+    ] as const) {
       const value = entry[key];
       if (value !== undefined) total[key] = (total[key] ?? 0) + value;
     }

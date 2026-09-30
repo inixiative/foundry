@@ -34,31 +34,31 @@
 // ---------------------------------------------------------------------------
 
 import {
+  type ContextStack,
   computeHash,
   copyMessageIdentity,
-  type LogicalMessageIdentity,
-  newId,
-  type ContextStack,
   type LayerState,
+  type LogicalMessageIdentity,
   type MessageDecoration,
+  newId,
   type ParticipantRequest,
   type PromptBlock,
-  type SignalBus,
   type Signal,
-} from "@inixiative/foundry-core";
+  type SignalBus,
+} from '@inixiative/foundry-core';
 
-import type { Cartographer, RouteRequestEvidence, RouteResult } from "./cartographer";
+import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
 import type {
   AdviceRequestEvidence,
   DomainLibrarian,
-  ToolObservation,
   GuardCallEvidence,
   GuardFinding,
   GuardResult,
   GuardStatus,
   PhaseRequestEvidence,
-} from "./domain-librarian";
-import type { Librarian } from "./librarian";
+  ToolObservation,
+} from './domain-librarian';
+import type { Librarian } from './librarian';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,7 +72,13 @@ import type { Librarian } from "./librarian";
  * - excluded: the domain never started because the plan deadline passed while it was queued.
  * - omitted: the domain contributed but the composition budget excluded it.
  */
-export type ContributionDecision = "contribute" | "abstain" | "error" | "timeout" | "excluded" | "omitted";
+export type ContributionDecision =
+  | 'contribute'
+  | 'abstain'
+  | 'error'
+  | 'timeout'
+  | 'excluded'
+  | 'omitted';
 
 /** The three named inputs a domain worked from. Explicit, never inferred. */
 export interface ContributionSegments {
@@ -134,7 +140,7 @@ export interface PlanInput {
  * - timeout: no answer by the routing deadline (call still outstanding).
  * - error: the routing call rejected.
  */
-export type RoutingStatus = "routed" | "fallback" | "timeout" | "error";
+export type RoutingStatus = 'routed' | 'fallback' | 'timeout' | 'error';
 
 export interface RoutingOutcome extends RouteResult {
   readonly status: RoutingStatus;
@@ -148,7 +154,7 @@ export interface RoutingOutcome extends RouteResult {
 
 /** A provider call that had not settled when the plan was sealed. */
 export interface OutstandingCall {
-  readonly kind: "route" | "advise";
+  readonly kind: 'route' | 'advise';
   readonly participant: string;
   readonly startedAt: number;
 }
@@ -176,7 +182,11 @@ export interface InjectionPlan {
   /** Domains excluded by policy (budget), never silently. */
   readonly omissions: Array<{ readonly domain: string; readonly reason: string }>;
   /** Disagreements the composer noticed but did not resolve. */
-  readonly conflicts: Array<{ readonly kind: string; readonly domain: string; readonly detail: string }>;
+  readonly conflicts: Array<{
+    readonly kind: string;
+    readonly domain: string;
+    readonly detail: string;
+  }>;
   /** Provider calls still running when the plan was sealed. Not cancelled. */
   readonly outstanding: OutstandingCall[];
   /** When the plan was sealed. Nothing may change it afterwards. */
@@ -222,7 +232,7 @@ export interface DeliveryEvidence {
 /** Event emitted when the orchestrator detects a state change that invalidates the current plan. */
 export interface InvalidationEvent {
   /** What triggered the invalidation. */
-  reason: "eviction" | "rehydration" | "map_rebuild" | "compaction";
+  reason: 'eviction' | 'rehydration' | 'map_rebuild' | 'compaction';
   /** Layer IDs affected. */
   affectedLayers: string[];
   /** Timestamp of the invalidation. */
@@ -238,7 +248,7 @@ export interface GuardOutcome {
   readonly findings: number;
   readonly error?: string;
   /** Provider lifecycle classification of a failed call, "unknown", or "not-admitted" when the call was refused before the provider. */
-  readonly admission?: GuardCallEvidence | "unknown" | "not-admitted";
+  readonly admission?: GuardCallEvidence | 'unknown' | 'not-admitted';
   /** Revision of the domain's own thread understanding that was supplied. */
   readonly threadKnowledgeRevision?: number;
   /** The exact guard request supplied to the domain's provider, or why none was made. */
@@ -247,7 +257,11 @@ export interface GuardOutcome {
 
 /** Caller hooks for the post-action flow. `onRequest` fires at each domain's call boundary, before its answer. */
 export interface GuardPhaseHooks {
-  onRequest?: (domain: string, request: PhaseRequestEvidence, threadKnowledgeRevision: number) => void;
+  onRequest?: (
+    domain: string,
+    request: PhaseRequestEvidence,
+    threadKnowledgeRevision: number,
+  ) => void;
 }
 
 /** Result of the post-action flow — findings from guard checks, and which checks did not complete. */
@@ -327,9 +341,7 @@ interface PlanClock {
   remaining(): number | undefined;
 }
 
-type Raced<T> =
-  | { timedOut: false; value: T }
-  | { timedOut: true; reason: string };
+type Raced<T> = { timedOut: false; value: T } | { timedOut: true; reason: string };
 
 export class FlowOrchestrator {
   private _cartographer: Cartographer;
@@ -365,16 +377,14 @@ export class FlowOrchestrator {
     this._librarian = config.librarian;
     this._stack = config.stack;
     this._signals = config.signals;
-    this._maxAdviseParallel = positiveInteger("maxAdviseParallel", config.maxAdviseParallel, 5);
-    this._adviseTimeoutMs = positiveFiniteMs("adviseTimeoutMs", config.adviseTimeoutMs, 10_000)!;
-    this._routingTimeoutMs = positiveFiniteMs("routingTimeoutMs", config.routingTimeoutMs, 10_000)!;
-    this._planTimeoutMs = positiveFiniteMs("planTimeoutMs", config.planTimeoutMs, undefined);
-    this._contributionBudget = positiveBudget("contributionBudget", config.contributionBudget);
+    this._maxAdviseParallel = positiveInteger('maxAdviseParallel', config.maxAdviseParallel, 5);
+    this._adviseTimeoutMs = positiveFiniteMs('adviseTimeoutMs', config.adviseTimeoutMs, 10_000)!;
+    this._routingTimeoutMs = positiveFiniteMs('routingTimeoutMs', config.routingTimeoutMs, 10_000)!;
+    this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
+    this._contributionBudget = positiveBudget('contributionBudget', config.contributionBudget);
 
     // Subscribe to signals that invalidate the current plan
-    this._unsubscribes.push(
-      this._signals.onAny((signal) => this._handleInvalidation(signal)),
-    );
+    this._unsubscribes.push(this._signals.onAny((signal) => this._handleInvalidation(signal)));
   }
 
   /** Whether the current injection plan is stale and should be re-fired. */
@@ -422,7 +432,10 @@ export class FlowOrchestrator {
    * no digestion. Layers are decorators and routers around the message,
    * not summaries of it.
    */
-  async preMessage(message: string, currentMessage?: LogicalMessageIdentity): Promise<InjectionPlan> {
+  async preMessage(
+    message: string,
+    currentMessage?: LogicalMessageIdentity,
+  ): Promise<InjectionPlan> {
     const plan = await this._runPreMessage(message, true, currentMessage);
 
     // Track for re-firing after invalidation
@@ -442,7 +455,11 @@ export class FlowOrchestrator {
   async refire(): Promise<InjectionPlan | null> {
     if (!this._lastMessage) return null;
 
-    const plan = await this._runPreMessage(this._lastMessage, false, this._lastPlan?.input.currentMessage);
+    const plan = await this._runPreMessage(
+      this._lastMessage,
+      false,
+      this._lastPlan?.input.currentMessage,
+    );
 
     this._lastPlan = plan;
     this._invalidated = false;
@@ -451,7 +468,11 @@ export class FlowOrchestrator {
     return plan;
   }
 
-  private async _runPreMessage(message: string, fresh: boolean, currentMessage?: LogicalMessageIdentity): Promise<InjectionPlan> {
+  private async _runPreMessage(
+    message: string,
+    fresh: boolean,
+    currentMessage?: LogicalMessageIdentity,
+  ): Promise<InjectionPlan> {
     const start = Date.now();
 
     // 1. Freeze: everything a participant may read is captured now, before
@@ -482,12 +503,15 @@ export class FlowOrchestrator {
       deadlineAt,
       planTimeoutMs,
       passed: () => deadlineAt !== undefined && Date.now() >= deadlineAt,
-      remaining: () => (deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now())),
+      remaining: () =>
+        deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now()),
     };
     const outstanding: OutstandingCall[] = [];
 
     // 2. Assess: domains start immediately (bounded pool); routing runs alongside.
-    const assessments = runBounded(participants, this._maxAdviseParallel, (p) => this._assess(p, input, clock, outstanding));
+    const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
+      this._assess(p, input, clock, outstanding),
+    );
     const routing = this._route(message, threadState, clock, outstanding);
     const [route, contributions] = await Promise.all([routing, assessments]);
 
@@ -506,31 +530,53 @@ export class FlowOrchestrator {
     // Invocation-scoped: the exact routing input, observed at the Cartographer's call boundary. A
     // timed-out or failed route keeps its request; an empty map or a never-started route records why.
     let observed: RouteRequestEvidence | null = null;
-    const finish = (partial: Omit<RoutingOutcome, "startedAt" | "finishedAt" | "elapsedMs" | "request">): RoutingOutcome => {
+    const finish = (
+      partial: Omit<RoutingOutcome, 'startedAt' | 'finishedAt' | 'elapsedMs' | 'request'>,
+    ): RoutingOutcome => {
       const finishedAt = Date.now();
       const request: ParticipantRequest = observed
-        ? { status: "supplied", phase: observed.phase, providerId: observed.providerId, messages: observed.messages, capturedAt: observed.capturedAt }
-        : { status: "not-sent", phase: "route", reason: partial.reason ?? `${partial.status} before any provider call` };
+        ? {
+            status: 'supplied',
+            phase: observed.phase,
+            providerId: observed.providerId,
+            messages: observed.messages,
+            capturedAt: observed.capturedAt,
+          }
+        : {
+            status: 'not-sent',
+            phase: 'route',
+            reason: partial.reason ?? `${partial.status} before any provider call`,
+          };
       return { ...partial, request, startedAt, finishedAt, elapsedMs: finishedAt - startedAt };
     };
     const empty = { layers: [] as string[], domains: [] as string[], confidence: 0 };
 
-    const task = this._cartographer.route(message, threadState, { observeRequest: (evidence) => { observed = evidence; } }).then(
-      (result) => ({ kind: "result" as const, result }),
-      (err: unknown) => ({ kind: "error" as const, error: (err as Error)?.message ?? String(err) }),
-    );
-    const raced = await this._raceDeadline(task, this._routingTimeoutMs, "route", clock);
+    const task = this._cartographer
+      .route(message, threadState, {
+        observeRequest: (evidence) => {
+          observed = evidence;
+        },
+      })
+      .then(
+        (result) => ({ kind: 'result' as const, result }),
+        (err: unknown) => ({
+          kind: 'error' as const,
+          error: (err as Error)?.message ?? String(err),
+        }),
+      );
+    const raced = await this._raceDeadline(task, this._routingTimeoutMs, 'route', clock);
 
     if (raced.timedOut) {
       this._trackOutstanding(task);
-      outstanding.push({ kind: "route", participant: "cartographer", startedAt });
-      return finish({ ...empty, status: "timeout", reason: raced.reason });
+      outstanding.push({ kind: 'route', participant: 'cartographer', startedAt });
+      return finish({ ...empty, status: 'timeout', reason: raced.reason });
     }
     const outcome = raced.value;
-    if (outcome.kind === "error") return finish({ ...empty, status: "error", reason: outcome.error });
+    if (outcome.kind === 'error')
+      return finish({ ...empty, status: 'error', reason: outcome.error });
 
     const { result } = outcome;
-    const status: RoutingStatus = result.source === "keyword-fallback" ? "fallback" : "routed";
+    const status: RoutingStatus = result.source === 'keyword-fallback' ? 'fallback' : 'routed';
     return finish({
       layers: [...result.layers],
       domains: [...result.domains],
@@ -575,12 +621,28 @@ export class FlowOrchestrator {
     // never be misattributed. A timed-out or failed call keeps its request; a call never made
     // records why. Recorded input is what the provider interface was given, not native receipt.
     let observed: AdviceRequestEvidence | null = null;
-    const request = (decision: ContributionDecision, reason: string | undefined): ParticipantRequest => observed
-      ? { status: "supplied", phase: observed.phase, providerId: observed.providerId, messages: observed.messages, capturedAt: observed.capturedAt }
-      : { status: "not-sent", phase: "advice", reason: reason ?? `${decision} before any provider call` };
+    const request = (
+      decision: ContributionDecision,
+      reason: string | undefined,
+    ): ParticipantRequest =>
+      observed
+        ? {
+            status: 'supplied',
+            phase: observed.phase,
+            providerId: observed.providerId,
+            messages: observed.messages,
+            capturedAt: observed.capturedAt,
+          }
+        : {
+            status: 'not-sent',
+            phase: 'advice',
+            reason: reason ?? `${decision} before any provider call`,
+          };
     const decided = (
       decision: ContributionDecision,
-      extra: Partial<Pick<DomainContribution, "reason" | "layers" | "snippets" | "confidence">> = {},
+      extra: Partial<
+        Pick<DomainContribution, 'reason' | 'layers' | 'snippets' | 'confidence'>
+      > = {},
     ): DomainContribution => ({
       domain: p.lib.domain,
       decision,
@@ -594,36 +656,44 @@ export class FlowOrchestrator {
     });
 
     // Queued behind the pool until the plan deadline passed: never started.
-    if (clock.passed()) return decided("excluded", { reason: "deadline-queued" });
-    if (!p.cache) return decided("abstain", { reason: "cold-cache" });
+    if (clock.passed()) return decided('excluded', { reason: 'deadline-queued' });
+    if (!p.cache) return decided('abstain', { reason: 'cold-cache' });
 
     const task = p.lib
       .advise(input.message, input.threadState, {
         cache: p.cache,
         threadKnowledge: p.threadKnowledge,
-        observeRequest: (evidence) => { observed = evidence; },
+        observeRequest: (evidence) => {
+          observed = evidence;
+        },
       })
       .then(
-        (result) => ({ kind: "result" as const, result }),
-        (err: unknown) => ({ kind: "error" as const, error: (err as Error)?.message ?? String(err) }),
+        (result) => ({ kind: 'result' as const, result }),
+        (err: unknown) => ({
+          kind: 'error' as const,
+          error: (err as Error)?.message ?? String(err),
+        }),
       );
-    const raced = await this._raceDeadline(task, this._adviseTimeoutMs, "advise", clock);
+    const raced = await this._raceDeadline(task, this._adviseTimeoutMs, 'advise', clock);
 
     if (raced.timedOut) {
       // The late answer, whenever it arrives, is ignored: the plan is sealed.
       // The provider call itself is still running; count it until it settles.
       this._trackOutstanding(task);
-      outstanding.push({ kind: "advise", participant: p.lib.domain, startedAt });
-      return decided("timeout", { reason: raced.reason });
+      outstanding.push({ kind: 'advise', participant: p.lib.domain, startedAt });
+      return decided('timeout', { reason: raced.reason });
     }
     const outcome = raced.value;
-    if (outcome.kind === "error") return decided("error", { reason: outcome.error });
+    if (outcome.kind === 'error') return decided('error', { reason: outcome.error });
     const { result } = outcome;
-    if (result.error) return decided("error", { reason: result.error });
+    if (result.error) return decided('error', { reason: result.error });
     if (result.abstain || (result.layers.length === 0 && result.snippets.length === 0)) {
-      return decided("abstain", { reason: result.reason ?? "no relevant context", confidence: result.confidence });
+      return decided('abstain', {
+        reason: result.reason ?? 'no relevant context',
+        confidence: result.confidence,
+      });
     }
-    return decided("contribute", {
+    return decided('contribute', {
       layers: [...result.layers],
       snippets: [...result.snippets],
       confidence: result.confidence,
@@ -637,7 +707,7 @@ export class FlowOrchestrator {
   private async _raceDeadline<T>(
     task: Promise<T>,
     perCallMs: number,
-    kind: "route" | "advise",
+    kind: 'route' | 'advise',
     clock: PlanClock,
   ): Promise<Raced<T>> {
     const remaining = clock.remaining();
@@ -645,15 +715,15 @@ export class FlowOrchestrator {
     const waitMs = planBound ? remaining : perCallMs;
     const reason = planBound
       ? `plan deadline ${clock.planTimeoutMs}ms reached before ${kind} answered`
-      : `no ${kind === "route" ? "route" : "answer"} within ${perCallMs}ms`;
+      : `no ${kind === 'route' ? 'route' : 'answer'} within ${perCallMs}ms`;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), waitMs);
+    const deadline = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), waitMs);
     });
     try {
       const outcome = await Promise.race([task.then((value) => ({ value })), deadline]);
-      if (outcome === "timeout") return { timedOut: true, reason };
+      if (outcome === 'timeout') return { timedOut: true, reason };
       return { timedOut: false, value: outcome.value };
     } finally {
       if (timer) clearTimeout(timer);
@@ -661,9 +731,11 @@ export class FlowOrchestrator {
   }
 
   private _trackOutstanding(task: Promise<unknown>): void {
-    const token = Symbol("outstanding");
+    const token = Symbol('outstanding');
     this._outstanding.add(token);
-    void task.finally(() => { this._outstanding.delete(token); });
+    void task.finally(() => {
+      this._outstanding.delete(token);
+    });
   }
 
   /**
@@ -687,20 +759,24 @@ export class FlowOrchestrator {
     let budgetUsed = 0;
 
     const contributions = assessed.map((c) => {
-      if (c.decision !== "contribute") return c;
-      const size = c.snippets.join("\n").length;
+      if (c.decision !== 'contribute') return c;
+      const size = c.snippets.join('\n').length;
       if (budgetUsed + size > this._contributionBudget) {
-        omissions.push({ domain: c.domain, reason: "budget" });
-        return { ...c, decision: "omitted" as const, reason: "budget" };
+        omissions.push({ domain: c.domain, reason: 'budget' });
+        return { ...c, decision: 'omitted' as const, reason: 'budget' };
       }
       budgetUsed += size;
       for (const layer of c.layers) layerSet.add(layer);
       snippets.push(...c.snippets);
-      if (route.status === "routed" && route.domains.length > 0 && !route.domains.includes(c.domain)) {
+      if (
+        route.status === 'routed' &&
+        route.domains.length > 0 &&
+        !route.domains.includes(c.domain)
+      ) {
         conflicts.push({
-          kind: "routing-excluded",
+          kind: 'routing-excluded',
           domain: c.domain,
-          detail: `router selected [${route.domains.join(", ")}]; ${c.domain} contributed ${c.snippets.length} snippet(s) and ${c.layers.length} layer(s) anyway`,
+          detail: `router selected [${route.domains.join(', ')}]; ${c.domain} contributed ${c.snippets.length} snippet(s) and ${c.layers.length} layer(s) anyway`,
         });
       }
       return c;
@@ -762,7 +838,8 @@ export class FlowOrchestrator {
     // Point selecting sources at the frozen message. Only layers with a
     // focusable source go stale for this; the executor includes every warm
     // layer, so focus applies to all of them, not just the plan's.
-    for (const layer of this._stack.layers) layer.setFocus(plan.input.message, plan.input.currentMessage);
+    for (const layer of this._stack.layers)
+      layer.setFocus(plan.input.message, plan.input.currentMessage);
 
     // Warm only layers we need that aren't warm yet
     const toWarm = this._stack.layers.filter(
@@ -810,14 +887,14 @@ export class FlowOrchestrator {
     }
 
     if (plan.snippets.length > 0) {
-      parts.push(plan.snippets.join("\n"));
+      parts.push(plan.snippets.join('\n'));
     }
 
     const deliveredByDomain = new Map<string, string>();
     for (const [domain, lib] of this._domains) deliveredByDomain.set(domain, lib.cache.hash);
 
     return {
-      content: parts.join("\n\n---\n\n"),
+      content: parts.join('\n\n---\n\n'),
       injected,
       skipped,
       reinjected,
@@ -836,9 +913,9 @@ export class FlowOrchestrator {
     const committed: string[] = [];
     for (const { id, hash } of evidence.layers) {
       await this._signals.emit({
-        id: newId("flow-inject"),
-        kind: "context_loaded",
-        source: "flow-orchestrator",
+        id: newId('flow-inject'),
+        kind: 'context_loaded',
+        source: 'flow-orchestrator',
         content: { layerId: id, hash },
         timestamp: Date.now(),
       });
@@ -869,27 +946,52 @@ export class FlowOrchestrator {
 
     // Freeze each domain's OWN thread understanding before any await, so every guard checks
     // against one revision and no other domain's private interpretation can enter its request.
-    const frozen = domainsToCheck.map((d) => ({ threadKnowledge: d.threadKnowledge.content, threadKnowledgeRevision: d.threadKnowledge.revision }));
+    const frozen = domainsToCheck.map((d) => ({
+      threadKnowledge: d.threadKnowledge.content,
+      threadKnowledgeRevision: d.threadKnowledge.revision,
+    }));
 
     // Run guards in parallel. Each domain's exact request is observed at its call boundary (and handed to
     // the caller's hook before any answer). A guard that throws is a failed check, never an all-clear; if it
     // threw before its request was observed, the request is unobserved, not "not sent".
     const observed: Array<PhaseRequestEvidence | null> = domainsToCheck.map(() => null);
     const results: GuardResult[] = await Promise.all(
-      domainsToCheck.map((d, i) => d.guard(observation, threadState, { ...frozen[i], observeRequest: (evidence) => {
-        observed[i] = evidence; hooks?.onRequest?.(d.domain, evidence, frozen[i].threadKnowledgeRevision);
-      } }).catch((err: unknown): GuardResult => {
-        // A refusal raised at the boundary (e.g. the caller's journal refused the request) is not a provider error:
-        // no provider call was admitted. The prepared input is retained either way.
-        const refused = (err as { admission?: unknown })?.admission === "not-admitted";
-        return {
-          findings: [], ran: true, status: refused ? "not-admitted" : "provider-error", admission: refused ? "not-admitted" : "unknown",
-          error: String((err as Error)?.message ?? err).slice(0, 200), threadKnowledgeRevision: frozen[i].threadKnowledgeRevision,
-          request: observed[i]
-            ? { status: "supplied", phase: observed[i]!.phase, providerId: observed[i]!.providerId, messages: observed[i]!.messages, capturedAt: observed[i]!.capturedAt }
-            : { status: "unobserved", phase: "guard", reason: "guard threw before its request was observed" },
-        };
-      })),
+      domainsToCheck.map((d, i) =>
+        d
+          .guard(observation, threadState, {
+            ...frozen[i],
+            observeRequest: (evidence) => {
+              observed[i] = evidence;
+              hooks?.onRequest?.(d.domain, evidence, frozen[i].threadKnowledgeRevision);
+            },
+          })
+          .catch((err: unknown): GuardResult => {
+            // A refusal raised at the boundary (e.g. the caller's journal refused the request) is not a provider error:
+            // no provider call was admitted. The prepared input is retained either way.
+            const refused = (err as { admission?: unknown })?.admission === 'not-admitted';
+            return {
+              findings: [],
+              ran: true,
+              status: refused ? 'not-admitted' : 'provider-error',
+              admission: refused ? 'not-admitted' : 'unknown',
+              error: String((err as Error)?.message ?? err).slice(0, 200),
+              threadKnowledgeRevision: frozen[i].threadKnowledgeRevision,
+              request: observed[i]
+                ? {
+                    status: 'supplied',
+                    phase: observed[i]!.phase,
+                    providerId: observed[i]!.providerId,
+                    messages: observed[i]!.messages,
+                    capturedAt: observed[i]!.capturedAt,
+                  }
+                : {
+                    status: 'unobserved',
+                    phase: 'guard',
+                    reason: 'guard threw before its request was observed',
+                  },
+            };
+          }),
+      ),
     );
 
     // Collect findings and per-domain outcomes
@@ -899,25 +1001,36 @@ export class FlowOrchestrator {
     for (let i = 0; i < domainsToCheck.length; i++) {
       const r = results[i];
       domainsChecked.push(domainsToCheck[i].domain);
-      if (r.status === "completed") findings.push(...r.findings);
+      if (r.status === 'completed') findings.push(...r.findings);
       outcomes.push({
-        domain: domainsToCheck[i].domain, status: r.status, findings: r.status === "completed" ? r.findings.length : 0,
+        domain: domainsToCheck[i].domain,
+        status: r.status,
+        findings: r.status === 'completed' ? r.findings.length : 0,
         ...(r.error !== undefined ? { error: r.error } : {}),
         ...(r.admission !== undefined ? { admission: r.admission } : {}),
-        ...(r.threadKnowledgeRevision !== undefined ? { threadKnowledgeRevision: r.threadKnowledgeRevision } : {}),
+        ...(r.threadKnowledgeRevision !== undefined
+          ? { threadKnowledgeRevision: r.threadKnowledgeRevision }
+          : {}),
         request: r.request,
       });
     }
-    const failed = outcomes.filter((o) => o.status === "provider-error" || o.status === "invalid-response" || o.status === "not-admitted").map((o) => o.domain);
+    const failed = outcomes
+      .filter(
+        (o) =>
+          o.status === 'provider-error' ||
+          o.status === 'invalid-response' ||
+          o.status === 'not-admitted',
+      )
+      .map((o) => o.domain);
 
-    const critical = findings.filter((f) => f.severity === "critical");
-    const advisory = findings.filter((f) => f.severity === "advisory");
+    const critical = findings.filter((f) => f.severity === 'critical');
+    const advisory = findings.filter((f) => f.severity === 'advisory');
 
     // Emit tool observation signal for the Librarian's thread-state
     await this._signals.emit({
-      id: newId("flow-obs"),
-      kind: "tool_observation",
-      source: "flow-orchestrator",
+      id: newId('flow-obs'),
+      kind: 'tool_observation',
+      source: 'flow-orchestrator',
       content: {
         tool: observation.tool,
         input: observation.input,
@@ -952,27 +1065,27 @@ export class FlowOrchestrator {
     let event: InvalidationEvent | null = null;
 
     switch (signal.kind) {
-      case "context_evicted": {
+      case 'context_evicted': {
         const layerId = (signal.content as any)?.layerId;
         if (layerId && this._lastPlan.layers.includes(layerId)) {
           // A layer we injected just got evicted — plan is invalid
           event = {
-            reason: "eviction",
+            reason: 'eviction',
             affectedLayers: [layerId],
             timestamp: Date.now(),
           };
         }
         break;
       }
-      case "context_loaded": {
+      case 'context_loaded': {
         // A layer was loaded — if it's one we wanted but didn't have, routing may improve
         const layerId = (signal.content as any)?.layerId;
-        if (layerId && signal.source !== "flow-orchestrator") {
+        if (layerId && signal.source !== 'flow-orchestrator') {
           // External rehydration (not our own commit) — check if it matters
           const layer = this._stack.getLayer(layerId);
           if (layer && !this._lastPlan.layers.includes(layerId)) {
             event = {
-              reason: "rehydration",
+              reason: 'rehydration',
               affectedLayers: [layerId],
               timestamp: Date.now(),
             };
@@ -980,14 +1093,14 @@ export class FlowOrchestrator {
         }
         break;
       }
-      case "session_compacted": {
+      case 'session_compacted': {
         // The underlying agent session was compacted (Claude Code auto-compact,
         // Codex session restart). Whatever layers we told the Librarian were
         // delivered may have been summarized away. Clear the ledger so the
         // next turn re-delivers from scratch, and invalidate the plan.
         const cleared = this._librarian.clearInjectionLedger();
         event = {
-          reason: "compaction",
+          reason: 'compaction',
           affectedLayers: cleared,
           timestamp: Date.now(),
           source: (signal.content as any)?.source as string | undefined,
@@ -1018,9 +1131,13 @@ function positiveInteger(name: string, value: number | undefined, fallback: numb
   return value;
 }
 
-function positiveFiniteMs(name: string, value: number | undefined, fallback: number | undefined): number | undefined {
+function positiveFiniteMs(
+  name: string,
+  value: number | undefined,
+  fallback: number | undefined,
+): number | undefined {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new Error(`${name} must be a finite positive number of milliseconds, got ${value}`);
   }
   return value;
@@ -1028,14 +1145,18 @@ function positiveFiniteMs(name: string, value: number | undefined, fallback: num
 
 function positiveBudget(name: string, value: number | undefined): number {
   if (value === undefined) return Number.POSITIVE_INFINITY;
-  if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
     throw new Error(`${name} must be a positive number (Infinity allowed), got ${value}`);
   }
   return value;
 }
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep item order. */
-async function runBounded<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+async function runBounded<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
@@ -1049,39 +1170,52 @@ async function runBounded<T, R>(items: T[], limit: number, fn: (item: T, index: 
 }
 
 /** Build the executor-facing decoration from a sealed plan. */
-function composeDecoration(plan: InjectionPlan, deliveredByDomain: Map<string, string>): MessageDecoration {
+function composeDecoration(
+  plan: InjectionPlan,
+  deliveredByDomain: Map<string, string>,
+): MessageDecoration {
   const blocks: PromptBlock[] = [];
 
-  const decisions = plan.contributions.map((c) => `${c.domain}: ${c.decision}${c.reason ? ` (${c.reason})` : ""}`);
-  const routingLine = plan.routing.status === "routed"
-    ? `Router selected domains: ${plan.routing.domains.length ? plan.routing.domains.join(", ") : "none"} (confidence ${plan.routing.confidence}).`
-    : `Routing ${plan.routing.status}${plan.routing.reason ? ` (${plan.routing.reason})` : ""}; no router selection was applied.`;
+  const decisions = plan.contributions.map(
+    (c) => `${c.domain}: ${c.decision}${c.reason ? ` (${c.reason})` : ''}`,
+  );
+  const routingLine =
+    plan.routing.status === 'routed'
+      ? `Router selected domains: ${plan.routing.domains.length ? plan.routing.domains.join(', ') : 'none'} (confidence ${plan.routing.confidence}).`
+      : `Routing ${plan.routing.status}${plan.routing.reason ? ` (${plan.routing.reason})` : ''}; no router selection was applied.`;
   blocks.push({
-    role: "content",
-    id: "decoration:routing",
-    source: "cartographer",
-    segment: "routing",
+    role: 'content',
+    id: 'decoration:routing',
+    source: 'cartographer',
+    segment: 'routing',
     text: [
       routingLine,
-      `Domain decisions: ${decisions.join("; ") || "none"}.`,
-      ...(plan.conflicts.length ? [`Unresolved conflicts: ${plan.conflicts.map((c) => `${c.domain} ${c.kind}`).join("; ")}.`] : []),
-    ].join("\n"),
+      `Domain decisions: ${decisions.join('; ') || 'none'}.`,
+      ...(plan.conflicts.length
+        ? [
+            `Unresolved conflicts: ${plan.conflicts.map((c) => `${c.domain} ${c.kind}`).join('; ')}.`,
+          ]
+        : []),
+    ].join('\n'),
   });
 
   for (const c of plan.contributions) {
-    if (c.decision !== "contribute") continue;
+    if (c.decision !== 'contribute') continue;
     blocks.push({
-      role: "content",
+      role: 'content',
       id: `decoration:${c.domain}`,
       source: c.domain,
-      segment: "domain-knowledge",
-      text: `## ${c.domain} advice\n${c.snippets.map((s) => `- ${s}`).join("\n")}`,
+      segment: 'domain-knowledge',
+      text: `## ${c.domain} advice\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
     });
   }
 
   return deepFreeze({
-    input: { hash: plan.input.hash, capturedAt: plan.input.capturedAt,
-      ...(plan.input.currentMessage ? { currentMessage: plan.input.currentMessage } : {}) },
+    input: {
+      hash: plan.input.hash,
+      capturedAt: plan.input.capturedAt,
+      ...(plan.input.currentMessage ? { currentMessage: plan.input.currentMessage } : {}),
+    },
     blocks,
     participants: plan.contributions.map((c) => {
       const deliveredCacheHash = deliveredByDomain.get(c.domain);
@@ -1108,7 +1242,7 @@ function composeDecoration(plan: InjectionPlan, deliveredByDomain: Map<string, s
 }
 
 function deepFreeze<T>(value: T): T {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
   }

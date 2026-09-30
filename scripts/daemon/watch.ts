@@ -5,8 +5,9 @@
  * days never sees main move. This stages the candidate while running, then
  * exits 75 once no job is in flight so launchd relaunches onto it.
  */
-import { readState, RESTART_EXIT_CODE, stageUpdate } from "./update";
-import { runtimeJobsInFlight } from "./idle";
+
+import { runtimeJobsInFlight } from './idle';
+import { RESTART_EXIT_CODE, readState, stageUpdate } from './update';
 
 export interface WatchOptions {
   repoRoot: string;
@@ -31,8 +32,9 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
     checking = true;
     try {
       const result = await stageUpdate(options.repoRoot, options.configDir);
-      if (result.action === "failed") log(`update skipped — ${result.detail}`);
-      if (result.action === "staged") log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
+      if (result.action === 'failed') log(`update skipped — ${result.detail}`);
+      if (result.action === 'staged')
+        log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
       const { candidate } = await readState(options.configDir);
       if (!candidate || (await runtimeJobsInFlight(options.runtimeDirectory))) return;
 

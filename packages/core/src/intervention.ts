@@ -1,6 +1,6 @@
-import type { Signal, SignalBus } from "./signal";
-import type { Trace, Span } from "./trace";
-import { newId } from "./id";
+import { newId } from './id';
+import type { Signal, SignalBus } from './signal';
+import type { Span, Trace } from './trace';
 
 /**
  * An intervention — a manual override from a human operator.
@@ -70,10 +70,10 @@ export class InterventionLog {
     actual: unknown,
     correction: unknown,
     operator: string,
-    reason?: string
+    reason?: string,
   ): Promise<Intervention> {
     const intervention: Intervention = {
-      id: newId("int"),
+      id: newId('int'),
       timestamp: Date.now(),
       traceId,
       spanId,
@@ -91,7 +91,7 @@ export class InterventionLog {
     // Emit as a correction signal so the system learns
     await this._signals.emit({
       id: `sig_${intervention.id}`,
-      kind: "correction",
+      kind: 'correction',
       source: `operator:${operator}`,
       content: {
         traceId,

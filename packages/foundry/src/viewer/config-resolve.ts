@@ -9,16 +9,10 @@ import type {
   LayerSettingsConfig,
   LayerSettingsOverride,
   ListPatch,
-} from "./config";
+} from './config';
 
-export type MergeOrigin = "global" | "project" | "merged";
-export type MergeStrategy =
-  | "inherit"
-  | "override"
-  | "replace"
-  | "merge"
-  | "clear"
-  | "project-only";
+export type MergeOrigin = 'global' | 'project' | 'merged';
+export type MergeStrategy = 'inherit' | 'override' | 'replace' | 'merge' | 'clear' | 'project-only';
 
 export interface FieldProvenance {
   origin: MergeOrigin;
@@ -30,7 +24,7 @@ export interface FieldProvenance {
 
 export interface ResolvedLayerDefinition {
   id: string;
-  scope: "global" | "project-override" | "project-only";
+  scope: 'global' | 'project-override' | 'project-only';
   config: LayerSettingsConfig;
   fields: Record<string, FieldProvenance>;
 }
@@ -45,7 +39,7 @@ function dedupe<T>(items: readonly T[]): T[] {
 }
 
 function isListPatch<T>(value: unknown): value is ListPatch<T> {
-  return !!value && !Array.isArray(value) && typeof value === "object";
+  return !!value && !Array.isArray(value) && typeof value === 'object';
 }
 
 function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -53,7 +47,10 @@ function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(entries) as T;
 }
 
-function validateListPatch<T>(value: ListPatch<T> | undefined, label: string): ListPatch<T> | undefined {
+function validateListPatch<T>(
+  value: ListPatch<T> | undefined,
+  label: string,
+): ListPatch<T> | undefined {
   if (value === undefined) return undefined;
   if (!isListPatch<T>(value)) {
     throw new Error(
@@ -62,9 +59,9 @@ function validateListPatch<T>(value: ListPatch<T> | undefined, label: string): L
   }
 
   const record = value as Record<string, unknown>;
-  const hasReplace = "replace" in record;
-  const hasAppend = "append" in record;
-  const hasRemove = "remove" in record;
+  const hasReplace = 'replace' in record;
+  const hasAppend = 'append' in record;
+  const hasRemove = 'remove' in record;
 
   if (!hasReplace && !hasAppend && !hasRemove) {
     throw new Error(`[config] ${label} must include replace, append, or remove`);
@@ -81,7 +78,11 @@ function validateListPatch<T>(value: ListPatch<T> | undefined, label: string): L
   if (hasRemove && !Array.isArray(record.remove)) {
     throw new Error(`[config] ${label}.remove must be an array`);
   }
-  if (!hasReplace && !(record.append as unknown[] | undefined)?.length && !(record.remove as unknown[] | undefined)?.length) {
+  if (
+    !hasReplace &&
+    !(record.append as unknown[] | undefined)?.length &&
+    !(record.remove as unknown[] | undefined)?.length
+  ) {
     throw new Error(`[config] ${label} must append or remove at least one value`);
   }
 
@@ -91,14 +92,14 @@ function validateListPatch<T>(value: ListPatch<T> | undefined, label: string): L
 function scalarField<T>(
   base: T | undefined,
   override: T | undefined,
-  scope: ResolvedLayerDefinition["scope"] | "agent-override" | "agent-only",
+  scope: ResolvedLayerDefinition['scope'] | 'agent-override' | 'agent-only',
 ): { value: T | undefined; provenance: FieldProvenance } {
   if (override === undefined) {
     return {
       value: base,
       provenance: {
-        origin: scope === "project-only" || scope === "agent-only" ? "project" : "global",
-        strategy: scope === "project-only" || scope === "agent-only" ? "project-only" : "inherit",
+        origin: scope === 'project-only' || scope === 'agent-only' ? 'project' : 'global',
+        strategy: scope === 'project-only' || scope === 'agent-only' ? 'project-only' : 'inherit',
         globalValue: base,
         resolvedValue: base,
       },
@@ -108,8 +109,8 @@ function scalarField<T>(
   return {
     value: override,
     provenance: {
-      origin: base === undefined ? "project" : "project",
-      strategy: base === undefined ? "project-only" : "override",
+      origin: base === undefined ? 'project' : 'project',
+      strategy: base === undefined ? 'project-only' : 'override',
       globalValue: base,
       projectValue: override,
       resolvedValue: override,
@@ -120,7 +121,7 @@ function scalarField<T>(
 function listField<T>(
   base: T[] | undefined,
   override: ListPatch<T> | undefined,
-  scope: ResolvedLayerDefinition["scope"] | "agent-override" | "agent-only",
+  scope: ResolvedLayerDefinition['scope'] | 'agent-override' | 'agent-only',
   label: string,
 ): { value: T[] | undefined; provenance: FieldProvenance } {
   const patch = validateListPatch(override, label);
@@ -129,21 +130,21 @@ function listField<T>(
     return {
       value: base ? [...base] : base,
       provenance: {
-        origin: scope === "project-only" || scope === "agent-only" ? "project" : "global",
-        strategy: scope === "project-only" || scope === "agent-only" ? "project-only" : "inherit",
+        origin: scope === 'project-only' || scope === 'agent-only' ? 'project' : 'global',
+        strategy: scope === 'project-only' || scope === 'agent-only' ? 'project-only' : 'inherit',
         globalValue: base,
         resolvedValue: base,
       },
     };
   }
 
-  if ("replace" in patch) {
+  if ('replace' in patch) {
     const replaced = dedupe(patch.replace);
     return {
       value: replaced,
       provenance: {
-        origin: "project",
-        strategy: base === undefined ? "project-only" : "replace",
+        origin: 'project',
+        strategy: base === undefined ? 'project-only' : 'replace',
         globalValue: base,
         projectValue: patch,
         resolvedValue: replaced,
@@ -166,13 +167,13 @@ function listField<T>(
     current = current.filter((item) => !removals.has(item));
   }
 
-  const result = current.length > 0 ? current : (base === undefined ? undefined : current);
+  const result = current.length > 0 ? current : base === undefined ? undefined : current;
 
   return {
     value: result,
     provenance: {
-      origin: base === undefined ? "project" : "merged",
-      strategy: base === undefined ? "project-only" : "merge",
+      origin: base === undefined ? 'project' : 'merged',
+      strategy: base === undefined ? 'project-only' : 'merge',
       globalValue: base,
       projectValue: patch,
       resolvedValue: result,
@@ -183,15 +184,15 @@ function listField<T>(
 function conditionField(
   base: InvocationCondition | undefined,
   override: InvocationConditionOverride | null | undefined,
-  scope: ResolvedLayerDefinition["scope"] | "agent-override" | "agent-only",
+  scope: ResolvedLayerDefinition['scope'] | 'agent-override' | 'agent-only',
   label: string,
 ): { value: InvocationCondition | undefined; provenance: FieldProvenance } {
   if (override === undefined) {
     return {
       value: base ? { ...base } : undefined,
       provenance: {
-        origin: scope === "project-only" || scope === "agent-only" ? "project" : "global",
-        strategy: scope === "project-only" || scope === "agent-only" ? "project-only" : "inherit",
+        origin: scope === 'project-only' || scope === 'agent-only' ? 'project' : 'global',
+        strategy: scope === 'project-only' || scope === 'agent-only' ? 'project-only' : 'inherit',
         globalValue: base,
         resolvedValue: base,
       },
@@ -202,8 +203,8 @@ function conditionField(
     return {
       value: undefined,
       provenance: {
-        origin: "project",
-        strategy: "clear",
+        origin: 'project',
+        strategy: 'clear',
         globalValue: base,
         projectValue: null,
         resolvedValue: undefined,
@@ -222,16 +223,16 @@ function conditionField(
   }) as InvocationCondition;
 
   const hasAny = Object.keys(value).length > 0;
-  const origin = [categories, tags, routes].some((f) => f.provenance.origin === "merged")
-    ? "merged"
-    : [categories, tags, routes].some((f) => f.provenance.origin === "project")
-      ? "project"
-      : "global";
-  const strategy = [categories, tags, routes].some((f) => f.provenance.strategy === "merge")
-    ? "merge"
+  const origin = [categories, tags, routes].some((f) => f.provenance.origin === 'merged')
+    ? 'merged'
+    : [categories, tags, routes].some((f) => f.provenance.origin === 'project')
+      ? 'project'
+      : 'global';
+  const strategy = [categories, tags, routes].some((f) => f.provenance.strategy === 'merge')
+    ? 'merge'
     : base === undefined
-      ? "project-only"
-      : "override";
+      ? 'project-only'
+      : 'override';
 
   return {
     value: hasAny ? value : undefined,
@@ -248,15 +249,15 @@ function conditionField(
 function browserField(
   base: BrowserConfig | undefined,
   override: BrowserConfigOverride | null | undefined,
-  scope: ResolvedLayerDefinition["scope"] | "agent-override" | "agent-only",
+  scope: ResolvedLayerDefinition['scope'] | 'agent-override' | 'agent-only',
   label: string,
 ): { value: BrowserConfig | undefined; provenance: FieldProvenance } {
   if (override === undefined) {
     return {
       value: base ? { ...base } : undefined,
       provenance: {
-        origin: scope === "project-only" || scope === "agent-only" ? "project" : "global",
-        strategy: scope === "project-only" || scope === "agent-only" ? "project-only" : "inherit",
+        origin: scope === 'project-only' || scope === 'agent-only' ? 'project' : 'global',
+        strategy: scope === 'project-only' || scope === 'agent-only' ? 'project-only' : 'inherit',
         globalValue: base,
         resolvedValue: base,
       },
@@ -267,8 +268,8 @@ function browserField(
     return {
       value: undefined,
       provenance: {
-        origin: "project",
-        strategy: "clear",
+        origin: 'project',
+        strategy: 'clear',
         globalValue: base,
         projectValue: null,
         resolvedValue: undefined,
@@ -280,8 +281,18 @@ function browserField(
   const shareSession = scalarField(base?.shareSession, override.shareSession, scope);
   const screenshots = scalarField(base?.screenshots, override.screenshots, scope);
   const maxNavigations = scalarField(base?.maxNavigations, override.maxNavigations, scope);
-  const allowedUrls = listField(base?.allowedUrls, override.allowedUrls, scope, `${label}.allowedUrls`);
-  const blockedUrls = listField(base?.blockedUrls, override.blockedUrls, scope, `${label}.blockedUrls`);
+  const allowedUrls = listField(
+    base?.allowedUrls,
+    override.allowedUrls,
+    scope,
+    `${label}.allowedUrls`,
+  );
+  const blockedUrls = listField(
+    base?.blockedUrls,
+    override.blockedUrls,
+    scope,
+    `${label}.blockedUrls`,
+  );
 
   const value = pruneUndefined({
     mode: mode.value,
@@ -293,18 +304,20 @@ function browserField(
   }) as BrowserConfig;
 
   const hasAny = Object.keys(value).length > 0;
-  const origin = [mode, shareSession, screenshots, maxNavigations, allowedUrls, blockedUrls]
-    .some((f) => f.provenance.origin === "merged")
-    ? "merged"
-    : [mode, shareSession, screenshots, maxNavigations, allowedUrls, blockedUrls]
-        .some((f) => f.provenance.origin === "project")
-      ? "project"
-      : "global";
-  const strategy = [allowedUrls, blockedUrls].some((f) => f.provenance.strategy === "merge")
-    ? "merge"
+  const origin = [mode, shareSession, screenshots, maxNavigations, allowedUrls, blockedUrls].some(
+    (f) => f.provenance.origin === 'merged',
+  )
+    ? 'merged'
+    : [mode, shareSession, screenshots, maxNavigations, allowedUrls, blockedUrls].some(
+          (f) => f.provenance.origin === 'project',
+        )
+      ? 'project'
+      : 'global';
+  const strategy = [allowedUrls, blockedUrls].some((f) => f.provenance.strategy === 'merge')
+    ? 'merge'
     : base === undefined
-      ? "project-only"
-      : "override";
+      ? 'project-only'
+      : 'override';
 
   return {
     value: hasAny ? value : undefined,
@@ -323,7 +336,7 @@ function resolveAgentDefinition(
   base: AgentSettingsConfig | undefined,
   override: AgentSettingsOverride,
 ): AgentSettingsConfig {
-  const scope = base ? "agent-override" : "agent-only";
+  const scope = base ? 'agent-override' : 'agent-only';
   const resolved: Partial<AgentSettingsConfig> = { id };
 
   resolved.kind = scalarField(base?.kind, override.kind, scope).value;
@@ -333,21 +346,48 @@ function resolveAgentDefinition(
   resolved.provider = scalarField(base?.provider, override.provider, scope).value;
   resolved.model = scalarField(base?.model, override.model, scope).value;
   resolved.temperature = scalarField(base?.temperature, override.temperature, scope).value;
-  resolved.visibleLayers = listField(base?.visibleLayers, override.visibleLayers, scope, `project.agents.${id}.visibleLayers`).value ?? [];
-  resolved.ownedLayers = listField(base?.ownedLayers, override.ownedLayers, scope, `project.agents.${id}.ownedLayers`).value;
-  resolved.guardTriggers = listField(base?.guardTriggers, override.guardTriggers, scope, `project.agents.${id}.guardTriggers`).value;
-  resolved.peers = listField(base?.peers, override.peers, scope, `project.agents.${id}.peers`).value ?? [];
+  resolved.visibleLayers =
+    listField(
+      base?.visibleLayers,
+      override.visibleLayers,
+      scope,
+      `project.agents.${id}.visibleLayers`,
+    ).value ?? [];
+  resolved.ownedLayers = listField(
+    base?.ownedLayers,
+    override.ownedLayers,
+    scope,
+    `project.agents.${id}.ownedLayers`,
+  ).value;
+  resolved.guardTriggers = listField(
+    base?.guardTriggers,
+    override.guardTriggers,
+    scope,
+    `project.agents.${id}.guardTriggers`,
+  ).value;
+  resolved.peers =
+    listField(base?.peers, override.peers, scope, `project.agents.${id}.peers`).value ?? [];
   resolved.maxDepth = scalarField(base?.maxDepth, override.maxDepth, scope).value;
   resolved.tools = scalarField(base?.tools, override.tools, scope).value;
   resolved.thinking = scalarField(base?.thinking, override.thinking, scope).value;
   resolved.permissions = scalarField(base?.permissions, override.permissions, scope).value;
   resolved.executionEnv = scalarField(base?.executionEnv, override.executionEnv, scope).value;
-  resolved.browser = browserField(base?.browser, override.browser, scope, `project.agents.${id}.browser`).value;
+  resolved.browser = browserField(
+    base?.browser,
+    override.browser,
+    scope,
+    `project.agents.${id}.browser`,
+  ).value;
   resolved.timeout = scalarField(base?.timeout, override.timeout, scope).value;
   resolved.cacheControl = scalarField(base?.cacheControl, override.cacheControl, scope).value;
   resolved.enabled = scalarField(base?.enabled, override.enabled, scope).value;
   resolved.invocation = scalarField(base?.invocation, override.invocation, scope).value;
-  resolved.condition = conditionField(base?.condition, override.condition, scope, `project.agents.${id}.condition`).value;
+  resolved.condition = conditionField(
+    base?.condition,
+    override.condition,
+    scope,
+    `project.agents.${id}.condition`,
+  ).value;
 
   return resolved as AgentSettingsConfig;
 }
@@ -357,9 +397,11 @@ function resolveLayerDefinition(
   base: LayerSettingsConfig | undefined,
   override: LayerSettingsOverride | undefined,
 ): ResolvedLayerDefinition {
-  const scope: ResolvedLayerDefinition["scope"] = base
-    ? override ? "project-override" : "global"
-    : "project-only";
+  const scope: ResolvedLayerDefinition['scope'] = base
+    ? override
+      ? 'project-override'
+      : 'global'
+    : 'project-only';
 
   const project = override ?? {};
   const resolved: Partial<LayerSettingsConfig> = { id };
@@ -380,7 +422,12 @@ function resolveLayerDefinition(
   if (segment.value !== undefined) resolved.segment = segment.value;
   fields.segment = segment.provenance;
 
-  const sourceIds = listField(base?.sourceIds, project.sourceIds, scope, `project.layers.${id}.sourceIds`);
+  const sourceIds = listField(
+    base?.sourceIds,
+    project.sourceIds,
+    scope,
+    `project.layers.${id}.sourceIds`,
+  );
   resolved.sourceIds = sourceIds.value ?? [];
   fields.sourceIds = sourceIds.provenance;
 
@@ -400,7 +447,12 @@ function resolveLayerDefinition(
   resolved.activation = activation.value;
   fields.activation = activation.provenance;
 
-  const condition = conditionField(base?.condition, project.condition, scope, `project.layers.${id}.condition`);
+  const condition = conditionField(
+    base?.condition,
+    project.condition,
+    scope,
+    `project.layers.${id}.condition`,
+  );
   resolved.condition = condition.value;
   fields.condition = condition.provenance;
 
@@ -435,11 +487,10 @@ export function resolveProjectView(
     }
   }
 
-  const layerIds = dedupe([
-    ...Object.keys(config.layers),
-    ...Object.keys(project.layers ?? {}),
-  ]);
-  const layers = layerIds.map((id) => resolveLayerDefinition(id, config.layers[id], project.layers?.[id]));
+  const layerIds = dedupe([...Object.keys(config.layers), ...Object.keys(project.layers ?? {})]);
+  const layers = layerIds.map((id) =>
+    resolveLayerDefinition(id, config.layers[id], project.layers?.[id]),
+  );
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
   return { config: resolved, layers };

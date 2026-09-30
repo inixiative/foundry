@@ -1,4 +1,4 @@
-import type { OwnershipScope } from "./scope";
+import type { OwnershipScope } from './scope';
 
 /**
  * A source that can provide content to a layer.
@@ -10,7 +10,7 @@ import type { OwnershipScope } from "./scope";
  * record) cannot be carried and no retrieval exists. The executor refuses
  * provider execution while any included layer reports it.
  */
-export const REQUIRED_CONTEXT_BLOCKED = "required-context-blocked";
+export const REQUIRED_CONTEXT_BLOCKED = 'required-context-blocked';
 
 /** Logical request identity, independent of dispatches and native sessions. */
 export interface LogicalMessageIdentity extends OwnershipScope {
@@ -19,15 +19,25 @@ export interface LogicalMessageIdentity extends OwnershipScope {
 }
 
 /** Own only the identity fields; callers cannot change a pending load by reference. */
-export function copyMessageIdentity(identity: LogicalMessageIdentity | undefined): LogicalMessageIdentity | undefined {
-  return identity?.messageId && identity.threadId ? Object.freeze({
-    messageId: identity.messageId, threadId: identity.threadId,
-    ...(identity.projectId ? { projectId: identity.projectId } : {}),
-  }) : undefined;
+export function copyMessageIdentity(
+  identity: LogicalMessageIdentity | undefined,
+): LogicalMessageIdentity | undefined {
+  return identity?.messageId && identity.threadId
+    ? Object.freeze({
+        messageId: identity.messageId,
+        threadId: identity.threadId,
+        ...(identity.projectId ? { projectId: identity.projectId } : {}),
+      })
+    : undefined;
 }
 
-function sameMessage(a: LogicalMessageIdentity | undefined, b: LogicalMessageIdentity | undefined): boolean {
-  return a?.messageId === b?.messageId && a?.threadId === b?.threadId && a?.projectId === b?.projectId;
+function sameMessage(
+  a: LogicalMessageIdentity | undefined,
+  b: LogicalMessageIdentity | undefined,
+): boolean {
+  return (
+    a?.messageId === b?.messageId && a?.threadId === b?.threadId && a?.projectId === b?.projectId
+  );
 }
 
 export interface SourceLoadHint {
@@ -49,17 +59,27 @@ export interface SourceSelectionReport {
     readonly chars: number;
     readonly kind?: string;
     readonly timestamp?: number;
-    readonly truncated?: boolean; ranges?: Array<readonly [number, number]>;
+    readonly truncated?: boolean;
+    ranges?: Array<readonly [number, number]>;
     readonly matched?: string[];
   }>;
-  readonly omitted: Array<{ readonly id: string; readonly reason: string; readonly chars: number; readonly kind?: string;
-    readonly excludedFor?: LogicalMessageIdentity }>;
+  readonly omitted: Array<{
+    readonly id: string;
+    readonly reason: string;
+    readonly chars: number;
+    readonly kind?: string;
+    readonly excludedFor?: LogicalMessageIdentity;
+  }>;
   /** Records the reader was allowed to see. */
   readonly considered: number;
   /** Everything retained in the source for this reader, injected or not. */
   readonly retained: { readonly count: number; readonly chars: number };
   readonly budget: { readonly chars: number; readonly used: number; readonly exceeded: boolean };
-  readonly conflicts: Array<{ readonly kind: string; readonly ids: string[]; readonly detail: string }>;
+  readonly conflicts: Array<{
+    readonly kind: string;
+    readonly ids: string[];
+    readonly detail: string;
+  }>;
   readonly focus?: { readonly hash: string; readonly terms: number };
   readonly currentMessage?: LogicalMessageIdentity;
 }
@@ -100,10 +120,13 @@ export interface LayerSelectionState {
  * layer predates this metadata or was never classified; consumers then fall back
  * to their legacy id heuristic and must not present that as verified provenance.
  */
-export type LayerSegment = "domain-knowledge" | "thread-knowledge";
-export const LAYER_SEGMENTS: readonly LayerSegment[] = Object.freeze(["domain-knowledge", "thread-knowledge"]);
+export type LayerSegment = 'domain-knowledge' | 'thread-knowledge';
+export const LAYER_SEGMENTS: readonly LayerSegment[] = Object.freeze([
+  'domain-knowledge',
+  'thread-knowledge',
+]);
 export function isLayerSegment(value: unknown): value is LayerSegment {
-  return typeof value === "string" && (LAYER_SEGMENTS as readonly string[]).includes(value);
+  return typeof value === 'string' && (LAYER_SEGMENTS as readonly string[]).includes(value);
 }
 
 /**
@@ -127,7 +150,7 @@ export interface LayerDefinition {
   /** Instruction explaining how this layer's content should be used. */
   prompt?: string;
   /** When this layer is activated: always, on-demand, or conditionally. */
-  activation?: "always" | "on-demand" | "conditional";
+  activation?: 'always' | 'on-demand' | 'conditional';
   /** Who can write to instances of this layer. Undefined = anyone. */
   writers?: string[];
 }
@@ -221,7 +244,7 @@ export interface VersionLog<T = unknown> {
   /** What is being versioned: "layer:conventions", "agent:librarian", etc. */
   subject: string;
   /** "definition" or "instance". */
-  scope: "definition" | "instance";
+  scope: 'definition' | 'instance';
   /** Ordered version entries, newest last. */
   entries: VersionEntry<T>[];
 }
@@ -244,7 +267,7 @@ export interface ContextLayerConfig {
   segment?: LayerSegment;
 }
 
-export type LayerState = "cold" | "warming" | "warm" | "stale" | "compressing";
+export type LayerState = 'cold' | 'warming' | 'warm' | 'stale' | 'compressing';
 
 /** Emitted on any write to a layer instance. The Session Store captures these. */
 export interface LayerMutationEvent {
@@ -278,9 +301,9 @@ export class ContextLayer {
    */
   readonly segment: LayerSegment | undefined;
 
-  private _content: string = "";
-  private _state: LayerState = "cold";
-  private _hash: string = "";
+  private _content: string = '';
+  private _state: LayerState = 'cold';
+  private _hash: string = '';
   private _lastWarmed: number | null = null;
   private _lastAccessed: number | null = null;
   private _sources: ContextSource[];
@@ -293,8 +316,7 @@ export class ContextLayer {
   private _version?: LayerVersionMark;
   private _warmingPromise: Promise<void> | null = null;
 
-  private _listeners: Array<(state: LayerState, layer: ContextLayer) => void> =
-    [];
+  private _listeners: Array<(state: LayerState, layer: ContextLayer) => void> = [];
 
   /**
    * Mutation listeners — called on any write to this layer (content, state).
@@ -302,9 +324,7 @@ export class ContextLayer {
    * Unlike onStateChange (which only fires on state transitions), this fires
    * on content changes and any other mutation.
    */
-  private _mutationListeners: Array<
-    (event: LayerMutationEvent) => void
-  > = [];
+  private _mutationListeners: Array<(event: LayerMutationEvent) => void> = [];
 
   constructor(config: ContextLayerConfig) {
     this.id = config.id;
@@ -315,7 +335,8 @@ export class ContextLayer {
     this._maxTokens = config.maxTokens ?? config.definition?.maxTokens;
     this._prompt = config.prompt ?? config.definition?.prompt;
     const segment = config.segment ?? config.definition?.segment;
-    if (segment !== undefined && !isLayerSegment(segment)) throw new Error(`Unknown layer segment "${String(segment)}" for layer "${config.id}"`);
+    if (segment !== undefined && !isLayerSegment(segment))
+      throw new Error(`Unknown layer segment "${String(segment)}" for layer "${config.id}"`);
     this.segment = segment;
   }
 
@@ -379,7 +400,7 @@ export class ContextLayer {
     });
     copy._focus = this._focus;
     copy._currentMessage = this._currentMessage;
-    if (this._state !== "cold") {
+    if (this._state !== 'cold') {
       copy.restoreInstance(this.snapshotInstance());
     }
     return copy;
@@ -393,21 +414,29 @@ export class ContextLayer {
     this._lastAccessed = snapshot.lastAccessed;
     this._selection = snapshot.selection ? structuredClone(snapshot.selection) : undefined;
     this._version = undefined;
-    if (snapshot.definitionId === (this.definition?.id ?? this.id)
-      && (!this.owner || snapshot.threadId === this.owner.threadId && snapshot.projectId === this.owner.projectId)
-      && snapshot.version && this._validVersion(snapshot.version)) this._version = Object.freeze({ ...snapshot.version });
-    const state = snapshot.state === "warming" ? "warm" : snapshot.state;
+    if (
+      snapshot.definitionId === (this.definition?.id ?? this.id) &&
+      (!this.owner ||
+        (snapshot.threadId === this.owner.threadId &&
+          snapshot.projectId === this.owner.projectId)) &&
+      snapshot.version &&
+      this._validVersion(snapshot.version)
+    )
+      this._version = Object.freeze({ ...snapshot.version });
+    const state = snapshot.state === 'warming' ? 'warm' : snapshot.state;
     // Restored content carries the focus it was selected for. If this layer is now focused
     // elsewhere, the content is real but answers another message: stale, not warm.
-    this._setState(state === "warm" && this._focusMismatch() ? "stale" : state);
+    this._setState(state === 'warm' && this._focusMismatch() ? 'stale' : state);
   }
 
   /** True when a focusable source's recorded selection focus differs from the current focus. */
   private _focusMismatch(): boolean {
     if (!this._sources.some((source) => source.focusable)) return false;
     const current = this._focus ? computeHash(this._focus) : undefined;
-    return (this._selection?.focusHash ?? undefined) !== current ||
-      !sameMessage(this._selection?.currentMessage, this._currentMessage);
+    return (
+      (this._selection?.focusHash ?? undefined) !== current ||
+      !sameMessage(this._selection?.currentMessage, this._currentMessage)
+    );
   }
 
   // -- Focus --
@@ -430,8 +459,8 @@ export class ContextLayer {
     // Omitting identity deliberately clears it: direct/background work must
     // never inherit the preceding request just because its text is identical.
     this._currentMessage = identity;
-    if (this._sources.some((source) => source.focusable) && this._state === "warm") {
-      this._setState("stale");
+    if (this._sources.some((source) => source.focusable) && this._state === 'warm') {
+      this._setState('stale');
     }
   }
 
@@ -459,12 +488,12 @@ export class ContextLayer {
   /** Check if this layer has become stale. Triggers state transition if so. */
   checkStaleness(): LayerState {
     if (
-      this._state === "warm" &&
+      this._state === 'warm' &&
       this._staleness !== undefined &&
       this._lastWarmed !== null &&
       Date.now() - this._lastWarmed > this._staleness
     ) {
-      this._setState("stale");
+      this._setState('stale');
     }
     return this._state;
   }
@@ -478,12 +507,12 @@ export class ContextLayer {
   }
 
   get isWarm(): boolean {
-    return this._state === "warm";
+    return this._state === 'warm';
   }
 
   get isStale(): boolean {
     this.checkStaleness();
-    return this._state === "stale";
+    return this._state === 'stale';
   }
 
   // -- Lifecycle --
@@ -502,7 +531,7 @@ export class ContextLayer {
 
   private async _doWarm(): Promise<void> {
     const previousState = this._state;
-    this._setState("warming");
+    this._setState('warming');
 
     try {
       // A load is labelled with the focus it was asked for. If a focusable source's focus moves
@@ -512,69 +541,94 @@ export class ContextLayer {
       for (let attempt = 0; ; attempt++) {
         const focus = this._focus;
         const currentMessage = this._currentMessage;
-        const hint: SourceLoadHint | undefined = focus || currentMessage
-          ? Object.freeze({ ...(focus ? { focus } : {}), ...(currentMessage ? { currentMessage } : {}) }) : undefined;
+        const hint: SourceLoadHint | undefined =
+          focus || currentMessage
+            ? Object.freeze({
+                ...(focus ? { focus } : {}),
+                ...(currentMessage ? { currentMessage } : {}),
+              })
+            : undefined;
         const parts: string[] = [];
-        const reports: LayerSelectionState["sources"] = [];
+        const reports: LayerSelectionState['sources'] = [];
         for (const source of this._sources) {
           parts.push(await source.load(hint));
           const report = source.report?.();
           if (report) reports.push({ sourceId: source.id, report: structuredClone(report) });
         }
 
-        this._content = parts.join("\n\n");
+        this._content = parts.join('\n\n');
         this._hash = computeHash(this._content);
         this._version = undefined; // even identical unversioned source bytes are a new write
         this._selection = reports.length
-          ? { ...(focus ? { focusHash: computeHash(focus) } : {}), ...(currentMessage ? { currentMessage } : {}), sources: reports }
+          ? {
+              ...(focus ? { focusHash: computeHash(focus) } : {}),
+              ...(currentMessage ? { currentMessage } : {}),
+              sources: reports,
+            }
           : undefined;
         this._lastWarmed = Date.now();
 
-        const focusMoved = (this._focus !== focus || !sameMessage(this._currentMessage, currentMessage)) &&
+        const focusMoved =
+          (this._focus !== focus || !sameMessage(this._currentMessage, currentMessage)) &&
           this._sources.some((source) => source.focusable);
-        if (!focusMoved) { this._setState("warm"); return; }
-        if (attempt >= 2) { this._setState("stale"); return; }
+        if (!focusMoved) {
+          this._setState('warm');
+          return;
+        }
+        if (attempt >= 2) {
+          this._setState('stale');
+          return;
+        }
       }
     } catch (err) {
       // Revert to previous state so the layer isn't stuck in "warming". Content and selection
       // provenance are whatever the last successful load left; a stale label stays stale.
-      const reverted = previousState === "warming" ? "cold" : previousState;
+      const reverted = previousState === 'warming' ? 'cold' : previousState;
       // Content from the last good load stays, but it answers the focus it was
       // selected for. If the focus has moved since, warm would be a lie.
-      this._setState(reverted === "warm" && this._focusMismatch() ? "stale" : reverted);
+      this._setState(reverted === 'warm' && this._focusMismatch() ? 'stale' : reverted);
       throw err;
     }
   }
 
-  set(content: string, author: string = "system"): void {
+  set(content: string, author: string = 'system'): void {
     const previous = this._content;
     this._content = content;
     this._hash = computeHash(content);
     this._selection = undefined; // manual content has no selection provenance
     this._version = undefined; // a new write carries no version until its owner marks it
     this._lastWarmed = Date.now();
-    this._setState("warm");
+    this._setState('warm');
     if (previous !== content) {
-      this._emitMutation("content", previous, content, author);
+      this._emitMutation('content', previous, content, author);
     }
   }
 
   invalidate(): void {
-    if (this._state !== "cold") {
-      this._setState("stale");
+    if (this._state !== 'cold') {
+      this._setState('stale');
     }
   }
 
   private _validVersion(mark: LayerVersionMark): boolean {
-    return Number.isSafeInteger(mark.revision) && mark.revision >= 0 && mark.hash === this._hash && mark.hash === computeHash(this._content)
-      && (mark.domain === undefined || typeof mark.domain === "string" && mark.domain.length > 0)
-      && [mark.threadId, mark.projectId, mark.author].every(value => value === undefined || typeof value === "string" && value.length > 0)
-      && (!this.owner || mark.threadId === this.owner.threadId && mark.projectId === this.owner.projectId);
+    return (
+      Number.isSafeInteger(mark.revision) &&
+      mark.revision >= 0 &&
+      mark.hash === this._hash &&
+      mark.hash === computeHash(this._content) &&
+      (mark.domain === undefined || (typeof mark.domain === 'string' && mark.domain.length > 0)) &&
+      [mark.threadId, mark.projectId, mark.author].every(
+        (value) => value === undefined || (typeof value === 'string' && value.length > 0),
+      ) &&
+      (!this.owner ||
+        (mark.threadId === this.owner.threadId && mark.projectId === this.owner.projectId))
+    );
   }
 
   /** A rejected mark never replaces the current valid owner mark. */
   markVersion(mark: LayerVersionMark): void {
-    if (!mark || !this._validVersion(mark)) throw new Error("Layer version mark does not describe the current content and owner");
+    if (!mark || !this._validVersion(mark))
+      throw new Error('Layer version mark does not describe the current content and owner');
     this._version = Object.freeze({ ...mark });
   }
 
@@ -583,12 +637,12 @@ export class ContextLayer {
   }
 
   clear(): void {
-    this._content = "";
-    this._hash = "";
+    this._content = '';
+    this._hash = '';
     this._lastWarmed = null;
     this._selection = undefined;
     this._version = undefined;
-    this._setState("cold");
+    this._setState('cold');
   }
 
   addSource(source: ContextSource): void {
@@ -604,9 +658,7 @@ export class ContextLayer {
 
   // -- Observation --
 
-  onStateChange(
-    listener: (state: LayerState, layer: ContextLayer) => void
-  ): () => void {
+  onStateChange(listener: (state: LayerState, layer: ContextLayer) => void): () => void {
     this._listeners.push(listener);
     return () => {
       const idx = this._listeners.indexOf(listener);
@@ -624,7 +676,7 @@ export class ContextLayer {
     const previous = this._staleness;
     this._staleness = value;
     if (previous !== value) {
-      this._emitMutation("staleness", previous, value, "system");
+      this._emitMutation('staleness', previous, value, 'system');
     }
   }
 
@@ -644,7 +696,7 @@ export class ContextLayer {
     const previous = this._prompt;
     this._prompt = value;
     if (previous !== value) {
-      this._emitMutation("prompt", previous, value, "system");
+      this._emitMutation('prompt', previous, value, 'system');
     }
   }
 
@@ -670,12 +722,7 @@ export class ContextLayer {
 
   // -- Internal --
 
-  private _emitMutation(
-    field: string,
-    previous: unknown,
-    current: unknown,
-    author: string,
-  ): void {
+  private _emitMutation(field: string, previous: unknown, current: unknown, author: string): void {
     if (this._mutationListeners.length === 0) return;
     const event: LayerMutationEvent = {
       layerId: this.id,
@@ -701,6 +748,6 @@ export class ContextLayer {
       listener(state, this);
     }
     // Also emit as mutation for instance history
-    this._emitMutation("state", previous, state, "system");
+    this._emitMutation('state', previous, state, 'system');
   }
 }

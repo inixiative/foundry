@@ -1,19 +1,19 @@
-import type { Hono } from 'hono';
 import { join } from 'node:path';
-import { z } from 'zod';
 import type { EventStream } from '@inixiative/foundry-core';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
+import type { Hono } from 'hono';
+import { z } from 'zod';
 import type { LocalSessionStore } from '../persistence/local-session-store';
-import { type ArchiveDestination, readDestinations } from './config';
 import { FoundryCredentials } from '../providers/credentials';
 import { ConfigStore } from '../viewer/config';
-import { ArchiveContextSource } from './context-source';
 import { ArchiveCapture } from './capture';
+import { type ArchiveDestination, readDestinations } from './config';
+import { ArchiveContextSource } from './context-source';
 import {
-  publishArchive,
   archiveRequest,
   kingdomFields,
   listKingdomConnections,
+  publishArchive,
   saveArchiveConnection,
 } from './publish';
 
@@ -59,7 +59,9 @@ export function registerArchiveRoutes(
     try {
       const projectId = store.read(id)?.snapshot.projectId;
       let failed = false;
-      for (const destination of destinations.filter((destination) => destination.projectId === projectId)) {
+      for (const destination of destinations.filter(
+        (destination) => destination.projectId === projectId,
+      )) {
         try {
           await publishArchive(store, id, destination, fetch, credentials);
         } catch {
@@ -144,7 +146,8 @@ export function registerArchiveRoutes(
         d.url === parsed.data.url &&
         (['connectionId', 'ownerModel', 'organizationId', 'spaceId'] as const).every(
           (key) =>
-            parsed.data[key] === undefined || (d.kind === 'archive' ? null : (d[key] ?? null)) === parsed.data[key],
+            parsed.data[key] === undefined ||
+            (d.kind === 'archive' ? null : (d[key] ?? null)) === parsed.data[key],
         ),
     );
     const destination = matches.length === 1 ? matches[0] : undefined;
@@ -166,7 +169,9 @@ export function registerArchiveRoutes(
         credentials,
       );
       return c.json({
-        evidence: await source.bind({ projectId: destination.projectId }).load({ focus: parsed.data.query }),
+        evidence: await source
+          .bind({ projectId: destination.projectId })
+          .load({ focus: parsed.data.query }),
       });
     } catch {
       return c.json({ error: 'Archive context unavailable' }, 502);
@@ -182,7 +187,8 @@ export function registerArchiveRoutes(
     } catch {
       return c.json(
         {
-          error: 'Connection failed. Check the destination and its Foundry credential or Kingdom enrollment.',
+          error:
+            'Connection failed. Check the destination and its Foundry credential or Kingdom enrollment.',
         },
         400,
       );

@@ -6,33 +6,37 @@
  * Acquiring it is therefore the same question as "is that job still running",
  * and reuses the worker's own primitive rather than inventing a second signal.
  */
-import { Database } from "bun:sqlite";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { Database } from 'bun:sqlite';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const heldByAnotherProcess = (path: string): boolean => {
   let database: Database | undefined;
   try {
     database = new Database(path, { readwrite: true });
-    database.exec("PRAGMA busy_timeout = 0; BEGIN IMMEDIATE");
-    database.exec("ROLLBACK");
+    database.exec('PRAGMA busy_timeout = 0; BEGIN IMMEDIATE');
+    database.exec('ROLLBACK');
     return false;
   } catch (error) {
-    return Boolean(error && typeof error === "object" && "code" in error && error.code === "SQLITE_BUSY");
+    return Boolean(
+      error && typeof error === 'object' && 'code' in error && error.code === 'SQLITE_BUSY',
+    );
   } finally {
     database?.close();
   }
 };
 
 /** A missing or unreadable jobs directory means nothing is running, not that we should guess. */
-export const runtimeJobsInFlight = async (runtimeDirectory: string | undefined): Promise<boolean> => {
+export const runtimeJobsInFlight = async (
+  runtimeDirectory: string | undefined,
+): Promise<boolean> => {
   if (!runtimeDirectory) return false;
-  const root = join(runtimeDirectory, "runtime-jobs");
+  const root = join(runtimeDirectory, 'runtime-jobs');
   let entries: string[];
   try {
     entries = await readdir(root);
   } catch {
     return false;
   }
-  return entries.some((entry) => heldByAnotherProcess(join(root, entry, "active.sqlite")));
+  return entries.some((entry) => heldByAnotherProcess(join(root, entry, 'active.sqlite')));
 };

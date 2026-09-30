@@ -1,5 +1,7 @@
 import { destinationUrl } from '@inixiative/session-archive/config';
+
 export { destinationUrl } from '@inixiative/session-archive/config';
+
 import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -43,7 +45,10 @@ export const archiveDestinationSchema = z
     if (Boolean(value.tokenEnv) === Boolean(value.credential))
       ctx.addIssue({ code: 'custom', message: 'Choose exactly one credential source' });
     if (value.kind === 'archive' && value.credential?.type === 'kingdom-runtime')
-      ctx.addIssue({ code: 'custom', message: 'Runtime credentials require a Kingdom destination' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Runtime credentials require a Kingdom destination',
+      });
   });
 export type ArchiveDestination = z.infer<typeof archiveDestinationSchema>;
 

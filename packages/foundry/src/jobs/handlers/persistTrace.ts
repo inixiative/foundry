@@ -1,6 +1,6 @@
-import { makeJob } from "../makeJob";
-import type { PersistedTraceRecord } from "../../persistence/trace-record";
-import { upsertTraceRecord } from "../../persistence/trace-record";
+import type { PersistedTraceRecord } from '../../persistence/trace-record';
+import { upsertTraceRecord } from '../../persistence/trace-record';
+import { makeJob } from '../makeJob';
 
 export type PersistTracePayload = {
   traceId: string;

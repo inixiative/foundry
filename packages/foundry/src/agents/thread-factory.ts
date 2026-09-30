@@ -1,45 +1,41 @@
-import type { TokenCounts } from "@inixiative/foundry-core";
-import { DECISION_MODEL } from "../models/registry";
-import { FoundryCredentials } from '../providers/credentials';
-import { fileURLToPath } from "node:url";
-import { createNativeToolProjector } from "./native-tool-projection";
+import { fileURLToPath } from 'node:url';
+import type { TokenCounts } from '@inixiative/foundry-core';
 import {
+  type BaseAgent,
+  type Classification,
+  Classifier,
+  type CompletionOpts,
+  type CompletionResult,
   ContextLayer,
   type ContextSource,
   ContextStack,
-  FileMemory,
-  MarkdownDocs,
+  type Decision,
+  type ExecuteMeta,
+  Executor,
+  type FileMemory,
   inlineSource,
+  type LLMMessage,
+  type LLMProvider,
+  MarkdownDocs,
   type OwnershipScope,
+  type Route,
+  Router,
   Thread,
   type ThreadConfig,
-  Classifier,
-  type Classification,
-  Router,
-  type Route,
-  Executor,
-  type Decision,
-  type BaseAgent,
-  type LLMProvider,
-  type LLMMessage,
-  type CompletionOpts,
-  type CompletionResult,
-  type ExecuteMeta,
   type TokenTracker,
   type ToolRegistry,
-} from "@inixiative/foundry-core";
-import { toolUseLoop } from "./tool-loop";
-import type { SessionAdapter } from "../providers/session-adapter";
-import { auxiliarySessionId, type ThreadRuntimeManager } from "./thread-runtime";
-import { nativeBridgeSource, type NativeToolJournal } from "../mcp/native-bridge";
-import type {
-  FoundryConfig,
-  AgentSettingsConfig,
-  LayerSettingsConfig,
-} from "../viewer/config";
-import { resolveProjectView } from "../viewer/config-resolve";
-import { configuredExperts } from "./configured-experts";
-import { ArchiveContextSource, archiveContextSchema } from "../archives/context-source";
+} from '@inixiative/foundry-core';
+import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
+import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
+import { DECISION_MODEL } from '../models/registry';
+import { FoundryCredentials } from '../providers/credentials';
+import type { SessionAdapter } from '../providers/session-adapter';
+import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from '../viewer/config';
+import { resolveProjectView } from '../viewer/config-resolve';
+import { configuredExperts } from './configured-experts';
+import { createNativeToolProjector } from './native-tool-projection';
+import { auxiliarySessionId, type ThreadRuntimeManager } from './thread-runtime';
+import { toolUseLoop } from './tool-loop';
 
 // ---------------------------------------------------------------------------
 // Source resolver — turns config source IDs into ContextSources
@@ -72,25 +68,34 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
     if (!srcCfg || !srcCfg.enabled) return null;
 
     switch (srcCfg.type) {
-      case "archive":
-        return new ArchiveContextSource(srcCfg.id, srcCfg.uri, archiveContextSchema.parse(srcCfg.archive), undefined, fetch, new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntime));
-      case "inline":
+      case 'archive':
+        return new ArchiveContextSource(
+          srcCfg.id,
+          srcCfg.uri,
+          archiveContextSchema.parse(srcCfg.archive),
+          undefined,
+          fetch,
+          new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntime),
+        );
+      case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
-      case "file":
+      case 'file':
         // Bounded selection by default: the owned log stays complete and
         // searchable, the automatic input is a deterministic, reported subset.
         return deps.memory.asSource(srcCfg.id, {
-          kind: srcCfg.id.includes("convention") ? "convention" : undefined,
+          kind: srcCfg.id.includes('convention') ? 'convention' : undefined,
           scope: srcCfg.scope,
           includeUnowned: srcCfg.includeUnowned,
           selection: srcCfg.selection === false ? false : { ...(srcCfg.selection ?? {}) },
         });
-      case "markdown":
+      case 'markdown':
         // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
         // the full content blows the layer budget. topologySource() produces a
         // compact H1+H2 index (~44 tokens/file) that the domain warden can
         // reason over; file bodies get hydrated on demand.
-        return new MarkdownDocs(srcCfg.uri.startsWith("file:") ? fileURLToPath(srcCfg.uri) : srcCfg.uri).topologySource(srcCfg.id);
+        return new MarkdownDocs(
+          srcCfg.uri.startsWith('file:') ? fileURLToPath(srcCfg.uri) : srcCfg.uri,
+        ).topologySource(srcCfg.id);
       default:
         return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
     }
@@ -123,10 +128,17 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
     layers.push(
       new ContextLayer({
         id,
-        ...((layerCfg.domain !== undefined || layerCfg.writers !== undefined) ? { definition: Object.freeze({
-          id, ...(layerCfg.domain !== undefined ? { domain: layerCfg.domain } : {}),
-          ...(layerCfg.writers !== undefined ? { writers: Object.freeze([...layerCfg.writers]) as unknown as string[] } : {}),
-        }) } : {}),
+        ...(layerCfg.domain !== undefined || layerCfg.writers !== undefined
+          ? {
+              definition: Object.freeze({
+                id,
+                ...(layerCfg.domain !== undefined ? { domain: layerCfg.domain } : {}),
+                ...(layerCfg.writers !== undefined
+                  ? { writers: Object.freeze([...layerCfg.writers]) as unknown as string[] }
+                  : {}),
+              }),
+            }
+          : {}),
         staleness: layerCfg.staleness || undefined,
         prompt: layerCfg.prompt || undefined,
         // Configured provenance only; an unconfigured layer keeps the legacy classification.
@@ -140,11 +152,13 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
   if (layers.length === 0) {
     layers.push(
       new ContextLayer({
-        id: "system",
-        sources: [{
-          id: "default",
-          load: async () => "You are a helpful engineering assistant.",
-        }],
+        id: 'system',
+        sources: [
+          {
+            id: 'default',
+            load: async () => 'You are a helpful engineering assistant.',
+          },
+        ],
       }),
     );
   }
@@ -174,7 +188,7 @@ export function buildAgents(
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
     // The runtime owns these pre/post actors; do not build a second executor.
-    if (agentCfg.flowRole === "domain-advising") continue;
+    if (agentCfg.flowRole === 'domain-advising') continue;
     const providerId = agentCfg.provider || config.defaults.provider;
     const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
     if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);
@@ -236,7 +250,7 @@ export class ThreadFactory {
   private _sessionAdapter?: SessionAdapter;
   private _runtime?: ThreadRuntimeManager;
   private _nativeTools?: ToolRegistry;
-  private _configuration?: ThreadFactoryDeps["configuration"];
+  private _configuration?: ThreadFactoryDeps['configuration'];
 
   constructor(deps: ThreadFactoryDeps) {
     this._stack = deps.stack;
@@ -244,7 +258,11 @@ export class ThreadFactory {
     this._sessionAdapter = deps.sessionAdapter;
     this._runtime = deps.runtime;
     this._nativeTools = deps.nativeTools;
-    if (deps.configuration) this._configuration = { ...deps.configuration, config: structuredClone(deps.configuration.config) };
+    if (deps.configuration)
+      this._configuration = {
+        ...deps.configuration,
+        config: structuredClone(deps.configuration.config),
+      };
   }
 
   /** The runtime session adapter, if one was configured. */
@@ -259,8 +277,14 @@ export class ThreadFactory {
 
   nativeBridge(thread: Thread, journal: NativeToolJournal, deviceIdentityPath?: string) {
     if (!this._nativeTools) return undefined;
-    if (!this._runtime) throw Error("Native tools require a registered live runtime");
-    return nativeBridgeSource(thread, this._runtime, this._nativeTools, journal, deviceIdentityPath);
+    if (!this._runtime) throw Error('Native tools require a registered live runtime');
+    return nativeBridgeSource(
+      thread,
+      this._runtime,
+      this._nativeTools,
+      journal,
+      deviceIdentityPath,
+    );
   }
 
   /**
@@ -279,19 +303,23 @@ export class ThreadFactory {
    * lazily so assignment after creation (project.addThread) is honored on
    * every later warm and refresh.
    */
-  create(
-    id: string,
-    opts?: ThreadConfig,
-  ): Thread {
+  create(id: string, opts?: ThreadConfig): Thread {
     let thread: Thread | undefined;
     const scope: OwnershipScope = {
       threadId: id,
-      get projectId() { return thread?.meta.projectId ?? opts?.projectId; },
+      get projectId() {
+        return thread?.meta.projectId ?? opts?.projectId;
+      },
     };
     const base = this._configuration;
-    if (opts?.projectId && base?.config.projects[opts.projectId]?.enabled === false) throw Error("Cannot construct a thread for a disabled project");
-    const config = base && (opts?.projectId ? resolveProjectView(base.config, opts.projectId)?.config : undefined) || base?.config;
-    const template = config && base ? new ContextStack(buildLayers(config, base.layers)) : this._stack;
+    if (opts?.projectId && base?.config.projects[opts.projectId]?.enabled === false)
+      throw Error('Cannot construct a thread for a disabled project');
+    const config =
+      (base &&
+        (opts?.projectId ? resolveProjectView(base.config, opts.projectId)?.config : undefined)) ||
+      base?.config;
+    const template =
+      config && base ? new ContextStack(buildLayers(config, base.layers)) : this._stack;
     const agents = config && base ? buildAgents(config, template, base.agents) : this._agents;
     const stack = template.clone(scope);
     thread = new Thread(id, stack, opts);
@@ -302,12 +330,22 @@ export class ThreadFactory {
 
     // Match startup's initial warm, but bind sources to the owning thread first.
     // A failed load does not admit a provider call or use another project's cache.
-    if (base) { let initialized = false; thread.middleware.use("factory:configured-sources", async (_ctx, next) => {
-      if (!initialized) { await stack.warmAll(); initialized = true; }
-      return next();
-    }); }
-    try { this._runtime?.attach(thread, config); }
-    catch (error) { thread.dispose(); throw error; }
+    if (base) {
+      let initialized = false;
+      thread.middleware.use('factory:configured-sources', async (_ctx, next) => {
+        if (!initialized) {
+          await stack.warmAll();
+          initialized = true;
+        }
+        return next();
+      });
+    }
+    try {
+      this._runtime?.attach(thread, config);
+    } catch (error) {
+      thread.dispose();
+      throw error;
+    }
 
     return thread;
   }
@@ -328,7 +366,7 @@ function buildAgent(
   const opts = resolveAgentOpts(agentCfg, config);
 
   switch (agentCfg.kind) {
-    case "classifier":
+    case 'classifier':
       return new Classifier<string>({
         id,
         stack,
@@ -338,36 +376,52 @@ function buildAgent(
             const result = await complete(
               [
                 {
-                  role: "system",
+                  role: 'system',
                   content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a classifier. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
                 },
-                { role: "user", content: payload },
+                { role: 'user', content: payload },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
+              {
+                ...opts,
+                maxTokens: 256,
+                maxTurns: 1,
+                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider),
+              },
             );
             const parsed = parseJSON(result.content);
-            if (!parsed || typeof parsed.category !== "string" || !parsed.category.trim() || parsed.reasoning === "parse failure") {
-              throw new Error("Invalid classifier JSON");
+            if (
+              !parsed ||
+              typeof parsed.category !== 'string' ||
+              !parsed.category.trim() ||
+              parsed.reasoning === 'parse failure'
+            ) {
+              throw new Error('Invalid classifier JSON');
             }
             return {
-              value: { category: parsed.category as string || "general", subcategory: parsed.subcategory as string },
+              value: {
+                category: (parsed.category as string) || 'general',
+                subcategory: parsed.subcategory as string,
+              },
               confidence: 0.9,
-              reasoning: (parsed.reasoning as string) || "LLM classification",
+              reasoning: (parsed.reasoning as string) || 'LLM classification',
             };
           } catch (err) {
-            console.warn(`[buildAgent] LLM classify failed, falling back to keyword:`, (err as Error).message);
+            console.warn(
+              `[buildAgent] LLM classify failed, falling back to keyword:`,
+              (err as Error).message,
+            );
             return keywordClassify(payload);
           }
         },
       });
 
-    case "router":
+    case 'router':
       return new Router<{ payload: string; classification: Classification } | string>({
         id,
         stack,
         handler: async (ctx, input, meta) => {
-          const payload = typeof input === "string" ? input : input.payload;
-          const classification = typeof input === "string" ? null : input.classification;
+          const payload = typeof input === 'string' ? input : input.payload;
+          const classification = typeof input === 'string' ? null : input.classification;
 
           if (!classification) {
             return keywordRoute(keywordClassify(payload).value, config);
@@ -378,24 +432,35 @@ function buildAgent(
             const result = await complete(
               [
                 {
-                  role: "system",
+                  role: 'system',
                   content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a router. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
                 },
                 {
-                  role: "user",
+                  role: 'user',
                   content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
                 },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
+              {
+                ...opts,
+                maxTokens: 256,
+                maxTurns: 1,
+                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider),
+              },
             );
             const parsed = parseJSON(result.content);
-            const target = typeof parsed?.destination === "string" ? config.agents[parsed.destination] : undefined;
-            if (!target || target.kind !== "executor" || !target.enabled || !target.prompt) {
-              throw new Error("Router did not select an enabled configured executor");
+            const target =
+              typeof parsed?.destination === 'string'
+                ? config.agents[parsed.destination]
+                : undefined;
+            if (!target || target.kind !== 'executor' || !target.enabled || !target.prompt) {
+              throw new Error('Router did not select an enabled configured executor');
             }
-            if (parsed.contextSlice !== undefined && (!Array.isArray(parsed.contextSlice)
-              || !parsed.contextSlice.every(id => typeof id === "string" && !!config.layers[id]))) {
-              throw new Error("Router returned an invalid context slice");
+            if (
+              parsed.contextSlice !== undefined &&
+              (!Array.isArray(parsed.contextSlice) ||
+                !parsed.contextSlice.every((id) => typeof id === 'string' && !!config.layers[id]))
+            ) {
+              throw new Error('Router returned an invalid context slice');
             }
             return {
               value: {
@@ -404,18 +469,24 @@ function buildAgent(
                 priority: (parsed.priority as number) ?? 5,
               },
               confidence: 0.9,
-              reasoning: (parsed.reasoning as string) || "LLM routing",
+              reasoning: (parsed.reasoning as string) || 'LLM routing',
             };
           } catch (err) {
-            console.warn(`[buildAgent] LLM route failed, falling back to keyword:`, (err as Error).message);
+            console.warn(
+              `[buildAgent] LLM route failed, falling back to keyword:`,
+              (err as Error).message,
+            );
             const fallback = keywordRoute(classification, config);
-            return { ...fallback, confidence: 0,
-              reasoning: `fallback: ${(err as Error).message}; ${fallback.reasoning}` };
+            return {
+              ...fallback,
+              confidence: 0,
+              reasoning: `fallback: ${(err as Error).message}; ${fallback.reasoning}`,
+            };
           }
         },
       });
 
-    case "executor":
+    case 'executor':
     default: {
       if (!agentCfg.prompt) {
         console.warn(`[buildAgent] Agent "${id}" has no prompt configured — skipping.`);
@@ -436,8 +507,8 @@ function buildAgent(
           }
 
           const messages: LLMMessage[] = [
-            { role: "system", content: systemParts.join("\n\n") },
-            { role: "user", content: payload },
+            { role: 'system', content: systemParts.join('\n\n') },
+            { role: 'user', content: payload },
           ];
           meta?.recordProviderInput?.(messages);
           // Owned public native tool events feed the dispatch's ordinary tool observation channel
@@ -445,44 +516,58 @@ function buildAgent(
           // engine ran. The raw journal write comes first and is independent of this projection.
           // The central executor's provider pool is the thread id; the provider adds it to the admitted
           // owner at registration, so the projector validates the logical owner plus this expected pool.
-          const projector = meta?.nativeObservation?.owner && meta.observeTool && meta.threadId
-            ? createNativeToolProjector({ owner: meta.nativeObservation.owner, expectedPool: meta.threadId, observeTool: meta.observeTool }) : undefined;
-          const nativeObservation = meta?.nativeObservation && deps.provider.nativeOwnership === "required-prewrite" ? {
-            ...meta.nativeObservation,
-            register: async (evidence: import("@inixiative/foundry-core").NativeEvidence) => {
-              await meta.nativeObservation!.register(evidence);
-              projector?.register(evidence);
-            },
-            observe: async (evidence: import("@inixiative/foundry-core").NativeEvidence) => {
-              meta.recordNative?.(evidence);
-              if ((evidence.kind === "text" || evidence.kind === "text_delta") && evidence.text) meta.onDelta?.(evidence.text);
-              await meta.nativeObservation!.observe(evidence);
-              projector?.observe(evidence);
-            },
-          } : undefined;
+          const projector =
+            meta?.nativeObservation?.owner && meta.observeTool && meta.threadId
+              ? createNativeToolProjector({
+                  owner: meta.nativeObservation.owner,
+                  expectedPool: meta.threadId,
+                  observeTool: meta.observeTool,
+                })
+              : undefined;
+          const nativeObservation =
+            meta?.nativeObservation && deps.provider.nativeOwnership === 'required-prewrite'
+              ? {
+                  ...meta.nativeObservation,
+                  register: async (evidence: import('@inixiative/foundry-core').NativeEvidence) => {
+                    await meta.nativeObservation!.register(evidence);
+                    projector?.register(evidence);
+                  },
+                  observe: async (evidence: import('@inixiative/foundry-core').NativeEvidence) => {
+                    meta.recordNative?.(evidence);
+                    if (
+                      (evidence.kind === 'text' || evidence.kind === 'text_delta') &&
+                      evidence.text
+                    )
+                      meta.onDelta?.(evidence.text);
+                    await meta.nativeObservation!.observe(evidence);
+                    projector?.observe(evidence);
+                  },
+                }
+              : undefined;
 
           try {
             if (useToolLoop) {
-              const result = await toolUseLoop(
-                deps.provider,
-                messages,
-                tools,
-                {
-                  ...opts,
-                  nativeObservation,
-                  threadId: meta?.threadId,
-                  toolCwd: meta?.cwd,
-                  // Memory tools read and write within the dispatching thread's ownership.
-                  toolScope: meta?.threadId ? { threadId: meta.threadId, projectId: meta.projectId } : undefined,
-                  // Every executed tool is attributed to this dispatch, never to the next completion.
-                  dispatchId: meta?.dispatchId,
-                  onToolObservation: meta?.observeTool,
-                  maxIterations: 10,
-                  onToolCall: (name, input, resultStr) => {
-                    console.log(`    [${id}] tool: ${name}(${Object.values(input).map((v) => String(v).slice(0, 40)).join(", ")})`);
-                  },
+              const result = await toolUseLoop(deps.provider, messages, tools, {
+                ...opts,
+                nativeObservation,
+                threadId: meta?.threadId,
+                toolCwd: meta?.cwd,
+                // Memory tools read and write within the dispatching thread's ownership.
+                toolScope: meta?.threadId
+                  ? { threadId: meta.threadId, projectId: meta.projectId }
+                  : undefined,
+                // Every executed tool is attributed to this dispatch, never to the next completion.
+                dispatchId: meta?.dispatchId,
+                onToolObservation: meta?.observeTool,
+                maxIterations: 10,
+                onToolCall: (name, input, resultStr) => {
+                  console.log(
+                    `    [${id}] tool: ${name}(${Object.values(input)
+                      .map((v) => String(v).slice(0, 40))
+                      .join(', ')})`,
+                  );
                 },
-              );
+              });
 
               if (deps.tokenTracker && result.tokens) {
                 deps.tokenTracker.record({
@@ -494,32 +579,42 @@ function buildAgent(
               }
 
               return result.content;
-            } else if (meta?.onDelta && typeof deps.provider.stream === "function") {
+            } else if (meta?.onDelta && typeof deps.provider.stream === 'function') {
               // Streaming path — forward text deltas to the sink, accumulate
               // full content for the return value + single DB write upstream.
-              let full = "";
+              let full = '';
               let tokens: TokenCounts | undefined;
-              for await (const ev of deps.provider.stream(messages, { ...opts, nativeObservation, cwd: meta?.cwd, threadId: meta?.threadId })) {
-                if (ev.type === "text" && ev.text) {
+              for await (const ev of deps.provider.stream(messages, {
+                ...opts,
+                nativeObservation,
+                cwd: meta?.cwd,
+                threadId: meta?.threadId,
+              })) {
+                if (ev.type === 'text' && ev.text) {
                   full += ev.text;
                   meta.onDelta(ev.text);
-                } else if (ev.type === "usage" && ev.tokens) {
+                } else if (ev.type === 'usage' && ev.tokens) {
                   tokens = ev.tokens;
-                } else if (ev.type === "error") {
-                  throw new Error(ev.error ?? "stream error");
+                } else if (ev.type === 'error') {
+                  throw new Error(ev.error ?? 'stream error');
                 }
               }
               if (deps.tokenTracker && tokens) {
                 deps.tokenTracker.record({
                   provider: deps.provider.id,
-                  model: opts.model ?? "unknown",
+                  model: opts.model ?? 'unknown',
                   agentId: id,
                   tokens,
                 });
               }
               return full;
             } else {
-              const result = await complete(messages, { ...opts, nativeObservation, cwd: meta?.cwd, threadId: meta?.threadId });
+              const result = await complete(messages, {
+                ...opts,
+                nativeObservation,
+                cwd: meta?.cwd,
+                threadId: meta?.threadId,
+              });
               if (result.native) meta?.recordNative?.(result.native);
               return result.content;
             }
@@ -540,12 +635,28 @@ function buildAgent(
  * Session identity for a thread's auxiliary decision (classifier/router).
  * Never the bare thread id: that belongs to the central executor session.
  */
-function auxiliaryIdentity(meta: ExecuteMeta | undefined, role: string, provider: LLMProvider): Pick<CompletionOpts, "threadId" | "cwd" | "nativeObservation"> {
+function auxiliaryIdentity(
+  meta: ExecuteMeta | undefined,
+  role: string,
+  provider: LLMProvider,
+): Pick<CompletionOpts, 'threadId' | 'cwd' | 'nativeObservation'> {
   if (!meta?.threadId) return {};
-  return { threadId: auxiliarySessionId(meta.threadId, role), cwd: meta.cwd,
-    ...(meta.nativeObservation && provider.nativeOwnership === "required-prewrite" ? { nativeObservation: { ...meta.nativeObservation, bridge: undefined, observe: evidence => {
-      meta.recordNative?.(evidence); return meta.nativeObservation!.observe(evidence);
-    } } } : {}) };
+  return {
+    threadId: auxiliarySessionId(meta.threadId, role),
+    cwd: meta.cwd,
+    ...(meta.nativeObservation && provider.nativeOwnership === 'required-prewrite'
+      ? {
+          nativeObservation: {
+            ...meta.nativeObservation,
+            bridge: undefined,
+            observe: (evidence) => {
+              meta.recordNative?.(evidence);
+              return meta.nativeObservation!.observe(evidence);
+            },
+          },
+        }
+      : {}),
+  };
 }
 
 function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
@@ -570,12 +681,14 @@ function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
 
 export function keywordClassify(payload: string): Decision<Classification> {
   const lower = payload.toLowerCase();
-  let category = "general";
-  if (lower.includes("bug") || lower.includes("fix") || lower.includes("error")) category = "bug";
-  else if (lower.includes("feature") || lower.includes("add") || lower.includes("build")) category = "feature";
-  else if (lower.includes("refactor") || lower.includes("clean")) category = "refactor";
-  else if (lower.includes("question") || lower.includes("how") || lower.includes("why")) category = "question";
-  else if (lower.includes("convention") || lower.includes("style")) category = "convention";
+  let category = 'general';
+  if (lower.includes('bug') || lower.includes('fix') || lower.includes('error')) category = 'bug';
+  else if (lower.includes('feature') || lower.includes('add') || lower.includes('build'))
+    category = 'feature';
+  else if (lower.includes('refactor') || lower.includes('clean')) category = 'refactor';
+  else if (lower.includes('question') || lower.includes('how') || lower.includes('why'))
+    category = 'question';
+  else if (lower.includes('convention') || lower.includes('style')) category = 'convention';
   return { value: { category }, confidence: 0.7, reasoning: `keyword: ${category}` };
 }
 
@@ -585,19 +698,25 @@ export function keywordRoute(
 ): Decision<Route> {
   const layerIds = Object.keys(config.layers);
   const routeMap: Record<string, { dest: string; layers: string[] }> = {
-    bug: { dest: "artificer", layers: layerIds },
-    feature: { dest: "artificer", layers: ["system", "conventions"] },
-    refactor: { dest: "artificer", layers: ["system", "conventions"] },
-    question: { dest: "artificer", layers: ["system", "memory"] },
-    convention: { dest: "artificer", layers: ["conventions", "memory"] },
-    general: { dest: "artificer", layers: ["system"] },
+    bug: { dest: 'artificer', layers: layerIds },
+    feature: { dest: 'artificer', layers: ['system', 'conventions'] },
+    refactor: { dest: 'artificer', layers: ['system', 'conventions'] },
+    question: { dest: 'artificer', layers: ['system', 'memory'] },
+    convention: { dest: 'artificer', layers: ['conventions', 'memory'] },
+    general: { dest: 'artificer', layers: ['system'] },
   };
   const route = routeMap[classification.category] ?? routeMap.general;
-  const candidates = Object.entries(config.agents).filter(([, agent]) => agent.enabled && agent.kind === "executor" && !!agent.prompt);
+  const candidates = Object.entries(config.agents).filter(
+    ([, agent]) => agent.enabled && agent.kind === 'executor' && !!agent.prompt,
+  );
   const destination = candidates.find(([id]) => id === route.dest)?.[0] ?? candidates[0]?.[0];
-  if (!destination) throw new Error("Routing failed and no enabled executor is configured");
+  if (!destination) throw new Error('Routing failed and no enabled executor is configured');
   return {
-    value: { destination, contextSlice: route.layers.filter(id => !!config.layers[id]), priority: 5 },
+    value: {
+      destination,
+      contextSlice: route.layers.filter((id) => !!config.layers[id]),
+      priority: 5,
+    },
     confidence: 0.8,
     reasoning: `rule: ${classification.category} → ${destination}`,
   };
@@ -618,14 +737,16 @@ export function resolveAgentOpts(
   agentCfg: AgentSettingsConfig,
   config: FoundryConfig,
 ): CompletionOpts {
-  const isLightweight = agentCfg.kind === "classifier" || agentCfg.kind === "router";
+  const isLightweight = agentCfg.kind === 'classifier' || agentCfg.kind === 'router';
 
   return {
-    model: agentCfg.model || (isLightweight ? config.defaults.classifierModel ?? DECISION_MODEL : config.defaults.model),
+    model:
+      agentCfg.model ||
+      (isLightweight ? (config.defaults.classifierModel ?? DECISION_MODEL) : config.defaults.model),
     temperature: agentCfg.temperature ?? 0,
     maxTokens: isLightweight ? 256 : 16384,
     tools: agentCfg.tools ?? !isLightweight,
-    thinking: agentCfg.thinking ?? "none",
+    thinking: agentCfg.thinking ?? 'none',
     permissions: agentCfg.permissions,
     timeout: agentCfg.timeout,
     cacheControl: agentCfg.cacheControl,
@@ -640,8 +761,12 @@ export function parseJSON(text: string): Record<string, unknown> {
   } catch {
     const braced = raw.match(/\{[\s\S]*\}/);
     if (braced) {
-      try { return JSON.parse(braced[0]); } catch { /* fall through */ }
+      try {
+        return JSON.parse(braced[0]);
+      } catch {
+        /* fall through */
+      }
     }
-    return { category: "general", reasoning: "parse failure" };
+    return { category: 'general', reasoning: 'parse failure' };
   }
 }

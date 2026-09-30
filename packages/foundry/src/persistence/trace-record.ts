@@ -1,15 +1,15 @@
-import type { Prisma } from "@prisma/client";
-import type { Span, Trace as FoundryTrace } from "@inixiative/foundry-core";
-import { toOptionalPrismaJson, toPrismaJson } from "./prisma-json";
+import type { Trace as FoundryTrace, Span } from '@inixiative/foundry-core';
+import type { Prisma } from '@prisma/client';
+import { toOptionalPrismaJson, toPrismaJson } from './prisma-json';
 
 export interface PersistedSpanRecord {
   id: string;
   parentId?: string;
   name: string;
-  kind: Span["kind"];
+  kind: Span['kind'];
   agentId?: string;
   threadId?: string;
-  status: Span["status"];
+  status: Span['status'];
   layerIds?: string[];
   contextHash?: string;
   input?: unknown;
@@ -102,9 +102,10 @@ export async function upsertTraceRecord(
         input: toOptionalPrismaJson(span.input),
         output: toOptionalPrismaJson(span.output),
         error: toOptionalPrismaJson(span.error),
-        annotations: Object.keys(span.annotations).length > 0
-          ? toOptionalPrismaJson(span.annotations)
-          : undefined,
+        annotations:
+          Object.keys(span.annotations).length > 0
+            ? toOptionalPrismaJson(span.annotations)
+            : undefined,
         startedAt: span.startedAt,
         endedAt: span.endedAt,
         durationMs: span.durationMs,

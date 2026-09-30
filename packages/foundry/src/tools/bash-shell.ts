@@ -18,12 +18,12 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  ShellTool,
-  ShellResult,
-  ShellOpts,
   OutputFilter,
+  ShellOpts,
+  ShellResult,
+  ShellTool,
   ToolResult,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 export interface BashShellConfig {
   id?: string;
@@ -41,8 +41,8 @@ export interface BashShellConfig {
 
 export class BashShell implements ShellTool {
   readonly id: string;
-  readonly kind = "shell" as const;
-  readonly capability = "exec:shell" as const;
+  readonly kind = 'shell' as const;
+  readonly capability = 'exec:shell' as const;
 
   private _cwd: string;
   private _timeout: number;
@@ -51,12 +51,12 @@ export class BashShell implements ShellTool {
   private _shell: string;
 
   constructor(config?: BashShellConfig) {
-    this.id = config?.id ?? "bash";
+    this.id = config?.id ?? 'bash';
     this._cwd = config?.cwd ?? process.cwd();
     this._timeout = config?.timeout ?? 120_000;
     this._maxOutput = config?.maxOutput ?? 200 * 1024;
     this._defaultFilter = config?.outputFilter;
-    this._shell = config?.shell ?? "/bin/bash";
+    this._shell = config?.shell ?? '/bin/bash';
   }
 
   async exec(command: string, opts?: ShellOpts): Promise<ToolResult<ShellResult>> {
@@ -66,10 +66,10 @@ export class BashShell implements ShellTool {
     const start = performance.now();
 
     try {
-      const proc = Bun.spawn([this._shell, "-c", command], {
+      const proc = Bun.spawn([this._shell, '-c', command], {
         cwd,
-        stdout: "pipe",
-        stderr: "pipe",
+        stdout: 'pipe',
+        stderr: 'pipe',
         env: opts?.env ? { ...process.env, ...opts.env } : undefined,
       });
 
@@ -83,11 +83,8 @@ export class BashShell implements ShellTool {
       });
 
       const [rawStdout, stderr] = await Promise.race([
-        Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-        ]),
-        timeoutPromise.then(() => ["", ""] as [string, string]),
+        Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]),
+        timeoutPromise.then(() => ['', ''] as [string, string]),
       ]);
 
       const exitCode = await proc.exited;
@@ -126,8 +123,8 @@ export class BashShell implements ShellTool {
 
   async run(command: string, opts?: ShellOpts): Promise<string> {
     const result = await this.exec(command, opts);
-    if (!result.ok) throw new Error(result.error ?? "Command failed");
-    return result.data?.stdout ?? "";
+    if (!result.ok) throw new Error(result.error ?? 'Command failed');
+    return result.data?.stdout ?? '';
   }
 
   async which(command: string): Promise<string | null> {

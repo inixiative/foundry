@@ -11,19 +11,32 @@ export interface NativeOwner {
 }
 /** Compare typed ownership fields, not serialization order or prompt text. */
 export function sameNativeOwner(a: NativeOwner | undefined, b: NativeOwner | undefined): boolean {
-  return !!a && !!b && (["threadId", "projectId", "generation", "messageId", "dispatchId", "reviewJobId", "providerSessionKey"] as const)
-    .every(key => a[key] === b[key]);
+  return (
+    !!a &&
+    !!b &&
+    (
+      [
+        'threadId',
+        'projectId',
+        'generation',
+        'messageId',
+        'dispatchId',
+        'reviewJobId',
+        'providerSessionKey',
+      ] as const
+    ).every((key) => a[key] === b[key])
+  );
 }
 export interface OwnedAdmissionInspection {
   readonly evidence: NativeEvidence;
   /** Physical call settlement is independent of a native terminal and local waiter. */
-  readonly call: "settled" | "pending" | "unknown";
-  readonly cleanup: "not-requested" | "pending" | "released" | "unknown";
-  readonly capacity: "settled" | "unknown";
+  readonly call: 'settled' | 'pending' | 'unknown';
+  readonly cleanup: 'not-requested' | 'pending' | 'released' | 'unknown';
+  readonly capacity: 'settled' | 'unknown';
 }
 export interface NativeEvidence {
   readonly schema: 1;
-  readonly executionMode?: "controlled-fixture";
+  readonly executionMode?: 'controlled-fixture';
   readonly owner?: NativeOwner;
   readonly admissionId?: string;
   readonly nativeSessionId?: string;
@@ -33,15 +46,22 @@ export interface NativeEvidence {
   readonly itemId?: string;
   readonly callId?: string;
   readonly rpcRequestId?: string | number;
-  readonly nativeOutcome: "unknown" | "completed" | "failed";
-  readonly localOutcome?: "pending" | "resolved" | "rejected";
-  readonly dispatch?: "not-dispatched" | "attempted";
-  readonly transportOutcome?: "open" | "failed" | "closed";
-  readonly rpcOutcome?: "pending" | "resolved" | "failed" | "unknown";
+  readonly nativeOutcome: 'unknown' | 'completed' | 'failed';
+  readonly localOutcome?: 'pending' | 'resolved' | 'rejected';
+  readonly dispatch?: 'not-dispatched' | 'attempted';
+  readonly transportOutcome?: 'open' | 'failed' | 'closed';
+  readonly rpcOutcome?: 'pending' | 'resolved' | 'failed' | 'unknown';
   readonly localFailure?: string;
   readonly localError?: string;
   readonly observedAt?: number;
-  readonly terminal?: Readonly<{ type: string; eventId?: string; turnId?: string; subtype?: string; reason?: string; apiErrorStatus?: number }>;
+  readonly terminal?: Readonly<{
+    type: string;
+    eventId?: string;
+    turnId?: string;
+    subtype?: string;
+    reason?: string;
+    apiErrorStatus?: number;
+  }>;
   readonly content?: string;
   readonly correlation?: string;
   readonly kind?: string;
@@ -60,27 +80,60 @@ export interface NativeEvidence {
   readonly toolOutputOmittedTypes?: readonly string[];
   readonly toolError?: boolean;
   readonly observationFailures?: number;
-  readonly configuration?: Readonly<{ requestedModel: string; observedModel?: string; requestedMaxTurns?: number | null;
-    engine?: "mcp" | "app-server"; transportMode?: "controlled-fixture"; requestedEffort?: string; observedEffort?: string | null;
-    history?: Readonly<{source:"thread/start"|"thread/resume";available:boolean;hasMore:boolean;turns:readonly Readonly<{id:string;status:string}>[]}>;
-    turnBudgetEnforcement: "launch-option" | "unavailable"; tokenBudget: "unavailable"; effortBudget: "unavailable" }>;
+  readonly configuration?: Readonly<{
+    requestedModel: string;
+    observedModel?: string;
+    requestedMaxTurns?: number | null;
+    engine?: 'mcp' | 'app-server';
+    transportMode?: 'controlled-fixture';
+    requestedEffort?: string;
+    observedEffort?: string | null;
+    history?: Readonly<{
+      source: 'thread/start' | 'thread/resume';
+      available: boolean;
+      hasMore: boolean;
+      turns: readonly Readonly<{ id: string; status: string }>[];
+    }>;
+    turnBudgetEnforcement: 'launch-option' | 'unavailable';
+    tokenBudget: 'unavailable';
+    effortBudget: 'unavailable';
+  }>;
   readonly text?: string;
   /** Public text form only; reasoning is never projected. Missing phase is not a final-answer acknowledgment. */
-  readonly textKind?: "delta" | "snapshot";
-  readonly textPhase?: "commentary" | "final_answer";
+  readonly textKind?: 'delta' | 'snapshot';
+  readonly textPhase?: 'commentary' | 'final_answer';
   /** Safe setup/status evidence, never launch paths or config values. */
-  readonly runtimeStatus?: Readonly<{ type: string; status?: string; reason?: string; server?: string; tools?: readonly string[] }>;
-  readonly bridge?: { readonly id: string; readonly configurationHash: string; readonly toolPolicy?: NativeToolPolicy; readonly tools: readonly NativeToolEvidence[] };
+  readonly runtimeStatus?: Readonly<{
+    type: string;
+    status?: string;
+    reason?: string;
+    server?: string;
+    tools?: readonly string[];
+  }>;
+  readonly bridge?: {
+    readonly id: string;
+    readonly configurationHash: string;
+    readonly toolPolicy?: NativeToolPolicy;
+    readonly tools: readonly NativeToolEvidence[];
+  };
 }
 export interface NativeToolRecord {
   readonly id: string;
   readonly bridgeId: string;
   readonly operation: string;
-  readonly owner: { readonly threadId: string; readonly projectId?: string; readonly generation: string };
-  readonly association: { readonly kind: "registered-admission-window" | "unassociated"; readonly admissionId?: string; readonly owner?: NativeOwner };
+  readonly owner: {
+    readonly threadId: string;
+    readonly projectId?: string;
+    readonly generation: string;
+  };
+  readonly association: {
+    readonly kind: 'registered-admission-window' | 'unassociated';
+    readonly admissionId?: string;
+    readonly owner?: NativeOwner;
+  };
   readonly sdkRequestId?: string | number;
   readonly sdkSessionId?: string;
-  readonly nativeCorrelation: "unknown";
+  readonly nativeCorrelation: 'unknown';
   readonly startedAt: number;
   readonly finishedAt: number;
   readonly arguments: Readonly<Record<string, unknown>>;
@@ -91,8 +144,8 @@ export interface NativeToolRecord {
 }
 export interface NativeToolEvidence {
   readonly record: NativeToolRecord;
-  readonly persistence: "pending" | "committed" | "failed";
-  readonly publication: "pending" | "published" | "reconciliation-needed";
+  readonly persistence: 'pending' | 'committed' | 'failed';
+  readonly publication: 'pending' | 'published' | 'reconciliation-needed';
   readonly error?: string;
 }
 /** Process lifetime grant. Data/functions never become part of a provider prompt. */
@@ -105,7 +158,11 @@ export interface NativeBridgeSource {
 export interface NativeBridgeLease {
   readonly id: string;
   readonly name: string;
-  readonly owner: { readonly threadId: string; readonly projectId?: string; readonly generation: string };
+  readonly owner: {
+    readonly threadId: string;
+    readonly projectId?: string;
+    readonly generation: string;
+  };
   readonly configurationHash: string;
   readonly toolPolicy?: NativeToolPolicy;
   /** Private, empty native cwd owned by a restricted fixture lease. */
@@ -115,12 +172,17 @@ export interface NativeBridgeLease {
   register(evidence: NativeEvidence): void;
   observe(evidence: NativeEvidence): void;
   evidence(admissionId?: string): readonly NativeToolEvidence[];
-  status?(): Readonly<{ closed: boolean; pendingCleanups: number; cleanupFailures: number; evictedRecords: number }>;
+  status?(): Readonly<{
+    closed: boolean;
+    pendingCleanups: number;
+    cleanupFailures: number;
+    evictedRecords: number;
+  }>;
   close(): Promise<void>;
 }
 /** Immutable policy identity; contains no credentials, launch paths or tool input. */
 export interface NativeToolPolicy {
-  readonly version: "isolated-fixture-v1";
+  readonly version: 'isolated-fixture-v1';
   readonly digest: string;
 }
 export interface NativeObservation {
@@ -135,6 +197,12 @@ export interface NativeObservation {
 }
 export function freezeEvidence<T>(value: T): T {
   const copy = structuredClone(value);
-  const freeze = (v: unknown) => { if (v && typeof v === "object" && !Object.isFrozen(v)) { for (const nested of Object.values(v)) freeze(nested); Object.freeze(v); } };
-  freeze(copy); return copy;
+  const freeze = (v: unknown) => {
+    if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+      for (const nested of Object.values(v)) freeze(nested);
+      Object.freeze(v);
+    }
+  };
+  freeze(copy);
+  return copy;
 }

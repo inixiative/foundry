@@ -24,13 +24,8 @@
 //   `, { modules: { input: JSON.stringify(userData) } });
 // ---------------------------------------------------------------------------
 
-import { unlinkSync } from "node:fs";
-import type {
-  ScriptTool,
-  ScriptResult,
-  ScriptOpts,
-  ToolResult,
-} from "@inixiative/foundry-core";
+import { unlinkSync } from 'node:fs';
+import type { ScriptOpts, ScriptResult, ScriptTool, ToolResult } from '@inixiative/foundry-core';
 
 export interface BunScriptConfig {
   id?: string;
@@ -44,15 +39,15 @@ export interface BunScriptConfig {
 
 export class BunScript implements ScriptTool {
   readonly id: string;
-  readonly kind = "script" as const;
-  readonly capability = "exec:process" as const;
+  readonly kind = 'script' as const;
+  readonly capability = 'exec:process' as const;
 
   private _timeout: number;
   private _maxOutput: number;
   private _cwd: string;
 
   constructor(config?: BunScriptConfig) {
-    this.id = config?.id ?? "script";
+    this.id = config?.id ?? 'script';
     this._timeout = config?.timeout ?? 30_000;
     this._maxOutput = config?.maxOutput ?? 512 * 1024;
     this._cwd = config?.cwd ?? process.cwd();
@@ -60,7 +55,7 @@ export class BunScript implements ScriptTool {
 
   async evaluate<T = unknown>(
     code: string,
-    opts?: ScriptOpts
+    opts?: ScriptOpts,
   ): Promise<ToolResult<ScriptResult<T>>> {
     const timeout = opts?.timeout ?? this._timeout;
     const captureLogs = opts?.captureLogs !== false;
@@ -73,12 +68,12 @@ export class BunScript implements ScriptTool {
     const modules = opts?.modules ?? {};
     const moduleInjections = Object.entries(modules)
       .map(([name, value]) => `globalThis[${JSON.stringify(name)}] = ${JSON.stringify(value)};`)
-      .join("\n");
+      .join('\n');
 
     const wrapper = `
 const __logs = [];
 const __origLog = console.log;
-${captureLogs ? `console.log = (...args) => { __logs.push(args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")); };` : ""}
+${captureLogs ? `console.log = (...args) => { __logs.push(args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")); };` : ''}
 
 ${moduleInjections}
 
@@ -103,10 +98,10 @@ try {
 
     // --env-file=/dev/null stops Bun from auto-loading .env/.env.local from
     // the cwd, which would resurrect the scrubbed credentials in the child.
-    const proc = Bun.spawn(["bun", "run", "--env-file=/dev/null", tmpFile], {
+    const proc = Bun.spawn(['bun', 'run', '--env-file=/dev/null', tmpFile], {
       cwd: opts?.cwd ?? this._cwd,
-      stdout: "pipe",
-      stderr: "pipe",
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         ...process.env,
         // Don't inherit credentials into script subprocess
@@ -125,15 +120,16 @@ try {
       proc.exited.then(() => clearTimeout(timer));
     });
 
-    const cleanup = () => { try { unlinkSync(tmpFile); } catch {} };
+    const cleanup = () => {
+      try {
+        unlinkSync(tmpFile);
+      } catch {}
+    };
 
     try {
       const [stdout, stderr] = await Promise.race([
-        Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-        ]),
-        timeoutPromise.then(() => ["", ""] as [string, string]),
+        Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]),
+        timeoutPromise.then(() => ['', ''] as [string, string]),
       ]);
 
       const durationMs = Math.round(performance.now() - start);
@@ -141,12 +137,12 @@ try {
       cleanup();
 
       // Truncate if needed
-      const truncatedStdout = stdout.length > this._maxOutput
-        ? stdout.slice(0, this._maxOutput)
-        : stdout;
+      const truncatedStdout =
+        stdout.length > this._maxOutput ? stdout.slice(0, this._maxOutput) : stdout;
 
       if (exitCode !== 0) {
-        const errMsg = stderr.trim() || truncatedStdout.trim().slice(0, 200) || `exit code ${exitCode}`;
+        const errMsg =
+          stderr.trim() || truncatedStdout.trim().slice(0, 200) || `exit code ${exitCode}`;
         return {
           ok: false,
           summary: `Script failed (${durationMs}ms): ${errMsg.slice(0, 100)}`,
@@ -181,9 +177,10 @@ try {
       }
 
       const resultStr = JSON.stringify(parsed.result);
-      const summary = resultStr.length > 200
-        ? `Script completed (${durationMs}ms) — ${resultStr.length} chars of data`
-        : `Script completed (${durationMs}ms): ${resultStr}`;
+      const summary =
+        resultStr.length > 200
+          ? `Script completed (${durationMs}ms) — ${resultStr.length} chars of data`
+          : `Script completed (${durationMs}ms): ${resultStr}`;
 
       return {
         ok: true,
@@ -197,7 +194,11 @@ try {
       };
     } catch (err) {
       cleanup();
-      try { proc.kill(); } catch { /* already dead */ }
+      try {
+        proc.kill();
+      } catch {
+        /* already dead */
+      }
       const durationMs = Math.round(performance.now() - start);
       return {
         ok: false,

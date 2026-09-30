@@ -76,9 +76,7 @@
       "id": "core-framework-boundary",
       "claim": "Core owns generic engine primitives; Foundry owns behavioral policy.",
       "status": "accepted",
-      "profiles": [
-        "architectural-placement"
-      ],
+      "profiles": ["architectural-placement"],
       "evidence": {
         "path": "CLAUDE.md",
         "reference": "CLAUDE.md:Monorepo Structure",

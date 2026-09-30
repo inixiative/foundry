@@ -1,4 +1,4 @@
-import { html, useState, useEffect } from './lib.js';
+import { html, useEffect, useState } from './lib.js';
 
 export function ArchiveSettings() {
   const [connections, setConnections] = useState([]);
@@ -127,7 +127,9 @@ export function ArchiveSettings() {
           kingdom &&
           html`<label>Destination<select value=${connectionId} onChange=${(event) => {
             setConnectionId(event.target.value);
-            const selected = kingdom.connections.find((connection) => connection.id === event.target.value);
+            const selected = kingdom.connections.find(
+              (connection) => connection.id === event.target.value,
+            );
             if (selected?.projectId) setProjectId(selected.projectId);
           }}>
           <option value="">Kingdom-stored archives</option>

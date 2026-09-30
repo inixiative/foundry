@@ -1,4 +1,4 @@
-import type { TokenCounts } from "./token-counts";
+import type { TokenCounts } from './token-counts';
 // ---------------------------------------------------------------------------
 // Shared types — used by harness for conditional invocation/activation
 // ---------------------------------------------------------------------------
@@ -21,7 +21,7 @@ export interface InvocationCondition {
  * Full AgentSettingsConfig lives in @inixiative/foundry.
  */
 export interface AgentModeConfig {
-  invocation?: "always" | "on-demand" | "conditional";
+  invocation?: 'always' | 'on-demand' | 'conditional';
   condition?: InvocationCondition;
 }
 
@@ -30,7 +30,7 @@ export interface AgentModeConfig {
  * Full LayerSettingsConfig lives in @inixiative/foundry.
  */
 export interface LayerModeConfig {
-  activation?: "always" | "on-demand" | "conditional";
+  activation?: 'always' | 'on-demand' | 'conditional';
   condition?: InvocationCondition;
 }
 
@@ -39,7 +39,7 @@ export interface LayerModeConfig {
 // ---------------------------------------------------------------------------
 
 export interface LLMMessage {
-  readonly role: "system" | "user" | "assistant";
+  readonly role: 'system' | 'user' | 'assistant';
   readonly content: string;
 }
 
@@ -82,7 +82,7 @@ export interface CompletionOpts {
   /** Max agentic turns (for runtimes that support tool use). */
   maxTurns?: number | null;
   /** Additive native ownership contract; optional for standalone/legacy providers. */
-  nativeObservation?: import("./native-evidence").NativeObservation;
+  nativeObservation?: import('./native-evidence').NativeObservation;
   /** Enable/disable tool use. False = pure text completion. */
   tools?: boolean;
   /** Tool definitions for the LLM to call. Providers map to native format. */
@@ -95,9 +95,9 @@ export interface CompletionOpts {
    * Providers translate: Anthropic → thinking.budget_tokens, OpenAI → reasoning_effort.
    * "none" = no thinking, "low"/"medium"/"high" = increasing effort, number = explicit budget tokens.
    */
-  thinking?: "none" | "low" | "medium" | "high" | number;
+  thinking?: 'none' | 'low' | 'medium' | 'high' | number;
   /** Permission level for code execution runtimes (claude-code, codex). */
-  permissions?: "bypass" | "restricted";
+  permissions?: 'bypass' | 'restricted';
   /** Per-call timeout in ms. Provider uses its own default if omitted. */
   timeout?: number;
   /** Enable prompt caching where supported. */
@@ -111,7 +111,7 @@ export interface CompletionOpts {
 }
 
 export interface CompletionResult {
-  readonly native?: import("./native-evidence").NativeEvidence;
+  readonly native?: import('./native-evidence').NativeEvidence;
   readonly content: string;
   readonly model: string;
   readonly tokens?: TokenCounts;
@@ -127,7 +127,7 @@ export interface EmbeddingResult {
 }
 
 export interface LLMStreamEvent {
-  type: "text" | "usage" | "done" | "error";
+  type: 'text' | 'usage' | 'done' | 'error';
   text?: string;
   tokens?: TokenCounts;
   error?: string;
@@ -137,27 +137,30 @@ export interface LLMStreamEvent {
 export interface LLMProvider {
   readonly id: string;
   /** Native callback support, distinct from stateless/legacy serializable options. */
-  readonly nativeOwnership?: "required-prewrite";
+  readonly nativeOwnership?: 'required-prewrite';
   /** Optional owned-call evidence. A rejected waiter alone never proves remote settlement. */
   readonly completionLifecycle?: {
-    readonly kind: "request" | "session";
-    settlement(outcome: { result?: CompletionResult; error?: unknown }): "settled" | "unknown";
-    admission?(outcome: { result?: CompletionResult; error?: unknown }): "not-admitted" | "attempted" | "unknown";
+    readonly kind: 'request' | 'session';
+    settlement(outcome: { result?: CompletionResult; error?: unknown }): 'settled' | 'unknown';
+    admission?(outcome: {
+      result?: CompletionResult;
+      error?: unknown;
+    }): 'not-admitted' | 'attempted' | 'unknown';
     /** Read only the original registered admission. Never sends, resumes or replaces work. */
-    inspectOwnedAdmission?(owner: import("./native-evidence").NativeOwner, admissionId: string): Promise<import("./native-evidence").OwnedAdmissionInspection | undefined>;
+    inspectOwnedAdmission?(
+      owner: import('./native-evidence').NativeOwner,
+      admissionId: string,
+    ): Promise<import('./native-evidence').OwnedAdmissionInspection | undefined>;
     /** Cleanup of that original, confirmed idle pool entry; never a current-scope lookup. */
-    releaseOwnedAdmission?(owner: import("./native-evidence").NativeOwner, admissionId: string): Promise<"released" | "unknown" | "unavailable">;
+    releaseOwnedAdmission?(
+      owner: import('./native-evidence').NativeOwner,
+      admissionId: string,
+    ): Promise<'released' | 'unknown' | 'unavailable'>;
     /** Release only a confirmed idle owned resource; never clear its resume binding. */
-    releaseIdle?(opts: CompletionOpts): Promise<"released" | "unknown" | "unavailable">;
+    releaseIdle?(opts: CompletionOpts): Promise<'released' | 'unknown' | 'unavailable'>;
   };
-  complete(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): Promise<CompletionResult>;
-  stream?(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): AsyncGenerator<LLMStreamEvent>;
+  complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult>;
+  stream?(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent>;
 }
 
 export interface EmbeddingProvider {

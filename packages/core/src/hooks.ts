@@ -3,22 +3,22 @@
 // ---------------------------------------------------------------------------
 
 export type HookPoint =
-  | "pre:dispatch"
-  | "post:dispatch"
-  | "pre:classify"
-  | "post:classify"
-  | "pre:route"
-  | "post:route"
-  | "pre:compact"
-  | "post:compact"
-  | "session:create"
-  | "session:archive"
-  | "budget:warning"
-  | "budget:exceeded"
-  | "plan:enter"
-  | "plan:exit"
-  | "error:agent"
-  | "error:provider";
+  | 'pre:dispatch'
+  | 'post:dispatch'
+  | 'pre:classify'
+  | 'post:classify'
+  | 'pre:route'
+  | 'post:route'
+  | 'pre:compact'
+  | 'post:compact'
+  | 'session:create'
+  | 'session:archive'
+  | 'budget:warning'
+  | 'budget:exceeded'
+  | 'plan:enter'
+  | 'plan:exit'
+  | 'error:agent'
+  | 'error:provider';
 
 export interface HookContext {
   hookPoint: HookPoint;
@@ -31,7 +31,7 @@ export interface HookContext {
 }
 
 export interface HookResult {
-  action: "continue" | "skip" | "abort" | "redirect";
+  action: 'continue' | 'skip' | 'abort' | 'redirect';
   redirectTo?: string;
   modified?: Partial<HookContext>;
   annotations?: Record<string, unknown>;
@@ -45,7 +45,7 @@ export interface HookHandler {
 }
 
 export interface PlanModeTrigger {
-  kind: "complexity" | "newDomain" | "largeDiff" | "custom";
+  kind: 'complexity' | 'newDomain' | 'largeDiff' | 'custom';
   threshold?: number;
   detect?: (ctx: HookContext) => boolean;
 }
@@ -67,7 +67,9 @@ export class HookRegistry {
 
   register(handler: HookHandler): () => void {
     this._handlers.set(handler.id, handler);
-    return () => { this._handlers.delete(handler.id); };
+    return () => {
+      this._handlers.delete(handler.id);
+    };
   }
 
   unregister(id: string): boolean {
@@ -76,11 +78,11 @@ export class HookRegistry {
 
   async execute(
     point: HookPoint,
-    ctx: HookContext
-  ): Promise<HookContext & { action: HookResult["action"] }> {
+    ctx: HookContext,
+  ): Promise<HookContext & { action: HookResult['action'] }> {
     const handlers = this.forPoint(point);
     let current = { ...ctx };
-    let action: HookResult["action"] = "continue";
+    let action: HookResult['action'] = 'continue';
 
     for (const handler of handlers) {
       const result = await handler.handler(current);
@@ -102,7 +104,7 @@ export class HookRegistry {
         current.meta = { ...current.meta, redirectTo: result.redirectTo };
       }
 
-      if (action === "abort" || action === "skip" || action === "redirect") {
+      if (action === 'abort' || action === 'skip' || action === 'redirect') {
         break;
       }
     }
@@ -117,9 +119,7 @@ export class HookRegistry {
         matching.push(handler);
       }
     }
-    matching.sort(
-      (a, b) => (a.priority ?? DEFAULT_PRIORITY) - (b.priority ?? DEFAULT_PRIORITY)
-    );
+    matching.sort((a, b) => (a.priority ?? DEFAULT_PRIORITY) - (b.priority ?? DEFAULT_PRIORITY));
     return matching;
   }
 

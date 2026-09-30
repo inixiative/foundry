@@ -6,24 +6,50 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
-import { html, useState, useRef, useEffect } from "./lib.js";
 import {
-  messages, sending, inflight, sendMessage, selectedSpanId, loadTraceDetail,
-  prompts, resolvePrompt, allThreads, tokenUsage, revertThread, forkThread,
-  threadData, layerColor, threadContextTokens, activeThreadId, historyPaging, loadOlderMessages, showToast,
-} from "./store.js";
-import { failurePresentation } from "./inspector-data.js";
+  browserStorageNotice,
+  browserStorageSummary,
+  isUnsavedCompletion,
+} from './conversation-state.js';
+import { failurePresentation } from './inspector-data.js';
+import { html, useEffect, useRef, useState } from './lib.js';
 import { liveThreadStatus, liveWorkLabel } from './live-state.js';
-import { isUnsavedCompletion, browserStorageNotice, browserStorageSummary } from "./conversation-state.js";
-import { dictationSupported, speechSupported, startDictation, speakReplies, toggleSpeakReplies } from "./voice.js";
+import {
+  activeThreadId,
+  allThreads,
+  forkThread,
+  historyPaging,
+  inflight,
+  layerColor,
+  loadOlderMessages,
+  loadTraceDetail,
+  messages,
+  prompts,
+  resolvePrompt,
+  revertThread,
+  selectedSpanId,
+  sending,
+  sendMessage,
+  showToast,
+  threadContextTokens,
+  threadData,
+  tokenUsage,
+} from './store.js';
+import {
+  dictationSupported,
+  speakReplies,
+  speechSupported,
+  startDictation,
+  toggleSpeakReplies,
+} from './voice.js';
 
 // ---------------------------------------------------------------------------
 // Token bar — session usage + budget at top of conversation
 // ---------------------------------------------------------------------------
 
 function fmtNum(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
   return String(n);
 }
 
@@ -31,18 +57,29 @@ function TokenBar() {
   const usage = tokenUsage.value;
   if (!usage) return null;
 
-  const { usedTokens, totalInput, totalOutput, usedCost, totalCalls, percentage, warning, exceeded, limitCost, contextWindow } = usage;
+  const {
+    usedTokens,
+    totalInput,
+    totalOutput,
+    usedCost,
+    totalCalls,
+    percentage,
+    warning,
+    exceeded,
+    limitCost,
+    contextWindow,
+  } = usage;
   const contextTokens = threadContextTokens.value;
   const contextPct = contextWindow ? contextTokens / contextWindow : null;
   if (usedTokens === 0 && totalCalls === 0 && !usage.usageUnavailable) return null;
 
   const budgetPct = Math.min(percentage * 100, 100);
-  const budgetColor = exceeded ? "#f87171" : warning ? "#facc15" : "#4ade80";
-  const barClass = exceeded ? "token-bar--exceeded" : warning ? "token-bar--warning" : "";
+  const budgetColor = exceeded ? '#f87171' : warning ? '#facc15' : '#4ade80';
+  const barClass = exceeded ? 'token-bar--exceeded' : warning ? 'token-bar--warning' : '';
 
   // Context window fill
   const ctxPct = contextPct != null ? Math.min(contextPct * 100, 100) : null;
-  const ctxColor = ctxPct > 90 ? "#f87171" : ctxPct > 70 ? "#facc15" : "#6c9eff";
+  const ctxColor = ctxPct > 90 ? '#f87171' : ctxPct > 70 ? '#facc15' : '#6c9eff';
 
   return html`
     <div class="token-bar ${barClass}">
@@ -59,11 +96,11 @@ function TokenBar() {
         <span class="token-stat-divider"></span>
         <span class="token-stat">
           <span class="token-stat-value">${fmtNum(usedTokens)}</span>
-          <span class="token-stat-label">${usage.usageUnavailable ? "known tokens" : "tokens"}</span>
+          <span class="token-stat-label">${usage.usageUnavailable ? 'known tokens' : 'tokens'}</span>
         </span>
         <span class="token-stat-divider"></span>
         <span class="token-stat">
-          <span class="token-stat-value">${usage.costUnavailable ? "Unavailable" : `$${usedCost.toFixed(4)}`}</span>
+          <span class="token-stat-value">${usage.costUnavailable ? 'Unavailable' : `$${usedCost.toFixed(4)}`}</span>
           <span class="token-stat-label">cost</span>
         </span>
         <span class="token-stat-divider"></span>
@@ -73,7 +110,9 @@ function TokenBar() {
         </span>
       </div>
       <div class="token-bar-meters">
-        ${ctxPct != null ? html`
+        ${
+          ctxPct != null
+            ? html`
           <div class="token-bar-meter" title="${fmtNum(contextTokens)} / ${fmtNum(contextWindow)} context window">
             <span class="token-bar-meter-label" style="color: ${ctxColor}">ctx</span>
             <div class="token-bar-track">
@@ -81,16 +120,22 @@ function TokenBar() {
             </div>
             <span class="token-bar-pct" style="color: ${ctxColor}">${ctxPct.toFixed(0)}%</span>
           </div>
-        ` : null}
-        ${limitCost && !usage.costUnavailable ? html`
-          <div class="token-bar-meter" title=${usage.costUnavailable ? "Cost unavailable; budget shows known subtotal only" : `$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget`}>
+        `
+            : null
+        }
+        ${
+          limitCost && !usage.costUnavailable
+            ? html`
+          <div class="token-bar-meter" title=${usage.costUnavailable ? 'Cost unavailable; budget shows known subtotal only' : `$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget`}>
             <span class="token-bar-meter-label" style="color: ${budgetColor}">$$$</span>
             <div class="token-bar-track">
               <div class="token-bar-fill" style="width: ${budgetPct}%; background: ${budgetColor}"></div>
             </div>
             <span class="token-bar-pct" style="color: ${budgetColor}">${budgetPct.toFixed(0)}%</span>
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
     </div>
   `;
@@ -100,7 +145,7 @@ function TokenBar() {
 // Context bar — thread metadata + active context at top of conversation
 // ---------------------------------------------------------------------------
 
-const WARM_LAYER_STATES = new Set(["warm", "warming"]);
+const WARM_LAYER_STATES = new Set(['warm', 'warming']);
 
 function ContextBar() {
   const data = threadData.value;
@@ -111,7 +156,7 @@ function ContextBar() {
   const meta = data.meta || {};
   const layers = data.layers || [];
   const agents = data.agents || [];
-  const warmLayers = layers.filter(l => WARM_LAYER_STATES.has(l.state));
+  const warmLayers = layers.filter((l) => WARM_LAYER_STATES.has(l.state));
 
   // Rough token estimate: ~4 chars per token (same heuristic as store.estimateContextTokens)
 
@@ -119,7 +164,9 @@ function ContextBar() {
   const warmTokens = warmLayers.reduce((sum, l) => sum + Math.ceil((l.contentLength || 0) / 4), 0);
 
   // System: what the last agent turn actually injected (from the Librarian's injection ledger on msg.meta).
-  const lastAgent = [...msgList].reverse().find(m => m.actor === "agent" && m.meta?.injectedLayers);
+  const lastAgent = [...msgList]
+    .reverse()
+    .find((m) => m.actor === 'agent' && m.meta?.injectedLayers);
   const injectedLayers = lastAgent?.meta?.injectedLayers || [];
   const systemTokens = injectedLayers.reduce(
     (sum, l) => sum + (l.tokens ?? Math.ceil((l.contentLength || 0) / 4)),
@@ -130,15 +177,18 @@ function ContextBar() {
   const threadTokens = threadContextTokens.value;
 
   const contextWindow = usage?.contextWindow ?? null;
-  const denom = contextWindow && contextWindow > 0 ? contextWindow : Math.max(warmTokens, systemTokens, threadTokens, 1);
+  const denom =
+    contextWindow && contextWindow > 0
+      ? contextWindow
+      : Math.max(warmTokens, systemTokens, threadTokens, 1);
 
   const title = meta.description || data.threadId;
-  const status = liveThreadStatus(messages.value) || meta.status || "idle";
+  const status = liveThreadStatus(messages.value) || meta.status || 'idle';
   const branch = meta.branch || null;
-  const cwd = meta.cwd ? meta.cwd.split("/").slice(-2).join("/") : null;
+  const cwd = meta.cwd ? meta.cwd.split('/').slice(-2).join('/') : null;
 
   // Stacked bar: segment-per-warm-layer, sized against context window so empty space = remaining budget.
-  const segments = warmLayers.map(l => {
+  const segments = warmLayers.map((l) => {
     const tokens = Math.ceil((l.contentLength || 0) / 4);
     const pct = (tokens / denom) * 100;
     return { id: l.id, tokens, pct, color: layerColor(l.id) };
@@ -159,27 +209,37 @@ function ContextBar() {
         ${branch ? html`<span class="context-bar-chip" title="branch">${branch}</span>` : null}
         ${cwd ? html`<span class="context-bar-chip context-bar-chip--dim" title=${meta.cwd}>${cwd}</span>` : null}
         <span class="context-bar-spacer"></span>
-        <span class="context-bar-count" title="agents">${agents.length} agent${agents.length === 1 ? "" : "s"}</span>
+        <span class="context-bar-count" title="agents">${agents.length} agent${agents.length === 1 ? '' : 's'}</span>
         <span class="context-bar-count" title="warm / total layers">${warmLayers.length}/${layers.length} layers</span>
-        ${stat("warm", warmTokens, "Warm layer cache pool (tokens of currently-warm layer content)")}
-        ${stat("system", systemTokens, "System injection — layers injected on the last agent turn")}
-        ${stat("thread", threadTokens, "Thread context — estimated tokens of the conversation so far")}
-        ${contextWindow ? html`
+        ${stat('warm', warmTokens, 'Warm layer cache pool (tokens of currently-warm layer content)')}
+        ${stat('system', systemTokens, 'System injection — layers injected on the last agent turn')}
+        ${stat('thread', threadTokens, 'Thread context — estimated tokens of the conversation so far')}
+        ${
+          contextWindow
+            ? html`
           <span class="context-bar-stat context-bar-stat--window" title="Model context window">
             <span class="context-bar-stat-label">window</span>
             <span class="context-bar-stat-value">${fmtNum(contextWindow)}</span>
           </span>
-        ` : null}
+        `
+            : null
+        }
       </div>
-      ${segments.length > 0 ? html`
+      ${
+        segments.length > 0
+          ? html`
         <div class="context-bar-stack" title="Warm layers vs. model context window">
-          ${segments.map(s => html`
+          ${segments.map(
+            (s) => html`
             <span key=${s.id} class="context-bar-seg"
               style="width: ${s.pct}%; background: ${s.color}"
               title="${s.id}: ${fmtNum(s.tokens)} tok (${s.pct.toFixed(1)}% of window)"></span>
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -192,7 +252,7 @@ const inputHistory = [];
 let historyIdx = -1;
 
 function ChatInput() {
-  const [text, setText] = useState("");
+  const [text, setText] = useState('');
   const inputRef = useRef(null);
   const stopDictation = useRef(null);
   const [listening, setListening] = useState(false);
@@ -207,7 +267,7 @@ function ChatInput() {
       onEnd: (error) => {
         stopDictation.current = null;
         setListening(false);
-        if (error) showToast(`Dictation stopped: ${error}`, "warn");
+        if (error) showToast(`Dictation stopped: ${error}`, 'warn');
       },
     });
     setListening(true);
@@ -219,30 +279,30 @@ function ChatInput() {
     stopDictation.current?.();
     inputHistory.push(sent);
     historyIdx = -1;
-    setText("");
+    setText('');
     // Unsent text comes back unless something new was typed meanwhile.
-    if (!(await sendMessage(sent))) setText(current => current || sent);
+    if (!(await sendMessage(sent))) setText((current) => current || sent);
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
-    if (e.key === "ArrowUp" && !text.includes("\n")) {
+    if (e.key === 'ArrowUp' && !text.includes('\n')) {
       if (inputHistory.length === 0) return;
       e.preventDefault();
       if (historyIdx === -1) historyIdx = inputHistory.length;
       historyIdx = Math.max(0, historyIdx - 1);
       setText(inputHistory[historyIdx]);
     }
-    if (e.key === "ArrowDown" && !text.includes("\n")) {
+    if (e.key === 'ArrowDown' && !text.includes('\n')) {
       if (historyIdx === -1) return;
       e.preventDefault();
       historyIdx += 1;
       if (historyIdx >= inputHistory.length) {
         historyIdx = -1;
-        setText("");
+        setText('');
       } else {
         setText(inputHistory[historyIdx]);
       }
@@ -261,10 +321,18 @@ function ChatInput() {
         rows="4"
       ></textarea>
       <div class="chat-input-actions">
-        ${dictationSupported ? html`<button class="chat-voice-btn ${listening ? "chat-voice-on" : ""}" onClick=${toggleDictation}
-          title=${listening ? "Stop dictation" : "Dictate"} aria-pressed=${listening}>${listening ? "■" : "🎙"}</button>` : null}
-        ${speechSupported ? html`<button class="chat-voice-btn ${speakReplies.value ? "chat-voice-on" : ""}" onClick=${toggleSpeakReplies}
-          title=${speakReplies.value ? "Stop reading replies aloud" : "Read replies aloud"} aria-pressed=${speakReplies.value}>${speakReplies.value ? "🔊" : "🔈"}</button>` : null}
+        ${
+          dictationSupported
+            ? html`<button class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
+          title=${listening ? 'Stop dictation' : 'Dictate'} aria-pressed=${listening}>${listening ? '■' : '🎙'}</button>`
+            : null
+        }
+        ${
+          speechSupported
+            ? html`<button class="chat-voice-btn ${speakReplies.value ? 'chat-voice-on' : ''}" onClick=${toggleSpeakReplies}
+          title=${speakReplies.value ? 'Stop reading replies aloud' : 'Read replies aloud'} aria-pressed=${speakReplies.value}>${speakReplies.value ? '🔊' : '🔈'}</button>`
+            : null
+        }
         <button
           class="chat-send-btn"
           onClick=${handleSubmit}
@@ -282,7 +350,10 @@ function ChatInput() {
 function MessageActions({ index }) {
   const [open, setOpen] = useState(false);
 
-  const toggle = (e) => { e.stopPropagation(); setOpen((v) => !v); };
+  const toggle = (e) => {
+    e.stopPropagation();
+    setOpen((v) => !v);
+  };
   const run = (fn) => (e) => {
     e.stopPropagation();
     setOpen(false);
@@ -290,37 +361,46 @@ function MessageActions({ index }) {
   };
 
   return html`
-    <div class="msg-actions ${open ? "msg-actions-open" : ""}">
+    <div class="msg-actions ${open ? 'msg-actions-open' : ''}">
       <button class="msg-action-btn msg-action-trigger" onClick=${toggle}
-        title="Actions" aria-expanded=${open}>${open ? "×" : "⋯"}</button>
-      ${open ? html`
+        title="Actions" aria-expanded=${open}>${open ? '×' : '⋯'}</button>
+      ${
+        open
+          ? html`
         <button class="msg-action-btn" onClick=${run(revertThread)}
           title="Revert to this point">revert</button>
         <button class="msg-action-btn" onClick=${run(forkThread)}
           title="Fork thread from here">fork</button>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
 
 function BrowserStorageWarning({ msg }) {
   const notice = browserStorageNotice(msg);
-  return notice ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn, #facc15); margin: 8px 0;">${notice}</div>` : null;
+  return notice
+    ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn, #facc15); margin: 8px 0;">${notice}</div>`
+    : null;
 }
 
 function browserHistoryLabel(msg) {
-  if (msg.browserStorage?.status === "volatile") return " | Browser copy not saved";
-  return msg.storage === "browser-only" ? " | Browser-only history" : "";
+  if (msg.browserStorage?.status === 'volatile') return ' | Browser copy not saved';
+  return msg.storage === 'browser-only' ? ' | Browser-only history' : '';
 }
 
 function evidenceText(value) {
-  try { return JSON.stringify(value, null, 2); }
-  catch { return "Evidence could not be serialized for display. The message above remains available in this tab."; }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return 'Evidence could not be serialized for display. The message above remains available in this tab.';
+  }
 }
 
 function UserMessage({ msg, index }) {
   return html`
-    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ""} data-actor="user">
+    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
       <${MessageActions} index=${index} />
       <div class="chat-msg-content">${msg.content}</div>
       <${BrowserStorageWarning} msg=${msg} />
@@ -335,38 +415,51 @@ function PipelineBar({ stages, label, className, onTraceClick, traceId }) {
   if (!stages || stages.length === 0) return null;
 
   const totalMs = stages.reduce((sum, s) => sum + (s.durationMs || 0), 0);
-  const summary = stages.map(s => s.name).join(" → ");
+  const summary = stages.map((s) => s.name).join(' → ');
 
   return html`
     <div class="pipeline-bar ${className}" onClick=${() => setExpanded(!expanded)}>
       <span class="pipeline-bar-label">${label}</span>
       <span class="pipeline-bar-summary">${summary}</span>
-      <span class="pipeline-bar-time">${totalMs > 0 ? `${totalMs.toFixed(0)}ms` : ""}</span>
-      <span class="pipeline-bar-caret">${expanded ? "▼" : "▶"}</span>
+      <span class="pipeline-bar-time">${totalMs > 0 ? `${totalMs.toFixed(0)}ms` : ''}</span>
+      <span class="pipeline-bar-caret">${expanded ? '▼' : '▶'}</span>
     </div>
-    ${expanded ? html`
+    ${
+      expanded
+        ? html`
       <div class="pipeline-bar-detail">
-        ${stages.map((s, i) => html`
-          <div key=${i} class="pipeline-stage ${s.status || ""}">
+        ${stages.map(
+          (s, i) => html`
+          <div key=${i} class="pipeline-stage ${s.status || ''}">
             <span class="pipeline-stage-name">${s.name}</span>
             ${s.agentId ? html`<span class="pipeline-stage-agent">${s.agentId}</span>` : null}
             ${s.durationMs ? html`<span class="pipeline-stage-ms">${s.durationMs.toFixed(0)}ms</span>` : null}
             ${s.tokens ? html`<span class="pipeline-stage-tokens">${s.tokens.input}→${s.tokens.output}t</span>` : null}
             ${s.cost ? html`<span class="pipeline-stage-cost">$${s.cost.toFixed(4)}</span>` : null}
           </div>
-        `)}
-        ${traceId ? html`
-          <button class="pipeline-trace-btn" onClick=${(e) => { e.stopPropagation(); onTraceClick(traceId); }}>
+        `,
+        )}
+        ${
+          traceId
+            ? html`
+          <button class="pipeline-trace-btn" onClick=${(e) => {
+            e.stopPropagation();
+            onTraceClick(traceId);
+          }}>
             full trace
           </button>
-        ` : null}
+        `
+            : null
+        }
       </div>
-    ` : null}
+    `
+        : null
+    }
   `;
 }
 
 function fmtTokenCount(n) {
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
 }
 
@@ -376,12 +469,14 @@ function LayerChips({ layers }) {
   return html`
     <div class="chat-layers">
       <span class="chat-layers-prefix">ctx:</span>
-      ${layers.map((l) => html`
+      ${layers.map(
+        (l) => html`
         <span class="chat-layer-chip"
               title="${l.id}\nhash: ${l.hash}\n~${l.tokens} tokens">
           ${l.id}<span class="chat-layer-chip-tokens">${fmtTokenCount(l.tokens)}</span>
         </span>
-      `)}
+      `,
+      )}
     </div>
   `;
 }
@@ -392,16 +487,16 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const isStreaming = !!msg.streaming;
   const injectedLayers = msg.meta?.injectedLayers;
   const failure = failurePresentation(msg.meta);
-  const volatile = msg.browserStorage?.status === "volatile";
+  const volatile = msg.browserStorage?.status === 'volatile';
 
   // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback)
-  const execIdx = stages.findIndex(s => s.kind === "execute" || s.name?.includes("execut"));
+  const execIdx = stages.findIndex((s) => s.kind === 'execute' || s.name?.includes('execut'));
   const preStages = execIdx > 0 ? stages.slice(0, execIdx) : [];
   const postStages = execIdx >= 0 && execIdx < stages.length - 1 ? stages.slice(execIdx + 1) : [];
   const execStage = execIdx >= 0 ? stages[execIdx] : null;
 
   return html`
-    <div class="chat-msg chat-agent ${msg.error ? "chat-error" : ""} ${isStreaming ? "chat-streaming" : ""}" data-turn-id=${msg.turnId ?? ""} data-actor="agent">
+    <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent">
       <${MessageActions} index=${index} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
@@ -413,60 +508,103 @@ function AgentMessage({ msg, index, onTraceClick }) {
       />
 
       <!-- Classification + route badges (inline) -->
-      ${msg.classification || msg.route || execStage || hasTrace ? html`
+      ${
+        msg.classification || msg.route || execStage || hasTrace
+          ? html`
         <div class="chat-pipeline">
-          ${msg.classification ? html`
+          ${
+            msg.classification
+              ? html`
             <span class="chat-badge classify">${msg.classification.category}</span>
-          ` : null}
-          ${msg.route ? html`
+          `
+              : null
+          }
+          ${
+            msg.route
+              ? html`
             <span class="chat-badge route">${msg.route.destination}</span>
-          ` : null}
-          ${execStage ? html`
-            <span class="chat-badge exec">${execStage.agentId || "executor"}${execStage.durationMs ? ` ${(execStage.durationMs / 1000).toFixed(1)}s` : ""}</span>
-          ` : null}
-          ${hasTrace ? html`
+          `
+              : null
+          }
+          ${
+            execStage
+              ? html`
+            <span class="chat-badge exec">${execStage.agentId || 'executor'}${execStage.durationMs ? ` ${(execStage.durationMs / 1000).toFixed(1)}s` : ''}</span>
+          `
+              : null
+          }
+          ${
+            hasTrace
+              ? html`
             <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
               title="Inspect trace in detail panel">
-              trace ${msg.trace?.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ""}
+              trace ${msg.trace?.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ''}
             </button>
-          ` : null}
+          `
+              : null
+          }
         </div>
-      ` : null}
+      `
+          : null
+      }
 
       <${LayerChips} layers=${injectedLayers} />
 
-      ${msg.live ? html`<section class="live-work" aria-label="Work activity">
+      ${
+        msg.live
+          ? html`<section class="live-work" aria-label="Work activity">
         <div class="live-work-status">${liveWorkLabel(msg)}</div>
-        ${!msg.live.activity.length ? html`<div>Public native detail ${msg.live.nativeDetail==='unavailable'?'unavailable':'not yet received'}.</div>` : null}
-        ${msg.live.native?html`<div>Observed native ${msg.live.native.outcome} · RPC ${msg.live.native.rpc}. Cleanup is separate.</div>`:null}
-        <div class="live-work-activity">${msg.live.activity.map(a=>a.kind==='text'?html`<div class="live-work-progress">${a.phase==='final_answer'?html`<small>Final answer preview</small><br/>`:a.phase==='unavailable'?html`<small>Public text · phase unavailable</small><br/>`:null}${a.text}</div>`:
-          html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`)}</div>
-        ${msg.live.truncated?html`<div>Partial activity window; complete recorded evidence is in inspection.</div>`:null}
-      </section>`:null}
+        ${!msg.live.activity.length ? html`<div>Public native detail ${msg.live.nativeDetail === 'unavailable' ? 'unavailable' : 'not yet received'}.</div>` : null}
+        ${msg.live.native ? html`<div>Observed native ${msg.live.native.outcome} · RPC ${msg.live.native.rpc}. Cleanup is separate.</div>` : null}
+        <div class="live-work-activity">${msg.live.activity.map((a) =>
+          a.kind === 'text'
+            ? html`<div class="live-work-progress">${a.phase === 'final_answer' ? html`<small>Final answer preview</small><br/>` : a.phase === 'unavailable' ? html`<small>Public text · phase unavailable</small><br/>` : null}${a.text}</div>`
+            : html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`,
+        )}</div>
+        ${msg.live.truncated ? html`<div>Partial activity window; complete recorded evidence is in inspection.</div>` : null}
+      </section>`
+          : null
+      }
 
       <div class="chat-msg-content">${msg.content}${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
       <${BrowserStorageWarning} msg=${msg} />
-      ${failure.notices.filter(notice => !volatile || !notice.includes("browser-only") && !notice.includes("Browser-only"))
-        .map(notice => html`<div class="chat-msg-time">${notice}</div>`)}
+      ${failure.notices
+        .filter(
+          (notice) =>
+            !volatile || (!notice.includes('browser-only') && !notice.includes('Browser-only')),
+        )
+        .map((notice) => html`<div class="chat-msg-time">${notice}</div>`)}
       ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this browser's observed result is separate.</div>` : null}
-      ${isUnsavedCompletion(msg) ? html`
+      ${
+        isUnsavedCompletion(msg)
+          ? html`
         <details>
-          <summary>${volatile ? "Tab-only completed evidence" : "Browser-only completed evidence"}</summary>
+          <summary>${volatile ? 'Tab-only completed evidence' : 'Browser-only completed evidence'}</summary>
           <div class="chat-msg-content">${evidenceText({ trace: msg.traceSnapshot ?? msg.trace, input: msg.meta?.injection })}</div>
         </details>
-      ` : null}
-      ${failure.partialOutput ? html`
+      `
+          : null
+      }
+      ${
+        failure.partialOutput
+          ? html`
         <details open>
           <summary>Partial output (unconfirmed)</summary>
           <div class="chat-msg-content">${failure.partialOutput}</div>
         </details>
-      ` : null}
-      ${failure.browserEvidence ? html`
+      `
+          : null
+      }
+      ${
+        failure.browserEvidence
+          ? html`
         <details>
-          <summary>${volatile ? "Tab-only failure evidence" : "Browser-only failure evidence"}</summary>
+          <summary>${volatile ? 'Tab-only failure evidence' : 'Browser-only failure evidence'}</summary>
           <div class="chat-msg-content">${evidenceText(failure.browserEvidence)}</div>
         </details>
-      ` : null}
+      `
+          : null
+      }
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}
@@ -477,7 +615,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
         traceId=${msg.traceId}
       />
 
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === "unconfirmed" ? " | Connection interrupted; server outcome unconfirmed" : ""}</div>
+      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === 'unconfirmed' ? ' | Connection interrupted; server outcome unconfirmed' : ''}</div>
     </div>
   `;
 }
@@ -488,19 +626,23 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
 function ThinkingMessage({ msg }) {
   const [open, setOpen] = useState(false);
-  const content = msg.content || "";
+  const content = msg.content || '';
   const words = content.split(/\s+/).filter(Boolean).length;
 
   return html`
     <div class="chat-msg chat-agent chat-thinking-block">
       <div class="thinking-fold-header" onClick=${() => setOpen(!open)}>
-        <span class="thinking-caret">${open ? "▼" : "▶"}</span>
+        <span class="thinking-caret">${open ? '▼' : '▶'}</span>
         <span class="thinking-label">thinking</span>
         <span class="thinking-meta">${words} words</span>
       </div>
-      ${open ? html`
+      ${
+        open
+          ? html`
         <div class="chat-msg-content thinking-content">${content}</div>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -519,7 +661,7 @@ function threadBreadcrumb(threadId) {
     for (const t of nodes) {
       const id = t.threadId || t.id;
       threadMap[id] = t;
-      for (const child of (t.children || [])) {
+      for (const child of t.children || []) {
         const cid = child.threadId || child.id;
         parentMap[cid] = id;
         walk([child]);
@@ -539,11 +681,15 @@ function threadBreadcrumb(threadId) {
 }
 
 function PromptCard({ prompt }) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState('');
   const [resolving, setResolving] = useState(false);
 
-  const urgencyClass = prompt.urgency === "critical" ? "prompt-critical"
-    : prompt.urgency === "high" ? "prompt-high" : "";
+  const urgencyClass =
+    prompt.urgency === 'critical'
+      ? 'prompt-critical'
+      : prompt.urgency === 'high'
+        ? 'prompt-high'
+        : '';
 
   const handleAction = async (action) => {
     setResolving(true);
@@ -552,8 +698,8 @@ function PromptCard({ prompt }) {
   };
 
   const options = prompt.options || [];
-  const isInput = prompt.kind === "input";
-  const isChoice = prompt.kind === "choice";
+  const isInput = prompt.kind === 'input';
+  const isChoice = prompt.kind === 'choice';
 
   const breadcrumb = prompt.threadId ? threadBreadcrumb(prompt.threadId) : [];
 
@@ -563,23 +709,34 @@ function PromptCard({ prompt }) {
         <span class="prompt-kind">${prompt.kind}</span>
         ${prompt.agentId ? html`<span class="prompt-agent">${prompt.agentId}</span>` : null}
         ${prompt.capability ? html`<span class="prompt-cap">${prompt.capability}</span>` : null}
-        ${prompt.urgency && prompt.urgency !== "normal"
-          ? html`<span class="prompt-urgency ${urgencyClass}">${prompt.urgency}</span>` : null}
+        ${
+          prompt.urgency && prompt.urgency !== 'normal'
+            ? html`<span class="prompt-urgency ${urgencyClass}">${prompt.urgency}</span>`
+            : null
+        }
       </div>
-      ${breadcrumb.length > 0 ? html`
+      ${
+        breadcrumb.length > 0
+          ? html`
         <div class="prompt-breadcrumb">
-          ${breadcrumb.map((seg, i) => html`
+          ${breadcrumb.map(
+            (seg, i) => html`
             <span key=${seg}>
               ${i > 0 ? html`<span class="prompt-breadcrumb-sep">/</span>` : null}
-              <span class="prompt-breadcrumb-seg ${i === breadcrumb.length - 1 ? "current" : ""}">${seg}</span>
+              <span class="prompt-breadcrumb-seg ${i === breadcrumb.length - 1 ? 'current' : ''}">${seg}</span>
             </span>
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
       <div class="prompt-card-message">${prompt.message}</div>
       ${prompt.detail ? html`<div class="prompt-card-detail">${prompt.detail}</div>` : null}
 
-      ${isInput ? html`
+      ${
+        isInput
+          ? html`
         <input
           class="prompt-input"
           placeholder="Type your response..."
@@ -587,24 +744,32 @@ function PromptCard({ prompt }) {
           onInput=${(e) => setInput(e.target.value)}
           disabled=${resolving}
         />
-      ` : null}
+      `
+          : null
+      }
 
       <div class="prompt-card-actions">
-        ${isChoice && options.length > 0 ? options.map(opt => html`
+        ${
+          isChoice && options.length > 0
+            ? options.map(
+                (opt) => html`
           <button key=${opt.action}
             class="prompt-btn"
             onClick=${() => handleAction(opt.action)}
             disabled=${resolving}
-            title=${opt.description || ""}
+            title=${opt.description || ''}
           >${opt.label}</button>
-        `) : html`
+        `,
+              )
+            : html`
           <button class="prompt-btn prompt-btn-approve"
-            onClick=${() => handleAction("approve")}
+            onClick=${() => handleAction('approve')}
             disabled=${resolving}>Approve</button>
           <button class="prompt-btn prompt-btn-reject"
-            onClick=${() => handleAction("reject")}
+            onClick=${() => handleAction('reject')}
             disabled=${resolving}>Reject</button>
-        `}
+        `
+        }
       </div>
     </div>
   `;
@@ -616,7 +781,7 @@ function PromptList() {
 
   return html`
     <div class="prompt-list">
-      ${pending.map(p => html`<${PromptCard} key=${p.id} prompt=${p} />`)}
+      ${pending.map((p) => html`<${PromptCard} key=${p.id} prompt=${p} />`)}
     </div>
   `;
 }
@@ -629,15 +794,21 @@ function PromptList() {
 function HistoryPager({ threadId, count, onLoadOlder }) {
   const paging = historyPaging.value[threadId] ?? null;
   if (!threadId || !paging) return null;
-  if (paging.indexUnavailable) return html`<div class="chat-history-pager" role="status">Older history is not available from this server; showing the rows it returned (${count}).</div>`;
-  if (paging.offline) return html`<div class="chat-history-pager" role="status">Server history unavailable; showing this browser's saved copy (${count} rows). Older records were not fetched.</div>`;
+  if (paging.indexUnavailable)
+    return html`<div class="chat-history-pager" role="status">Older history is not available from this server; showing the rows it returned (${count}).</div>`;
+  if (paging.offline)
+    return html`<div class="chat-history-pager" role="status">Server history unavailable; showing this browser's saved copy (${count} rows). Older records were not fetched.</div>`;
   return html`
     <div class="chat-history-pager" role="status">
-      ${paging.hasMore ? html`
+      ${
+        paging.hasMore
+          ? html`
         <button class="chat-history-older" type="button" disabled=${paging.loading} onClick=${onLoadOlder}>
-          ${paging.loading ? "Loading older messages…" : `Load older messages (${count} loaded)`}
+          ${paging.loading ? 'Loading older messages…' : `Load older messages (${count} loaded)`}
         </button>
-      ` : html`<span class="chat-history-oldest">Oldest record reached (${count} messages)</span>`}
+      `
+          : html`<span class="chat-history-oldest">Oldest record reached (${count} messages)</span>`
+      }
       ${paging.error ? html`<span class="chat-history-error">${paging.error}</span>` : null}
     </div>
   `;
@@ -660,7 +831,9 @@ export function Conversation({ onTraceSelect }) {
   // Auto-scroll only when the newest row changes (new message or streaming text),
   // not when older pages are prepended above.
   const last = msgList.at(-1);
-  const newestKey = last ? `${last.turnId ?? last.id ?? ""}:${last.actor}:${last.content?.length ?? 0}:${last.streaming ? 1 : 0}` : "";
+  const newestKey = last
+    ? `${last.turnId ?? last.id ?? ''}:${last.actor}:${last.content?.length ?? 0}:${last.streaming ? 1 : 0}`
+    : '';
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -692,25 +865,33 @@ export function Conversation({ onTraceSelect }) {
       <div class="chat-messages" ref=${scrollRef}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />
-        ${msgList.length === 0 ? html`
+        ${
+          msgList.length === 0
+            ? html`
           <div class="conv-empty">
             Type a message below to start a conversation.<br/>
             Messages are routed through the agent pipeline.
           </div>
-        ` : null}
+        `
+            : null
+        }
         ${msgList.map((msg, i) =>
-          msg.actor === "user"
-            ? html`<${UserMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : msg.id ?? i} msg=${msg} index=${i} />`
-            : msg.kind === "thinking"
+          msg.actor === 'user'
+            ? html`<${UserMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i} />`
+            : msg.kind === 'thinking'
               ? html`<${ThinkingMessage} key=${msg.id ?? i} msg=${msg} />`
-              : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : msg.id ?? i} msg=${msg} index=${i}
-                  onTraceClick=${handleTraceClick} />`
+              : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i}
+                  onTraceClick=${handleTraceClick} />`,
         )}
-        ${sending.value ? html`
+        ${
+          sending.value
+            ? html`
           <div class="chat-msg chat-agent chat-thinking">
-            <div class="chat-msg-content">Processing${inflight.value > 1 ? ` (${inflight.value} in flight)` : ""}...</div>
+            <div class="chat-msg-content">Processing${inflight.value > 1 ? ` (${inflight.value} in flight)` : ''}...</div>
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
       <${PromptList} />
       <${ChatInput} />

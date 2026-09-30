@@ -1,4 +1,4 @@
-import type { ContextSource } from "./context-layer";
+import type { ContextSource } from './context-layer';
 
 /**
  * A ref is a pointer into a knowledge system.
@@ -106,7 +106,7 @@ export class HydrationRegistry {
    * Returns concatenated content in ref order.
    */
   async hydrateAll(refs: ContextRef[]): Promise<string> {
-    if (refs.length === 0) return "";
+    if (refs.length === 0) return '';
 
     // Group by system
     const bySystem = new Map<string, { idx: number; ref: ContextRef }[]>();
@@ -127,9 +127,7 @@ export class HydrationRegistry {
         }
 
         if (adapter.hydrateBatch && entries.length > 1) {
-          const batchResults = await adapter.hydrateBatch(
-            entries.map((e) => e.ref)
-          );
+          const batchResults = await adapter.hydrateBatch(entries.map((e) => e.ref));
           for (let i = 0; i < entries.length; i++) {
             results[entries[i].idx] = batchResults[i];
           }
@@ -137,12 +135,12 @@ export class HydrationRegistry {
           await Promise.all(
             entries.map(async (entry) => {
               results[entry.idx] = await adapter.hydrate(entry.ref);
-            })
+            }),
           );
         }
-      })
+      }),
     );
 
-    return results.join("\n\n");
+    return results.join('\n\n');
   }
 }

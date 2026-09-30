@@ -18,12 +18,12 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  ApiTool,
   ApiRequest,
   ApiResponse,
+  ApiTool,
   ApiToolConfig,
   ToolResult,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 export interface HttpApiConfig extends ApiToolConfig {
   id?: string;
@@ -31,17 +31,17 @@ export interface HttpApiConfig extends ApiToolConfig {
 
 export class HttpApi implements ApiTool {
   readonly id: string;
-  readonly kind = "api" as const;
-  readonly capability = "net:api" as const;
+  readonly kind = 'api' as const;
+  readonly capability = 'net:api' as const;
 
-  private _config: Required<Omit<HttpApiConfig, "id">>;
+  private _config: Required<Omit<HttpApiConfig, 'id'>>;
 
   constructor(config?: HttpApiConfig) {
-    this.id = config?.id ?? "api";
+    this.id = config?.id ?? 'api';
     this._config = {
-      baseUrl: config?.baseUrl ?? "",
+      baseUrl: config?.baseUrl ?? '',
       defaultHeaders: config?.defaultHeaders ?? {},
-      bearerToken: config?.bearerToken ?? "",
+      bearerToken: config?.bearerToken ?? '',
       maxResponseSize: config?.maxResponseSize ?? 1_048_576, // 1MB
       allowedUrls: config?.allowedUrls ?? [],
       blockedUrls: config?.blockedUrls ?? [],
@@ -62,14 +62,14 @@ export class HttpApi implements ApiTool {
 
   async request<T = unknown>(req: ApiRequest): Promise<ToolResult<ApiResponse<T>>> {
     const url = this._resolveUrl(req.url);
-    const method = req.method ?? "GET";
+    const method = req.method ?? 'GET';
 
     // URL gating
     if (!this._isUrlAllowed(url)) {
       return {
         ok: false,
         summary: `${method} ${req.url} — blocked by URL policy`,
-        error: "URL not allowed",
+        error: 'URL not allowed',
       };
     }
 
@@ -78,11 +78,11 @@ export class HttpApi implements ApiTool {
       ...this._config.defaultHeaders,
       ...req.headers,
     };
-    if (this._config.bearerToken && !headers["Authorization"]) {
-      headers["Authorization"] = `Bearer ${this._config.bearerToken}`;
+    if (this._config.bearerToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${this._config.bearerToken}`;
     }
-    if (req.body != null && !headers["Content-Type"]) {
-      headers["Content-Type"] = "application/json";
+    if (req.body != null && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
     }
 
     // Build fetch options
@@ -92,9 +92,7 @@ export class HttpApi implements ApiTool {
       signal: AbortSignal.timeout(req.timeout ?? 30_000),
     };
     if (req.body != null) {
-      fetchOpts.body = typeof req.body === "string"
-        ? req.body
-        : JSON.stringify(req.body);
+      fetchOpts.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     }
 
     const start = performance.now();
@@ -110,19 +108,20 @@ export class HttpApi implements ApiTool {
 
       // Parse body based on requested type
       let body: T;
-      const responseType = req.responseType ?? "json";
+      const responseType = req.responseType ?? 'json';
 
-      if (responseType === "json") {
+      if (responseType === 'json') {
         const text = await response.text();
-        const truncated = text.length > this._config.maxResponseSize
-          ? text.slice(0, this._config.maxResponseSize)
-          : text;
+        const truncated =
+          text.length > this._config.maxResponseSize
+            ? text.slice(0, this._config.maxResponseSize)
+            : text;
         try {
           body = JSON.parse(truncated) as T;
         } catch {
           body = truncated as unknown as T;
         }
-      } else if (responseType === "text") {
+      } else if (responseType === 'text') {
         const text = await response.text();
         body = (text.length > this._config.maxResponseSize
           ? text.slice(0, this._config.maxResponseSize)
@@ -156,49 +155,50 @@ export class HttpApi implements ApiTool {
       return {
         ok: false,
         summary: `${method} ${req.url} — failed (${durationMs}ms)`,
-        error: message.includes("AbortError") || message.includes("timeout")
-          ? `Request timed out after ${req.timeout ?? 30_000}ms`
-          : message,
+        error:
+          message.includes('AbortError') || message.includes('timeout')
+            ? `Request timed out after ${req.timeout ?? 30_000}ms`
+            : message,
       };
     }
   }
 
   async get<T = unknown>(
     url: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<ToolResult<ApiResponse<T>>> {
-    return this.request<T>({ url, method: "GET", headers });
+    return this.request<T>({ url, method: 'GET', headers });
   }
 
   async post<T = unknown>(
     url: string,
     body: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<ToolResult<ApiResponse<T>>> {
-    return this.request<T>({ url, method: "POST", body, headers });
+    return this.request<T>({ url, method: 'POST', body, headers });
   }
 
   async put<T = unknown>(
     url: string,
     body: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<ToolResult<ApiResponse<T>>> {
-    return this.request<T>({ url, method: "PUT", body, headers });
+    return this.request<T>({ url, method: 'PUT', body, headers });
   }
 
   async delete<T = unknown>(
     url: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<ToolResult<ApiResponse<T>>> {
-    return this.request<T>({ url, method: "DELETE", headers });
+    return this.request<T>({ url, method: 'DELETE', headers });
   }
 
   // ---- Internals ----
 
   private _resolveUrl(url: string): string {
-    if (url.startsWith("http://") || url.startsWith("https://")) return url;
-    const base = this._config.baseUrl.replace(/\/+$/, "");
-    const path = url.startsWith("/") ? url : `/${url}`;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const base = this._config.baseUrl.replace(/\/+$/, '');
+    const path = url.startsWith('/') ? url : `/${url}`;
     return `${base}${path}`;
   }
 
@@ -221,10 +221,10 @@ export class HttpApi implements ApiTool {
 
   private _matchGlob(url: string, pattern: string): boolean {
     const regex = pattern
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*\*/g, "<<<GLOBSTAR>>>")
-      .replace(/\*/g, "[^/]*")
-      .replace(/<<<GLOBSTAR>>>/g, ".*");
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '<<<GLOBSTAR>>>')
+      .replace(/\*/g, '[^/]*')
+      .replace(/<<<GLOBSTAR>>>/g, '.*');
     return new RegExp(`^${regex}$`).test(url);
   }
 }

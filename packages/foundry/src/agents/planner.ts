@@ -1,13 +1,13 @@
 import {
-  computeHash,
-  sumTokenCounts,
-  type TokenCounts,
-  BaseAgent,
   type AgentConfig,
+  BaseAgent,
   type ContextStack,
+  computeHash,
   type ExecutionResult,
   type LayerFilter,
-} from "@inixiative/foundry-core";
+  sumTokenCounts,
+  type TokenCounts,
+} from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------
 // Plan types
@@ -24,7 +24,7 @@ export interface PlanStep {
   estimatedTokens?: number;
   /** Layer IDs needed for this step. */
   contextNeeded?: string[];
-  status: "pending" | "active" | "done" | "skipped" | "failed";
+  status: 'pending' | 'active' | 'done' | 'skipped' | 'failed';
 }
 
 export interface Plan {
@@ -32,7 +32,7 @@ export interface Plan {
   goal: string;
   steps: PlanStep[];
   estimatedTotalTokens: number;
-  complexity: "low" | "medium" | "high";
+  complexity: 'low' | 'medium' | 'high';
   reasoning: string;
   createdAt: number;
 }
@@ -51,10 +51,7 @@ export interface PlanExecutionResult {
 // Planner config
 // ---------------------------------------------------------------------------
 
-export type PlanHandler = (
-  context: string,
-  payload: unknown
-) => Promise<Plan>;
+export type PlanHandler = (context: string, payload: unknown) => Promise<Plan>;
 
 export interface PlannerConfig extends AgentConfig {
   /** Max steps in a plan. Defaults to 10. */
@@ -115,10 +112,7 @@ export class Planner extends BaseAgent<unknown, Plan> {
     });
   }
 
-  async run(
-    payload: unknown,
-    filterOverride?: LayerFilter
-  ): Promise<ExecutionResult<Plan>> {
+  async run(payload: unknown, filterOverride?: LayerFilter): Promise<ExecutionResult<Plan>> {
     const context = this.getContextWith(filterOverride);
     const contextHash = computeHash(context);
 
@@ -165,22 +159,20 @@ export class Planner extends BaseAgent<unknown, Plan> {
       // Skip if any dependency failed
       const hasFailed = step.dependencies?.some((dep) => failedIds.has(dep));
       if (hasFailed) {
-        step.status = "skipped";
+        step.status = 'skipped';
         continue;
       }
 
-      const agent = step.agentId
-        ? this._agentRegistry.get(step.agentId)
-        : undefined;
+      const agent = step.agentId ? this._agentRegistry.get(step.agentId) : undefined;
 
       if (!agent) {
-        step.status = "failed";
+        step.status = 'failed';
         failedSteps++;
         failedIds.add(step.id);
         continue;
       }
 
-      step.status = "active";
+      step.status = 'active';
 
       try {
         // Build a layer filter from contextNeeded if specified
@@ -196,10 +188,10 @@ export class Planner extends BaseAgent<unknown, Plan> {
           totalTokens = sumTokenCounts([totalTokens, result.tokens]);
         }
 
-        step.status = "done";
+        step.status = 'done';
         completedSteps++;
       } catch {
-        step.status = "failed";
+        step.status = 'failed';
         failedSteps++;
         failedIds.add(step.id);
       }
@@ -227,26 +219,24 @@ export class Planner extends BaseAgent<unknown, Plan> {
     const parts: string[] = [baseContext];
 
     if (this._availableAgents.length > 0) {
-      parts.push("");
-      parts.push("## Available Agents");
+      parts.push('');
+      parts.push('## Available Agents');
       for (const a of this._availableAgents) {
         parts.push(`- **${a.id}** (${a.kind}): ${a.description}`);
       }
     }
 
     if (this._estimateTokens) {
-      parts.push("");
+      parts.push('');
+      parts.push('## Planning Instructions');
       parts.push(
-        "## Planning Instructions"
-      );
-      parts.push(
-        "Include token estimates for each step. Keep the total plan under " +
+        'Include token estimates for each step. Keep the total plan under ' +
           this._maxSteps +
-          " steps."
+          ' steps.',
       );
     }
 
-    return parts.join("\n");
+    return parts.join('\n');
   }
 }
 

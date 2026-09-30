@@ -17,20 +17,19 @@
 //   await initLogger("pino");
 // ---------------------------------------------------------------------------
 
-import type { Logger, LoggerConfig } from "./scope";
+import type { Logger, LoggerConfig } from './scope';
 
+export { createConsolaLogger } from './consola';
+export { createPinoLogger } from './pino';
 export {
+  addLogBroadcast,
+  type LogBroadcastFn,
   type Logger,
   type LoggerConfig,
   type LogLevel,
-  type LogBroadcastFn,
   LogScope,
   logScope,
-  addLogBroadcast,
-} from "./scope";
-
-export { createConsolaLogger } from "./consola";
-export { createPinoLogger } from "./pino";
+} from './scope';
 
 // ---------------------------------------------------------------------------
 // Default logger — synchronous fallback until an adapter is initialized
@@ -42,13 +41,13 @@ function makePrefix(): string {
 }
 
 const fallbackLogger: Logger = {
-  fatal: (...args) => console.error(makePrefix(), "[FATAL]", ...args),
-  error: (...args) => console.error(makePrefix(), "[ERROR]", ...args),
-  warn: (...args) => console.warn(makePrefix(), "[WARN]", ...args),
-  info: (...args) => console.info(makePrefix(), "[INFO]", ...args),
-  debug: (...args) => console.debug(makePrefix(), "[DEBUG]", ...args),
-  trace: (...args) => console.debug(makePrefix(), "[TRACE]", ...args),
-  box: (msg) => console.info(`\n${"─".repeat(40)}\n${msg}\n${"─".repeat(40)}\n`),
+  fatal: (...args) => console.error(makePrefix(), '[FATAL]', ...args),
+  error: (...args) => console.error(makePrefix(), '[ERROR]', ...args),
+  warn: (...args) => console.warn(makePrefix(), '[WARN]', ...args),
+  info: (...args) => console.info(makePrefix(), '[INFO]', ...args),
+  debug: (...args) => console.debug(makePrefix(), '[DEBUG]', ...args),
+  trace: (...args) => console.debug(makePrefix(), '[TRACE]', ...args),
+  box: (msg) => console.info(`\n${'─'.repeat(40)}\n${msg}\n${'─'.repeat(40)}\n`),
   child(scope: string): Logger {
     return {
       fatal: (...args) => fallbackLogger.fatal(`[${scope}]`, ...args),
@@ -88,14 +87,14 @@ export const log: Logger = new Proxy({} as Logger, {
  * @param config  - Optional level/timestamp config
  */
 export async function initLogger(
-  adapter: "consola" | "pino" = "consola",
+  adapter: 'consola' | 'pino' = 'consola',
   config?: LoggerConfig,
 ): Promise<Logger> {
-  if (adapter === "pino") {
-    const { createPinoLogger } = await import("./pino");
+  if (adapter === 'pino') {
+    const { createPinoLogger } = await import('./pino');
     _logger = await createPinoLogger(config);
   } else {
-    const { createConsolaLogger } = await import("./consola");
+    const { createConsolaLogger } = await import('./consola');
     _logger = await createConsolaLogger(config);
   }
   return _logger;

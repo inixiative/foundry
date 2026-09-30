@@ -1,5 +1,5 @@
-import { isValidHandlerName, type JobPayloads } from "./handlers";
-import type { JobsQueue, JobOptions, JobType } from "./types";
+import { isValidHandlerName, type JobPayloads } from './handlers';
+import type { JobOptions, JobsQueue, JobType } from './types';
 
 type EnqueueOptions = JobOptions & {
   type?: JobType;
@@ -34,7 +34,7 @@ export const enqueueJob = async <K extends keyof JobPayloads>(
     throw new Error(`Unknown job handler: ${handlerName}`);
   }
 
-  const { type = "adhoc", id, ...jobOptions } = options || {};
+  const { type = 'adhoc', id, ...jobOptions } = options || {};
 
   const job = await _queue.add(
     handlerName,

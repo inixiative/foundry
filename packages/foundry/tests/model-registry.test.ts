@@ -1,10 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import { defaultConfig } from "../src/viewer/config";
-import { createRegisteredProvider, providerApiRoot, providerReasoning } from "../src/providers/openai-compatible";
+import { describe, expect, test } from 'bun:test';
 import {
   DECISION_MODEL,
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
+  type ModelCapability,
   modelCapabilities,
   modelHasCapability,
   modelOptionsByCapability,
@@ -12,131 +11,156 @@ import {
   providersWithCapability,
   registryForViewer,
   registryModel,
-  type ModelCapability,
-} from "../src/models/registry";
+} from '../src/models/registry';
+import {
+  createRegisteredProvider,
+  providerApiRoot,
+  providerReasoning,
+} from '../src/providers/openai-compatible';
+import { defaultConfig } from '../src/viewer/config';
 
-describe("model registry", () => {
-  test("includes current target OpenAI and Claude Code models", () => {
+describe('model registry', () => {
+  test('includes current target OpenAI and Claude Code models', () => {
     expect(MODEL_REGISTRY.openai.models.map((model) => model.id)).toEqual([
-      "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
-      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
+      'gpt-6-astra',
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
     ]);
 
     expect(MODEL_REGISTRY.codex.models.map((model) => model.id)).toEqual([
-      "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
-      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
+      'gpt-6-astra',
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
     ]);
-    expect(MODEL_REGISTRY["claude-code"].models.map((model) => model.id)).toContain("fable");
-    expect(MODEL_REGISTRY.anthropic.models.map((model) => model.id)).toContain("claude-fable-5-1");
+    expect(MODEL_REGISTRY['claude-code'].models.map((model) => model.id)).toContain('fable');
+    expect(MODEL_REGISTRY.anthropic.models.map((model) => model.id)).toContain('claude-fable-5-1');
   });
 
-  test("default config is generated from the registry", () => {
+  test('default config is generated from the registry', () => {
     const config = defaultConfig();
 
     expect(config.defaults).toMatchObject({
-      provider: "claude-code",
-      model: "fable",
-      classifierModel: "gpt-6-luna",
+      provider: 'claude-code',
+      model: 'fable',
+      classifierModel: 'gpt-6-luna',
     });
-    expect(config.providers.openai.models.some((model) => model.id === "gpt-6-astra")).toBe(true);
-    expect(config.providers.codex.models.some((model) => model.id === "gpt-6-astra")).toBe(true);
-    expect(config.providers["claude-code"].models.some((model) => model.id === "fable")).toBe(true);
+    expect(config.providers.openai.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
+    expect(config.providers.codex.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
+    expect(config.providers['claude-code'].models.some((model) => model.id === 'fable')).toBe(true);
   });
 
-  test("research sweeps draw from the registry", () => {
-    const fastModels = modelOptionsByTier(["fast"]);
-    const executionModels = modelOptionsByTier(["standard", "powerful"]);
+  test('research sweeps draw from the registry', () => {
+    const fastModels = modelOptionsByTier(['fast']);
+    const executionModels = modelOptionsByTier(['standard', 'powerful']);
 
-    expect(fastModels.some((model) => model.model === "gpt-6-luna")).toBe(true);
-    expect(executionModels.some((model) => model.model === "gpt-6-astra")).toBe(true);
-    expect(executionModels.some((model) => model.provider === "codex" && model.model === "gpt-6-astra")).toBe(true);
-    expect(executionModels.some((model) => model.provider === "claude-code" && model.model === "fable")).toBe(true);
+    expect(fastModels.some((model) => model.model === 'gpt-6-luna')).toBe(true);
+    expect(executionModels.some((model) => model.model === 'gpt-6-astra')).toBe(true);
+    expect(
+      executionModels.some((model) => model.provider === 'codex' && model.model === 'gpt-6-astra'),
+    ).toBe(true);
+    expect(
+      executionModels.some((model) => model.provider === 'claude-code' && model.model === 'fable'),
+    ).toBe(true);
   });
 
-  test("viewer projection distinguishes API models from native harness aliases", () => {
+  test('viewer projection distinguishes API models from native harness aliases', () => {
     const viewer = registryForViewer();
-    const claudeCode = viewer.providers.find((provider) => provider.id === "claude-code");
-    const codex = viewer.providers.find((provider) => provider.id === "codex");
-    const openai = viewer.providers.find((provider) => provider.id === "openai");
+    const claudeCode = viewer.providers.find((provider) => provider.id === 'claude-code');
+    const codex = viewer.providers.find((provider) => provider.id === 'codex');
+    const openai = viewer.providers.find((provider) => provider.id === 'openai');
 
-    expect(claudeCode?.models.find((model) => model.id === "fable")).toMatchObject({
-      runtimeKind: "native-harness",
+    expect(claudeCode?.models.find((model) => model.id === 'fable')).toMatchObject({
+      runtimeKind: 'native-harness',
       nativeAlias: true,
     });
-    expect(openai?.models.find((model) => model.id === "gpt-6-astra")).toMatchObject({
-      runtimeKind: "api",
+    expect(openai?.models.find((model) => model.id === 'gpt-6-astra')).toMatchObject({
+      runtimeKind: 'api',
       nativeAlias: false,
     });
-    expect(codex?.models.find((model) => model.id === "gpt-6-astra")).toMatchObject({
-      runtimeKind: "native-harness",
+    expect(codex?.models.find((model) => model.id === 'gpt-6-astra')).toMatchObject({
+      runtimeKind: 'native-harness',
       nativeAlias: false,
     });
   });
 });
 
-describe("capability tags", () => {
-  test("every model is a judgment client and every capability is in the vocabulary", () => {
+describe('capability tags', () => {
+  test('every model is a judgment client and every capability is in the vocabulary', () => {
     const vocabulary = new Set<ModelCapability>(MODEL_CAPABILITIES);
     for (const provider of Object.values(MODEL_REGISTRY)) {
       expect(provider.models.length).toBeGreaterThan(0);
       for (const model of provider.models) {
-        expect(model.capabilities).toContain("judgment");
+        expect(model.capabilities).toContain('judgment');
         expect(new Set(model.capabilities).size).toBe(model.capabilities.length);
         for (const capability of model.capabilities) expect(vocabulary.has(capability)).toBe(true);
       }
     }
-    expect(modelOptionsByCapability("judgment").length).toBe(
+    expect(modelOptionsByCapability('judgment').length).toBe(
       Object.values(MODEL_REGISTRY).reduce((total, provider) => total + provider.models.length, 0),
     );
   });
 
-  test("a credential is declared for every provider and envKey follows it", () => {
+  test('a credential is declared for every provider and envKey follows it', () => {
     for (const provider of Object.values(MODEL_REGISTRY)) {
-      expect(["api-key", "subscription", "local"]).toContain(provider.credential);
-      expect(!!provider.envKey).toBe(provider.credential === "api-key");
+      expect(['api-key', 'subscription', 'local']).toContain(provider.credential);
+      expect(!!provider.envKey).toBe(provider.credential === 'api-key');
     }
-    expect(MODEL_REGISTRY.ollama.credential).toBe("local");
-    expect(MODEL_REGISTRY.vllm.credential).toBe("local");
-    expect(MODEL_REGISTRY["claude-code"].credential).toBe("subscription");
-    expect(MODEL_REGISTRY.codex.credential).toBe("subscription");
+    expect(MODEL_REGISTRY.ollama.credential).toBe('local');
+    expect(MODEL_REGISTRY.vllm.credential).toBe('local');
+    expect(MODEL_REGISTRY['claude-code'].credential).toBe('subscription');
+    expect(MODEL_REGISTRY.codex.credential).toBe('subscription');
   });
 
-  test("capability lookup answers per provider and model", () => {
-    expect(modelCapabilities("openai", "gpt-5.6-luna")).toContain("judgment");
-    expect(modelHasCapability("openai", "gpt-5.6-luna", "execution")).toBe(false);
-    expect(modelHasCapability("openai", "gpt-6-astra", "execution")).toBe(true);
-    expect(modelHasCapability("typesafe", "jev-latest", "judgment")).toBe(true);
-    expect(modelHasCapability("typesafe", "jev-latest", "execution")).toBe(false);
-    expect(modelCapabilities("openai", "no-such-model")).toEqual([]);
-    expect(modelCapabilities("no-such-provider", "gpt-6-astra")).toEqual([]);
+  test('capability lookup answers per provider and model', () => {
+    expect(modelCapabilities('openai', 'gpt-5.6-luna')).toContain('judgment');
+    expect(modelHasCapability('openai', 'gpt-5.6-luna', 'execution')).toBe(false);
+    expect(modelHasCapability('openai', 'gpt-6-astra', 'execution')).toBe(true);
+    expect(modelHasCapability('typesafe', 'jev-latest', 'judgment')).toBe(true);
+    expect(modelHasCapability('typesafe', 'jev-latest', 'execution')).toBe(false);
+    expect(modelCapabilities('openai', 'no-such-model')).toEqual([]);
+    expect(modelCapabilities('no-such-provider', 'gpt-6-astra')).toEqual([]);
   });
 
-  test("a keyless local model can serve judgment, which is the point of registering one", () => {
-    const local = modelOptionsByCapability("judgment").filter(option => ["ollama", "vllm"].includes(option.provider));
+  test('a keyless local model can serve judgment, which is the point of registering one', () => {
+    const local = modelOptionsByCapability('judgment').filter((option) =>
+      ['ollama', 'vllm'].includes(option.provider),
+    );
     expect(local.length).toBeGreaterThan(0);
-    expect(local.some(option => option.model === "llama3.2:3b")).toBe(true);
-    expect(providersWithCapability("judgment").map(provider => provider.id)).toContain("ollama");
-    expect(providersWithCapability("execution").map(provider => provider.id)).not.toContain("typesafe");
+    expect(local.some((option) => option.model === 'llama3.2:3b')).toBe(true);
+    expect(providersWithCapability('judgment').map((provider) => provider.id)).toContain('ollama');
+    expect(providersWithCapability('execution').map((provider) => provider.id)).not.toContain(
+      'typesafe',
+    );
   });
 
-  test("capabilities and the API root reach the saved config and the viewer", () => {
+  test('capabilities and the API root reach the saved config and the viewer', () => {
     const config = defaultConfig();
-    expect(config.providers.ollama.baseUrl).toBe("http://localhost:11434/v1");
-    expect(config.providers.deepseek.models[0].capabilities).toContain("judgment");
+    expect(config.providers.ollama.baseUrl).toBe('http://localhost:11434/v1');
+    expect(config.providers.deepseek.models[0].capabilities).toContain('judgment');
     expect(config.providers.gemini.baseUrl).toBeUndefined();
     const viewer = registryForViewer();
-    const ollama = viewer.providers.find(provider => provider.id === "ollama");
-    expect(ollama).toMatchObject({ credential: "local", envKey: "" });
-    expect(ollama?.models[0]?.capabilities).toContain("judgment");
-    expect(viewer.providers.find(provider => provider.id === "typesafe")?.models[0]?.runtimeKind).toBe("typed-decision");
+    const ollama = viewer.providers.find((provider) => provider.id === 'ollama');
+    expect(ollama).toMatchObject({ credential: 'local', envKey: '' });
+    expect(ollama?.models[0]?.capabilities).toContain('judgment');
+    expect(
+      viewer.providers.find((provider) => provider.id === 'typesafe')?.models[0]?.runtimeKind,
+    ).toBe('typed-decision');
   });
 });
 
-describe("the map, not the model name, decides request shape", () => {
-  test("the reasoning capability and the reasoning shape always agree", () => {
+describe('the map, not the model name, decides request shape', () => {
+  test('the reasoning capability and the reasoning shape always agree', () => {
     for (const provider of Object.values(MODEL_REGISTRY)) {
       for (const model of provider.models) {
-        expect(model.capabilities.includes("reasoning")).toBe(model.reasoning !== undefined);
+        expect(model.capabilities.includes('reasoning')).toBe(model.reasoning !== undefined);
         if (!model.reasoning) continue;
         expect(model.reasoning.efforts).toContain(model.reasoning.fallback);
         expect(model.reasoning.efforts.length).toBeGreaterThan(0);
@@ -144,43 +168,45 @@ describe("the map, not the model name, decides request shape", () => {
     }
   });
 
-  test("models of one generation do not share one effort ladder", () => {
+  test('models of one generation do not share one effort ladder', () => {
     // gpt-6-astra rejects "none"; its siblings accept it. A name prefix cannot express that.
-    expect(registryModel("openai", "gpt-6-astra")!.reasoning!.efforts).not.toContain("none");
-    expect(registryModel("openai", "gpt-6-luna")!.reasoning!.efforts).toContain("none");
-    expect(registryModel("openai", "gpt-5.5")!.reasoning!.efforts).not.toContain("max");
-    expect(registryModel("xai", "grok-4.7")!.reasoning!.param).toBe("reasoning.effort");
-    expect(registryModel("openai", "gpt-6-luna")!.reasoning!.param).toBe("reasoning_effort");
+    expect(registryModel('openai', 'gpt-6-astra')!.reasoning!.efforts).not.toContain('none');
+    expect(registryModel('openai', 'gpt-6-luna')!.reasoning!.efforts).toContain('none');
+    expect(registryModel('openai', 'gpt-5.5')!.reasoning!.efforts).not.toContain('max');
+    expect(registryModel('xai', 'grok-4.7')!.reasoning!.param).toBe('reasoning.effort');
+    expect(registryModel('openai', 'gpt-6-luna')!.reasoning!.param).toBe('reasoning_effort');
   });
 
-  test("the GPT-6 family is registered on both paths with the credential kinds kept apart", () => {
-    for (const id of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]) {
-      expect(registryModel("codex", id)!.runtimeKind).toBe("native-harness");
-      expect(registryModel("openai", id)!.runtimeKind).toBe("api");
+  test('the GPT-6 family is registered on both paths with the credential kinds kept apart', () => {
+    for (const id of ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna']) {
+      expect(registryModel('codex', id)!.runtimeKind).toBe('native-harness');
+      expect(registryModel('openai', id)!.runtimeKind).toBe('api');
     }
-    expect(MODEL_REGISTRY.codex.credential).toBe("subscription");
+    expect(MODEL_REGISTRY.codex.credential).toBe('subscription');
     expect(MODEL_REGISTRY.codex.envKey).toBeUndefined();
-    expect(MODEL_REGISTRY.openai.credential).toBe("api-key");
+    expect(MODEL_REGISTRY.openai.credential).toBe('api-key');
   });
 
-  test("shut-down model ids are not served to users", () => {
+  test('shut-down model ids are not served to users', () => {
     // Google lists these under "Previous models (Shut down)".
-    for (const id of ["gemini-3.1-flash-lite-preview", "gemini-3-pro-preview", "gemini-2.0-flash"])
-      expect(registryModel("gemini", id)).toBeUndefined();
-    expect(registryModel("gemini", "gemini-3.1-flash-lite")).toBeDefined();
+    for (const id of ['gemini-3.1-flash-lite-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash'])
+      expect(registryModel('gemini', id)).toBeUndefined();
+    expect(registryModel('gemini', 'gemini-3.1-flash-lite')).toBeDefined();
   });
 });
 
 test("each vendor's own effort field is recorded, not flattened into OpenAI's", () => {
-  expect(registryModel("anthropic", "claude-opus-5")!.reasoning!.param).toBe("output_config.effort");
-  expect(registryModel("gemini", "gemini-3.8-flash")!.reasoning!.param).toBe("thinking_level");
-  expect(registryModel("kimi", "kimi-k3")!.reasoning!.param).toBe("reasoning_effort");
+  expect(registryModel('anthropic', 'claude-opus-5')!.reasoning!.param).toBe(
+    'output_config.effort',
+  );
+  expect(registryModel('gemini', 'gemini-3.8-flash')!.reasoning!.param).toBe('thinking_level');
+  expect(registryModel('kimi', 'kimi-k3')!.reasoning!.param).toBe('reasoning_effort');
 });
 
-describe("the registry moved to core without moving any import path", () => {
+describe('the registry moved to core without moving any import path', () => {
   test("the foundry re-export and core's own export are the same table and the same functions", async () => {
-    const core = await import("@inixiative/foundry-core");
-    const foundry = await import("../src/models/registry");
+    const core = await import('@inixiative/foundry-core');
+    const foundry = await import('../src/models/registry');
     expect(foundry.MODEL_REGISTRY).toBe(core.MODEL_REGISTRY);
     expect(foundry.registryModel).toBe(core.registryModel);
     expect(foundry.modelHasCapability).toBe(core.modelHasCapability);
@@ -192,64 +218,78 @@ describe("the registry moved to core without moving any import path", () => {
     expect(foundry.DECISION_PROVIDER).toBe(core.DECISION_PROVIDER);
   });
 
-  test("resolveDecisionModel keeps its old import path on the provider module", async () => {
-    const { resolveDecisionModel } = await import("../src/providers/decision-provider");
-    const core = await import("@inixiative/foundry-core");
+  test('resolveDecisionModel keeps its old import path on the provider module', async () => {
+    const { resolveDecisionModel } = await import('../src/providers/decision-provider');
+    const core = await import('@inixiative/foundry-core');
     expect(resolveDecisionModel).toBe(core.resolveDecisionModel);
   });
 
   test("the projections that need Foundry's own shapes stayed behind", async () => {
-    const core = await import("@inixiative/foundry-core") as Record<string, unknown>;
-    for (const name of ["providerConfigsFromRegistry", "registryForViewer", "modelOptionsByTier"])
+    const core = (await import('@inixiative/foundry-core')) as Record<string, unknown>;
+    for (const name of ['providerConfigsFromRegistry', 'registryForViewer', 'modelOptionsByTier'])
       expect(core[name]).toBeUndefined();
   });
 });
 
-describe("Muse Spark reaches the surfaces a user chooses from", () => {
-  test("it goes through the existing openai-compatible adapter, with no new adapter kind", () => {
-    expect(MODEL_REGISTRY.meta.type).toBe("openai-compatible");
-    const provider = createRegisteredProvider("meta", { apiKey: "k" });
-    expect(provider.id).toBe("meta");
-    expect(providerApiRoot("meta")).toBe("https://api.meta.ai/v1");
-    expect(providerReasoning("meta")("muse-spark-1.3")!.outputField).toBe("max_completion_tokens");
-    expect(() => createRegisteredProvider("meta")).toThrow("MODEL_API_KEY");
+describe('Muse Spark reaches the surfaces a user chooses from', () => {
+  test('it goes through the existing openai-compatible adapter, with no new adapter kind', () => {
+    expect(MODEL_REGISTRY.meta.type).toBe('openai-compatible');
+    const provider = createRegisteredProvider('meta', { apiKey: 'k' });
+    expect(provider.id).toBe('meta');
+    expect(providerApiRoot('meta')).toBe('https://api.meta.ai/v1');
+    expect(providerReasoning('meta')('muse-spark-1.3')!.outputField).toBe('max_completion_tokens');
+    expect(() => createRegisteredProvider('meta')).toThrow('MODEL_API_KEY');
   });
 
-  test("the contributor warning survives both projections of the table", () => {
+  test('the contributor warning survives both projections of the table', () => {
     const saved = defaultConfig().providers.meta!;
-    const contributor = saved.models.find(model => model.id === "muse-spark-1.3-contributor")!;
-    const standard = saved.models.find(model => model.id === "muse-spark-1.3")!;
-    expect(saved.baseUrl).toBe("https://api.meta.ai/v1");
+    const contributor = saved.models.find((model) => model.id === 'muse-spark-1.3-contributor')!;
+    const standard = saved.models.find((model) => model.id === 'muse-spark-1.3')!;
+    expect(saved.baseUrl).toBe('https://api.meta.ai/v1');
     expect(contributor.trainsOnInput).toBe(true);
     expect(standard.trainsOnInput).toBeUndefined();
 
-    const meta = registryForViewer().providers.find(provider => provider.id === "meta")!;
-    expect(meta.envKey).toBe("MODEL_API_KEY");
-    expect(meta.models.find(model => model.id === "muse-spark-1.3-contributor")).toMatchObject({
+    const meta = registryForViewer().providers.find((provider) => provider.id === 'meta')!;
+    expect(meta.envKey).toBe('MODEL_API_KEY');
+    expect(meta.models.find((model) => model.id === 'muse-spark-1.3-contributor')).toMatchObject({
       trainsOnInput: true,
-      label: expect.stringContaining("trains on your data"),
+      label: expect.stringContaining('trains on your data'),
     });
-    expect(meta.models.find(model => model.id === "muse-spark-1.3")!.trainsOnInput).toBe(false);
+    expect(meta.models.find((model) => model.id === 'muse-spark-1.3')!.trainsOnInput).toBe(false);
   });
 });
 
-describe("shipped defaults name a model that is actually served", () => {
-  test("decisions default to Codex Luna everywhere a new configuration is built from", async () => {
-    const { starterConfig } = await import("../src/viewer/config");
-    const { SUBSCRIPTION_DECISIONS } = await import("../src/providers/subscription-policy");
-    for (const config of [defaultConfig(), starterConfig(), starterConfig("claude-code", "opus")])
-      expect(config.defaults).toMatchObject({ classifierProvider: SUBSCRIPTION_DECISIONS, classifierModel: DECISION_MODEL });
-    expect(DECISION_MODEL).toBe("gpt-6-luna");
+describe('shipped defaults name a model that is actually served', () => {
+  test('decisions default to Codex Luna everywhere a new configuration is built from', async () => {
+    const { starterConfig } = await import('../src/viewer/config');
+    const { SUBSCRIPTION_DECISIONS } = await import('../src/providers/subscription-policy');
+    for (const config of [defaultConfig(), starterConfig(), starterConfig('claude-code', 'opus')])
+      expect(config.defaults).toMatchObject({
+        classifierProvider: SUBSCRIPTION_DECISIONS,
+        classifierModel: DECISION_MODEL,
+      });
+    expect(DECISION_MODEL).toBe('gpt-6-luna');
     // The subscription decision profile is the Codex login; Luna is registered on it.
-    expect(registryModel("codex", DECISION_MODEL)!.runtimeKind).toBe("native-harness");
+    expect(registryModel('codex', DECISION_MODEL)!.runtimeKind).toBe('native-harness');
 
-    const example = await Bun.file(new URL("../../../examples/domain-team.settings.json", import.meta.url)).json();
-    expect(example.defaults).toMatchObject({ classifierProvider: SUBSCRIPTION_DECISIONS, classifierModel: DECISION_MODEL });
+    const example = await Bun.file(
+      new URL('../../../examples/domain-team.settings.json', import.meta.url),
+    ).json();
+    expect(example.defaults).toMatchObject({
+      classifierProvider: SUBSCRIPTION_DECISIONS,
+      classifierModel: DECISION_MODEL,
+    });
   });
 
-  test("no adapter or wizard fallback hardcodes a model the registry does not serve", async () => {
-    const shutDown = ["gemini-3.1-flash-lite-preview", "gemini-3-pro-preview", "gemini-3.1-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
-    for (const path of ["../src/providers/gemini.ts", "../src/viewer/ui/wizard.js"]) {
+  test('no adapter or wizard fallback hardcodes a model the registry does not serve', async () => {
+    const shutDown = [
+      'gemini-3.1-flash-lite-preview',
+      'gemini-3-pro-preview',
+      'gemini-3.1-flash',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+    ];
+    for (const path of ['../src/providers/gemini.ts', '../src/viewer/ui/wizard.js']) {
       const source = await Bun.file(new URL(path, import.meta.url)).text();
       for (const id of shutDown) expect(source).not.toContain(`"${id}"`);
     }

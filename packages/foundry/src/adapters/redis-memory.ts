@@ -1,9 +1,4 @@
-import type {
-  ContextSource,
-  HydrationAdapter,
-  ContextRef,
-  Signal,
-} from "@inixiative/foundry-core";
+import type { ContextRef, ContextSource, HydrationAdapter, Signal } from '@inixiative/foundry-core';
 
 /**
  * Minimal interface for Redis client — compatible with ioredis.
@@ -45,7 +40,7 @@ export class RedisMemory {
   private _client: RedisClient;
   private _prefix: string;
 
-  constructor(client: RedisClient, prefix: string = "foundry:") {
+  constructor(client: RedisClient, prefix: string = 'foundry:') {
     this._client = client;
     this._prefix = prefix;
   }
@@ -65,12 +60,12 @@ export class RedisMemory {
   /** Write an entry. */
   async write(entry: RedisEntry): Promise<void> {
     const key = this._key(entry.id);
-    await this._client.hset(key, "id", entry.id);
-    await this._client.hset(key, "kind", entry.kind);
-    await this._client.hset(key, "content", entry.content);
-    await this._client.hset(key, "timestamp", String(entry.timestamp));
-    if (entry.source) await this._client.hset(key, "source", entry.source);
-    if (entry.meta) await this._client.hset(key, "meta", JSON.stringify(entry.meta));
+    await this._client.hset(key, 'id', entry.id);
+    await this._client.hset(key, 'kind', entry.kind);
+    await this._client.hset(key, 'content', entry.content);
+    await this._client.hset(key, 'timestamp', String(entry.timestamp));
+    if (entry.source) await this._client.hset(key, 'source', entry.source);
+    if (entry.meta) await this._client.hset(key, 'meta', JSON.stringify(entry.meta));
 
     if (entry.ttl) {
       await this._client.expire(key, entry.ttl);
@@ -107,7 +102,7 @@ export class RedisMemory {
   /** Delete by id. Also removes from index lists. */
   async delete(id: string): Promise<boolean> {
     // Get the entry's kind so we can remove from the kind index
-    const kind = await this._client.hget(this._key(id), "kind");
+    const kind = await this._client.hget(this._key(id), 'kind');
     const result = await this._client.del(this._key(id));
     if (result > 0) {
       // Best-effort removal from index lists
@@ -125,10 +120,8 @@ export class RedisMemory {
       id,
       async load() {
         const entries = await mem.recent(limit, kind);
-        if (entries.length === 0) return "";
-        return entries
-          .map((e) => `[${e.kind}] ${e.id}: ${e.content}`)
-          .join("\n");
+        if (entries.length === 0) return '';
+        return entries.map((e) => `[${e.kind}] ${e.id}: ${e.content}`).join('\n');
       },
     };
   }
@@ -137,25 +130,22 @@ export class RedisMemory {
   asAdapter(): HydrationAdapter {
     const mem = this;
     return {
-      system: "redis",
+      system: 'redis',
       async hydrate(ref: ContextRef): Promise<string> {
         const entry = await mem.get(ref.locator);
-        return entry ? entry.content : "";
+        return entry ? entry.content : '';
       },
     };
   }
 
   /** Signal handler that writes signals to Redis. */
   signalWriter(ttl?: number) {
-    const mem = this;
     return async (signal: Signal): Promise<void> => {
-      await mem.write({
+      await this.write({
         id: signal.id,
         kind: signal.kind,
         content:
-          typeof signal.content === "string"
-            ? signal.content
-            : JSON.stringify(signal.content),
+          typeof signal.content === 'string' ? signal.content : JSON.stringify(signal.content),
         source: signal.source,
         timestamp: signal.timestamp,
         meta: { confidence: signal.confidence, refs: signal.refs },
@@ -168,7 +158,7 @@ export class RedisMemory {
    * Signal handler that publishes signals to a Redis pub/sub channel.
    * Use for cross-process signal propagation.
    */
-  signalPublisher(channel: string = "foundry:signals") {
+  signalPublisher(channel: string = 'foundry:signals') {
     const client = this._client;
     return async (signal: Signal): Promise<void> => {
       await client.publish(channel, JSON.stringify(signal));

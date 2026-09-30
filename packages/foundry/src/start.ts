@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
-import { createSubscriptionDecisions } from "./providers/subscription-decisions";
-import { resolveSubscriptionPolicy } from "./providers/subscription-policy";
-import { SubscriptionAuthentication } from "./providers/subscription-authentication";
-import { nativeTextEnvironment } from "./providers/native-text-environment";
-import { createDecisionProvider, resolveDecisionModel } from "./providers/decision-provider";
-import { KingdomAuthentication } from "./providers/kingdom-authentication";
-import { NativeAuthentication } from "./providers/native-authentication";
+import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
+import { KingdomAuthentication } from './providers/kingdom-authentication';
+import { NativeAuthentication } from './providers/native-authentication';
+import { nativeTextEnvironment } from './providers/native-text-environment';
+import { SubscriptionAuthentication } from './providers/subscription-authentication';
+import { createSubscriptionDecisions } from './providers/subscription-decisions';
+import { resolveSubscriptionPolicy } from './providers/subscription-policy';
+
 /**
  * Foundry — production entrypoint.
  *
@@ -16,62 +17,62 @@ import { NativeAuthentication } from "./providers/native-authentication";
  * Open:     http://localhost:${VIEWER_PORT || 4400}
  */
 
+import { ContextStack, type SignalBus, ToolRegistry } from '@inixiative/foundry-core';
+import { existsSync, mkdirSync } from 'fs';
+import { FileMemory, PostgresMemory } from './adapters';
 import {
-  Harness,
-  EventStream,
-  InterventionLog,
-  TokenTracker,
   ActionQueue,
+  buildAgents,
+  buildLayers,
+  createSourceResolver,
+  DEFAULT_THREAD_DOMAINS,
+  EventStream,
+  Harness,
+  InterventionLog,
   ProjectRegistry,
   ThreadFactory,
   ThreadRuntimeManager,
-  DEFAULT_THREAD_DOMAINS,
-  buildLayers,
-  buildAgents,
-  createSourceResolver,
-} from "./agents";
-import { ContextStack, ToolRegistry, type SignalBus } from "@inixiative/foundry-core";
-import { resolveLearningSettings } from "./agents/learning-config";
-import { runStartupSelfTest, startupSelfTestEnabled } from "./startup-self-test";
-import { FileMemory, PostgresMemory } from "./adapters";
-import { MemoryToolAdapter } from "./tools/memory-adapter";
-import { registerKingdomAccess } from "./tools/kingdom-access";
-import { BashShell } from "./tools/bash-shell";
-import { BunScript } from "./tools/bun-script";
-import { rtk as rtkFilter } from "./tools/output-filters";
+  TokenTracker,
+} from './agents';
+import { resolveLearningSettings } from './agents/learning-config';
+import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
+import type { LLMProvider } from './providers';
 import {
   AnthropicProvider,
-  OpenAIProvider,
-  GeminiProvider,
   ClaudeCodeProvider,
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
   FileExternalSessionStore,
-  SessionBackedProvider,
+  GeminiProvider,
+  OpenAIProvider,
   type SessionAdapter,
-} from "./providers";
-import type { LLMProvider } from "./providers";
-import { startViewer } from "./viewer/server";
-import { RuntimeJobRegistry } from "./providers/runtime-job-handler";
+  SessionBackedProvider,
+} from './providers';
+import { RuntimeJobRegistry } from './providers/runtime-job-handler';
+import { DOCS_ADVISE_PROMPT } from './setup/scan-docs';
+import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
+import { BashShell } from './tools/bash-shell';
+import { BunScript } from './tools/bun-script';
+import { registerKingdomAccess } from './tools/kingdom-access';
+import { MemoryToolAdapter } from './tools/memory-adapter';
+import { rtk as rtkFilter } from './tools/output-filters';
 import {
   ConfigStore,
   createProject,
   defaultProjectAgents,
   defaultProjectLayers,
   defaultProjectSources,
+  type FoundryConfig,
   projectSources,
   starterConfig,
-  type FoundryConfig,
-} from "./viewer/config";
-import { DOCS_ADVISE_PROMPT } from "./setup/scan-docs";
-import { createQueue, setQueue, initializeWorker, shutdownWorker } from "./jobs";
-import { existsSync, mkdirSync } from "fs";
+} from './viewer/config';
+import { startViewer } from './viewer/server';
 
 // ---------------------------------------------------------------------------
 // Load config (auto-bootstrap on first run)
 // ---------------------------------------------------------------------------
 
-const FOUNDRY_DIR = ".foundry";
+const FOUNDRY_DIR = '.foundry';
 const selfTestRequested = startupSelfTestEnabled(process.env.FOUNDRY_STARTUP_SELF_TEST);
 
 const configStore = new ConfigStore(FOUNDRY_DIR);
@@ -86,7 +87,12 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
   const projectPath = process.cwd();
 
   if (!hasEntries(config.agents)) {
-    config.agents = defaultProjectAgents(config.defaults.provider, config.defaults.model, config.defaults.classifierProvider, config.defaults.classifierModel);
+    config.agents = defaultProjectAgents(
+      config.defaults.provider,
+      config.defaults.model,
+      config.defaults.classifierProvider,
+      config.defaults.classifierModel,
+    );
     changed = true;
   }
 
@@ -102,7 +108,7 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
 
   if (!hasEntries(config.projects)) {
     const project = createProject(projectPath, {
-      label: "Foundry",
+      label: 'Foundry',
       sources: projectSources(projectPath),
     });
     config.projects = { [project.id]: project };
@@ -114,8 +120,8 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
 
 if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   // First run — generate a runnable local config.
-  console.log("No config found — generating starter config...");
-  config = starterConfig("claude-code", "fable");
+  console.log('No config found — generating starter config...');
+  config = starterConfig('claude-code', 'fable');
   ensureRunnableLocalConfig(config);
   await configStore.save(config);
 
@@ -123,12 +129,12 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   mkdirSync(`${FOUNDRY_DIR}/memory`, { recursive: true });
   mkdirSync(`${FOUNDRY_DIR}/analytics`, { recursive: true });
 
-  console.log("Starter config generated — setup wizard will open in the viewer.");
+  console.log('Starter config generated — setup wizard will open in the viewer.');
 } else {
   config = structuredClone(await configStore.load());
   if (ensureRunnableLocalConfig(config)) {
     await configStore.save(config);
-    console.log("Updated starter config with default local agents, layers, and project.");
+    console.log('Updated starter config with default local agents, layers, and project.');
   }
 }
 
@@ -136,34 +142,45 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
 const subscription = resolveSubscriptionPolicy(config, { startup: true });
 if (subscription) {
   config = subscription.config;
-  console.log(`Subscription-only: worker claude-code (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`);
-  if (subscription.rerouted.length) console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(", ")}`);
+  console.log(
+    `Subscription-only: worker claude-code (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
+  );
+  if (subscription.rerouted.length)
+    console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
-const decisions = subscription ? createSubscriptionDecisions({ ...subscription.policy, source: subscription.decision,
-  onPressure: event => {
-    const message = event.kind === "shed"
-      ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
-      : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
-    console.warn(`[subscription-decisions] ${message}`);
-    eventStream.pushError("subscription-decisions", message, "warn");
-  } }) : undefined;
+const decisions = subscription
+  ? createSubscriptionDecisions({
+      ...subscription.policy,
+      source: subscription.decision,
+      onPressure: (event) => {
+        const message =
+          event.kind === 'shed'
+            ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
+            : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+        console.warn(`[subscription-decisions] ${message}`);
+        eventStream.pushError('subscription-decisions', message, 'warn');
+      },
+    })
+  : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 
-console.log(`Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`);
+console.log(
+  `Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`,
+);
 
 // ---------------------------------------------------------------------------
 // Compose project identity files (CLAUDE.md, .cursorrules, etc.)
 // ---------------------------------------------------------------------------
 
-import { writeComposed, RUNTIME_OUTPUT_FILES } from "./prompts/composer";
+import { RUNTIME_OUTPUT_FILES, writeComposed } from './prompts/composer';
 
 for (const project of Object.values(config.projects)) {
   if (!project.prompts || !project.path) continue;
   try {
     const written = await writeComposed(project.path, project.prompts);
     if (written.size > 0) {
-      const files = [...written.keys()].map(rt => RUNTIME_OUTPUT_FILES[rt]).join(", ");
+      const files = [...written.keys()].map((rt) => RUNTIME_OUTPUT_FILES[rt]).join(', ');
       console.log(`Composed identity files for ${project.label || project.id}: ${files}`);
     }
   } catch (err) {
@@ -181,40 +198,80 @@ function createProvider(config: FoundryConfig): {
 } {
   const providerId = config.defaults.provider;
   const sessionStore = FileExternalSessionStore.forProject(process.cwd());
-  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kingdomOwnerKey || Object.keys(config.kingdomInferenceAssignments ?? {}).length
-    ? new KingdomAuthentication({ directory: `${process.cwd()}/.foundry/kingdom`, sources: config.kingdomInference ?? [], defaultOwnerKey: config.defaults.kingdomOwnerKey, assignments: config.kingdomInferenceAssignments })
-    : config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length ? new NativeAuthentication({
-    directory: `${process.cwd()}/.foundry/runtime-profiles`, sources: config.nativeAuthentication ?? [],
-    defaultSourceId: config.defaults.nativeAuthenticationId,
-  }) : undefined;
-  if (authentication && !["claude-code", "codex"].includes(providerId)) throw Error("Native authentication requires a native runtime provider");
-  if (authentication instanceof NativeAuthentication) for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {})) authentication.select(threadId, sourceId);
-  const selectedAuth = config.nativeAuthentication?.find(source => source.id === config.defaults.nativeAuthenticationId);
-  if (!subscription && selectedAuth?.mode === "native-profile" && !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)) {
-    throw Error("A native profile has one refresh owner. Configure the separate OpenAI decision provider or use a gateway authentication source before starting Foundry.");
+  const authentication = subscription
+    ? new SubscriptionAuthentication(
+        `${process.cwd()}/.foundry/runtime-profiles`,
+        subscription.worker,
+      )
+    : config.defaults.kingdomOwnerKey ||
+        Object.keys(config.kingdomInferenceAssignments ?? {}).length
+      ? new KingdomAuthentication({
+          directory: `${process.cwd()}/.foundry/kingdom`,
+          sources: config.kingdomInference ?? [],
+          defaultOwnerKey: config.defaults.kingdomOwnerKey,
+          assignments: config.kingdomInferenceAssignments,
+        })
+      : config.defaults.nativeAuthenticationId ||
+          Object.keys(config.nativeAuthenticationSelections ?? {}).length
+        ? new NativeAuthentication({
+            directory: `${process.cwd()}/.foundry/runtime-profiles`,
+            sources: config.nativeAuthentication ?? [],
+            defaultSourceId: config.defaults.nativeAuthenticationId,
+          })
+        : undefined;
+  if (authentication && !['claude-code', 'codex'].includes(providerId))
+    throw Error('Native authentication requires a native runtime provider');
+  if (authentication instanceof NativeAuthentication)
+    for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
+      authentication.select(threadId, sourceId);
+  const selectedAuth = config.nativeAuthentication?.find(
+    (source) => source.id === config.defaults.nativeAuthenticationId,
+  );
+  if (
+    !subscription &&
+    selectedAuth?.mode === 'native-profile' &&
+    !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)
+  ) {
+    throw Error(
+      'A native profile has one refresh owner. Configure the separate OpenAI decision provider or use a gateway authentication source before starting Foundry.',
+    );
   }
 
   switch (providerId) {
-    case "claude-code": {
+    case 'claude-code': {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
         contextBudget: config.providers[providerId]?.contextBudget,
         store: sessionStore,
         authentication,
         defaults: {
           model: config.defaults.model,
-          ...(subscription ? { spawn: (argv: string[], options: { cwd: string; env: Record<string, string | undefined> }) => Bun.spawn(argv, { ...options, env: nativeTextEnvironment(options.env), stdin: "pipe", stdout: "pipe", stderr: "pipe" }) } : {}),
+          ...(subscription
+            ? {
+                spawn: (
+                  argv: string[],
+                  options: { cwd: string; env: Record<string, string | undefined> },
+                ) =>
+                  Bun.spawn(argv, {
+                    ...options,
+                    env: nativeTextEnvironment(options.env),
+                    stdin: 'pipe',
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                  }),
+              }
+            : {}),
         },
       });
       return {
         sessionAdapter,
         provider: new SessionBackedProvider({
-          id: "claude-code",
+          id: 'claude-code',
           adapter: sessionAdapter,
           defaultModel: config.defaults.model,
         }),
       };
     }
-    case "codex": {
+    case 'codex': {
       const sessionAdapter = new CodexSessionAdapter({
         store: sessionStore,
         authentication,
@@ -227,16 +284,16 @@ function createProvider(config: FoundryConfig): {
       return {
         sessionAdapter,
         provider: new SessionBackedProvider({
-          id: "codex",
+          id: 'codex',
           adapter: sessionAdapter,
           defaultModel: config.defaults.model,
         }),
       };
     }
-    case "anthropic": {
+    case 'anthropic': {
       const key = process.env.ANTHROPIC_API_KEY;
       if (!key) {
-        console.error("ANTHROPIC_API_KEY not set. Add it to .env.local or environment.");
+        console.error('ANTHROPIC_API_KEY not set. Add it to .env.local or environment.');
         process.exit(1);
       }
       return {
@@ -246,10 +303,10 @@ function createProvider(config: FoundryConfig): {
         }),
       };
     }
-    case "openai": {
+    case 'openai': {
       const key = process.env.OPENAI_API_KEY;
       if (!key) {
-        console.error("OPENAI_API_KEY not set. Add it to .env.local or environment.");
+        console.error('OPENAI_API_KEY not set. Add it to .env.local or environment.');
         process.exit(1);
       }
       return {
@@ -259,10 +316,10 @@ function createProvider(config: FoundryConfig): {
         }),
       };
     }
-    case "gemini": {
+    case 'gemini': {
       const key = process.env.GEMINI_API_KEY;
       if (!key) {
-        console.error("GEMINI_API_KEY not set. Add it to .env.local or environment.");
+        console.error('GEMINI_API_KEY not set. Add it to .env.local or environment.');
         process.exit(1);
       }
       return {
@@ -280,7 +337,7 @@ function createProvider(config: FoundryConfig): {
 
 const providerSetup = createProvider(config);
 const provider = providerSetup.provider;
-let sessionAdapter: SessionAdapter | undefined = providerSetup.sessionAdapter;
+const sessionAdapter: SessionAdapter | undefined = providerSetup.sessionAdapter;
 
 // ---------------------------------------------------------------------------
 // Action queue
@@ -292,7 +349,8 @@ const actionQueue = new ActionQueue();
 // Token tracker
 // ---------------------------------------------------------------------------
 
-const maxCost = parseFloat(process.env.FOUNDRY_MAX_COST || "") || (config as any).budget?.maxCost || 10.0;
+const maxCost =
+  parseFloat(process.env.FOUNDRY_MAX_COST || '') || (config as any).budget?.maxCost || 10.0;
 const tokenTracker = new TokenTracker({
   budget: { maxCost },
 });
@@ -320,18 +378,18 @@ registerKingdomAccess(tools, config.kingdomAccess);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
-tools.register(memoryTool, "Project memory — search conventions, signals, learnings");
+tools.register(memoryTool, 'Project memory — search conventions, signals, learnings');
 
 // Real shell — executes against the actual filesystem with RTK output filtering
 const shellTool = new BashShell({
   cwd: process.cwd(),
   outputFilter: rtkFilter,
 });
-tools.register(shellTool, "Execute shell commands — file I/O, git, tests, builds");
+tools.register(shellTool, 'Execute shell commands — file I/O, git, tests, builds');
 
 // TypeScript execution environment (Bun subprocess isolation)
 const scriptTool = new BunScript({ timeout: 15_000 });
-tools.register(scriptTool, "Execute TypeScript/JS in isolated Bun subprocess");
+tools.register(scriptTool, 'Execute TypeScript/JS in isolated Bun subprocess');
 
 // Tools log deferred until after optional Postgres/Redis registration
 
@@ -359,7 +417,7 @@ const atlasRoot =
     .map((p) => p.path)
     .filter((p): p is string => !!p)
     .find((p) => existsSync(`${p}/.atlas`) || existsSync(`${p}/MAP.md`)) ??
-  (existsSync(".atlas") || existsSync("MAP.md") ? process.cwd() : undefined);
+  (existsSync('.atlas') || existsSync('MAP.md') ? process.cwd() : undefined);
 
 // Every factory-created thread (main included) gets its own Librarian,
 // Cartographer, Wardens, FlowOrchestrator, reactive rules, event bridges and
@@ -367,17 +425,29 @@ const atlasRoot =
 const runtimeManager = new ThreadRuntimeManager({
   config,
   llm: flowLlm,
-  providers: new Map([[provider.id, provider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]),
+  providers: new Map([
+    [provider.id, provider],
+    ...(!subscription ? [['openai', flowLlm] as const] : []),
+    [flowLlm.id, flowLlm],
+  ]),
   // Review uses its explicit phase profile, otherwise the configured flow policy.
   // No provider is constructed and no live binding/settings are changed by this resolver.
-  learning: resolveLearningSettings(config.learning, new Map([[provider.id, provider], ...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm]]), flowLlm,
-    decisionModel),
+  learning: resolveLearningSettings(
+    config.learning,
+    new Map([
+      [provider.id, provider],
+      ...(!subscription ? [['openai', flowLlm] as const] : []),
+      [flowLlm.id, flowLlm],
+    ]),
+    flowLlm,
+    decisionModel,
+  ),
   eventStream,
   atlasRoot,
   // Docs warden uses the probe-validated topology-aware prompt from
   // setup/scan-docs.ts (single source of truth for generated configs too).
   legacyDomains: DEFAULT_THREAD_DOMAINS.map((d) =>
-    d.domain === "docs" ? { ...d, advisePrompt: DOCS_ADVISE_PROMPT } : d,
+    d.domain === 'docs' ? { ...d, advisePrompt: DOCS_ADVISE_PROMPT } : d,
   ),
   signalSinks: [memory.signalWriter()],
   // Native session lifecycle (compaction) binds per thread: central session
@@ -386,12 +456,27 @@ const runtimeManager = new ThreadRuntimeManager({
   sessionAdapter,
 });
 
-const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents, runtime: runtimeManager, nativeTools: tools,
-  configuration: { config, layers: { sourceResolver }, agents: { provider, tokenTracker, tools,
-    // Refuse an unavailable explicit project provider; only these providers
-    // have actually been constructed above.
-    providers: new Map([...(!subscription ? [["openai", flowLlm] as const] : []), [flowLlm.id, flowLlm], [provider.id, provider]]),
-  } },
+const factory = new ThreadFactory({
+  stack: templateStack,
+  agents: templateAgents,
+  runtime: runtimeManager,
+  nativeTools: tools,
+  configuration: {
+    config,
+    layers: { sourceResolver },
+    agents: {
+      provider,
+      tokenTracker,
+      tools,
+      // Refuse an unavailable explicit project provider; only these providers
+      // have actually been constructed above.
+      providers: new Map([
+        ...(!subscription ? [['openai', flowLlm] as const] : []),
+        [flowLlm.id, flowLlm],
+        [provider.id, provider],
+      ]),
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -400,9 +485,11 @@ const factory = new ThreadFactory({ stack: templateStack, agents: templateAgents
 
 // Main joins the first enabled project at construction, so its runtime's learning owner
 // (captured when the runtime is built) matches the project it is later listed under.
-const mainProjectId = Object.values(config.projects ?? {}).find(project => project.enabled !== false)?.id;
-const thread = factory.create("main", {
-  description: "Main conversation thread",
+const mainProjectId = Object.values(config.projects ?? {}).find(
+  (project) => project.enabled !== false,
+)?.id;
+const thread = factory.create('main', {
+  description: 'Main conversation thread',
   ...(mainProjectId ? { projectId: mainProjectId } : {}),
 });
 
@@ -437,7 +524,9 @@ if (sessionAdapter) {
 // factory-created thread gets the same wiring automatically.
 // ---------------------------------------------------------------------------
 
-console.log(`Flow: Cartographer + ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`);
+console.log(
+  `Flow: Cartographer + ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`,
+);
 
 // ---------------------------------------------------------------------------
 // Build harness
@@ -448,12 +537,12 @@ const harness = new Harness(thread);
 // Auto-detect classifier/router/executor from config agent kinds
 for (const [id, agentCfg] of Object.entries(config.agents)) {
   if (!agentCfg.enabled) continue;
-  if (agentCfg.kind === "classifier") harness.setClassifier(id);
-  else if (agentCfg.kind === "router") harness.setRouter(id);
+  if (agentCfg.kind === 'classifier') harness.setClassifier(id);
+  else if (agentCfg.kind === 'router') harness.setRouter(id);
 }
 harness.setDefaultExecutor(
-  Object.entries(config.agents).find(([_, a]) => a.kind === "executor" && a.enabled)?.[0]
-  ?? "artificer"
+  Object.entries(config.agents).find(([_, a]) => a.kind === 'executor' && a.enabled)?.[0] ??
+    'artificer',
 );
 
 // Load invocation/activation modes from config
@@ -467,21 +556,50 @@ let pgMemory: PostgresMemory | undefined;
 
 if (process.env.DATABASE_URL) {
   try {
-    const { PrismaClient } = await import("@prisma/client");
+    const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
     pgMemory = new PostgresMemory(prisma);
     // Wire signal persistence to postgres
     runtimeManager.addSignalSink(pgMemory.signalWriter());
     // Also register as a queryable tool for agents
-    const pgTool = MemoryToolAdapter.from("postgres", {
+    const pgTool = MemoryToolAdapter.from('postgres', {
       write: (e) => pgMemory!.writeEntry(e),
-      get: (id) => pgMemory!.getEntry(id).then((r) => r ? { id: r.id, kind: r.kind, content: r.content, timestamp: r.timestamp?.getTime?.() ?? Date.now(), meta: r.meta as any } : undefined),
-      search: (q, limit) => pgMemory!.searchEntries(q, limit).then((rows) => rows.map((r: any) => ({ id: r.id, kind: r.kind, content: r.content, timestamp: r.timestamp?.getTime?.() ?? Date.now(), meta: r.meta }))),
-      recent: (limit, kind) => pgMemory!.recentEntries(limit, kind).then((rows) => rows.map((r: any) => ({ id: r.id, kind: r.kind, content: r.content, timestamp: r.timestamp?.getTime?.() ?? Date.now(), meta: r.meta }))),
+      get: (id) =>
+        pgMemory!.getEntry(id).then((r) =>
+          r
+            ? {
+                id: r.id,
+                kind: r.kind,
+                content: r.content,
+                timestamp: r.timestamp?.getTime?.() ?? Date.now(),
+                meta: r.meta as any,
+              }
+            : undefined,
+        ),
+      search: (q, limit) =>
+        pgMemory!.searchEntries(q, limit).then((rows) =>
+          rows.map((r: any) => ({
+            id: r.id,
+            kind: r.kind,
+            content: r.content,
+            timestamp: r.timestamp?.getTime?.() ?? Date.now(),
+            meta: r.meta,
+          })),
+        ),
+      recent: (limit, kind) =>
+        pgMemory!.recentEntries(limit, kind).then((rows) =>
+          rows.map((r: any) => ({
+            id: r.id,
+            kind: r.kind,
+            content: r.content,
+            timestamp: r.timestamp?.getTime?.() ?? Date.now(),
+            meta: r.meta,
+          })),
+        ),
       delete: (id) => pgMemory!.deleteEntry(id),
     });
-    tools.register(pgTool, "Persistent memory — postgres-backed signals, threads, history");
-    console.log(`Postgres: connected (${process.env.DATABASE_URL.replace(/\/\/.*@/, "//***@")})`);
+    tools.register(pgTool, 'Persistent memory — postgres-backed signals, threads, history');
+    console.log(`Postgres: connected (${process.env.DATABASE_URL.replace(/\/\/.*@/, '//***@')})`);
   } catch (err) {
     console.warn(`Postgres: unavailable (${(err as Error).message}). Running in-memory only.`);
   }
@@ -493,10 +611,10 @@ if (process.env.DATABASE_URL) {
 
 if (process.env.MUNINN_URL) {
   try {
-    const { MuninnMemory } = await import("./adapters/muninn-memory");
+    const { MuninnMemory } = await import('./adapters/muninn-memory');
     const muninn = new MuninnMemory({
       baseUrl: process.env.MUNINN_URL,
-      vault: process.env.MUNINN_VAULT ?? "foundry",
+      vault: process.env.MUNINN_VAULT ?? 'foundry',
       token: process.env.MUNINN_TOKEN,
     });
 
@@ -505,11 +623,13 @@ if (process.env.MUNINN_URL) {
 
     // Register as queryable tool for agents
     const muninnTool = MemoryToolAdapter.fromMuninnMemory(muninn);
-    tools.register(muninnTool, "Neural memory — MuninnDB with decay, strengthening, associations");
+    tools.register(muninnTool, 'Neural memory — MuninnDB with decay, strengthening, associations');
 
     console.log(`MuninnDB: connected (${process.env.MUNINN_URL})`);
   } catch (err) {
-    console.warn(`MuninnDB: unavailable (${(err as Error).message}). Running without neural memory.`);
+    console.warn(
+      `MuninnDB: unavailable (${(err as Error).message}). Running without neural memory.`,
+    );
   }
 }
 
@@ -534,17 +654,24 @@ if (redisUrl && pgMemory) {
 
     // Wire signal persistence through the job queue instead of direct DB writes
     // (The direct pgMemory.signalWriter() above is kept as a fast-path fallback)
-    console.log(`Jobs: BullMQ connected (${redisUrl.replace(/\/\/.*@/, "//***@")})`);
+    console.log(`Jobs: BullMQ connected (${redisUrl.replace(/\/\/.*@/, '//***@')})`);
   } catch (err) {
-    console.warn(`Jobs: BullMQ unavailable (${(err as Error).message}). Persistence via direct DB writes.`);
+    console.warn(
+      `Jobs: BullMQ unavailable (${(err as Error).message}). Persistence via direct DB writes.`,
+    );
   }
 } else if (redisUrl && !pgMemory) {
-  console.log("Jobs: Redis available but no database — skipping worker (no persistence target)");
+  console.log('Jobs: Redis available but no database — skipping worker (no persistence target)');
 } else {
-  console.log("Jobs: No REDIS_URL — persistence via direct DB writes");
+  console.log('Jobs: No REDIS_URL — persistence via direct DB writes');
 }
 
-console.log(`Tools: ${tools.list().map((t) => t.id).join(", ")}`);
+console.log(
+  `Tools: ${tools
+    .list()
+    .map((t) => t.id)
+    .join(', ')}`,
+);
 
 // ---------------------------------------------------------------------------
 // Event stream + viewer
@@ -566,10 +693,10 @@ if (config.projects) {
   if (firstProject) {
     firstProject.addThread(thread);
   }
-  console.log(`Projects: ${[...projectRegistry.all.keys()].join(", ") || "(none)"}`);
+  console.log(`Projects: ${[...projectRegistry.all.keys()].join(', ') || '(none)'}`);
 }
 
-const port = parseInt(process.env.VIEWER_PORT || "4400");
+const port = parseInt(process.env.VIEWER_PORT || '4400');
 
 const viewer = await startViewer({
   harness,
@@ -592,29 +719,41 @@ const viewer = await startViewer({
 
 console.log(`Viewer: http://localhost:${port}`);
 console.log(`Provider: ${provider.id} (${config.defaults.model})`);
-console.log(`Agents: ${[...thread.agents.keys()].join(", ")}`);
-console.log(`Layers: ${stack.layers.map((l) => l.id).join(", ")}`);
-console.log(`Persistence: local SQLite${pgMemory ? " + postgres mirror" : ""}${process.env.MUNINN_URL ? " + muninn" : ""}`);
+console.log(`Agents: ${[...thread.agents.keys()].join(', ')}`);
+console.log(`Layers: ${stack.layers.map((l) => l.id).join(', ')}`);
+console.log(
+  `Persistence: local SQLite${pgMemory ? ' + postgres mirror' : ''}${process.env.MUNINN_URL ? ' + muninn' : ''}`,
+);
 console.log();
 
 // ---------------------------------------------------------------------------
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-await runStartupSelfTest({ enabled: selfTestRequested, provider: decisions?.provider ?? provider, model: decisions ? decisionModel : config.defaults.model, cwd: process.cwd(),
-  log: console.log, warn: console.warn, error: console.error });
+await runStartupSelfTest({
+  enabled: selfTestRequested,
+  provider: decisions?.provider ?? provider,
+  model: decisions ? decisionModel : config.defaults.model,
+  cwd: process.cwd(),
+  log: console.log,
+  warn: console.warn,
+  error: console.error,
+});
 
 console.log();
-console.log("Ready. Send messages through the harness API or viewer.");
+console.log('Ready. Send messages through the harness API or viewer.');
 
 // ---------------------------------------------------------------------------
 // Keep alive
 // ---------------------------------------------------------------------------
 
-process.on("SIGINT", async () => {
-  console.log("\nShutting down...");
+process.on('SIGINT', async () => {
+  console.log('\nShutting down...');
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
-  await Promise.race([Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown()]), Bun.sleep(5_000)]);
+  await Promise.race([
+    Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown()]),
+    Bun.sleep(5_000),
+  ]);
   runtimeManager.disposeAll();
   viewer.server.stop();
   viewer.localStore?.close();

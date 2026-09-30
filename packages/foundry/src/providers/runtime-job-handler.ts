@@ -1,12 +1,22 @@
-import type { z } from "zod";
-import type { RuntimeJob } from "./runtime-job-contracts";
-import type { KingdomRuntimeSettings } from "./kingdom-runtime-connection";
-import { connectionCheckJobHandler } from "./connection-check-job";
+import type { z } from 'zod';
+import { connectionCheckJobHandler } from './connection-check-job';
+import type { KingdomRuntimeSettings } from './kingdom-runtime-connection';
+import type { RuntimeJob } from './runtime-job-contracts';
 
 /** Enrolled runtime identity returned by `runtimeHeartbeat`. */
 /** Kingdom's owner reference: the model plus whichever ids identify it. */
-export type RuntimeOwner = { ownerModel: string; userId?: string | null; organizationId?: string | null; spaceId?: string | null };
-export type RuntimeIdentity = { installationId: string; userId: string | null; owner: RuntimeOwner; expiresAt: string };
+export type RuntimeOwner = {
+  ownerModel: string;
+  userId?: string | null;
+  organizationId?: string | null;
+  spaceId?: string | null;
+};
+export type RuntimeIdentity = {
+  installationId: string;
+  userId: string | null;
+  owner: RuntimeOwner;
+  expiresAt: string;
+};
 
 /** Kingdom access call a handler may make. Handler actions are the handler's own; the worker never enumerates them. */
 export type RuntimeJobRequest = (action: string, body: unknown) => Promise<unknown>;
@@ -39,18 +49,26 @@ export interface RuntimeJobHandler<Payload = unknown> {
 /** Job kinds a runtime may execute. `connectionCheck` is framework and is always present. */
 export class RuntimeJobRegistry {
   private handlers = new Map<string, RuntimeJobHandler>();
-  constructor() { this.register(connectionCheckJobHandler); }
+  constructor() {
+    this.register(connectionCheckJobHandler);
+  }
   register<Payload>(handler: RuntimeJobHandler<Payload>): this {
-    if (this.handlers.has(handler.kind)) throw Error(`Runtime job kind ${JSON.stringify(handler.kind)} is already registered`);
+    if (this.handlers.has(handler.kind))
+      throw Error(`Runtime job kind ${JSON.stringify(handler.kind)} is already registered`);
     this.handlers.set(handler.kind, handler as RuntimeJobHandler);
     return this;
   }
   /** Fails closed: an unregistered kind is refused, never skipped. */
   require(kind: string): RuntimeJobHandler {
     const handler = this.handlers.get(kind);
-    if (!handler) throw Error(`No runtime job handler is registered for kind ${JSON.stringify(kind)}`);
+    if (!handler)
+      throw Error(`No runtime job handler is registered for kind ${JSON.stringify(kind)}`);
     return handler;
   }
-  get kinds(): string[] { return [...this.handlers.keys()]; }
-  all(): RuntimeJobHandler[] { return [...this.handlers.values()]; }
+  get kinds(): string[] {
+    return [...this.handlers.keys()];
+  }
+  all(): RuntimeJobHandler[] {
+    return [...this.handlers.values()];
+  }
 }

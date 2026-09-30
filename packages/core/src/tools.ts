@@ -18,9 +18,9 @@
 //   without bloating their context with tool descriptions upfront
 // ---------------------------------------------------------------------------
 
-import type { Capability } from "./capability";
-import type { OwnershipScope } from "./scope";
-import type { ToolDefinition } from "./types";
+import type { Capability } from './capability';
+import type { OwnershipScope } from './scope';
+import type { ToolDefinition } from './types';
 
 // ---------------------------------------------------------------------------
 // Tool result — every tool returns this wrapper
@@ -47,7 +47,11 @@ export interface ToolCallObservation {
   /** 1-based position of this call within its dispatch. */
   readonly sequence: number;
   /** Original lengths of any field that was cut to its bound. */
-  readonly truncated?: { readonly input?: number; readonly output?: number; readonly error?: number };
+  readonly truncated?: {
+    readonly input?: number;
+    readonly output?: number;
+    readonly error?: number;
+  };
 }
 
 export interface ToolResult<T = unknown> {
@@ -93,7 +97,7 @@ export interface NavigateOpts {
 
 export interface BrowserTool {
   readonly id: string;
-  readonly kind: "browser";
+  readonly kind: 'browser';
 
   /** Required capabilities for each operation. */
   readonly capabilities: {
@@ -137,13 +141,13 @@ export interface BrowserTool {
 
 export interface ApiRequest {
   url: string;
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
   headers?: Record<string, string>;
   body?: unknown;
   /** Timeout in ms. Default: 30000. */
   timeout?: number;
   /** Parse response body as this type. Default: "json". */
-  responseType?: "json" | "text" | "buffer";
+  responseType?: 'json' | 'text' | 'buffer';
 }
 
 export interface ApiResponse<T = unknown> {
@@ -172,7 +176,7 @@ export interface ApiToolConfig {
 
 export interface ApiTool {
   readonly id: string;
-  readonly kind: "api";
+  readonly kind: 'api';
 
   /** Required capability. */
   readonly capability: Capability;
@@ -184,16 +188,30 @@ export interface ApiTool {
   request<T = unknown>(req: ApiRequest): Promise<ToolResult<ApiResponse<T>>>;
 
   /** Convenience: GET request. */
-  get<T = unknown>(url: string, headers?: Record<string, string>): Promise<ToolResult<ApiResponse<T>>>;
+  get<T = unknown>(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<ToolResult<ApiResponse<T>>>;
 
   /** Convenience: POST request with JSON body. */
-  post<T = unknown>(url: string, body: unknown, headers?: Record<string, string>): Promise<ToolResult<ApiResponse<T>>>;
+  post<T = unknown>(
+    url: string,
+    body: unknown,
+    headers?: Record<string, string>,
+  ): Promise<ToolResult<ApiResponse<T>>>;
 
   /** Convenience: PUT request with JSON body. */
-  put<T = unknown>(url: string, body: unknown, headers?: Record<string, string>): Promise<ToolResult<ApiResponse<T>>>;
+  put<T = unknown>(
+    url: string,
+    body: unknown,
+    headers?: Record<string, string>,
+  ): Promise<ToolResult<ApiResponse<T>>>;
 
   /** Convenience: DELETE request. */
-  delete<T = unknown>(url: string, headers?: Record<string, string>): Promise<ToolResult<ApiResponse<T>>>;
+  delete<T = unknown>(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<ToolResult<ApiResponse<T>>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +255,7 @@ export interface ShellOpts {
 
 export interface ShellTool {
   readonly id: string;
-  readonly kind: "shell";
+  readonly kind: 'shell';
 
   /** Required capability. */
   readonly capability: Capability;
@@ -277,7 +295,7 @@ export interface ScriptOpts {
 
 export interface ScriptTool {
   readonly id: string;
-  readonly kind: "script";
+  readonly kind: 'script';
 
   /** Required capability. */
   readonly capability: Capability;
@@ -307,7 +325,7 @@ export interface ScriptTool {
  * Entries without a visibility are unowned legacy records: hidden from every
  * scoped read unless a source explicitly opts in.
  */
-export type MemoryVisibility = "thread" | "project" | "global";
+export type MemoryVisibility = 'thread' | 'project' | 'global';
 
 export interface MemoryEntry {
   id: string;
@@ -333,7 +351,7 @@ export interface MemorySearchOpts {
 
 export interface MemoryTool {
   readonly id: string;
-  readonly kind: "memory";
+  readonly kind: 'memory';
   /** The underlying system name (e.g., "file", "sqlite", "redis", "supermemory"). */
   readonly system: string;
 
@@ -375,7 +393,7 @@ export interface MemoryTool {
 export type Tool = BrowserTool | ApiTool | ShellTool | ScriptTool | MemoryTool;
 
 /** Tool kind discriminator. */
-export type ToolKind = Tool["kind"];
+export type ToolKind = Tool['kind'];
 
 /** Metadata about a registered tool (what agents see before using it). */
 export interface ToolInfo {
@@ -406,19 +424,15 @@ export class ToolRegistry {
     this._tools.set(tool.id, tool);
 
     const capabilities: Capability[] = [];
-    if (tool.kind === "browser") {
+    if (tool.kind === 'browser') {
       capabilities.push(
         tool.capabilities.navigate,
         tool.capabilities.interact,
         tool.capabilities.execute,
         tool.capabilities.screenshot,
       );
-    } else if (tool.kind === "memory") {
-      capabilities.push(
-        tool.capabilities.read,
-        tool.capabilities.write,
-        tool.capabilities.delete,
-      );
+    } else if (tool.kind === 'memory') {
+      capabilities.push(tool.capabilities.read, tool.capabilities.write, tool.capabilities.delete);
     } else {
       capabilities.push(tool.capability);
     }
@@ -472,10 +486,8 @@ export class ToolRegistry {
   /** Get a compact summary string for injecting into agent context. */
   summary(): string {
     const tools = this.list();
-    if (tools.length === 0) return "No tools available.";
-    return tools
-      .map((t) => `- ${t.id} (${t.kind}): ${t.description}`)
-      .join("\n");
+    if (tools.length === 0) return 'No tools available.';
+    return tools.map((t) => `- ${t.id} (${t.kind}): ${t.description}`).join('\n');
   }
 
   /**
@@ -489,128 +501,132 @@ export class ToolRegistry {
       const desc = this._info.get(id)?.description ?? id;
 
       switch (tool.kind) {
-        case "shell":
+        case 'shell':
           defs.push({
             name: `${id}_exec`,
             description: `[${id}] ${desc} — execute a shell command`,
             inputSchema: {
-              type: "object",
+              type: 'object',
               properties: {
-                command: { type: "string", description: "Shell command to execute" },
+                command: { type: 'string', description: 'Shell command to execute' },
               },
-              required: ["command"],
+              required: ['command'],
             },
           });
           break;
 
-        case "memory":
+        case 'memory':
           defs.push(
             {
               name: `${id}_search`,
               description: `[${id}] Search ${desc}`,
               inputSchema: {
-                type: "object",
+                type: 'object',
                 properties: {
-                  query: { type: "string", description: "Search query" },
-                  kind: { type: "string", description: "Filter by entry kind (optional)" },
-                  limit: { type: "number", description: "Max results (default: 20)" },
+                  query: { type: 'string', description: 'Search query' },
+                  kind: { type: 'string', description: 'Filter by entry kind (optional)' },
+                  limit: { type: 'number', description: 'Max results (default: 20)' },
                 },
-                required: ["query"],
+                required: ['query'],
               },
             },
             {
               name: `${id}_get`,
               description: `[${id}] Get entry by ID from ${desc}`,
               inputSchema: {
-                type: "object",
-                properties: { id: { type: "string" } },
-                required: ["id"],
+                type: 'object',
+                properties: { id: { type: 'string' } },
+                required: ['id'],
               },
             },
             {
               name: `${id}_write`,
               description: `[${id}] Write an entry to ${desc}`,
               inputSchema: {
-                type: "object",
+                type: 'object',
                 properties: {
-                  id: { type: "string" },
-                  kind: { type: "string" },
-                  content: { type: "string" },
+                  id: { type: 'string' },
+                  kind: { type: 'string' },
+                  content: { type: 'string' },
                   visibility: {
-                    type: "string",
-                    enum: ["thread", "project", "global"],
-                    description: "Who may read it. Default: thread (private). project/global publish it deliberately.",
+                    type: 'string',
+                    enum: ['thread', 'project', 'global'],
+                    description:
+                      'Who may read it. Default: thread (private). project/global publish it deliberately.',
                   },
                 },
-                required: ["id", "kind", "content"],
+                required: ['id', 'kind', 'content'],
               },
             },
           );
           break;
 
-        case "script":
+        case 'script':
           defs.push({
             name: `${id}_evaluate`,
             description: `[${id}] ${desc} — execute code and return result`,
             inputSchema: {
-              type: "object",
+              type: 'object',
               properties: {
-                code: { type: "string", description: "TypeScript/JS code to execute. Use 'return' to return a value." },
+                code: {
+                  type: 'string',
+                  description: "TypeScript/JS code to execute. Use 'return' to return a value.",
+                },
               },
-              required: ["code"],
+              required: ['code'],
             },
           });
           break;
 
-        case "api":
+        case 'api':
           defs.push({
             name: `${id}_request`,
             description: `[${id}] ${desc} — make an HTTP request`,
             inputSchema: {
-              type: "object",
+              type: 'object',
               properties: {
-                url: { type: "string" },
-                method: { type: "string", enum: ["GET", "POST", "PUT", "DELETE"] },
-                body: { description: "Request body (JSON)" },
-                headers: { type: "object", description: "Additional headers" },
+                url: { type: 'string' },
+                method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'] },
+                body: { description: 'Request body (JSON)' },
+                headers: { type: 'object', description: 'Additional headers' },
               },
-              required: ["url"],
+              required: ['url'],
             },
           });
           break;
 
-        case "browser":
+        case 'browser':
           defs.push(
             {
               name: `${id}_navigate`,
               description: `[${id}] Navigate to a URL`,
               inputSchema: {
-                type: "object",
-                properties: { url: { type: "string" } },
-                required: ["url"],
+                type: 'object',
+                properties: { url: { type: 'string' } },
+                required: ['url'],
               },
             },
             {
               name: `${id}_snapshot`,
               description: `[${id}] Get page accessibility snapshot`,
-              inputSchema: { type: "object", properties: {} },
+              inputSchema: { type: 'object', properties: {} },
             },
             {
               name: `${id}_click`,
               description: `[${id}] Click an element`,
               inputSchema: {
-                type: "object",
-                properties: { ref: { type: "string", description: "CSS selector or ref" } },
-                required: ["ref"],
+                type: 'object',
+                properties: { ref: { type: 'string', description: 'CSS selector or ref' } },
+                required: ['ref'],
               },
             },
             {
               name: `${id}_evaluate`,
               description: `[${id}] Execute JavaScript in page`,
               inputSchema: {
-                type: "object",
-                properties: { script: { type: "string" } },
-                required: ["script"],
+                type: 'object',
+                properties: { script: { type: 'string' } },
+                required: ['script'],
               },
             },
           );
@@ -631,16 +647,16 @@ export class ToolRegistry {
     opts?: { cwd?: string; scope?: OwnershipScope },
   ): Promise<ToolResult> {
     // Parse "toolId_method" format
-    const lastUnderscore = toolName.lastIndexOf("_");
+    const lastUnderscore = toolName.lastIndexOf('_');
     if (lastUnderscore === -1) {
-      return { ok: false, summary: `Unknown tool: ${toolName}`, error: "Invalid tool name format" };
+      return { ok: false, summary: `Unknown tool: ${toolName}`, error: 'Invalid tool name format' };
     }
 
     // Try progressively shorter prefixes (tool IDs can contain underscores)
     let tool: Tool | undefined;
-    let method = "";
+    let method = '';
     for (let i = toolName.length - 1; i >= 0; i--) {
-      if (toolName[i] === "_") {
+      if (toolName[i] === '_') {
         const candidateId = toolName.slice(0, i);
         const candidateMethod = toolName.slice(i + 1);
         if (this._tools.has(candidateId)) {
@@ -652,24 +668,37 @@ export class ToolRegistry {
     }
 
     if (!tool) {
-      return { ok: false, summary: `Unknown tool: ${toolName}`, error: `No registered tool matches "${toolName}"` };
+      return {
+        ok: false,
+        summary: `Unknown tool: ${toolName}`,
+        error: `No registered tool matches "${toolName}"`,
+      };
     }
 
     try {
       switch (tool.kind) {
-        case "shell":
-          if (method === "exec") return await tool.exec(input.command as string, { cwd: opts?.cwd });
+        case 'shell':
+          if (method === 'exec')
+            return await tool.exec(input.command as string, { cwd: opts?.cwd });
           break;
 
-        case "memory": {
+        case 'memory': {
           // A scoped dispatch may only reach a tool that can honor the scope.
           const memory = opts?.scope ? tool.scoped?.(opts.scope) : tool;
           if (!memory) {
-            return { ok: false, summary: `Memory tool "${tool.id}" cannot scope reads to a thread`, error: "Unscoped memory tool" };
+            return {
+              ok: false,
+              summary: `Memory tool "${tool.id}" cannot scope reads to a thread`,
+              error: 'Unscoped memory tool',
+            };
           }
-          if (method === "search") return await memory.search(input.query as string, { kind: input.kind as string, limit: input.limit as number });
-          if (method === "get") return await memory.get(input.id as string);
-          if (method === "write") {
+          if (method === 'search')
+            return await memory.search(input.query as string, {
+              kind: input.kind as string,
+              limit: input.limit as number,
+            });
+          if (method === 'get') return await memory.get(input.id as string);
+          if (method === 'write') {
             const visibility = input.visibility as MemoryVisibility | undefined;
             return await memory.write({
               id: input.id as string,
@@ -682,28 +711,42 @@ export class ToolRegistry {
           break;
         }
 
-        case "script":
-          if (method === "evaluate") return await tool.evaluate(input.code as string, { cwd: opts?.cwd });
+        case 'script':
+          if (method === 'evaluate')
+            return await tool.evaluate(input.code as string, { cwd: opts?.cwd });
           break;
 
-        case "api":
-          if (method === "request") {
+        case 'api':
+          if (method === 'request') {
             const api = tool.scoped ? tool.scoped(opts?.scope ?? {}) : tool;
-            return await api.request({ url: input.url as string, method: (input.method as any) ?? "GET", body: input.body, headers: input.headers as Record<string, string> });
+            return await api.request({
+              url: input.url as string,
+              method: (input.method as any) ?? 'GET',
+              body: input.body,
+              headers: input.headers as Record<string, string>,
+            });
           }
           break;
 
-        case "browser":
-          if (method === "navigate") return await tool.navigate(input.url as string);
-          if (method === "snapshot") return await tool.snapshot();
-          if (method === "click") return await tool.click(input.ref as string);
-          if (method === "evaluate") return await tool.evaluate(input.script as string);
+        case 'browser':
+          if (method === 'navigate') return await tool.navigate(input.url as string);
+          if (method === 'snapshot') return await tool.snapshot();
+          if (method === 'click') return await tool.click(input.ref as string);
+          if (method === 'evaluate') return await tool.evaluate(input.script as string);
           break;
       }
 
-      return { ok: false, summary: `Unknown method "${method}" for tool kind "${tool.kind}"`, error: "Method not found" };
+      return {
+        ok: false,
+        summary: `Unknown method "${method}" for tool kind "${tool.kind}"`,
+        error: 'Method not found',
+      };
     } catch (err) {
-      return { ok: false, summary: `Tool error: ${(err as Error).message}`, error: (err as Error).message };
+      return {
+        ok: false,
+        summary: `Tool error: ${(err as Error).message}`,
+        error: (err as Error).message,
+      };
     }
   }
 

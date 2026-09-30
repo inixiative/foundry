@@ -5,17 +5,23 @@
  * Collapsed: thin strip with project icons. Expanded: full list.
  */
 
-import { LocalDevicePanel } from "./devices.js";
-import { html, useState, useEffect } from "./lib.js";
+import { LocalDevicePanel } from './devices.js';
+import { html, useEffect, useState } from './lib.js';
 import {
-  projects, projectTags, activeProjectId, projectSidebarOpen,
-  createProject, deleteProject, showToast, authFetch,
-} from "./store.js";
+  activeProjectId,
+  authFetch,
+  createProject,
+  deleteProject,
+  projectSidebarOpen,
+  projects,
+  projectTags,
+  showToast,
+} from './store.js';
 
 const STATUS_COLORS = {
-  active: "#4ade80",
-  idle: "#6c9eff",
-  archived: "#555",
+  active: '#4ade80',
+  idle: '#6c9eff',
+  archived: '#555',
 };
 
 // ---------------------------------------------------------------------------
@@ -23,18 +29,18 @@ const STATUS_COLORS = {
 // ---------------------------------------------------------------------------
 
 function AddProjectForm({ onDone }) {
-  const [path, setPath] = useState("");
-  const [label, setLabel] = useState("");
+  const [path, setPath] = useState('');
+  const [label, setLabel] = useState('');
   const [browsing, setBrowsing] = useState(false);
   const [browseDir, setBrowseDir] = useState(null);
   const [browseDirs, setBrowseDirs] = useState([]);
   const [browseParent, setBrowseParent] = useState(null);
   const [browseIsRepo, setBrowseIsRepo] = useState(false);
-  const [browseName, setBrowseName] = useState("");
+  const [browseName, setBrowseName] = useState('');
 
   const browse = async (dir) => {
     try {
-      const url = dir ? `/api/browse?path=${encodeURIComponent(dir)}` : "/api/browse";
+      const url = dir ? `/api/browse?path=${encodeURIComponent(dir)}` : '/api/browse';
       const res = await authFetch(url);
       if (!res.ok) return;
       const data = await res.json();
@@ -42,9 +48,9 @@ function AddProjectForm({ onDone }) {
       setBrowseDirs(data.dirs || []);
       setBrowseParent(data.parent);
       setBrowseIsRepo(data.isRepo || false);
-      setBrowseName(data.name || "");
+      setBrowseName(data.name || '');
     } catch {
-      showToast("Failed to browse directory", "error");
+      showToast('Failed to browse directory', 'error');
     }
   };
 
@@ -62,7 +68,7 @@ function AddProjectForm({ onDone }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!path.trim()) {
-      showToast("Path is required", "error");
+      showToast('Path is required', 'error');
       return;
     }
     const ok = await createProject({
@@ -81,23 +87,35 @@ function AddProjectForm({ onDone }) {
           title="Browse folders">...</button>
       </div>
 
-      ${browsing ? html`
+      ${
+        browsing
+          ? html`
         <div class="proj-browser">
           <div class="proj-browser-path" title=${browseDir}>${browseDir}</div>
           <div class="proj-browser-list">
-            ${browseParent ? html`
+            ${
+              browseParent
+                ? html`
               <div class="proj-browser-item proj-browser-parent" onClick=${() => browse(browseParent)}>
-                ${".."}
+                ${'..'}
               </div>
-            ` : null}
-            ${browseDirs.map((d) => html`
-              <div key=${d} class="proj-browser-item" onClick=${() => browse(browseDir + "/" + d)}>
-                ${d}${"/"}
+            `
+                : null
+            }
+            ${browseDirs.map(
+              (d) => html`
+              <div key=${d} class="proj-browser-item" onClick=${() => browse(browseDir + '/' + d)}>
+                ${d}${'/'}
               </div>
-            `)}
-            ${browseDirs.length === 0 ? html`
+            `,
+            )}
+            ${
+              browseDirs.length === 0
+                ? html`
               <div class="proj-browser-empty">No subdirectories</div>
-            ` : null}
+            `
+                : null
+            }
           </div>
           <div class="proj-browser-actions">
             ${browseIsRepo ? html`<span class="proj-browser-repo">repo detected</span>` : null}
@@ -105,7 +123,9 @@ function AddProjectForm({ onDone }) {
             <button type="button" class="proj-btn" onClick=${() => setBrowsing(false)}>Cancel</button>
           </div>
         </div>
-      ` : null}
+      `
+          : null
+      }
 
       <input class="proj-input" placeholder="label (optional)" value=${label}
         onInput=${(e) => setLabel(e.target.value)} />
@@ -122,11 +142,11 @@ function AddProjectForm({ onDone }) {
 // ---------------------------------------------------------------------------
 
 function ProjectItem({ project, isActive, onSelect }) {
-  const statusColor = STATUS_COLORS[project.status] || "#555";
+  const statusColor = STATUS_COLORS[project.status] || '#555';
 
   return html`
     <div
-      class="proj-item ${isActive ? "proj-active" : ""}"
+      class="proj-item ${isActive ? 'proj-active' : ''}"
       onClick=${() => onSelect(project.id)}
       title=${project.path}
     >
@@ -135,9 +155,7 @@ function ProjectItem({ project, isActive, onSelect }) {
         <div class="proj-item-meta">
           <span class="proj-status-dot" style="background: ${statusColor}"></span>
           <span>${project.threadCount || 0} threads</span>
-          ${(project.tags || []).map(
-            (t) => html`<span class="proj-tag" key=${t}>${t}</span>`
-          )}
+          ${(project.tags || []).map((t) => html`<span class="proj-tag" key=${t}>${t}</span>`)}
         </div>
       </div>
     </div>
@@ -156,14 +174,16 @@ function CollapsedStrip({ onExpand }) {
     <div class="proj-collapsed" onClick=${onExpand} title="Expand projects">
       <div class="proj-collapsed-icon">P</div>
       <div class="proj-collapsed-dots">
-        ${items.map((p) => html`
+        ${items.map(
+          (p) => html`
           <span
             key=${p.id}
-            class="proj-collapsed-dot ${p.id === active ? "active" : ""}"
-            style="background: ${STATUS_COLORS[p.status] || "#555"}"
+            class="proj-collapsed-dot ${p.id === active ? 'active' : ''}"
+            style="background: ${STATUS_COLORS[p.status] || '#555'}"
             title=${p.label}
           ></span>
-        `)}
+        `,
+        )}
       </div>
     </div>
   `;
@@ -182,12 +202,12 @@ export function ProjectSidebar() {
   const [filterTag, setFilterTag] = useState(null);
 
   if (!isOpen) {
-    return html`<${CollapsedStrip} onExpand=${() => { projectSidebarOpen.value = true; }} />`;
+    return html`<${CollapsedStrip} onExpand=${() => {
+      projectSidebarOpen.value = true;
+    }} />`;
   }
 
-  const filtered = filterTag
-    ? items.filter((p) => (p.tags || []).includes(filterTag))
-    : items;
+  const filtered = filterTag ? items.filter((p) => (p.tags || []).includes(filterTag)) : items;
 
   const handleSelect = (id) => {
     activeProjectId.value = active === id ? null : id;
@@ -195,36 +215,46 @@ export function ProjectSidebar() {
 
   return html`
     <div class="proj-sidebar">
-      <${LocalDevicePanel} projectIds=${JSON.stringify(items.map(project => project.id))} />
+      <${LocalDevicePanel} projectIds=${JSON.stringify(items.map((project) => project.id))} />
       <div class="proj-sidebar-header">
         <span class="proj-sidebar-title">PROJECTS</span>
         <span class="proj-sidebar-count">${items.length}</span>
         <button class="sidebar-add-btn" onClick=${() => setAdding(true)} title="Add project">+</button>
-        <button class="proj-collapse-btn" onClick=${() => { projectSidebarOpen.value = false; }}
+        <button class="proj-collapse-btn" onClick=${() => {
+          projectSidebarOpen.value = false;
+        }}
           title="Collapse">‹</button>
       </div>
 
       <!-- Tag filter chips -->
-      ${tags.length > 0 ? html`
+      ${
+        tags.length > 0
+          ? html`
         <div class="proj-tags-bar">
           <span
-            class="proj-filter-chip ${!filterTag ? "active" : ""}"
+            class="proj-filter-chip ${!filterTag ? 'active' : ''}"
             onClick=${() => setFilterTag(null)}
           >all</span>
-          ${tags.map((t) => html`
+          ${tags.map(
+            (t) => html`
             <span
               key=${t}
-              class="proj-filter-chip ${filterTag === t ? "active" : ""}"
+              class="proj-filter-chip ${filterTag === t ? 'active' : ''}"
               onClick=${() => setFilterTag(filterTag === t ? null : t)}
             >${t}</span>
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
 
       <!-- Global scope item -->
       <div
-        class="proj-item proj-global ${!active ? "proj-active" : ""}"
-        onClick=${() => { activeProjectId.value = null; }}
+        class="proj-item proj-global ${!active ? 'proj-active' : ''}"
+        onClick=${() => {
+          activeProjectId.value = null;
+        }}
       >
         <span class="proj-runtime-icon">*</span>
         <div class="proj-item-body">
@@ -237,20 +267,30 @@ export function ProjectSidebar() {
 
       <!-- Project list -->
       <div class="proj-list">
-        ${filtered.map((p) => html`
+        ${filtered.map(
+          (p) => html`
           <${ProjectItem}
             key=${p.id}
             project=${p}
             isActive=${active === p.id}
             onSelect=${handleSelect}
           />
-        `)}
-        ${filtered.length === 0 && items.length > 0 ? html`
+        `,
+        )}
+        ${
+          filtered.length === 0 && items.length > 0
+            ? html`
           <div class="proj-empty">No projects match "${filterTag}"</div>
-        ` : null}
-        ${items.length === 0 ? html`
+        `
+            : null
+        }
+        ${
+          items.length === 0
+            ? html`
           <div class="proj-empty">No projects yet</div>
-        ` : null}
+        `
+            : null
+        }
       </div>
 
       <!-- Add form -->

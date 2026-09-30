@@ -1,5 +1,5 @@
-import { idAtTime } from "@inixiative/foundry-core";
-import { makeSingletonJob } from "../makeSingletonJob";
+import { idAtTime } from '@inixiative/foundry-core';
+import { makeSingletonJob } from '../makeSingletonJob';
 
 /**
  * Clean up old traces and spans from Postgres.
@@ -19,7 +19,7 @@ export const cleanStaleTraces = makeSingletonJob(async (ctx) => {
   });
 
   const traceResult = await db.prisma.trace.deleteMany({
-    where: { id: { lt: idAtTime("trace", new Date(cutoffMs)) } },
+    where: { id: { lt: idAtTime('trace', new Date(cutoffMs)) } },
   });
 
   log(`Cleaned ${traceResult.count} traces and ${spanResult.count} spans older than 30 days`);

@@ -4,329 +4,327 @@
 // Re-exports everything from core + foundry-specific additions.
 // ---------------------------------------------------------------------------
 
+// HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
+// (the single source of truth for agent-driving sessions across the ecosystem).
+export {
+  ClaudeCodeSession,
+  type ClaudeCodeSessionConfig,
+  CodexSession,
+  type CodexSessionConfig,
+  type HarnessSession,
+  type SessionArtifact,
+  type SessionEvent,
+  type SessionEventHandler,
+  type SessionEventKind,
+  type SessionResult,
+  type SessionTokens,
+} from '@inixiative/agent-session';
 // Everything from core (engine primitives)
-export * from "@inixiative/foundry-core";
-
+export * from '@inixiative/foundry-core';
+export {
+  type MuninnConfig,
+  MuninnMemory,
+} from './adapters/muninn-memory';
+export { PostgresMemory } from './adapters/postgres-memory';
+// Heavy-infra adapters
+export {
+  type RedisClient,
+  type RedisEntry,
+  RedisMemory,
+} from './adapters/redis-memory';
+export {
+  SupermemoryAdapter,
+  type SupermemoryConfig,
+} from './adapters/supermemory';
 // Foundry agents (re-exports core + adds foundry-specific agents)
 export {
-  // Built-in hooks
-  planModeHook,
-  budgetGuardHook,
-  type HookTokenTracker,
-  // Sessions
-  SessionManager,
-  type ThreadBlueprint,
-  type LayerInheritance,
-  // Planner
-  Planner,
-  type Plan,
-  type PlanStep,
-  type PlannerConfig,
-  type PlanExecutionResult,
-  // Corpus Compiler
-  CorpusCompiler,
-  type FluidEntry,
-  type FormalDoc,
-  type DocState,
-  type CompiledCorpus,
-  type CorpusTier,
-  type CorpusCompilerConfig,
-  // Project
-  Project,
-  ProjectRegistry,
-  fromSettingsConfig,
-  type ProjectConfig,
-  type ProjectStatus,
-  type ProjectSummary,
-  // Thread Factory
-  ThreadFactory,
-  buildLayers,
-  buildAgents,
-  keywordClassify,
-  keywordRoute,
-  parseJSON,
-  resolveAgentOpts,
-  type SourceResolver,
-  type BuildLayersDeps,
-  type BuildAgentsDeps,
-  type ThreadFactoryDeps,
-  // Reactive Middleware
-  ReactiveMiddleware,
-  lowConfidenceRule,
-  classificationOverrideRule,
-  rewarmOnAgentRule,
-  emitOnPatternRule,
-  type ReactionRule,
-  type ReactionContext,
-  type ReactiveMiddlewareConfig,
-  // Herald
-  Herald,
-  DuplicationDetector,
-  ContradictionDetector,
-  ConvergenceDetector,
-  CrossPollinationDetector,
-  ResourceImbalanceDetector,
-  type VisibilityTier,
-  type LayerVisibility,
-  type ThreadSnapshot,
-  type HeraldPattern,
-  type HeraldRecommendation,
-  type PatternDetector,
-  type HeraldConfig,
-  // Librarian (signal reconciliation)
-  Librarian,
-  type ThreadState,
-  type LibrarianConfig,
-  // Domain Librarian (advise + guard pattern)
-  DomainLibrarian,
-  type DomainLibrarianConfig,
   type AdviseResult,
-  type GuardFinding,
-  type GuardResult,
-  type ToolObservation,
+  type BuildAgentsDeps,
+  type BuildLayersDeps,
+  budgetGuardHook,
+  buildAgents,
+  buildLayers,
   // Cartographer (context routing)
   Cartographer,
   type CartographerConfig,
-  type MapEntry,
-  type TopologyMap,
-  type RouteResult,
+  type CompiledCorpus,
+  ContradictionDetector,
+  ConvergenceDetector,
+  // Corpus Compiler
+  CorpusCompiler,
+  type CorpusCompilerConfig,
+  type CorpusTier,
+  CrossPollinationDetector,
+  classificationOverrideRule,
+  type DocState,
+  // Domain Librarian (advise + guard pattern)
+  DomainLibrarian,
+  type DomainLibrarianConfig,
+  DuplicationDetector,
+  emitOnPatternRule,
   // Flow Orchestrator (wires the five FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
-  type InjectionPlan,
+  type FluidEntry,
+  type FormalDoc,
+  fromSettingsConfig,
+  type GuardFinding,
   type GuardReport,
+  type GuardResult,
+  // Herald
+  Herald,
+  type HeraldConfig,
+  type HeraldPattern,
+  type HeraldRecommendation,
+  type HookTokenTracker,
+  type InjectionPlan,
   type InvalidationEvent,
-} from "./agents";
+  keywordClassify,
+  keywordRoute,
+  type LayerInheritance,
+  type LayerVisibility,
+  // Librarian (signal reconciliation)
+  Librarian,
+  type LibrarianConfig,
+  lowConfidenceRule,
+  type MapEntry,
+  type PatternDetector,
+  type Plan,
+  type PlanExecutionResult,
+  // Planner
+  Planner,
+  type PlannerConfig,
+  type PlanStep,
+  // Project
+  Project,
+  type ProjectConfig,
+  ProjectRegistry,
+  type ProjectStatus,
+  type ProjectSummary,
+  parseJSON,
+  // Built-in hooks
+  planModeHook,
+  type ReactionContext,
+  type ReactionRule,
+  // Reactive Middleware
+  ReactiveMiddleware,
+  type ReactiveMiddlewareConfig,
+  ResourceImbalanceDetector,
+  type RouteResult,
+  resolveAgentOpts,
+  rewarmOnAgentRule,
+  // Sessions
+  SessionManager,
+  type SourceResolver,
+  type ThreadBlueprint,
+  // Thread Factory
+  ThreadFactory,
+  type ThreadFactoryDeps,
+  type ThreadSnapshot,
+  type ThreadState,
+  type ToolObservation,
+  type TopologyMap,
+  type VisibilityTier,
+} from './agents';
+// Git — worktree detection for thread→branch assignment
+export {
+  diffStat,
+  findByBranch,
+  findByPath,
+  type GitWorktree,
+  getCurrentBranch,
+  listWorktrees,
+} from './git';
+// Jobs — BullMQ background job system
+export {
+  createQueue,
+  enqueueJob,
+  initializeWorker,
+  type JobHandler,
+  JobHandlerName,
+  type JobOptions,
+  type JobPayloads,
+  type JobsQueue,
+  makeJob,
+  makeSingletonJob,
+  setQueue,
+  shutdownWorker,
+  type WorkerContext,
+} from './jobs';
+// Logger
+export { initLogger, type Logger, type LogLevel, log } from './logger';
+// MCP — mid-session bridge (FLOW.md Loop 2)
+export {
+  createFoundryMcpServer,
+  createSseTransport,
+  type FoundryMcpConfig,
+  startStdioTransport,
+} from './mcp';
+// Prompts — project identity composition
+export {
+  compose as composePrompts,
+  type DecomposedSections,
+  decompose as decomposePrompts,
+  decomposeBack,
+  RUNTIME_OUTPUT_FILES,
+  readFileRef,
+  writeComposed as writeComposedPrompts,
+  writeFileRef,
+} from './prompts';
+export {
+  type AnthropicConfig,
+  AnthropicProvider,
+  VoyageEmbeddingProvider,
+} from './providers/anthropic';
+// LLM Providers
+export {
+  type ClaudeCodeConfig as ClaudeCodeProviderConfig,
+  ClaudeCodeProvider,
+} from './providers/claude-code';
+export type { ClaudeContextBudget } from './providers/claude-context-budget';
+export {
+  type GeminiConfig,
+  GeminiEmbeddingProvider,
+  GeminiProvider,
+} from './providers/gemini';
+export {
+  KingdomAuthentication,
+  type KingdomInferenceAssignment,
+  type KingdomInferenceSource,
+} from './providers/kingdom-authentication';
+export {
+  KingdomClient,
+  type KingdomRunEnvelope,
+  type KingdomSelection,
+} from './providers/kingdom-client';
+export {
+  NativeAuthentication,
+  type NativeAuthenticationLaunch,
+  type NativeAuthenticationSource,
+} from './providers/native-authentication';
+export {
+  createCursorProvider,
+  createOllamaProvider,
+  type OpenAIConfig,
+  OpenAIEmbeddingProvider,
+  OpenAIProvider,
+} from './providers/openai';
 
-// Tools — execution environment adapters
+// Runtime Adapters (context injection)
 export {
-  PlaywrightBrowser,
-  type PlaywrightBrowserConfig,
-} from "./tools/playwright-browser";
+  ClaudeCodeRuntime,
+  CodexRuntime,
+  type ContextInjection,
+  CursorRuntime,
+  type RuntimeAdapter,
+  type RuntimeEvent,
+  type RuntimeEventHandler,
+  type RuntimeEventKind,
+} from './providers/runtime';
+// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {
-  HttpApi,
-  type HttpApiConfig,
-} from "./tools/http-api";
+  ClaudeCodeSessionAdapter,
+  type ClaudeCodeSessionAdapterConfig,
+  CodexSessionAdapter,
+  type CodexSessionAdapterConfig,
+  type CreateSessionOpts,
+  type ExternalSessionStore,
+  FileExternalSessionStore,
+  InMemoryExternalSessionStore,
+  type SessionAdapter,
+} from './providers/session-adapter';
+export {
+  formatMessagesForNativeSession,
+  SessionBackedProvider,
+  type SessionBackedProviderConfig,
+} from './providers/session-backed';
 export {
   BashShell,
   type BashShellConfig,
-} from "./tools/bash-shell";
+} from './tools/bash-shell';
 export {
   BunScript,
   type BunScriptConfig,
-} from "./tools/bun-script";
+} from './tools/bun-script';
+export {
+  HttpApi,
+  type HttpApiConfig,
+} from './tools/http-api';
 export {
   JustBashShell,
   type JustBashShellConfig,
-} from "./tools/just-bash-shell";
+} from './tools/just-bash-shell';
 export {
-  MemoryToolAdapter,
   type MemoryBackend,
-  type RichMemoryBackend,
+  MemoryToolAdapter,
   type MemoryToolAdapterConfig,
-} from "./tools/memory-adapter";
+  type RichMemoryBackend,
+} from './tools/memory-adapter';
 export {
   builtinFilters,
   compose as composeFilters,
   rtk as rtkFilter,
-} from "./tools/output-filters";
-
-// Heavy-infra adapters
+} from './tools/output-filters';
+// Tools — execution environment adapters
 export {
-  RedisMemory,
-  type RedisClient,
-  type RedisEntry,
-} from "./adapters/redis-memory";
-export { PostgresMemory } from "./adapters/postgres-memory";
+  PlaywrightBrowser,
+  type PlaywrightBrowserConfig,
+} from './tools/playwright-browser';
 export {
-  SupermemoryAdapter,
-  type SupermemoryConfig,
-} from "./adapters/supermemory";
+  ActionHandler,
+  type ActionKind,
+  type ActionResult,
+  type OperatorAction,
+} from './viewer/actions';
 export {
-  MuninnMemory,
-  type MuninnConfig,
-} from "./adapters/muninn-memory";
-
+  AIAssist,
+  type AISuggestion,
+  type AssistRequest,
+} from './viewer/ai-assist';
 export {
-  SessionBackedProvider,
-  formatMessagesForNativeSession,
-  type SessionBackedProviderConfig,
-} from "./providers/session-backed";
-
-// LLM Providers
+  type AnalyticsSnapshot,
+  AnalyticsStore,
+  type RollupPeriod,
+  type TimeSeriesPoint,
+} from './viewer/analytics';
 export {
-  ClaudeCodeProvider,
-  type ClaudeCodeConfig as ClaudeCodeProviderConfig,
-} from "./providers/claude-code";
-// HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
-// (the single source of truth for agent-driving sessions across the ecosystem).
-export {
-  type HarnessSession,
-  type SessionEvent,
-  type SessionEventKind,
-  type SessionEventHandler,
-  type SessionResult,
-  type SessionTokens,
-  type SessionArtifact,
-  ClaudeCodeSession,
-  CodexSession,
-  type ClaudeCodeSessionConfig,
-  type CodexSessionConfig,
-} from "@inixiative/agent-session";
-
-// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
-export {
-  type SessionAdapter,
-  type CreateSessionOpts,
-  type ExternalSessionStore,
-  InMemoryExternalSessionStore,
-  FileExternalSessionStore,
-  ClaudeCodeSessionAdapter,
-  CodexSessionAdapter,
-  type ClaudeCodeSessionAdapterConfig,
-  type CodexSessionAdapterConfig,
-} from "./providers/session-adapter";
-export {
-  AnthropicProvider,
-  VoyageEmbeddingProvider,
-  type AnthropicConfig,
-} from "./providers/anthropic";
-export {
-  OpenAIProvider,
-  OpenAIEmbeddingProvider,
-  createCursorProvider,
-  createOllamaProvider,
-  type OpenAIConfig,
-} from "./providers/openai";
-export {
-  GeminiProvider,
-  GeminiEmbeddingProvider,
-  type GeminiConfig,
-} from "./providers/gemini";
-
-// Runtime Adapters (context injection)
-export {
-  type RuntimeAdapter,
-  type RuntimeEvent,
-  type RuntimeEventKind,
-  type RuntimeEventHandler,
-  type ContextInjection,
-  ClaudeCodeRuntime,
-  CodexRuntime,
-  CursorRuntime,
-} from "./providers/runtime";
-
+  type AgentSettingsConfig,
+  type AgentSettingsOverride,
+  type BrowserConfig,
+  type BrowserConfigOverride,
+  ConfigStore,
+  createProject,
+  type DataSourceConfig,
+  defaultConfig,
+  defaultProjectAgents,
+  defaultProjectLayers,
+  defaultProjectSources,
+  type ExecutionEnv,
+  type FoundryConfig,
+  type InvocationConditionOverride,
+  type LayerSettingsConfig,
+  type LayerSettingsOverride,
+  type ListPatch,
+  PROJECT_LAYER,
+  type ProjectPrompts,
+  type ProjectSettingsConfig,
+  projectSources,
+  starterConfig,
+} from './viewer/config';
+export type {
+  FieldProvenance,
+  ResolvedLayerDefinition,
+  ResolvedProjectView,
+} from './viewer/config-resolve';
 // Viewer
 export {
   createViewer,
   startViewer,
   type ViewerConfig,
-} from "./viewer/server";
-export {
-  ActionHandler,
-  type OperatorAction,
-  type ActionResult,
-  type ActionKind,
-} from "./viewer/actions";
-export {
-  ConfigStore,
-  defaultConfig,
-  starterConfig,
-  defaultProjectAgents,
-  defaultProjectLayers,
-  defaultProjectSources,
-  projectSources,
-  PROJECT_LAYER,
-  createProject,
-  type FoundryConfig,
-  type ListPatch,
-  type AgentSettingsConfig,
-  type AgentSettingsOverride,
-  type LayerSettingsConfig,
-  type LayerSettingsOverride,
-  type DataSourceConfig,
-  type ProjectSettingsConfig,
-  type ProjectPrompts,
-  type ExecutionEnv,
-  type BrowserConfig,
-  type BrowserConfigOverride,
-  type InvocationConditionOverride,
-} from "./viewer/config";
-export {
-  type FieldProvenance,
-  type ResolvedLayerDefinition,
-  type ResolvedProjectView,
-} from "./viewer/config-resolve";
-export {
-  AIAssist,
-  type AISuggestion,
-  type AssistRequest,
-} from "./viewer/ai-assist";
-export {
-  AnalyticsStore,
-  type AnalyticsSnapshot,
-  type TimeSeriesPoint,
-  type RollupPeriod,
-} from "./viewer/analytics";
+} from './viewer/server';
 export {
   FoundryTunnel,
-  tunnelAuth,
   type TunnelConfig,
   type TunnelInfo,
-} from "./viewer/tunnel";
-
-// Jobs — BullMQ background job system
-export {
-  createQueue,
-  enqueueJob,
-  setQueue,
-  initializeWorker,
-  shutdownWorker,
-  JobHandlerName,
-  makeJob,
-  makeSingletonJob,
-  type JobsQueue,
-  type WorkerContext,
-  type JobHandler,
-  type JobOptions,
-  type JobPayloads,
-} from "./jobs";
-
-// Logger
-export { log, initLogger, type LogLevel, type Logger } from "./logger";
-
-// Git — worktree detection for thread→branch assignment
-export {
-  listWorktrees,
-  findByBranch,
-  findByPath,
-  getCurrentBranch,
-  diffStat,
-  type GitWorktree,
-} from "./git";
-
-// Prompts — project identity composition
-export {
-  compose as composePrompts,
-  decompose as decomposePrompts,
-  writeComposed as writeComposedPrompts,
-  decomposeBack,
-  readFileRef,
-  writeFileRef,
-  RUNTIME_OUTPUT_FILES,
-  type DecomposedSections,
-} from "./prompts";
-
-// MCP — mid-session bridge (FLOW.md Loop 2)
-export {
-  createFoundryMcpServer,
-  startStdioTransport,
-  createSseTransport,
-  type FoundryMcpConfig,
-} from "./mcp";
-
-export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthenticationLaunch } from "./providers/native-authentication";
-
-export { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "./providers/kingdom-authentication";
-export { KingdomClient, type KingdomSelection, type KingdomRunEnvelope } from "./providers/kingdom-client";
-export { type ClaudeContextBudget } from "./providers/claude-context-budget";
+  tunnelAuth,
+} from './viewer/tunnel';

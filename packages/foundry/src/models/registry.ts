@@ -7,34 +7,40 @@
  * saved provider configuration and the viewer payload — which need `ProviderConfig`
  * from the viewer, and the tier sweep that feeds Foundry's research runs.
  */
-import type { ProviderConfig } from "../viewer/config";
-import { MODEL_REGISTRY, MODEL_REGISTRY_UPDATED_AT, type ModelSweepOption, type ModelTier } from "@inixiative/foundry-core";
+
+import {
+  MODEL_REGISTRY,
+  MODEL_REGISTRY_UPDATED_AT,
+  type ModelSweepOption,
+  type ModelTier,
+} from '@inixiative/foundry-core';
+import type { ProviderConfig } from '../viewer/config';
 
 export {
+  type CostTier,
+  DECISION_MODEL,
+  DECISION_PROVIDER,
+  type DecisionModelDefaults,
+  type FoundryModelInfo,
+  type FoundryProviderInfo,
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
   MODEL_REGISTRY_UPDATED_AT,
-  DECISION_MODEL,
-  DECISION_PROVIDER,
+  type ModelCapability,
+  type ModelReasoning,
+  type ModelSweepOption,
+  type ModelTier,
   modelCapabilities,
   modelHasCapability,
   modelOptionsByCapability,
+  type ProviderCredential,
+  type ProviderType,
   providersWithCapability,
+  type ReasoningEffort,
+  type RuntimeKind,
   registryModel,
   resolveDecisionModel,
-  type ModelTier,
-  type CostTier,
-  type ProviderType,
-  type RuntimeKind,
-  type ModelCapability,
-  type ProviderCredential,
-  type ReasoningEffort,
-  type ModelReasoning,
-  type FoundryModelInfo,
-  type FoundryProviderInfo,
-  type ModelSweepOption,
-  type DecisionModelDefaults,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 export function providerConfigsFromRegistry(): Record<string, ProviderConfig> {
   return Object.fromEntries(
@@ -79,11 +85,11 @@ export function registryForViewer() {
     providers: Object.values(MODEL_REGISTRY).map((provider) => ({
       id: provider.id,
       type: provider.type,
-      label: provider.id === "claude-code" ? "Claude Code (recommended)" : provider.label,
+      label: provider.id === 'claude-code' ? 'Claude Code (recommended)' : provider.label,
       desc: provider.description,
-      envKey: provider.envKey ?? "",
+      envKey: provider.envKey ?? '',
       credential: provider.credential,
-      baseUrl: provider.apiRoot ?? "",
+      baseUrl: provider.apiRoot ?? '',
       models: provider.models.map((model) => ({
         id: model.id,
         label: model.label,

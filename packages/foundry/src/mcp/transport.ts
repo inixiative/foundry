@@ -22,14 +22,14 @@
 // application boundary, not an OS sandbox.
 // ---------------------------------------------------------------------------
 
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { chmodSync, closeSync, constants, mkdtempSync, openSync, rmSync, writeSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { FoundryMcp, ToolInvocationRecord } from "./server";
-import type { SharedRevocation } from "./authority";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { chmodSync, closeSync, constants, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import type { SharedRevocation } from './authority';
+import type { FoundryMcp, ToolInvocationRecord } from './server';
 
 export interface LiveBridgeOptions {
   /** Unique process-owned name for integration; legacy T2 default is foundry. */
@@ -50,11 +50,26 @@ export interface LiveBridgeOptions {
 export interface LaunchDescriptor {
   readonly command: string;
   readonly args: readonly string[];
-  readonly claude: { readonly mcpConfig: { mcpServers: Record<string, { command: string; args: string[] }> }; readonly mcpConfigJson: string };
+  readonly claude: {
+    readonly mcpConfig: { mcpServers: Record<string, { command: string; args: string[] }> };
+    readonly mcpConfigJson: string;
+  };
   readonly codex: { readonly configOverrides: readonly string[] };
 }
 
-export type RejectionReason = "closed" | "path" | "method" | "origin" | "host" | "unauthorized" | "revoked" | "too-large" | "malformed" | "session" | "capacity" | "connect";
+export type RejectionReason =
+  | 'closed'
+  | 'path'
+  | 'method'
+  | 'origin'
+  | 'host'
+  | 'unauthorized'
+  | 'revoked'
+  | 'too-large'
+  | 'malformed'
+  | 'session'
+  | 'capacity'
+  | 'connect';
 
 export interface LiveBridgeStats {
   readonly requests: number;
@@ -103,18 +118,28 @@ export interface LaunchFile {
 const DEFAULT_MAX_BODY = 1_048_576;
 const DEFAULT_MAX_SESSIONS = 16;
 const MAX_RETAINED_RECORDS = 2_000;
-const ALLOWED_METHODS = "POST, GET, DELETE";
+const ALLOWED_METHODS = 'POST, GET, DELETE';
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', ...headers },
+  });
 }
-function rpcError(status: number, code: number, message: string, headers: Record<string, string> = {}): Response {
-  return json(status, { jsonrpc: "2.0", error: { code, message }, id: null }, headers);
+function rpcError(
+  status: number,
+  code: number,
+  message: string,
+  headers: Record<string, string> = {},
+): Response {
+  return json(status, { jsonrpc: '2.0', error: { code, message }, id: null }, headers);
 }
 
 function isInitialize(body: unknown): boolean {
   const messages = Array.isArray(body) ? body : [body];
-  return messages.some(m => m && typeof m === "object" && (m as { method?: unknown }).method === "initialize");
+  return messages.some(
+    (m) => m && typeof m === 'object' && (m as { method?: unknown }).method === 'initialize',
+  );
 }
 
 function bearer(header: string | null): string | undefined {
@@ -126,8 +151,8 @@ function bearer(header: string | null): string | undefined {
 /** Constant-time comparison over digests so lengths never leak. */
 function sameCapability(expected: string, given: string | undefined): boolean {
   if (!given) return false;
-  const a = createHash("sha256").update(expected).digest();
-  const b = createHash("sha256").update(given).digest();
+  const a = createHash('sha256').update(expected).digest();
+  const b = createHash('sha256').update(given).digest();
   return timingSafeEqual(a, b);
 }
 
@@ -140,16 +165,32 @@ interface Owned {
 }
 
 export async function createLiveBridge(options: LiveBridgeOptions): Promise<LiveBridge> {
-  const serverName = options.serverName ?? "foundry";
-  if (!/^[a-zA-Z][a-zA-Z0-9_]{0,80}$/.test(serverName)) throw Error("Invalid bridge server name");
+  const serverName = options.serverName ?? 'foundry';
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{0,80}$/.test(serverName)) throw Error('Invalid bridge server name');
   const maxBody = options.maxBodyBytes ?? DEFAULT_MAX_BODY;
   const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
   const primary = options.createMcp();
   const authority = primary.authority;
   let primaryUsed = false;
   const stats = {
-    requests: 0, sessionsOpened: 0, serversCreated: 1, serversClosed: 0,
-    rejected: { closed: 0, path: 0, method: 0, origin: 0, host: 0, unauthorized: 0, revoked: 0, "too-large": 0, malformed: 0, session: 0, capacity: 0, connect: 0 } as Record<RejectionReason, number>,
+    requests: 0,
+    sessionsOpened: 0,
+    serversCreated: 1,
+    serversClosed: 0,
+    rejected: {
+      closed: 0,
+      path: 0,
+      method: 0,
+      origin: 0,
+      host: 0,
+      unauthorized: 0,
+      revoked: 0,
+      'too-large': 0,
+      malformed: 0,
+      session: 0,
+      capacity: 0,
+      connect: 0,
+    } as Record<RejectionReason, number>,
   };
   const sessions = new Map<string, Owned>();
   const live = new Set<Owned>();
@@ -166,7 +207,10 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
   let droppedRecords = 0;
   const retain = (record: ToolInvocationRecord) => {
     retained.push(record);
-    if (retained.length > MAX_RETAINED_RECORDS) { retained.splice(0, retained.length - MAX_RETAINED_RECORDS); droppedRecords += 1; }
+    if (retained.length > MAX_RETAINED_RECORDS) {
+      retained.splice(0, retained.length - MAX_RETAINED_RECORDS);
+      droppedRecords += 1;
+    }
   };
   primary.onRecord(retain);
   let reservations = 0;
@@ -174,9 +218,12 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
   let closing: Promise<void> | undefined;
   let launchDir: string | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
-  let expectedHost = "";
+  let expectedHost = '';
 
-  const reject = (reason: RejectionReason, response: Response): Response => { stats.rejected[reason] += 1; return response; };
+  const reject = (reason: RejectionReason, response: Response): Response => {
+    stats.rejected[reason] += 1;
+    return response;
+  };
 
   // One revocation lifetime for the whole bridge. Every authority created for it,
   // primary or later session, is bound here at creation; latching `reason` at
@@ -193,17 +240,44 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
   // removed it from live. A snapshot of individual closes misses later links.
   const releases = new Set<Promise<void>>();
   let cleanupFailures = 0;
-  const trackCleanup = (request: () => Promise<unknown>, onComplete?: () => void): Promise<void> => {
+  const trackCleanup = (
+    request: () => Promise<unknown>,
+    onComplete?: () => void,
+  ): Promise<void> => {
     let attempt: Promise<unknown>;
-    try { attempt = Promise.resolve(request()); } catch (error) { attempt = Promise.reject(error); }
-    const tracked: Promise<void> = attempt.then(() => { onComplete?.(); }, () => { cleanupFailures += 1; }).finally(() => { cleanups.delete(tracked); });
+    try {
+      attempt = Promise.resolve(request());
+    } catch (error) {
+      attempt = Promise.reject(error);
+    }
+    const tracked: Promise<void> = attempt
+      .then(
+        () => {
+          onComplete?.();
+        },
+        () => {
+          cleanupFailures += 1;
+        },
+      )
+      .finally(() => {
+        cleanups.delete(tracked);
+      });
     cleanups.add(tracked);
     return tracked;
   };
-  const closeServer = (mcp: FoundryMcp) => trackCleanup(() => mcp.server.close(), () => { stats.serversClosed += 1; });
+  const closeServer = (mcp: FoundryMcp) =>
+    trackCleanup(
+      () => mcp.server.close(),
+      () => {
+        stats.serversClosed += 1;
+      },
+    );
 
   const acquire = (): FoundryMcp => {
-    if (!primaryUsed) { primaryUsed = true; return primary; }
+    if (!primaryUsed) {
+      primaryUsed = true;
+      return primary;
+    }
     const next = options.createMcp();
     stats.serversCreated += 1;
     next.authority.bindLifetime(revocation);
@@ -211,9 +285,9 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
       // A factory that hands out another thread's server is invalid configuration.
       // The allocation is revoked, its hook released and its close owned until it
       // settles; it is never adopted and never counted closed before it is.
-      next.authority.revoke("revoked");
+      next.authority.revoke('revoked');
       void closeServer(next);
-      throw new Error("Bridge session servers must pin the same thread");
+      throw new Error('Bridge session servers must pin the same thread');
     }
     next.onRecord(retain);
     return next;
@@ -247,118 +321,218 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
   const admit = async (req: Request, parsedBody: unknown): Promise<Response> => {
     // Capacity is reserved synchronously, before any asynchronous work, and
     // released exactly once on every exit path below.
-    if (sessions.size + reservations >= maxSessions) return reject("capacity", rpcError(429, -32000, "Too many bridge sessions"));
+    if (sessions.size + reservations >= maxSessions)
+      return reject('capacity', rpcError(429, -32000, 'Too many bridge sessions'));
     reservations += 1;
     let reserved = true;
-    const settle = () => { if (reserved) { reserved = false; reservations -= 1; } };
+    const settle = () => {
+      if (reserved) {
+        reserved = false;
+        reservations -= 1;
+      }
+    };
     let owned: Owned | undefined;
     try {
       let mcp: FoundryMcp;
-      try { mcp = acquire(); }
-      catch { return reject("connect", rpcError(500, -32000, "Bridge session could not be allocated")); }
+      try {
+        mcp = acquire();
+      } catch {
+        return reject('connect', rpcError(500, -32000, 'Bridge session could not be allocated'));
+      }
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         allowedHosts: [expectedHost],
         onsessioninitialized: (id) => {
           if (!owned || owned.closed) return;
-          owned.sessionId = id; sessions.set(id, owned); stats.sessionsOpened += 1;
+          owned.sessionId = id;
+          sessions.set(id, owned);
+          stats.sessionsOpened += 1;
         },
-        onsessionclosed: (id) => { const o = sessions.get(id); if (o) void release(o); },
+        onsessionclosed: (id) => {
+          const o = sessions.get(id);
+          if (o) void release(o);
+        },
       });
       owned = { mcp, transport, closed: false };
       live.add(owned);
-      try { await mcp.server.connect(transport); }
-      catch { await release(owned); return reject("connect", rpcError(500, -32000, "Bridge session could not be connected")); }
+      try {
+        await mcp.server.connect(transport);
+      } catch {
+        await release(owned);
+        return reject('connect', rpcError(500, -32000, 'Bridge session could not be connected'));
+      }
       // Recheck at the asynchronous admission boundary: a close or revocation that
       // happened while connecting must not let this initialization escape.
-      if (closed) { await release(owned); return reject("closed", rpcError(410, -32000, "Bridge closed")); }
+      if (closed) {
+        await release(owned);
+        return reject('closed', rpcError(410, -32000, 'Bridge closed'));
+      }
       const refusal = authority.check();
-      if (refusal) { await release(owned); return reject("revoked", rpcError(410, -32000, `Bridge authority is no longer valid: ${refusal}`)); }
+      if (refusal) {
+        await release(owned);
+        return reject(
+          'revoked',
+          rpcError(410, -32000, `Bridge authority is no longer valid: ${refusal}`),
+        );
+      }
       const response = await transport.handleRequest(req, { parsedBody });
-      const established = !!owned.sessionId && sessions.get(owned.sessionId) === owned && response.status < 400;
+      const established =
+        !!owned.sessionId && sessions.get(owned.sessionId) === owned && response.status < 400;
       if (!established || closed) {
         await release(owned);
-        if (closed && response.status < 400) return reject("closed", rpcError(410, -32000, "Bridge closed"));
+        if (closed && response.status < 400)
+          return reject('closed', rpcError(410, -32000, 'Bridge closed'));
       }
       return response;
     } catch (error) {
       if (owned) await release(owned);
       throw error;
-    } finally { settle(); }
+    } finally {
+      settle();
+    }
   };
 
   const handle = async (req: Request): Promise<Response> => {
     stats.requests += 1;
-    if (closed) return reject("closed", rpcError(410, -32000, "Bridge closed"));
+    if (closed) return reject('closed', rpcError(410, -32000, 'Bridge closed'));
     const url = new URL(req.url);
-    if (url.pathname !== "/mcp") return reject("path", rpcError(404, -32000, "Not found"));
-    if (!["POST", "GET", "DELETE"].includes(req.method)) return reject("method", rpcError(405, -32000, "Method not allowed", { Allow: ALLOWED_METHODS }));
+    if (url.pathname !== '/mcp') return reject('path', rpcError(404, -32000, 'Not found'));
+    if (!['POST', 'GET', 'DELETE'].includes(req.method))
+      return reject(
+        'method',
+        rpcError(405, -32000, 'Method not allowed', { Allow: ALLOWED_METHODS }),
+      );
     // Any browser-origin request, including an opaque "null" origin, is refused.
-    if (req.headers.has("origin")) return reject("origin", rpcError(403, -32000, "Browser origins are not accepted by this bridge"));
-    if (req.headers.get("host") !== expectedHost) return reject("host", rpcError(400, -32000, "Invalid Host header"));
-    if (!sameCapability(capability, bearer(req.headers.get("authorization")))) {
-      return reject("unauthorized", rpcError(401, -32000, "Unauthorized", { "WWW-Authenticate": 'Bearer realm="foundry-bridge"' }));
+    if (req.headers.has('origin'))
+      return reject(
+        'origin',
+        rpcError(403, -32000, 'Browser origins are not accepted by this bridge'),
+      );
+    if (req.headers.get('host') !== expectedHost)
+      return reject('host', rpcError(400, -32000, 'Invalid Host header'));
+    if (!sameCapability(capability, bearer(req.headers.get('authorization')))) {
+      return reject(
+        'unauthorized',
+        rpcError(401, -32000, 'Unauthorized', {
+          'WWW-Authenticate': 'Bearer realm="foundry-bridge"',
+        }),
+      );
     }
-    if (authority.check()) return reject("revoked", rpcError(410, -32000, `Bridge authority is no longer valid: ${authority.check()}`));
-    const declared = Number(req.headers.get("content-length") ?? "0");
-    if (Number.isFinite(declared) && declared > maxBody) return reject("too-large", rpcError(413, -32000, "Request body too large"));
+    if (authority.check())
+      return reject(
+        'revoked',
+        rpcError(410, -32000, `Bridge authority is no longer valid: ${authority.check()}`),
+      );
+    const declared = Number(req.headers.get('content-length') ?? '0');
+    if (Number.isFinite(declared) && declared > maxBody)
+      return reject('too-large', rpcError(413, -32000, 'Request body too large'));
     let parsedBody: unknown;
-    if (req.method === "POST") {
+    if (req.method === 'POST') {
       const reader = req.body?.getReader();
-      const chunks: Uint8Array[] = []; let total = 0;
+      const chunks: Uint8Array[] = [];
+      let total = 0;
       if (reader) {
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
           total += value.byteLength;
-          if (total > maxBody) { await reader.cancel().catch(() => {}); return reject("too-large", rpcError(413, -32000, "Request body too large")); }
+          if (total > maxBody) {
+            await reader.cancel().catch(() => {});
+            return reject('too-large', rpcError(413, -32000, 'Request body too large'));
+          }
           chunks.push(value);
         }
       }
-      try { parsedBody = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))); }
-      catch { return reject("malformed", rpcError(400, -32700, "Parse error")); }
+      try {
+        parsedBody = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+      } catch {
+        return reject('malformed', rpcError(400, -32700, 'Parse error'));
+      }
       // The body read was asynchronous: recheck the boundary before admitting work.
-      if (closed) return reject("closed", rpcError(410, -32000, "Bridge closed"));
+      if (closed) return reject('closed', rpcError(410, -32000, 'Bridge closed'));
       const late = authority.check();
-      if (late) return reject("revoked", rpcError(410, -32000, `Bridge authority is no longer valid: ${late}`));
+      if (late)
+        return reject(
+          'revoked',
+          rpcError(410, -32000, `Bridge authority is no longer valid: ${late}`),
+        );
     }
-    const sessionId = req.headers.get("mcp-session-id");
-    if (req.method === "POST" && !sessionId && isInitialize(parsedBody)) {
+    const sessionId = req.headers.get('mcp-session-id');
+    if (req.method === 'POST' && !sessionId && isInitialize(parsedBody)) {
       const attempt = admit(req, parsedBody);
       pending.add(attempt);
-      try { return await attempt; } finally { pending.delete(attempt); }
+      try {
+        return await attempt;
+      } finally {
+        pending.delete(attempt);
+      }
     }
-    if (!sessionId) return reject("session", rpcError(400, -32000, "Bad Request: no session; initialize first"));
+    if (!sessionId)
+      return reject('session', rpcError(400, -32000, 'Bad Request: no session; initialize first'));
     const session = sessions.get(sessionId);
-    if (!session || session.closed) return reject("session", rpcError(404, -32001, "Session not found"));
+    if (!session || session.closed)
+      return reject('session', rpcError(404, -32001, 'Session not found'));
     return session.transport.handleRequest(req, { parsedBody });
   };
 
-  const capability = randomBytes(32).toString("base64url");
+  const capability = randomBytes(32).toString('base64url');
   try {
-    launchDir = mkdtempSync(join(options.launchRoot ?? tmpdir(), "foundry-bridge-"));
+    launchDir = mkdtempSync(join(options.launchRoot ?? tmpdir(), 'foundry-bridge-'));
     chmodSync(launchDir, 0o700);
-    server = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 120, maxRequestBodySize: maxBody, fetch: handle });
+    server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      idleTimeout: 120,
+      maxRequestBodySize: maxBody,
+      fetch: handle,
+    });
     const port = server.port;
-    if (typeof port !== "number") throw new Error("Loopback bridge did not receive an allocated port");
+    if (typeof port !== 'number')
+      throw new Error('Loopback bridge did not receive an allocated port');
     expectedHost = `127.0.0.1:${port}`;
     const endpoint = `http://${expectedHost}/mcp`;
-    const launchFile = join(launchDir, "launch.json");
+    const launchFile = join(launchDir, 'launch.json');
     // Newly created, never replaced, never through a symlink: 0600 from the first byte.
-    const fd = openSync(launchFile, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    const fd = openSync(
+      launchFile,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
     try {
-      const record: LaunchFile = { version: 1, endpoint, capability, threadId: authority.threadId, ...(authority.generation ? { generation: authority.generation } : {}), createdAt: Date.now() };
+      const record: LaunchFile = {
+        version: 1,
+        endpoint,
+        capability,
+        threadId: authority.threadId,
+        ...(authority.generation ? { generation: authority.generation } : {}),
+        createdAt: Date.now(),
+      };
       writeSync(fd, JSON.stringify(record));
-    } finally { closeSync(fd); }
-    const proxyEntry = options.proxyEntry ?? fileURLToPath(new URL("./proxy.ts", import.meta.url));
+    } finally {
+      closeSync(fd);
+    }
+    const proxyEntry = options.proxyEntry ?? fileURLToPath(new URL('./proxy.ts', import.meta.url));
     const args = [proxyEntry, launchFile];
     // Owned deep-frozen configuration snapshot: the nested server entry and its args
     // cannot be altered after creation, and the canonical JSON is taken from it once.
-    const mcpConfig = Object.freeze({ mcpServers: Object.freeze({ [serverName]: Object.freeze({ command: "bun", args: Object.freeze([...args]) as unknown as string[] }) }) });
+    const mcpConfig = Object.freeze({
+      mcpServers: Object.freeze({
+        [serverName]: Object.freeze({
+          command: 'bun',
+          args: Object.freeze([...args]) as unknown as string[],
+        }),
+      }),
+    });
     const launch: LaunchDescriptor = Object.freeze({
-      command: "bun", args: Object.freeze(args),
+      command: 'bun',
+      args: Object.freeze(args),
       claude: Object.freeze({ mcpConfig, mcpConfigJson: JSON.stringify(mcpConfig) }),
-      codex: Object.freeze({ configOverrides: Object.freeze([`mcp_servers.${serverName}.command="bun"`, `mcp_servers.${serverName}.args=${JSON.stringify(args)}`]) }),
+      codex: Object.freeze({
+        configOverrides: Object.freeze([
+          `mcp_servers.${serverName}.command="bun"`,
+          `mcp_servers.${serverName}.args=${JSON.stringify(args)}`,
+        ]),
+      }),
     });
     const close = async (): Promise<void> => {
       if (closing) return closing;
@@ -366,12 +540,12 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
         // Latched synchronously at close entry: every authority this bridge created
         // is revoked now, whatever the state of its transport or pending backend work.
         closed = true;
-        revocation.reason = "revoked";
+        revocation.reason = 'revoked';
         // Outstanding initializations observe `closed` at their next boundary and release themselves.
         await Promise.allSettled([...pending]);
         for (const owned of [...live]) await release(owned);
         if (!primaryUsed) await closeServer(primary);
-        primary.authority.revoke("revoked");
+        primary.authority.revoke('revoked');
         // Owned closes requested earlier (for example a refused allocation) settle
         // before the bridge reports closed; backend reads are never awaited here.
         while (releases.size || cleanups.size) await Promise.allSettled([...releases, ...cleanups]);
@@ -382,14 +556,28 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
       return closing;
     };
     const bridge: LiveBridge = {
-      endpoint, port, launchDir, launchFile, launch,
-      get closed() { return closed; },
+      endpoint,
+      port,
+      launchDir,
+      launchFile,
+      launch,
+      get closed() {
+        return closed;
+      },
       invocations: () => retained.slice(),
       stats: () => ({
-        requests: stats.requests, rejected: { ...stats.rejected }, sessions: sessions.size, pendingInitializations: reservations,
-        liveServers: live.size, sessionsOpened: stats.sessionsOpened, serversCreated: stats.serversCreated, serversClosed: stats.serversClosed,
-        retainedRecords: retained.length, droppedRecords,
-        pendingCleanups: cleanups.size, cleanupFailures,
+        requests: stats.requests,
+        rejected: { ...stats.rejected },
+        sessions: sessions.size,
+        pendingInitializations: reservations,
+        liveServers: live.size,
+        sessionsOpened: stats.sessionsOpened,
+        serversCreated: stats.serversCreated,
+        serversClosed: stats.serversClosed,
+        retainedRecords: retained.length,
+        droppedRecords,
+        pendingCleanups: cleanups.size,
+        cleanupFailures,
       }),
       close,
     };
@@ -398,7 +586,9 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
     // Partial setup never leaves a listener or a launch directory behind.
     server?.stop(true);
     if (launchDir) rmSync(launchDir, { recursive: true, force: true });
-    try { await primary.server.close(); } catch {}
+    try {
+      await primary.server.close();
+    } catch {}
     throw error;
   }
 }

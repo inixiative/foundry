@@ -1,10 +1,10 @@
 import type {
+  ContextRef,
   ContextSource,
   HydrationAdapter,
-  ContextRef,
-  Signal,
   MemoryEntry,
-} from "@inixiative/foundry-core";
+  Signal,
+} from '@inixiative/foundry-core';
 
 /**
  * MuninnDB adapter — cognitive database with neural memory primitives.
@@ -29,10 +29,10 @@ export class MuninnMemory {
   readonly vault: string;
 
   constructor(opts: MuninnConfig) {
-    this._baseUrl = (opts.baseUrl ?? "http://localhost:8475").replace(/\/$/, "") + "/api";
+    this._baseUrl = (opts.baseUrl ?? 'http://localhost:8475').replace(/\/$/, '') + '/api';
     this._timeout = opts.timeout ?? 15_000;
     this._token = opts.token;
-    this.vault = opts.vault ?? "default";
+    this.vault = opts.vault ?? 'default';
   }
 
   // ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ export class MuninnMemory {
     path: string,
     init?: RequestInit & { params?: Record<string, string> },
   ): Promise<Response> {
-    const url = new URL(path, this._baseUrl.endsWith("/") ? this._baseUrl : this._baseUrl + "/");
+    const url = new URL(path, this._baseUrl.endsWith('/') ? this._baseUrl : this._baseUrl + '/');
     if (init?.params) {
       for (const [k, v] of Object.entries(init.params)) {
         url.searchParams.set(k, v);
@@ -51,11 +51,11 @@ export class MuninnMemory {
     }
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       ...(init?.headers as Record<string, string>),
     };
     if (this._token) {
-      headers["Authorization"] = `Bearer ${this._token}`;
+      headers['Authorization'] = `Bearer ${this._token}`;
     }
 
     const res = await fetch(url.toString(), {
@@ -65,11 +65,11 @@ export class MuninnMemory {
     });
 
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      const safeBody = body.length > 200 ? body.slice(0, 200) + "…" : body;
+      const body = await res.text().catch(() => '');
+      const safeBody = body.length > 200 ? body.slice(0, 200) + '…' : body;
       const sanitized = safeBody
-        .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
-        .replace(/mk_[a-zA-Z0-9_-]{8,}/g, "[REDACTED]");
+        .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+        .replace(/mk_[a-zA-Z0-9_-]{8,}/g, '[REDACTED]');
       throw new Error(`muninn ${res.status}: ${res.statusText} ${sanitized}`);
     }
 
@@ -82,11 +82,11 @@ export class MuninnMemory {
 
   /** Store a memory entry as an engram. */
   async write(entry: MemoryEntry): Promise<void> {
-    await this._fetch("engrams", {
-      method: "POST",
+    await this._fetch('engrams', {
+      method: 'POST',
       body: JSON.stringify({
         vault: this.vault,
-        concept: entry.kind ?? "memory",
+        concept: entry.kind ?? 'memory',
         content: entry.content,
         tags: entry.meta?.tags ?? [],
         confidence: entry.meta?.confidence ?? 1.0,
@@ -107,7 +107,7 @@ export class MuninnMemory {
       const chunk = entries.slice(i, i + CHUNK_SIZE);
       const engrams = chunk.map((entry) => ({
         vault: this.vault,
-        concept: entry.kind ?? "memory",
+        concept: entry.kind ?? 'memory',
         content: entry.content,
         tags: entry.meta?.tags ?? [],
         confidence: entry.meta?.confidence ?? 1.0,
@@ -118,8 +118,8 @@ export class MuninnMemory {
           ...entry.meta,
         },
       }));
-      await this._fetch("engrams/bulk", {
-        method: "POST",
+      await this._fetch('engrams/bulk', {
+        method: 'POST',
         body: JSON.stringify({ engrams }),
       });
     }
@@ -134,7 +134,7 @@ export class MuninnMemory {
       const engram = (await res.json()) as MuninnEngram;
       return this._toEntry(engram);
     } catch (err) {
-      if ((err as Error).message?.includes("404")) return undefined;
+      if ((err as Error).message?.includes('404')) return undefined;
       console.warn(`[muninn] get(${id}) failed:`, (err as Error).message);
       return undefined;
     }
@@ -144,7 +144,7 @@ export class MuninnMemory {
   async delete(id: string): Promise<boolean> {
     try {
       await this._fetch(`engrams/${encodeURIComponent(id)}`, {
-        method: "DELETE",
+        method: 'DELETE',
         params: { vault: this.vault },
       });
       return true;
@@ -196,12 +196,12 @@ export class MuninnMemory {
       };
       if (kind) params.tags = kind;
 
-      const res = await this._fetch("engrams", { params });
+      const res = await this._fetch('engrams', { params });
       const data = (await res.json()) as MuninnEngram[];
       const engrams = Array.isArray(data) ? data : [];
       return engrams.map((e) => this._toEntry(e));
     } catch (err) {
-      console.warn("[muninn] recent() failed:", (err as Error).message);
+      console.warn('[muninn] recent() failed:', (err as Error).message);
       return [];
     }
   }
@@ -215,13 +215,10 @@ export class MuninnMemory {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private async _activate(
-    query: string,
-    limit?: number,
-  ): Promise<MuninnActivationResult[]> {
+  private async _activate(query: string, limit?: number): Promise<MuninnActivationResult[]> {
     try {
-      const res = await this._fetch("activate", {
-        method: "POST",
+      const res = await this._fetch('activate', {
+        method: 'POST',
         body: JSON.stringify({
           vault: this.vault,
           context: [query],
@@ -231,7 +228,7 @@ export class MuninnMemory {
       const data = (await res.json()) as MuninnActivationResult[];
       return Array.isArray(data) ? data : [];
     } catch (err) {
-      console.warn("[muninn] activate failed:", (err as Error).message);
+      console.warn('[muninn] activate failed:', (err as Error).message);
       return [];
     }
   }
@@ -239,11 +236,9 @@ export class MuninnMemory {
   private _toEntry(engram: MuninnEngram): MemoryEntry {
     return {
       id: engram.id,
-      kind: engram.concept ?? "memory",
+      kind: engram.concept ?? 'memory',
       content: engram.content,
-      timestamp: engram.created_at
-        ? new Date(engram.created_at).getTime()
-        : Date.now(),
+      timestamp: engram.created_at ? new Date(engram.created_at).getTime() : Date.now(),
       meta: {
         strength: engram.strength,
         decay_rate: engram.decay_rate,
@@ -258,7 +253,7 @@ export class MuninnMemory {
   private _activationToEntry(result: MuninnActivationResult): MemoryEntry {
     return {
       id: result.id ?? `activation-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      kind: result.concept ?? "memory",
+      kind: result.concept ?? 'memory',
       content: result.content,
       timestamp: Date.now(),
       meta: {
@@ -285,19 +280,18 @@ export class MuninnMemory {
       async load(): Promise<string> {
         try {
           const entries = await muninn.recent(limit, kind);
-          if (entries.length === 0) return "";
+          if (entries.length === 0) return '';
 
           const lines = entries.map((e) => {
-            const confidence = e.meta?.confidence != null
-              ? ` (conf: ${Number(e.meta.confidence).toFixed(2)})`
-              : "";
+            const confidence =
+              e.meta?.confidence != null ? ` (conf: ${Number(e.meta.confidence).toFixed(2)})` : '';
             return `- [${e.kind}] ${e.content}${confidence}`;
           });
 
-          return `## MuninnDB Memories\n${lines.join("\n")}`;
+          return `## MuninnDB Memories\n${lines.join('\n')}`;
         } catch (err) {
           console.warn(`[MuninnDB] source load failed for "${id}":`, (err as Error).message);
-          return "";
+          return '';
         }
       },
     };
@@ -314,23 +308,23 @@ export class MuninnMemory {
    * - An engram ULID → fetches the engram directly
    * - A query prefixed with "?" → activates and returns top result
    */
-  asAdapter(system: string = "muninn"): HydrationAdapter {
+  asAdapter(system: string = 'muninn'): HydrationAdapter {
     const muninn = this;
     return {
       system,
       async hydrate(ref: ContextRef): Promise<string> {
         try {
-          if (ref.locator.startsWith("?")) {
+          if (ref.locator.startsWith('?')) {
             const query = ref.locator.slice(1);
             const results = await muninn.search(query, 1);
-            return results[0]?.content ?? "";
+            return results[0]?.content ?? '';
           }
 
           const entry = await muninn.get(ref.locator);
-          return entry?.content ?? "";
+          return entry?.content ?? '';
         } catch (err) {
           console.warn(`[MuninnDB] hydrate failed for "${ref.locator}":`, (err as Error).message);
-          return "";
+          return '';
         }
       },
 
@@ -354,7 +348,6 @@ export class MuninnMemory {
     /** Signal kinds to persist. Default: all. */
     kinds?: string[];
   }) {
-    const muninn = this;
     const allowedKinds = opts?.kinds ? new Set(opts.kinds) : null;
 
     return async (signal: Signal): Promise<void> => {
@@ -362,11 +355,9 @@ export class MuninnMemory {
 
       try {
         const content =
-          typeof signal.content === "string"
-            ? signal.content
-            : JSON.stringify(signal.content);
+          typeof signal.content === 'string' ? signal.content : JSON.stringify(signal.content);
 
-        await muninn.write({
+        await this.write({
           id: signal.id,
           kind: signal.kind,
           content: `[${signal.kind}] ${content}`,
@@ -378,7 +369,10 @@ export class MuninnMemory {
           },
         });
       } catch (err) {
-        console.warn(`[MuninnDB] signal write failed for "${signal.kind}":`, (err as Error).message);
+        console.warn(
+          `[MuninnDB] signal write failed for "${signal.kind}":`,
+          (err as Error).message,
+        );
       }
     };
   }

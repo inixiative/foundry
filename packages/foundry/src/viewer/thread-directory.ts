@@ -1,13 +1,16 @@
-import { Thread, type ThreadMeta } from "@inixiative/foundry-core";
-import type { ProjectRegistry } from "../agents/project";
-import type { ThreadFactory } from "../agents/thread-factory";
+import { Thread, type ThreadMeta } from '@inixiative/foundry-core';
+import type { ProjectRegistry } from '../agents/project';
+import type { ThreadFactory } from '../agents/thread-factory';
 
 /** Viewer lookup includes projectless threads as well as project-owned threads. */
 export class ViewerThreadDirectory {
   private readonly threads = new Map<string, Thread>();
 
-  constructor(private readonly main: Thread, private readonly projects?: ProjectRegistry,
-    private readonly factory?: ThreadFactory) {
+  constructor(
+    private readonly main: Thread,
+    private readonly projects?: ProjectRegistry,
+    private readonly factory?: ThreadFactory,
+  ) {
     this.threads.set(main.id, main);
   }
 
@@ -34,8 +37,9 @@ export class ViewerThreadDirectory {
       return project ? [...project.threads.values()] : undefined;
     }
     const owned = new Set<string>();
-    for (const project of this.projects?.all.values() ?? []) for (const id of project.threads.keys()) owned.add(id);
-    return this.all().filter(thread => !owned.has(thread.id));
+    for (const project of this.projects?.all.values() ?? [])
+      for (const id of project.threads.keys()) owned.add(id);
+    return this.all().filter((thread) => !owned.has(thread.id));
   }
 
   add(thread: Thread): void {
@@ -49,18 +53,25 @@ export class ViewerThreadDirectory {
     for (const record of records) {
       const project = record.meta.projectId ? this.projects?.get(record.meta.projectId) : undefined;
       if (record.meta.projectId && !project) {
-        warnings.push(`Stored thread ${record.id} retained on disk: project ${record.meta.projectId} is unavailable`);
+        warnings.push(
+          `Stored thread ${record.id} retained on disk: project ${record.meta.projectId} is unavailable`,
+        );
         continue;
       }
       let thread = this.get(record.id);
       if (thread && thread.meta.projectId !== record.meta.projectId) {
-        warnings.push(`Stored thread ${record.id} retained on disk: project ownership differs from startup`);
+        warnings.push(
+          `Stored thread ${record.id} retained on disk: project ownership differs from startup`,
+        );
         continue;
       }
       if (!thread) {
         if (this.factory) thread = this.factory.create(record.id, record.meta);
         else {
-          const stack = this.main.stack.clone({ threadId: record.id, projectId: record.meta.projectId });
+          const stack = this.main.stack.clone({
+            threadId: record.id,
+            projectId: record.meta.projectId,
+          });
           thread = new Thread(record.id, stack, record.meta);
           for (const agent of this.main.agents.values()) thread.register(agent.withStack(stack));
         }
@@ -68,11 +79,11 @@ export class ViewerThreadDirectory {
         this.add(thread);
       }
       Object.assign(thread.meta, structuredClone(record.meta));
-      if (record.meta.status === "archived") {
+      if (record.meta.status === 'archived') {
         thread.archive();
         Object.assign(thread.meta, structuredClone(record.meta));
-      } else if (record.meta.status === "waiting" || record.meta.status === "active") {
-        thread.meta.status = "waiting";
+      } else if (record.meta.status === 'waiting' || record.meta.status === 'active') {
+        thread.meta.status = 'waiting';
         thread.stop();
       }
     }

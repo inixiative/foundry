@@ -19,13 +19,13 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  MemoryTool,
   MemoryEntry,
   MemoryReadScope,
   MemorySearchOpts,
+  MemoryTool,
   OwnershipScope,
   ToolResult,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 /**
  * Minimal interface that all Foundry memory adapters implement.
@@ -57,7 +57,10 @@ export interface MemoryBackend {
  */
 export interface RichMemoryBackend extends MemoryBackend {
   /** Scored search results (Supermemory, pgvector, etc.) */
-  searchMemories?(query: string, opts?: { limit?: number; containerTag?: string }): Promise<Array<{ content: string; score?: number; metadata?: any }>>;
+  searchMemories?(
+    query: string,
+    opts?: { limit?: number; containerTag?: string },
+  ): Promise<Array<{ content: string; score?: number; metadata?: any }>>;
   /** Full-text search with ranking (SqliteMemory FTS5, etc.) */
   searchEntries?(query: string, limit?: number): Promise<MemoryEntry[]>;
 }
@@ -78,12 +81,12 @@ export interface MemoryToolAdapterConfig {
 
 export class MemoryToolAdapter implements MemoryTool {
   readonly id: string;
-  readonly kind = "memory" as const;
+  readonly kind = 'memory' as const;
   readonly system: string;
   readonly capabilities = {
-    read: "data:read" as const,
-    write: "data:write" as const,
-    delete: "data:delete" as const,
+    read: 'data:read' as const,
+    write: 'data:write' as const,
+    delete: 'data:delete' as const,
   };
 
   private _backend: MemoryBackend;
@@ -110,8 +113,8 @@ export class MemoryToolAdapter implements MemoryTool {
     if (this._scope && !this._root.view) {
       return {
         ok: false,
-        summary: `${this.system} memory cannot scope reads to thread "${this._scope.threadId ?? "?"}"`,
-        error: "Backend stores no ownership; scoped reads refused",
+        summary: `${this.system} memory cannot scope reads to thread "${this._scope.threadId ?? '?'}"`,
+        error: 'Backend stores no ownership; scoped reads refused',
       };
     }
     return null;
@@ -131,8 +134,8 @@ export class MemoryToolAdapter implements MemoryTool {
           .filter((r) => !opts?.minScore || (r.score ?? 1) >= opts.minScore)
           .map((r, i) => ({
             id: `search-${i}`,
-            kind: "memory",
-            content: typeof r.content === "string" ? r.content : JSON.stringify(r.content),
+            kind: 'memory',
+            content: typeof r.content === 'string' ? r.content : JSON.stringify(r.content),
             timestamp: Date.now(),
             meta: { score: r.score, ...r.metadata },
           }));
@@ -147,9 +150,10 @@ export class MemoryToolAdapter implements MemoryTool {
         results = results.filter((e) => e.kind === opts.kind);
       }
 
-      const summary = results.length > 0
-        ? `Found ${results.length} entries for "${query}" in ${this.system}`
-        : `No entries found for "${query}" in ${this.system}`;
+      const summary =
+        results.length > 0
+          ? `Found ${results.length} entries for "${query}" in ${this.system}`
+          : `No entries found for "${query}" in ${this.system}`;
 
       return {
         ok: true,
@@ -198,13 +202,13 @@ export class MemoryToolAdapter implements MemoryTool {
           .sort((a, b) => b.timestamp - a.timestamp)
           .slice(0, limit);
       } else {
-        entries = (await this._backend.search("", limit)).slice(0, limit);
+        entries = (await this._backend.search('', limit)).slice(0, limit);
       }
 
       return {
         ok: true,
         data: entries,
-        summary: `${entries.length} recent entries from ${this.system}${kind ? ` (kind: ${kind})` : ""}`,
+        summary: `${entries.length} recent entries from ${this.system}${kind ? ` (kind: ${kind})` : ''}`,
         estimatedTokens: entries.reduce((t, e) => t + Math.ceil(e.content.length / 4), 0),
       };
     } catch (err) {
@@ -220,7 +224,7 @@ export class MemoryToolAdapter implements MemoryTool {
   async write(entry: MemoryEntry): Promise<ToolResult<{ id: string }>> {
     try {
       await this._backend.write(entry);
-      const visibility = this._root.view ? ` (${entry.visibility ?? "thread"})` : "";
+      const visibility = this._root.view ? ` (${entry.visibility ?? 'thread'})` : '';
       return {
         ok: true,
         data: { id: entry.id },
@@ -236,13 +240,19 @@ export class MemoryToolAdapter implements MemoryTool {
     if (refused) return refused;
     try {
       if (!this._backend.delete) {
-        return { ok: false, summary: `${this.system} doesn't support delete`, error: "Not implemented" };
+        return {
+          ok: false,
+          summary: `${this.system} doesn't support delete`,
+          error: 'Not implemented',
+        };
       }
       const deleted = await this._backend.delete(id);
       return {
         ok: true,
         data: { deleted: !!deleted },
-        summary: deleted ? `Deleted "${id}" from ${this.system}` : `"${id}" not found in ${this.system}`,
+        summary: deleted
+          ? `Deleted "${id}" from ${this.system}`
+          : `"${id}" not found in ${this.system}`,
       };
     } catch (err) {
       return { ok: false, summary: `Memory delete failed`, error: (err as Error).message };
@@ -251,32 +261,32 @@ export class MemoryToolAdapter implements MemoryTool {
 
   /** Wrap a FileMemory instance. */
   static fromFileMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "file", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'file', backend: memory, id });
   }
 
   /** Wrap a SqliteMemory instance. */
   static fromSqliteMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "sqlite", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'sqlite', backend: memory, id });
   }
 
   /** Wrap a RedisMemory instance. */
   static fromRedisMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "redis", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'redis', backend: memory, id });
   }
 
   /** Wrap a PostgresMemory instance. */
   static fromPostgresMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "postgres", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'postgres', backend: memory, id });
   }
 
   /** Wrap a SupermemoryAdapter instance. */
   static fromSupermemory(memory: RichMemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "supermemory", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'supermemory', backend: memory, id });
   }
 
   /** Wrap a MuninnMemory instance. */
   static fromMuninnMemory(memory: RichMemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: "muninn", backend: memory, id });
+    return new MemoryToolAdapter({ system: 'muninn', backend: memory, id });
   }
 
   /** Wrap any backend — the generic escape hatch. */
