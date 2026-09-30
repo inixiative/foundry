@@ -9,9 +9,10 @@
   "scripts": {
     "archive": "bun run packages/foundry/src/archives/cli.ts",
     "kingdom": "bun run packages/foundry/src/providers/kingdom-cli.ts",
-    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./scripts/daemon/",
+    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./packages/foundry/tests/gates/ && bun test ./scripts/daemon/",
     "test:core": "bun test ./packages/core/tests/",
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
+    "test:browser": "bun test ./packages/foundry/tests/browser/",
     "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5442/foundry_test bun test ./packages/foundry/tests/db/ --max-concurrency=1",
     "test:live": "bun run scripts/vcr/live.ts",
     "test:live:daemon": "bun run scripts/vcr/daemon-smoke.ts",

@@ -20,6 +20,7 @@ Oracle (eval/scoring) lives in its own repo (`../oracle`), linked to core via a 
 bun run start          # Production start (reads .foundry/settings.json)
 bun run dev            # Watch mode
 bun run test           # Core + foundry tests (cassette replays, no network)
+bun run test:browser   # Viewer browser suite (needs `bunx playwright install chromium`)
 bun run test:live      # Same tests live against this machine's subscriptions; re-records cassettes
 bun run test:live:daemon  # Live smoke inside a throwaway LaunchAgent with the daemon's environment
 bun run typecheck      # Both packages

@@ -11,7 +11,7 @@ test("actual conversation keeps a completed-but-unsaved result it sent through r
   const reportDir = resolve(".foundry/qa", `completion-browser-${new Date().toISOString().replaceAll(":", "-")}`);
   mkdirSync(reportDir, { recursive: true });
   const results: unknown[] = [];
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({ headless: true });
   try {
     // This tab sends and reads its full terminal from its thread stream.
     for (const transport of ["send"]) {
