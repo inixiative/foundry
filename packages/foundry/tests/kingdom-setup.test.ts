@@ -21,11 +21,25 @@ beforeAll(() => {
 });
 afterAll(() => { if (viewerPort === undefined) delete process.env.VIEWER_PORT; else process.env.VIEWER_PORT = viewerPort; });
 
-/** Kingdom's access + archive surface: pairing approves on first poll unless held; heartbeat trusts approved hashes. */
+/** Kingdom's access + archive surface: pairing approves on first poll unless held; the runtime socket and identity read trust approved hashes. */
 function mockKingdom(options: { expiresInMs?: number; hold?: boolean; connections?: unknown[] } = {}) {
   const hashes = new Map<string, string>(), pairings = new Map<string, { hash: string; installationId: string }>();
   const calls: { action: string; body: any }[] = [];
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
+  let authentications = 0;
+  const identity = (installationId: string) => ({ installationId, userId: null, owner: { ownerModel: "User", userId: crypto.randomUUID() }, expiresAt: new Date(Date.now() + 60000).toISOString() });
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", websocket: {
+    message(ws, raw) {
+      const frame = JSON.parse(String(raw));
+      if (frame.action === "ping") return void ws.send(JSON.stringify({ type: "pong" }));
+      if (frame.action !== "authenticateRuntime") return;
+      authentications++;
+      const token = String(frame.headers?.authorization ?? "").replace("Bearer ", "");
+      const installationId = hashes.get(createHash("sha256").update(token).digest("hex"));
+      if (!installationId) return ws.close(4401, "Runtime installation unavailable");
+      ws.send(JSON.stringify({ type: "runtimeIdentity", ...identity(installationId) }));
+    },
+  }, async fetch(request, server) {
+    if (request.headers.get("upgrade") === "websocket") return server.upgrade(request, { data: {} }) ? undefined : new Response("upgrade failed", { status: 426 });
     const path = new URL(request.url).pathname, body = await request.json().catch(() => ({})) as any;
     const action = path.replace(/^\/api\/v1\//, "");
     calls.push({ action, body });
@@ -44,14 +58,13 @@ function mockKingdom(options: { expiresInMs?: number; hold?: boolean; connection
     const token = request.headers.get("authorization")?.replace("Bearer ", "") ?? "";
     const installationId = hashes.get(createHash("sha256").update(token).digest("hex"));
     if (!installationId) return new Response("revoked", { status: 401 });
-    if (action === "access/runtimeHeartbeat")
-      return Response.json({ data: { installationId, userId: null, owner: { ownerModel: "User", userId: crypto.randomUUID() }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
+    if (action === "access/runtimeHeartbeat") return Response.json({ data: identity(installationId) });
     if (action === "archive/remote/connections")
       return Response.json({ data: options.connections ?? [{ id: "conn-a", name: "Team archive", groups: [], projectId: P1 }, { id: "conn-b", name: "Other", groups: [], projectId: "elsewhere" }] });
     if (action === "archive/remote/search" || action === "archive/search") return Response.json({ data: { archives: [] } });
     return new Response("unknown", { status: 404 });
   } });
-  return { server, url: `http://127.0.0.1:${server.port}`, calls, revokeAll: () => hashes.clear() };
+  return { server, url: `http://127.0.0.1:${server.port}`, calls, get authentications() { return authentications; }, revokeAll: () => hashes.clear() };
 }
 
 async function configDirectory(projects: string[] = []) {
@@ -76,8 +89,11 @@ test("shared pairing sends only the key hash, persists privately on approval and
     if (approved.status !== "approved") throw Error("expected approval");
 
     const store = new ConfigStore(dir);
-    const refused = (async () => new Response("no", { status: 401 })) as unknown as typeof fetch;
-    await expect(completeKingdomPairing(store, dir, pairing, approved.installationId, { connect: s => new KingdomRuntimeConnection(s, () => 0, refused), start: false })).rejects.toThrow();
+    const stranger = mockKingdom();
+    const refused = { openSocket: () => new WebSocket(stranger.url.replace(/^http/, "ws")) };
+    try {
+      await expect(completeKingdomPairing(store, dir, pairing, approved.installationId, { connect: s => new KingdomRuntimeConnection(s, () => 0, fetch, undefined, refused), start: false })).rejects.toThrow();
+    } finally { stranger.server.stop(true); }
     expect(await readdir(dir)).not.toContain(`kingdom-runtime-${approved.installationId}.json`);
     expect((await store.load()).kingdomRuntime).toBeUndefined();
 
@@ -107,7 +123,7 @@ test("CLI pairing polls at Kingdom's interval, opens the approval page and persi
     expect(lines.join("\n")).toContain("ABCDEF012345");
     const saved = (await new ConfigStore(dir).load()).kingdomRuntime!;
     expect(saved.credentialFile).toBe(join(dir, `kingdom-runtime-${result.installationId}.json`));
-    expect(kingdom.calls.filter(call => call.action === "access/runtimeHeartbeat")).toHaveLength(1);
+    expect(kingdom.authentications).toBe(1);
     expect(await kingdomStatus(dir)).toEqual({ status: "connected", url: kingdom.url, installationId: result.installationId });
     await expect(pairKingdom({ configDir: dir, url: kingdom.url, log: () => {}, sleep: async () => {} })).rejects.toThrow("--replace");
     kingdom.revokeAll();

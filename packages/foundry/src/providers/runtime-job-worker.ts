@@ -12,7 +12,8 @@ import { RuntimeJobRegistry } from "./runtime-job-handler";
 const REQUEST_TIMEOUT_MS = 20000;
 
 export class RuntimeJobWorker {
-  private busy = false;
+  private running?: Promise<void>;
+  private rerun = false;
   private stopped = false;
   constructor(private settings: KingdomRuntimeSettings, private transport: typeof fetch = fetch, private handlers: RuntimeJobRegistry = new RuntimeJobRegistry()) { this.settings = { ...settings, url: kingdomUrl(settings.url) }; }
   stop() { this.stopped = true; }
@@ -26,13 +27,18 @@ export class RuntimeJobWorker {
     if (!response.ok) { await response.body?.cancel(); throw new SignetHttpError(response.status); }
     return z.object({ data: z.unknown() }).parse(await response.json()).data;
   }
-  private request(action: "pollRuntimeJob" | "reportRuntimeJob" | "runtimeHeartbeat", body: unknown): Promise<unknown> {
+  private request(action: "pollRuntimeJob" | "reportRuntimeJob", body: unknown): Promise<unknown> {
     return this.send(action, body, REQUEST_TIMEOUT_MS);
   }
-  async check() {
-    if (this.busy || this.stopped) return;
-    this.busy = true;
-    try { await this.run(); } finally { this.busy = false; }
+  /** Claims and runs the next job. A call during a run is not dropped: the run repeats once it settles. */
+  check(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    if (this.running) { this.rerun = true; return this.running; }
+    this.running = this.drain().finally(() => { this.running = undefined; });
+    return this.running;
+  }
+  private async drain() {
+    do { this.rerun = false; await this.run(); } while (this.rerun && !this.stopped);
   }
   private async run() {
     const candidate = await this.request("pollRuntimeJob", {});

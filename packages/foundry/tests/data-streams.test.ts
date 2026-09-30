@@ -9,6 +9,7 @@ import { createViewer, startViewer } from "../src/viewer/server";
 import { createWebSocketServer } from "../src/ws/handler";
 import { getConnectionStats } from "../src/ws/lifecycle";
 import { connectStreams } from "./helpers/data-stream";
+import { startFakeKingdom } from "./helpers/fake-kingdom";
 import { StreamBufferRegistry } from "../src/viewer/stream-buffer";
 // @ts-expect-error native browser module
 import { applyTurnFrame } from "../src/viewer/ui/live-state.js";
@@ -296,18 +297,22 @@ test("the upgrade is authorized like HTTP: loopback, or the tunnel credential, a
 test("losing Kingdom authorization closes sockets on the next append or open and refuses upgrades", async () => {
   const root = await mkdtemp(join(tmpdir(), "kingdom-streams-"));
   let allowed = true;
-  const kingdom = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
-    if (!allowed) return new Response("denied", { status: 401 });
-    if (new URL(request.url).pathname === "/api/v1/access/pollRuntimeJob") return Response.json({ data: null });
-    return Response.json({ data: { installationId: id, userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } });
-  } });
   const id = crypto.randomUUID(), credentialFile = join(root, "runtime.json");
+  const kingdom = startFakeKingdom({
+    identify: () => allowed ? { installationId: id } : undefined,
+    http: () => allowed ? Response.json({ data: null }) : new Response("denied", { status: 401 }),
+  });
+  const revoke = async () => {
+    allowed = false;
+    kingdom.revoke(id);
+    await until(() => viewer.kingdomConnection?.connected === false);
+  };
   await writeFile(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"0".repeat(43)}` }), { mode: 0o600 });
   const thread = new Thread("kingdom-main", new ContextStack()), events = new EventStream();
   const viewer = await startViewer({ port: 0, configDir: root, analyticsDir: join(root, "analytics"), localStore: null,
     harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(thread.signals),
-    kingdomRuntime: { url: `http://127.0.0.1:${kingdom.port}`, installationId: id, credentialFile } });
-  cleanup.push(async () => { viewer.server.stop(true); kingdom.stop(true); await rm(root, { recursive: true, force: true }); });
+    kingdomRuntime: { url: kingdom.url, installationId: id, credentialFile } });
+  cleanup.push(async () => { viewer.server.stop(true); kingdom.stop(); await rm(root, { recursive: true, force: true }); });
   const url = `ws://127.0.0.1:${viewer.server.port}/ws`;
   const until = async (check: () => boolean) => { const end = performance.now() + 4000; while (!check() && performance.now() < end) await Bun.sleep(5); };
   const connect = async () => {
@@ -323,7 +328,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   const watcher = await connect();
   watcher.ws.send(JSON.stringify({ action: "open", stream: "events" }));
   await until(() => watcher.frames.some(frame => frame.type === "opened"));
-  allowed = false;
+  await revoke();
   expect((await fetch(`http://127.0.0.1:${viewer.server.port}/api/threads`)).status).toBe(503);
   events.pushError("harness", "after revocation");
   await until(() => watcher.closed !== null);
@@ -333,7 +338,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   // Open path: an open that fails the Kingdom check closes the socket rather than rejecting one stream.
   allowed = true;
   const opener = await connect();
-  allowed = false;
+  await revoke();
   opener.ws.send(JSON.stringify({ action: "open", stream: "prompts" }));
   await until(() => opener.closed !== null);
   expect(opener.closed).toEqual({ code: 1008, reason: "Kingdom runtime unavailable" });
