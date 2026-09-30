@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import { EventStream } from '@inixiative/foundry-core';
 import { startArchiveServer } from '@inixiative/session-archive/server';
 import { FoundryCredentials } from '../src/providers/credentials';
-import { writePrivateJson } from '../src/providers/kastle-credential-file';
+import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 import { ArchiveContextSource } from '../src/archives/context-source';
 import { archiveRequest, kingdomFields, publishArchive } from '../src/archives/publish';
 import { registerArchiveRoutes } from '../src/archives/routes';
@@ -47,7 +47,7 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
   const dir = temporary();
   const credentialFile = join(dir, 'runtime.json');
   const installationId = crypto.randomUUID();
-  const secret = 'kastle_runtime_' + 'a'.repeat(43);
+  const secret = 'kingdom_runtime_' + 'a'.repeat(43);
   await writePrivateJson(credentialFile, { secret });
   const credentials = new FoundryCredentials(dir, () => ({
     url: 'https://kingdom.example',

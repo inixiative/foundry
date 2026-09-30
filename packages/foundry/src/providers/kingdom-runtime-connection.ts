@@ -2,19 +2,18 @@ import { RuntimeJobWorker } from "./runtime-job-worker";
 import { RuntimeJobRegistry } from "./runtime-job-handler";
 import { z } from "zod";
 import { isAbsolute } from "node:path";
-import { kastleUrl } from "./kastle-client";
-import { installationCredentialSchema, readPrivateJson } from "./kastle-credential-file";
+import { kingdomUrl, ownerRefSchema } from "./kingdom-client";
+import { installationCredentialSchema, readPrivateJson } from "./kingdom-credential-file";
 
 export const kingdomRuntimeSchema = z.object({
-  url: z.string().transform(kastleUrl),
+  url: z.string().transform(kingdomUrl),
   installationId: z.string().uuid(),
   credentialFile: z.string().refine(isAbsolute, "Credential path must be absolute"),
 }).strict();
 export type KingdomRuntimeSettings = z.input<typeof kingdomRuntimeSchema>;
-const ownerId = z.string().uuid().nullable().optional();
 const identitySchema = z.object({ data: z.object({
   installationId: z.string().uuid(), userId: z.string().uuid().nullable(), expiresAt: z.string().datetime(),
-  owner: z.object({ ownerModel: z.string(), userId: ownerId, organizationId: ownerId, spaceId: ownerId }),
+  owner: ownerRefSchema,
 }) });
 
 export class KingdomRuntimeConnection {

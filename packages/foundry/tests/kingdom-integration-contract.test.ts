@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { KastleClient, kastleEnvelopeSchema, kastleSelectionSchema } from "../src/providers/kastle-client";
-import { KastleAccessClient, kastleAccessSourceSchema } from "../src/providers/kastle-access-client";
+import { KingdomClient, kingdomEnvelopeSchema, kingdomSelectionSchema } from "../src/providers/kingdom-client";
+import { KingdomAccessClient, kingdomAccessSourceSchema } from "../src/providers/kingdom-access-client";
 
 test("Kingdom Integration selection/envelope use canonical wire fields and reject old or ambiguous names", async () => {
   const integrationId = crypto.randomUUID(), runId = crypto.randomUUID(), bindingId = crypto.randomUUID();
-  const envelope = { id: bindingId, kastleId: crypto.randomUUID(), installationId: crypto.randomUUID(), runId,
+  const envelope = { id: bindingId, owner: { ownerModel: "User", userId: crypto.randomUUID(), organizationId: null, spaceId: null }, installationId: crypto.randomUUID(), runId,
     integrationId, capacityId: crypto.randomUUID(), model: "controlled", effort: "low", runtime: "claude",
     expiresAt: new Date(Date.now() + 60000).toISOString(), gatewayPath: `/api/v1/access/gateway/${bindingId}` };
   let calls = 0;
@@ -17,13 +17,13 @@ test("Kingdom Integration selection/envelope use canonical wire fields and rejec
     return Response.json({ data: envelope });
   } });
   try {
-    const client = new KastleClient(server.url.origin, "synthetic");
+    const client = new KingdomClient(server.url.origin, "synthetic");
     expect((await client.resolve(runId, { integrationIds: [integrationId] })).integrationId).toBe(integrationId);
-    expect(kastleSelectionSchema.safeParse({ connectionIds: [integrationId] }).success).toBe(false);
-    expect(kastleSelectionSchema.safeParse({ integrationIds: [integrationId], connectionIds: [integrationId] }).success).toBe(false);
+    expect(kingdomSelectionSchema.safeParse({ connectionIds: [integrationId] }).success).toBe(false);
+    expect(kingdomSelectionSchema.safeParse({ integrationIds: [integrationId], connectionIds: [integrationId] }).success).toBe(false);
     const { integrationId: _, ...withoutIntegration } = envelope;
-    expect(kastleEnvelopeSchema.safeParse({ ...withoutIntegration, connectionId: integrationId }).success).toBe(false);
-    expect(kastleEnvelopeSchema.safeParse({ ...envelope, connectionId: integrationId }).success).toBe(false);
+    expect(kingdomEnvelopeSchema.safeParse({ ...withoutIntegration, connectionId: integrationId }).success).toBe(false);
+    expect(kingdomEnvelopeSchema.safeParse({ ...envelope, connectionId: integrationId }).success).toBe(false);
     expect(calls).toBe(1);
   } finally { server.stop(true); }
 });
@@ -48,8 +48,8 @@ test("read routes the exact discovered resource Integration and rejects foreign 
   try {
     const source = { id: crypto.randomUUID(), name: "Controlled", url: server.url.origin,
       credentialFile: join(directory, "credential.json"), integrationId, signetId, projectIds: ["P"] };
-    await writeFile(source.credentialFile, JSON.stringify({ secret: "kastle_" + "a".repeat(43) }), { mode: 0o600 });
-    const client = new KastleAccessClient(source);
+    await writeFile(source.credentialFile, JSON.stringify({ secret: "kingdom_" + "a".repeat(43) }), { mode: 0o600 });
+    const client = new KingdomAccessClient(source);
     const input = { requestId: crypto.randomUUID(), runId: crypto.randomUUID(), operation: "documents.read", resourceId, limit: 1 };
     await client.read(input);
     expect(executions[0].integrationId).toBe(resourceIntegrationId);
@@ -58,7 +58,7 @@ test("read routes the exact discovered resource Integration and rejects foreign 
     await expect(client.read({ ...input, requestId: crypto.randomUUID() })).rejects.toThrow("another grant");
     expect(executions).toHaveLength(1);
     const { integrationId: _, ...withoutIntegration } = source;
-    expect(kastleAccessSourceSchema.safeParse({ ...withoutIntegration, connectionId: integrationId }).success).toBe(false);
-    expect(kastleAccessSourceSchema.safeParse({ ...source, connectionId: integrationId }).success).toBe(false);
+    expect(kingdomAccessSourceSchema.safeParse({ ...withoutIntegration, connectionId: integrationId }).success).toBe(false);
+    expect(kingdomAccessSourceSchema.safeParse({ ...source, connectionId: integrationId }).success).toBe(false);
   } finally { server.stop(true); await rm(directory, { recursive: true, force: true }); }
 });

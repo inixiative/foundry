@@ -3,14 +3,15 @@ import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { ConfigStore } from "../viewer/config";
-import { kastleUrl } from "./kastle-client";
-import { writePrivateJson } from "./kastle-credential-file";
+import { kingdomUrl } from "./kingdom-client";
+import { writePrivateJson } from "./kingdom-credential-file";
 import type { KingdomRuntimeConnection } from "./kingdom-runtime-connection";
+import { RUNTIME_SECRET_PREFIX } from "./kingdom-secrets";
 
 /** Hosted production Kingdom API origin; the default offered by guided setup. */
 export const HOSTED_KINGDOM_URL = "https://kingdom-prod-api-prod.up.railway.app";
 
-export const kingdomPairInputSchema = z.object({ url: z.string().transform(kastleUrl), name: z.string().trim().min(1).max(120) }).strict();
+export const kingdomPairInputSchema = z.object({ url: z.string().transform(kingdomUrl), name: z.string().trim().min(1).max(120) }).strict();
 const pairSchema = z.object({ data: z.object({ deviceCode: z.string().regex(/^[A-Za-z0-9_-]{43}$/), userCode: z.string().regex(/^[A-F0-9]{12}$/), verificationUrl: z.string().url(), expiresAt: z.string().datetime(), interval: z.number().int().min(1).max(60).optional() }) });
 const pollSchema = z.object({ data: z.discriminatedUnion("status", [z.object({ status: z.literal("pending") }), z.object({ status: z.literal("approved"), installationId: z.string().uuid() })]) });
 
@@ -30,10 +31,10 @@ export async function beginKingdomPairing(input: z.output<typeof kingdomPairInpu
   const stat = await lstat(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink() || (process.getuid && stat.uid !== process.getuid())) throw Error("Configuration directory must be owned by this user.");
   await chmod(directory, 0o700);
-  const secret = `kastle_runtime_${randomBytes(32).toString("base64url")}`;
+  const secret = `${RUNTIME_SECRET_PREFIX}${randomBytes(32).toString("base64url")}`;
   const { data } = pairSchema.parse(await request(input.url, "pairRuntime", { name: input.name, keyHash: createHash("sha256").update(secret).digest("hex") }, transport));
   const verification = new URL(data.verificationUrl);
-  kastleUrl(verification.origin);
+  kingdomUrl(verification.origin);
   if (verification.username || verification.password || (new URL(input.url).protocol === "https:" && verification.protocol !== "https:"))
     throw Error("Kingdom returned an unsafe login address.");
   return { ...data, url: input.url, secret };

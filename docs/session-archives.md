@@ -68,7 +68,7 @@ A running viewer holds settings and archive routing in memory: the CLIs report `
 
 ## Publish to Kingdom
 
-Pair a runtime with Kingdom. Kingdom takes the archive owner from its `kastle_runtime_…` credential; `ownerModel`, `organizationId` and `spaceId` narrow it to an organization or space that owner manages. Put the credential in an environment variable available to Foundry, or use the enrolled identity (see Foundry credentials below); archive config never stores the secret.
+Pair a runtime with Kingdom. Kingdom takes the archive owner from its `kingdom_runtime_…` credential; `ownerModel`, `organizationId` and `spaceId` narrow it to an organization or space that owner manages. Put the credential in an environment variable available to Foundry, or use the enrolled identity (see Foundry credentials below); archive config never stores the secret.
 
 `<configDir>/archives.json` is an array:
 
@@ -85,7 +85,7 @@ Pair a runtime with Kingdom. Kingdom takes the archive owner from its `kastle_ru
 ]
 ```
 
-Use real IDs; omit the owner fields to publish under the credential's own owner. Only archives whose explicit local `projectId` matches a destination are uploaded. Multiple destinations are explicit separate copies, with independent ownership and shares. Restart Foundry to load changed configuration. Entries written before Kastle removal (`kastleId`, `keepIds`) are rejected: the viewer reports the invalid file in Settings → Archives and publishes nothing until it is fixed or removed and the destinations are reconnected. All archived text, including recorded tool results and phase request context, goes to the selected destination; there is no automatic secret scrubber.
+Use real IDs; omit the owner fields to publish under the credential's own owner. Only archives whose explicit local `projectId` matches a destination are uploaded. Multiple destinations are explicit separate copies, with independent ownership and shares. Restart Foundry to load changed configuration. Destinations with unknown fields are rejected: the viewer reports the invalid file in Settings → Archives and publishes nothing until it is fixed or removed and the destinations are reconnected. All archived text, including recorded tool results and phase request context, goes to the selected destination; there is no automatic secret scrubber.
 
 For one imported archive, save one destination object (without the outer array) and run:
 
