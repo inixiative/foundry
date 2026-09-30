@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import { FoundryCredentials } from '../providers/credentials';
-import { defaultKingdomUrl, defaultRuntimeName, kingdomStatus, pairKingdom } from '../providers/kingdom-cli';
+import { defaultKingdomUrl, defaultRuntimeName, kingdomStatus, pairKingdom, type KingdomRuntimeStatus } from '../providers/kingdom-cli';
+import { kingdomUrl } from '../providers/kingdom-client';
+import { selectKingdomRuntime } from '../providers/kingdom-runtime-connection';
 import { viewerRunning } from '../providers/kingdom-pairing';
 import type { SetupPrompts } from '../setup/prompts';
 import { ConfigStore } from '../viewer/config';
-import { readDestinations } from './config';
+import { destinationUrl, readDestinations } from './config';
 import { listKingdomConnections, saveArchiveConnection } from './publish';
 
 export interface ArchiveSetupOptions {
@@ -13,7 +15,9 @@ export interface ArchiveSetupOptions {
   archivesPath?: string;
   /** Omitted: non-interactive; flags decide. */
   prompts?: SetupPrompts;
-  /** Pair with this Kingdom when not connected. */
+  /** Paired Kingdom (id or API origin) whose destinations to set up; required when several are paired. */
+  kingdom?: string;
+  /** Pair with this Kingdom when no paired Kingdom is at this address. */
   kingdomUrl?: string;
   name?: string;
   /** Defaults to every registered project. */
@@ -42,22 +46,26 @@ export type ProjectSetupResult = {
   reason?: string;
 };
 
-/** Guided path from nothing to a paired Kingdom and a verified destination per registered project. */
+/** Guided path from nothing to a paired Kingdom and a verified destination per registered project on it. */
 export async function runArchiveSetup(options: ArchiveSetupOptions) {
   const { configDir, prompts, transport = fetch, log = console.error } = options;
   const archivesPath = options.archivesPath ?? join(configDir, 'archives.json');
-  let kingdom: { status: string; url?: string; installationId?: string } = await kingdomStatus(configDir, transport);
+  const paired = await kingdomStatus(configDir, transport);
+  let kingdom: { status: string; id?: string; url?: string; owner?: string; installationId?: string } =
+    await chooseKingdom(options, paired.runtimes);
   let written = false;
 
   if (kingdom.status !== 'connected') {
     log(
       kingdom.status === 'unavailable'
         ? `Kingdom runtime at ${kingdom.url} is unavailable (revoked, expired or unreachable).`
-        : 'This Foundry is not paired with Kingdom.',
+        : paired.runtimes.length
+          ? `No paired Kingdom is at ${options.kingdomUrl}.`
+          : 'This Foundry is not paired with Kingdom.',
     );
     let url = options.kingdomUrl;
     if (prompts && (await prompts.confirm(kingdom.status === 'unavailable' ? 'Pair again?' : 'Pair with Kingdom now?', true)))
-      url = await prompts.ask('Kingdom API address', url ?? (await defaultKingdomUrl(configDir)));
+      url = kingdom.url ?? (await prompts.ask('Kingdom API address', url ?? defaultKingdomUrl()));
     else if (prompts) url = undefined;
     if (url) {
       const name = options.name ?? (prompts ? await prompts.ask('Foundry name', defaultRuntimeName()) : undefined);
@@ -66,7 +74,7 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
         url,
         name,
         open: options.open,
-        replace: true,
+        ...(kingdom.id ? { replace: true, kingdom: kingdom.id } : {}),
         transport,
         log,
         sleep: options.sleep,
@@ -81,32 +89,41 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
   if (!targets.length) log('No registered projects yet. Start Foundry in a project, then run bun run archive setup.');
   const credentials = new FoundryCredentials(
     configDir,
-    async () => (await new ConfigStore(configDir).load()).kingdomRuntime,
+    async () => (await new ConfigStore(configDir).load()).kingdomRuntimes,
   );
-  let listed: { url: string; connections: KingdomConnection[] } | undefined;
-  if (kingdom.status === 'connected') {
+  const runtime = kingdom.status === 'connected' ? { id: kingdom.id!, url: kingdom.url!, owner: kingdom.owner! } : undefined;
+  let listed: KingdomConnection[] | undefined;
+  if (runtime) {
     try {
-      const result = await listKingdomConnections(credentials, transport);
-      listed = {
-        url: result.url,
-        connections: Array.isArray(result.connections)
-          ? result.connections.filter((c: unknown): c is KingdomConnection => typeof (c as KingdomConnection)?.id === 'string')
-          : [],
-      };
+      const result = await listKingdomConnections(credentials, runtime.id, transport);
+      listed = Array.isArray(result.connections)
+        ? result.connections.filter((c: unknown): c is KingdomConnection => typeof (c as KingdomConnection)?.id === 'string')
+        : [];
     } catch {
       log('Kingdom archive connections are unavailable; only direct Archive servers can be connected now.');
     }
   }
+  // Destinations are per paired Kingdom: one on another Kingdom leaves this one to set up.
+  const configured = (projectId: string) =>
+    destinations.some(
+      (d) =>
+        d.projectId === projectId &&
+        (!runtime ||
+          d.kind === 'archive' ||
+          (d.credential?.type === 'kingdom-runtime'
+            ? d.credential.owner === runtime.owner && destinationUrl(d.url).origin === runtime.url
+            : destinationUrl(d.url).origin === runtime.url)),
+    );
 
   const projects: ProjectSetupResult[] = [];
   for (const projectId of targets) {
     const project = config.projects[projectId];
     const label = project?.label ?? project?.path ?? projectId;
-    if (destinations.some((d) => d.projectId === projectId)) {
+    if (configured(projectId)) {
       projects.push({ projectId, status: 'configured' });
       continue;
     }
-    const matches = listed?.connections.filter((c) => c.projectId === projectId) ?? [];
+    const matches = listed?.filter((c) => c.projectId === projectId) ?? [];
     let choice: Choice | string;
     try {
       choice = prompts
@@ -126,10 +143,10 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
         choice.kind === 'kingdom'
           ? {
               kind: 'kingdom',
-              url: listed!.url,
+              url: runtime!.url,
               projectId,
               ...(choice.connectionId ? { connectionId: choice.connectionId } : {}),
-              credential: { type: 'kingdom-runtime' },
+              credential: { type: 'kingdom-runtime', owner: runtime!.owner },
             }
           : { kind: 'archive', url: choice.url, projectId, secret: choice.secret },
         credentials,
@@ -146,10 +163,32 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
   const restartViewer = written && (await viewerRunning(undefined, transport));
   if (restartViewer) log('A Foundry viewer is running; restart it (bun run daemon:start restarts the daemon) to load the new configuration.');
   return {
-    kingdom: { status: kingdom.status, ...(kingdom.url ? { url: kingdom.url, installationId: kingdom.installationId } : {}) },
+    kingdom: {
+      status: kingdom.status,
+      ...(kingdom.url ? { id: kingdom.id, url: kingdom.url, installationId: kingdom.installationId } : {}),
+    },
     projects,
     restartViewer,
   };
+}
+
+/**
+ * The paired Kingdom to set up: `--kingdom`, else the one at `--kingdom-url`, else the only one, else a prompt.
+ * No match (and `--kingdom-url` names an unpaired address) means pairing a new one.
+ */
+async function chooseKingdom(options: ArchiveSetupOptions, runtimes: KingdomRuntimeStatus[]) {
+  if (options.kingdom) return selectKingdomRuntime(runtimes, options.kingdom);
+  const url = options.kingdomUrl ? kingdomUrl(options.kingdomUrl) : undefined;
+  const candidates = url ? runtimes.filter((runtime) => runtime.url === url) : runtimes;
+  if (candidates.length === 1) return candidates[0]!;
+  if (!candidates.length) return { status: 'disconnected' };
+  if (!options.prompts) throw Error('Several Kingdoms are paired; choose one with --kingdom ID|URL (bun run kingdom status lists them).');
+  const index = await options.prompts.choose(
+    'Which Kingdom should these archives publish through?',
+    candidates.map((runtime) => `${runtime.url} as ${runtime.owner} (${runtime.id}, ${runtime.status})`),
+    0,
+  );
+  return candidates[index]!;
 }
 
 function chooseFromFlags(options: ArchiveSetupOptions, matches: KingdomConnection[], kingdom: boolean): Choice | string {

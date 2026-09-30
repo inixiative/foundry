@@ -12,6 +12,7 @@ export { RuntimeJobWorker } from "../providers/runtime-job-worker";
 export {
   KingdomRuntimeConnection,
   kingdomRuntimeSchema,
+  type KingdomInstallation,
   type KingdomRuntimeSettings,
 } from "../providers/kingdom-runtime-connection";
 export { SignetClient, SignetHttpError } from "../providers/signet-client";

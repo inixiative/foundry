@@ -41,6 +41,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       watch: { type: 'boolean' },
       help: { type: 'boolean' },
       'kingdom-url': { type: 'string' },
+      kingdom: { type: 'string' },
       name: { type: 'string' },
       project: { type: 'string', multiple: true },
       connection: { type: 'string' },
@@ -55,13 +56,13 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   const storePath = String(v.store ?? join(dirname(config), 'archives', 'archives.sqlite'));
   const credentials = new FoundryCredentials(
     dirname(resolve(config)),
-    async () => (await new ConfigStore(dirname(resolve(config))).load()).kingdomRuntime,
+    async () => (await new ConfigStore(dirname(resolve(config))).load()).kingdomRuntimes,
   );
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (v.help) {
     console.log(
-      'Foundry credentials: connect --kingdom-identity [--connection-id ID] [--owner-model M --organization-id UUID --space-id UUID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.\n' +
-        'Guided setup: setup [--kingdom-url URL] [--name NAME] [--project ID]... [--connection ID|kingdom] [--archive-url URL --archive-token-env VAR] [--yes] [--no-open]; pairs Kingdom if needed and connects each registered project without a destination.',
+      'Foundry credentials: connect --kingdom-identity [--kingdom ID|URL] [--connection-id ID] [--owner-model M --organization-id UUID --space-id UUID] --project-id PROJECT, or --credential-id UUID for a saved direct credential.\n' +
+        'Guided setup: setup [--kingdom ID|URL] [--kingdom-url URL] [--name NAME] [--project ID]... [--connection ID|kingdom] [--archive-url URL --archive-token-env VAR] [--yes] [--no-open]; pairs Kingdom if needed and connects each registered project without a destination on the selected Kingdom.',
     );
     return runCli(['--help']);
   }
@@ -85,6 +86,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
         configDir: dirname(resolve(config)),
         archivesPath: config,
         prompts,
+        kingdom: v.kingdom as string | undefined,
         kingdomUrl: v['kingdom-url'] as string | undefined,
         name: v.name as string | undefined,
         projects: v.project as string[] | undefined,
@@ -108,7 +110,9 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
       1
     )
       throw Error('Choose one credential source');
-    const identity = v['kingdom-identity'] ? await credentials.kingdomIdentity() : undefined;
+    const identity = v['kingdom-identity']
+      ? await credentials.kingdomIdentity(v.kingdom as string | undefined)
+      : undefined;
     const kind = identity ? 'kingdom' : String(v.kind ?? 'archive');
     const destination = archiveDestinationSchema.parse({
       kind,
@@ -123,7 +127,7 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
           }
         : {}),
       ...(identity
-        ? { credential: { type: 'kingdom-runtime' } }
+        ? { credential: { type: 'kingdom-runtime', owner: identity.owner } }
         : v['credential-id']
           ? { credential: { type: 'managed', id: v['credential-id'] } }
           : { tokenEnv: v['token-env'] ?? 'ARCHIVE_TOKEN' }),

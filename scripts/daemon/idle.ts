@@ -2,7 +2,7 @@
  * Whether the runtime is safe to restart.
  *
  * The job worker holds a SQLite write lock at
- * <runtimeDirectory>/runtime-jobs/<jobId>/active.sqlite for the life of a job.
+ * <runtimeDirectory>/runtime-jobs/<installationId>_<jobId>/active.sqlite for the life of a job.
  * Acquiring it is therefore the same question as "is that job still running",
  * and reuses the worker's own primitive rather than inventing a second signal.
  */
@@ -25,8 +25,7 @@ const heldByAnotherProcess = (path: string): boolean => {
 };
 
 /** A missing or unreadable jobs directory means nothing is running, not that we should guess. */
-export const runtimeJobsInFlight = async (runtimeDirectory: string | undefined): Promise<boolean> => {
-  if (!runtimeDirectory) return false;
+export const runtimeJobsInFlight = async (runtimeDirectory: string): Promise<boolean> => {
   const root = join(runtimeDirectory, "runtime-jobs");
   let entries: string[];
   try {
