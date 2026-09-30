@@ -3,6 +3,7 @@ import type { ExecutionResult } from "./base-agent";
 import type { Decision } from "./decider";
 import type { Classification } from "./classifier";
 import type { Route } from "./router";
+import type { ClarificationResult, ClarifyPayload } from "./clarifier";
 import type { LayerFilter } from "./context-stack";
 import type { ContextLayer } from "./context-layer";
 import { Trace } from "./trace";
@@ -24,6 +25,8 @@ export interface HarnessResult<T = unknown> {
   readonly messageId: string;
   readonly classification?: Decision<Classification>;
   readonly route?: Decision<Route>;
+  /** Set when a clarify stage ran; when `needed`, execution was skipped. */
+  readonly clarification?: ClarificationResult;
   readonly result: ExecutionResult<T>;
   readonly trace: Trace;
   readonly timestamp: number;
@@ -57,7 +60,7 @@ export interface FlowStage {
   /** Agent ID for this stage. Use "routed" to use route.destination. */
   agentId: string | "routed";
   /** Pipeline role (for tracing and UI). */
-  role: "classify" | "route" | "execute" | "enrich" | "guard" | "observe";
+  role: "classify" | "route" | "clarify" | "execute" | "enrich" | "guard" | "observe";
   /**
    * When this stage runs:
    * - "always": every request
@@ -478,6 +481,7 @@ export class Harness {
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
+    let clarification: ClarificationResult | undefined;
     let lastExecuteAgentId: string | undefined;
 
     // Build request context for middleware
@@ -562,10 +566,15 @@ export class Harness {
           annotations: { invocation: stage.invocation },
         });
 
-        // Route stage receives classification context; others get raw payload
+        // Route and clarify stages receive classification context; others get raw payload
         const stagePayload = stage.role === "route" && classification
           ? { payload: message.payload, classification: classification.value }
-          : message.payload;
+          : stage.role === "clarify"
+            ? ({
+                message: typeof message.payload === "string" ? message.payload : JSON.stringify(message.payload),
+                classification: classification?.value ?? { category: "unknown" },
+              } satisfies ClarifyPayload)
+            : message.payload;
 
         // The thread observes this dispatch once at its boundary; the stage
         // only contributes correlation. Only the execute stage streams deltas:
@@ -603,16 +612,21 @@ export class Harness {
           }
         } else if (stage.role === "route") {
           route = result.output as Decision<Route>;
+        } else if (stage.role === "clarify") {
+          clarification = (result.output as Decision<ClarificationResult>).value;
         }
 
         if (trace.current && result.meta?.injection) {
           trace.current.annotations.injection = result.meta.injection;
         }
         trace.end(result.output);
+
+        // Circuit breaker: an underspecified request returns questions instead of executing
+        if (clarification?.needed) break;
       }
 
       // Run any remaining on-demand agents requested by middleware
-      for (const agentId of requestedAgents) {
+      for (const agentId of clarification?.needed ? [] : requestedAgents) {
         const alreadyRan = invokedAgents.some((a) => a.id === agentId);
         if (alreadyRan) continue;
         if (!this.thread.getAgent(agentId)) continue;
@@ -635,8 +649,10 @@ export class Harness {
       // Final result: from last execute-role agent, or last invoked agent
       const finalAgentId = lastExecuteAgentId
         ?? invokedAgents[invokedAgents.length - 1]?.id;
-      const finalResult = (finalAgentId ? stageResults.get(finalAgentId) : undefined)
-        ?? { output: null, contextHash: "" } as ExecutionResult;
+      const finalResult = clarification?.needed
+        ? { output: null, contextHash: "" } as ExecutionResult
+        : (finalAgentId ? stageResults.get(finalAgentId) : undefined)
+          ?? { output: null, contextHash: "" } as ExecutionResult;
 
       const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
       const activeLayers = this.thread.stack.layers.filter(layerFilter).map((l) => l.id);
@@ -645,6 +661,7 @@ export class Harness {
         messageId: message.id,
         classification,
         route,
+        clarification,
         result: finalResult,
         trace,
         timestamp: Date.now(),
