@@ -66,6 +66,8 @@ export interface RouteRequestEvidence {
 export interface RouteOpts {
   /** Observes the exact messages supplied to the routing provider, once, before the call. Invocation-scoped. */
   observeRequest?: (request: RouteRequestEvidence) => void;
+  /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
+  timeoutMs?: number;
 }
 
 export interface RouteResult {
@@ -363,6 +365,8 @@ export class Cartographer {
     const mapContent = JSON.stringify(this._map.entries, null, 2);
     const atlasSection = this._atlasSection();
 
+    // The topology map and atlas change only when layers or the atlas change: a stable, primable prefix.
+    const stablePrefix = `## Available context (topology map)\n${mapContent}\n${atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}\n` : ""}`;
     const messages: LLMMessage[] = [
       { role: "system", content: this._routePrompt },
       {
@@ -383,7 +387,8 @@ export class Cartographer {
       messages: Object.freeze(messages.map((m) => Object.freeze({ role: m.role, content: m.content }))) }));
 
     try {
-      const result = await this._llm.complete(messages, this._llmOpts);
+      const result = await this._llm.complete(messages, { ...this._llmOpts, stablePrefix,
+        ...(opts?.timeoutMs !== undefined ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) } : {}) });
       const parsed = parseJSON<RouteResult>(result.content);
       return {
         layers: parsed.layers ?? [],

@@ -2,45 +2,56 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCodexTextProvider } from "../src/providers/codex-text-provider";
+import { createPrimedDecisionHost } from "../src/providers/primed-decisions";
 import { buildSubscriptionDecisions, type DecisionPressure, type SubscriptionDecisionConfig } from "../src/providers/subscription-decisions";
 import { defaultProfileSource } from "../src/providers/default-profiles";
 import { NativeAuthentication } from "../src/providers/native-authentication";
 import { DECISION_PRIORITY } from "../src/providers/decision-priority";
-import { codexTransport } from "./helpers/subscription-transport";
+import { appServerTransport } from "./helpers/subscription-transport";
 
 const roots: string[] = [];
+const hosts: Array<() => Promise<void>> = [];
 const home = process.env.HOME;
 afterEach(async () => {
+  for (const close of hosts.splice(0)) await close();
   process.env.HOME = home;
   await Bun.sleep(10);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-function scheduler(transport: ReturnType<typeof codexTransport>, bounds: Partial<SubscriptionDecisionConfig> = {}) {
+/** The production scheduler over one warm, primed app-server (controlled). */
+function scheduler(transport: ReturnType<typeof appServerTransport>, bounds: Partial<SubscriptionDecisionConfig> = {}) {
   const root = mkdtempSync(join(tmpdir(), "subscription-scheduling-")); roots.push(root);
   mkdirSync(join(root, ".codex"), { mode: 0o700 }); process.env.HOME = root;
   const directory = join(root, "receipts"); mkdirSync(directory, { mode: 0o700 });
   const pressure: DecisionPressure[] = [];
-  const decisions = buildSubscriptionDecisions({ directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna",
+  const config: SubscriptionDecisionConfig = { directory, source: defaultProfileSource("codex"), model: "gpt-5.6-luna",
     maxCalls: 10_000, maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 8, callTimeoutMs: 20_000,
-    onPressure: event => pressure.push(event), ...bounds }, cfg => buildCodexTextProvider(cfg, transport));
-  return { root, decisions, pressure };
+    onPressure: event => pressure.push(event), ...bounds };
+  const primed = createPrimedDecisionHost({ source: config.source, directory, model: config.model, maxConcurrent: config.maxConcurrent ?? 1,
+    callTimeoutMs: config.callTimeoutMs, spawn: transport.spawn });
+  const decisions = buildSubscriptionDecisions(config, primed.createRun);
+  hosts.push(async () => { await decisions.shutdown(); await primed.close(); });
+  return { root, decisions, pressure, primed };
 }
 /** Each answer echoes its prompt's label, so completion order is observable. */
-const labelled = (delayMs: number) => codexTransport({ delayMs, response: prompt => prompt.match(/label:(\S+)/)?.[1] ?? "?" });
+const labelled = (delayMs: number) => appServerTransport({ delayMs, response: prompt => prompt.match(/label:(\S+)/)?.[1] ?? "?" });
 const ask = (decisions: ReturnType<typeof scheduler>["decisions"], label: string, thread: string, priority?: number) =>
   decisions.provider.complete([{ role: "user", content: `label:${label}` }], { threadId: `${thread}:aux:domain:x`, ...(priority === undefined ? {} : { priority }) })
     .then(result => result.content, (error: Error) => `rejected:${error.message}`);
 
-test("decisions run concurrently up to the cap on one shared Codex login, and every holder is released", async () => {
+test("decisions run concurrently up to the cap on one warm process sharing the Codex login, released at shutdown", async () => {
   const transport = labelled(60);
-  const { root, decisions } = scheduler(transport, { maxConcurrent: 3 });
+  const { root, decisions, primed } = scheduler(transport, { maxConcurrent: 3 });
   const results = await Promise.all(Array.from({ length: 7 }, (_, i) => ask(decisions, `d${i}`, `T${i}`)));
   expect(results).toEqual(["d0", "d1", "d2", "d3", "d4", "d5", "d6"]);
-  // Overlap is proven by concurrent live processes, not wall-clock time (suite load varies).
+  // Overlap is proven by concurrent in-flight turns, not wall-clock time (suite load varies).
   expect(transport.peak).toBe(3);
-  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
+  expect(transport.launches).toHaveLength(1);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(true);
   expect(decisions.snapshot()).toMatchObject({ closed: false, running: 0, queued: 0, attempts: 7 });
+  await decisions.shutdown(); await primed.close();
+  expect(transport.launches[0]!.exited).toBe(true);
+  expect(existsSync(join(root, ".codex", ".foundry-auth-shared"))).toBe(false);
 });
 
 test("a blocked turn outranks guards, which outrank learning review", async () => {
@@ -94,17 +105,18 @@ test("full queues shed lower-priority waits instead of refusing a turn", async (
 });
 
 test("a rate limit backs off and signals, without closing admission or retrying", async () => {
-  const limited = codexTransport({ failure: "You've hit your usage limit. Try again later." });
+  const limited = appServerTransport({ failure: { message: "You've hit your usage limit. Try again later.", codexErrorInfo: "usageLimitExceeded" } });
   const { decisions, pressure } = scheduler(limited, { rateLimitBackoffMs: 150 });
   expect(await ask(decisions, "one", "A")).toContain("rate limited; no fallback or retry");
-  expect(limited.launches).toHaveLength(1);
+  expect(limited.turns).toHaveLength(1);
   expect(pressure).toMatchObject([{ kind: "rate-limited", backoffMs: 150 }]);
   expect(decisions.snapshot()).toMatchObject({ closed: false });
   expect(decisions.snapshot().backoffUntil).toBeGreaterThan(Date.now());
   const started = Date.now();
   expect(await ask(decisions, "two", "A")).toContain("rate limited");
   expect(Date.now() - started).toBeGreaterThanOrEqual(100);
-  expect(limited.launches).toHaveLength(2);
+  // The account is known to be blocked: the second decision is refused before any turn is sent.
+  expect(limited.turns).toHaveLength(1);
   expect(pressure.at(-1)).toMatchObject({ kind: "rate-limited", backoffMs: 300 });
 });
 
@@ -131,7 +143,7 @@ test("shared decision holders and an exclusive worker lock exclude each other on
 /** 10 threads, each a turn (classifier, router, cartographer, 4 experts) then 3 tool calls
  * (3 guards each) and 2 background reviews, arriving together. */
 async function load(bounds: Partial<SubscriptionDecisionConfig>) {
-  const { decisions } = scheduler(codexTransport({ delayMs: 25 }), bounds);
+  const { decisions } = scheduler(appServerTransport({ delayMs: 25 }), bounds);
   const turnWaits: number[] = [], results: string[] = [];
   let peakQueue = 0;
   const probe = setInterval(() => { peakQueue = Math.max(peakQueue, decisions.snapshot().queued); }, 2);

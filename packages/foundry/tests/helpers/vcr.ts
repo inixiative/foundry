@@ -42,10 +42,6 @@ export const claudeStatusOnly = (frames: Frame[]): Frame[] => {
     return [{ after: 0, stream: "stdout", data: JSON.stringify({ loggedIn: status.loggedIn, authMethod: status.authMethod }) }];
   } catch { return [{ after: 0, stream: "stdout", data: "VCR: unparseable auth status withheld" }]; }
 };
-/** `codex login status` reports the login method on stderr; nothing else is kept. */
-export const codexLoginOnly = (frames: Frame[]): Frame[] =>
-  frames.filter(frame => /^(Logged in using|Not logged in)/.test(frame.data)).map(frame => ({ ...frame, data: frame.data.replace(/ - .*/, "") }));
-
 type Names = { decision?: string[]; status?: string[] };
 const queueAll = (vcr: VCR, method: string, names: string[] = []) => { for (const name of names) vcr.queue(method, name); };
 
@@ -58,20 +54,11 @@ export function recordedClaudeTransport(names: Names, vcr = claudeVcr()) {
     spawn: decisions.spawn, statusSpawn: status.statusSpawn };
 }
 
-/** Codex decisions: `codex login status`, then one `codex exec --json` process per call. */
-export function recordedCodexTransport(names: Names, vcr = codexVcr()) {
-  queueAll(vcr, "decision", names.decision); queueAll(vcr, "login-status", names.status);
-  const decisions = new ProcessCassettes(vcr, "decision", { model: LIVE.codexModel });
-  const status = new ProcessCassettes(vcr, "login-status", { argv: ["codex", "login", "status"], sanitize: codexLoginOnly, recordOnce: true, model: () => undefined, env: () => nativeTextEnvironment(process.env) });
-  let live = 0, peak = 0;
-  return { vcr, launches: decisions.launches, get statusChecks() { return status.launches.length; }, get live() { return live; }, get peak() { return peak; },
-    statusSpawn: status.statusSpawn,
-    spawn: (argv: string[], options: { cwd: string; env: Record<string, string | undefined> }) => {
-      const child = decisions.spawn(argv, options);
-      live++; peak = Math.max(peak, live);
-      void child.exited.then(() => { live--; });
-      return child;
-    } };
+/** Primed Codex decisions: one warm `codex app-server` (JSON-RPC) serves every role's session. */
+export function recordedAppServerTransport(names: string[], vcr = codexVcr()) {
+  queueAll(vcr, "primed", names);
+  const server = new ProcessCassettes(vcr, "primed", { model: LIVE.codexModel });
+  return { vcr, launches: server.launches, spawn: server.spawn };
 }
 
 /** Replay proves it matches live: record stores the live conclusion, replay compares against it. */

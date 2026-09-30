@@ -3,18 +3,19 @@
 // live, re-records it, then replays the fresh cassette in-process and requires the same
 // conclusion. Each replay also compares against the conclusion live reached when recorded.
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VCR, vcrMode, httpCassettes, webSocketCassettes } from "../src/vcr";
 import { buildNativeTextProvider, subscriptionStatus } from "../src/providers/native-text-provider";
-import { buildCodexTextProvider, codexSubscriptionStatus } from "../src/providers/codex-text-provider";
+import { createPrimedDecisionHost, primedRequest } from "../src/providers/primed-decisions";
+import { buildSubscriptionDecisions } from "../src/providers/subscription-decisions";
 import { SubscriptionAuthentication } from "../src/providers/subscription-authentication";
 import { ClaudeCodeSessionAdapter, CodexSessionAdapter, InMemoryExternalSessionStore } from "../src/providers/session-adapter";
 import { SessionBackedProvider } from "../src/providers/session-backed";
 import { KingdomRuntimeConnection } from "../src/providers/kingdom-runtime-connection";
 import { ProcessCassettes } from "../src/vcr";
-import { ANSWER, DECIDED, LIVE, answerPrompt, decisionMessages, claudeVcr, codexVcr, kingdomVcr, recordedClaudeTransport, recordedCodexTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
+import { ANSWER, DECIDED, LIVE, answerPrompt, decisionMessages, claudeVcr, codexVcr, kingdomVcr, recordedAppServerTransport, recordedClaudeTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 
 const recording = vcrMode() === "record";
 const roots: string[] = [];
@@ -56,14 +57,6 @@ test("claude auth status: the login is a claude.ai subscription, and the account
   })).toEqual({ subscribed: true, withinStatusDeadline: true });
 }, LIVE_TIMEOUT);
 
-test("codex login status: the login is a ChatGPT subscription", async () => {
-  const vcr = codexVcr();
-  expect(await scenario(vcr, "login-status", async () => {
-    const status = recordedCodexTransport({ status: ["chatgpt"] }, vcr);
-    return { subscribed: await codexSubscriptionStatus(status.statusSpawn("unused")) };
-  })).toEqual({ subscribed: true });
-}, LIVE_TIMEOUT);
-
 test("claude text decision: one stream-json turn, text only, observed model acknowledged, process released", async () => {
   const vcr = claudeVcr();
   const out = await scenario(vcr, "decision", async () => {
@@ -81,20 +74,37 @@ test("claude text decision: one stream-json turn, text only, observed model ackn
   expect(out).toMatchObject({ native: { outcome: "completed", observedModel: LIVE.claudeObservedModel }, call: { valid: true, release: "released", processExit: "exited", statusProcessExit: "exited" } });
 }, LIVE_TIMEOUT);
 
-test("codex decision: one ephemeral `codex exec --json` turn on the ChatGPT login, answered within the decision deadline", async () => {
+/** A warden's advice call: role instructions, then its domain cache (the stable, primable prefix) and the message. */
+const cache = "## Domain cache (settings)\n- Settings UI lives under src/settings; toggles are features, not bugs.\n";
+const primedMessages = [decisionMessages()[0]!, { role: "user" as const, content: `${cache}\n## Message\n${decisionMessages()[1]!.content}` }];
+
+test("codex primed decisions: one warm app-server on the ChatGPT login; a role primed once, then forked per cycle", async () => {
   const vcr = codexVcr();
-  const out = await scenario(vcr, "decision", async () => {
-    const transport = recordedCodexTransport({ status: ["chatgpt"], decision: ["answer"] }, vcr);
-    const directory = root();
-    const run = buildCodexTextProvider({ directory, source: source("codex", directory), runId: crypto.randomUUID(), model: LIVE.codexModel,
-      maxCalls: 1, callTimeoutMs: 30_000 }, transport);
-    const result = await run.provider.complete(messages);
-    const call = run.snapshot().calls[0]!;
-    return { content: result.content, model: result.model, tokens: !!result.tokens?.output, native: result.native?.nativeOutcome,
-      call: { valid: call.valid, release: call.release, processExit: call.processExit, statusProcessExit: call.statusProcessExit } };
+  const out = await scenario(vcr, "primed", async () => {
+    const transport = recordedAppServerTransport(["role"], vcr);
+    const directory = root(), receipts = join(directory, "receipts"); mkdirSync(receipts, { mode: 0o700 });
+    const decisionSource = source("codex", directory);
+    const primed = createPrimedDecisionHost({ source: decisionSource, directory: receipts, model: LIVE.codexModel, effort: "low",
+      maxConcurrent: 2, callTimeoutMs: 30_000, spawn: transport.spawn });
+    const decisions = buildSubscriptionDecisions({ directory: receipts, source: decisionSource, model: LIVE.codexModel, maxCalls: 4, maxQueued: 2,
+      maxConcurrent: 2, callTimeoutMs: 30_000 }, primed.createRun);
+    const opts = { threadId: "T:aux:domain:settings", stablePrefix: cache };
+    try {
+      // Prime explicitly so the recording's stdin order is fixed (no background priming racing a decision).
+      await primed.host.prime(primedRequest(primedMessages, opts, opts.threadId).spec);
+      const first = await decisions.provider.complete(primedMessages, opts);
+      const second = await decisions.provider.complete(primedMessages, opts);
+      const stdin = transport.launches[0]!.stdin.split("\n").filter(Boolean).map(line => JSON.parse(line) as { method?: string; params?: Record<string, unknown> });
+      const turns = stdin.filter(m => m.method === "turn/start").map(m => String((m.params!.input as Array<{ text: string }>)[0]!.text));
+      return { contents: [first.content, second.content].map(c => DECIDED.test(c)), launches: transport.launches.length,
+        persistedThreads: stdin.filter(m => m.method === "thread/start" && m.params!.ephemeral === false).length,
+        forks: stdin.filter(m => m.method === "thread/fork").length, primerCarriedContext: turns[0]!.startsWith(cache),
+        cyclesSentOnlyTheMessage: turns.slice(1).every(t => !t.includes("Domain cache") && t.includes("## Message")),
+        receipts: readFileSync(primed.receiptsPath, "utf8").trim().split("\n").map(line => { const r = JSON.parse(line); return { valid: r.valid, settled: r.settled, prime: r.prime }; }) };
+    } finally { await decisions.shutdown(); await primed.close(); }
   });
-  expect(out.content).toMatch(DECIDED);
-  expect(out).toMatchObject({ model: LIVE.codexModel, tokens: true, native: "completed", call: { valid: true, release: "released", processExit: "exited", statusProcessExit: "exited" } });
+  expect(out).toEqual({ contents: [true, true], launches: 1, persistedThreads: 1, forks: 2, primerCarriedContext: true, cyclesSentOnlyTheMessage: true,
+    receipts: [{ valid: true, settled: true, prime: "warm" }, { valid: true, settled: true, prime: "warm" }] });
 }, LIVE_TIMEOUT);
 
 test("claude worker session: two turns on one persistent stream-json process behind the subscription status gate", async () => {

@@ -219,3 +219,35 @@ describe("Harness", () => {
     expect(results[1].result?.output).toBe("answered: test");
   });
 });
+
+test("classification and routing run concurrently on the frozen message; results apply in configured order", async () => {
+  const stack = new ContextStack();
+  const thread = new Thread("concurrent", stack);
+  const inputs: Record<string, unknown> = {};
+  const running = new Set<string>(); let overlap = false;
+  const decide = async <T>(id: string, input: unknown, value: T) => {
+    inputs[id] = input; running.add(id);
+    if (running.size > 1) overlap = true;
+    await Bun.sleep(40); running.delete(id);
+    return { value, confidence: 1 };
+  };
+  thread.register(new Classifier({ id: "classifier", stack, handler: async (_ctx, payload: unknown) => decide("classifier", payload, { category: "bug", tags: [] } as Classification) }));
+  thread.register(new Router({ id: "router", stack, handler: async (_ctx, payload: unknown) => decide("router", payload, { destination: "worker", contextSlice: [], priority: 1 } as Route) }));
+  thread.register(new Executor({ id: "worker", stack, handler: async (_ctx, payload: unknown) => ({ output: `done:${payload}`, contextHash: "" }) }));
+  const harness = new Harness(thread); harness.setClassifier("classifier"); harness.setRouter("router");
+  const classifications: unknown[] = [];
+  thread.signals.on("classification", signal => { classifications.push(signal.content); });
+  try {
+    const started = performance.now();
+    const result = await harness.send({ id: "m1", payload: "fix login" });
+    expect(overlap).toBe(true);
+    expect(performance.now() - started).toBeLessThan(75);
+    expect(inputs).toEqual({ classifier: "fix login", router: "fix login" });
+    expect(result.classification?.value).toEqual({ category: "bug", tags: [] });
+    expect(result.route?.value.destination).toBe("worker");
+    expect(result.invokedAgents.map(a => a.id)).toEqual(["classifier", "router", "worker"]);
+    expect(classifications).toEqual([{ category: "bug", tags: [] }]);
+    const spans = result.trace.root.children.map(s => [s.name, s.status]);
+    expect(spans).toEqual([["classify:classifier", "ok"], ["route:router", "ok"], ["execute:worker", "ok"]]);
+  } finally { thread.dispose(); }
+});

@@ -135,6 +135,27 @@ export class Trace {
     return span;
   }
 
+  /**
+   * Start a span that runs concurrently with its siblings: a child of the current
+   * span that does not become current. End it with endSpan().
+   */
+  startDetached(name: string, kind: SpanKind, detail?: Partial<Span>): Span {
+    const parent = this._stack[this._stack.length - 1];
+    const span = this._createSpan(name, kind, parent?.id, detail);
+    if (parent) parent.children.push(span);
+    return span;
+  }
+
+  /** End a span started with startDetached(). */
+  endSpan(span: Span, output?: unknown, error?: unknown): Span {
+    span.endedAt = performance.now();
+    span.durationMs = span.endedAt - span.startedAt;
+    span.status = error ? "error" : "ok";
+    if (error) span.error = error;
+    if (output !== undefined) (span as { output: unknown }).output = output;
+    return span;
+  }
+
   /** End the entire trace. Closes any remaining open spans. */
   finish(): void {
     const now = performance.now();

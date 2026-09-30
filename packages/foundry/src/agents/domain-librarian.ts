@@ -58,6 +58,8 @@ export interface AdviseOpts {
    * and one turn. A late, failed or timed-out completion cannot change what was observed.
    */
   observeRequest?: (request: AdviceRequestEvidence) => void;
+  /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
+  timeoutMs?: number;
 }
 
 /** The exact input one phase call supplied to its provider, frozen at the call boundary. Text only. */
@@ -824,6 +826,8 @@ export class DomainLibrarian {
     // The domain's instructions (system) stay exactly as configured and inspectable through
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
     // so custom instructions never have to restate the schema and never get rewritten to carry it.
+    // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
+    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
     const messages: LLMMessage[] = [
       { role: "system", content: this._advisePrompt },
       {
@@ -845,7 +849,8 @@ export class DomainLibrarian {
 
     let content: string;
     try {
-      content = (await this._llm.complete(messages, this._llmOpts)).content;
+      content = (await this._llm.complete(messages, { ...this._llmOpts, stablePrefix,
+        ...(opts?.timeoutMs !== undefined ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) } : {}) })).content;
     } catch (err) {
       // Model failure: advise nothing, but say why so the composer records an error, not silence.
       return { layers: [], snippets: [], confidence: 0, error: (err as Error)?.message ?? String(err) };
@@ -891,6 +896,7 @@ export class DomainLibrarian {
     // instructions.
     const understanding = opts?.threadKnowledge ?? this._threadKnowledge.content;
     const revision = opts?.threadKnowledge !== undefined ? opts.threadKnowledgeRevision : this._threadKnowledge.revision;
+    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
     const messages: LLMMessage[] = [
       { role: "system", content: this._guardPrompt },
       {
@@ -918,7 +924,7 @@ export class DomainLibrarian {
     let content: string;
     try {
       // Guards observe completed actions; queued decision capacity serves blocked turns first.
-      content = (await this._llm.complete(messages, { ...this._llmOpts, priority: DECISION_PRIORITY.guard })).content;
+      content = (await this._llm.complete(messages, { ...this._llmOpts, priority: DECISION_PRIORITY.guard, stablePrefix })).content;
     } catch (err) {
       // A rejected call is not a completed check. Whether a model ran, or native work is still
       // running, is only known when the provider classifies it; otherwise it is unknown.

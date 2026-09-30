@@ -86,11 +86,8 @@ console.log(`Stack warmed: ${stack.layers.length} layers, ~${stack.estimateToken
 // -- 4. Build agents --
 
 // Classifier — categorizes incoming messages
-const classifier = new Classifier<string>({
-  id: "classifier",
-  stack,
-  handler: async (_ctx, payload) => {
-    // Simple keyword-based classification (swap for LLM in production)
+// Simple keyword-based classification (swap for LLM in production)
+function keywordCategory(payload: string): Decision<Classification> {
     const lower = payload.toLowerCase();
 
     let category = "general";
@@ -114,15 +111,21 @@ const classifier = new Classifier<string>({
       confidence: 0.8,
       reasoning: `Keyword match: "${category}"`,
     } satisfies Decision<Classification>;
-  },
+}
+
+const classifier = new Classifier<string>({
+  id: "classifier",
+  stack,
+  handler: async (_ctx, payload) => keywordCategory(payload),
 });
 
-// Router — decides where to send based on classification
-const router = new Router<{ payload: string; classification: Classification }>({
+// Router — decides where to send
+// Routing runs concurrently with classification on the frozen message, so it classifies for itself.
+const router = new Router<string>({
   id: "router",
   stack,
   handler: async (_ctx, input) => {
-    const cat = input.classification.category;
+    const cat = keywordCategory(input).value.category;
 
     const routeMap: Record<string, { dest: string; layers: string[] }> = {
       bug: { dest: "executor-fix", layers: ["docs", "conventions", "memory"] },
