@@ -4,7 +4,7 @@ import { resolveSubscriptionPolicy } from "./providers/subscription-policy";
 import { SubscriptionAuthentication } from "./providers/subscription-authentication";
 import { nativeTextEnvironment } from "./providers/native-text-environment";
 import { createDecisionProvider, resolveDecisionModel } from "./providers/decision-provider";
-import { KastleAuthentication } from "./providers/kastle-authentication";
+import { KingdomAuthentication } from "./providers/kingdom-authentication";
 import { NativeAuthentication } from "./providers/native-authentication";
 /**
  * Foundry — production entrypoint.
@@ -35,7 +35,7 @@ import { resolveLearningSettings } from "./agents/learning-config";
 import { runStartupSelfTest, startupSelfTestEnabled } from "./startup-self-test";
 import { FileMemory, PostgresMemory } from "./adapters";
 import { MemoryToolAdapter } from "./tools/memory-adapter";
-import { registerKastleAccess } from "./tools/kastle-access";
+import { registerKingdomAccess } from "./tools/kingdom-access";
 import { BashShell } from "./tools/bash-shell";
 import { BunScript } from "./tools/bun-script";
 import { rtk as rtkFilter } from "./tools/output-filters";
@@ -189,8 +189,8 @@ function createProvider(config: FoundryConfig): {
 } {
   const providerId = config.defaults.provider;
   const sessionStore = FileExternalSessionStore.forProject(process.cwd());
-  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
-    ? new KastleAuthentication({ directory: `${process.cwd()}/.foundry/kastle`, sources: config.kastles ?? [], defaultKastleId: config.defaults.kastleId, assignments: config.kastleAssignments })
+  const authentication = subscription ? new SubscriptionAuthentication(`${process.cwd()}/.foundry/runtime-profiles`, subscription.worker) : config.defaults.kingdomOwnerKey || Object.keys(config.kingdomInferenceAssignments ?? {}).length
+    ? new KingdomAuthentication({ directory: `${process.cwd()}/.foundry/kingdom`, sources: config.kingdomInference ?? [], defaultOwnerKey: config.defaults.kingdomOwnerKey, assignments: config.kingdomInferenceAssignments })
     : config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length ? new NativeAuthentication({
     directory: `${process.cwd()}/.foundry/runtime-profiles`, sources: config.nativeAuthentication ?? [],
     defaultSourceId: config.defaults.nativeAuthenticationId,
@@ -324,7 +324,7 @@ const sourceResolver = createSourceResolver({ memory, configDir: FOUNDRY_DIR });
 // ---------------------------------------------------------------------------
 
 const tools = new ToolRegistry();
-registerKastleAccess(tools, config.kastleAccess);
+registerKingdomAccess(tools, config.kingdomAccess);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);

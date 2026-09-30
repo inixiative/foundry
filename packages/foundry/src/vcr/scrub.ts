@@ -2,6 +2,7 @@
 // become placeholders it can fill back in; identity and secrets are replaced for good.
 import { realpathSync } from "node:fs";
 import { hostname, tmpdir, userInfo } from "node:os";
+import { secretInText, unredactedSecretInText } from "../providers/kingdom-secrets";
 
 export type ScrubContext = { cwd?: string };
 
@@ -11,7 +12,7 @@ const REDACTED_EMAIL = "redacted@example.invalid";
 const SECRETS: [RegExp, string][] = [
   [/sk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-REDACTED"],
   [/\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "sk-REDACTED"],
-  [/\bkastle_(?:runtime_|run_|refresh_)?[A-Za-z0-9_-]{20,}/g, "kastle_REDACTED"],
+  [secretInText, "kingdom_REDACTED"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT_REDACTED"],
   [/\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}/g, "GITHUB_TOKEN_REDACTED"],
   [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, "SLACK_TOKEN_REDACTED"],
@@ -111,7 +112,7 @@ export const LEAK_PATTERNS: [string, RegExp][] = [
   ["email", /[A-Za-z0-9._%+-]+@(?!example\.invalid\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/],
   ["Anthropic key", /sk-ant-(?!REDACTED)[A-Za-z0-9_-]{8,}/],
   ["API key", /\bsk-(?!REDACTED)(?:proj-)?[A-Za-z0-9_-]{16,}/],
-  ["Kastle secret", /\bkastle_(?!REDACTED)(?:runtime_|run_|refresh_)?[A-Za-z0-9_-]{20,}/],
+  ["Kingdom secret", unredactedSecretInText],
   ["JWT", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/],
   ["GitHub token", /\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}/],
   ["bearer credential", /\bBearer\s+(?!REDACTED)[A-Za-z0-9._~+/=-]{8,}/i],

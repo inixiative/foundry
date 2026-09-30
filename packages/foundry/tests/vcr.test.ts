@@ -248,10 +248,10 @@ describe("http and websocket cassettes", () => {
     const server = Bun.serve({ port: 0, fetch: async request => Response.json({ saw: request.headers.get("authorization") ? "credential" : "none", body: await request.json() }, { status: 401 }) });
     try {
       const vcr = new VCR(dir, { service: "api", version: () => "1" }).queue("post", "refused");
-      const live = await httpCassettes(vcr, "post")(`http://127.0.0.1:${server.port}/api/v1/access/x`, { method: "POST", headers: { authorization: "Bearer kastle_runtime_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG" }, body: JSON.stringify({ n: 1 }) });
+      const live = await httpCassettes(vcr, "post")(`http://127.0.0.1:${server.port}/api/v1/access/x`, { method: "POST", headers: { authorization: "Bearer kingdom_runtime_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG" }, body: JSON.stringify({ n: 1 }) });
       expect(live.status).toBe(401);
       const text = readFileSync(join(dir, "post.refused.json"), "utf8");
-      expect(text).not.toContain("kastle_runtime_abc");
+      expect(text).not.toContain("kingdom_runtime_abc");
       expect(JSON.parse(text).request).toMatchObject({ method: "POST", path: "/api/v1/access/x", body: { n: 1 } });
       setMode("replay");
       const replayed = await httpCassettes(vcr.queue("post", "refused"), "post")("http://unused.invalid/api/v1/access/x", { method: "POST" });

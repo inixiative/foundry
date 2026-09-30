@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import type { CredentialReference, CredentialResolver, CredentialScope } from '@inixiative/foundry-core';
 import { destinationUrl } from '@inixiative/session-archive/config';
-import { installationCredentialSchema, readPrivateJson, writePrivateJson } from './kastle-credential-file';
+import { installationCredentialSchema, readPrivateJson, writePrivateJson } from './kingdom-credential-file';
 import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from './kingdom-runtime-connection';
 
 export const credentialReferenceSchema = z.discriminatedUnion('type', [

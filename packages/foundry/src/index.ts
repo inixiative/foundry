@@ -327,6 +327,6 @@ export {
 
 export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthenticationLaunch } from "./providers/native-authentication";
 
-export { KastleAuthentication, type KastleSource, type KastleAssignment } from "./providers/kastle-authentication";
-export { KastleClient, type KastleSelection, type KastleRunEnvelope } from "./providers/kastle-client";
+export { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "./providers/kingdom-authentication";
+export { KingdomClient, type KingdomSelection, type KingdomRunEnvelope } from "./providers/kingdom-client";
 export { type ClaudeContextBudget } from "./providers/claude-context-budget";

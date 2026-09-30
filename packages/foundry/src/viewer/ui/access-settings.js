@@ -44,7 +44,7 @@ export function AccessSettings({ projectId, onSaved }) {
     setBusy(true); setError("");
     try {
       await request(`/${id}`, "DELETE", { revision: data.revision });
-      setRemoveId(null); setDraft(null); setNotice("Grant removed from saved settings. Restart to apply. Revoke it in Kastle to block subsequent requests immediately.");
+      setRemoveId(null); setDraft(null); setNotice("Grant removed from saved settings. Restart to apply. Revoke it in Kingdom to block subsequent requests immediately.");
       await load(); await onSaved?.();
     } catch (error) { setError(error.message); }
     finally { setBusy(false); }
@@ -57,11 +57,11 @@ export function AccessSettings({ projectId, onSaved }) {
   };
   const sources = (data?.sources || []).filter(source => !projectId || source.projectIds.includes(projectId));
   const disabled = busy || !!checking;
-  return html`<section class="access-settings" aria-label="Kastle integrations">
+  return html`<section class="access-settings" aria-label="Kingdom integrations">
     <div class="settings-card">
-      <div class="settings-card-header"><h2 class="settings-card-title">Integrations</h2><span class="settings-card-kind">Kastle access</span></div>
-      <p class="settings-desc">Give your agents access to selected resources through Kastle. Provider credentials stay in Kastle; this instance uses revocable access tokens.</p>
-      <p class="settings-desc">Grant changes apply after a restart. Use Kastle revocation to block new requests immediately. Inference capacity is configured separately.</p>
+      <div class="settings-card-header"><h2 class="settings-card-title">Integrations</h2><span class="settings-card-kind">Kingdom access</span></div>
+      <p class="settings-desc">Give your agents access to selected resources through Kingdom. Provider credentials stay in Kingdom; this instance uses revocable access tokens.</p>
+      <p class="settings-desc">Grant changes apply after a restart. Use Kingdom revocation to block new requests immediately. Inference capacity is configured separately.</p>
       <div class="settings-card-actions">
         <button class="action-btn" disabled=${!data || disabled || !!draft} onClick=${() => edit(emptyGrant(projectId))}>Add grant</button>
         <button class="action-btn" disabled=${disabled} onClick=${() => { setDraft(null); setRemoveId(null); load(); }}>Reload saved settings</button>
@@ -70,19 +70,19 @@ export function AccessSettings({ projectId, onSaved }) {
     ${error && html`<p class="access-error" role="alert">${error}</p>`}
     ${notice && html`<p class="access-notice" role="status">${notice}</p>`}
     ${!data && !error && html`<p role="status">Loading integration settings…</p>`}
-    ${data && !sources.length && !draft && html`<div class="settings-empty">No integration grants ${projectId ? "for this project" : "configured"}. Add a grant using a connection and Signet from Kastle.</div>`}
+    ${data && !sources.length && !draft && html`<div class="settings-empty">No integration grants ${projectId ? "for this project" : "configured"}. Add a grant using a connection and Signet from Kingdom.</div>`}
     ${draft && html`<form class="settings-card access-editor" onSubmit=${save}>
       <h3>${data.sources.some(source => source.id === draft.id) ? "Edit grant" : "New grant"}</h3>
       <fieldset disabled=${disabled}>
         <label class="settings-field">Name<input class="settings-input" required maxlength="120" value=${draft.name} onInput=${event => update("name", event.target.value)} /></label>
-        <label class="settings-field">Kastle origin<input class="settings-input mono" required type="url" placeholder="https://kastle.example" value=${draft.url} onInput=${event => update("url", event.target.value)} /></label>
+        <label class="settings-field">Kingdom origin<input class="settings-input mono" required type="url" placeholder="https://kingdom.example" value=${draft.url} onInput=${event => update("url", event.target.value)} /></label>
         <div class="settings-row">
           <label class="settings-field">Integration ID<input class="settings-input mono" required value=${draft.integrationId} onInput=${event => update("integrationId", event.target.value.trim())} /></label>
           <label class="settings-field">Signet ID<input class="settings-input mono" required value=${draft.signetId} onInput=${event => update("signetId", event.target.value.trim())} /></label>
         </div>
-        <label class="settings-field">Kastle token file<input class="settings-input mono" required placeholder="/private/path/access.json" value=${draft.credentialFile} onInput=${event => update("credentialFile", event.target.value)} /></label>
+        <label class="settings-field">Kingdom token file<input class="settings-input mono" required placeholder="/private/path/access.json" value=${draft.credentialFile} onInput=${event => update("credentialFile", event.target.value)} /></label>
         <button type="button" class="action-btn" onClick=${() => setPicker(true)}>Choose file</button>
-        <p class="settings-desc">Select a private file on the Foundry host containing your Kastle token. The file must be owned by the current user and accessible only to that user. Its contents are not sent to this browser.</p>
+        <p class="settings-desc">Select a private file on the Foundry host containing your Kingdom token. The file must be owned by the current user and accessible only to that user. Its contents are not sent to this browser.</p>
         <fieldset class="access-projects"><legend>Allowed projects · choose at least one</legend>
           ${data.projects.filter(project => project.enabled).map(project => html`<label key=${project.id}><input type="checkbox" checked=${draft.projectIds.includes(project.id)} onChange=${event => update("projectIds", event.target.checked ? [...draft.projectIds, project.id] : draft.projectIds.filter(id => id !== project.id))} /> ${project.name}</label>`)}
           ${!data.projects.some(project => project.enabled) && html`<p>Add an enabled project before saving a grant.</p>`}
@@ -92,18 +92,18 @@ export function AccessSettings({ projectId, onSaved }) {
       </fieldset>
     </form>`}
     ${sources.map(source => html`<article key=${source.id} class="settings-card access-grant">
-      <div class="settings-card-header"><h3 class="settings-card-title">${source.name}</h3><span class=${`access-badge ${source.credentialStatus === "available" ? "" : "needs-attention"}`}>${source.credentialStatus === "available" ? "Kastle token file available" : "Kastle token file needs attention"}</span></div>
+      <div class="settings-card-header"><h3 class="settings-card-title">${source.name}</h3><span class=${`access-badge ${source.credentialStatus === "available" ? "" : "needs-attention"}`}>${source.credentialStatus === "available" ? "Kingdom token file available" : "Kingdom token file needs attention"}</span></div>
       <p class="settings-desc">${source.url}</p>
       <dl class="access-details"><dt>Integration</dt><dd>${source.integrationId}</dd><dt>Signet</dt><dd>${source.signetId}</dd><dt>Projects</dt><dd>${source.projectIds.map(id => data.projects.find(project => project.id === id)?.name || id).join(", ")}</dd><dt>Task scope</dt><dd>${source.threadIds ? `${source.threadIds.length} selected tasks` : "All tasks in allowed projects"}</dd></dl>
       <p class="settings-desc">Local file status does not confirm server access. Check access to verify the saved grant and list its resources.</p>
       <div class="settings-card-actions"><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => check(source.id)}>${checking === source.id ? "Checking…" : "Check access"}</button><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => edit(source)}>Edit</button><button class="action-btn" disabled=${disabled || !!draft} onClick=${() => setRemoveId(source.id)}>Remove</button></div>
-      ${removeId === source.id && html`<div class="access-notice"><p>Remove this local grant? This takes effect after restart and does not revoke its token in Kastle.</p><button class="action-btn" disabled=${disabled} onClick=${() => remove(source.id)}>Remove grant</button> <button class="action-btn" disabled=${disabled} onClick=${() => setRemoveId(null)}>Keep grant</button></div>`}
+      ${removeId === source.id && html`<div class="access-notice"><p>Remove this local grant? This takes effect after restart and does not revoke its token in Kingdom.</p><button class="action-btn" disabled=${disabled} onClick=${() => remove(source.id)}>Remove grant</button> <button class="action-btn" disabled=${disabled} onClick=${() => setRemoveId(null)}>Keep grant</button></div>`}
       ${result?.id === source.id && html`<div class="access-check" role="status">
-        <h4>${result.status === "available" ? "Kastle access verified" : result.status === "needs-authentication" ? "Authentication required" : "Access unavailable"}</h4>
+        <h4>${result.status === "available" ? "Kingdom access verified" : result.status === "needs-authentication" ? "Authentication required" : "Access unavailable"}</h4>
         <p class="settings-desc">Checked ${new Date(result.checkedAt).toLocaleString()}. Authorization can change before the next request.</p>
         ${result.message && html`<p>${result.message}</p>`}
         ${result.description && html`<p>${result.description.remainingRequests} requests remaining on this Signet · Access expires ${new Date(result.description.expiresAt).toLocaleString()}</p>
-          ${!result.description.operations.length && html`<p>No read operations are currently available. Check resource and credential permissions in Kastle.</p>`}
+          ${!result.description.operations.length && html`<p>No read operations are currently available. Check resource and credential permissions in Kingdom.</p>`}
           ${result.description.operations.map(operation => html`<details key=${operation.key}><summary>${operation.name} · ${operation.resources.length} resources</summary><code>${operation.key}</code><ul>${operation.resources.map(resource => html`<li key=${resource.id}><strong>${resource.name}</strong> <span>(${resource.kind})</span><code class="access-resource-id">${resource.id}</code></li>`)}</ul></details>`)}
         `}
       </div>`}

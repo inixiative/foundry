@@ -69,7 +69,7 @@ test("shared pairing sends only the key hash, persists privately on approval and
     const pairing = await beginKingdomPairing({ url: kingdom.url, name: "Test" }, dir);
     const sent = kingdom.calls.find(call => call.action === "access/pairRuntime")!.body;
     expect(sent).toEqual({ name: "Test", keyHash: createHash("sha256").update(pairing.secret).digest("hex") });
-    expect(pairing.secret).toStartWith("kastle_runtime_");
+    expect(pairing.secret).toStartWith("kingdom_runtime_");
     expect(pairing.interval).toBe(1);
     expect((await lstat(dir)).mode & 0o777).toBe(0o700);
     const approved = await pollKingdomPairing(pairing);

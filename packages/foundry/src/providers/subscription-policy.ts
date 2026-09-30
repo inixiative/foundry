@@ -61,7 +61,7 @@ export function resolveSubscriptionPolicy(config: FoundryConfig, options: { star
     return undefined;
   }
   const settings = subscriptionSettingsSchema.parse(config.subscriptionOnly ?? {});
-  if (config.kastles?.length || config.defaults.kastleId || Object.keys(config.kastleAssignments ?? {}).length
+  if (config.kingdomInference?.length || config.defaults.kingdomOwnerKey || Object.keys(config.kingdomInferenceAssignments ?? {}).length
     || Object.keys(config.nativeAuthenticationSelections ?? {}).length)
     throw Error("Subscription-only startup requires fixed native profile selections, without gateway or per-thread overrides; set apiTokens: true for other sources");
   const explicit = (id: string) => {
@@ -108,7 +108,7 @@ export function resolveSubscriptionPolicy(config: FoundryConfig, options: { star
     if (view.defaults.provider !== "claude-code")
       throw Error(`Subscription-only mode runs the worker on claude-code; set apiTokens: true to use ${view.defaults.provider}`);
     if (view.defaults.model !== config.defaults.model || view.defaults.nativeAuthenticationId !== config.defaults.nativeAuthenticationId
-      || view.defaults.kastleId || view.defaults.classifierProvider !== SUBSCRIPTION_DECISIONS || view.defaults.classifierModel !== policy.model)
+      || view.defaults.kingdomOwnerKey || view.defaults.classifierProvider !== SUBSCRIPTION_DECISIONS || view.defaults.classifierModel !== policy.model)
       throw Error("Subscription-only defaults require the Claude worker and subscription decision model");
     model.parse(view.defaults.model);
     for (const agent of Object.values(view.agents)) {

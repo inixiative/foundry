@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RuntimeJobRecord } from "./runtime-job-record";
 import type { RuntimeJobHandler } from "./runtime-job-handler";
 
-/** Framework handler: proves a Kastle connection end to end without executing any domain work. */
+/** Framework handler: proves a Kingdom connection end to end without executing any domain work. */
 export const connectionCheckJobHandler: RuntimeJobHandler<null> = {
   kind: "connectionCheck",
   payload: z.looseObject({ payload: z.null() }).transform(() => null),

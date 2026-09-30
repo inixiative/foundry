@@ -11,7 +11,7 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 
 | Key | Default | Meaning |
 |---|---|---|
-| `apiTokens` | absent (`false`) | `true` opts in to API-key providers (Anthropic, OpenAI, Gemini, gateways, Kastle bindings) and the OpenAI/Luna API decision provider, which requires `OPENAI_API_KEY`. It cannot be combined with `subscriptionOnly`. |
+| `apiTokens` | absent (`false`) | `true` opts in to API-key providers (Anthropic, OpenAI, Gemini, gateways, Kingdom bindings) and the OpenAI/Luna API decision provider, which requires `OPENAI_API_KEY`. It cannot be combined with `subscriptionOnly`. |
 | `defaults.provider` | `claude-code` | The subscription worker must be `claude-code`. Any other worker requires `apiTokens: true`. |
 | `defaults.nativeAuthenticationId` | absent: `~/.claude` | Optional explicit Claude `native-profile` source for the worker. |
 | `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `gpt-6-luna` | New configurations record the decision profile here. With a Codex decision profile, `classifierModel` selects its model. |
@@ -39,7 +39,7 @@ Explicit profile sources are credential references in `nativeAuthentication`, ne
 }
 ```
 
-An explicit profile directory must be an owned private (0700) directory with private files. The default login locations are referenced in place: they must be owned, real directories whose credential files (`auth.json`, `.credentials.json`) are private, but Foundry does not require or change their mode. Worker and decision profiles must resolve to different directories; a Claude worker with Codex decisions satisfies this. Profile directories, gateways, Kastle bindings and per-thread authentication selections cannot be mixed into subscription mode.
+An explicit profile directory must be an owned private (0700) directory with private files. The default login locations are referenced in place: they must be owned, real directories whose credential files (`auth.json`, `.credentials.json`) are private, but Foundry does not require or change their mode. Worker and decision profiles must resolve to different directories; a Claude worker with Codex decisions satisfies this. Profile directories, gateways, Kingdom bindings and per-thread authentication selections cannot be mixed into subscription mode.
 
 ## Existing settings
 

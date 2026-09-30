@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { archiveRuntimeJob } from "./archive-runtime-job";
-import { readPrivateJson, writePrivateJson } from "./kastle-credential-file";
+import { readPrivateJson, writePrivateJson } from "./kingdom-credential-file";
 import { jobStateSchema, type RuntimeJob, type RuntimeJobState } from "./runtime-job-contracts";
 import type { RuntimeJobContext } from "./runtime-job-handler";
 

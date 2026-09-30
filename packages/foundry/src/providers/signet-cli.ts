@@ -3,11 +3,11 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { ConfigStore } from "../viewer/config";
-import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kastle-credential-file";
+import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kingdom-credential-file";
 import { deliveredSignetSchema, generateSignetKey, SignetClient, signetCredentialSchema, signetPost, signetProof, signetPublicKey } from "./signet-client";
-import { kastleUrl } from "./kastle-client";
+import { kingdomUrl } from "./kingdom-client";
 
-const pendingSchema = z.object({ url: z.string().transform(kastleUrl), requestId: z.string().uuid(), reviewCode: z.string(), deviceCode: z.string(), expiresAt: z.string().datetime(), keyFile: z.string(), integrationId: z.string().uuid(), name: z.string(), projectId: z.string().min(1), threadId: z.string().optional() });
+const pendingSchema = z.object({ url: z.string().transform(kingdomUrl), requestId: z.string().uuid(), reviewCode: z.string(), deviceCode: z.string(), expiresAt: z.string().datetime(), keyFile: z.string(), integrationId: z.string().uuid(), name: z.string(), projectId: z.string().min(1), threadId: z.string().optional() });
 const proposalSchema = z.object({ name: z.string().min(1), integrationId: z.string().uuid(), resources: z.array(z.object({ resourceId: z.string().uuid(), operations: z.array(z.string()).min(1), lens: z.object({ documentIds: z.array(z.string().uuid()).optional(), fields: z.array(z.enum(["id", "title", "content", "tags", "createdAt"])).optional() }).strict().default({}) }).strict()).min(1), lifecycle: z.enum(["request", "task", "ongoing"]), taskId: z.string().uuid().optional(), expiresAt: z.string().datetime().nullable(), maxRequests: z.number().int().min(1), maxConcurrent: z.number().int().min(1) }).strict();
 const { positionals, values } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, strict: true, options: {
   "config-dir": { type: "string", default: ".foundry" }, proposal: { type: "string" }, project: { type: "string" }, thread: { type: "string" }, pending: { type: "string" }, credential: { type: "string" }, revision: { type: "string" }, task: { type: "string" }, reason: { type: "string", default: "completed" },
@@ -19,9 +19,9 @@ const connect = async (pending: z.infer<typeof pendingSchema>, delivered: z.infe
   const credentialFile = join(directory, `signet-${delivered.signetId}.json`);
   await writePrivateJson(credentialFile, signetCredentialSchema.parse({ ...delivered, url: pending.url, keyFile: pending.keyFile }));
   const config = await store.load();
-  const existing = config.kastleAccess?.find(source => source.signetId === delivered.signetId && source.url === pending.url);
+  const existing = config.kingdomAccess?.find(source => source.signetId === delivered.signetId && source.url === pending.url);
   const source = { id: existing?.id ?? crypto.randomUUID(), url: pending.url, credentialFile, signetId: delivered.signetId, integrationId: pending.integrationId, name: pending.name, projectIds: [pending.projectId], ...(pending.threadId ? { threadIds: [pending.threadId] } : {}) };
-  await store.save({ ...config, kastleAccess: [...(config.kastleAccess ?? []).filter(source => source.id !== existing?.id), source] });
+  await store.save({ ...config, kingdomAccess: [...(config.kingdomAccess ?? []).filter(source => source.id !== existing?.id), source] });
   console.log(JSON.stringify({ connected: true, signetId: delivered.signetId, accessId: source.id, projectId: pending.projectId, expiresAt: delivered.expiresAt, idleExpiresAt: delivered.idleExpiresAt, renewalExpiresAt: delivered.renewalExpiresAt, restartViewer: true }));
 };
 try {
@@ -51,7 +51,7 @@ try {
     if (!values.credential || !values.revision) throw Error("Usage: signet reenroll --credential FILE --revision ACCEPTED_REVISION [--config-dir DIR]");
     const path = resolve(values.credential), credential = signetCredentialSchema.parse(await readPrivateJson(path));
     const config = await store.load();
-    if (!config.kingdomRuntime || kastleUrl(config.kingdomRuntime.url) !== credential.url) throw Error("Foundry must be connected to the Signet issuer");
+    if (!config.kingdomRuntime || kingdomUrl(config.kingdomRuntime.url) !== credential.url) throw Error("Foundry must be connected to the Signet issuer");
     const runtime = installationCredentialSchema.parse(await readPrivateJson(config.kingdomRuntime.credentialFile));
     const response = await signetPost(credential.url, "enrollSignet", { signetId: credential.signetId, expectedRevision: z.coerce.number().int().min(1).parse(values.revision), name: "Foundry", publicKey: signetPublicKey(await readPrivateJson(credential.keyFile)) }, { authorization: `Bearer ${runtime.secret}`, DPoP: await signetProof(credential.url, "enrollSignet", credential.keyFile) });
     const delivered = deliveredSignetSchema.parse({ ...(typeof response === "object" ? response : {}), signetId: credential.signetId });
