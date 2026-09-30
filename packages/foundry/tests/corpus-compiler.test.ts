@@ -7,6 +7,7 @@ import {
   CorpusCompiler,
   type FluidEntry,
   type CorpusCompilerConfig,
+  type CorpusTier,
 } from "../src/agents/corpus-compiler";
 
 // ---------------------------------------------------------------------------
@@ -418,5 +419,49 @@ describe("CorpusCompiler", () => {
 
     expect(corpus.layers.length).toBe(1);
     expect(corpus.layers[0].confidence).toBe(0.7);
+  });
+
+  function activeDoc(compiler: CorpusCompiler, content: string, tier?: CorpusTier, confidence = 0.9) {
+    const entry = makeEntry({ content });
+    compiler.ingest(entry);
+    return compiler.promote([entry.id], { title: content, kind: "convention", content, state: "active", confidence, tier });
+  }
+
+  test("compile() shows each audience only the tiers visible to it", () => {
+    const compiler = setupCompiler();
+    activeDoc(compiler, "PRIVATE-SENTINEL", "personal_private");
+    activeDoc(compiler, "UNTIERED-SENTINEL");
+    activeDoc(compiler, "public", "personal_public");
+    activeDoc(compiler, "team", "team");
+    activeDoc(compiler, "org", "org");
+    const seen = (audience?: CorpusTier) => compiler.compile(audience).layers.map((l) => l.content).sort();
+
+    expect(seen()).toEqual(["PRIVATE-SENTINEL", "UNTIERED-SENTINEL", "org", "public", "team"]);
+    expect(seen("personal_private")).toEqual(seen());
+    expect(seen("personal_public")).toEqual(["org", "public", "team"]);
+    expect(seen("team")).toEqual(["org", "public", "team"]);
+    expect(seen("org")).toEqual(["org"]);
+  });
+
+  test("compile() keeps docs whole, skips what does not fit, and records exclusions", () => {
+    const compiler = setupCompiler({ maxTokens: 30 });
+    const big = activeDoc(compiler, "Always run migrations before seeding. ".repeat(10), undefined, 0.95);
+    const small = activeDoc(compiler, "Use bun, not npm.", undefined, 0.6);
+
+    const corpus = compiler.compile();
+
+    expect(corpus.layers.map((l) => l.content)).toEqual([small.content]);
+    expect(corpus.excluded).toEqual([{ docId: big.id, tokens: expect.any(Number), reason: "budget" }]);
+    expect(corpus.totalTokens).toBeLessThanOrEqual(30);
+  });
+
+  test("contentHash identifies the compilation manifest, not just the text", () => {
+    const compiler = setupCompiler();
+    activeDoc(compiler, "shared convention", "org");
+
+    const forTeam = compiler.compile("team"), forOrg = compiler.compile("org");
+    expect(forTeam.layers.map((l) => l.content)).toEqual(forOrg.layers.map((l) => l.content));
+    expect(forTeam.contentHash).not.toBe(forOrg.contentHash);
+    expect(compiler.compile("team").contentHash).toBe(forTeam.contentHash);
   });
 });

@@ -2,6 +2,7 @@ import {
   ContextLayer,
   computeHash,
   ContextStack,
+  estimateTokens,
   newId,
   type SignalBus,
   type Signal,
@@ -61,6 +62,8 @@ export interface CompiledCorpus {
     sources: string[];
   }>;
   totalTokens: number;
+  /** Eligible docs left out whole because they did not fit the budget. */
+  excluded: Array<{ docId: string; tokens: number; reason: "budget" }>;
   compiledAt: number;
   attribution: Array<{
     layerId: string;
@@ -87,9 +90,13 @@ export interface CorpusCompilerConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+/** Audiences that may see a doc at each tier (docs/VISION.md §5). Untiered docs are personal_private. */
+const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
+  personal_private: ["personal_private"],
+  personal_public: ["personal_private", "personal_public", "team"],
+  team: ["personal_private", "personal_public", "team"],
+  org: ["personal_private", "personal_public", "team", "org"],
+};
 
 function generateId(prefix: string): string {
   return newId(prefix);
@@ -270,47 +277,31 @@ export class CorpusCompiler {
   // Stage 3: Formal → Compiled
   // -----------------------------------------------------------------------
 
-  /** Compile active formal docs into an immutable corpus snapshot. */
-  compile(tier?: CorpusTier): CompiledCorpus {
+  /** Compile active formal docs visible to an audience; the default is the owner's own view. */
+  compile(audience: CorpusTier = "personal_private"): CompiledCorpus {
     this._compilationCount++;
 
-    // Filter docs: active state + confidence threshold + optional tier
-    let eligible = [...this._docs.values()].filter(
+    // Filter docs: active state + confidence threshold + visible to the audience
+    const eligible = [...this._docs.values()].filter(
       (d) => d.state === "active" && d.confidence >= this._minConfidence
+        && VISIBLE_TO[d.tier ?? "personal_private"].includes(audience)
     );
 
-    if (tier) {
-      eligible = eligible.filter(
-        (d) => !d.tier || this._tierRank(d.tier) <= this._tierRank(tier)
-      );
-    }
-
-    // Sort by confidence descending
-    eligible.sort((a, b) => b.confidence - a.confidence);
+    // Sort by confidence descending; id breaks ties so the snapshot is deterministic
+    eligible.sort((a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id));
 
     // Build layers
     const layers: CompiledCorpus["layers"] = [];
+    const excluded: CompiledCorpus["excluded"] = [];
     let totalTokens = 0;
 
     for (const doc of eligible) {
       const tokens = estimateTokens(doc.content);
 
+      // A doc is one instruction unit: whole or not at all
       if (totalTokens + tokens > this._maxTokens) {
-        // Truncate to fit remaining budget
-        const remaining = this._maxTokens - totalTokens;
-        if (remaining > 0) {
-          const truncated = doc.content.slice(0, remaining * 4);
-          const truncTokens = estimateTokens(truncated);
-          layers.push({
-            id: `layer_${doc.id}`,
-            content: truncated,
-            tokens: truncTokens,
-            confidence: doc.confidence,
-            sources: [doc.id],
-          });
-          totalTokens += truncTokens;
-        }
-        break;
+        excluded.push({ docId: doc.id, tokens, reason: "budget" });
+        continue;
       }
 
       layers.push({
@@ -338,9 +329,17 @@ export class CorpusCompiler {
       };
     });
 
-    // Compute content hash
-    const allContent = layers.map((l) => l.content).join("\n\n");
-    const contentHash = computeHash(allContent);
+    // Hash the manifest, not just the text: same content for a different audience or budget is a different corpus
+    const contentHash = computeHash(JSON.stringify({
+      audience,
+      maxTokens: this._maxTokens,
+      minConfidence: this._minConfidence,
+      layers: layers.map((l) => {
+        const doc = this._docs.get(l.sources[0])!;
+        return { docId: doc.id, version: doc.version, tier: doc.tier ?? "personal_private", content: l.content };
+      }),
+      excluded: excluded.map((e) => e.docId),
+    }));
 
     return {
       id: generateId("corpus"),
@@ -348,6 +347,7 @@ export class CorpusCompiler {
       contentHash,
       layers,
       totalTokens,
+      excluded,
       compiledAt: Date.now(),
       attribution,
     };
@@ -439,19 +439,6 @@ export class CorpusCompiler {
         return "taste";
       default:
         return "reference";
-    }
-  }
-
-  private _tierRank(tier: CorpusTier): number {
-    switch (tier) {
-      case "personal_private":
-        return 0;
-      case "personal_public":
-        return 1;
-      case "team":
-        return 2;
-      case "org":
-        return 3;
     }
   }
 }
