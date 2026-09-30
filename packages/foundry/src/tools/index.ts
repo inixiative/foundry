@@ -1,6 +1,6 @@
 export { PlaywrightBrowser, type PlaywrightBrowserConfig } from "./playwright-browser";
 export { HttpApi, type HttpApiConfig } from "./http-api";
-export { KastleAccessTool, registerKastleAccess } from "./kastle-access";
+export { KingdomAccessTool, registerKingdomAccess } from "./kingdom-access";
 export { BashShell, type BashShellConfig } from "./bash-shell";
 export { BunScript, type BunScriptConfig } from "./bun-script";
 export { JustBashShell, type JustBashShellConfig } from "./just-bash-shell";

@@ -56,7 +56,7 @@ test('publication carries one explicit destination and only acknowledges a commi
   const t = thread(); journal.saveThread(t); journal.beginTurn(t, 'turn-a', 'Publish fixture');
   const captured = archives.capture(captureThread(journal, archives.sourceId, t.id));
   const destination = { kind: 'kingdom' as const, projectId: 'project-a', url: 'https://example.invalid/', tokenEnv: 'ARCHIVE_TEST_TOKEN' };
-  process.env.ARCHIVE_TEST_TOKEN = 'kastle_runtime_fixture';
+  process.env.ARCHIVE_TEST_TOKEN = 'kingdom_runtime_fixture';
   const calls: any[] = [];
   const transport = (async (url: any, init: any) => {
     calls.push({ url: String(url), init });
@@ -79,7 +79,7 @@ test('publication carries one explicit destination and only acknowledges a commi
 });
 
 test('context retrieval is bound to a local project and does not reuse an earlier successful authorization', async () => {
-  process.env.ARCHIVE_CONTEXT_TEST_TOKEN = 'kastle_runtime_fixture';
+  process.env.ARCHIVE_CONTEXT_TEST_TOKEN = 'kingdom_runtime_fixture';
   let calls = 0;
   const source = new ArchiveContextSource('archive-source', 'https://example.invalid/', { projectId: 'project-a',
     kind: 'kingdom', tokenEnv: 'ARCHIVE_CONTEXT_TEST_TOKEN', budget: 2048 }, undefined, (async () => {
@@ -122,7 +122,7 @@ test('an upload with a lost acknowledgment is replayed before newer captured con
   const t = thread(); journal.saveThread(t); journal.beginTurn(t, 'turn-a', 'First');
   const first = archives.capture(captureThread(journal, archives.sourceId, t.id));
   const destination = { kind: 'kingdom' as const, projectId: 'project-a', url: 'https://example.invalid/', tokenEnv: 'ARCHIVE_RETRY_TEST_TOKEN' };
-  process.env.ARCHIVE_RETRY_TEST_TOKEN = 'kastle_runtime_fixture';
+  process.env.ARCHIVE_RETRY_TEST_TOKEN = 'kingdom_runtime_fixture';
   let lost = true, head: string | null = null;
   const received: string[] = [];
   const { snapshotDigest } = await import('@inixiative/session-archive');
@@ -156,7 +156,7 @@ test('viewer connection setup verifies access, reloads publishing routes and ret
   process.env.ARCHIVE_CONNECT_VIEWER_TOKEN='incorrect';
   const app=new Hono();const registered=registerArchiveRoutes(app,journal,new EventStream(),dir);
   const post=(path:string,body:unknown)=>app.request(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const destination={kind:'archive',projectId:'project-a',url:hosted.server.url.href,tokenEnv:'ARCHIVE_CONNECT_VIEWER_TOKEN',keepIds:[]};
+  const destination={kind:'archive',projectId:'project-a',url:hosted.server.url.href,tokenEnv:'ARCHIVE_CONNECT_VIEWER_TOKEN'};
   try{
     expect((await post('/api/archives/connect',destination)).status).toBe(400);
     expect(existsSync(join(dir,'archives.json'))).toBe(false);

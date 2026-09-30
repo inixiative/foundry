@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { accessCredentialSchema, KastleAccessClient, KastleAccessHttpError, kastleAccessSourceSchema } from "../../providers/kastle-access-client";
-import { readPrivateJson } from "../../providers/kastle-credential-file";
+import { accessCredentialSchema, KingdomAccessClient, KingdomAccessHttpError, kingdomAccessSourceSchema } from "../../providers/kingdom-access-client";
+import { readPrivateJson } from "../../providers/kingdom-credential-file";
 import { ConfigRevisionError, type ConfigStore, type FoundryConfig } from "../config";
 
-const revision = (config: FoundryConfig) => createHash("sha256").update(JSON.stringify({ sources: config.kastleAccess ?? [], projects: config.projects })).digest("hex");
+const revision = (config: FoundryConfig) => createHash("sha256").update(JSON.stringify({ sources: config.kingdomAccess ?? [], projects: config.projects })).digest("hex");
 const revisionSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
 /** Operator configuration only. Saved changes are not installed into live native sessions. */
@@ -16,7 +16,7 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
   app.get("/api/access/sources", async c => {
     try {
       const config = await store.load();
-      const sources = await Promise.all((config.kastleAccess ?? []).map(async source => {
+      const sources = await Promise.all((config.kingdomAccess ?? []).map(async source => {
         let credentialStatus: "available" | "unavailable" = "available";
         try { accessCredentialSchema.parse(await readPrivateJson(source.credentialFile)); }
         catch { credentialStatus = "unavailable"; }
@@ -26,15 +26,15 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
     } catch { return c.json({ error: "Saved access settings could not be loaded. Check the configuration with doctor." }, 400); }
   });
   app.put("/api/access/sources/:id", async c => {
-    const parsed = z.object({ revision: revisionSchema, source: kastleAccessSourceSchema }).strict().safeParse(await c.req.json().catch(() => null));
+    const parsed = z.object({ revision: revisionSchema, source: kingdomAccessSourceSchema }).strict().safeParse(await c.req.json().catch(() => null));
     if (!parsed.success || parsed.data.source.id !== c.req.param("id")) return c.json({ error: "Check the grant fields, UUIDs, project selection and absolute credential file path." }, 400);
     try {
       await store.load();
       const next = await store.update(draft => {
         expectRevision(draft, parsed.data.revision);
-        const sources = draft.kastleAccess ?? [], index = sources.findIndex(source => source.id === parsed.data.source.id);
+        const sources = draft.kingdomAccess ?? [], index = sources.findIndex(source => source.id === parsed.data.source.id);
         if (index < 0) sources.push(parsed.data.source); else sources[index] = parsed.data.source;
-        draft.kastleAccess = sources;
+        draft.kingdomAccess = sources;
       });
       return c.json({ revision: revision(next), applyMode: "restart" });
     } catch (error) {
@@ -50,8 +50,8 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
       await store.load();
       const next = await store.update(draft => {
         expectRevision(draft, parsed.data.revision);
-        if (!draft.kastleAccess?.some(source => source.id === c.req.param("id"))) throw missing;
-        draft.kastleAccess = draft.kastleAccess.filter(source => source.id !== c.req.param("id"));
+        if (!draft.kingdomAccess?.some(source => source.id === c.req.param("id"))) throw missing;
+        draft.kingdomAccess = draft.kingdomAccess.filter(source => source.id !== c.req.param("id"));
       });
       return c.json({ revision: revision(next), applyMode: "restart" });
     } catch (error) {
@@ -63,15 +63,15 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
   app.post("/api/access/sources/:id/check", async c => {
     try {
       const config = await store.load();
-      const source = config.kastleAccess?.find(source => source.id === c.req.param("id"));
+      const source = config.kingdomAccess?.find(source => source.id === c.req.param("id"));
       if (!source) return c.json({ error: "Grant not found." }, 404);
-      const description = await new KastleAccessClient(source).describe();
+      const description = await new KingdomAccessClient(source).describe();
       return c.json({ status: "available", checkedAt: new Date().toISOString(), revision: revision(config), description });
     } catch (error) {
-      const status = error instanceof KastleAccessHttpError && error.status === 401 ? "needs-authentication" : "unavailable";
+      const status = error instanceof KingdomAccessHttpError && error.status === 401 ? "needs-authentication" : "unavailable";
       return c.json({ status, checkedAt: new Date().toISOString(), message: status === "needs-authentication"
-        ? "Kastle rejected this access token. Issue a valid token for this Signet and replace the private file."
-        : "Access could not be verified. Check the private file, connection, Signet permissions and Kastle availability." });
+        ? "Kingdom rejected this access token. Issue a valid token for this Signet and replace the private file."
+        : "Access could not be verified. Check the private file, connection, Signet permissions and Kingdom availability." });
     }
   });
 }

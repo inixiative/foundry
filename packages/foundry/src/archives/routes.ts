@@ -36,7 +36,7 @@ export function registerArchiveRoutes(
       configurationError = undefined;
     } catch {
       destinations = [];
-      configurationError = `${configPath} is invalid, so no archives publish. Fix or remove it, then reconnect; Kingdom destinations no longer take kastleId or keepIds.`;
+      configurationError = `${configPath} is invalid, so no archives publish. Fix or remove it, then reconnect.`;
     }
   };
   loadDestinations();

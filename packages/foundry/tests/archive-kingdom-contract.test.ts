@@ -12,9 +12,9 @@ import { archiveContextSchema } from '../src/archives/context-source';
 import { publishArchive, verifyArchiveDestination } from '../src/archives/publish';
 import { registerArchiveRoutes } from '../src/archives/routes';
 import { FoundryCredentials } from '../src/providers/credentials';
-import { writePrivateJson } from '../src/providers/kastle-credential-file';
+import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 
-const secret = 'kastle_runtime_' + 'b'.repeat(43);
+const secret = 'kingdom_runtime_' + 'b'.repeat(43);
 const spaceId = '33333333-3333-4333-8333-333333333333';
 
 async function fixture() {
@@ -52,7 +52,7 @@ async function fixture() {
   return { dir, credentials, store, archive, calls, transport, close };
 }
 
-test('Kingdom storage sends owner fields without Kastle or Keep identifiers', async () => {
+test('Kingdom storage sends only owner fields', async () => {
   const f = await fixture();
   const destination = archiveDestinationSchema.parse({
     kind: 'kingdom',
@@ -112,40 +112,34 @@ test('Kingdom forwarding routes through remote actions with the connection ident
   }
 });
 
-test('legacy Kastle destinations are rejected and surfaced without crashing the viewer', async () => {
+test('destinations with unknown fields are rejected and surfaced without crashing the viewer', async () => {
   const f = await fixture();
-  const legacy = {
+  const invalid = {
     kind: 'kingdom',
     url: 'https://kingdom.example/',
     projectId: 'project-a',
-    kastleId: crypto.randomUUID(),
-    keepIds: [],
+    ownerId: crypto.randomUUID(),
     credential: { type: 'kingdom-runtime' },
   };
   const journal = new LocalSessionStore(':memory:');
   try {
-    expect(archiveDestinationSchema.safeParse(legacy).success).toBe(false);
-    expect(archiveDestinationSchema.safeParse({ ...legacy, kind: undefined }).success).toBe(false);
-    expect(archiveDestinationSchema.safeParse({ ...legacy, kastleId: undefined }).success).toBe(false);
+    expect(archiveDestinationSchema.safeParse(invalid).success).toBe(false);
+    expect(archiveDestinationSchema.safeParse({ ...invalid, kind: undefined }).success).toBe(false);
     expect(
-      archiveDestinationSchema.safeParse({ kind: 'archive', url: legacy.url, projectId: 'project-a', tokenEnv: 'ARCHIVE_TOKEN', keepIds: [] })
-        .success,
-    ).toBe(true);
-    expect(
-      archiveContextSchema.safeParse({ kind: 'kingdom', projectId: 'project-a', kastleId: legacy.kastleId, tokenEnv: 'ARCHIVE_TOKEN' })
+      archiveContextSchema.safeParse({ kind: 'kingdom', projectId: 'project-a', ownerId: invalid.ownerId, tokenEnv: 'ARCHIVE_TOKEN' })
         .success,
     ).toBe(false);
-    await expect(publishArchive(f.store, f.archive.id, legacy as any, f.transport, f.credentials)).rejects.toThrow();
+    await expect(publishArchive(f.store, f.archive.id, invalid as any, f.transport, f.credentials)).rejects.toThrow();
     expect(f.calls).toHaveLength(0);
 
-    writeFileSync(join(f.dir, 'archives.json'), JSON.stringify([legacy]));
+    writeFileSync(join(f.dir, 'archives.json'), JSON.stringify([invalid]));
     const app = new Hono();
     const registered = registerArchiveRoutes(app, journal, new EventStream(), f.dir);
     try {
       const listed = await (await app.request('/api/archives/connections')).json();
       expect(listed.connections).toEqual([]);
-      expect(listed.configurationError).toContain('kastleId');
-      expect((await (await app.request('/api/archives')).json()).configurationError).toContain('kastleId');
+      expect(listed.configurationError).toContain('archives.json');
+      expect((await (await app.request('/api/archives')).json()).configurationError).toContain('archives.json');
     } finally {
       registered.store.close();
     }

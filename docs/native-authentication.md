@@ -2,7 +2,7 @@
 
 Foundry binds Claude Code and Codex sessions to credential sources at its existing native process launch boundary. No extra agent or daemon is needed. The runtime still consumes its normal configuration directory, environment or credential helper.
 
-This implements local launch binding, profile ownership, source-specific session history and pre-dispatch checks. The native Kastle integration now resolves capacities, obtains per-run gateway credentials and renews them through the included helper. Follow [the Kastle–Foundry setup guide](../../kingdom/docs/foundry-integration.md) for `kastles`, defaults and per-thread assignments. The manually configured sources below remain useful for other gateways or existing native profiles; do not combine them with Kastle assignments. Native subscription enrollment and OAuth refresh custody are not implemented by this launcher.
+This implements local launch binding, profile ownership, source-specific session history and pre-dispatch checks. The native Kingdom integration now resolves capacities, obtains per-run gateway credentials and renews them through the included helper. Follow [the Kingdom–Foundry setup guide](../../kingdom/docs/foundry-integration.md) for runtime installations, then configure `kingdomInference` (sources keyed by Kingdom owner key), `defaults.kingdomOwnerKey` and per-thread `kingdomInferenceAssignments`. The manually configured sources below remain useful for other gateways or existing native profiles; do not combine them with Kingdom assignments. Native subscription enrollment and OAuth refresh custody are not implemented by this launcher.
 
 ## Configure a source
 
@@ -57,7 +57,7 @@ A command credential replaces the environment credential object:
 }
 ```
 
-A custom executable must already exist and print the token expected by the CLI. Kastle configuration uses Foundry's bundled `kastle-token-helper.ts` automatically; manual gateway sources must supply their own helper. Arguments and paths are configuration, not secret storage; never put tokens in arguments. Foundry passes the refresh interval into the native helper configuration. It is a cache/refresh setting, not a guarantee that authentication can renew unattended. A helper must enforce the connection's `autoRenew` policy and report required user interaction. The bundled Kastle helper enforces the server's `autoRenew` policy for subsequent token issuance. Native-profile mode leaves native refresh behavior in the CLI and cannot promise to disable it through Kingdom.
+A custom executable must already exist and print the token expected by the CLI. Kingdom configuration uses Foundry's bundled `kingdom-token-helper.ts` automatically; manual gateway sources must supply their own helper. Arguments and paths are configuration, not secret storage; never put tokens in arguments. Foundry passes the refresh interval into the native helper configuration. It is a cache/refresh setting, not a guarantee that authentication can renew unattended. A helper must enforce the connection's `autoRenew` policy and report required user interaction. The bundled Kingdom helper enforces the server's `autoRenew` policy for subsequent token issuance. Native-profile mode leaves native refresh behavior in the CLI and cannot promise to disable it through Kingdom.
 
 Refresh is distinct from buying capacity, consuming account resets or switching subscriptions. Passkey/MFA user presence cannot be replaced by a saved password bundle.
 
@@ -91,7 +91,7 @@ bun test packages/foundry/tests/native-authentication.test.ts packages/foundry/t
 bun run typecheck
 ```
 
-Controlled tests cover child environment isolation, lock contention, queued revocation, source-scoped resumption, cleanup failures and conflicting CLI overrides. Unit checks use controlled processes and synthetic tokens. The subsequent Kastle integration additionally runs the installed Claude/Codex CLIs and actual helper through localhost HTTP and disposable PostgreSQL with synthetic provider responses. This validates local transport/configuration and cap enforcement; a bounded live-source pilot and subscription-specific enrollment remain separate.
+Controlled tests cover child environment isolation, lock contention, queued revocation, source-scoped resumption, cleanup failures and conflicting CLI overrides. Unit checks use controlled processes and synthetic tokens. The subsequent Kingdom integration additionally runs the installed Claude/Codex CLIs and actual helper through localhost HTTP and disposable PostgreSQL with synthetic provider responses. This validates local transport/configuration and cap enforcement; a bounded live-source pilot and subscription-specific enrollment remain separate.
 
 See [runtime credential research](../../kingdom/docs/runtime-credential-research.md) for the official runtime contracts and local profile probes.
 
@@ -104,13 +104,13 @@ See [runtime credential research](../../kingdom/docs/runtime-credential-research
 - Full Foundry suite after snapshot installation: 1,404 passed, 8 skipped, 3 failed. Remaining failures are the message-delivery exact-object expectation, an owned-host exit-confirmation test, and the viewer's closed-local-import-graph assertion. The full suite is not green. Earlier diagnostic subprocess timeouts did not reproduce in this run.
 - Fable 5.1 review: fixed the Codex attached-argument bypass and deferred profile creation until launch. Retained profile history for resumption instead of deleting it on release. Retained explicit cleanup failure reporting instead of silently accepting missing/changed lock ownership; a controlled regression verifies the unknown release result.
 
-No actual credentials were imported and no deployment occurred. The Kastle integration exercises its actual helper against a local HTTP server with synthetic provider credentials and responses. Live provider inference remains untested. See the Kastle setup guide for the implemented gateway and remaining rollout limits.
+No actual credentials were imported and no deployment occurred. The Kingdom integration exercises its actual helper against a local HTTP server with synthetic provider credentials and responses. Live provider inference remains untested. See the Kingdom setup guide for the implemented gateway and remaining rollout limits.
 
-### Kastle integration validation — 2026-09-10
+### Kingdom integration validation — 2026-09-10
 
 - Focused Foundry authentication, adapter and provider tests: 55 passed. Foundry typechecks passed.
-- Kingdom package tests: 17 passed; Kastle frontend client test: 1 passed; API integration tests: 70 passed against disposable PostgreSQL.
-- Opt-in native CLI proof passed for installed Claude Code 2.1.258 and Codex 0.153.4. Both returned synthetic provider output through the actual token helper and local Kastle gateway. Model-discovery probes are not implemented; unknown fixture models use the CLI's fallback metadata.
-- Kingdom monorepo typechecks, post-Biome lint checks and CI rules passed. Canonical `kingdom:check` remains blocked by two formatting errors in concurrent archive work (`KastlePage.tsx` and `scripts/kingdom/test.ts`); it did not reach its full backend/frontend suites.
+- Kingdom package tests: 17 passed; Kingdom frontend client test: 1 passed; API integration tests: 70 passed against disposable PostgreSQL.
+- Opt-in native CLI proof passed for installed Claude Code 2.1.258 and Codex 0.153.4. Both returned synthetic provider output through the actual token helper and local Kingdom gateway. Model-discovery probes are not implemented; unknown fixture models use the CLI's fallback metadata.
+- Kingdom monorepo typechecks, post-Biome lint checks and CI rules passed. Canonical `kingdom:check` remains blocked by two formatting errors in concurrent archive work; it did not reach its full backend/frontend suites.
 - The final broader Foundry run recorded 1,413 passes, 8 skips and the same three failures listed above. It is not a fully green repository-wide result.
 - Adversarial review addressed missing final usage, credential replacement races, exhausted preferred capacities, binding retry identity, token lifetime, beta pricing headers and terminal-stream cancellation. Automatic renewal disabled plus a lost first token response requires a new-run recovery.
