@@ -46,7 +46,7 @@ test("browser-only failure evidence survives quota fallback and reload, distinct
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: viewer.fetch, websocket: viewer.websocket });
     cleanup.unshift(["server", () => server.stop(true)]);
     const origin = `http://127.0.0.1:${server.port}`;
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await chromium.launch({ headless: true });
     cleanup.unshift(["browser", () => browser.close()]);
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
