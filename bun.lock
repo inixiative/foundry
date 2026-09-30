@@ -28,7 +28,7 @@
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
-        "@inixiative/agent-session": "^0.2.0",
+        "@inixiative/agent-session": "^0.3.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.4",
         "@inixiative/session-archive": "npm:@inixiative/archive@^0.5.1",
@@ -94,7 +94,7 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.2.0", "", {}, "sha512-nL4k43CJh1JWy4tm5MYLLGMSHQVpre61hppUXOfdCl+lecSbGJxC+watoLkwFbF/BYmfIugodl6PqHlg90i10A=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.3.0", "", {}, "sha512-dlG+ULnzk0K5unPBJJa40gwz5072xGUdMVk/ao+lu6emMz7eY0yk5Ps6wwMFg1XLsK1HqxolklgBtOIS7prH7g=="],
 
     "@inixiative/config": ["@inixiative/config@0.5.40", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.0.0", "typescript": ">=5.9.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-lu84pUChF5DCflqTk/h21DeuECheIWSjEpVZmoT8mIOjFOXU6/YiKpBukAM7PqzTpB/zcD7W2EVOhUCnnWCSQw=="],
 
