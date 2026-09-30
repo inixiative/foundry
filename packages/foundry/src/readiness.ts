@@ -1,5 +1,6 @@
 import { access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
+import { join } from "node:path";
 import { configuredExperts } from "./agents/configured-experts";
 import { MODEL_REGISTRY } from "./models/registry";
 import { installationCredentialSchema, readPrivateJson } from "./providers/kastle-credential-file";
@@ -8,26 +9,41 @@ import { type FoundryConfig, validateConfig } from "./viewer/config";
 import { resolveProjectView } from "./viewer/config-resolve";
 import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionResolution } from "./providers/subscription-policy";
 import { assertProfile } from "./providers/private-profile";
+import { KingdomRuntimeConnection } from "./providers/kingdom-runtime-connection";
+import { FoundryCredentials } from "./providers/credentials";
+import { type ArchiveDestination, readDestinations } from "./archives/config";
+import { verifyArchiveDestination } from "./archives/publish";
 import { resolveDecisionModel } from "./providers/decision-provider";
 
 export interface ReadinessIssue { severity: "error" | "warning"; scope: string; code: string; message: string }
 export interface ReadinessProfile { scope: string; agentId: string; role: string; provider: string; model: string; domain?: string; layerId?: string }
+export interface ReadinessKingdom { status: "connected" | "unavailable" | "disconnected" | "unverified"; url?: string; installationId?: string }
+export interface ReadinessArchive { projectId: string; status: "none" | "configured" | "verification-failing"; destinations: number }
 export interface ReadinessReport {
   configurationReady: boolean;
   liveAccess: "unverified";
   profiles: ReadinessProfile[];
   issues: ReadinessIssue[];
+  kingdom?: ReadinessKingdom;
+  /** Present when a configuration directory is inspected. */
+  archives?: ReadinessArchive[];
 }
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
 export async function inspectReadiness(config: FoundryConfig, options: {
   environment?: Record<string, string | undefined>;
   which?: (binary: string) => string | null;
+  /** Enables archive destination inspection (`<configDir>/archives.json`). */
+  configDir?: string;
+  /** Enables one Kingdom heartbeat and one search per archive destination. */
+  transport?: typeof fetch;
 } = {}): Promise<ReadinessReport> {
   const saved = config;
   const issues: ReadinessIssue[] = [], profiles: ReadinessProfile[] = [];
   const environment = options.environment ?? process.env, which = options.which ?? Bun.which;
   const issue = (severity: ReadinessIssue["severity"], scope: string, code: string, message: string) => issues.push({ severity, scope, code, message });
-  const result = (): ReadinessReport => ({ configurationReady: !issues.some(item => item.severity === "error"), liveAccess: "unverified", profiles, issues });
+  let kingdom: ReadinessKingdom | undefined, archives: ReadinessArchive[] | undefined;
+  const result = (): ReadinessReport => ({ configurationReady: !issues.some(item => item.severity === "error"), liveAccess: "unverified", profiles, issues,
+    ...(kingdom ? { kingdom } : {}), ...(archives ? { archives } : {}) });
   let subscription: SubscriptionResolution | undefined;
   try { validateConfig(saved); subscription = resolveSubscriptionPolicy(saved); }
   catch { issue("error", "global", "invalid-configuration", "Configuration validation failed. Check authentication references, learning settings and source policies."); return result(); }
@@ -116,5 +132,49 @@ export async function inspectReadiness(config: FoundryConfig, options: {
     } else if (source.credential.type === "environment" && !environment[source.credential.variable])
       issue("error", source.id, "gateway-credential-missing", "The configured gateway credential environment variable is absent.");
   }
+  kingdom = await inspectKingdom(saved, issue, options.transport);
+  if (options.configDir) archives = await inspectArchives(saved, options.configDir, kingdom, issue, options.transport);
   return result();
+}
+
+type Issue = (severity: ReadinessIssue["severity"], scope: string, code: string, message: string) => void;
+
+async function inspectKingdom(config: FoundryConfig, issue: Issue, transport?: typeof fetch): Promise<ReadinessKingdom> {
+  const runtime = config.kingdomRuntime;
+  if (!runtime) return { status: "disconnected" };
+  const identity = { url: runtime.url, installationId: runtime.installationId };
+  try { installationCredentialSchema.parse(await readPrivateJson(runtime.credentialFile)); }
+  catch {
+    issue("error", "kingdom", "kingdom-credential-unavailable", "The Kingdom runtime credential must be an owned private file. Pair again with bun run kingdom pair --replace.");
+    return { status: "unavailable", ...identity };
+  }
+  if (!transport) return { status: "unverified", ...identity };
+  const connection = new KingdomRuntimeConnection(runtime, () => 0, transport);
+  try { await connection.check(); return { status: "connected", ...identity }; }
+  catch {
+    issue("error", "kingdom", "kingdom-unavailable", "Kingdom refused or could not be reached; the viewer stays locked until it returns. Check the runtime in Kingdom's Foundry tab, or pair again with bun run kingdom pair --replace.");
+    return { status: "unavailable", ...identity };
+  } finally { connection.stop(); }
+}
+
+async function inspectArchives(config: FoundryConfig, configDir: string, kingdom: ReadinessKingdom, issue: Issue, transport?: typeof fetch): Promise<ReadinessArchive[]> {
+  let destinations: ArchiveDestination[];
+  try { destinations = readDestinations(join(configDir, "archives.json")); }
+  catch {
+    issue("error", "archives", "archive-configuration-invalid", "archives.json is invalid, so no archives publish. Fix or remove it, then run bun run archive setup.");
+    return [];
+  }
+  const credentials = new FoundryCredentials(configDir, () => config.kingdomRuntime);
+  const projectIds = [...new Set([...Object.keys(config.projects), ...destinations.map(d => d.projectId)])];
+  return Promise.all(projectIds.map(async (projectId): Promise<ReadinessArchive> => {
+    const owned = destinations.filter(d => d.projectId === projectId);
+    if (!owned.length) return { projectId, status: "none", destinations: 0 };
+    let failing = false;
+    for (const destination of owned) {
+      if (destination.credential?.type === "kingdom-runtime" && kingdom.status === "disconnected") failing = true;
+      else if (transport) failing ||= await verifyArchiveDestination(destination, credentials, transport).then(() => false, () => true);
+    }
+    if (failing) issue("warning", projectId, "archive-destination-failing", "An archive destination failed verification; captured sessions stay local. Check its credential or Kingdom pairing, or reconnect with bun run archive setup.");
+    return { projectId, status: failing ? "verification-failing" : "configured", destinations: owned.length };
+  }));
 }

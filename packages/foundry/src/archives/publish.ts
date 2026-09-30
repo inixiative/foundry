@@ -1,12 +1,14 @@
 // Native authentication adapter. Preserve standalone Archive's durable outbox/replay semantics.
+import { z } from 'zod';
 import {
   type ArchiveDestination,
   archiveDestinationSchema,
+  connectDestination,
   destinationIdentity,
   destinationUrl,
 } from './config';
 import type { LocalArchiveStore } from '@inixiative/session-archive/local';
-import type { CredentialResolver } from '@inixiative/foundry-core';
+import type { CredentialReference, CredentialResolver } from '@inixiative/foundry-core';
 import { FoundryCredentials } from '../providers/credentials';
 
 export { type ArchiveDestination, archiveDestinationSchema } from './config';
@@ -57,6 +59,60 @@ export async function verifyArchiveDestination(
     credentials,
   );
   if (!Array.isArray(result.data?.archives)) throw Error('Archive protocol unavailable');
+}
+
+/** Hosted Archive destinations Kingdom has bound to the enrolled owner. */
+export async function listKingdomConnections(
+  credentials: FoundryCredentials,
+  transport: typeof fetch = fetch,
+  sessionCount = 0,
+) {
+  const identity = await credentials.kingdomIdentity(transport, sessionCount);
+  const result = await archiveRequest(
+    { ...identity, kind: 'kingdom', projectId: 'discovery', credential: { type: 'kingdom-runtime' } },
+    'remote/connections',
+    {},
+    transport,
+    credentials,
+  );
+  return { ...identity, connections: result.data };
+}
+
+/** Verifies then saves a destination; a direct `secret` becomes a managed credential, removed again on failure. */
+export async function saveArchiveConnection(
+  configPath: string,
+  input: unknown,
+  credentials: FoundryCredentials,
+  transport: typeof fetch = fetch,
+) {
+  let created: CredentialReference | undefined;
+  let committed = false;
+  try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid connection');
+    const { secret, ...configuration } = input as Record<string, unknown>;
+    if (secret !== undefined) {
+      if (configuration.credential || configuration.tokenEnv) throw Error('Choose one credential');
+      // Validate the destination before accepting secret custody.
+      const candidate = archiveDestinationSchema.parse({
+        ...configuration,
+        credential: { type: 'managed', id: crypto.randomUUID() },
+      });
+      if (candidate.kind !== 'archive') throw Error('Pair Kingdom to use native credentials');
+      created = await credentials.save(
+        { service: 'archive', url: candidate.url, projectId: candidate.projectId },
+        z.string().min(1).max(16384).parse(secret),
+      );
+      configuration.credential = created;
+    }
+    const destination = archiveDestinationSchema.parse(configuration);
+    await verifyArchiveDestination(destination, credentials, transport);
+    const configured = connectDestination(configPath, destination);
+    committed = true;
+    return configured;
+  } catch (error) {
+    if (created && !committed) await credentials.remove(created).catch(() => {});
+    throw error;
+  }
 }
 
 export async function archiveRequest(

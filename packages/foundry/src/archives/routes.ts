@@ -4,18 +4,17 @@ import { z } from 'zod';
 import type { EventStream } from '@inixiative/foundry-core';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
 import type { LocalSessionStore } from '../persistence/local-session-store';
-import { type ArchiveDestination, connectDestination, readDestinations } from './config';
+import { type ArchiveDestination, readDestinations } from './config';
 import { FoundryCredentials } from '../providers/credentials';
-import type { CredentialReference } from '@inixiative/foundry-core';
 import { ConfigStore } from '../viewer/config';
 import { ArchiveContextSource } from './context-source';
 import { ArchiveCapture } from './capture';
 import {
-  archiveDestinationSchema,
   publishArchive,
   archiveRequest,
   kingdomFields,
-  verifyArchiveDestination,
+  listKingdomConnections,
+  saveArchiveConnection,
 } from './publish';
 
 export function registerArchiveRoutes(
@@ -93,15 +92,7 @@ export function registerArchiveRoutes(
   for (const archive of store.list()) void publish(archive.id);
   app.get('/api/archives/kingdom', async (c) => {
     try {
-      const identity = await credentials.kingdomIdentity(fetch, journal.threads().length);
-      const result = await archiveRequest(
-        { ...identity, kind: 'kingdom', projectId: 'discovery', credential: { type: 'kingdom-runtime' } },
-        'remote/connections',
-        {},
-        fetch,
-        credentials,
-      );
-      return c.json({ ...identity, connections: result.data });
+      return c.json(await listKingdomConnections(credentials, fetch, journal.threads().length));
     } catch {
       return c.json({ error: 'Connect Foundry to Kingdom in Settings → Kingdom first.' }, 503);
     }
@@ -182,36 +173,13 @@ export function registerArchiveRoutes(
     }
   });
   app.post('/api/archives/connect', async (c) => {
-    let created: CredentialReference | undefined;
-    let committed = false;
     try {
-      const input = await c.req.json();
-      if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid connection');
-      const { secret, ...configuration } = input;
-      if (secret !== undefined) {
-        if (configuration.credential || configuration.tokenEnv) throw Error('Choose one credential');
-        // Validate the destination before accepting secret custody.
-        const candidate = archiveDestinationSchema.parse({
-          ...configuration,
-          credential: { type: 'managed', id: crypto.randomUUID() },
-        });
-        if (candidate.kind !== 'archive') throw Error('Pair Kingdom to use native credentials');
-        created = await credentials.save(
-          { service: 'archive', url: candidate.url, projectId: candidate.projectId },
-          z.string().min(1).max(16384).parse(secret),
-        );
-        configuration.credential = created;
-      }
-      const destination = archiveDestinationSchema.parse(configuration);
-      await verifyArchiveDestination(destination, credentials);
-      const configured = connectDestination(configPath, destination);
-      committed = true;
+      const configured = await saveArchiveConnection(configPath, await c.req.json(), credentials);
       loadDestinations();
       for (const archive of store.list())
-        if (archive.projectId === destination.projectId) void publish(archive.id);
+        if (archive.projectId === configured.projectId) void publish(archive.id);
       return c.json({ ...configured, status: 'connected' });
     } catch {
-      if (created && !committed) await credentials.remove(created).catch(() => {});
       return c.json(
         {
           error: 'Connection failed. Check the destination and its Foundry credential or Kingdom enrollment.',

@@ -8,50 +8,20 @@
  * Run with: bun run setup
  */
 
-import * as readline from "readline/promises";
 import { MODEL_REGISTRY } from "./models/registry";
 import { existsSync, mkdirSync } from "fs";
 import { basename } from "path";
-import { defaultConfig, starterConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
+import { ConfigStore, defaultConfig, starterConfig, type FoundryConfig, type ProjectPrompts } from "./viewer/config";
 import { writeComposed, writeFileRef, RUNTIME_OUTPUT_FILES } from "./prompts/composer";
 import { scanRepoDocs, formatPlan } from "./setup/scan-docs";
+import { createTerminalPrompts } from "./setup/prompts";
+import { runArchiveSetup } from "./archives/setup";
 
 const FOUNDRY_DIR = ".foundry";
 const CONFIG_PATH = `${FOUNDRY_DIR}/settings.json`;
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-// ---------------------------------------------------------------------------
-// Prompt helpers
-// ---------------------------------------------------------------------------
-
-async function ask(question: string, fallback?: string): Promise<string> {
-  const hint = fallback ? ` [${fallback}]` : "";
-  const answer = await rl.question(`  ${question}${hint}: `);
-  return answer.trim() || fallback || "";
-}
-
-async function choose(question: string, options: string[], defaultIdx = 0): Promise<number> {
-  console.log(`\n  ${question}\n`);
-  for (let i = 0; i < options.length; i++) {
-    const marker = i === defaultIdx ? ">" : " ";
-    console.log(`    ${marker} ${i + 1}. ${options[i]}`);
-  }
-  console.log();
-  const answer = await ask("Choice", String(defaultIdx + 1));
-  const idx = parseInt(answer) - 1;
-  return idx >= 0 && idx < options.length ? idx : defaultIdx;
-}
-
-async function confirm(question: string, fallback = true): Promise<boolean> {
-  const hint = fallback ? "Y/n" : "y/N";
-  const answer = await ask(`${question} (${hint})`);
-  if (!answer) return fallback;
-  return answer.toLowerCase().startsWith("y");
-}
+const prompts = createTerminalPrompts();
+const { ask, choose, confirm } = prompts;
 
 // ---------------------------------------------------------------------------
 // Provider definitions
@@ -116,13 +86,17 @@ async function main() {
     await saveConfig(config);
     await ensureDirs();
     await seedMemory();
+    if (await confirm("\n  Pair with Kingdom and set up session archives now?", true)) {
+      await configureArchives(config);
+      await saveConfig(config);
+    }
     printDone(config);
   } else {
     // Cumulative — menu loop
     await configureLoop(existing);
   }
 
-  rl.close();
+  prompts.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +174,7 @@ async function configureLoop(config: FoundryConfig) {
     const c = counts();
     const hasPrompts = Object.values(config.projects).some(p => p.prompts);
     const docsStatus = config.sources["docs-src"] ? "configured" : "not scanned";
+    const archiveStatus = config.kingdomRuntime ? "Kingdom paired" : "Kingdom not paired";
     const idx = await choose("What would you like to configure?", [
       `Provider & defaults  (${config.defaults.provider} / ${config.defaults.model})`,
       `Prompts              (${hasPrompts ? "configured" : "not set up"})`,
@@ -208,6 +183,7 @@ async function configureLoop(config: FoundryConfig) {
       `Layers               (${c.layers} configured)`,
       `Sources              (${c.sources} configured)`,
       `Projects             (${c.projects} configured)`,
+      `Kingdom & archives   (${archiveStatus})`,
       "Reset to starter config",
       "Done",
     ]);
@@ -220,7 +196,8 @@ async function configureLoop(config: FoundryConfig) {
       case 4: await configureSection(config, "layers", layerEditor); break;
       case 5: await configureSection(config, "sources", sourceEditor); break;
       case 6: await configureSection(config, "projects", projectEditor); break;
-      case 7: {
+      case 7: await configureArchives(config); break;
+      case 8: {
         if (await confirm("Replace config with starter defaults?", false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -230,13 +207,35 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 8: running = false; break;
+      case 9: running = false; break;
     }
 
     await saveConfig(config);
   }
 
   console.log("\n  Config saved to .foundry/settings.json\n");
+}
+
+// ---------------------------------------------------------------------------
+// Kingdom pairing + archive destinations
+// ---------------------------------------------------------------------------
+
+async function configureArchives(config: FoundryConfig) {
+  console.log("\n  ── Kingdom & archives ──\n");
+  // Projects edited in this session must exist on disk before the shared flow reads them.
+  await saveConfig(config);
+  try {
+    const result = await runArchiveSetup({ configDir: FOUNDRY_DIR, prompts, log: line => console.log(`  ${line}`) });
+    for (const project of result.projects) console.log(`    • ${project.projectId}: ${project.status}${project.reason ? ` — ${project.reason}` : ""}`);
+  } catch (error) {
+    console.log(`  Kingdom/archive setup did not finish: ${error instanceof Error && error.name === "Error" ? error.message : "check the address and configuration"}`);
+    console.log("  Re-run later with: bun run archive setup");
+  } finally {
+    // Pairing writes settings.json directly; keep this session's copy from overwriting it.
+    const saved = await new ConfigStore(FOUNDRY_DIR).load().catch(() => undefined);
+    if (saved?.kingdomRuntime) config.kingdomRuntime = saved.kingdomRuntime;
+    else if (saved) delete config.kingdomRuntime;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1082,6 @@ function printDone(config: FoundryConfig) {
 
 main().catch((err) => {
   console.error("\n  Setup failed:", err.message ?? err);
-  rl.close();
+  prompts.close();
   process.exit(1);
 });
