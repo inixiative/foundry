@@ -1,6 +1,11 @@
-import { MODEL_REGISTRY, registryModel, type FoundryProviderInfo, type ModelReasoning } from "../models/registry";
-import { OpenAIProvider, openAiApiRoot } from "./openai";
-import type { LLMProvider } from "@inixiative/foundry-core";
+import type { LLMProvider } from '@inixiative/foundry-core';
+import {
+  type FoundryProviderInfo,
+  MODEL_REGISTRY,
+  type ModelReasoning,
+  registryModel,
+} from '../models/registry';
+import { OpenAIProvider, openAiApiRoot } from './openai';
 
 export interface RegisteredProviderConfig {
   /** Omit for a local provider (Ollama, vLLM); a placeholder bearer is sent. */
@@ -14,12 +19,12 @@ export interface RegisteredProviderConfig {
 }
 
 /** Local hosts require a bearer the server ignores; the OpenAI client library refuses an empty one. */
-const LOCAL_PLACEHOLDER_KEY = "local";
+const LOCAL_PLACEHOLDER_KEY = 'local';
 
 const OPENROUTER_HEADERS = {
   // Required for app attribution; the request succeeds without it, the ranking page does not exist.
-  "HTTP-Referer": "https://github.com/inixiative/foundry",
-  "X-OpenRouter-Title": "Foundry",
+  'HTTP-Referer': 'https://github.com/inixiative/foundry',
+  'X-OpenRouter-Title': 'Foundry',
 };
 
 export function registeredProvider(providerId: string): FoundryProviderInfo {
@@ -40,17 +45,22 @@ export function providerApiRoot(providerId: string, baseUrl?: string): string {
 }
 
 /** The registry's reasoning request shape for this provider's models. */
-export function providerReasoning(providerId: string): (model: string) => ModelReasoning | undefined {
+export function providerReasoning(
+  providerId: string,
+): (model: string) => ModelReasoning | undefined {
   registeredProvider(providerId);
   return (model: string) => registryModel(providerId, model)?.reasoning;
 }
 
 /** Build a client for any registered OpenAI-compatible provider: one adapter, one table. */
-export function createRegisteredProvider(providerId: string, config: RegisteredProviderConfig = {}): LLMProvider {
+export function createRegisteredProvider(
+  providerId: string,
+  config: RegisteredProviderConfig = {},
+): LLMProvider {
   const provider = registeredProvider(providerId);
-  if (!["openai", "openai-compatible", "xai"].includes(provider.type))
+  if (!['openai', 'openai-compatible', 'xai'].includes(provider.type))
     throw Error(`Provider is not OpenAI-compatible: ${providerId}`);
-  if (provider.credential === "api-key" && !config.apiKey?.trim())
+  if (provider.credential === 'api-key' && !config.apiKey?.trim())
     throw Error(`${providerId} requires ${provider.envKey}`);
 
   const options = {
@@ -58,13 +68,16 @@ export function createRegisteredProvider(providerId: string, config: RegisteredP
     apiRoot: providerApiRoot(providerId, config.baseUrl),
     defaultModel: config.defaultModel ?? provider.models[0]!.id,
     reasoning: providerReasoning(providerId),
-    headers: { ...(providerId === "openrouter" ? OPENROUTER_HEADERS : {}), ...config.headers },
+    headers: { ...(providerId === 'openrouter' ? OPENROUTER_HEADERS : {}), ...config.headers },
   };
   return new OpenAIProvider(options, config.id ?? providerId);
 }
 
 /** Read a registered provider's credential from the environment. */
-export function providerApiKey(providerId: string, environment: Record<string, string | undefined> = process.env): string | undefined {
+export function providerApiKey(
+  providerId: string,
+  environment: Record<string, string | undefined> = process.env,
+): string | undefined {
   const { envKey } = registeredProvider(providerId);
   return envKey ? environment[envKey]?.trim() || undefined : undefined;
 }

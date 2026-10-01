@@ -1,10 +1,10 @@
-import { computeHash, REQUIRED_CONTEXT_BLOCKED } from "./context-layer";
-import { BaseAgent, type AgentConfig, type ExecutionResult } from "./base-agent";
-import type { AssembledContext, ContextStack, LayerFilter } from "./context-stack";
-import { buildInjectionArtifact, type InjectionArtifact, type MessageDecoration } from "./messages";
-import type { LLMMessage } from "./types";
-import type { ToolCallObservation } from "./tools";
-import type { NativeEvidence, NativeObservation } from "./native-evidence";
+import { type AgentConfig, BaseAgent, type ExecutionResult } from './base-agent';
+import { computeHash, REQUIRED_CONTEXT_BLOCKED } from './context-layer';
+import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';
+import { buildInjectionArtifact, type InjectionArtifact, type MessageDecoration } from './messages';
+import type { NativeEvidence, NativeObservation } from './native-evidence';
+import type { ToolCallObservation } from './tools';
+import type { LLMMessage } from './types';
 
 /** Runtime metadata passed to executor handlers at dispatch time. */
 export interface ExecuteMeta {
@@ -44,21 +44,17 @@ export interface ExecuteMeta {
 export type ExecuteHandler<TPayload, TResult> = (
   context: string,
   payload: TPayload,
-  meta?: ExecuteMeta
+  meta?: ExecuteMeta,
 ) => Promise<TResult>;
 
-export interface ExecutorConfig<TPayload = unknown, TResult = unknown>
-  extends AgentConfig {
+export interface ExecutorConfig<TPayload = unknown, TResult = unknown> extends AgentConfig {
   handler: ExecuteHandler<TPayload, TResult>;
 }
 
 /**
  * An Executor takes context + payload, goes and does work, returns full results.
  */
-export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
-  TPayload,
-  TResult
-> {
+export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<TPayload, TResult> {
   private _handler: ExecuteHandler<TPayload, TResult>;
 
   constructor(config: ExecutorConfig<TPayload, TResult>) {
@@ -73,7 +69,7 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
   async run(
     payload: TPayload,
     filterOverride?: LayerFilter,
-    meta?: ExecuteMeta
+    meta?: ExecuteMeta,
   ): Promise<ExecutionResult<TResult>> {
     // Decoration composed by pre-message middleware (parallel domain advice)
     // rides in on annotations and is appended after the assembled layers, so
@@ -83,37 +79,54 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
     const base = this.assembleContext(filterOverride);
     const blocks = decoration?.blocks.length ? [...base.blocks, ...decoration.blocks] : base.blocks;
     const assembled: AssembledContext = decoration?.blocks.length
-      ? { blocks, text: blocks.map((block) => block.text).join("\n\n") }
+      ? { blocks, text: blocks.map((block) => block.text).join('\n\n') }
       : base;
     const context = assembled.text;
     const contextHash = computeHash(context);
     const capturedAt = Date.now();
-    const included = new Set(assembled.blocks.map(block => block.id));
-    const layers = this._stack.layers.map(layer => ({
+    const included = new Set(assembled.blocks.map((block) => block.id));
+    const layers = this._stack.layers.map((layer) => ({
       ...layer.snapshotInstance(meta?.threadId),
       id: layer.id,
       prompt: layer.prompt,
-      sourceIds: layer.sources.map(source => source.id),
+      sourceIds: layer.sources.map((source) => source.id),
       included: included.has(layer.id),
     }));
-    const userMessage = typeof payload === "string" ? payload : JSON.stringify(payload);
+    const userMessage = typeof payload === 'string' ? payload : JSON.stringify(payload);
     const injection = buildInjectionArtifact({
       userMessage,
       assembled: base,
       decoration,
-      layerFreshness: Object.fromEntries(layers.map(layer => [layer.id, {
-        state: layer.state, lastWarmed: layer.lastWarmed,
-      }])),
+      layerFreshness: Object.fromEntries(
+        layers.map((layer) => [
+          layer.id,
+          {
+            state: layer.state,
+            lastWarmed: layer.lastWarmed,
+          },
+        ]),
+      ),
     });
     let providerMessages: LLMMessage[] | undefined;
     let providerBoundary: ProviderBoundaryReceipt | undefined;
-    const capture = (): InjectionArtifact => ({ ...injection, capturedAt, threadId: meta?.threadId,
-      projectId: meta?.projectId, messageId: meta?.messageId, providerBoundary,
-      executorContext: context, providerMessages, layers,
-      ...(plan !== undefined ? { plan } : {}) });
+    const capture = (): InjectionArtifact => ({
+      ...injection,
+      capturedAt,
+      threadId: meta?.threadId,
+      projectId: meta?.projectId,
+      messageId: meta?.messageId,
+      providerBoundary,
+      executorContext: context,
+      providerMessages,
+      layers,
+      ...(plan !== undefined ? { plan } : {}),
+    });
     const observe = (callback: () => void) => {
-      try { callback(); }
-      catch (error) { console.warn("[Executor] input evidence observer failed:", error); }
+      try {
+        callback();
+      } catch (error) {
+        console.warn('[Executor] input evidence observer failed:', error);
+      }
     };
     const record = () => observe(() => meta?.recordInjection?.(structuredClone(capture())));
     // These are in-memory preparation observations, not durable writes or
@@ -122,27 +135,43 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
     // Shared layers may finish a coalesced load for a later request. Preserve
     // the actual prepared evidence above, but never send it as this request's
     // selection. No retry/replay is implied by refusing this provider call.
-    const mismatched = layers.filter(layer => {
+    const mismatched = layers.filter((layer) => {
       if (!layer.included || !layer.selection) return false;
       const selectedFor = layer.selection.currentMessage;
       // Standalone legacy sources have no request-identity contract. A flow
       // plan does: even its unidentified loads must not replace identified work.
       if (!selectedFor && plan === undefined) return false;
       const expectedId = meta?.messageId && meta.threadId ? meta.messageId : undefined;
-      return selectedFor?.messageId !== expectedId || (selectedFor !== undefined &&
-        (selectedFor.threadId !== meta?.threadId || selectedFor.projectId !== meta?.projectId));
+      return (
+        selectedFor?.messageId !== expectedId ||
+        (selectedFor !== undefined &&
+          (selectedFor.threadId !== meta?.threadId || selectedFor.projectId !== meta?.projectId))
+      );
     });
     if (mismatched.length) {
-      throw new Error(`Memory selection changed before provider execution: logical message ownership differs for layer(s) ${mismatched.map(l => l.id).join(", ")}`);
+      throw new Error(
+        `Memory selection changed before provider execution: logical message ownership differs for layer(s) ${mismatched.map((l) => l.id).join(', ')}`,
+      );
     }
     // A selecting source that could not carry required context is a reason to
     // stop, not a note for the model. Refuse before any provider call; the
     // recorded artifact above keeps the conflict and record ids inspectable.
-    const blocked = layers.filter(layer => layer.included).flatMap(layer => (layer.selection?.sources ?? []).flatMap(source =>
-      source.report.conflicts.filter(conflict => conflict.kind === REQUIRED_CONTEXT_BLOCKED)
-        .map(conflict => `layer ${layer.id}, source ${source.sourceId}: ${conflict.ids.join(", ")}`)));
+    const blocked = layers
+      .filter((layer) => layer.included)
+      .flatMap((layer) =>
+        (layer.selection?.sources ?? []).flatMap((source) =>
+          source.report.conflicts
+            .filter((conflict) => conflict.kind === REQUIRED_CONTEXT_BLOCKED)
+            .map(
+              (conflict) =>
+                `layer ${layer.id}, source ${source.sourceId}: ${conflict.ids.join(', ')}`,
+            ),
+        ),
+      );
     if (blocked.length) {
-      throw new Error(`Required memory context blocked before provider execution: pinned records exceed the selection cap and no scoped retrieval is available (${blocked.join("; ")})`);
+      throw new Error(
+        `Required memory context blocked before provider execution: pinned records exceed the selection cap and no scoped retrieval is available (${blocked.join('; ')})`,
+      );
     }
     let output: TResult;
     let native: NativeEvidence | undefined;
@@ -150,14 +179,22 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
     try {
       output = await this._handler(context, payload, {
         ...meta,
-        recordNative: evidence => { if (recording) { native = evidence; observe(() => meta?.recordNative?.(evidence)); } },
-        recordProviderInput: messages => {
+        recordNative: (evidence) => {
+          if (recording) {
+            native = evidence;
+            observe(() => meta?.recordNative?.(evidence));
+          }
+        },
+        recordProviderInput: (messages) => {
           // The initial boundary input must not be replaced by tool followups.
           if (providerMessages === undefined) {
             providerMessages = structuredClone(messages);
-            if (meta?.threadId && meta.messageId) providerBoundary = boundaryReceipt(capture(), {
-              threadId: meta.threadId, messageId: meta.messageId, ...(meta.projectId ? { projectId: meta.projectId } : {}),
-            });
+            if (meta?.threadId && meta.messageId)
+              providerBoundary = boundaryReceipt(capture(), {
+                threadId: meta.threadId,
+                messageId: meta.messageId,
+                ...(meta.projectId ? { projectId: meta.projectId } : {}),
+              });
           }
           record();
           observe(() => meta?.recordProviderInput?.(structuredClone(messages)));
@@ -182,4 +219,5 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<
     };
   }
 }
-import { boundaryReceipt, type ProviderBoundaryReceipt } from "./delivery-evidence";
+
+import { boundaryReceipt, type ProviderBoundaryReceipt } from './delivery-evidence';

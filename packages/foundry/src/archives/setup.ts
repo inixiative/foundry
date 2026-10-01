@@ -1,9 +1,15 @@
 import { join } from 'node:path';
 import { FoundryCredentials } from '../providers/credentials';
-import { defaultKingdomUrl, defaultRuntimeName, kingdomStatus, pairKingdom, type KingdomRuntimeStatus } from '../providers/kingdom-cli';
+import {
+  defaultKingdomUrl,
+  defaultRuntimeName,
+  type KingdomRuntimeStatus,
+  kingdomStatus,
+  pairKingdom,
+} from '../providers/kingdom-cli';
 import { kingdomUrl } from '../providers/kingdom-client';
-import { selectKingdomRuntime } from '../providers/kingdom-runtime-connection';
 import { viewerRunning } from '../providers/kingdom-pairing';
+import { selectKingdomRuntime } from '../providers/kingdom-runtime-connection';
 import type { SetupPrompts } from '../setup/prompts';
 import { ConfigStore } from '../viewer/config';
 import { destinationUrl, readDestinations } from './config';
@@ -39,7 +45,9 @@ interface KingdomConnection {
   name?: string;
   projectId?: string | null;
 }
-type Choice = { kind: 'kingdom'; connectionId?: string } | { kind: 'archive'; url: string; secret: string };
+type Choice =
+  | { kind: 'kingdom'; connectionId?: string }
+  | { kind: 'archive'; url: string; secret: string };
 export type ProjectSetupResult = {
   projectId: string;
   status: 'configured' | 'connected' | 'skipped' | 'failed';
@@ -51,8 +59,13 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
   const { configDir, prompts, transport = fetch, log = console.error } = options;
   const archivesPath = options.archivesPath ?? join(configDir, 'archives.json');
   const paired = await kingdomStatus(configDir, transport);
-  let kingdom: { status: string; id?: string; url?: string; owner?: string; installationId?: string } =
-    await chooseKingdom(options, paired.runtimes);
+  let kingdom: {
+    status: string;
+    id?: string;
+    url?: string;
+    owner?: string;
+    installationId?: string;
+  } = await chooseKingdom(options, paired.runtimes);
   let written = false;
 
   if (kingdom.status !== 'connected') {
@@ -64,11 +77,19 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
           : 'This Foundry is not paired with Kingdom.',
     );
     let url = options.kingdomUrl;
-    if (prompts && (await prompts.confirm(kingdom.status === 'unavailable' ? 'Pair again?' : 'Pair with Kingdom now?', true)))
+    if (
+      prompts &&
+      (await prompts.confirm(
+        kingdom.status === 'unavailable' ? 'Pair again?' : 'Pair with Kingdom now?',
+        true,
+      ))
+    )
       url = kingdom.url ?? (await prompts.ask('Kingdom API address', url ?? defaultKingdomUrl()));
     else if (prompts) url = undefined;
     if (url) {
-      const name = options.name ?? (prompts ? await prompts.ask('Foundry name', defaultRuntimeName()) : undefined);
+      const name =
+        options.name ??
+        (prompts ? await prompts.ask('Foundry name', defaultRuntimeName()) : undefined);
       kingdom = await pairKingdom({
         configDir,
         url,
@@ -86,21 +107,30 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
   const config = await new ConfigStore(configDir).load();
   const destinations = readDestinations(archivesPath);
   const targets = options.projects?.length ? options.projects : Object.keys(config.projects);
-  if (!targets.length) log('No registered projects yet. Start Foundry in a project, then run bun run archive setup.');
+  if (!targets.length)
+    log('No registered projects yet. Start Foundry in a project, then run bun run archive setup.');
   const credentials = new FoundryCredentials(
     configDir,
     async () => (await new ConfigStore(configDir).load()).kingdomRuntimes,
   );
-  const runtime = kingdom.status === 'connected' ? { id: kingdom.id!, url: kingdom.url!, owner: kingdom.owner! } : undefined;
+  const runtime =
+    kingdom.status === 'connected'
+      ? { id: kingdom.id!, url: kingdom.url!, owner: kingdom.owner! }
+      : undefined;
   let listed: KingdomConnection[] | undefined;
   if (runtime) {
     try {
       const result = await listKingdomConnections(credentials, runtime.id, transport);
       listed = Array.isArray(result.connections)
-        ? result.connections.filter((c: unknown): c is KingdomConnection => typeof (c as KingdomConnection)?.id === 'string')
+        ? result.connections.filter(
+            (c: unknown): c is KingdomConnection =>
+              typeof (c as KingdomConnection)?.id === 'string',
+          )
         : [];
     } catch {
-      log('Kingdom archive connections are unavailable; only direct Archive servers can be connected now.');
+      log(
+        'Kingdom archive connections are unavailable; only direct Archive servers can be connected now.',
+      );
     }
   }
   // Destinations are per paired Kingdom: one on another Kingdom leaves this one to set up.
@@ -156,16 +186,25 @@ export async function runArchiveSetup(options: ArchiveSetupOptions) {
       projects.push({ projectId, status: 'connected' });
       log(`Connected ${label}.`);
     } catch {
-      projects.push({ projectId, status: 'failed', reason: 'Verification failed; nothing was saved. Check the destination and its credential.' });
+      projects.push({
+        projectId,
+        status: 'failed',
+        reason: 'Verification failed; nothing was saved. Check the destination and its credential.',
+      });
       log(`Could not connect ${label}; verification failed and nothing was saved.`);
     }
   }
   const restartViewer = written && (await viewerRunning(undefined, transport));
-  if (restartViewer) log('A Foundry viewer is running; restart it (bun run daemon:start restarts the daemon) to load the new configuration.');
+  if (restartViewer)
+    log(
+      'A Foundry viewer is running; restart it (bun run daemon:start restarts the daemon) to load the new configuration.',
+    );
   return {
     kingdom: {
       status: kingdom.status,
-      ...(kingdom.url ? { id: kingdom.id, url: kingdom.url, installationId: kingdom.installationId } : {}),
+      ...(kingdom.url
+        ? { id: kingdom.id, url: kingdom.url, installationId: kingdom.installationId }
+        : {}),
     },
     projects,
     restartViewer,
@@ -182,29 +221,43 @@ async function chooseKingdom(options: ArchiveSetupOptions, runtimes: KingdomRunt
   const candidates = url ? runtimes.filter((runtime) => runtime.url === url) : runtimes;
   if (candidates.length === 1) return candidates[0]!;
   if (!candidates.length) return { status: 'disconnected' };
-  if (!options.prompts) throw Error('Several Kingdoms are paired; choose one with --kingdom ID|URL (bun run kingdom status lists them).');
+  if (!options.prompts)
+    throw Error(
+      'Several Kingdoms are paired; choose one with --kingdom ID|URL (bun run kingdom status lists them).',
+    );
   const index = await options.prompts.choose(
     'Which Kingdom should these archives publish through?',
-    candidates.map((runtime) => `${runtime.url} as ${runtime.owner} (${runtime.id}, ${runtime.status})`),
+    candidates.map(
+      (runtime) => `${runtime.url} as ${runtime.owner} (${runtime.id}, ${runtime.status})`,
+    ),
     0,
   );
   return candidates[index]!;
 }
 
-function chooseFromFlags(options: ArchiveSetupOptions, matches: KingdomConnection[], kingdom: boolean): Choice | string {
+function chooseFromFlags(
+  options: ArchiveSetupOptions,
+  matches: KingdomConnection[],
+  kingdom: boolean,
+): Choice | string {
   if (options.connection === 'kingdom' && kingdom) return { kind: 'kingdom' };
   if (options.connection && options.connection !== 'kingdom') {
-    if (matches.some((c) => c.id === options.connection)) return { kind: 'kingdom', connectionId: options.connection };
+    if (matches.some((c) => c.id === options.connection))
+      return { kind: 'kingdom', connectionId: options.connection };
   } else if (matches.length === 1) return { kind: 'kingdom', connectionId: matches[0]!.id };
-  else if (matches.length > 1) return 'Several Kingdom connections carry this project; pass --connection.';
+  else if (matches.length > 1)
+    return 'Several Kingdom connections carry this project; pass --connection.';
   if (options.archiveUrl) {
     const variable = options.archiveTokenEnv ?? 'ARCHIVE_TOKEN';
     const secret = process.env[variable];
     if (!secret) throw Error(`Set ${variable} to the Archive token, or pass --archive-token-env.`);
     return { kind: 'archive', url: options.archiveUrl, secret };
   }
-  if (options.connection) return `Kingdom connection ${options.connection} does not carry this project.`;
-  return kingdom ? 'No Kingdom connection carries this project.' : 'Kingdom is not connected and no --archive-url was given.';
+  if (options.connection)
+    return `Kingdom connection ${options.connection} does not carry this project.`;
+  return kingdom
+    ? 'No Kingdom connection carries this project.'
+    : 'Kingdom is not connected and no --archive-url was given.';
 }
 
 async function promptChoice(
@@ -216,15 +269,28 @@ async function promptChoice(
 ): Promise<Choice | string> {
   const choices: [string, () => Promise<Choice | string>][] = [
     ...matches.map(
-      (c) => [`Kingdom connection: ${c.name ?? c.id} (${c.id})`, async () => ({ kind: 'kingdom' as const, connectionId: c.id })] as [string, () => Promise<Choice>],
+      (c) =>
+        [
+          `Kingdom connection: ${c.name ?? c.id} (${c.id})`,
+          async () => ({ kind: 'kingdom' as const, connectionId: c.id }),
+        ] as [string, () => Promise<Choice>],
     ),
-    ...(kingdom ? [['Kingdom-stored archives', async () => ({ kind: 'kingdom' as const })] as [string, () => Promise<Choice>]] : []),
+    ...(kingdom
+      ? [
+          ['Kingdom-stored archives', async () => ({ kind: 'kingdom' as const })] as [
+            string,
+            () => Promise<Choice>,
+          ],
+        ]
+      : []),
     [
       'Direct Archive server (URL + token)',
       async () => {
         const url = await prompts.ask('Archive URL');
         const secret = await prompts.secret('Archive access token (hidden)');
-        return url && secret ? { kind: 'archive' as const, url, secret } : 'Archive URL and token are required.';
+        return url && secret
+          ? { kind: 'archive' as const, url, secret }
+          : 'Archive URL and token are required.';
       },
     ],
     ['Skip', async () => 'Skipped.'],

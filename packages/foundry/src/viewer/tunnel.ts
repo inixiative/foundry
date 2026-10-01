@@ -17,16 +17,22 @@
 // the login page (cookie session) or Authorization: Bearer header.
 // ---------------------------------------------------------------------------
 
-import { privateTunnelToken } from "./private-token";
-import { authenticatedRequest, sameOrigin, sameSecret, SESSION_COOKIE, sessionValue } from "./request-auth";
-import type { Context, Next } from "hono";
-import type { Subprocess } from "bun";
+import type { Subprocess } from 'bun';
+import type { Context, Next } from 'hono';
+import { privateTunnelToken } from './private-token';
+import {
+  authenticatedRequest,
+  SESSION_COOKIE,
+  sameOrigin,
+  sameSecret,
+  sessionValue,
+} from './request-auth';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type TunnelProvider = "localtunnel" | "cloudflared";
+export type TunnelProvider = 'localtunnel' | 'cloudflared';
 
 export interface TunnelConfig {
   /** Local port to tunnel. */
@@ -78,7 +84,7 @@ function loginPage(error?: string): string {
 <div class="card">
   <h1>foundry</h1>
   <p>Enter your access token to continue.</p>
-  ${error ? `<div class="error">${error}</div>` : ""}
+  ${error ? `<div class="error">${error}</div>` : ''}
   <form method="POST" action="/auth">
     <input type="password" name="token" placeholder="Access token" autofocus required />
     <button type="submit">Continue</button>
@@ -107,39 +113,41 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
     const url = new URL(c.req.url);
     const path = url.pathname;
 
-    c.header("Cache-Control", "no-store");
-    if (!sameOrigin(c.req.raw, publicOrigin)) return c.json({ error: "Origin not allowed" }, 403);
-    if (path === "/api/health" && c.req.method === "GET") return next();
+    c.header('Cache-Control', 'no-store');
+    if (!sameOrigin(c.req.raw, publicOrigin)) return c.json({ error: 'Origin not allowed' }, 403);
+    if (path === '/api/health' && c.req.method === 'GET') return next();
 
     // Serve login page (GET /auth)
-    if (path === "/auth" && c.req.method === "GET") {
+    if (path === '/auth' && c.req.method === 'GET') {
       return c.html(loginPage());
     }
 
     // Handle login submission (POST /auth)
-    if (path === "/auth" && c.req.method === "POST") {
+    if (path === '/auth' && c.req.method === 'POST') {
       const body = await c.req.parseBody();
-      const submitted = typeof body.token === "string" ? body.token.trim() : "";
+      const submitted = typeof body.token === 'string' ? body.token.trim() : '';
       if (sameSecret(submitted, token)) {
         // Set session cookie and redirect to root
-        const secure = url.protocol === "https:" || (!!publicOrigin && new URL(publicOrigin).protocol === "https:");
-        const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? "; Secure" : ""}`;
+        const secure =
+          url.protocol === 'https:' ||
+          (!!publicOrigin && new URL(publicOrigin).protocol === 'https:');
+        const cookie = `${SESSION_COOKIE}=${validSession}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure ? '; Secure' : ''}`;
         return new Response(null, {
           status: 302,
-          headers: { Location: "/", "Set-Cookie": cookie },
+          headers: { Location: '/', 'Set-Cookie': cookie },
         });
       }
-      return c.html(loginPage("Invalid token. Try again."), 401);
+      return c.html(loginPage('Invalid token. Try again.'), 401);
     }
 
     if (authenticatedRequest(c.req.raw, token, publicOrigin)) return next();
 
     // Not authenticated — redirect browsers to login, return 401 for API
-    const accept = c.req.header("accept") ?? "";
-    if (accept.includes("text/html")) {
-      return new Response(null, { status: 302, headers: { Location: "/auth" } });
+    const accept = c.req.header('accept') ?? '';
+    if (accept.includes('text/html')) {
+      return new Response(null, { status: 302, headers: { Location: '/auth' } });
     }
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: 'Unauthorized' }, 401);
   };
 }
 
@@ -150,11 +158,11 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
 function resolveToken(config: TunnelConfig): string {
   if (config.token) {
     if (config.token.length < 32 || config.token.length > 256 || /[\r\n\0]/.test(config.token))
-      throw Error("Tunnel access token must contain 32 to 256 characters");
+      throw Error('Tunnel access token must contain 32 to 256 characters');
     return config.token;
   }
 
-  return privateTunnelToken(config.configDir ?? ".foundry");
+  return privateTunnelToken(config.configDir ?? '.foundry');
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +193,7 @@ export class FoundryTunnel {
     if (!this._url) return null;
     return {
       url: this._url,
-      provider: this._config.provider ?? "localtunnel",
+      provider: this._config.provider ?? 'localtunnel',
     };
   }
 
@@ -193,12 +201,12 @@ export class FoundryTunnel {
    * Start the tunnel. Returns the public URL.
    */
   async start(): Promise<string> {
-    const provider = this._config.provider ?? "localtunnel";
+    const provider = this._config.provider ?? 'localtunnel';
 
     switch (provider) {
-      case "localtunnel":
+      case 'localtunnel':
         return this._startLocaltunnel();
-      case "cloudflared":
+      case 'cloudflared':
         return this._startCloudflared();
       default:
         throw new Error(`Unknown tunnel provider: ${provider}`);
@@ -226,15 +234,15 @@ export class FoundryTunnel {
 
   private async _startLocaltunnel(): Promise<string> {
     // Use localtunnel CLI via subprocess (no need to bundle the dependency)
-    const args = ["npx", "localtunnel", "--port", String(this._config.port)];
+    const args = ['npx', 'localtunnel', '--port', String(this._config.port)];
 
     if (this._config.subdomain) {
-      args.push("--subdomain", this._config.subdomain);
+      args.push('--subdomain', this._config.subdomain);
     }
 
     const proc = Bun.spawn(args, {
-      stdout: "pipe",
-      stderr: "pipe",
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: { ...process.env },
     });
 
@@ -244,7 +252,7 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStdout(proc, /https?:\/\/\S+/);
     this._url = url;
 
-    const { log } = await import("../logger");
+    const { log } = await import('../logger');
     log.info(`[Tunnel] localtunnel active: ${url}`);
 
     return url;
@@ -255,16 +263,13 @@ export class FoundryTunnel {
   // -------------------------------------------------------------------------
 
   private async _startCloudflared(): Promise<string> {
-    const bin = this._config.cloudflaredBin ?? "cloudflared";
+    const bin = this._config.cloudflaredBin ?? 'cloudflared';
 
-    const proc = Bun.spawn(
-      [bin, "tunnel", "--url", `http://localhost:${this._config.port}`],
-      {
-        stdout: "pipe",
-        stderr: "pipe",
-        env: { ...process.env },
-      },
-    );
+    const proc = Bun.spawn([bin, 'tunnel', '--url', `http://localhost:${this._config.port}`], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env },
+    });
 
     this._proc = proc;
 
@@ -272,7 +277,7 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStderr(proc, /https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     this._url = url;
 
-    const { log } = await import("../logger");
+    const { log } = await import('../logger');
     log.info(`[Tunnel] cloudflared active: ${url}`);
 
     return url;
@@ -293,7 +298,7 @@ export class FoundryTunnel {
   private async _readUrlFromStream(stream: ReadableStream, pattern: RegExp): Promise<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    let buffer = '';
     const timeout = 30_000;
     const start = Date.now();
 
@@ -314,8 +319,6 @@ export class FoundryTunnel {
     }
 
     reader.releaseLock();
-    throw new Error(
-      `Tunnel did not produce a URL within ${timeout / 1000}s`,
-    );
+    throw new Error(`Tunnel did not produce a URL within ${timeout / 1000}s`);
   }
 }

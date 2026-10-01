@@ -1,4 +1,4 @@
-import { uuidv7 } from "uuidv7";
+import { uuidv7 } from 'uuidv7';
 
 /**
  * Mint a new UUID v7 identifier, optionally prefixed.
@@ -26,14 +26,14 @@ export function idAtTime(prefix: string | undefined, date: Date): string {
   if (ms < 0 || ms > 0xffffffffffff) {
     throw new RangeError(`timestamp ${ms} out of UUID v7 range`);
   }
-  const hex = ms.toString(16).padStart(12, "0");
+  const hex = ms.toString(16).padStart(12, '0');
   const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7000-8000-000000000000`;
   return prefix ? `${prefix}_${uuid}` : uuid;
 }
 
 /** Extract the millisecond timestamp encoded in a UUID v7 id (with or without prefix). */
 export function timeFromId(id: string): number {
-  const uuid = id.includes("_") ? id.slice(id.lastIndexOf("_") + 1) : id;
+  const uuid = id.includes('_') ? id.slice(id.lastIndexOf('_') + 1) : id;
   const hex = uuid.slice(0, 8) + uuid.slice(9, 13);
   return parseInt(hex, 16);
 }

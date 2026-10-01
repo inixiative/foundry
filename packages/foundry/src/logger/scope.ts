@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 // ---------------------------------------------------------------------------
 // Scopes — async-context-aware log scoping
@@ -9,20 +9,20 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * Use these for consistency, or pass custom strings.
  */
 export enum LogScope {
-  harness = "harness",
-  thread = "thread",
-  agent = "agent",
-  provider = "provider",
-  viewer = "viewer",
-  tunnel = "tunnel",
-  eval = "eval",
-  signal = "signal",
-  memory = "memory",
-  analytics = "analytics",
-  db = "db",
-  lifecycle = "lifecycle",
-  herald = "herald",
-  corpus = "corpus",
+  harness = 'harness',
+  thread = 'thread',
+  agent = 'agent',
+  provider = 'provider',
+  viewer = 'viewer',
+  tunnel = 'tunnel',
+  eval = 'eval',
+  signal = 'signal',
+  memory = 'memory',
+  analytics = 'analytics',
+  db = 'db',
+  lifecycle = 'lifecycle',
+  herald = 'herald',
+  corpus = 'corpus',
 }
 
 const scopeStore = new AsyncLocalStorage<string[]>();
@@ -38,8 +38,7 @@ export const getLogScopes = (): string[] => scopeStore.getStore() ?? [];
 export type LogBroadcastFn = (level: string, message: string) => void;
 
 /** Get current broadcast targets (internal). */
-export const getLogBroadcasts = (): LogBroadcastFn[] =>
-  broadcastStore.getStore() ?? [];
+export const getLogBroadcasts = (): LogBroadcastFn[] => broadcastStore.getStore() ?? [];
 
 /**
  * Run `fn` within a named log scope. All log calls inside will include
@@ -76,14 +75,7 @@ export function addLogBroadcast(target: LogBroadcastFn): void {
 // Log levels
 // ---------------------------------------------------------------------------
 
-export type LogLevel =
-  | "silent"
-  | "fatal"
-  | "error"
-  | "warn"
-  | "info"
-  | "debug"
-  | "trace";
+export type LogLevel = 'silent' | 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
 export const LOG_LEVEL_VALUES: Record<LogLevel, number> = {
   silent: 0,

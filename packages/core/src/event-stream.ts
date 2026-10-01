@@ -1,12 +1,12 @@
-import type { LifecycleEvent } from "./cache-lifecycle";
-import type { Dispatch } from "./thread";
-import type { Signal } from "./signal";
-import type { DispatchContext } from "./middleware";
-import type { ActionPrompt } from "./action-prompt";
+import type { ActionPrompt } from './action-prompt';
+import type { LifecycleEvent } from './cache-lifecycle';
+import type { DispatchContext } from './middleware';
+import type { Signal } from './signal';
+import type { Dispatch } from './thread';
 
 /** Session lifecycle events (minimal type for event stream). */
 export interface SessionEvent {
-  readonly type: "thread:added" | "thread:removed" | "thread:spawned";
+  readonly type: 'thread:added' | 'thread:removed' | 'thread:spawned';
   readonly threadId: string;
   readonly parentId?: string;
   readonly timestamp: number;
@@ -16,14 +16,28 @@ export interface SessionEvent {
  * Every observable event in the system, tagged by origin.
  */
 export type StreamEvent =
-  | { kind: "journal"; threadId: string; turnId: string | null; projectId?: string; timestamp: number; scope?: "phase" | "learning"; outcome?: "durable" | "failed" }
-  | { kind: "layer"; threadId: string; event: LifecycleEvent }
-  | { kind: "dispatch"; threadId: string; dispatch: Dispatch }
-  | { kind: "signal"; threadId: string; signal: Signal }
-  | { kind: "prompt"; threadId: string; prompt: ActionPrompt }
-  | { kind: "session"; event: SessionEvent }
-  | { kind: "middleware"; threadId: string; phase: "before" | "after"; context: DispatchContext }
-  | { kind: "error"; source: string; message: string; severity: "error" | "warn"; timestamp: number };
+  | {
+      kind: 'journal';
+      threadId: string;
+      turnId: string | null;
+      projectId?: string;
+      timestamp: number;
+      scope?: 'phase' | 'learning';
+      outcome?: 'durable' | 'failed';
+    }
+  | { kind: 'layer'; threadId: string; event: LifecycleEvent }
+  | { kind: 'dispatch'; threadId: string; dispatch: Dispatch }
+  | { kind: 'signal'; threadId: string; signal: Signal }
+  | { kind: 'prompt'; threadId: string; prompt: ActionPrompt }
+  | { kind: 'session'; event: SessionEvent }
+  | { kind: 'middleware'; threadId: string; phase: 'before' | 'after'; context: DispatchContext }
+  | {
+      kind: 'error';
+      source: string;
+      message: string;
+      severity: 'error' | 'warn';
+      timestamp: number;
+    };
 
 /**
  * Unified event stream across all threads and sessions.
@@ -56,7 +70,7 @@ export class EventStream {
       try {
         listener(event);
       } catch (err) {
-        console.warn("[EventStream] listener error:", (err as Error).message ?? err);
+        console.warn('[EventStream] listener error:', (err as Error).message ?? err);
       }
     }
   }
@@ -72,7 +86,7 @@ export class EventStream {
 
   /** Get recent events, optionally filtered by kind and/or thread. */
   recent(opts?: {
-    kind?: StreamEvent["kind"];
+    kind?: StreamEvent['kind'];
     threadId?: string;
     limit?: number;
   }): ReadonlyArray<StreamEvent> {
@@ -84,8 +98,8 @@ export class EventStream {
 
     if (opts?.threadId) {
       events = events.filter((e) => {
-        if (e.kind === "session") return true; // session events are global
-        return "threadId" in e && e.threadId === opts.threadId;
+        if (e.kind === 'session') return true; // session events are global
+        return 'threadId' in e && e.threadId === opts.threadId;
       });
     }
 
@@ -94,8 +108,8 @@ export class EventStream {
   }
 
   /** Push an error event — surfaced as a toast in the viewer UI. */
-  pushError(source: string, message: string, severity: "error" | "warn" = "error"): void {
-    this.push({ kind: "error", source, message, severity, timestamp: Date.now() });
+  pushError(source: string, message: string, severity: 'error' | 'warn' = 'error'): void {
+    this.push({ kind: 'error', source, message, severity, timestamp: Date.now() });
   }
 
   /** Clear history. */

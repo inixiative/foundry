@@ -1,1 +1,1 @@
-import "../packages/foundry/src/decisions/catalog-cli";
+import '../packages/foundry/src/decisions/catalog-cli';

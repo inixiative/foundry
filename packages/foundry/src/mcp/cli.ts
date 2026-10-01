@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // ---------------------------------------------------------------------------
 // Foundry MCP Server — standalone entrypoint
 //
@@ -18,22 +19,17 @@
 // layers, and exposes the 5 MCP tools from FLOW.md Loop 2.
 // ---------------------------------------------------------------------------
 
-import { resolve } from "path";
-import {
-  Thread,
-  ContextLayer,
-  ContextStack,
-  type ContextSource,
-} from "@inixiative/foundry-core";
-import { ConfigStore, type FoundryConfig } from "../viewer/config";
-import { createFoundryMcpServer, startStdioTransport } from "./server";
+import { ContextLayer, type ContextSource, ContextStack, Thread } from '@inixiative/foundry-core';
+import { resolve } from 'path';
+import { ConfigStore, type FoundryConfig } from '../viewer/config';
+import { createFoundryMcpServer, startStdioTransport } from './server';
 
 // ---------------------------------------------------------------------------
 // Load config
 // ---------------------------------------------------------------------------
 
 const projectDir = process.cwd();
-const configDir = resolve(projectDir, ".foundry");
+const configDir = resolve(projectDir, '.foundry');
 const configStore = new ConfigStore(configDir);
 const config = await configStore.load();
 
@@ -54,12 +50,12 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
       const srcCfg = config.sources[sourceId];
       if (!srcCfg || !srcCfg.enabled) continue;
 
-      if (srcCfg.type === "inline") {
+      if (srcCfg.type === 'inline') {
         sources.push({
           id: sourceId,
           load: async () => srcCfg.uri,
         });
-      } else if (srcCfg.type === "file") {
+      } else if (srcCfg.type === 'file') {
         const filePath = resolve(projectDir, srcCfg.uri);
         sources.push({
           id: sourceId,
@@ -71,19 +67,19 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
             }
           },
         });
-      } else if (srcCfg.type === "markdown") {
+      } else if (srcCfg.type === 'markdown') {
         const dirPath = resolve(projectDir, srcCfg.uri);
         sources.push({
           id: sourceId,
           load: async () => {
             try {
-              const glob = new Bun.Glob("**/*.md");
+              const glob = new Bun.Glob('**/*.md');
               const files: string[] = [];
               for await (const file of glob.scan({ cwd: dirPath })) {
                 const content = await Bun.file(resolve(dirPath, file)).text();
                 files.push(`# ${file}\n\n${content}`);
               }
-              return files.join("\n\n---\n\n");
+              return files.join('\n\n---\n\n');
             } catch {
               return `[Failed to scan ${dirPath}]`;
             }
@@ -92,7 +88,8 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
       } else {
         sources.push({
           id: sourceId,
-          load: async () => `[Source ${sourceId}: type "${srcCfg.type}" not yet supported in MCP CLI]`,
+          load: async () =>
+            `[Source ${sourceId}: type "${srcCfg.type}" not yet supported in MCP CLI]`,
         });
       }
     }
@@ -104,12 +101,14 @@ function configToSources(config: FoundryConfig): ContextLayer[] {
       });
     }
 
-    layers.push(new ContextLayer({
-      id,
-      sources,
-      prompt: layerCfg.prompt,
-      staleness: layerCfg.staleness,
-    }));
+    layers.push(
+      new ContextLayer({
+        id,
+        sources,
+        prompt: layerCfg.prompt,
+        staleness: layerCfg.staleness,
+      }),
+    );
   }
 
   return layers;
@@ -125,9 +124,9 @@ const stack = new ContextStack(layers);
 // Warm all layers before accepting connections
 await stack.warmAll();
 
-const thread = new Thread("mcp-session", stack);
-thread.meta.description = "MCP bridge session";
-thread.meta.tags = ["mcp"];
+const thread = new Thread('mcp-session', stack);
+thread.meta.description = 'MCP bridge session';
+thread.meta.tags = ['mcp'];
 
 // Standalone operator mode: a reconstructed configuration thread, not a live
 // Foundry runtime. Its legacy signal emission is kept as an explicit grant here;
@@ -135,8 +134,8 @@ thread.meta.tags = ["mcp"];
 const server = createFoundryMcpServer({
   thread,
   grant: { signal: true },
-  name: "foundry",
-  version: "0.1.0",
+  name: 'foundry',
+  version: '0.1.0',
 });
 
 // Start stdio transport — Claude Code communicates via stdin/stdout

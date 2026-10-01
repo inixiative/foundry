@@ -1,16 +1,24 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { z } from 'zod';
-import type { CredentialReference, CredentialResolver, CredentialScope } from '@inixiative/foundry-core';
+import type {
+  CredentialReference,
+  CredentialResolver,
+  CredentialScope,
+} from '@inixiative/foundry-core';
 import { destinationUrl } from '@inixiative/session-archive/config';
-import { installationCredentialSchema, readPrivateJson, writePrivateJson } from './kingdom-credential-file';
+import { z } from 'zod';
 import { ownerKey, ownerKeySchema } from './kingdom-client';
 import {
+  installationCredentialSchema,
+  readPrivateJson,
+  writePrivateJson,
+} from './kingdom-credential-file';
+import {
+  type KingdomRuntimeSettings,
   kingdomRuntimeId,
   kingdomRuntimeSchema,
   readRuntimeIdentity,
   selectKingdomRuntime,
-  type KingdomRuntimeSettings,
 } from './kingdom-runtime-connection';
 
 export const credentialReferenceSchema = z.discriminatedUnion('type', [
@@ -33,7 +41,10 @@ export class FoundryCredentials implements CredentialResolver {
   private directory: string;
   constructor(
     configDir = process.env.FOUNDRY_CONFIG_DIR ?? '.foundry',
-    private runtimes?: () => KingdomRuntimeSettings[] | undefined | Promise<KingdomRuntimeSettings[] | undefined>,
+    private runtimes?: () =>
+      | KingdomRuntimeSettings[]
+      | undefined
+      | Promise<KingdomRuntimeSettings[] | undefined>,
   ) {
     this.directory = join(resolve(configDir), 'credentials');
   }
@@ -50,8 +61,12 @@ export class FoundryCredentials implements CredentialResolver {
   }
   /** The paired Kingdom a selector names (id or API origin; the only one when omitted), checked with one heartbeat. */
   async kingdomIdentity(selector?: string, transport: typeof fetch = fetch, sessionCount = 0) {
-    const runtime = kingdomRuntimeSchema.parse(selectKingdomRuntime(await this.runtimes?.(), selector));
-    const identity = await readRuntimeIdentity(runtime, { transport, sessionCount }).catch(() => { throw Error('Kingdom enrollment unavailable'); });
+    const runtime = kingdomRuntimeSchema.parse(
+      selectKingdomRuntime(await this.runtimes?.(), selector),
+    );
+    const identity = await readRuntimeIdentity(runtime, { transport, sessionCount }).catch(() => {
+      throw Error('Kingdom enrollment unavailable');
+    });
     if (ownerKey(identity.owner) !== runtime.owner) throw Error('Kingdom identity mismatch');
     return { id: kingdomRuntimeId(runtime), url: runtime.url, owner: runtime.owner };
   }
@@ -59,7 +74,9 @@ export class FoundryCredentials implements CredentialResolver {
     const parsed = credentialReferenceSchema.parse(reference),
       requested = normalize(scope);
     if (parsed.type === 'managed') {
-      const record = recordSchema.parse(await readPrivateJson(join(this.directory, `${parsed.id}.json`)));
+      const record = recordSchema.parse(
+        await readPrivateJson(join(this.directory, `${parsed.id}.json`)),
+      );
       if (
         record.scope.service !== requested.service ||
         record.scope.url !== requested.url ||
@@ -69,10 +86,13 @@ export class FoundryCredentials implements CredentialResolver {
       return record.secret;
     }
     const settings = (await this.runtimes?.())?.find(
-      (runtime) => runtime.owner === parsed.owner && destinationUrl(runtime.url).href === requested.url,
+      (runtime) =>
+        runtime.owner === parsed.owner && destinationUrl(runtime.url).href === requested.url,
     );
-    if (requested.service !== 'archive' || !settings) throw Error('Kingdom credential is outside the requested scope');
+    if (requested.service !== 'archive' || !settings)
+      throw Error('Kingdom credential is outside the requested scope');
     // Kingdom checks current installation expiry, revocation and owner authority on every request.
-    return installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile)).secret;
+    return installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile))
+      .secret;
   }
 }

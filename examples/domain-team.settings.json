@@ -150,32 +150,32 @@
         }
       ]
     },
-    "openai": {
-      "id": "openai",
-      "type": "openai",
+    "gemini": {
+      "id": "gemini",
+      "type": "gemini",
       "label": "Google Gemini",
       "enabled": true,
       "models": [
         {
-          "id": "gpt-6-luna",
+          "id": "gemini-3.1-flash-lite",
           "label": "Gemini 3.1 Flash Lite",
           "tier": "fast",
           "costTier": "low",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         },
         {
-          "id": "gemini-3-flash-preview",
-          "label": "Gemini 3 Flash",
+          "id": "gemini-3.8-flash",
+          "label": "Gemini 3.8 Flash",
           "tier": "standard",
           "costTier": "medium",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         },
         {
           "id": "gemini-3.1-pro-preview",
           "label": "Gemini 3.1 Pro",
           "tier": "powerful",
           "costTier": "high",
-          "contextWindow": 1000000
+          "contextWindow": 1048576
         }
       ]
     }
@@ -199,9 +199,7 @@
           "temperature": 0,
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "system"
-            ]
+            "replace": ["system"]
           },
           "ownedLayers": {
             "replace": []
@@ -223,9 +221,7 @@
           "temperature": 0,
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "system"
-            ]
+            "replace": ["system"]
           },
           "ownedLayers": {
             "replace": []
@@ -270,14 +266,10 @@
           "model": "gpt-6-luna",
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "domain-docs"
-            ]
+            "replace": ["domain-docs"]
           },
           "ownedLayers": {
-            "replace": [
-              "domain-docs"
-            ]
+            "replace": ["domain-docs"]
           },
           "peers": {
             "replace": []
@@ -295,14 +287,10 @@
           "model": "gpt-6-luna",
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "domain-architecture"
-            ]
+            "replace": ["domain-architecture"]
           },
           "ownedLayers": {
-            "replace": [
-              "domain-architecture"
-            ]
+            "replace": ["domain-architecture"]
           },
           "peers": {
             "replace": []
@@ -320,14 +308,10 @@
           "model": "gpt-6-luna",
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "domain-security"
-            ]
+            "replace": ["domain-security"]
           },
           "ownedLayers": {
-            "replace": [
-              "domain-security"
-            ]
+            "replace": ["domain-security"]
           },
           "peers": {
             "replace": []
@@ -345,14 +329,10 @@
           "model": "gpt-6-luna",
           "tools": false,
           "visibleLayers": {
-            "replace": [
-              "domain-testing"
-            ]
+            "replace": ["domain-testing"]
           },
           "ownedLayers": {
-            "replace": [
-              "domain-testing"
-            ]
+            "replace": ["domain-testing"]
           },
           "peers": {
             "replace": []
@@ -366,9 +346,7 @@
           "id": "system",
           "prompt": "Core system instructions.",
           "sourceIds": {
-            "replace": [
-              "system-prompt"
-            ]
+            "replace": ["system-prompt"]
           },
           "staleness": 0,
           "enabled": true
@@ -377,9 +355,7 @@
           "id": "conventions",
           "prompt": "Project conventions and coding standards.",
           "sourceIds": {
-            "replace": [
-              "conventions-src"
-            ]
+            "replace": ["conventions-src"]
           },
           "staleness": 60000,
           "enabled": true
@@ -388,9 +364,7 @@
           "id": "memory",
           "prompt": "Working memory — recent context, signals, decisions.",
           "sourceIds": {
-            "replace": [
-              "memory-src"
-            ]
+            "replace": ["memory-src"]
           },
           "staleness": 30000,
           "enabled": true
@@ -401,9 +375,7 @@
           "segment": "domain-knowledge",
           "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
           "writers": {
-            "replace": [
-              "expert-docs"
-            ]
+            "replace": ["expert-docs"]
           },
           "sourceIds": {
             "replace": []
@@ -417,9 +389,7 @@
           "segment": "domain-knowledge",
           "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
           "writers": {
-            "replace": [
-              "expert-architecture"
-            ]
+            "replace": ["expert-architecture"]
           },
           "sourceIds": {
             "replace": []
@@ -433,9 +403,7 @@
           "segment": "domain-knowledge",
           "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
           "writers": {
-            "replace": [
-              "expert-security"
-            ]
+            "replace": ["expert-security"]
           },
           "sourceIds": {
             "replace": []
@@ -449,9 +417,7 @@
           "segment": "domain-knowledge",
           "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
           "writers": {
-            "replace": [
-              "expert-testing"
-            ]
+            "replace": ["expert-testing"]
           },
           "sourceIds": {
             "replace": []

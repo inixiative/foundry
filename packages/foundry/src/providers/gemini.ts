@@ -1,16 +1,16 @@
-import { HttpCompletionSettlement } from "./http-settlement";
 import type {
-  LLMProvider,
-  LLMMessage,
   CompletionOpts,
   CompletionResult,
-  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
-  ToolDefinition,
+  LLMMessage,
+  LLMProvider,
+  LLMStreamEvent,
   ToolCall,
-} from "@inixiative/foundry-core";
-import { splitSystemMessage } from "@inixiative/foundry-core";
+  ToolDefinition,
+} from '@inixiative/foundry-core';
+import { splitSystemMessage } from '@inixiative/foundry-core';
+import { HttpCompletionSettlement } from './http-settlement';
 
 export interface GeminiConfig {
   apiKey: string;
@@ -20,7 +20,7 @@ export interface GeminiConfig {
   baseUrl?: string;
 }
 
-const DEFAULT_BASE = "https://generativelanguage.googleapis.com";
+const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
 
 // ---------------------------------------------------------------------------
 // Gemini function calling helpers
@@ -65,7 +65,7 @@ function toGeminiFunctionDecl(tool: ToolDefinition): Record<string, unknown> {
 export class GeminiProvider implements LLMProvider {
   private readonly _settlement = new HttpCompletionSettlement();
   readonly completionLifecycle = this._settlement.lifecycle;
-  readonly id = "gemini";
+  readonly id = 'gemini';
 
   private _apiKey: string;
   private _defaultModel: string;
@@ -73,20 +73,17 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "gemini-3.1-flash-lite";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._defaultModel = config.defaultModel ?? 'gemini-3.1-flash-lite';
+    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
   }
 
-  async complete(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): Promise<CompletionResult> {
+  async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
     const model = opts?.model ?? this._defaultModel;
     const { system, turns } = splitSystemMessage(messages);
 
     // Map LLMMessage roles to Gemini roles
     const contents = turns.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
+      role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
 
@@ -97,10 +94,8 @@ export class GeminiProvider implements LLMProvider {
     }
 
     const generationConfig: Record<string, unknown> = {};
-    if (opts?.maxTokens !== undefined)
-      generationConfig.maxOutputTokens = opts.maxTokens;
-    if (opts?.temperature !== undefined)
-      generationConfig.temperature = opts.temperature;
+    if (opts?.maxTokens !== undefined) generationConfig.maxOutputTokens = opts.maxTokens;
+    if (opts?.temperature !== undefined) generationConfig.temperature = opts.temperature;
     if (opts?.topP !== undefined) generationConfig.topP = opts.topP;
     if (opts?.stop) generationConfig.stopSequences = opts.stop;
 
@@ -116,10 +111,10 @@ export class GeminiProvider implements LLMProvider {
     const url = `${this._baseUrl}/v1beta/models/${model}:generateContent`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": this._apiKey,
+        'content-type': 'application/json',
+        'x-goog-api-key': this._apiKey,
       },
       body: JSON.stringify(body),
     });
@@ -152,7 +147,7 @@ export class GeminiProvider implements LLMProvider {
     }
 
     return {
-      content: textParts.join(""),
+      content: textParts.join(''),
       model,
       tokens: data.usageMetadata
         ? {
@@ -172,15 +167,12 @@ export class GeminiProvider implements LLMProvider {
    * Uses the `alt=sse` parameter to get Server-Sent Events instead of
    * the default JSON array streaming format.
    */
-  async *stream(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): AsyncGenerator<LLMStreamEvent> {
+  async *stream(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? this._defaultModel;
     const { system, turns } = splitSystemMessage(messages);
 
     const contents = turns.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
+      role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
 
@@ -191,10 +183,8 @@ export class GeminiProvider implements LLMProvider {
     }
 
     const generationConfig: Record<string, unknown> = {};
-    if (opts?.maxTokens !== undefined)
-      generationConfig.maxOutputTokens = opts.maxTokens;
-    if (opts?.temperature !== undefined)
-      generationConfig.temperature = opts.temperature;
+    if (opts?.maxTokens !== undefined) generationConfig.maxOutputTokens = opts.maxTokens;
+    if (opts?.temperature !== undefined) generationConfig.temperature = opts.temperature;
     if (opts?.topP !== undefined) generationConfig.topP = opts.topP;
     if (opts?.stop) generationConfig.stopSequences = opts.stop;
 
@@ -210,22 +200,22 @@ export class GeminiProvider implements LLMProvider {
     const url = `${this._baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": this._apiKey,
+        'content-type': 'application/json',
+        'x-goog-api-key': this._apiKey,
       },
       body: JSON.stringify(body),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      yield { type: "error", error: `Gemini API ${res.status}: ${text}` };
+      yield { type: 'error', error: `Gemini API ${res.status}: ${text}` };
       return;
     }
 
     if (!res.body) {
-      yield { type: "error", error: "No response body for streaming" };
+      yield { type: 'error', error: 'No response body for streaming' };
       return;
     }
 
@@ -235,7 +225,7 @@ export class GeminiProvider implements LLMProvider {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    let buffer = '';
 
     try {
       while (true) {
@@ -243,12 +233,12 @@ export class GeminiProvider implements LLMProvider {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
+          if (!trimmed.startsWith('data: ')) continue;
 
           const data = trimmed.slice(6);
           try {
@@ -259,7 +249,7 @@ export class GeminiProvider implements LLMProvider {
             if (candidate?.content?.parts) {
               for (const part of candidate.content.parts) {
                 if (part.text) {
-                  yield { type: "text", text: part.text };
+                  yield { type: 'text', text: part.text };
                 }
               }
             }
@@ -274,7 +264,7 @@ export class GeminiProvider implements LLMProvider {
               outputTokens = parsed.usageMetadata.candidatesTokenCount ?? outputTokens;
             }
           } catch (err) {
-            console.warn("[Gemini] malformed stream chunk:", (err as Error).message);
+            console.warn('[Gemini] malformed stream chunk:', (err as Error).message);
           }
         }
       }
@@ -283,10 +273,10 @@ export class GeminiProvider implements LLMProvider {
     }
 
     if (inputTokens > 0 || outputTokens > 0) {
-      yield { type: "usage", tokens: { input: inputTokens, output: outputTokens } };
+      yield { type: 'usage', tokens: { input: inputTokens, output: outputTokens } };
     }
 
-    yield { type: "done", finishReason };
+    yield { type: 'done', finishReason };
   }
 }
 
@@ -295,7 +285,7 @@ export class GeminiProvider implements LLMProvider {
  * Uses the embedContent / batchEmbedContents endpoints.
  */
 export class GeminiEmbeddingProvider implements EmbeddingProvider {
-  readonly id = "gemini-embed";
+  readonly id = 'gemini-embed';
 
   private _apiKey: string;
   private _model: string;
@@ -307,18 +297,18 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     baseUrl?: string;
   }) {
     this._apiKey = config.apiKey;
-    this._model = config.model ?? "text-embedding-004";
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._model = config.model ?? 'text-embedding-004';
+    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
     const url = `${this._baseUrl}/v1beta/models/${this._model}:embedContent`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": this._apiKey,
+        'content-type': 'application/json',
+        'x-goog-api-key': this._apiKey,
       },
       body: JSON.stringify({
         model: `models/${this._model}`,
@@ -342,10 +332,10 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     const url = `${this._baseUrl}/v1beta/models/${this._model}:batchEmbedContents`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": this._apiKey,
+        'content-type': 'application/json',
+        'x-goog-api-key': this._apiKey,
       },
       body: JSON.stringify({
         requests: texts.map((text) => ({

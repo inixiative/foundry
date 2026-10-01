@@ -1,4 +1,4 @@
-import { makeJob } from "../makeJob";
+import { makeJob } from '../makeJob';
 
 export type PersistSignalPayload = {
   id: string;

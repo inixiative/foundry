@@ -6,11 +6,12 @@
  * candidate that fails to boot is marked failed, never retried, and the
  * relaunch runs stable. Only stable and the release before it are kept.
  */
-import { $ } from "bun";
-import { mkdir, readdir, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
 
-export type AutoUpdate = "off" | "check" | "apply";
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { $ } from 'bun';
+
+export type AutoUpdate = 'off' | 'check' | 'apply';
 
 /** Distinct from a crash so the logs can tell the two apart. */
 export const RESTART_EXIT_CODE = 75;
@@ -31,7 +32,7 @@ export interface Release {
 }
 
 export interface UpdateResult {
-  action: "none" | "reported" | "staged" | "skipped" | "failed";
+  action: 'none' | 'reported' | 'staged' | 'skipped' | 'failed';
   target?: string;
   detail?: string;
 }
@@ -39,19 +40,19 @@ export interface UpdateResult {
 /** Makes an exported commit runnable. */
 export type PrepareRelease = (dir: string) => Promise<void>;
 
-const READY_MARKER = ".release-ready";
+const READY_MARKER = '.release-ready';
 const KEEP_FAILED = 20;
 
-const releasesRoot = (configDir: string) => join(configDir, "releases");
-const statePath = (configDir: string) => join(releasesRoot(configDir), "state.json");
+const releasesRoot = (configDir: string) => join(configDir, 'releases');
+const statePath = (configDir: string) => join(releasesRoot(configDir), 'state.json');
 export const releaseDir = (configDir: string, sha: string) => join(releasesRoot(configDir), sha);
 
 export const readAutoUpdate = async (configDir: string): Promise<AutoUpdate> => {
   try {
-    const value = (await Bun.file(join(configDir, "settings.json")).json())?.daemon?.autoUpdate;
-    return value === "check" || value === "apply" ? value : "off";
+    const value = (await Bun.file(join(configDir, 'settings.json')).json())?.daemon?.autoUpdate;
+    return value === 'check' || value === 'apply' ? value : 'off';
   } catch {
-    return "off";
+    return 'off';
   }
 };
 
@@ -71,7 +72,8 @@ const writeState = async (configDir: string, state: ReleaseState) => {
 const prune = async (configDir: string, state: ReleaseState) => {
   const keep = new Set([state.stable, state.previous, state.candidate].filter(Boolean));
   for (const entry of await readdir(releasesRoot(configDir)))
-    if (entry !== "state.json" && !keep.has(entry)) await rm(join(releasesRoot(configDir), entry), { recursive: true, force: true });
+    if (entry !== 'state.json' && !keep.has(entry))
+      await rm(join(releasesRoot(configDir), entry), { recursive: true, force: true });
 };
 
 export const installRelease: PrepareRelease = async (dir) => {
@@ -80,7 +82,12 @@ export const installRelease: PrepareRelease = async (dir) => {
 };
 
 /** Exports a commit and prepares it; a build that fails leaves no release behind. */
-export const buildRelease = async (repoRoot: string, configDir: string, sha: string, prepare = installRelease): Promise<string> => {
+export const buildRelease = async (
+  repoRoot: string,
+  configDir: string,
+  sha: string,
+  prepare = installRelease,
+): Promise<string> => {
   const dir = releaseDir(configDir, sha);
   if (await Bun.file(join(dir, READY_MARKER)).exists()) return dir;
   const staging = `${dir}.building`;
@@ -113,27 +120,33 @@ export const rejectCandidate = async (configDir: string, sha: string): Promise<v
  * Builds origin/<branch> as the candidate when it is new, has not failed
  * before, and autoUpdate is "apply".
  */
-export const stageUpdate = async (repoRoot: string, configDir: string, branch = "main", prepare = installRelease): Promise<UpdateResult> => {
+export const stageUpdate = async (
+  repoRoot: string,
+  configDir: string,
+  branch = 'main',
+  prepare = installRelease,
+): Promise<UpdateResult> => {
   try {
     await $`git -C ${repoRoot} fetch --quiet origin ${branch}`.quiet();
   } catch (error) {
-    return { action: "failed", detail: `fetch failed: ${String(error)}` };
+    return { action: 'failed', detail: `fetch failed: ${String(error)}` };
   }
   const target = (await $`git -C ${repoRoot} rev-parse origin/${branch}`.quiet().text()).trim();
   const state = await readState(configDir);
-  if (target === state.stable || target === state.candidate) return { action: "none", target };
-  if (state.failed.includes(target)) return { action: "skipped", target, detail: "it failed to boot before" };
-  if ((await readAutoUpdate(configDir)) !== "apply") return { action: "reported", target };
+  if (target === state.stable || target === state.candidate) return { action: 'none', target };
+  if (state.failed.includes(target))
+    return { action: 'skipped', target, detail: 'it failed to boot before' };
+  if ((await readAutoUpdate(configDir)) !== 'apply') return { action: 'reported', target };
   try {
     await buildRelease(repoRoot, configDir, target, prepare);
   } catch (error) {
-    return { action: "failed", target, detail: `build failed: ${String(error)}` };
+    return { action: 'failed', target, detail: `build failed: ${String(error)}` };
   }
   const current = await readState(configDir);
   current.candidate = target;
   await writeState(configDir, current);
   await prune(configDir, current);
-  return { action: "staged", target };
+  return { action: 'staged', target };
 };
 
 /**
@@ -141,7 +154,11 @@ export const stageUpdate = async (repoRoot: string, configDir: string, branch = 
  * previous boot never completed is rejected first. The first run seeds stable
  * from the checkout's HEAD.
  */
-export const selectRelease = async (repoRoot: string, configDir: string, prepare = installRelease): Promise<Release> => {
+export const selectRelease = async (
+  repoRoot: string,
+  configDir: string,
+  prepare = installRelease,
+): Promise<Release> => {
   let state = await readState(configDir);
   if (state.candidate && state.booting === state.candidate) {
     await rejectCandidate(configDir, state.candidate);

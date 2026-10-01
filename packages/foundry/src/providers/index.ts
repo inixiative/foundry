@@ -1,92 +1,119 @@
 // Provider types — re-exported from core
-export {
-  type LLMProvider,
-  type LLMMessage,
-  type CompletionOpts,
-  type CompletionResult,
-  type EmbeddingProvider,
-  type EmbeddingResult,
-  type LLMStreamEvent,
-  assembledToMessages,
-  splitSystemMessage,
-} from "@inixiative/foundry-core";
-
-// LLM Providers (API-level)
-export { ClaudeCodeProvider, type ClaudeCodeConfig as ClaudeCodeProviderConfig } from "./claude-code";
-export { AnthropicProvider, VoyageEmbeddingProvider, type AnthropicConfig } from "./anthropic";
-export {
-  OpenAIProvider,
-  OpenAIEmbeddingProvider,
-  createCursorProvider,
-  createOllamaProvider,
-  openAiApiRoot,
-  type OpenAIConfig,
-} from "./openai";
-export {
-  createRegisteredProvider,
-  providerApiRoot,
-  providerApiKey,
-  providerReasoning,
-  registeredProvider,
-  type RegisteredProviderConfig,
-} from "./openai-compatible";
-export { GeminiProvider, GeminiEmbeddingProvider, type GeminiConfig } from "./gemini";
-
-export { SessionBackedProvider, formatMessagesForNativeSession, type SessionBackedProviderConfig } from "./session-backed";
 
 // HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
 // (the single source of truth for agent-driving sessions across the ecosystem).
 export {
+  ClaudeCodeSession,
+  type ClaudeCodeSessionConfig,
+  CodexSession,
+  type CodexSessionConfig,
   type HarnessSession,
+  type SessionArtifact,
   type SessionEvent,
-  type SessionEventKind,
   type SessionEventHandler,
+  type SessionEventKind,
   type SessionResult,
   type SessionTokens,
-  type SessionArtifact,
-  ClaudeCodeSession,
-  CodexSession,
-  type ClaudeCodeSessionConfig,
-  type CodexSessionConfig,
-} from "@inixiative/agent-session";
-
-// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
+} from '@inixiative/agent-session';
 export {
-  type SessionAdapter,
-  type CreateSessionOpts,
-  type ExternalSessionStore,
-  InMemoryExternalSessionStore,
-  FileExternalSessionStore,
-  ClaudeCodeSessionAdapter,
-  CodexSessionAdapter,
-  type ClaudeCodeSessionAdapterConfig,
-  type CodexSessionAdapterConfig,
-} from "./session-adapter";
-
+  assembledToMessages,
+  type CompletionOpts,
+  type CompletionResult,
+  type EmbeddingProvider,
+  type EmbeddingResult,
+  type LLMMessage,
+  type LLMProvider,
+  type LLMStreamEvent,
+  splitSystemMessage,
+} from '@inixiative/foundry-core';
+export { type AnthropicConfig, AnthropicProvider, VoyageEmbeddingProvider } from './anthropic';
+// LLM Providers (API-level)
+export {
+  type ClaudeCodeConfig as ClaudeCodeProviderConfig,
+  ClaudeCodeProvider,
+} from './claude-code';
+export type { ClaudeContextBudget } from './claude-context-budget';
+export { type GeminiConfig, GeminiEmbeddingProvider, GeminiProvider } from './gemini';
+export {
+  KingdomAuthentication,
+  type KingdomInferenceAssignment,
+  type KingdomInferenceSource,
+} from './kingdom-authentication';
+export { KingdomClient, type KingdomRunEnvelope, type KingdomSelection } from './kingdom-client';
+export {
+  NativeAuthentication,
+  type NativeAuthenticationLaunch,
+  type NativeAuthenticationSource,
+} from './native-authentication';
+export {
+  createNativeTextProvider,
+  type NativeTextCall,
+  type NativeTextConfig,
+} from './native-text-provider';
+export {
+  createCursorProvider,
+  createOllamaProvider,
+  type OpenAIConfig,
+  OpenAIEmbeddingProvider,
+  OpenAIProvider,
+  openAiApiRoot,
+} from './openai';
+export {
+  createRegisteredProvider,
+  providerApiKey,
+  providerApiRoot,
+  providerReasoning,
+  type RegisteredProviderConfig,
+  registeredProvider,
+} from './openai-compatible';
 // Runtime Adapters (context injection into agent runtimes)
 export {
+  type ClaudeCodeConfig,
+  ClaudeCodeRuntime,
+  type CodexConfig,
+  CodexRuntime,
+  type ContextInjection,
+  type CursorConfig,
+  CursorRuntime,
   type RuntimeAdapter,
   type RuntimeEvent,
-  type RuntimeEventKind,
   type RuntimeEventHandler,
-  type ContextInjection,
-  ClaudeCodeRuntime,
-  CodexRuntime,
-  CursorRuntime,
-  type ClaudeCodeConfig,
-  type CodexConfig,
-  type CursorConfig,
-} from "./runtime";
-
-export { NativeAuthentication, type NativeAuthenticationSource, type NativeAuthenticationLaunch } from "./native-authentication";
-
-export { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "./kingdom-authentication";
-export { KingdomClient, type KingdomSelection, type KingdomRunEnvelope } from "./kingdom-client";
-
+  type RuntimeEventKind,
+} from './runtime';
+// SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
+export {
+  ClaudeCodeSessionAdapter,
+  type ClaudeCodeSessionAdapterConfig,
+  CodexSessionAdapter,
+  type CodexSessionAdapterConfig,
+  type CreateSessionOpts,
+  type ExternalSessionStore,
+  FileExternalSessionStore,
+  InMemoryExternalSessionStore,
+  type SessionAdapter,
+} from './session-adapter';
+export {
+  formatMessagesForNativeSession,
+  SessionBackedProvider,
+  type SessionBackedProviderConfig,
+} from './session-backed';
 // Typed Jev decisions and opt-in dispatch middleware.
-export { TypeSafeDecisionClient, TypeSafeError, type TypeSafeClientOptions, type TypeSafeContent, type TypeSafeValue, type TypeSafeQuestion, type TypeSafeQuestions, type TypeSafeAnswer, type TypeSafeResult } from "./typesafe";
-export { createTypeSafeMiddleware, type TypeSafeMiddlewareOptions } from "./typesafe-middleware";
-export { TypeSafeShadowRunner, type TypeSafeShadowOptions, type TypeSafeShadowCatalog, type TypeSafeShadowResult, type TypeSafeShadowStage } from "./typesafe-shadow";
-
-export { createNativeTextProvider, type NativeTextConfig, type NativeTextCall } from "./native-text-provider";
-export { type ClaudeContextBudget } from "./claude-context-budget";
+export {
+  type TypeSafeAnswer,
+  type TypeSafeClientOptions,
+  type TypeSafeContent,
+  TypeSafeDecisionClient,
+  TypeSafeError,
+  type TypeSafeQuestion,
+  type TypeSafeQuestions,
+  type TypeSafeResult,
+  type TypeSafeValue,
+} from './typesafe';
+export { createTypeSafeMiddleware, type TypeSafeMiddlewareOptions } from './typesafe-middleware';
+export {
+  type TypeSafeShadowCatalog,
+  type TypeSafeShadowOptions,
+  type TypeSafeShadowResult,
+  TypeSafeShadowRunner,
+  type TypeSafeShadowStage,
+} from './typesafe-shadow';

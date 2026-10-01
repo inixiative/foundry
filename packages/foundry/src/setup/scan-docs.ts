@@ -14,13 +14,9 @@
  *   - The emitted config is a suggestion; `setup.ts` asks before writing.
  */
 
-import { join, relative, basename } from "node:path";
-import { existsSync, statSync } from "node:fs";
-import type {
-  AgentSettingsConfig,
-  DataSourceConfig,
-  LayerSettingsConfig,
-} from "../viewer/config";
+import { existsSync, statSync } from 'node:fs';
+import { basename, join, relative } from 'node:path';
+import type { AgentSettingsConfig, DataSourceConfig, LayerSettingsConfig } from '../viewer/config';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -49,11 +45,11 @@ export interface DocsCandidate {
 /** The chosen strategy for the docs warden's warm cache. */
 export type DocsStrategy =
   /** Corpus too small or missing. Don't set up a docs layer. */
-  | "none"
+  | 'none'
   /** Small corpus (< ~3k tokens). Emit full content as the layer source. */
-  | "inline"
+  | 'inline'
   /** Large corpus. Emit a compact path+H1+H2 topology; bodies hydrate on demand. */
-  | "topology";
+  | 'topology';
 
 /** A ready-to-merge config snippet for the docs domain. */
 export interface DocsConfigSnippet {
@@ -94,18 +90,12 @@ export interface ScanOptions {
 // Defaults
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CANDIDATE_DIRS = [
-  "docs/claude",
-  "docs/ai",
-  ".ai",
-  "docs",
-  "documentation",
-];
+const DEFAULT_CANDIDATE_DIRS = ['docs/claude', 'docs/ai', '.ai', 'docs', 'documentation'];
 
-const DEFAULT_GLOB = "**/*.md";
-const DEFAULT_SOURCE_ID = "docs-src";
-const DEFAULT_LAYER_ID = "docs";
-const DEFAULT_AGENT_ID = "librarian-docs";
+const DEFAULT_GLOB = '**/*.md';
+const DEFAULT_SOURCE_ID = 'docs-src';
+const DEFAULT_LAYER_ID = 'docs';
+const DEFAULT_AGENT_ID = 'librarian-docs';
 const DEFAULT_MIN_TOKENS = 200;
 const DEFAULT_TOPOLOGY_THRESHOLD = 3_000;
 
@@ -124,18 +114,18 @@ const DEFAULT_TOPOLOGY_THRESHOLD = 3_000;
  */
 export const DOCS_ADVISE_PROMPT = [
   "You are the docs-domain advisor. Pick the small set of doc files from the topology that would help the user's message.",
-  "",
-  "Procedure:",
-  "1. Identify the ASPECTS of the task (e.g. \"database schema\", \"auth\", \"API routing\", \"notifications\", \"naming conventions\").",
-  "2. For each aspect, find the file in the topology that covers it.",
-  "3. Collect those files as your answer. Typically 2–4 files, up to 5 for cross-cutting queries.",
-  "",
-  "Rules:",
-  "- Return ONLY file paths that appear EXACTLY in the topology below.",
-  "- Distinguish near-duplicate filenames by reading their H1 title AND H2 headings (e.g. a backend AUTH.md vs a frontend AUTHENTICATION.md). A doc from the wrong side of the stack is worse than a missing doc.",
-  "- Respond with JSON only, no prose, no code fences:",
+  '',
+  'Procedure:',
+  '1. Identify the ASPECTS of the task (e.g. "database schema", "auth", "API routing", "notifications", "naming conventions").',
+  '2. For each aspect, find the file in the topology that covers it.',
+  '3. Collect those files as your answer. Typically 2–4 files, up to 5 for cross-cutting queries.',
+  '',
+  'Rules:',
+  '- Return ONLY file paths that appear EXACTLY in the topology below.',
+  '- Distinguish near-duplicate filenames by reading their H1 title AND H2 headings (e.g. a backend AUTH.md vs a frontend AUTHENTICATION.md). A doc from the wrong side of the stack is worse than a missing doc.',
+  '- Respond with JSON only, no prose, no code fences:',
   '  {"layers": ["docs"], "snippets": ["path1", "path2"], "confidence": 0.0-1.0}',
-].join("\n");
+].join('\n');
 
 // ---------------------------------------------------------------------------
 // Main entrypoint
@@ -161,7 +151,7 @@ export async function scanRepoDocs(
     return {
       chosen: null,
       candidates: [],
-      strategy: "none",
+      strategy: 'none',
       rationale: `Repo path does not exist: ${repoPath}`,
     };
   }
@@ -174,7 +164,7 @@ export async function scanRepoDocs(
     const abs = join(repoPath, sub);
     if (!existsSync(abs) || !isDir(abs)) continue;
     const nestedCandidates = candidateDirs
-      .filter((other) => other !== sub && other.startsWith(sub + "/"))
+      .filter((other) => other !== sub && other.startsWith(sub + '/'))
       .map((other) => other.slice(sub.length + 1));
     const cand = await scoreCandidate(repoPath, abs, glob, nestedCandidates);
     if (cand.fileCount > 0) candidates.push(cand);
@@ -186,8 +176,8 @@ export async function scanRepoDocs(
     return {
       chosen: null,
       candidates: [],
-      strategy: "none",
-      rationale: `No markdown corpus found. Looked for: ${candidateDirs.join(", ")}.`,
+      strategy: 'none',
+      rationale: `No markdown corpus found. Looked for: ${candidateDirs.join(', ')}.`,
     };
   }
 
@@ -197,13 +187,12 @@ export async function scanRepoDocs(
     return {
       chosen,
       candidates,
-      strategy: "none",
+      strategy: 'none',
       rationale: `Best candidate (${chosen.relPath}) has only ~${chosen.approxTokens} tokens — too small to justify a warm layer.`,
     };
   }
 
-  const strategy: DocsStrategy =
-    chosen.approxTokens >= topologyThreshold ? "topology" : "inline";
+  const strategy: DocsStrategy = chosen.approxTokens >= topologyThreshold ? 'topology' : 'inline';
 
   const settings = emitConfigSnippet(chosen, strategy, opts);
 
@@ -230,7 +219,7 @@ async function scoreCandidate(
   let totalH2 = 0;
 
   for await (const relPath of scanner) {
-    if (excludePrefixes.some((p) => relPath === p || relPath.startsWith(p + "/"))) continue;
+    if (excludePrefixes.some((p) => relPath === p || relPath.startsWith(p + '/'))) continue;
     const abs = join(absDir, relPath);
     const file = Bun.file(abs);
     const text = await file.text();
@@ -252,14 +241,11 @@ async function scoreCandidate(
   // Heavy weight on H2s because the probe showed they're what disambiguates
   // near-duplicate filenames (AUTH.md vs AUTHENTICATION.md).
   const score =
-    fileCount * 1.0 +
-    totalH2 * 0.5 +
-    titleCoverage * 10 +
-    Math.min(approxTokens / 1000, 50); // cap token contribution
+    fileCount * 1.0 + totalH2 * 0.5 + titleCoverage * 10 + Math.min(approxTokens / 1000, 50); // cap token contribution
 
   return {
     absPath: absDir,
-    relPath: relative(repoRoot, absDir) || ".",
+    relPath: relative(repoRoot, absDir) || '.',
     fileCount,
     approxTokens,
     titleCoverage,
@@ -272,7 +258,7 @@ async function scoreCandidate(
 function countHeadings(text: string): { hasH1: boolean; h2Count: number } {
   let hasH1 = false;
   let h2Count = 0;
-  for (const line of text.split("\n")) {
+  for (const line of text.split('\n')) {
     if (!hasH1 && /^#\s+\S/.test(line)) hasH1 = true;
     else if (/^##\s+\S/.test(line)) h2Count++;
   }
@@ -293,7 +279,7 @@ function isDir(p: string): boolean {
 
 function emitConfigSnippet(
   chosen: DocsCandidate,
-  strategy: Exclude<DocsStrategy, "none">,
+  strategy: Exclude<DocsStrategy, 'none'>,
   opts: ScanOptions,
 ): DocsConfigSnippet {
   const sourceId = opts.sourceId ?? DEFAULT_SOURCE_ID;
@@ -302,43 +288,35 @@ function emitConfigSnippet(
 
   const source: DataSourceConfig = {
     id: sourceId,
-    type: "markdown",
+    type: 'markdown',
     label: `Project documentation (${chosen.relPath})`,
     uri: chosen.absPath,
     enabled: true,
   };
 
-  // Size the layer budget to the content. Inline needs room for everything;
-  // topology is ~44 tokens/file so a 2× headroom over fileCount suffices.
-  const maxTokens =
-    strategy === "inline"
-      ? Math.min(Math.max(chosen.approxTokens + 500, 1_000), 32_000)
-      : Math.max(chosen.fileCount * 80, 1_000);
-
   const layer: LayerSettingsConfig = {
     id: layerId,
-    domain: "docs",
+    domain: 'docs',
     contentShape:
-      strategy === "topology"
-        ? "Compact path+H1+H2 index of the docs corpus. The warden picks file paths; bodies hydrate on demand."
-        : "Full markdown content of the docs corpus, joined with path headers.",
-    prompt:
-      "Project documentation. The docs warden routes reads against this cache.",
+      strategy === 'topology'
+        ? 'Compact path+H1+H2 index of the docs corpus. The warden picks file paths; bodies hydrate on demand.'
+        : 'Full markdown content of the docs corpus, joined with path headers.',
+    prompt: 'Project documentation. The docs warden routes reads against this cache.',
     sourceIds: [sourceId],
     staleness: 60_000,
     writers: [agentId],
     enabled: true,
-    activation: "conditional",
+    activation: 'conditional',
     condition: {
-      tags: ["docs", "documentation", "readme", "api"],
+      tags: ['docs', 'documentation', 'readme', 'api'],
     },
   };
 
   const agent: AgentSettingsConfig = {
     id: agentId,
-    kind: "domain-librarian",
-    flowRole: "domain-advising",
-    domain: "docs",
+    kind: 'domain-librarian',
+    flowRole: 'domain-advising',
+    domain: 'docs',
     prompt: DOCS_ADVISE_PROMPT,
     temperature: 0,
     tools: false,
@@ -346,7 +324,7 @@ function emitConfigSnippet(
     ownedLayers: [layerId],
     peers: [],
     maxDepth: 1,
-    invocation: "on-demand",
+    invocation: 'on-demand',
     enabled: true,
   };
 
@@ -366,22 +344,22 @@ function explainChoice(
   const parts: string[] = [];
 
   parts.push(
-    `Picked ${chosen.relPath} — ${chosen.fileCount} file${chosen.fileCount === 1 ? "" : "s"}, ~${chosen.approxTokens} tokens, ${(chosen.titleCoverage * 100).toFixed(0)}% titled, ${chosen.avgH2PerFile.toFixed(1)} H2/file.`,
+    `Picked ${chosen.relPath} — ${chosen.fileCount} file${chosen.fileCount === 1 ? '' : 's'}, ~${chosen.approxTokens} tokens, ${(chosen.titleCoverage * 100).toFixed(0)}% titled, ${chosen.avgH2PerFile.toFixed(1)} H2/file.`,
   );
 
   if (candidates.length > 1) {
     const runners = candidates
       .slice(1, 4)
       .map((c) => `${c.relPath} (${c.fileCount}f, ${c.approxTokens}t)`)
-      .join(", ");
+      .join(', ');
     parts.push(`Also considered: ${runners}.`);
   }
 
-  if (strategy === "topology") {
+  if (strategy === 'topology') {
     parts.push(
       `Strategy: topology — corpus exceeds ${topologyThreshold} tokens, so the layer caches a compact H1+H2 index (~44 tok/file) and the Artificer reads file bodies on demand.`,
     );
-  } else if (strategy === "inline") {
+  } else if (strategy === 'inline') {
     parts.push(
       `Strategy: inline — corpus fits under ${topologyThreshold} tokens, so the full content lives in the layer cache.`,
     );
@@ -398,7 +376,7 @@ function explainChoice(
     );
   }
 
-  return parts.join(" ");
+  return parts.join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -407,24 +385,24 @@ function explainChoice(
 
 export function formatPlan(plan: DocsSetupPlan): string {
   const lines: string[] = [];
-  lines.push("Docs-layer scan results:");
-  lines.push("");
+  lines.push('Docs-layer scan results:');
+  lines.push('');
 
   if (plan.candidates.length === 0) {
-    lines.push("  No docs directory found.");
+    lines.push('  No docs directory found.');
     lines.push(`  ${plan.rationale}`);
-    return lines.join("\n");
+    return lines.join('\n');
   }
 
-  lines.push("  Candidates (best first):");
+  lines.push('  Candidates (best first):');
   for (const c of plan.candidates) {
-    const marker = c === plan.chosen ? ">" : " ";
+    const marker = c === plan.chosen ? '>' : ' ';
     lines.push(
       `    ${marker} ${c.relPath.padEnd(24)} ${c.fileCount.toString().padStart(3)}f  ${c.approxTokens.toString().padStart(6)}t  ${(c.titleCoverage * 100).toFixed(0).padStart(3)}% titled  ${c.avgH2PerFile.toFixed(1)} H2/f`,
     );
   }
-  lines.push("");
+  lines.push('');
   lines.push(`  Strategy: ${plan.strategy}`);
   lines.push(`  ${plan.rationale}`);
-  return lines.join("\n");
+  return lines.join('\n');
 }

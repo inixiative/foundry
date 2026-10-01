@@ -2,13 +2,13 @@
 // Foundry's live-first policy: the mode is explicit (replay never calls live; record always
 // does), a recording is stamped with who/what/when, and a recording whose structure drifted
 // from the committed cassette is written beside it as pending instead of overwriting it.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
-import { signatureOf, compareSignatures, type Signature } from "./signature";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, join } from 'node:path';
+import { compareSignatures, type Signature, signatureOf } from './signature';
 
-export type VcrMode = "replay" | "record";
+export type VcrMode = 'replay' | 'record';
 /** `bun run test` replays; `bun run test:live` and the launchd smoke record. */
-export const vcrMode = (): VcrMode => process.env.FOUNDRY_VCR === "record" ? "record" : "replay";
+export const vcrMode = (): VcrMode => (process.env.FOUNDRY_VCR === 'record' ? 'record' : 'replay');
 
 export type Recorded = {
   service: string;
@@ -55,9 +55,14 @@ export type DriftFinding = { cassette: string; pending: string; differences: str
 
 export const agentSessionVersion = (() => {
   try {
-    const url = new URL("../../node_modules/@inixiative/agent-session/package.json", import.meta.url);
-    return (JSON.parse(readFileSync(url, "utf8")) as { version: string }).version;
-  } catch { return undefined; }
+    const url = new URL(
+      '../../node_modules/@inixiative/agent-session/package.json',
+      import.meta.url,
+    );
+    return (JSON.parse(readFileSync(url, 'utf8')) as { version: string }).version;
+  } catch {
+    return undefined;
+  }
 })();
 
 export class VCR {
@@ -72,7 +77,8 @@ export class VCR {
   static liveCalls = 0;
   static spendLive(what: string): void {
     const limit = Number(process.env.FOUNDRY_VCR_MAX_LIVE ?? 40);
-    if (++VCR.liveCalls > limit) throw Error(`VCR: live call budget of ${limit} spent; refusing ${what}`);
+    if (++VCR.liveCalls > limit)
+      throw Error(`VCR: live call budget of ${limit} spent; refusing ${what}`);
   }
 
   static setVersion(service: string, value: string): void {
@@ -103,7 +109,9 @@ export class VCR {
     this.model = opts.model;
   }
 
-  get mode(): VcrMode { return vcrMode(); }
+  get mode(): VcrMode {
+    return vcrMode();
+  }
 
   queue(method: string, fixture: string): this {
     const q = this.queues.get(method) ?? [];
@@ -114,28 +122,36 @@ export class VCR {
 
   async capture<T>(method: string, realFn: () => Promise<T>): Promise<T> {
     const fixturePath = this.popFixturePath(method);
-    if (this.mode === "replay") {
+    if (this.mode === 'replay') {
       const saved = this.load<T>(fixturePath);
-      if (saved.status >= 400) throw new Error(typeof saved.body === "string" ? saved.body : JSON.stringify(saved.body));
-      if (saved.bodyFile) return readFileSync(join(dirname(fixturePath), saved.bodyFile)) as unknown as T;
+      if (saved.status >= 400)
+        throw new Error(typeof saved.body === 'string' ? saved.body : JSON.stringify(saved.body));
+      if (saved.bodyFile)
+        return readFileSync(join(dirname(fixturePath), saved.bodyFile)) as unknown as T;
       return saved.body as T;
     }
     VCR.spendLive(`${this.service} ${method}`);
     const started = Date.now();
     try {
       const sanitized = this.sanitize(method, await realFn());
-      await this.saveFixture(fixturePath, method, sanitized, 200, undefined, { durationMs: Date.now() - started });
+      await this.saveFixture(fixturePath, method, sanitized, 200, undefined, {
+        durationMs: Date.now() - started,
+      });
       return sanitized;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.store(fixturePath, { status: 500, body: message }, { durationMs: Date.now() - started });
+      await this.store(
+        fixturePath,
+        { status: 500, body: message },
+        { durationMs: Date.now() - started },
+      );
       throw error;
     }
   }
 
   async captureResponse<T>(method: string, realFn: () => Promise<Fixture<T>>): Promise<Fixture<T>> {
     const fixturePath = this.popFixturePath(method);
-    if (this.mode === "replay") {
+    if (this.mode === 'replay') {
       const saved = this.load<T>(fixturePath);
       const body = saved.bodyFile
         ? (readFileSync(join(dirname(fixturePath), saved.bodyFile)) as unknown as T)
@@ -146,10 +162,21 @@ export class VCR {
     const started = Date.now();
     try {
       const raw = await realFn();
-      return await this.saveFixture<T>(fixturePath, method, this.sanitize(method, raw.body) as T, raw.status, raw.headers, { durationMs: Date.now() - started });
+      return await this.saveFixture<T>(
+        fixturePath,
+        method,
+        this.sanitize(method, raw.body) as T,
+        raw.status,
+        raw.headers,
+        { durationMs: Date.now() - started },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.store(fixturePath, { status: 500, body: message }, { durationMs: Date.now() - started });
+      await this.store(
+        fixturePath,
+        { status: 500, body: message },
+        { durationMs: Date.now() - started },
+      );
       throw error;
     }
   }
@@ -158,7 +185,7 @@ export class VCR {
    * Tests compare their replayed conclusion with it, so every replay proves it matches live. */
   async outcome<T>(method: string, value: T): Promise<T> {
     const fixturePath = this.popFixturePath(method);
-    if (this.mode === "replay") return this.load<T>(fixturePath).body as T;
+    if (this.mode === 'replay') return this.load<T>(fixturePath).body as T;
     const body = JSON.parse(JSON.stringify(value)) as T;
     await this.store(fixturePath, { status: 200, body });
     return body;
@@ -169,7 +196,8 @@ export class VCR {
     const cached = VCR.versionCache.get(this.service);
     if (cached !== undefined) return cached;
     const resolved = await this.versionFn();
-    if (!resolved) throw new Error(`VCR: version callback resolved to empty string (service=${this.service})`);
+    if (!resolved)
+      throw new Error(`VCR: version callback resolved to empty string (service=${this.service})`);
     VCR.versionCache.set(this.service, resolved);
     return resolved;
   }
@@ -185,12 +213,18 @@ export class VCR {
   load<T = unknown>(requested: string): Fixture<T> {
     const fixturePath = VCR.written.get(requested) ?? requested;
     if (!existsSync(fixturePath))
-      throw new Error(`VCR: cassette "${basename(fixturePath)}" is missing; record it with \`bun run test:live\``);
-    return JSON.parse(readFileSync(fixturePath, "utf-8")) as Fixture<T>;
+      throw new Error(
+        `VCR: cassette "${basename(fixturePath)}" is missing; record it with \`bun run test:live\``,
+      );
+    return JSON.parse(readFileSync(fixturePath, 'utf-8')) as Fixture<T>;
   }
 
   /** Stamps and writes a recording. Drift from the committed cassette goes to `<name>.pending.json`. */
-  store(fixturePath: string, fixture: Omit<Fixture, "version" | "recorded">, extra: Partial<Recorded> = {}): Promise<string> {
+  store(
+    fixturePath: string,
+    fixture: Omit<Fixture, 'version' | 'recorded'>,
+    extra: Partial<Recorded> = {},
+  ): Promise<string> {
     const saving = (async () => {
       const version = await this.getVersion();
       const recorded: Recorded = {
@@ -199,7 +233,7 @@ export class VCR {
         ...(this.model ? { model: this.model } : {}),
         recordedAt: new Date().toISOString(),
         ...(agentSessionVersion ? { agentSession: agentSessionVersion } : {}),
-        environment: process.env.FOUNDRY_VCR_ENVIRONMENT ?? "terminal",
+        environment: process.env.FOUNDRY_VCR_ENVIRONMENT ?? 'terminal',
         ...extra,
       };
       const next: Fixture = { version, ...fixture, recorded };
@@ -225,17 +259,21 @@ export class VCR {
   }
 
   private targetPath(fixturePath: string, next: Fixture): string {
-    const out = process.env.FOUNDRY_VCR_OUT ? join(process.env.FOUNDRY_VCR_OUT, relativeFixture(fixturePath)) : fixturePath;
-    const pendingPath = out.replace(/\.json$/, ".pending.json");
+    const out = process.env.FOUNDRY_VCR_OUT
+      ? join(process.env.FOUNDRY_VCR_OUT, relativeFixture(fixturePath))
+      : fixturePath;
+    const pendingPath = out.replace(/\.json$/, '.pending.json');
     if (this.drifted) return pendingPath;
     if (!existsSync(fixturePath)) return out;
-    const committed = JSON.parse(readFileSync(fixturePath, "utf-8")) as Fixture;
+    const committed = JSON.parse(readFileSync(fixturePath, 'utf-8')) as Fixture;
     const differences = compareSignatures(signature(committed), signature(next));
     if (!differences.length) return out;
     const pending = pendingPath;
     this.drifted = true;
     VCR.drift.push({ cassette: fixturePath, pending, differences });
-    console.warn(`VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join("\n  ")}`);
+    console.warn(
+      `VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join('\n  ')}`,
+    );
     return pending;
   }
 
@@ -248,13 +286,17 @@ export class VCR {
     extra?: Partial<Recorded>,
   ): Promise<Fixture<T>> {
     if (body instanceof Uint8Array || body instanceof Buffer) {
-      const ext = this.sanitizers[method]?.binaryExtension ?? ".bin";
+      const ext = this.sanitizers[method]?.binaryExtension ?? '.bin';
       const baseName = basename(fixturePath, extname(fixturePath));
       const sidecarName = `${baseName}${ext}`;
       const sidecarPath = join(dirname(fixturePath), sidecarName);
       mkdirSync(dirname(sidecarPath), { recursive: true });
       writeFileSync(sidecarPath, body as Uint8Array);
-      await this.store(fixturePath, { status, bodyFile: sidecarName, ...(headers && { headers }) }, extra);
+      await this.store(
+        fixturePath,
+        { status, bodyFile: sidecarName, ...(headers && { headers }) },
+        extra,
+      );
       return { status, body: body as T, ...(headers && { headers }) };
     }
     await this.store(fixturePath, { status, body, ...(headers && { headers }) }, extra);
@@ -292,7 +334,7 @@ export class VCR {
 const signature = (fixture: Fixture): Signature => signatureOf(fixture.status, fixture.body);
 
 const relativeFixture = (fixturePath: string) => {
-  const marker = `${join("fixtures", "vcr")}/`;
+  const marker = `${join('fixtures', 'vcr')}/`;
   const index = fixturePath.lastIndexOf(marker);
   return index === -1 ? basename(fixturePath) : fixturePath.slice(index + marker.length);
 };
@@ -305,12 +347,12 @@ const write = (fixturePath: string, data: unknown): void => {
 const redactKeys = <T>(data: T, keys: string[]): T => {
   if (!keys.length) return data;
   const clone = JSON.parse(JSON.stringify(data)) as T;
-  for (const key of keys) redactPath(clone, key.split("."));
+  for (const key of keys) redactPath(clone, key.split('.'));
   return clone;
 };
 
 const redactPath = (obj: unknown, parts: string[]): void => {
-  if (!obj || typeof obj !== "object") return;
+  if (!obj || typeof obj !== 'object') return;
   if (Array.isArray(obj)) {
     for (const item of obj) redactPath(item, parts);
     return;
@@ -320,7 +362,7 @@ const redactPath = (obj: unknown, parts: string[]): void => {
   if (rest.length === 0) {
     if (head in record) {
       const v = record[head];
-      record[head] = v === null || v === undefined || typeof v === "object" ? v : "REDACTED";
+      record[head] = v === null || v === undefined || typeof v === 'object' ? v : 'REDACTED';
     }
   } else {
     redactPath(record[head], rest);

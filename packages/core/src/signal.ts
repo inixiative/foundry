@@ -3,12 +3,12 @@
  * Extensible via string union, not a closed enum.
  */
 export type SignalKind =
-  | "correction"
-  | "convention"
-  | "taste"
-  | "ci_rule"
-  | "adr"
-  | "security"
+  | 'correction'
+  | 'convention'
+  | 'taste'
+  | 'ci_rule'
+  | 'adr'
+  | 'security'
   | (string & {});
 
 /**
@@ -89,7 +89,10 @@ export class SignalBus {
       try {
         await handler(signal);
       } catch (err) {
-        console.warn(`[SignalBus] handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
+        console.warn(
+          `[SignalBus] handler error for signal "${signal.kind}":`,
+          (err as Error).message ?? err,
+        );
       }
     }
 
@@ -97,16 +100,17 @@ export class SignalBus {
       try {
         await handler(signal);
       } catch (err) {
-        console.warn(`[SignalBus] global handler error for signal "${signal.kind}":`, (err as Error).message ?? err);
+        console.warn(
+          `[SignalBus] global handler error for signal "${signal.kind}":`,
+          (err as Error).message ?? err,
+        );
       }
     }
   }
 
   /** Get recent signals, optionally filtered by kind. */
   recent(kind?: SignalKind, limit: number = 50): ReadonlyArray<Signal> {
-    const filtered = kind
-      ? this._history.filter((s) => s.kind === kind)
-      : this._history;
+    const filtered = kind ? this._history.filter((s) => s.kind === kind) : this._history;
     return filtered.slice(-limit);
   }
 

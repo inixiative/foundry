@@ -1,5 +1,5 @@
-import { ContextLayer, type LayerState } from "./context-layer";
-import { ContextStack } from "./context-stack";
+import type { ContextLayer, LayerState } from './context-layer';
+import type { ContextStack } from './context-stack';
 
 export interface LifecycleEvent {
   readonly type: string;
@@ -8,19 +8,13 @@ export interface LifecycleEvent {
   readonly meta?: Record<string, unknown>;
 }
 
-export type LifecycleHandler = (
-  event: LifecycleEvent
-) => void | false | Promise<void | false>;
+export type LifecycleHandler = (event: LifecycleEvent) => void | false | Promise<void | false>;
 
 export interface LifecycleRule {
   readonly id: string;
   readonly triggers: LayerState[];
   readonly layerIds?: string[];
-  action(
-    layer: ContextLayer,
-    state: LayerState,
-    stack: ContextStack
-  ): Promise<void>;
+  action(layer: ContextLayer, state: LayerState, stack: ContextStack): Promise<void>;
 }
 
 /**
@@ -156,26 +150,32 @@ export class CacheLifecycle {
                 // Best-effort error event — if this also throws, outer catch handles it
                 try {
                   await this.emit({
-                    type: "rule:error",
+                    type: 'rule:error',
                     layerId: layer.id,
                     timestamp: Date.now(),
                     meta: { ruleId: rule.id, error: err },
                   });
                 } catch (emitErr) {
-                  console.warn(`[CacheLifecycle] failed to emit rule:error for ${layer.id}:`, (emitErr as Error).message);
+                  console.warn(
+                    `[CacheLifecycle] failed to emit rule:error for ${layer.id}:`,
+                    (emitErr as Error).message,
+                  );
                 }
               }
             }
           } catch (err) {
             try {
               await this.emit({
-                type: "lifecycle:error",
+                type: 'lifecycle:error',
                 layerId: layer.id,
                 timestamp: Date.now(),
                 meta: { error: err },
               });
             } catch (emitErr) {
-              console.warn(`[CacheLifecycle] failed to emit lifecycle:error for ${layer.id}:`, (emitErr as Error).message);
+              console.warn(
+                `[CacheLifecycle] failed to emit lifecycle:error for ${layer.id}:`,
+                (emitErr as Error).message,
+              );
             }
           }
         }

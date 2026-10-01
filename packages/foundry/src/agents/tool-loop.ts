@@ -21,15 +21,20 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  LLMProvider,
-  LLMMessage,
   CompletionOpts,
   CompletionResult,
+  LLMMessage,
+  LLMProvider,
   OwnershipScope,
   ToolCallObservation,
   ToolCallResult,
-} from "@inixiative/foundry-core";
-import { ToolRegistry, newId, type TokenCounts, sumTokenCounts } from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
+import {
+  newId,
+  sumTokenCounts,
+  type TokenCounts,
+  type ToolRegistry,
+} from '@inixiative/foundry-core';
 
 export interface ToolLoopOpts extends CompletionOpts {
   /** Max tool-use iterations before forcing a text response. Default: 10. */
@@ -112,8 +117,9 @@ export async function toolUseLoop(
     // (The provider should include this in its response handling,
     //  but we track it here for the conversation history)
     conversation.push({
-      role: "assistant",
-      content: result.content || `[Tool calls: ${result.toolCalls.map((tc) => tc.name).join(", ")}]`,
+      role: 'assistant',
+      content:
+        result.content || `[Tool calls: ${result.toolCalls.map((tc) => tc.name).join(', ')}]`,
     });
 
     // Execute each tool call and collect results
@@ -121,7 +127,10 @@ export async function toolUseLoop(
 
     for (const call of result.toolCalls) {
       const startedAt = performance.now();
-      const toolResult = await tools.dispatch(call.name, call.input, { cwd: opts?.toolCwd, scope: opts?.toolScope });
+      const toolResult = await tools.dispatch(call.name, call.input, {
+        cwd: opts?.toolCwd,
+        scope: opts?.toolScope,
+      });
 
       const resultContent = toolResult.ok
         ? toolResult.data
@@ -139,17 +148,24 @@ export async function toolUseLoop(
       opts?.onToolCall?.(call.name, call.input, resultContent);
       sequence += 1;
       let rawInput: string;
-      try { rawInput = JSON.stringify(call.input) ?? "{}"; } catch { rawInput = "[unserializable input]"; }
+      try {
+        rawInput = JSON.stringify(call.input) ?? '{}';
+      } catch {
+        rawInput = '[unserializable input]';
+      }
       const rawResult = toolResult.ok ? resultContent : (toolResult.error ?? toolResult.summary);
       const truncated: { input?: number; output?: number; error?: number } = {};
       if (rawInput.length > MAX_OBSERVED_INPUT) truncated.input = rawInput.length;
-      if (rawResult.length > MAX_OBSERVED_OUTPUT) truncated[toolResult.ok ? "output" : "error"] = rawResult.length;
+      if (rawResult.length > MAX_OBSERVED_OUTPUT)
+        truncated[toolResult.ok ? 'output' : 'error'] = rawResult.length;
       opts?.onToolObservation?.({
-        callId: call.id || newId("call"),
+        callId: call.id || newId('call'),
         tool: call.name,
         inputSummary: bounded(rawInput, MAX_OBSERVED_INPUT),
         ok: toolResult.ok,
-        ...(toolResult.ok ? { outputSummary: bounded(rawResult, MAX_OBSERVED_OUTPUT) } : { error: bounded(rawResult, MAX_OBSERVED_OUTPUT) }),
+        ...(toolResult.ok
+          ? { outputSummary: bounded(rawResult, MAX_OBSERVED_OUTPUT) }
+          : { error: bounded(rawResult, MAX_OBSERVED_OUTPUT) }),
         durationMs: performance.now() - startedAt,
         sequence,
         ...(Object.keys(truncated).length ? { truncated } : {}),
@@ -159,13 +175,15 @@ export async function toolUseLoop(
     // Append tool results as a user message
     // (In a real provider integration, these would be tool_result messages.
     //  For our simplified LLMMessage interface, we format as structured text.)
-    const resultText = toolResults.map((tr) => {
-      const status = tr.isError ? "ERROR" : "OK";
-      return `[Tool Result ${tr.toolCallId}] (${status})\n${tr.content}`;
-    }).join("\n\n");
+    const resultText = toolResults
+      .map((tr) => {
+        const status = tr.isError ? 'ERROR' : 'OK';
+        return `[Tool Result ${tr.toolCallId}] (${status})\n${tr.content}`;
+      })
+      .join('\n\n');
 
     conversation.push({
-      role: "user",
+      role: 'user',
       content: resultText,
     });
   }

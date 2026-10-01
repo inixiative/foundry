@@ -1,7 +1,7 @@
-import { Decider, type DeciderConfig, type Decision } from "./decider";
-import type { AgentConfig } from "./base-agent";
-import type { ContextStack } from "./context-stack";
-import type { ExecuteMeta } from "./executor";
+import type { AgentConfig } from './base-agent';
+import type { ContextStack } from './context-stack';
+import { Decider, type DeciderConfig, type Decision } from './decider';
+import type { ExecuteMeta } from './executor';
 
 /**
  * A classification — "what is this thing?"
@@ -15,7 +15,7 @@ export interface Classification {
 export type ClassifyHandler<TPayload> = (
   context: string,
   payload: TPayload,
-  meta?: ExecuteMeta
+  meta?: ExecuteMeta,
 ) => Promise<Decision<Classification>>;
 
 export interface ClassifierConfig<TPayload = unknown> extends AgentConfig {
@@ -29,10 +29,7 @@ export interface ClassifierConfig<TPayload = unknown> extends AgentConfig {
  * The Classifier has the full taxonomy loaded in its context layers.
  * The caller sends a payload and gets back a category — not the taxonomy.
  */
-export class Classifier<TPayload = unknown> extends Decider<
-  TPayload,
-  Classification
-> {
+export class Classifier<TPayload = unknown> extends Decider<TPayload, Classification> {
   constructor(config: ClassifierConfig<TPayload>) {
     super(config as DeciderConfig<TPayload, Classification>);
   }

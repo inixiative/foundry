@@ -2,7 +2,7 @@
 // viewers in one process (tests), so the maps live on an instance instead of the
 // module. Siblings attach meaning: subscriptions.ts (byStream), delivery.ts
 // (sends), lifecycle.ts (sweeps). No cross-instance fan-out: one viewer, one process.
-import type { WSSocket } from "./types";
+import type { WSSocket } from './types';
 
 export type WSRegistry = {
   byId: Map<string, WSSocket>;
@@ -17,7 +17,11 @@ export const createRegistry = (onStreamIdle: (stream: string) => void = () => {}
   onStreamIdle,
 });
 
-export const indexInto = (map: Map<string, Set<string>>, key: string, connectionId: string): void => {
+export const indexInto = (
+  map: Map<string, Set<string>>,
+  key: string,
+  connectionId: string,
+): void => {
   let set = map.get(key);
   if (!set) {
     set = new Set();
@@ -27,7 +31,11 @@ export const indexInto = (map: Map<string, Set<string>>, key: string, connection
 };
 
 /** Returns true when the key lost its last connection. */
-export const deindexFrom = (map: Map<string, Set<string>>, key: string, connectionId: string): boolean => {
+export const deindexFrom = (
+  map: Map<string, Set<string>>,
+  key: string,
+  connectionId: string,
+): boolean => {
   const set = map.get(key);
   if (!set) return false;
   set.delete(connectionId);

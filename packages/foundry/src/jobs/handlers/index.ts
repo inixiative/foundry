@@ -1,20 +1,20 @@
-import { cleanStaleTraces } from "./cleanStaleTraces";
-import { type PersistMessagePayload, persistMessage } from "./persistMessage";
-import { type PersistSignalPayload, persistSignal } from "./persistSignal";
-import { type PersistTracePayload, persistTrace } from "./persistTrace";
-import { warmLayers, type WarmLayersPayload } from "./warmLayers";
-import type { JobHandler } from "../types";
+import type { JobHandler } from '../types';
+import { cleanStaleTraces } from './cleanStaleTraces';
+import { type PersistMessagePayload, persistMessage } from './persistMessage';
+import { type PersistSignalPayload, persistSignal } from './persistSignal';
+import { type PersistTracePayload, persistTrace } from './persistTrace';
+import { type WarmLayersPayload, warmLayers } from './warmLayers';
 
 // ---------------------------------------------------------------------------
 // Handler name registry — type-safe payload mappings
 // ---------------------------------------------------------------------------
 
 export const JobHandlerName = {
-  persistTrace: "persistTrace",
-  persistMessage: "persistMessage",
-  persistSignal: "persistSignal",
-  warmLayers: "warmLayers",
-  cleanStaleTraces: "cleanStaleTraces",
+  persistTrace: 'persistTrace',
+  persistMessage: 'persistMessage',
+  persistSignal: 'persistSignal',
+  warmLayers: 'warmLayers',
+  cleanStaleTraces: 'cleanStaleTraces',
 } as const;
 
 export type JobHandlerName = (typeof JobHandlerName)[keyof typeof JobHandlerName];

@@ -1,1 +1,1 @@
-import "../packages/foundry/src/providers/kingdom-connect-cli";
+import '../packages/foundry/src/providers/kingdom-connect-cli';

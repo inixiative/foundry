@@ -3,7 +3,7 @@
  * No dependencies. Supports chords, modifiers, and customizable bindings.
  */
 
-import { commandPaletteOpen, helpOpen } from "./store.js";
+import { commandPaletteOpen, helpOpen } from './store.js';
 
 // ---------------------------------------------------------------------------
 // Hotkey registry
@@ -21,7 +21,7 @@ export function bind(key, opts) {
   bindings.set(normalizeKey(key), {
     key,
     description: opts.description || key,
-    category: opts.category || "general",
+    category: opts.category || 'general',
     action: opts.action,
   });
 }
@@ -42,41 +42,39 @@ export function allBindings() {
 }
 
 /** Temporarily disable all hotkeys (e.g. when typing in an input). */
-export function setEnabled(v) { enabled = v; }
+export function setEnabled(v) {
+  enabled = v;
+}
 
 // ---------------------------------------------------------------------------
 // Key normalization
 // ---------------------------------------------------------------------------
 
 function normalizeKey(key) {
-  return key
-    .toLowerCase()
-    .split("+")
-    .sort()
-    .join("+");
+  return key.toLowerCase().split('+').sort().join('+');
 }
 
 function eventToKey(e) {
   const parts = [];
-  if (e.ctrlKey || e.metaKey) parts.push("ctrl");
-  if (e.altKey) parts.push("alt");
-  if (e.shiftKey) parts.push("shift");
+  if (e.ctrlKey || e.metaKey) parts.push('ctrl');
+  if (e.altKey) parts.push('alt');
+  if (e.shiftKey) parts.push('shift');
 
   let key = e.key.toLowerCase();
   // Normalize special keys
-  if (key === " ") key = "space";
-  if (key === "escape") key = "escape";
-  if (key === "arrowup") key = "up";
-  if (key === "arrowdown") key = "down";
-  if (key === "arrowleft") key = "left";
-  if (key === "arrowright") key = "right";
+  if (key === ' ') key = 'space';
+  if (key === 'escape') key = 'escape';
+  if (key === 'arrowup') key = 'up';
+  if (key === 'arrowdown') key = 'down';
+  if (key === 'arrowleft') key = 'left';
+  if (key === 'arrowright') key = 'right';
 
   // Don't duplicate modifier keys
-  if (!["control", "meta", "alt", "shift"].includes(key)) {
+  if (!['control', 'meta', 'alt', 'shift'].includes(key)) {
     parts.push(key);
   }
 
-  return parts.sort().join("+");
+  return parts.sort().join('+');
 }
 
 // ---------------------------------------------------------------------------
@@ -84,11 +82,11 @@ function eventToKey(e) {
 // ---------------------------------------------------------------------------
 
 export function initHotkeys() {
-  document.addEventListener("keydown", (e) => {
+  document.addEventListener('keydown', (e) => {
     // Don't fire in inputs/textareas unless it's Escape
     if (!enabled) return;
     const tag = e.target.tagName;
-    if ((tag === "INPUT" || tag === "TEXTAREA") && e.key !== "Escape") return;
+    if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'Escape') return;
 
     const normalized = eventToKey(e);
     const binding = bindings.get(normalized);
@@ -107,28 +105,80 @@ export function initHotkeys() {
 
 export function registerDefaults(actions) {
   // Navigation
-  bind("1", { description: "Focus thread tree", category: "navigation", action: actions.focusTree });
-  bind("2", { description: "Focus conversation", category: "navigation", action: actions.focusConversation });
-  bind("3", { description: "Focus detail drawer", category: "navigation", action: actions.focusDetail });
+  bind('1', {
+    description: 'Focus thread tree',
+    category: 'navigation',
+    action: actions.focusTree,
+  });
+  bind('2', {
+    description: 'Focus conversation',
+    category: 'navigation',
+    action: actions.focusConversation,
+  });
+  bind('3', {
+    description: 'Focus detail drawer',
+    category: 'navigation',
+    action: actions.focusDetail,
+  });
 
   // Movement
-  bind("j", { description: "Next trace / span", category: "navigation", action: actions.nextItem });
-  bind("k", { description: "Previous trace / span", category: "navigation", action: actions.prevItem });
-  bind("enter", { description: "Expand / select", category: "navigation", action: actions.expandItem });
-  bind("escape", { description: "Close overlay / deselect", category: "navigation", action: actions.escape });
+  bind('j', { description: 'Next trace / span', category: 'navigation', action: actions.nextItem });
+  bind('k', {
+    description: 'Previous trace / span',
+    category: 'navigation',
+    action: actions.prevItem,
+  });
+  bind('enter', {
+    description: 'Expand / select',
+    category: 'navigation',
+    action: actions.expandItem,
+  });
+  bind('escape', {
+    description: 'Close overlay / deselect',
+    category: 'navigation',
+    action: actions.escape,
+  });
 
   // Actions
-  bind("ctrl+k", { description: "Command palette", category: "actions", action: () => { commandPaletteOpen.value = !commandPaletteOpen.value; } });
-  bind("shift+?", { description: "Show hotkey help", category: "actions", action: () => { helpOpen.value = !helpOpen.value; } });
-  bind("p", { description: "Pause / resume thread", category: "actions", action: actions.togglePause });
-  bind("i", { description: "Inspect thread state", category: "actions", action: actions.inspect });
-  bind("o", { description: "Override selected span", category: "actions", action: actions.override });
-  bind("r", { description: "Refresh all data", category: "actions", action: actions.refresh });
+  bind('ctrl+k', {
+    description: 'Command palette',
+    category: 'actions',
+    action: () => {
+      commandPaletteOpen.value = !commandPaletteOpen.value;
+    },
+  });
+  bind('shift+?', {
+    description: 'Show hotkey help',
+    category: 'actions',
+    action: () => {
+      helpOpen.value = !helpOpen.value;
+    },
+  });
+  bind('p', {
+    description: 'Pause / resume thread',
+    category: 'actions',
+    action: actions.togglePause,
+  });
+  bind('i', { description: 'Inspect thread state', category: 'actions', action: actions.inspect });
+  bind('o', {
+    description: 'Override selected span',
+    category: 'actions',
+    action: actions.override,
+  });
+  bind('r', { description: 'Refresh all data', category: 'actions', action: actions.refresh });
 
   // Panels
-  bind("s", { description: "Open settings", category: "panels", action: actions.openSettings });
-  bind("a", { description: "Open analytics", category: "panels", action: actions.openAnalytics });
-  bind("l", { description: "Toggle layers panel", category: "panels", action: actions.toggleLayers });
-  bind("e", { description: "Toggle events panel", category: "panels", action: actions.toggleEvents });
-  bind("g", { description: "Toggle graph view", category: "panels", action: actions.toggleGraph });
+  bind('s', { description: 'Open settings', category: 'panels', action: actions.openSettings });
+  bind('a', { description: 'Open analytics', category: 'panels', action: actions.openAnalytics });
+  bind('l', {
+    description: 'Toggle layers panel',
+    category: 'panels',
+    action: actions.toggleLayers,
+  });
+  bind('e', {
+    description: 'Toggle events panel',
+    category: 'panels',
+    action: actions.toggleEvents,
+  });
+  bind('g', { description: 'Toggle graph view', category: 'panels', action: actions.toggleGraph });
 }

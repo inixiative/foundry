@@ -1,5 +1,10 @@
 // Native authentication adapter. Preserve standalone Archive's durable outbox/replay semantics.
+
+import type { CredentialReference, CredentialResolver } from '@inixiative/foundry-core';
+import type { LocalArchiveStore } from '@inixiative/session-archive/local';
 import { z } from 'zod';
+import { FoundryCredentials } from '../providers/credentials';
+import { RUNTIME_SECRET_PREFIX } from '../providers/kingdom-secrets';
 import {
   type ArchiveDestination,
   archiveDestinationSchema,
@@ -7,10 +12,6 @@ import {
   destinationIdentity,
   destinationUrl,
 } from './config';
-import type { LocalArchiveStore } from '@inixiative/session-archive/local';
-import type { CredentialReference, CredentialResolver } from '@inixiative/foundry-core';
-import { FoundryCredentials } from '../providers/credentials';
-import { RUNTIME_SECRET_PREFIX } from '../providers/kingdom-secrets';
 
 export { type ArchiveDestination, archiveDestinationSchema } from './config';
 
@@ -42,7 +43,8 @@ export async function verifyArchiveDestination(
       !Array.isArray(listed.data) ||
       !listed.data.some(
         (connection) =>
-          connection.id === destination.connectionId && connection.projectId === destination.projectId,
+          connection.id === destination.connectionId &&
+          connection.projectId === destination.projectId,
       )
     )
       throw Error('Kingdom Archive publication is not configured for this project');
@@ -54,7 +56,9 @@ export async function verifyArchiveDestination(
       query: '',
       budget: 16,
       limit: 1,
-      ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
+      ...(destination.kind === 'archive'
+        ? { projectId: destination.projectId }
+        : kingdomFields(destination)),
     },
     transport,
     credentials,
@@ -95,7 +99,8 @@ export async function saveArchiveConnection(
   let created: CredentialReference | undefined;
   let committed = false;
   try {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid connection');
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      throw Error('Invalid connection');
     const { secret, ...configuration } = input as Record<string, unknown>;
     if (secret !== undefined) {
       if (configuration.credential || configuration.tokenEnv) throw Error('Choose one credential');
@@ -139,7 +144,8 @@ export async function archiveRequest(
     : process.env[destination.tokenEnv!];
   if (!token || (destination.kind === 'kingdom' && !token.startsWith(RUNTIME_SECRET_PREFIX)))
     throw new Error('Archive runtime credential unavailable');
-  const path = destination.kind === 'kingdom' && destination.connectionId ? `remote/${action}` : action;
+  const path =
+    destination.kind === 'kingdom' && destination.connectionId ? `remote/${action}` : action;
   const response = await transport(new URL(`api/v1/archive/${path}`, url), {
     method: 'POST',
     redirect: 'error',
@@ -147,7 +153,8 @@ export async function archiveRequest(
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`Archive request rejected (${response.status}); local archive retained`);
+  if (!response.ok)
+    throw new Error(`Archive request rejected (${response.status}); local archive retained`);
   return response.json() as Promise<{ data: any }>;
 }
 
@@ -251,7 +258,9 @@ export async function searchRemotes(
           {
             query,
             budget,
-            ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
+            ...(destination.kind === 'archive'
+              ? { projectId: destination.projectId }
+              : kingdomFields(destination)),
           },
           fetch,
           credentials,

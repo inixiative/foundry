@@ -1,12 +1,8 @@
-import type { Middleware, DispatchContext, MiddlewareNext } from "./middleware";
-import {
-  CapabilityGate,
-  CapabilityDeniedError,
-  type Capability,
-} from "./capability";
+import { type Capability, CapabilityDeniedError, type CapabilityGate } from './capability';
+import type { DispatchContext, Middleware, MiddlewareNext } from './middleware';
 
 export interface PermissionCheckResult {
-  action: "allow" | "deny" | "ask";
+  action: 'allow' | 'deny' | 'ask';
   /** Optional modified payload (like Claude Code's updatedInput). */
   modifiedPayload?: unknown;
   /** Reason for denial. */
@@ -40,12 +36,7 @@ export interface PermissionMiddlewareConfig {
  * Records permission decisions in ctx.annotations.
  */
 export function permissionMiddleware(config: PermissionMiddlewareConfig): Middleware {
-  const {
-    gate,
-    threadId,
-    defaultCapability = "llm:call",
-    checks,
-  } = config;
+  const { gate, threadId, defaultCapability = 'llm:call', checks } = config;
 
   return async (ctx: DispatchContext, next: MiddlewareNext) => {
     // Check default capability via gate
@@ -55,14 +46,14 @@ export function permissionMiddleware(config: PermissionMiddlewareConfig): Middle
       detail: `Dispatch to agent ${ctx.agentId}`,
     });
 
-    if (resolution.action === "rejected") {
-      ctx.annotations["permission:denied"] = true;
-      ctx.annotations["permission:capability"] = defaultCapability;
-      throw new CapabilityDeniedError(defaultCapability, "deny");
+    if (resolution.action === 'rejected') {
+      ctx.annotations['permission:denied'] = true;
+      ctx.annotations['permission:capability'] = defaultCapability;
+      throw new CapabilityDeniedError(defaultCapability, 'deny');
     }
 
-    ctx.annotations["permission:approved"] = true;
-    ctx.annotations["permission:by"] = resolution.by;
+    ctx.annotations['permission:approved'] = true;
+    ctx.annotations['permission:by'] = resolution.by;
 
     // Run custom checks
     if (checks) {
@@ -71,18 +62,15 @@ export function permissionMiddleware(config: PermissionMiddlewareConfig): Middle
 
         const result = await check.check(ctx);
 
-        if (result.action === "deny") {
-          ctx.annotations["permission:denied"] = true;
-          ctx.annotations["permission:capability"] = check.capability;
-          ctx.annotations["permission:reason"] = result.reason;
-          throw new CapabilityDeniedError(
-            check.capability,
-            "deny",
-          );
+        if (result.action === 'deny') {
+          ctx.annotations['permission:denied'] = true;
+          ctx.annotations['permission:capability'] = check.capability;
+          ctx.annotations['permission:reason'] = result.reason;
+          throw new CapabilityDeniedError(check.capability, 'deny');
         }
 
         if (result.modifiedPayload !== undefined) {
-          ctx.annotations["permission:modifiedPayload"] = result.modifiedPayload;
+          ctx.annotations['permission:modifiedPayload'] = result.modifiedPayload;
         }
       }
     }
