@@ -1,1 +1,1 @@
-export * from '@inixiative/session-archive/import-file';
+export * from '@inixiative/archive/import-file';

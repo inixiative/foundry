@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startArchiveServer } from '@inixiative/session-archive/server';
+import { startArchiveServer } from '@inixiative/archive/server';
 import { runArchiveSetup } from '../src/archives/setup';
 import { kingdomStatus, pairKingdom } from '../src/providers/kingdom-cli';
 import {

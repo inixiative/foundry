@@ -1,6 +1,6 @@
-import { destinationUrl } from '@inixiative/session-archive/config';
+import { destinationUrl } from '@inixiative/archive/config';
 
-export { destinationUrl } from '@inixiative/session-archive/config';
+export { destinationUrl } from '@inixiative/archive/config';
 
 import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { runCli } from '@inixiative/session-archive/cli';
-import { LocalArchiveStore } from '@inixiative/session-archive/local';
+import { runCli } from '@inixiative/archive/cli';
+import { LocalArchiveStore } from '@inixiative/archive/local';
 import { FoundryCredentials } from '../providers/credentials';
 import { createTerminalPrompts } from '../setup/prompts';
 import { ConfigStore } from '../viewer/config';
