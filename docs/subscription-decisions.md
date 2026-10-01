@@ -3,7 +3,7 @@
 Foundry runs subscription-only by default. A fresh install, with no settings at all, runs the Claude Code worker and Foundry's decisions from the logins already on the machine:
 
 - **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset).
-- **Decisions:** GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`). Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review) and configured experts all use this decision profile.
+- **Decisions:** GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`). Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review), configured experts and thread naming all use this decision profile.
 
 No API provider is constructed in this mode. There is no paid fallback, no automatic retry and no model substitution. API-key providers need an explicit opt-in.
 
@@ -71,7 +71,7 @@ A Claude decision profile keeps the bounded one-turn text provider.
 
 One process-wide scheduler serves every thread's decisions, with up to `maxConcurrent` processes at once:
 
-- **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (classifier, router, Cartographer, expert advice) run before post-action guards, which run before learning review. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
+- **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (classifier, router, Cartographer, expert advice) run before post-action guards, which run before learning review and thread naming. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
 - **Fairness.** Within a priority, the thread served longest ago goes next, so one busy thread cannot starve another.
 - **Shedding.** A full queue (per thread, then global) sheds its oldest lowest-priority wait to admit a more urgent call; only a call that cannot displace anything is refused. Shed guards report as unchecked, never as all-clear.
 - **Rate limits.** A Codex usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission. While the account reports usage blocked, the warm host refuses decisions before sending anything and re-reads limits at most once a minute.

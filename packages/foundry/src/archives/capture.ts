@@ -4,7 +4,7 @@ import {
   archiveSnapshotSchema,
 } from '@inixiative/archive';
 import type { LocalArchiveStore } from '@inixiative/archive/local';
-import type { EventStream } from '@inixiative/foundry-core';
+import { type EventStream, threadTitle } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 
 export function captureThread(
@@ -112,7 +112,7 @@ export function captureThread(
     sourceId,
     source: 'foundry',
     sessionId: threadId,
-    title: thread.meta.description.slice(0, 500) || threadId,
+    title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
     tags: thread.meta.tags,
     capturedAt: Date.now(),
@@ -137,7 +137,7 @@ export class ArchiveCapture {
     readonly journal: LocalSessionStore,
     readonly archives: LocalArchiveStore,
     events: EventStream,
-    private readonly captured?: (id: string) => void,
+    private readonly captured?: (id: string, snapshot: ArchiveSnapshot) => void,
   ) {
     this.unsubscribe = events.subscribe((event) => {
       if (event.kind === 'journal' && event.outcome !== 'failed') this.schedule(event.threadId);
@@ -159,7 +159,7 @@ export class ArchiveCapture {
         const snapshot = captureThread(this.journal, this.archives.sourceId, threadId);
         const result = this.archives.capture(snapshot);
         this.errors.delete(threadId);
-        this.captured?.(result.id);
+        this.captured?.(result.id, snapshot);
       } catch {
         this.errors.set(
           threadId,

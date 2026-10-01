@@ -24,7 +24,7 @@ import type { TokenCounts } from '@inixiative/foundry-core';
 // ---------------------------------------------------------------------------
 
 import type { Dispatch, Signal, SignalKind, Thread, ThreadStatus } from '@inixiative/foundry-core';
-import { ContextLayer, newId } from '@inixiative/foundry-core';
+import { ContextLayer, newId, threadTitle } from '@inixiative/foundry-core';
 import type { SessionManager } from './session';
 import { WorkstreamOverloadDetector } from './workstream-detector';
 
@@ -740,7 +740,7 @@ export class Herald {
 
     const lines: string[] = [`Active threads: ${threads.length}`];
     for (const t of threads) {
-      const desc = t.meta.description || '(no description)';
+      const desc = threadTitle(t.meta)?.text ?? '(no description)';
       const status = t.meta.status;
       lines.push(`  - ${t.id} [${status}]: ${desc}`);
     }

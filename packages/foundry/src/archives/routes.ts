@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { ArchiveSnapshot } from '@inixiative/archive';
 import { LocalArchiveStore } from '@inixiative/archive/local';
 import type { EventStream } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
@@ -22,6 +23,8 @@ export function registerArchiveRoutes(
   journal: LocalSessionStore,
   events: EventStream,
   configDir: string,
+  /** Each captured thread snapshot, e.g. to derive the thread's linked work. */
+  observe?: (snapshot: ArchiveSnapshot) => void,
 ) {
   const credentials = new FoundryCredentials(
     configDir,
@@ -80,7 +83,8 @@ export function registerArchiveRoutes(
       if (republish.delete(id) && !stopped) void publish(id);
     }
   };
-  const capture = new ArchiveCapture(journal, store, events, (id) => {
+  const capture = new ArchiveCapture(journal, store, events, (id, snapshot) => {
+    observe?.(snapshot);
     void publish(id);
   });
   const retry = setInterval(() => {

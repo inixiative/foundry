@@ -10,9 +10,52 @@ import type { ToolCallObservation } from './tools';
 
 export type ThreadStatus = 'idle' | 'active' | 'waiting' | 'archived';
 
+/** A thread name and when it was set. */
+export interface ThreadName {
+  readonly text: string;
+  readonly updatedAt: number;
+}
+
+/** Tracked work a thread links to, in Archive's integration-reference shape (`github` `owner/repo#12`, `linear` `ENG-4`). */
+export interface ThreadReference {
+  readonly integration: string;
+  readonly ref: string;
+  readonly url?: string;
+}
+
+/** Where a thread's work lives, as the runtime last observed it. */
+export interface ThreadContext {
+  /** `owner/repo` of the worktree's origin. */
+  readonly repository?: string;
+  /** Branch checked out in the worktree now (may differ from the assigned `branch`). */
+  readonly branch?: string;
+  /** Worktree root containing the thread's cwd. */
+  readonly worktree?: string;
+  readonly references: readonly ThreadReference[];
+  readonly updatedAt: number;
+}
+
+/** The name a thread shows: a person's name overrides the agent-maintained one. */
+export function threadTitle(
+  meta: Pick<ThreadMeta, 'name' | 'agentName' | 'description'>,
+): { text: string; source: 'human' | 'agent' | 'description' } | undefined {
+  if (meta.name?.text) return { text: meta.name.text, source: 'human' };
+  if (meta.agentName?.text) return { text: meta.agentName.text, source: 'agent' };
+  return meta.description ? { text: meta.description, source: 'description' } : undefined;
+}
+
 export interface ThreadMeta {
   /** Living description — what this thread is doing right now. */
   description: string;
+
+  /** Name a person set. A hard override: agents never change it. */
+  name?: ThreadName;
+
+  /** Name an agent maintains while no person has named the thread. */
+  agentName?: ThreadName;
+
+  /** Branch, worktree and linked PRs/tickets, derived by the runtime. */
+  context?: ThreadContext;
 
   /** Classification tags — what kind of work this thread handles. */
   tags: string[];
@@ -203,6 +246,13 @@ export class Thread {
   /** Update the living description. */
   describe(description: string): void {
     this.meta.description = description;
+  }
+
+  /** Set (or with an empty name, clear) the person-given name. */
+  rename(name: string): void {
+    const text = name.trim();
+    if (!text) delete this.meta.name;
+    else if (text !== this.meta.name?.text) this.meta.name = { text, updatedAt: Date.now() };
   }
 
   /** Update tags. */
