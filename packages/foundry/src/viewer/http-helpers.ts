@@ -1,4 +1,4 @@
-import type { Thread, Trace } from '@inixiative/foundry-core';
+import { type Thread, type Trace, threadTitle } from '@inixiative/foundry-core';
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
 export function validateId(id: string, label: string): string | null {
@@ -28,6 +28,7 @@ export function threadToJSON(thread: Thread) {
   return {
     threadId: thread.id,
     meta: thread.meta,
+    title: threadTitle(thread.meta) ?? null,
     agents: [...thread.agents.entries()].map(([id, agent]) => ({
       id,
       agentId: agent.id,

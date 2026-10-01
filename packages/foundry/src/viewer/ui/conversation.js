@@ -35,6 +35,7 @@ import {
   threadData,
   tokenUsage,
 } from './store.js';
+import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
 import {
   dictationSupported,
   speakReplies,
@@ -182,10 +183,10 @@ function ContextBar() {
       ? contextWindow
       : Math.max(warmTokens, systemTokens, threadTokens, 1);
 
-  const title = meta.description || data.threadId;
+  const title = threadName(data);
+  const titleSource = data.title?.source || null;
   const status = liveThreadStatus(messages.value) || meta.status || 'idle';
-  const branch = meta.branch || null;
-  const cwd = meta.cwd ? meta.cwd.split('/').slice(-2).join('/') : null;
+  const place = threadPlace(meta);
 
   // Stacked bar: segment-per-warm-layer, sized against context window so empty space = remaining budget.
   const segments = warmLayers.map((l) => {
@@ -205,9 +206,12 @@ function ContextBar() {
     <div class="context-bar">
       <div class="context-bar-head">
         <span class="context-bar-status context-bar-status--${status}" title=${status}></span>
-        <span class="context-bar-title" title=${data.threadId}>${title}</span>
-        ${branch ? html`<span class="context-bar-chip" title="branch">${branch}</span>` : null}
-        ${cwd ? html`<span class="context-bar-chip context-bar-chip--dim" title=${meta.cwd}>${cwd}</span>` : null}
+        <span class="context-bar-title" data-name-source=${titleSource || ''}
+          title=${`${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
+        ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
+        ${place.branch ? html`<span class="context-bar-chip context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${place.branch}</span>` : null}
+        ${place.worktreeShort ? html`<span class="context-bar-chip context-bar-chip--dim" title=${place.worktree}>${place.worktreeShort}</span>` : null}
+        <${ReferenceChips} meta=${meta} />
         <span class="context-bar-spacer"></span>
         <span class="context-bar-count" title="agents">${agents.length} agent${agents.length === 1 ? '' : 's'}</span>
         <span class="context-bar-count" title="warm / total layers">${warmLayers.length}/${layers.length} layers</span>

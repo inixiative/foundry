@@ -5380,3 +5380,84 @@ body {
 .graph-caption--warn {
   color: var(--warn);
 }
+
+/* Thread names and linked work */
+.context-bar-name-source {
+  font-size: 9px;
+  color: var(--text-dimmer);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.context-bar-chip--branch {
+  color: var(--ok);
+}
+a.thread-ref {
+  text-decoration: none;
+}
+a.thread-ref:hover {
+  text-decoration: underline;
+}
+.context-bar-chip.thread-ref {
+  color: var(--accent);
+}
+.thread-ref-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tree-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tree-sub {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.tree-sub .thread-branch-badge {
+  margin-left: 0;
+  max-width: 140px;
+  flex-shrink: 1;
+}
+.tree-sub .thread-meta-tag.thread-ref {
+  flex-shrink: 0;
+}
+.thread-name-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 10px;
+}
+.thread-name-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.thread-name-source {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dimmer);
+  margin-left: 4px;
+}
+.thread-name-source[data-source="human"] {
+  color: var(--accent);
+}
+.thread-name-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.thread-name-input {
+  flex: 1;
+  min-width: 0;
+}
+.thread-name-agent {
+  font-size: 10px;
+  color: var(--text-dimmer);
+}

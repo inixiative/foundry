@@ -48,6 +48,7 @@ import {
   loadTraceDetail,
   messages,
   openTurnDetail,
+  renameThread,
   selectedEvent,
   selectedSpanId,
   showToast,
@@ -56,6 +57,7 @@ import {
   updateThreadWorktree,
   worktrees,
 } from './store.js';
+import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
 
 // ---------------------------------------------------------------------------
 // Shared components
@@ -1263,6 +1265,7 @@ function ThreadDetail() {
   if (!data) return null;
 
   const meta = data.meta || {};
+  const place = threadPlace(meta);
 
   const handleWorktreeChange = async (e) => {
     const path = e.target.value;
@@ -1273,26 +1276,45 @@ function ThreadDetail() {
   return html`
     <div class="detail-content">
       <div class="detail-header">
-        <span class="detail-name">${meta.description || data.threadId}</span>
+        <span class="detail-name">${threadName(data)}</span>
         <span class="detail-status ${liveThreadStatus(messages.value) || meta.status || 'idle'}">${liveThreadStatus(messages.value) || meta.status || 'idle'}</span>
       </div>
+
+      <${ThreadNameEditor} key=${tid} threadId=${tid} data=${data} />
 
       <div class="detail-meta-row">
         <div class="detail-meta"><label>ID</label><span class="mono">${data.threadId}</span></div>
         ${
-          meta.branch
+          place.branch
             ? html`
-          <div class="detail-meta"><label>Branch</label><span class="mono">${meta.branch}</span></div>
+          <div class="detail-meta"><label>Branch</label><span class="mono">${place.branch}</span></div>
+        `
+            : null
+        }
+        ${
+          place.repository
+            ? html`
+          <div class="detail-meta"><label>Repository</label><span class="mono">${place.repository}</span></div>
         `
             : null
         }
       </div>
 
       ${
-        meta.cwd
+        place.worktree
           ? html`
         <div class="detail-meta-row">
-          <div class="detail-meta"><label>Worktree</label><span class="mono">${meta.cwd}</span></div>
+          <div class="detail-meta"><label>Worktree</label><span class="mono">${place.worktree}</span></div>
+        </div>
+      `
+          : null
+      }
+
+      ${
+        meta.context?.references?.length
+          ? html`
+        <div class="detail-meta-row">
+          <div class="detail-meta"><label>Linked work</label><span class="thread-ref-list"><${ReferenceChips} meta=${meta} /></span></div>
         </div>
       `
           : null
@@ -1341,6 +1363,39 @@ function ThreadDetail() {
 
       <${KnowledgeInspection} key=${tid} threadId=${tid} />
     </div>
+  `;
+}
+
+/** A person's name overrides the agent's; clearing it hands naming back to the agent. */
+function ThreadNameEditor({ threadId, data }) {
+  const meta = data.meta || {};
+  const [draft, setDraft] = useState(meta.name?.text || '');
+  const [saving, setSaving] = useState(false);
+  const source = data.title?.source;
+  const save = async (name) => {
+    setSaving(true);
+    if (await renameThread(threadId, name)) setDraft(name.trim());
+    setSaving(false);
+  };
+  return html`
+    <form class="thread-name-editor" onSubmit=${(e) => {
+      e.preventDefault();
+      save(draft);
+    }}>
+      <label class="thread-name-label">Name <span class="thread-name-source" data-source=${source || ''}>${source ? nameSourceLabel[source] : 'unnamed'}</span></label>
+      <div class="thread-name-row">
+        <input class="settings-input thread-name-input" value=${draft} maxLength="200"
+          placeholder=${meta.agentName?.text || 'Name this thread'} onInput=${(e) => setDraft(e.target.value)} />
+        <button type="submit" class="action-btn" disabled=${saving || draft.trim() === (meta.name?.text || '')}>Save</button>
+        ${
+          meta.name
+            ? html`<button type="button" class="back-btn" disabled=${saving} onClick=${() => save('')}
+          title=${meta.agentName ? `Show the agent name: ${meta.agentName.text}` : 'Let the agent name this thread'}>Use agent name</button>`
+            : null
+        }
+      </div>
+      ${meta.name && meta.agentName ? html`<div class="thread-name-agent">Agent name: ${meta.agentName.text}</div>` : null}
+    </form>
   `;
 }
 
