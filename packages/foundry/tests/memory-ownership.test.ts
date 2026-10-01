@@ -455,7 +455,7 @@ test("a viewer correction lands on the bus of the thread it was made in, not mai
 
     const response = await post('other');
     expect(response.status).toBe(201);
-    expect((await response.json()).threadId).toBe('other');
+    expect(((await response.json()) as { threadId: string }).threadId).toBe('other');
     expect((await post('missing')).status).toBe(404);
 
     const written = memory
