@@ -95,6 +95,7 @@ export { Executor, type ExecuteHandler, type ExecuteMeta, type ExecutorConfig } 
 export { Decider, type Decision, type DecideHandler, type DeciderConfig } from "./decider";
 export { Classifier, type Classification, type ClassifyHandler, type ClassifierConfig } from "./classifier";
 export { Router, type Route, type RouteHandler, type RouterConfig } from "./router";
+export { Clarifier, type ClarifyPayload, type ClarificationResult, type ClarifyHandler, type ClarifierConfig } from "./clarifier";
 
 // Middleware
 export {
@@ -269,3 +270,29 @@ export type { CredentialReference, CredentialScope, CredentialResolver } from ".
 export { evidenceDigest, assemblyDigest, boundaryReceipt, verifyExpertDelivery } from "./delivery-evidence";
 export type { ProviderBoundaryReceipt, DeliveryOwner, ExpertDeliveryProof } from "./delivery-evidence";
 export { type TokenCounts, totalTokenCount, sumTokenCounts } from "./token-counts";
+
+export {
+  MODEL_CAPABILITIES,
+  MODEL_REGISTRY,
+  MODEL_REGISTRY_UPDATED_AT,
+  DECISION_MODEL,
+  DECISION_PROVIDER,
+  modelCapabilities,
+  modelHasCapability,
+  modelOptionsByCapability,
+  providersWithCapability,
+  registryModel,
+  resolveDecisionModel,
+  type ModelTier,
+  type CostTier,
+  type ProviderType,
+  type RuntimeKind,
+  type ModelCapability,
+  type ProviderCredential,
+  type ReasoningEffort,
+  type ModelReasoning,
+  type FoundryModelInfo,
+  type FoundryProviderInfo,
+  type ModelSweepOption,
+  type DecisionModelDefaults,
+} from "./model-registry";

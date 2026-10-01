@@ -2,6 +2,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { atlasSection, developmentTeam, type DevelopmentDomain, type TeamSnapshot } from "./development-team";
+import { DECISION_MODEL } from "./models/registry";
+import { SUBSCRIPTION_DECISIONS } from "./providers/subscription-policy";
 
 export async function createDevelopmentTeam(repo: string, destination: string) {
   const projectPath = resolve(repo), directory = resolve(destination);
@@ -14,7 +16,7 @@ export async function createDevelopmentTeam(repo: string, destination: string) {
     if (content) snapshots[domain] = { content, reference: join(projectPath, "MAP.md"), capturedAt: new Date().toISOString() };
   }
   const config = developmentTeam({ projectId: crypto.randomUUID(), projectPath,
-    worker: { provider: "claude-code", model: "fable" }, decision: { provider: "openai", model: "gpt-6-luna" }, snapshots });
+    worker: { provider: "claude-code", model: "fable" }, decision: { provider: SUBSCRIPTION_DECISIONS, model: DECISION_MODEL }, snapshots });
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeFile(join(directory, "settings.json"), JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   return { directory, projectId: Object.keys(config.projects)[0], enabledDomains: Object.values(config.agents).filter(a => a.enabled && a.domain).map(a => a.domain), modelCalls: 0 };

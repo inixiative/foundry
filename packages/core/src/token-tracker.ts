@@ -127,6 +127,15 @@ export const DEFAULT_COST_TABLE: CostTable = {
     "gemini-3-flash-preview": { inputPer1M: 0.5, outputPer1M: 3 },
     "gemini-3.1-flash-lite-preview": { inputPer1M: 0.25, outputPer1M: 1.5 },
   },
+  meta: {
+    // The -contributor ids are the same models, ~21x cheaper because Meta trains
+    // on the traffic. Tracking both makes the saving show up next to what bought it.
+    "muse-spark-1.3": { inputPer1M: 1.25, outputPer1M: 4.25 },
+    "muse-spark-1.3-contributor": { inputPer1M: 0.1, outputPer1M: 0.2 },
+    "muse-spark-1.2": { inputPer1M: 1.25, outputPer1M: 4.25 },
+    "muse-spark-1.2-contributor": { inputPer1M: 0.1, outputPer1M: 0.2 },
+    "muse-spark-1.1": { inputPer1M: 1.25, outputPer1M: 4.25 },
+  },
   // Claude Code provider tracks usage via session output, not cost table
   "claude-code": {},
 };

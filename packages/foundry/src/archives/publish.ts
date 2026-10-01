@@ -164,7 +164,7 @@ export async function publishArchive(
     let pending = store.pending(id, receiptKey);
     if (!pending) {
       if (previousDigest === latest.digest) return { unchanged: !sent };
-      store.enqueue(id, receiptKey, { revision: latest.revision, keepIds: [] });
+      store.enqueue(id, receiptKey, { revision: latest.revision });
       pending = store.pending(id, receiptKey)!;
     }
     const queued = store.read(id, pending.revision);
@@ -182,7 +182,7 @@ export async function publishArchive(
       credentials,
     );
     if (body.data?.digest !== queued.digest) throw new Error('Archive acknowledgement mismatch');
-    store.delivered(id, receiptKey, queued.digest, '[]');
+    store.delivered(id, receiptKey, queued.digest);
     sent = true;
   }
   throw new Error('Archive changed repeatedly during publication; retry sync');

@@ -1,13 +1,12 @@
 {
-  "version": "2.1.286",
+  "version": "0.155.1",
   "status": 0,
   "body": {
     "kind": "process",
     "argv": [
-      "claude",
-      "auth",
-      "status",
-      "--json"
+      "codex",
+      "login",
+      "status"
     ],
     "cwd": "{{cwd}}",
     "stdin": [],
@@ -15,8 +14,8 @@
     "frames": [
       {
         "after": 0,
-        "stream": "stdout",
-        "data": "{\"loggedIn\":true,\"authMethod\":\"claude.ai\"}",
+        "stream": "stderr",
+        "data": "Logged in using ChatGPT",
         "kept": true
       }
     ],
@@ -27,11 +26,11 @@
     }
   },
   "recorded": {
-    "service": "claude",
-    "cli": "claude",
-    "recordedAt": "2026-09-30T19:26:47.066Z",
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-09-30T19:26:47.283Z",
     "agentSession": "0.3.0",
     "environment": "terminal",
-    "durationMs": 209
+    "durationMs": 136
   }
 }

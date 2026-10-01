@@ -5,6 +5,7 @@ import { Thread } from "../src/thread";
 import { Executor } from "../src/executor";
 import { Classifier, type Classification } from "../src/classifier";
 import { Router, type Route } from "../src/router";
+import { Clarifier } from "../src/clarifier";
 import { Harness, type Message } from "../src/harness";
 
 function source(id: string, content: string): ContextSource {
@@ -250,4 +251,53 @@ test("classification and routing run concurrently on the frozen message; results
     const spans = result.trace.root.children.map(s => [s.name, s.status]);
     expect(spans).toEqual([["classify:classifier", "ok"], ["route:router", "ok"], ["execute:worker", "ok"]]);
   } finally { thread.dispose(); }
+});
+
+describe("clarify stage", () => {
+  function clarifyHarness(needed: boolean) {
+    const stack = new ContextStack();
+    const thread = new Thread("clarify", stack);
+    const seen: { clarify?: unknown; executed: boolean } = { executed: false };
+    thread.register(new Classifier({ id: "classifier", stack, handler: async () => ({ value: { category: "code-generation" }, confidence: 1 }) }));
+    thread.register(new Clarifier({
+      id: "clarifier",
+      stack,
+      handler: async (_ctx, payload) => {
+        seen.clarify = payload;
+        return { value: needed ? { needed: true, questions: ["Which language?"] } : { needed: false }, confidence: 1 };
+      },
+    }));
+    thread.register(new Executor({ id: "executor", stack, handler: async () => { seen.executed = true; return "done"; } }));
+    const harness = new Harness(thread);
+    harness.setFlow({
+      stages: [
+        { agentId: "classifier", role: "classify", invocation: "always" },
+        { agentId: "clarifier", role: "clarify", invocation: "always" },
+        { agentId: "executor", role: "execute", invocation: "always" },
+      ],
+    });
+    return { harness, thread, seen };
+  }
+
+  test("an underspecified request returns questions without executing", async () => {
+    const { harness, thread, seen } = clarifyHarness(true);
+    try {
+      const result = await harness.send({ id: "c1", payload: "write a function" });
+      expect(seen.clarify).toEqual({ message: "write a function", classification: { category: "code-generation" } });
+      expect(seen.executed).toBe(false);
+      expect(result.clarification).toEqual({ needed: true, questions: ["Which language?"] });
+      expect(result.result.output).toBeNull();
+      expect(result.invokedAgents?.map(a => a.id)).toEqual(["classifier", "clarifier"]);
+    } finally { thread.dispose(); }
+  });
+
+  test("a complete request executes", async () => {
+    const { harness, thread, seen } = clarifyHarness(false);
+    try {
+      const result = await harness.send({ id: "c2", payload: "write a TypeScript function" });
+      expect(seen.executed).toBe(true);
+      expect(result.clarification).toEqual({ needed: false });
+      expect(result.result.output).toBe("done");
+    } finally { thread.dispose(); }
+  });
 });
