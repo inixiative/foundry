@@ -8,7 +8,7 @@
 import { signal, computed, batch, effect } from "./lib.js";
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { mergeMessageHistory, updateTurnMessage, terminalMessagePatch, persistBrowserMessages,
-  reconcileThreadMessages, reconcileTargets, selectedDetailTarget } from "./conversation-state.js";
+  mergeStoredMessages, discardKeys, reconcileThreadMessages, reconcileTargets, selectedDetailTarget } from "./conversation-state.js";
 import { createDataStreamSocket } from "./data-stream-socket.js";
 
 // ---------------------------------------------------------------------------
@@ -840,8 +840,9 @@ export async function revertThread(messageIndex) {
   const msgs = messages.value;
   if (messageIndex < 0 || messageIndex >= msgs.length) return;
 
-  // Truncate locally first (optimistic)
+  // Truncate locally first (optimistic); discarded rows leave every tab's copy.
   const kept = msgs.slice(0, messageIndex + 1);
+  _discardLocal(tid, msgs.slice(messageIndex + 1));
   _persistLocal(tid, kept);
 
   // Tell server to clean up DB
@@ -984,12 +985,27 @@ export function selectThread(threadId) {
   else if (threadId) requestReconcile(threadId, 0);
 }
 
-/** Keep write outcomes with the thread's live messages, including while inactive. */
+/** Keep write outcomes with the thread's live messages, including while inactive.
+ * The write merges with what other tabs stored for the thread instead of replacing it. */
 function _persistLocal(threadId, msgs) {
   // A sender may just have applied its full terminal. Merge only the watch-owned
   // projection in that case; failed persistence does not revoke local completion.
-  const observed = mergeLiveSnapshot(msgs, liveView(threadId));
+  const observed = mergeStoredMessages(_loadLocal(threadId), mergeLiveSnapshot(msgs, liveView(threadId)), _loadDiscarded(threadId));
   const next = persistBrowserMessages(observed, value => localStorage.setItem(`foundry:msgs:${threadId}`, value));
+  _threadMessages[threadId] = next;
+  if (activeThreadId.value === threadId) messages.value = next;
+}
+
+/** Another tab wrote a loaded thread's rows (or discarded some): adopt them without a write. */
+function _adoptStored(event) {
+  if (event.storageArea !== localStorage || !event.key?.startsWith("foundry:msgs:")) return;
+  const rest = event.key.slice("foundry:msgs:".length);
+  if (rest.startsWith("legacy-backup:")) return;
+  const threadId = rest.startsWith("discarded:") ? rest.slice("discarded:".length) : rest;
+  const rows = _threadMessages[threadId];
+  if (!rows) return; // its first load reads storage
+  const next = mergeStoredMessages(_loadLocal(threadId), rows, _loadDiscarded(threadId));
+  if (next === rows) return;
   _threadMessages[threadId] = next;
   if (activeThreadId.value === threadId) messages.value = next;
 }
@@ -1002,6 +1018,20 @@ function _loadLocal(threadId) {
     // Reading this snapshot establishes a browser copy, never a server commit.
     return Array.isArray(cached) ? cached.map(msg => ({ ...msg, browserStorage: { status: "saved" } })) : [];
   } catch { return []; }
+}
+
+function _loadDiscarded(threadId) {
+  try {
+    const keys = JSON.parse(localStorage.getItem(`foundry:msgs:discarded:${threadId}`) ?? "[]");
+    return new Set(Array.isArray(keys) ? keys : []);
+  } catch { return new Set(); }
+}
+
+function _discardLocal(threadId, rows) {
+  if (!rows.length) return;
+  try {
+    localStorage.setItem(`foundry:msgs:discarded:${threadId}`, JSON.stringify([..._loadDiscarded(threadId), ...discardKeys(rows)]));
+  } catch { showToast("Browser storage could not record the revert; other tabs may keep the removed rows", "warn"); }
 }
 
 /** Reconcile durable history without erasing pre-journal browser-only messages. */
@@ -1277,6 +1307,8 @@ export function init() {
 
   // Persistence happens at each mutation with its originating thread ID.
   // Combining selected-thread and message signals here can cross-write history.
+
+  window.addEventListener("storage", _adoptStored);
 
   // Handle back/forward navigation
   window.addEventListener("hashchange", () => {
