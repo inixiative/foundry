@@ -8,8 +8,8 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-10-01T01:29:29.748Z",
-    "agentSession": "0.3.0",
+    "recordedAt": "2026-10-01T01:49:52.621Z",
+    "agentSession": "0.3.1",
     "environment": "terminal"
   }
 }
