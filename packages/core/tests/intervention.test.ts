@@ -43,8 +43,12 @@ describe('InterventionLog', () => {
       b = new SignalBus();
     const onA: Signal[] = [],
       onB: Signal[] = [];
-    a.on('correction', (s) => onA.push(s));
-    b.on('correction', (s) => onB.push(s));
+    a.on('correction', (s) => {
+      onA.push(s);
+    });
+    b.on('correction', (s) => {
+      onB.push(s);
+    });
     const log = new InterventionLog();
 
     const made = await log.intervene(
