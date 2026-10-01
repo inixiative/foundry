@@ -140,12 +140,9 @@ flowchart LR
   - `docs/BOUNDARY-BENCHMARK.md`
   - `docs/DISTILLATION.md:39-62`
   - Code in the same area: `mcp/fixture-bridge.ts` (`fixture_read/write/command`) and `providers/native-launch.ts:67-73` (`withIsolatedFixture`, used from `session-adapter.ts:520`). These look like eval-run infrastructure; confirm whether Oracle should own them.
-- **Dead script:** `package.json:45` `oracle:profile` points at `packages/foundry/src/providers/oracle-profile-cli.ts`, which does not exist. Running it gives "Module not found".
-- **Lab and QA material:**
-  - `fixtures/harness-qa/`: 227 entries of QA handoff notes, which still mention `supervised` and `native-candidate`.
+- **Lab and QA material** (the dead `oracle:profile` script, the top-level `fixtures/harness-qa/` handoff notes and the `../foundry-lab` reference were removed in the follow-up cleanup):
   - `docs/validation/*.json`
   - `scripts/native-worker/` (VM prototype)
-  - `CLAUDE.md:28` (`../foundry-lab`)
 - **Duplicates agent-session:**
   - `packages/foundry/src/providers/claude-code.ts:146,224` spawns `claude` directly.
   - `providers/codex-text-provider.ts:136` spawns `codex exec` directly.
