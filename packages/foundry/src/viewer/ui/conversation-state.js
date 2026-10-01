@@ -209,6 +209,10 @@ export function mergeMessageHistory(local, server) {
   recorded.forEach((message, i) => {
     if (!used.has(i)) merged.push({ ...message, streaming: false, error: message.error ?? false, storage: "server" });
   });
+  return orderHistory(merged);
+}
+
+function orderHistory(merged) {
   // Keep the same request/response grouping as the live composer, even when
   // the journal records two overlapping turns finishing in reverse order.
   // Journal rows carry `seq`; two groups that both have one order by the journal, not by
@@ -229,6 +233,64 @@ export function mergeMessageHistory(local, server) {
       || Number(a.actor !== "user") - Number(b.actor !== "user")
       || (a.timestamp ?? 0) - (b.timestamp ?? 0);
   });
+}
+
+const rowKeys = message => {
+  const keys = identityKeys(message);
+  // A legacy row without identity is matched one-for-one by what it says and when; the
+  // labels a merge adds (storage, browserStorage) never change it.
+  return keys.length ? keys : [`row:${message.actor}:${message.timestamp}:${JSON.stringify(message.content)}`];
+};
+const isServerRow = message => message.storage === "server" && !message.browserEvidenceProjection;
+const carriesBrowserEvidence = message => message.terminalSource === "response" || isUnsavedCompletion(message) || hasBrowserOnlyEvidence(message);
+
+/** Identity keys of rows the user discarded, so no tab's merge brings them back. */
+export function discardKeys(messages) {
+  return messages.flatMap(rowKeys);
+}
+
+/** One row as two tabs hold it. A server-saved copy reconciles the other as a history load does;
+ * otherwise browser-only evidence, then completeness, then the newer timestamp wins; ties keep mine.
+ * This tab's running stream yields only to the sender's full terminal. */
+function preferRow(mine, theirs) {
+  if (mine.streaming && theirs.terminalSource !== "response") return mine;
+  if (isServerRow(mine) !== isServerRow(theirs)) {
+    const [saved, local] = isServerRow(mine) ? [mine, theirs] : [theirs, mine];
+    const merged = mergeMessageHistory([local], [saved]);
+    if (merged.length !== 1) return saved;
+    for (const row of [mine, theirs]) if (stableMessageKey(row) === stableMessageKey(merged[0])) return row;
+    return merged[0];
+  }
+  const rank = message => [Number(carriesBrowserEvidence(message)), Number(!message.browserEvidenceProjection),
+    Number(!message.streaming), message.timestamp ?? 0];
+  const a = rank(mine), b = rank(theirs);
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] > a[i] ? theirs : mine;
+  return mine;
+}
+
+/**
+ * Merge this tab's rows for a thread with what is stored for it (possibly written by another tab).
+ * Union by identity: a stored row this tab lacks is kept, never dropped for that reason. A row
+ * leaves only by reconciling into its saved server record or when its keys are in `discarded`.
+ * Returns `mine` itself when storage adds and changes nothing.
+ */
+export function mergeStoredMessages(stored, mine, discarded = new Set()) {
+  const own = Array.isArray(mine) ? mine : [];
+  const gone = message => rowKeys(message).some(key => discarded.has(key));
+  const result = own.filter(message => !gone(message));
+  let changed = result.length !== own.length;
+  const slots = new Map();
+  result.forEach((message, i) => { for (const key of rowKeys(message)) slots.set(key, [...(slots.get(key) ?? []), i]); });
+  const claimed = new Set();
+  for (const message of Array.isArray(stored) ? stored : []) {
+    if (gone(message)) continue;
+    const i = rowKeys(message).flatMap(key => slots.get(key) ?? []).find(index => !claimed.has(index));
+    if (i === undefined) { result.push(message); changed = true; continue; }
+    claimed.add(i);
+    const chosen = preferRow(result[i], message);
+    if (chosen !== result[i]) { result[i] = chosen; changed = true; }
+  }
+  return changed ? orderHistory(result) : own;
 }
 
 /**
