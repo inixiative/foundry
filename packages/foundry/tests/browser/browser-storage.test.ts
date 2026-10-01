@@ -29,10 +29,15 @@ for (const errorName of ["QuotaExceededError", "SecurityError"]) {
         await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
         await page.locator(".chat-input").waitFor();
         await page.waitForFunction(() => localStorage.getItem("foundry:msgs:main") !== null);
-        // Include a real prior browser record, not just an empty key.
-        await page.evaluate(() => localStorage.setItem("foundry:msgs:main", JSON.stringify([
-          { actor: "user", turnId: "legacy", content: "Previously saved browser history", timestamp: 1 },
-        ])));
+        // Include a real prior browser record, not just an empty key. Written before the next
+        // document's viewer boots: the live tab still writes its own copy of this key.
+        await page.addInitScript(() => {
+          if (sessionStorage.getItem("fixture:seeded")) return;
+          sessionStorage.setItem("fixture:seeded", "1");
+          localStorage.setItem("foundry:msgs:main", JSON.stringify([
+            { actor: "user", turnId: "legacy", content: "Previously saved browser history", timestamp: 1 },
+          ]));
+        });
         await page.reload();
         await page.getByText("Previously saved browser history", { exact: true }).waitFor();
         const prior = await page.evaluate((name: string) => {
