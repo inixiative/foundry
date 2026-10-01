@@ -127,9 +127,13 @@ export const stageUpdate = async (
   prepare = installRelease,
 ): Promise<UpdateResult> => {
   try {
-    await $`git -C ${repoRoot} fetch --quiet origin ${branch}`.quiet();
+    // The repo is public: fetch over HTTPS so a LaunchAgent without an SSH agent can update.
+    await $`git -c url.https://github.com/.insteadOf=git@github.com: -C ${repoRoot} fetch --quiet origin ${branch}`
+      .env({ ...process.env, GIT_TERMINAL_PROMPT: '0' })
+      .quiet();
   } catch (error) {
-    return { action: 'failed', detail: `fetch failed: ${String(error)}` };
+    const stderr = (error as { stderr?: { toString(): string } }).stderr?.toString().trim();
+    return { action: 'failed', detail: `fetch failed: ${stderr || String(error)}` };
   }
   const target = (await $`git -C ${repoRoot} rev-parse origin/${branch}`.quiet().text()).trim();
   const state = await readState(configDir);
