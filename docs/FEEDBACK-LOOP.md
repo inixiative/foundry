@@ -1,363 +1,319 @@
 # Feedback loop
 
-**Status: proposal.** Nothing in this document is built yet, and every design choice in it is open for Aron to decide. It is the design for [system map](SYSTEM-MAP.md) journey goal 8 ("process feedback captured into a middleware layer") and the measuring half of goal 9. Evidence comes from `origin/main` on 2026-09-30: Foundry `bc53278`, Oracle `b961afd`, Archive `ab3f173`, agent-session `320eee1`. A `path:line` is in Foundry unless it is prefixed with another repo's name.
+**Status: hypotheses, not a settled design.** This document covers journey goal 8 in the [system map](SYSTEM-MAP.md) ("process feedback captured into a middleware layer") and the measuring half of goal 9. Treat what follows as working hypotheses and the experiments that would test them, not as decisions.
+
+Code references point at `origin/main` as of 2026-09-30:
+
+| Repo | Commit |
+|---|---|
+| Foundry | `bc53278` |
+| Oracle | `b961afd` |
+| Archive | `ab3f173` |
+| agent-session | `320eee1` |
+
+A `path:line` with no prefix is in Foundry. References into other repos carry the repo name as a prefix, for example `oracle:src/cli.ts:218`.
 
 ## The point
 
-Models get better with each release, but they don't change how they behave. Aron gives the same process feedback over and over ("merge it yourself", "use the primitive that already exists", "do not make things backwards compatible"). The thesis is that we can make behavior change last **without retraining**. The model stays the same. What changes is the context and middleware around it:
+Models get better, but they don't change how they behave. Aron gives the same process feedback over and over, for example "merge it yourself" or "use the primitive that already exists". The thesis is that we can make that change last without retraining.
 
-1. Feedback is captured where it is given.
-2. It becomes a tagged **rule**.
-3. The rule lives in a middleware layer that every relevant session receives, and that the Wardens (Foundry's per-domain checking agents) guard against.
-4. Oracle measures whether the rule took.
+Today `~/code/inixiative/FEEDBACK-LOG.md` does this by hand: 24 tagged rules with repeat counts. Rule 1 has recurred about 28 times even though it is written into `CLAUDE.md`.
 
-**The metric is recurrence**: how often the same correction comes back after the rule is in place. Today this loop runs by hand. `~/code/inixiative/FEEDBACK-LOG.md` is a hand-kept table of 24 tagged rules with repeat counts, and rule 1 has recurred about 28 times even though it is written into `CLAUDE.md`. That count is evidence that putting a rule in text, on its own, is not enough. This design treats a recurrence as a failure of the layer that carries the rule. A rule that keeps failing moves up to stronger enforcement.
+**The metric is recurrence**: how often the same feedback comes back.
 
-## 1. The loop
+### Capture and resolution are separate
+
+Capturing feedback is cheap and safe. Deciding what to do about it is neither:
+
+- **Resolutions are not obvious.** A captured correction often doesn't say what should change, or where.
+- **Automatic action can make things worse.** Examples:
+  - a misread rule injected into every session
+  - an over-broad guard that blocks good work
+  - two rules that contradict each other
+  - a "fix" for one project that leaks into another context
+
+So the loop has two halves:
+
+- **Capture** is always on and has no side effects on behavior. It detects feedback, tags it, routes it, dedupes it, counts recurrences and stores provenance. Nothing it does changes what an agent sees.
+- **Resolution** is any change to behavior: injecting a rule, guarding against it, escalating it, or committing it to a repo. Every resolution is a separate, explicit, reversible step. **Nothing resolves automatically.** Whether some resolutions should later become automatic is itself a hypothesis to test (section 5).
 
 ```mermaid
 flowchart LR
-  subgraph capture["Capture"]
-    T["Thread message<br/>(correction, 'remember this',<br/>'again…')"]
-    I["Viewer correction form<br/>(InterventionLog)"]
-    R["PR review comments"]
-    M["Archive-mined history<br/>(backfill)"]
+  subgraph capture["CAPTURE: always on, no behavior change"]
+    S["Sources:<br/>thread messages, viewer corrections,<br/>side conversations, PR reviews,<br/>Archive history"]
+    C["Detect → classify + tag<br/>→ route (scope, destination)<br/>→ match existing item"]
+    F[("Feedback items + events<br/>(counts, provenance)")]
+    S --> C --> F
   end
-  C["Classify + tag + match<br/>(one decision call)"]
-  RS[("Rule store<br/>rules + events<br/>(Foundry memory)")]
-  L["Rules layer<br/>(pinned memory records,<br/>project / global)"]
-  W["Warden guard<br/>(rules domain)"]
-  O["Oracle<br/>recurrence rate,<br/>rule probes, held-out"]
-  T & I & R & M --> C
-  C -- "new → proposed/active rule" --> RS
-  C -- "matches rule → recurrence +1" --> RS
-  RS -- "active rules" --> L
-  L --> W
-  W -- "guard caught (prevented)" --> RS
-  RS -- "export rules + events" --> O
-  O -- "evidence: keep / escalate / retire" --> RS
+  subgraph resolution["RESOLUTION: explicit, reversible"]
+    Q["Resolution queue<br/>(viewer)"]
+    A["Chosen action:<br/>inject · guard · commit to repo · none"]
+    Q --> A
+  end
+  F --> Q
+  A -- "linked resolution" --> F
+  F -- "export" --> O["Oracle: did recurrence<br/>change after the resolution?"]
 ```
 
-Each user message is checked against the existing rules **at capture time**. A match bumps that rule's counter instead of creating a new rule. Classifying, tagging and deduping happen in one step. Over the life of a rule its counter splits into four numbers:
+## 1. Capture (always on)
 
-- **seed**: occurrences before Foundry tracked the rule
-- **before**: occurrences before the rule was active
-- **after**: recurrences while the rule was active and in the session's context
-- **caught**: violations a guard flagged before Aron had to say anything
+### 1.1 Detect
 
-## 2. Step by step: what exists, what's missing, the smallest change
+**What exists:**
 
-### 2.1 Capture
+- **Viewer correction form.** The "Correction" form in the trace drawer (`viewer/ui/detail-drawer.js:613-639`) posts to `POST /api/interventions` (`viewer/routes/runtime.ts:623-643`). That emits a `correction` signal (`packages/core/src/intervention.ts:67-107`). Two gaps:
+  - The log is kept in memory only.
+  - It is bound to the **main thread's** bus (`start.ts:422,564`).
+- **User messages** enter at `POST /api/messages/send` (`viewer/routes/runtime.ts:514-560`). Nothing inspects them for feedback.
+- **`oracle mine`** detects corrections in Claude Code transcripts. It uses an interrupt marker or an opener regex (`oracle:src/session-miner.ts:216-272`) and appends results to `.oracle/corrections.jsonl` (`oracle:src/cli.ts:218-225`). It has three gaps:
+  - no dedupe
+  - no Codex or Archive input
+  - nothing reads the file it writes
 
-**What exists**
-- **The viewer correction form.** The trace drawer has a "Correction" section (`viewer/ui/detail-drawer.js:613-639`) that posts to `POST /api/interventions` (`viewer/routes/runtime.ts:623-643`). `InterventionLog.intervene` then emits a `correction` signal with confidence 1.0 (`packages/core/src/intervention.ts:67-107`). The log itself is in memory only, capped at 1000 entries (`intervention.ts:55-64`).
-  - It is bound to the **main thread's** bus only: `start.ts:422` together with `start.ts:564`. A correction made on any other thread lands on the wrong thread.
-- **The signal sink.** Every thread signal goes to `FileMemory.signalWriter()` (`start.ts:390`, `thread-runtime.ts:1539-1550`). The sink writes it as a memory record that the thread owns, with visibility `thread` (`packages/core/src/adapters/file-memory.ts:591-614`). `correction` is a pinned kind (`file-memory.ts:48`), so the record is injected into that one thread on every turn. It never leaves the thread.
-- **Guard findings share the same signal kind.** Advisory Warden findings are emitted as `correction` too (`agents/domain-librarian.ts:953-970`). Today, guard output and human corrections are mixed together and both get pinned.
-- **User messages enter in one place:** `POST /api/messages/send` (`viewer/routes/runtime.ts:514-560`). Nothing inspects them for feedback.
-- **The MCP `foundry_signal` tool** has a `correction` kind, but it is refused on the native grant (`mcp/server.ts:372-394`).
-- **Oracle's `oracle mine`** finds corrections in Claude Code JSONL transcripts (`oracle:src/session-miner.ts:219-272`).
-  - Detection is an interrupt marker, or an opener regex like `no|don't|stop|wait|actually|instead…` (`oracle:src/session-miner.ts:216-217`).
-  - It writes `{sessionId, timestamp, before, correction, signal}` (`oracle:src/session-miner.ts:31-40`) and appends the records to `.oracle/corrections.jsonl` (`oracle:src/cli.ts:218-225`).
-  - It does not dedupe, does not read Codex transcripts, and does not read Archive. **No code reads the file.**
-- **Archive:** Foundry captures every thread as an Archive snapshot. Entry `id` is the message id and `sessionId` is the thread id (`archives/capture.ts:6-49`). Archive has no annotation or feedback records (`archive:tickets/ARC-008-retrospective-proof.md` lists that as a future feature: "find and cite actual corrections").
+**What's missing:**
 
-**What's missing**
-- Detection on the live user message.
-- Detection of explicit requests ("remember this", "from now on", "always/never").
-- Detection of **repeat markers**: "again", "I thought we…", "once and for all", "over and over". These are the strongest signal that a rule already exists and failed. Oracle's opener regex misses most of Aron's process feedback. Rule 25, "Again we shouldn't be doing composer", starts with neither an opener nor an interrupt.
-- PR review comments.
+- Live detection.
+- Explicit phrases such as "remember this", "from now on", "always" and "never".
+- Repeat markers such as "again", "I thought we…" and "once and for all". These are the strongest sign that something already failed, and the opener regex misses most of Aron's process feedback.
 
-**Smallest change**
-- **Add one Foundry piece, `FeedbackCapture`** (`agents/feedback-capture.ts`). It subscribes to accepted user turns, plus `correction` signals whose `source` starts with `operator:`.
-- **Run a deterministic prefilter first:** explicit phrases, repeat markers, Oracle's opener regex, and the interrupt marker. The regex goes into core as data so Foundry and Oracle share it. Only messages that pass the prefilter reach the classifier (2.2).
-- **Keep it off the critical path.** It runs after the turn is accepted, in parallel with the turn, and never blocks the message.
-- **Fix the InterventionLog binding.** Emit the correction on the bus of the thread the trace belongs to, not the main thread's bus.
-- **Stop pinning guard findings.** Advisory guard findings get their own kind, `guard_finding`, which is listed in `auditOnlyKinds` (`file-memory.ts:49-50`). Then `correction` means a human said it.
-- **Mine PR review comments offline** (phase 3). Use Oracle's existing GitHub source (`oracle:src/github-fixtures.ts:21-68`), with the thread-to-PR link coming from Archive's `github:` references (`archive:src/tags.ts:5-33`). Live review capture can wait until Kingdom's GitHub integration serves it.
+**Smallest change:** a new `FeedbackCapture` piece (`agents/feedback-capture.ts`).
 
-### 2.2 Classify and tag
+- It reads accepted user turns and operator corrections, after the turn is accepted and off the critical path.
+- A deterministic prefilter runs first. The prefilter regex lives in foundry-core as data, so Oracle's backfill uses the same filter.
+- Also fix the InterventionLog binding so a correction lands on its own thread's bus.
 
-**What exists**
-- `SignalKind` already names the classes: `correction | convention | taste | ci_rule | adr | security` (`packages/core/src/signal.ts:5-12`).
-- Oracle's optional LLM judge adds `category: approach|scope|convention|fact|other` (`oracle:src/session-miner.ts:421-467`).
-- FEEDBACK-LOG uses a 12-tag vocabulary: `hygiene naming merge reuse overbuild architecture data product coordination communication tooling security`. Its rows also use `process`, which is not in that list.
-- Decision roles already run on warm subscription sessions at low priority (`providers/decision-priority.ts:3`, `subscription-policy.ts:120`).
+### 1.2 Classify, tag, route
 
-**What's missing:** a classifier that returns a *rule*, not just a category.
+**What exists:**
 
-**Smallest change: one decision call per candidate**, on the existing decision profile, at `review` priority.
-- **Inputs:**
-  - the user message
-  - the previous assistant turn (bounded to the same size as the learning-review input, `domain-librarian.ts:213-218`)
-  - the ids and statements of active and proposed rules in scope
-- **Output** (validated JSON):
-  ```
-  { feedback: "none" | "process" | "convention" | "taste" | "fact",
-    explicit: boolean,            // "remember this" / "from now on" / repeat marker
-    match: ruleId | null,         // existing rule this restates
-    statement: string,            // imperative one-liner, when new
-    tags: Tag[],                  // closed list below
-    scope: "project" | "global",  // classifier's suggestion
-    confidence: number }
-  ```
-- **Tags:** the closed list is FEEDBACK-LOG's 12 tags plus `process`. It lives as an enum in code; it is not settings. `feedback: "fact"` (a task-local correction such as "the file is in src/, not lib/") is recorded as an event and never becomes a rule.
-- **Why a call and not a Warden:** a Warden's advise output is fixed to `{layers, snippets, confidence}` (`domain-librarian.ts:625`), and its learning review writes thread-private text (`ThreadKnowledge`, `domain-librarian.ts:234-310`). Neither returns a structured rule. So a new prompt and parser are unavoidable. They are small and use the same provider and priority machinery.
+- `SignalKind` already names `correction | convention | taste | ci_rule | adr | security` (`packages/core/src/signal.ts:5-12`).
+- FEEDBACK-LOG uses 12 tags, and its rows also use `process`, which is missing from that list.
+- Decision roles already run on warm subscription sessions (`providers/decision-priority.ts:3`).
 
-### 2.3 Dedupe into a rule with a recurrence counter
+**Smallest change:** one decision call per candidate message.
 
-**What exists**
-- `CorpusCompiler.ingest` dedupes only on exact content plus source (`agents/corpus-compiler.ts:137-145`). `autoPromote` groups by signal *kind*, so every correction lands in one blob (`corpus-compiler.ts:199-249`).
+- **Inputs:** the user message, the previous assistant turn (bounded like `domain-librarian.ts:213-218`), and the existing feedback items in scope.
+- **Output:** `{ feedback: none|process|convention|taste|fact, explicit, match, statement, tags, scope, destination, confidence }`.
+- **What the outputs mean:** the classifier only *suggests* `scope` and `destination`. They are labels for the resolution queue, not actions.
+- **Why this can't reuse a Warden:** a Warden's advise output is fixed at `{layers, snippets, confidence}` (`domain-librarian.ts:624-625`), and its learning review writes free text that stays private to the thread (`domain-librarian.ts:234-310`). Neither returns a structured item, so this one prompt and parser are new.
+
+### 1.3 Dedupe and count
+
+**What exists:**
+
+- `CorpusCompiler` dedupes only exact strings (`agents/corpus-compiler.ts:137-145`).
 - Oracle's `gaps` and `suggestions` count exact strings (`oracle:src/store.ts:323-411`).
-- Nothing counts the same correction recurring.
+- Nothing counts the same feedback recurring.
 
-**What's missing:** rule identity, plus a counter attached to evidence.
+**Smallest change:**
 
-**Smallest change:** the classifier's `match` field *is* the dedupe step.
-- **When it matches**, `FeedbackCapture` appends a `recurred` event to that rule.
-- **When it doesn't**, `FeedbackCapture` creates a rule and a `captured` event.
-- **Counts are derived from events**, never stored as a bare number, so every count can be traced to the messages behind it.
-- **Guarding against duplicate rules:** an exact-match check on the normalized statement runs before the rule is written. A per-project "merge rules" action in the viewer handles the rest. A merge rewrites the events onto the surviving rule and supersedes the other one.
+- The classifier's `match` field *is* the dedupe. A match appends a `recurred` event to the existing item; no match creates a new item with a `captured` event.
+- Counts are derived from events, so every count links to the messages behind it.
+- The viewer gets a manual merge action for duplicates.
 
-### 2.4 Promote into a middleware layer
+### 1.4 Store with provenance, without injecting
 
-**What exists**, and it is almost all the delivery machinery the design needs:
-- **The `memory` layer.** Every install has a `memory` layer fed by the `memory-src` file source (`viewer/config.ts:609-615`, `:654-659`).
-- **Pinned records.** Memory sources inject pinned kinds in full, never excerpted and never dropped for budget (`file-memory.ts:19-56`, `:181-200`).
-  - There is an explicit policy for an oversized pinned record (`oversizedPinned`, `file-memory.ts:33-39`).
-  - Each turn's `SourceSelectionReport` says which record ids were injected (`packages/core/src/context-layer.ts:45-62`).
-- **Visibility.** Memory records already have `thread | project | global` visibility (`packages/core/src/tools.ts:303-324`). A source exposes a scope (`viewer/config.ts:407-436`). Publishing a record wider is explicit, through `FileMemory.publish` (`file-memory.ts:456-469`). **No caller uses `publish` today.**
-- **Layer definitions vs. instances.** The comment on layer settings already separates the two: a definition change affects all future threads, an instance change affects only one (`viewer/config.ts:325-330`).
+**What exists:**
 
-**What's missing:** a rule kind, and the step that publishes a rule to project or global.
+- Foundry memory already stores scoped records (`thread | project | global`, `packages/core/src/tools.ts:303-324`).
+- Memory also separates **pinned** kinds, which are injected every turn, from **audit-only** kinds, which are retained but never injected (`packages/core/src/adapters/file-memory.ts:46-56`).
+- `correction` is a pinned kind. So today every correction signal, including advisory guard findings (`domain-librarian.ts:953-970`), is already injected into its thread every turn (`start.ts:390`). **That is an automatic resolution, and it should go.**
 
-**Smallest change**
-- **Store rules as memory records of kind `rule`,** and add `rule` to `DEFAULT_MEMORY_SELECTION.pinnedKinds` (`file-memory.ts:48`). The record's `content` is the statement, the text that gets injected. The structured fields go in `meta.rule` (section 3).
-- **Store events as kind `feedback_event`,** listed in `auditOnlyKinds`. They are kept and searchable through `foundry_memory`, but never injected.
-- **Promote with `FileMemory.publish(id, "project" | "global")`.** No new store, no new layer type and no settings migration is needed.
-- **Optionally, a dedicated layer.** A project can give rules their own layer with its own budget by declaring a second file source with `selection: { pinnedKinds: ["rule"] }`, plus a `rules` layer. This is plain configuration, using the selection override that already exists (`viewer/config.ts:430-435`).
+**Smallest change:**
 
-**Scope**
-- *Project* is the default for inferred rules.
-- *Global* is for rules Aron states as universal, or a rule that recurs in two or more projects.
-- Visibility tiers beyond that are question Q3.
+- Store feedback items as `feedback_item` and events as `feedback_event`. Both are audit-only kinds: searchable through `foundry_memory`, never injected.
+- Advisory guard findings get their own audit-only kind.
+- Capture then changes no behavior by construction.
 
-### 2.5 Delivery: inject, guard, escalate
+## 2. Routing: scope and destination
 
-**What exists**
-- **Delivery tracking.** The executor assembles every warm layer on every turn (`agents/flow-orchestrator.ts:19-24`). Each dispatch records what it delivered (`thread-runtime.ts:760`, `packages/core/src/messages.ts:77`).
-- **Guards.** A Warden guards tool calls against its warm cache layer (`domain-librarian.ts:873-930`). Wardens are config-driven: a `domain-advising` agent that owns exactly one layer (`agents/configured-experts.ts:23-60`).
-- **Guard findings** are emitted as signals (`domain-librarian.ts:953-970`).
-- **`RuleCompiler` is unused.** It describes "recompile a programmatic guard when N corrections arrive" (`domain-librarian.ts:465-494`), but `recompileOn` is never read.
+A captured item carries two routing labels. Capture only suggests them; the resolution queue is where they get decided.
 
-**What's missing**
-- A guard that knows rule ids.
-- Any check of the assistant's **reply**. Guards fire only on tool calls (`shouldGuard`, `domain-librarian.ts:647-651`), but many process rules show up in what the agent *says*, for example "want me to merge?".
-- A way to make a rule stronger when it keeps failing.
+**Scope** is a hierarchy. Each level has its own set of feedback, and a narrower level can override a wider one:
 
-**Smallest change: an escalation ladder.** Each rule has a `delivery` level. A rule moves up one level when it recurs while active. Every move is an event, and Oracle measures each level separately.
-
-| Level | Mechanism | Uses |
-|---|---|---|
-| `pinned` | Statement injected every turn in scope | Existing pinned memory (2.4) |
-| `guarded` | A configured `rules` Warden owns the `rules` layer. Its guard prompt asks for findings that cite a rule id. A cited finding becomes a `caught` event, and a critical one is pushed to the session. | Existing configured Warden, guard and `push` channel (`agent-session:src/harness-session.ts:300-309`) |
-| `structural` | The rule becomes a check that cannot be skipped: lint, CI, a grep gate (for example, a dead concept's name may not appear in new code), or a Signet. The rule record points at that check, and Foundry stops injecting the text. | Each repo's own CI. Foundry only records the link |
-
-- **Reply checks:** the `rules` Warden also reviews the final reply, in the post-turn review slot the learning review already uses (`ReviewInput` carries `userMessage` and `output`, `domain-librarian.ts:161-184`).
-- **`RuleCompiler`:** delete it now. If a `structural` regex guard is ever generated from rules, the compile step can be written then (Q5).
-
-### 2.6 Measurement (Oracle)
-
-**What exists**
-- **Compare.** `compare` averages deltas over shared fixtures only. It returns `incomparable` if any fixture is missing or none are shared (`oracle:src/store.ts:186-263`), and the CLI exits 1 on `regressed` or `incomparable` (`oracle:src/cli.ts:443-457`).
-- **Held-out splits** exist in the experiments track. There are training and held-out stages per arm (`oracle:src/experiments/schedule.ts:44-62`), and validation that training and held-out tasks differ by id, family, input digest and source (`oracle:src/experiments/schedule.ts:98-113`).
-- **Baseline vs. candidate arms** run through the runtime handler (`oracle:src/runtime/handler.ts:229-272`). The cycle injects candidate guidance (`oracle:src/experiments/cycle.ts:185-279`) and always ends `promotion: 'blocked'` (`oracle:src/experiments/cycle.ts:333-335`).
-- **`SubjectArtifact`** has `layerIds` and `contextHash` (`oracle:src/artifacts.ts:26-47`), but `oracle capture` never fills them (`oracle:src/cli.ts:351-360`).
-
-**What's missing**
-- A recurrence metric.
-- Fixtures built from corrections. Corrections are "not runnable fixtures" (`oracle:src/session-miner.ts:21-23`), and today's fixtures are PR diffs with a golden diff (`oracle:src/types.ts:13-54`), which cannot score behavior.
-- Subscription execution. Oracle runs on paid API keys only (`oracle:src/providers.ts:167-190`), and native execution is refused (`oracle:src/runtime/handler.ts:97-98`).
-
-**Smallest change, in two parts**
-
-1. **Recurrence rate from events.** This needs no model calls, so ship it first.
-   - For each rule: **before** = matched occurrences per 100 user turns in scope, before `activatedAt`.
-   - **after** = `recurred` events per 100 turns in which the rule was actually injected. The `SourceSelectionReport` gives the record ids for each turn, which is the rule's exposure count.
-   - **caught** is reported separately: a caught violation is a prevented recurrence, not a success of the text.
-   - Foundry exports `rules.json` and `events.jsonl` (`foundry rules export`), using the same on-disk interchange as `SubjectArtifact`. A new `oracle recurrence` command reads them and reports per rule and per tag.
-   - Oracle's `trends` (`oracle:src/store.ts:271-315`) already fits a slope over time and can be reused for the series.
-2. **Rule probes.** This is a new fixture kind, and it cannot be avoided.
-   - **What a probe is:** each `recurred` or `captured` event carries the assistant turn that drew the correction and the conversation before it. A probe replays that prefix with the rules layer off (baseline arm) and on (candidate arm). An LLM judge, whose criterion is the rule's statement, scores whether the reply violates the rule.
-   - **Splits:** use the experiments track's training and held-out split with `family = ruleId`. Events from the sessions used to write the statement are training. Events from later sessions are held out.
-   - **Compare:** the existing shared-fixture-only `compare` applies unchanged.
-   - **Blocker:** probes need Oracle to execute on subscription capacity (system map goal 9).
-   - **Rename:** `oracle mine` becomes `oracle mine --archive`. It reads both Claude Code and Codex history from Archive, and appends events to the rule store through the export path, deduped by `(archiveId, entryId)`.
-
-### 2.7 Retire, supersede, revoke
-
-**What exists:** `DocState` is `draft | development | active | deprecated | archived` (`corpus-compiler.ts:45-50`), with no caller. The FEEDBACK-LOG has a "Reversals to respect" section: foundry-lab, the medical demo and an old naming scheme were each introduced and later removed.
-
-**Smallest change:** a rule's `status` is one of `proposed | active | superseded | revoked | retired`.
-- **Supersede:** used for reversals. A new rule lists `supersedes: [oldId]`. The old rule stops being injected but keeps its events, so "the latest word wins" is structural.
-- **Revoke:** Aron says the rule was wrong. One click in the viewer. The events are kept as evidence that the classifier misfired.
-- **Retire:** the rule is no longer needed as text, because it has moved to `structural` delivery or the code it guarded against is gone.
-  - Foundry *proposes* retirement when there are zero recurrences over 60 days of exposure and the rule has a structural link.
-  - It never retires a rule automatically. Retiring a rule that is working is how regressions come back.
-
-### 2.8 What not to wire
-
-- **`CorpusCompiler`** (`agents/corpus-compiler.ts`, exported but never constructed outside tests).
-  - It is a second, in-memory knowledge store with its own tier vocabulary (`CorpusTier`, `corpus-compiler.ts:76-80`) that runs parallel to memory visibility.
-  - Its `ingestFromSignalBus` (`corpus-compiler.ts:148-163`) would ingest *every* signal, guard findings and dispatches included.
-  - Wiring it would build exactly the parallel machinery FEEDBACK-LOG rule 4 warns against. Keep its two good ideas: the lifecycle states (2.7) and the hash over a compile manifest. Then delete it (Q5).
-- **`docs/DISTILLATION.md`** specifies a much larger target (Message → AnalysisPass → ArtifactVersion → CorpusSnapshot → OracleRun, with clusters, summaries and proposals). This design is the smallest slice of that same ladder:
-  - rule = artifact
-  - event = lineage
-  - escalation = side rungs
-  - The rest should be built only when it earns its place.
-- **The Librarian's thread state** only logs corrections as activity (`agents/librarian.ts:197-199`). That stays as it is. Rules do not belong in per-thread state.
-
-## 3. Data model and where it lives
-
-**A rule** is a memory record:
-- `kind: "rule"`
-- `content` = the statement
-- `owner: { projectId }`
-- `visibility: "project" | "global"`
-- the remaining fields in `meta.rule`:
-
-```ts
-interface FeedbackRule {
-  id: string;                 // newId("rule"); never reused
-  statement: string;          // imperative, one line; the injected text
-  rationale?: string;         // Aron's words, quoted, bounded
-  tags: FeedbackTag[];        // closed enum: hygiene naming merge reuse overbuild architecture data
-                              // product coordination communication tooling security process
-  class: "process" | "convention" | "taste";
-  status: "proposed" | "active" | "superseded" | "revoked" | "retired";
-  delivery: "pinned" | "guarded" | "structural";
-  structural?: { repo: string; check: string }; // e.g. CI job or lint rule that now enforces it
-  supersedes: string[];
-  supersededBy?: string;
-  origin: "explicit" | "inferred" | "intervention" | "review" | "seed" | "mined";
-  seedCount?: number;         // historical count with no event evidence (FEEDBACK-LOG seeds only)
-  revision: number;           // bumped on statement edits; edits are events
-  createdAt: number; activatedAt?: number; updatedAt: number;
-}
+```
+global
+  └─ context (personal · inixiative · UserEvidence)
+       └─ project (a repo within that context)
 ```
 
-**An event** is a memory record: `kind: "feedback_event"`, audit-only, with the same owner as the thread where it happened.
+- Foundry memory already has `project` and `global` visibility, and publishing from one to the other is explicit through `FileMemory.publish` (`file-memory.ts:456-469`). Nothing calls `publish` today.
+- **The context level is missing.** The likely key is the Kingdom owner that a project's integrations already bind to (`viewer/config.ts:407-436`).
+- Without a context level, a rule like "merge it yourself" either leaks into UserEvidence projects or has to be copied into every inixiative project.
+
+**Destination** is where a resolution would live:
+
+| Destination | Reaches | Review path |
+|---|---|---|
+| Foundry memory (pinned `rule` record) | Foundry sessions in that scope | Viewer; undo is a click |
+| Committed to the repo (`CLAUDE.md`/`AGENTS.md`, docs, lint/CI rule) | Every session and every teammate, including sessions outside Foundry | A PR; undo is a revert |
+| Tracked only | Nobody | Nothing changes; the item keeps counting |
+
+Some feedback belongs in the repo, for example a project convention that CI could enforce. Some is personal or about process and belongs in memory. Which destination fits which kind of feedback is an open question (section 6).
+
+## 3. Resolution (separate, explicit, reversible)
+
+Resolution starts from a queue in the viewer. The queue shows items ranked by recurrence, along with their routing labels and the messages behind them. A person, or later possibly an agent with a person approving, chooses an action. Each action is recorded as a `resolution` linked to the item and can be undone.
+
+**What exists for each possible action:**
+
+- **Inject.**
+  - A pinned memory record of kind `rule` would be injected on every turn in its scope (`file-memory.ts:181-200`).
+  - Each turn's `SourceSelectionReport` records which records were injected (`packages/core/src/context-layer.ts:45-62`). That gives an exposure count for measurement.
+- **Guard.**
+  - A configured Warden that owns a `rules` layer guards tool calls against that layer (`agents/configured-experts.ts:23-60`, `domain-librarian.ts:873-930`).
+  - Guards don't see the assistant's reply (`domain-librarian.ts:647-651`), although the post-turn review slot does (`domain-librarian.ts:161-184`).
+- **Commit to the repo.** A PR against the project's own `CLAUDE.md`, docs or CI. Foundry records the link and never edits a shared checkout.
+- **Supersede, revoke, retire.** A reversal supersedes the old rule. A wrong rule is revoked. A rule whose need disappeared, because the code is gone or a check enforces it now, is retired. All of these are explicit. `DocState` in `CorpusCompiler` (`corpus-compiler.ts:45-50`) describes the same lifecycle, but nothing calls it.
+
+**Not wired:**
+
+- `RuleCompiler.recompileOn` (`domain-librarian.ts:465-494`) is never read.
+- `CorpusCompiler.ingestFromSignalBus` (`corpus-compiler.ts:148-163`) would ingest every signal and would be a parallel store.
+- Both are candidates for deletion. Wiring either one would build automatic resolution.
+
+## 4. Measurement: what Oracle would measure
+
+Measurement turns the hypotheses below into evidence. It reads Foundry's exported items, events and resolutions (`foundry feedback export`), using the same on-disk interchange as `SubjectArtifact` (`oracle:src/artifacts.ts:26-47`).
+
+- **Recurrence rate, with no model calls.** For each item, count recurrences per 100 turns in scope, before and after a resolution. For an injected rule, "after" counts only turns where the rule was actually injected.
+  - Guard catches are counted separately.
+  - Oracle's `trends` (`oracle:src/store.ts:271-315`) can fit the slope.
+- **Feedback probes, a new fixture kind that can't be avoided.**
+  - Each event carries the assistant turn that drew the feedback and the turns before it.
+  - A probe replays that prefix with and without a candidate resolution. An LLM judge scores the reply against the item's statement.
+  - Two existing Oracle pieces carry over unchanged: the training/held-out split, with `family = itemId` (`oracle:src/experiments/schedule.ts:44-62,98-113`), and the shared-fixture-only `compare`, whose `incomparable` verdict also carries over (`oracle:src/store.ts:186-263`).
+  - Probes are blocked until Oracle runs on subscription capacity (system map goal 9; today `oracle:src/providers.ts:167-190` requires API keys).
+- **Attribution by model and effort.** "This keeps recurring" means different things on different models and reasoning-effort levels. Archive snapshots don't record either one today (`archive:src/index.ts:6-35`, a strict schema). Archive should carry **model and effort level per session and per turn**, so Oracle can split recurrence by model and effort. The Archive owner (inixiative-88) is being asked to add this. Foundry's capture would then fill those fields (`archives/capture.ts:6-49`).
+
+## 5. Hypotheses to test
+
+| # | Hypothesis | Experiment that decides it |
+|---|---|---|
+| H1 | Injecting a rule as text lowers its recurrence | Before/after recurrence rate on injected turns; probes with the rule on vs off, on held-out events |
+| H2 | Text alone stops working for some kinds of feedback (FEEDBACK-LOG rule 1 suggests so); a guard or a repo check does better | For items that still recur while injected, compare guard and structural resolutions against injection |
+| H3 | Some resolutions are safe to apply automatically (for example explicit "remember this", project scope, memory destination) | Run manual resolution first. Measure how often a person reverts or edits a proposed resolution, and automate only the classes with a near-zero revert rate |
+| H4 | Committing to the repo lasts longer than Foundry memory | Compare recurrence for items resolved into `CLAUDE.md`/CI with items resolved into memory, including sessions run outside Foundry |
+| H5 | Recurrence depends on model and effort | Split recurrence by the model and effort recorded in Archive |
+| H6 | Automatic escalation (for example, two recurrences turn an injected rule into a guarded one) helps more than it hurts | Only after H2. Escalate a test set by hand and measure false-positive guard findings against recurrence prevented |
+
+## 6. Data model
+
+Capture and resolution use separate records. All of them are audit-only memory records, so none of them is ever injected.
 
 ```ts
-interface FeedbackEvent {
-  id: string;                 // newId("fbe")
-  ruleId: string | null;      // null = classified "fact" or rejected
-  type: "captured" | "recurred" | "caught" | "proposed" | "activated" | "edited"
-      | "escalated" | "superseded" | "revoked" | "retired" | "merged";
+interface FeedbackItem {            // kind: "feedback_item"
+  id: string;                       // newId("fb")
+  statement: string;                // what the feedback says, one line
+  tags: FeedbackTag[];              // FEEDBACK-LOG's 12 + process; closed enum in foundry-core
+  class: "process" | "convention" | "taste" | "fact";
+  scope: { level: "global" | "context" | "project"; contextId?: string; projectId?: string };
+  destination?: "memory" | "repo" | "none";   // suggested until resolved
+  origin: "explicit" | "inferred" | "intervention" | "side-conversation" | "review" | "seed" | "mined";
+  seedCount?: number;               // FEEDBACK-LOG count with no event evidence
+  status: "open" | "resolved" | "superseded" | "dismissed";
+}
+
+interface FeedbackEvent {           // kind: "feedback_event"
+  id: string; itemId: string | null;
+  type: "captured" | "recurred" | "caught" | "merged" | "edited";
   at: number;
   ref: { threadId?: string; turnId?: string; messageId?: string; projectId?: string;
-         archive?: { archiveId: string; revision: number; entryId: string };
-         github?: string };   // "github:o/r#n"
-  quote?: string;             // the user's words, scrubbed, ≤1000 chars
-  before?: string;            // preceding assistant excerpt, ≤2000 chars (probe material)
-  injected?: boolean;         // was the rule in this turn's SourceSelectionReport
-  classifier?: { providerId: string; model?: string; confidence: number; requestHash: string };
-  actor: string;              // "operator:<name>", "classifier", "guard:<domain>", "oracle"
+         archive?: { archiveId: string; revision: number; entryId: string }; github?: string };
+  model?: string; effort?: string;  // from the session, when Archive carries it
+  quote?: string; before?: string;  // bounded and scrubbed; material for probes
+  injected?: string[];              // resolution ids active in this turn
+  classifier?: { providerId: string; confidence: number; requestHash: string };
+}
+
+interface FeedbackResolution {      // kind: "feedback_resolution"
+  id: string; itemId: string;
+  action: "inject" | "guard" | "repo" | "none";
+  target: string;                   // rule record id, Warden id, or PR URL
+  scope: FeedbackItem["scope"];
+  decidedBy: string; at: number;
+  status: "active" | "reverted" | "superseded" | "retired";
 }
 ```
 
-**Where each piece lives**, following the system map's boundaries:
+**Where each record lives:**
 
-| Data | Home | Why |
-|---|---|---|
-| Rules and events | Foundry memory (`.foundry/memory`, `start.ts:312`) | Foundry owns context layers and middleware. Memory already provides scope, pinning and injection evidence. No new store |
-| Session evidence | Archive. Foundry adds `rule:<id>` and `feedback:<tag>` to `thread.meta.tags`, which capture already copies (`archives/capture.ts:46`) | Archive owns capture and search. "Every session where rule X recurred" becomes a tag search (`archive:src/server.ts:74-124`) |
-| Measurement | Oracle reads Foundry's export files | Oracle owns evaluation. Neither app imports the other's machinery |
-| Kingdom | Nothing for now | Kingdom is the connector. See Q4 for multi-Foundry |
+- **Items, events and resolutions:** Foundry memory (`.foundry/memory`, `start.ts:312`), since Foundry owns context and middleware.
+- **Session evidence:** stays in Archive. Foundry adds `feedback:<id>` to `thread.meta.tags`, which capture already copies (`archives/capture.ts:46`).
+- **Oracle:** reads the export.
+- **Kingdom:** stores nothing.
+- **Sharing across Foundries:** an open question. One option is the context's Archive. The Archive branch `feat/actors-references` adds tag definitions and references, and `archive:tickets/ARC-008-retrospective-proof.md` already asks for "find and cite actual corrections".
 
-The classifier prompt, the prefilter regex and the `FeedbackTag` enum are data, so they go in foundry-core. Foundry (live) and Oracle (backfill) then match against the same definitions, which is the dependency direction Oracle already uses.
+## 7. Seeding
 
-## 4. Seeding
+1. **Import FEEDBACK-LOG.** `foundry feedback import FEEDBACK-LOG.md` creates one item per row, with `origin: "seed"`, `seedCount` and its tags. Rows already marked Done are imported with a `repo` or `none` resolution that points at where they were done. **Import creates no injections.**
+2. **Backfill.** Run the matcher over Sept 11–30 Archive history (Claude Code and Codex) to turn the hand counts into cited `recurred` events. This also gives the "before" rate.
+3. **Reconcile with CLAUDE.md.** Rules in `~/code/inixiative/CLAUDE.md` that match an item are recorded as existing `repo` resolutions. That is what they are, and it lets H4 be measured from day one.
 
-1. **Import FEEDBACK-LOG.md.** Run `foundry rules import FEEDBACK-LOG.md`, one rule per row.
-   - It sets `origin: "seed"`, `seedCount` from the Count column (so "~28" becomes 28 and "several" becomes unknown), `tags` from the Tags column (adding `process` to the enum), and `status: "active"`.
-   - Rows marked "Done" (6, 12, 18, 20) are imported as `retired`, with a `structural` link wherever the removal is enforced.
-   - Rows about a single app (13, 17, 25) go in at project scope. Cross-repo rows go in at global scope, or at inixiative-context scope once Q3 lands.
-2. **Backfill evidence from Archive.** Run the matcher over Sept 11–30 history in the local Archive. Claude Code and Codex collectors already capture it.
-   - Each match becomes a `recurred` event with an `archive` reference and `injected: false`.
-   - This turns the hand counts into cited events. It also gives the *before* rate that every later comparison needs.
-3. **Use the reconstructed rules in `~/code/inixiative/CLAUDE.md`.** They come from the same transcripts and seed the statements. Where a CLAUDE.md line and a FEEDBACK-LOG row say the same thing, one rule results, and the CLAUDE.md wording becomes the statement.
-4. **From then on the files are generated:** `foundry rules export --md` regenerates the FEEDBACK-LOG table and the rules section of CLAUDE.md. Sessions outside Foundry still get the rules, and nobody keeps the log by hand.
+## 8. Side conversations (idea)
 
-## 5. Open questions for Aron (with a recommendation for each)
+Sometimes Aron wants to give feedback about a thread, or discuss how something should work, without putting that into the thread's own context. A side conversation would be a fork-like thread that **refers to** the current thread without being part of it. Anything said there is captured with `origin: "side-conversation"` and a reference to the parent thread and turn.
 
-1. **Should a captured rule be injected immediately, or wait for approval?**
-   - *Recommend:* explicit feedback ("remember this", "from now on", or a repeat marker) goes **active at project scope immediately**. The viewer shows it on the message with a one-click undo.
-   - Inferred feedback stays `proposed` and is not injected until it recurs once more, or until you accept it. A recurrence while proposed counts as evidence, not as a failure.
-   - This keeps you out of babysitting without injecting misreadings everywhere.
-2. **When does a rule become global?**
-   - *Recommend:* never silently. Foundry proposes it when the same rule recurs in two or more projects, or when you say "everywhere". Accepting takes one click.
-3. **Which visibility tiers?** Memory has `thread/project/global`. `CorpusCompiler` has `personal_private/…/org`. Kingdom has owners.
-   - *Recommend:* drop `CorpusTier`.
-   - Add one scope between project and global: the **context** (personal / inixiative / UserEvidence), keyed by the Kingdom owner that a project's integrations already bind to (`viewer/config.ts:409`).
-   - Without it, "merge it yourself" leaks into UserEvidence projects, or has to be copied into every inixiative project.
-4. **Where do rules live when you have more than one Foundry?**
-   - *Recommend:* Foundry-local until a second Foundry is actually in use.
-   - After that, context-scoped rules and events sync through that context's Archive, as tag definitions with descriptions plus references on entries. The `feat/actors-references` branch adds both (`tag_definitions`, `references`), and ARC-008 already wants "find and cite actual corrections".
-   - Kingdom stays a connector.
-5. **Should unused machinery be deleted?**
-   - *Recommend:* delete `RuleCompiler`, the `compiler` fields of `ProcessingStrategy`, and `CorpusCompiler`, in the same PR as phase 1. Nothing calls them, and they suggest a design this one replaces.
-6. **What counts as "the same" correction?**
-   - *Recommend:* the classifier's judgment that the message restates the rule's intent, not its wording, with confidence ≥ 0.7. A low-confidence match is recorded as `captured` on a new proposed rule, linked as a candidate duplicate.
-   - Over-merging hides a failure. Under-merging only splits a count, and a viewer merge fixes that.
-7. **How hard should a rule escalate on recurrence?**
-   - *Recommend:* `pinned` to `guarded` after **2** recurrences while injected. `guarded` to *proposing* `structural` after 2 more.
-   - A structural check is always a PR you approve, never automatic.
-8. **Should rules also be written to CLAUDE.md?**
-   - *Recommend:* yes, generated from the store (seeding step 4). Claude Code and Codex sessions started outside Foundry should not lose the rules.
-   - The cost is double injection inside Foundry. Foundry can skip rules that the session's native CLAUDE.md already carries, since Claude Code loads CLAUDE.md natively, by comparing hashes.
+What Foundry already has:
 
-## 6. Phased build plan
+- **Parent links.** `ThreadMeta.parentThreadId` (`packages/core/src/thread.ts:30-31`, set at `:175`) links a child thread to its parent.
+- **A fork route.** `POST /api/threads/:id/fork` (`viewer/routes/runtime.ts:851-930`) creates a child thread in the same project, with its own stack and memory scope, and copies messages. It returns 501 when the local session store is active (`runtime.ts:865`), and that is the normal path.
+- **A side chat.** The Foundry "self-chat" (`viewer/foundry-self-chat.ts:12-18`, `viewer/routes/control.ts:511-545`) is a single long-lived side chat about the Foundry install. It has a `focus` of project, layer, agent or source, but not a thread or turn.
 
-**Phase 1: a correction in a thread becomes a rule, and the next recurrence shows up as a count.** Foundry only. This is the slice you can feel.
-- `FeedbackCapture`: the prefilter plus one classifier call on the decision profile, run after a turn is accepted.
-- Rules and events as memory records (`rule` pinned, `feedback_event` audit-only), at project scope. Explicit feedback goes active immediately, inferred feedback is proposed (Q1).
-- Fixes that come with it:
-  - InterventionLog emits on the target thread's bus.
-  - Guard findings get `guard_finding` instead of `correction`.
-  - `rule` is added to the pinned kinds.
+**Smallest version:** add a `thread`/`turn` focus to the side chat, or a "discuss" fork that holds a reference instead of copying messages. Either way, messages there go through capture like any other. Which shape is right is open.
+
+## 9. Open questions
+
+Each answer below is the leaning to test, not a decision.
+
+1. **Which resolutions, if any, should ever be automatic?** Leaning: none until H3 has data.
+2. **Which destination fits which kind of feedback?** Leaning: conventions CI can check go to the repo; personal and process feedback goes to memory. Test it with H4.
+3. **How should contexts be keyed, and can a project override its context?** Leaning: by the Kingdom owner, with the narrower scope winning.
+4. **What counts as "the same" feedback?** Leaning: the same intent at classifier confidence ≥ 0.7. Below that, create a linked candidate duplicate. Over-merging hides failures.
+5. **How do feedback sets sync across several Foundries?** Leaning: keep them local until a second Foundry exists, then sync through the context's Archive.
+6. **What shape should a side conversation take?** A thread-focused side chat, or a fork that holds only a reference.
+7. **Should `RuleCompiler` and `CorpusCompiler` be deleted?** Leaning: yes. Neither has a caller, and both point toward automatic resolution.
+
+## 10. Phases
+
+**Phase 1: capture and visibility. Resolution stays manual.**
+
+- `FeedbackCapture` runs the prefilter and the classifier call, and stores items and events as audit-only records with provenance and routing labels.
 - Viewer:
-  - A chip on the user message: "rule captured", or "↻ recurred: *merge approved work yourself* ×3".
-  - A project **Rules** panel with statement, tags, status, and the before / after / caught counts. It has undo, edit, revoke and merge actions, and each count links to the messages behind it.
-- `foundry rules import` seeds the 24 FEEDBACK-LOG rules into the Foundry project.
-- Tests: a recorded thread where a correction creates a rule, the rule is injected on the next turn (shown by the selection report), and a restated correction bumps `recurred` instead of creating a second rule.
-- Delete `RuleCompiler` and `CorpusCompiler` (Q5).
+  - a chip on the message: "feedback captured" or "↻ recurred ×3"
+  - a project **Feedback** panel showing each item's count, the messages behind it, and its tags, scope and destination labels
+  - edit, merge and dismiss actions
+- Fixes:
+  - InterventionLog uses the right thread's bus.
+  - Corrections and guard findings stop being pinned.
+- `foundry feedback import` seeds the FEEDBACK-LOG rows.
+- Any resolution is done by hand (a pinned record, or a PR) and recorded as a `resolution`, so the before/after counts start accumulating.
 
-**Phase 2: scope and evidence.**
-- Global scope, and context scope if Q3 is accepted.
-- `rule:` and `feedback:` tags flow into Archive.
-- Backfill from Archive (seeding step 2).
-- `foundry rules export` (JSON plus `--md`). FEEDBACK-LOG.md and the CLAUDE.md rules section become generated.
+**Phase 2:**
 
-**Phase 3: enforcement.**
-- A configured `rules` Warden with a rule-citing guard prompt, guarding tool calls and also reviewing the final reply.
-- `caught` events, and the escalation ladder with its thresholds (Q7).
-- Offline PR review comments, through Oracle's GitHub source.
+- context scope
+- Archive backfill
+- `feedback:` tags in Archive
+- `foundry feedback export`
+- side conversations
 
-**Phase 4: proof.** Oracle.
-- `oracle recurrence` reports before and after rates per rule and per tag, using no model calls.
-- Rule probes as a fixture kind, with training and held-out splits by rule and baseline vs. candidate through `compare`.
-- `oracle mine --archive` replaces the raw transcript miner.
-- Blocked on Oracle running on subscription capacity (system map goal 9).
+**Phase 3:**
 
-**Phase 5: more than one Foundry.**
-- Context rules sync through the context's Archive (Q4).
+- a resolution queue with one-click inject/guard/PR actions
+- a `rules` Warden that cites rule ids
+- recurrence reports in Oracle
+
+Every resolution is still explicit.
+
+**Phase 4:**
+
+- Oracle probes, held-out splits and attribution by model and effort
+- automating only the resolution classes the evidence supports (H3, H6)
 
 ## Findings to fix regardless
 
-- **Guard findings are pinned.** Advisory guard findings are emitted as `correction` (`domain-librarian.ts:955`) and written as pinned memory, so every one of them is injected into its thread on every later turn (`file-memory.ts:48`, `start.ts:390`).
-- **Viewer corrections hit the wrong thread.** The viewer's corrections always go to the main thread's bus, whatever thread the trace belongs to (`start.ts:422,564`).
-- **`oracle mine` duplicates and never reads its output.** It appends duplicates on every run, and nothing reads the file (`oracle:src/cli.ts:218-225`).
-- **Session fixtures overwrite each other.** Session-mined fixtures from different sessions collide on `session__<repo>__<n>.json` (`oracle:src/session-miner.ts:351-358` with `oracle:src/fixture-store.ts:97-100`).
-- **Importers skip `turnId`.** Archive's Claude and Codex importers never set it (`archive:src/import.ts`), so references from mined history must use `(archiveId, revision, entryId)`.
+- **Guard findings are pinned.** Advisory guard findings are emitted as `correction` signals (`domain-librarian.ts:955`). Because `correction` is a pinned kind, each finding is injected into its thread on every later turn (`file-memory.ts:48`, `start.ts:390`).
+- **Viewer corrections go to the wrong thread.** They always land on the main thread's bus (`start.ts:422,564`).
+- **`oracle mine` writes duplicates nobody reads.** It appends the same corrections on every run, and nothing reads `corrections.jsonl` (`oracle:src/cli.ts:218-225`).
+- **Session-mined fixtures overwrite each other.** Fixtures from different sessions get the same name, `session__<repo>__<n>.json` (`oracle:src/session-miner.ts:351-358`, `oracle:src/fixture-store.ts:97-100`).
+- **Imported sessions have no `turnId`.** Archive's Claude and Codex importers never set it, so references into mined history have to use `(archiveId, revision, entryId)`.
