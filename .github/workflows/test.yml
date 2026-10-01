@@ -14,8 +14,8 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      # Replay-only; the freshness check fails stale, unblessed, leaking or unreviewed cassettes.
-      - run: bun run test
+      - run: bunx inixiative-config check .
+      # typecheck, lint, then the replay-only suites; the freshness check fails stale, unblessed, leaking or unreviewed cassettes.
+      - run: bun run check
       - run: bunx playwright install --with-deps chromium
       - run: bun run test:browser
