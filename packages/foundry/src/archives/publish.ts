@@ -1,7 +1,7 @@
 // Native authentication adapter. Preserve standalone Archive's durable outbox/replay semantics.
 
+import type { LocalArchiveStore } from '@inixiative/archive/local';
 import type { CredentialReference, CredentialResolver } from '@inixiative/foundry-core';
-import type { LocalArchiveStore } from '@inixiative/session-archive/local';
 import { z } from 'zod';
 import { FoundryCredentials } from '../providers/credentials';
 import { RUNTIME_SECRET_PREFIX } from '../providers/kingdom-secrets';

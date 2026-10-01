@@ -29,9 +29,9 @@
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
         "@inixiative/agent-session": "^0.3.1",
+        "@inixiative/archive": "^0.6.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.4",
-        "@inixiative/session-archive": "npm:@inixiative/archive@^0.5.1",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@prisma/client": "^6.6.0",
         "bullmq": "^5.73.0",
@@ -96,6 +96,8 @@
 
     "@inixiative/agent-session": ["@inixiative/agent-session@0.3.1", "", {}, "sha512-A6NL4ZJkB46YEEJxcXEwggxk8McO9T4QOS+YO7k57bkZRBfcREFW/sS2OJ1n65KQIZ8U3fbHgRmEMs73stUw1w=="],
 
+    "@inixiative/archive": ["@inixiative/archive@0.6.0", "", { "dependencies": { "js-tiktoken": "1.0.21", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-H5s6nuxJEzQFwEedR6GR2AyEFMF7dK4FlabYN+GDmJ1196Efpv8Qa0f7pb64jkmjv1+iVTW8R8lVeQY1kZh1tA=="],
+
     "@inixiative/config": ["@inixiative/config@0.5.42", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-ml9zKmsp3l3QXY2Kw/1ITFreYheRah/5TRPY9Ze9f8ia9c/QrsQ372Hlq3uyIHeezhJpuU4Nv058svwgtTiF+g=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
@@ -103,8 +105,6 @@
     "@inixiative/foundry-core": ["@inixiative/foundry-core@workspace:packages/core"],
 
     "@inixiative/gloss": ["@inixiative/gloss@0.0.4", "", { "peerDependencies": { "typescript": ">=5.9.0" }, "bin": { "gloss": "dist/cli.js" } }, "sha512-X1Y+Y0KT8aCr/IqxR5rPjjmjD0WIiXxdmL0hKOQUhBT1CiCFHOz8KZLtzPppVAPt4zx3xE+XySmnwjrgxD4rug=="],
-
-    "@inixiative/session-archive": ["@inixiative/archive@0.5.1", "", { "dependencies": { "js-tiktoken": "1.0.21", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-ysh5+qnMBrHp448B4URiM0QXKx1bKOZmeatKNa/lVA4AuUqcyuYAGBR6jgIE5B6HsEuoGKRQMpl+Q9Q6mj1ZMA=="],
 
     "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
 

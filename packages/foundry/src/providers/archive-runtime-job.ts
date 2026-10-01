@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { archiveSnapshotSchema } from '@inixiative/session-archive';
-import { LocalArchiveStore } from '@inixiative/session-archive/local';
+import { archiveSnapshotSchema } from '@inixiative/archive';
+import { LocalArchiveStore } from '@inixiative/archive/local';
 import type { RuntimeJob, RuntimeJobState } from './runtime-job-contracts';
 
 export async function archiveRuntimeJob(

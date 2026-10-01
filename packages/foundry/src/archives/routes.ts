@@ -1,6 +1,6 @@
 import { join } from 'node:path';
+import { LocalArchiveStore } from '@inixiative/archive/local';
 import type { EventStream } from '@inixiative/foundry-core';
-import { LocalArchiveStore } from '@inixiative/session-archive/local';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { LocalSessionStore } from '../persistence/local-session-store';

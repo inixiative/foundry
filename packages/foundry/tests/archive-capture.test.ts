@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
+import { LocalArchiveStore } from '@inixiative/archive/local';
+import { startArchiveServer } from '@inixiative/archive/server';
 import { EventStream } from '@inixiative/foundry-core';
-import { LocalArchiveStore } from '@inixiative/session-archive/local';
-import { startArchiveServer } from '@inixiative/session-archive/server';
 import { ArchiveCapture, captureThread } from '../src/archives/capture';
 import { ArchiveContextSource } from '../src/archives/context-source';
 import { publishArchive } from '../src/archives/publish';
@@ -273,7 +273,7 @@ test('an upload with a lost acknowledgment is replayed before newer captured con
   // Widened: the transport closure assigns it, which control-flow narrowing cannot see.
   let head = null as string | null;
   const received: string[] = [];
-  const { snapshotDigest } = await import('@inixiative/session-archive');
+  const { snapshotDigest } = await import('@inixiative/archive');
   const transport = (async (_url: unknown, init: RequestInit) => {
     const body = JSON.parse(init.body as string),
       hash = snapshotDigest(body.snapshot);

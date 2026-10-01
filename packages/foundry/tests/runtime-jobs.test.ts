@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalArchiveStore } from '@inixiative/session-archive/local';
+import { LocalArchiveStore } from '@inixiative/archive/local';
 import { z } from 'zod';
 import { RuntimeJobRegistry } from '../src/providers/runtime-job-handler';
 import { lockRuntimeJob } from '../src/providers/runtime-job-lock';

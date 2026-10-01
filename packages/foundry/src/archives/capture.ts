@@ -1,10 +1,10 @@
-import type { EventStream } from '@inixiative/foundry-core';
 import {
   type ArchiveEntry,
   type ArchiveSnapshot,
   archiveSnapshotSchema,
-} from '@inixiative/session-archive';
-import type { LocalArchiveStore } from '@inixiative/session-archive/local';
+} from '@inixiative/archive';
+import type { LocalArchiveStore } from '@inixiative/archive/local';
+import type { EventStream } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 
 export function captureThread(

@@ -23,7 +23,7 @@
     "demo": "bun run src/demo.ts"
   },
   "dependencies": {
-    "@inixiative/session-archive": "npm:@inixiative/archive@^0.5.1",
+    "@inixiative/archive": "^0.6.0",
     "@anthropic-ai/claude-code": "^2.1.92",
     "@bull-board/api": "^6.20.7",
     "@bull-board/hono": "^6.20.7",

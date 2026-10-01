@@ -10,8 +10,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { startArchiveServer } from '@inixiative/archive/server';
 import { EventStream } from '@inixiative/foundry-core';
-import { startArchiveServer } from '@inixiative/session-archive/server';
 import { Hono } from 'hono';
 import { captureThread } from '../src/archives/capture';
 import { ArchiveContextSource } from '../src/archives/context-source';
