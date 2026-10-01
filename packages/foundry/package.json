@@ -11,7 +11,8 @@
     "./viewer": "./src/viewer/index.ts",
     "./jobs": "./src/jobs/index.ts",
     "./tools": "./src/tools/index.ts",
-    "./runtime": "./src/runtime/index.ts"
+    "./runtime": "./src/runtime/index.ts",
+    "./kingdom": "./src/kingdom/index.ts"
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
