@@ -25,7 +25,7 @@ export interface RuntimeJobContext {
   readonly settings: KingdomInstallation;
   /** Private 0700 job directory, created and ownership-checked by the worker. */
   readonly directory: string;
-  /** Private runtime root holding the installation credential and the local Archive. */
+  /** Private runtime root holding the installation credential. */
   readonly runtimeDirectory: string;
   readonly request: RuntimeJobRequest;
   readonly stopped: () => boolean;

@@ -187,7 +187,7 @@ export async function disconnectKingdom(store: ConfigStore, selector?: string) {
   return { id: kingdomRuntimeId(runtime), ...runtime };
 }
 
-/** A local viewer answering on its port holds settings and archive routing in memory until restarted. */
+/** A local viewer answering on its port holds settings in memory until restarted. */
 export async function viewerRunning(
   port = Number(process.env.VIEWER_PORT ?? 4500),
   transport: typeof fetch = fetch,

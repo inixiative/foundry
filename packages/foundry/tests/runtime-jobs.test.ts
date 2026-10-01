@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalArchiveStore } from '@inixiative/archive/local';
 import { z } from 'zod';
+import { archiveRuntimeJob } from '../src/providers/archive-runtime-job';
+import { runtimeJobSchema } from '../src/providers/runtime-job-contracts';
 import { RuntimeJobRegistry } from '../src/providers/runtime-job-handler';
 import { lockRuntimeJob } from '../src/providers/runtime-job-lock';
 import { RuntimeJobWorker } from '../src/providers/runtime-job-worker';
+import { startFakeArchive } from './helpers/fake-archive';
 
 const stubFetch = (
   respond: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
@@ -32,6 +34,10 @@ const privateRuntime = async () => {
 test('local Archive failure retries receipt persistence before reporting completion', async () => {
   const { directory, credentialFile } = await privateRuntime();
   const job = connectionJob();
+  const archive = startFakeArchive();
+  const environment = { url: process.env.ARCHIVE_URL, token: process.env.ARCHIVE_TOKEN };
+  process.env.ARCHIVE_URL = archive.url;
+  process.env.ARCHIVE_TOKEN = archive.token;
   let reports = 0;
   const transport = stubFetch(async (url: string | URL | Request) => {
     const path = new URL(String(url)).pathname;
@@ -43,23 +49,35 @@ test('local Archive failure retries receipt persistence before reporting complet
     transport,
   );
   try {
-    await writeFile(join(directory, 'archives'), 'blocked');
+    archive.fail(true);
     await expect(worker.check()).rejects.toThrow();
     expect(reports).toBe(0);
-    await unlink(join(directory, 'archives'));
+    archive.fail(false);
     await worker.check();
     expect(reports).toBe(1);
-    const store = new LocalArchiveStore(join(directory, 'archives', 'archives.sqlite'));
-    try {
-      expect(store.list()).toHaveLength(1);
-      expect(JSON.stringify(store.read(store.list()[0].id))).not.toContain('kingdom_runtime_');
-    } finally {
-      store.close();
-    }
+    const [listing] = archive.listings();
+    expect(archive.listings()).toHaveLength(1);
+    expect(listing?.sessionId).toBe(job.id);
+    expect(JSON.stringify(archive.snapshots(listing?.id ?? ''))).not.toContain('kingdom_runtime_');
   } finally {
     worker.stop();
+    archive.stop();
+    process.env.ARCHIVE_URL = environment.url;
+    process.env.ARCHIVE_TOKEN = environment.token;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('a runtime job record is skipped quietly when no local Archive is set up', async () => {
+  const job = connectionJob();
+  expect(
+    await archiveRuntimeJob(
+      runtimeJobSchema.parse(job),
+      { phase: 'finished' },
+      'Foundry connection check',
+      undefined,
+    ),
+  ).toBeUndefined();
 });
 
 test('OS job lock excludes concurrent execution and releases after a killed owner', async () => {

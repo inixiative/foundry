@@ -1,11 +1,9 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import type { ArchiveClient } from '@inixiative/archive/remote';
 import { configuredExperts } from './agents/configured-experts';
-import { type ArchiveDestination, destinationUrl, readDestinations } from './archives/config';
-import { verifyArchiveDestination } from './archives/publish';
+import { archiveStatus, localArchiveUrl } from './archives/local';
 import { MODEL_REGISTRY } from './models/registry';
-import { FoundryCredentials } from './providers/credentials';
 import { resolveDecisionModel } from './providers/decision-provider';
 import { accessCredentialSchema } from './providers/kingdom-access-client';
 import { installationCredentialSchema, readPrivateJson } from './providers/kingdom-credential-file';
@@ -46,9 +44,8 @@ export interface ReadinessKingdom {
   status: 'connected' | 'unavailable' | 'unverified';
 }
 export interface ReadinessArchive {
-  projectId: string;
-  status: 'none' | 'configured' | 'verification-failing';
-  destinations: number;
+  status: 'not-set-up' | 'unverified' | 'reachable' | 'unreachable';
+  url: string;
 }
 export interface ReadinessReport {
   configurationReady: boolean;
@@ -57,8 +54,8 @@ export interface ReadinessReport {
   issues: ReadinessIssue[];
   /** Every paired Kingdom, checked independently. */
   kingdoms?: ReadinessKingdom[];
-  /** Present when a configuration directory is inspected. */
-  archives?: ReadinessArchive[];
+  /** This machine's local Archive; present when inspected. */
+  archive?: ReadinessArchive;
 }
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
 export async function inspectReadiness(
@@ -66,9 +63,9 @@ export async function inspectReadiness(
   options: {
     environment?: Record<string, string | undefined>;
     which?: (binary: string) => string | null;
-    /** Enables archive destination inspection (`<configDir>/archives.json`). */
-    configDir?: string;
-    /** Enables one Kingdom heartbeat and one search per archive destination. */
+    /** Enables the local Archive check with this client (undefined: none is set up). */
+    archive?: () => ArchiveClient | undefined;
+    /** Enables one Kingdom heartbeat and one local Archive request. */
     transport?: typeof fetch;
   } = {},
 ): Promise<ReadinessReport> {
@@ -83,14 +80,14 @@ export async function inspectReadiness(
     code: string,
     message: string,
   ) => issues.push({ severity, scope, code, message });
-  let kingdoms: ReadinessKingdom[] | undefined, archives: ReadinessArchive[] | undefined;
+  let kingdoms: ReadinessKingdom[] | undefined, archive: ReadinessArchive | undefined;
   const result = (): ReadinessReport => ({
     configurationReady: !issues.some((item) => item.severity === 'error'),
     liveAccess: 'unverified',
     profiles,
     issues,
     ...(kingdoms ? { kingdoms } : {}),
-    ...(archives ? { archives } : {}),
+    ...(archive ? { archive } : {}),
   });
   let subscription: SubscriptionResolution | undefined;
   try {
@@ -367,8 +364,7 @@ export async function inspectReadiness(
       inspectKingdom(runtime, issue, options.transport),
     ),
   );
-  if (options.configDir)
-    archives = await inspectArchives(saved, options.configDir, kingdoms, issue, options.transport);
+  if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   return result();
 }
 
@@ -411,7 +407,7 @@ async function inspectKingdom(
       'error',
       `kingdom:${identity.id}`,
       'kingdom-unavailable',
-      `${runtime.url} refused or could not be reached; its jobs and archives wait until it returns. Check the runtime in that Kingdom's Foundry tab, or pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`,
+      `${runtime.url} refused or could not be reached; its jobs wait until it returns. Check the runtime in that Kingdom's Foundry tab, or pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`,
     );
     return { ...identity, status: 'unavailable' };
   } finally {
@@ -419,61 +415,28 @@ async function inspectKingdom(
   }
 }
 
-async function inspectArchives(
-  config: FoundryConfig,
-  configDir: string,
-  kingdoms: ReadinessKingdom[],
+async function inspectArchive(
+  client: ArchiveClient | undefined,
   issue: Issue,
   transport?: typeof fetch,
-): Promise<ReadinessArchive[]> {
-  let destinations: ArchiveDestination[];
-  try {
-    destinations = readDestinations(join(configDir, 'archives.json'));
-  } catch {
+): Promise<ReadinessArchive> {
+  const url = localArchiveUrl();
+  if (!client) {
     issue(
-      'error',
-      'archives',
-      'archive-configuration-invalid',
-      'archives.json is invalid, so no archives publish. Fix or remove it, then run bun run archive setup.',
+      'warning',
+      'archive',
+      'archive-not-set-up',
+      'No local Archive is set up, so captured sessions stay in the Foundry journal. Run bun run archive setup.',
     );
-    return [];
+    return { status: 'not-set-up', url };
   }
-  const credentials = new FoundryCredentials(configDir, () => config.kingdomRuntimes);
-  const paired = ({ credential, url }: ArchiveDestination) =>
-    credential?.type !== 'kingdom-runtime' ||
-    kingdoms.some(
-      (kingdom) =>
-        kingdom.owner === credential.owner &&
-        destinationUrl(kingdom.url).href === destinationUrl(url).href,
-    );
-  const projectIds = [
-    ...new Set([...Object.keys(config.projects), ...destinations.map((d) => d.projectId)]),
-  ];
-  return Promise.all(
-    projectIds.map(async (projectId): Promise<ReadinessArchive> => {
-      const owned = destinations.filter((d) => d.projectId === projectId);
-      if (!owned.length) return { projectId, status: 'none', destinations: 0 };
-      let failing = false;
-      for (const destination of owned) {
-        if (!paired(destination)) failing = true;
-        else if (transport)
-          failing ||= await verifyArchiveDestination(destination, credentials, transport).then(
-            () => false,
-            () => true,
-          );
-      }
-      if (failing)
-        issue(
-          'warning',
-          projectId,
-          'archive-destination-failing',
-          'An archive destination failed verification; captured sessions stay local. Check its credential or Kingdom pairing, or reconnect with bun run archive setup.',
-        );
-      return {
-        projectId,
-        status: failing ? 'verification-failing' : 'configured',
-        destinations: owned.length,
-      };
-    }),
+  if (!transport) return { status: 'unverified', url };
+  if ((await archiveStatus(client)).reachable) return { status: 'reachable', url };
+  issue(
+    'warning',
+    'archive',
+    'archive-unreachable',
+    `The local Archive at ${url} did not answer; captures retry until it does. Start it with bun run archive setup.`,
   );
+  return { status: 'unreachable', url };
 }

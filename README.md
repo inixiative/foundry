@@ -174,7 +174,7 @@ See [LICENSE](./LICENSE) for details.
 
 ## Session archives
 
-Foundry can capture its durable sessions, import old Claude Code/Codex transcripts, and publish selected projects to Kingdom under a user, organization or space. See [setup and retrieval](docs/session-archives.md).
+Foundry captures its durable sessions into this machine's local Archive (`bun run archive setup` starts it), which publishes onward to hosted Archives reached through Kingdom. See [setup and retrieval](docs/session-archives.md).
 
 ## Usage telemetry and context budgets
 

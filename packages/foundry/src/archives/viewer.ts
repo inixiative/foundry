@@ -17,7 +17,7 @@ const projects = new ProjectRegistry();
 projects.loadFromConfigs(config.projects);
 const projectId = Object.keys(config.projects)[0];
 const thread = new Thread('archive-console', new ContextStack(), {
-  description: 'Archive connection console',
+  description: 'Archive capture console',
   projectId,
   tags: [],
 });

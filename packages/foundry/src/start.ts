@@ -378,7 +378,7 @@ console.log(`Memory loaded: ${memory.all().length} entries`);
 // Source resolver — turns config source IDs into ContextSources. Memory-backed
 // sources are scope-aware: the template warms with globally published
 // knowledge only, and each thread's clone binds them to that thread.
-const sourceResolver = createSourceResolver({ memory, configDir: FOUNDRY_DIR });
+const sourceResolver = createSourceResolver({ memory });
 
 // ---------------------------------------------------------------------------
 // Tool registry — agents discover and use registered tools during execution

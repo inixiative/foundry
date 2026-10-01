@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { lstat, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startArchiveServer } from '@inixiative/archive/server';
+import { localArchiveUrl } from '../src/archives/local';
 import { runArchiveSetup } from '../src/archives/setup';
 import { kingdomStatus, pairKingdom } from '../src/providers/kingdom-cli';
 import {
@@ -16,10 +16,9 @@ import {
 import { kingdomRuntimeId } from '../src/providers/kingdom-runtime-connection';
 import { inspectReadiness } from '../src/readiness';
 import { ConfigStore } from '../src/viewer/config';
+import { startFakeArchive } from './helpers/fake-archive';
 
-const P1 = 'd8deab98-d4a6-43d9-9e65-ae783e58ae42',
-  P2 = '22222222-2222-4222-8222-222222222222',
-  P3 = '33333333-3333-4333-8333-333333333333';
+const P1 = 'd8deab98-d4a6-43d9-9e65-ae783e58ae42';
 const viewerPort = process.env.VIEWER_PORT;
 beforeAll(() => {
   // Never probe a real local viewer: point the running-viewer check at a closed port.
@@ -32,14 +31,9 @@ afterAll(() => {
   else process.env.VIEWER_PORT = viewerPort;
 });
 
-/** Kingdom's access + archive surface: pairing approves on first poll unless held; heartbeat trusts approved hashes. */
+/** Kingdom's access surface: pairing approves on first poll unless held; heartbeat trusts approved hashes. */
 function mockKingdom(
-  options: {
-    expiresInMs?: number;
-    hold?: boolean;
-    connections?: unknown[];
-    owner?: Record<string, string>;
-  } = {},
+  options: { expiresInMs?: number; hold?: boolean; owner?: Record<string, string> } = {},
 ) {
   const owner = options.owner ?? { ownerModel: 'User', userId: crypto.randomUUID() };
   const hashes = new Map<string, string>(),
@@ -87,15 +81,6 @@ function mockKingdom(
             expiresAt: new Date(Date.now() + 60000).toISOString(),
           },
         });
-      if (action === 'archive/remote/connections')
-        return Response.json({
-          data: options.connections ?? [
-            { id: 'conn-a', name: 'Team archive', groups: [], projectId: P1 },
-            { id: 'conn-b', name: 'Other', groups: [], projectId: 'elsewhere' },
-          ],
-        });
-      if (action === 'archive/remote/search' || action === 'archive/search')
-        return Response.json({ data: { archives: [] } });
       return new Response('unknown', { status: 404 });
     },
   });
@@ -299,259 +284,6 @@ test('CLI pairing stops at expiry without writing a credential or binding', asyn
   }
 });
 
-test('non-interactive setup pairs, connects matching Kingdom connections and direct Archives through verification, and doctor reports the state', async () => {
-  const kingdom = mockKingdom(),
-    dir = await configDirectory([P1, P2, P3]);
-  const token = 'synthetic-direct-archive-token-0001';
-  const hosted = startArchiveServer({ store: ':memory:', token, port: 0 });
-  const archivesPath = join(dir, 'archives.json');
-  await writeFile(
-    archivesPath,
-    JSON.stringify([
-      {
-        kind: 'archive',
-        projectId: P3,
-        url: 'https://existing.example/',
-        tokenEnv: 'EXISTING_TOKEN',
-      },
-    ]),
-    { mode: 0o600 },
-  );
-  process.env.FOUNDRY_TEST_ARCHIVE_TOKEN = token;
-  try {
-    const skipped = await runArchiveSetup({ configDir: dir, log: () => {} });
-    expect(skipped.kingdom.status).toBe('disconnected');
-    expect(skipped.projects).toEqual([
-      {
-        projectId: P1,
-        status: 'skipped',
-        reason: 'Kingdom is not connected and no --archive-url was given.',
-      },
-      {
-        projectId: P2,
-        status: 'skipped',
-        reason: 'Kingdom is not connected and no --archive-url was given.',
-      },
-      { projectId: P3, status: 'configured' },
-    ]);
-
-    const result = await runArchiveSetup({
-      configDir: dir,
-      kingdomUrl: kingdom.url,
-      name: 'Setup Foundry',
-      open: false,
-      sleep: async () => {},
-      log: () => {},
-      archiveUrl: hosted.server.url.href,
-      archiveTokenEnv: 'FOUNDRY_TEST_ARCHIVE_TOKEN',
-    });
-    expect(result.kingdom.status).toBe('connected');
-    expect(result.restartViewer).toBe(false);
-    expect(result.projects).toEqual([
-      { projectId: P1, status: 'connected' },
-      { projectId: P2, status: 'connected' },
-      { projectId: P3, status: 'configured' },
-    ]);
-    const saved = JSON.parse(await readFile(archivesPath, 'utf8'));
-    expect(saved).toHaveLength(3);
-    expect(saved.find((d: any) => d.projectId === P1)).toEqual({
-      kind: 'kingdom',
-      projectId: P1,
-      url: `${kingdom.url}/`,
-      connectionId: 'conn-a',
-      credential: { type: 'kingdom-runtime', owner: kingdom.ownerKey },
-    });
-    const direct = saved.find((d: any) => d.projectId === P2);
-    expect(direct).toMatchObject({
-      kind: 'archive',
-      url: hosted.server.url.href,
-      credential: { type: 'managed' },
-    });
-    expect(JSON.stringify(saved)).not.toContain(token);
-    expect(
-      (await lstat(join(dir, 'credentials', `${direct.credential.id}.json`))).mode & 0o777,
-    ).toBe(0o600);
-    expect(kingdom.calls.filter((call) => call.action === 'archive/remote/search')).toHaveLength(1);
-
-    const config = await new ConfigStore(dir).load();
-    const live = await inspectReadiness(config, {
-      configDir: dir,
-      transport: fetch,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
-    expect(live.kingdoms).toEqual([
-      expect.objectContaining({ status: 'connected', url: kingdom.url, owner: kingdom.ownerKey }),
-    ]);
-    expect(live.archives).toEqual([
-      { projectId: P1, status: 'configured', destinations: 1 },
-      { projectId: P2, status: 'configured', destinations: 1 },
-      { projectId: P3, status: 'verification-failing', destinations: 1 },
-    ]);
-    expect(
-      live.issues
-        .filter((item) => item.code.startsWith('archive') || item.code.startsWith('kingdom'))
-        .map((item) => [item.scope, item.code]),
-    ).toEqual([[P3, 'archive-destination-failing']]);
-    const offline = await inspectReadiness(config, {
-      configDir: dir,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
-    expect(offline.kingdoms?.map((item) => item.status)).toEqual(['unverified']);
-    expect(offline.archives?.every((item) => item.status === 'configured')).toBe(true);
-
-    kingdom.revokeAll();
-    const revoked = await inspectReadiness(config, {
-      configDir: dir,
-      transport: fetch,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
-    expect(revoked.kingdoms?.map((item) => item.status)).toEqual(['unavailable']);
-    expect(revoked.configurationReady).toBe(false);
-    expect(revoked.issues.map((item) => item.code)).toContain('kingdom-unavailable');
-    expect(revoked.archives?.find((item) => item.projectId === P1)?.status).toBe(
-      'verification-failing',
-    );
-    expect(JSON.stringify(revoked)).not.toContain(token);
-  } finally {
-    delete process.env.FOUNDRY_TEST_ARCHIVE_TOKEN;
-    kingdom.server.stop(true);
-    await hosted.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('setup picks only the named connection and never guesses between several', async () => {
-  const kingdom = mockKingdom({
-      connections: [
-        { id: 'one', projectId: P1 },
-        { id: 'two', projectId: P1 },
-      ],
-    }),
-    dir = await configDirectory([P1]);
-  try {
-    await pairKingdom({
-      configDir: dir,
-      url: kingdom.url,
-      open: false,
-      log: () => {},
-      sleep: async () => {},
-    });
-    expect((await runArchiveSetup({ configDir: dir, log: () => {} })).projects).toEqual([
-      {
-        projectId: P1,
-        status: 'skipped',
-        reason: 'Several Kingdom connections carry this project; pass --connection.',
-      },
-    ]);
-    expect(
-      (await runArchiveSetup({ configDir: dir, connection: 'missing', log: () => {} })).projects[0]!
-        .status,
-    ).toBe('skipped');
-    expect(
-      (await runArchiveSetup({ configDir: dir, connection: 'two', log: () => {} })).projects,
-    ).toEqual([{ projectId: P1, status: 'connected' }]);
-    expect(JSON.parse(await readFile(join(dir, 'archives.json'), 'utf8'))[0].connectionId).toBe(
-      'two',
-    );
-  } finally {
-    kingdom.server.stop(true);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('guided prompts offer matching connections, Kingdom storage, a direct server or skip', async () => {
-  const kingdom = mockKingdom(),
-    dir = await configDirectory([P1, P2]);
-  const asked: string[][] = [];
-  const answers = [0, 0];
-  const prompts = {
-    ask: async (_: string, fallback?: string) =>
-      fallback === undefined ? '' : fallback.startsWith('http') ? kingdom.url : fallback,
-    confirm: async () => true,
-    secret: async () => '',
-    choose: async (_: string, options: string[]) => {
-      asked.push(options);
-      return answers.shift()!;
-    },
-  };
-  try {
-    const result = await runArchiveSetup({
-      configDir: dir,
-      prompts,
-      open: false,
-      sleep: async () => {},
-      log: () => {},
-    });
-    expect(result.kingdom.status).toBe('connected');
-    expect(asked).toEqual([
-      [
-        'Kingdom connection: Team archive (conn-a)',
-        'Kingdom-stored archives',
-        'Direct Archive server (URL + token)',
-        'Skip',
-      ],
-      ['Kingdom-stored archives', 'Direct Archive server (URL + token)', 'Skip'],
-    ]);
-    const saved = JSON.parse(await readFile(join(dir, 'archives.json'), 'utf8'));
-    expect(saved.map((d: any) => [d.projectId, d.connectionId ?? null])).toEqual([
-      [P1, 'conn-a'],
-      [P2, null],
-    ]);
-  } finally {
-    kingdom.server.stop(true);
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('archive setup and kingdom CLIs run the same flow non-interactively', async () => {
-  const dir = await configDirectory([P1]);
-  const run = async (script: string, args: string[]) => {
-    const child = Bun.spawn(
-      [process.execPath, new URL(script, import.meta.url).pathname, ...args],
-      {
-        env: { PATH: process.env.PATH, VIEWER_PORT: process.env.VIEWER_PORT },
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    );
-    const stdout = await new Response(child.stdout).text();
-    return { code: await child.exited, output: JSON.parse(stdout) };
-  };
-  try {
-    const setup = await run('../src/archives/cli.ts', [
-      'setup',
-      '--yes',
-      '--config',
-      join(dir, 'archives.json'),
-    ]);
-    expect(setup.code).toBe(0);
-    expect(setup.output).toEqual({
-      kingdom: { status: 'disconnected' },
-      projects: [
-        {
-          projectId: P1,
-          status: 'skipped',
-          reason: 'Kingdom is not connected and no --archive-url was given.',
-        },
-      ],
-      restartViewer: false,
-    });
-    expect(await run('../src/providers/kingdom-cli.ts', ['status', '--config-dir', dir])).toEqual({
-      code: 0,
-      output: { status: 'disconnected', runtimes: [] },
-    });
-    expect(
-      await run('../src/providers/kingdom-cli.ts', ['disconnect', '--config-dir', dir]),
-    ).toEqual({ code: 0, output: { status: 'disconnected' } });
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test('pairing a second Kingdom keeps the first; --replace and disconnect touch only the chosen one', async () => {
   const a = mockKingdom(),
     b = mockKingdom(),
@@ -619,111 +351,164 @@ test('pairing a second Kingdom keeps the first; --replace and disconnect touch o
   }
 });
 
-test('archive setup publishes through the chosen Kingdom: required when several are paired, prompted when interactive', async () => {
-  const a = mockKingdom(),
-    b = mockKingdom({
-      connections: [{ id: 'conn-b', name: 'B archive', groups: [], projectId: P1 }],
+test('archive setup starts the local Archive only when it is not answering', async () => {
+  const archive = startFakeArchive();
+  let installed = false,
+    ups = 0;
+  const lines: string[] = [];
+  const options = {
+    connect: () => (installed ? archive.client() : undefined),
+    up: async () => {
+      ups++;
+      installed = true;
+    },
+    log: (line: string) => lines.push(line),
+  };
+  const declining = {
+    ask: async () => '',
+    choose: async () => 0,
+    confirm: async () => false,
+    secret: async () => '',
+  };
+  try {
+    expect(await runArchiveSetup({ ...options, prompts: declining })).toEqual({
+      configured: false,
+      reachable: false,
+      url: localArchiveUrl(),
+      started: false,
     });
-  const dir = await configDirectory([P1, P2]);
+    expect(ups).toBe(0);
+    const started = await runArchiveSetup(options);
+    expect(started).toMatchObject({ configured: true, reachable: true, started: true });
+    expect(started.integrations?.map((integration) => integration.key)).toContain('github');
+    expect(lines.at(-1)).toContain('Hosted Archives connect through Kingdom');
+    expect(await runArchiveSetup(options)).toMatchObject({ reachable: true, started: false });
+    expect(ups).toBe(1);
+    expect(
+      await runArchiveSetup({
+        ...options,
+        connect: () => undefined,
+        up: async () => {
+          throw Error('archive up failed; check that Docker is running.');
+        },
+      }),
+    ).toMatchObject({
+      reachable: false,
+      started: false,
+      error: 'archive up failed; check that Docker is running.',
+    });
+  } finally {
+    archive.stop();
+  }
+});
+
+test('archive setup and kingdom CLIs run non-interactively; other archive commands are the Archive CLI', async () => {
+  const dir = await configDirectory([P1]);
+  const archive = startFakeArchive();
+  const run = async (script: string, args: string[]) => {
+    const child = Bun.spawn(
+      [process.execPath, new URL(script, import.meta.url).pathname, ...args],
+      {
+        env: {
+          PATH: process.env.PATH,
+          VIEWER_PORT: process.env.VIEWER_PORT,
+          ARCHIVE_URL: archive.url,
+          ARCHIVE_TOKEN: archive.token,
+        },
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
+    const stdout = await new Response(child.stdout).text();
+    return { code: await child.exited, stdout };
+  };
+  try {
+    const setup = await run('../src/archives/cli.ts', ['setup', '--yes']);
+    expect(setup.code).toBe(0);
+    expect(JSON.parse(setup.stdout)).toMatchObject({
+      configured: true,
+      reachable: true,
+      url: archive.url,
+      started: false,
+    });
+    const help = await run('../src/archives/cli.ts', ['--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('up | down');
+    const kingdom = async (args: string[]) => {
+      const result = await run('../src/providers/kingdom-cli.ts', args);
+      return { code: result.code, output: JSON.parse(result.stdout) };
+    };
+    expect(await kingdom(['status', '--config-dir', dir])).toEqual({
+      code: 0,
+      output: { status: 'disconnected', runtimes: [] },
+    });
+    expect(await kingdom(['disconnect', '--config-dir', dir])).toEqual({
+      code: 0,
+      output: { status: 'disconnected' },
+    });
+  } finally {
+    archive.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('doctor checks every paired Kingdom and the local Archive', async () => {
+  const a = mockKingdom(),
+    b = mockKingdom(),
+    archive = startFakeArchive();
+  const dir = await configDirectory([P1]);
   const quiet = { open: false, log: () => {}, sleep: async () => {} };
+  const inspect = async (options: Partial<Parameters<typeof inspectReadiness>[1]> = {}) =>
+    inspectReadiness(await new ConfigStore(dir).load(), {
+      environment: {},
+      which: () => '/controlled/cli',
+      ...options,
+    });
   try {
     const first = await pairKingdom({ configDir: dir, url: a.url, ...quiet });
-    expect(
-      (
-        await runArchiveSetup({ configDir: dir, connection: 'kingdom', log: () => {} })
-      ).projects.map((p) => p.status),
-    ).toEqual(['connected', 'connected']);
     const second = await pairKingdom({ configDir: dir, url: b.url, ...quiet });
-    await expect(runArchiveSetup({ configDir: dir, log: () => {} })).rejects.toThrow('--kingdom');
+    const live = await inspect({ transport: fetch, archive: () => archive.client() });
+    expect(live.kingdoms).toEqual([
+      expect.objectContaining({ id: first.id, status: 'connected', url: a.url, owner: a.ownerKey }),
+      expect.objectContaining({ id: second.id, status: 'connected', url: b.url }),
+    ]);
+    expect(live.archive).toEqual({ status: 'reachable', url: localArchiveUrl() });
+    expect(live.issues.filter((item) => /^(archive|kingdom)/.test(item.code))).toEqual([]);
 
-    // A project published through Kingdom A still needs a destination on Kingdom B.
-    const result = await runArchiveSetup({ configDir: dir, kingdom: second.id, log: () => {} });
-    expect(result.kingdom).toMatchObject({ status: 'connected', id: second.id, url: b.url });
-    expect(result.projects).toEqual([
-      { projectId: P1, status: 'connected' },
-      { projectId: P2, status: 'skipped', reason: 'No Kingdom connection carries this project.' },
-    ]);
-    const saved = JSON.parse(await readFile(join(dir, 'archives.json'), 'utf8'));
-    expect(
-      saved.map((d: any) => [d.projectId, d.url, d.connectionId ?? null, d.credential.owner]),
-    ).toEqual([
-      [P1, `${a.url}/`, null, a.ownerKey],
-      [P2, `${a.url}/`, null, a.ownerKey],
-      [P1, `${b.url}/`, 'conn-b', b.ownerKey],
-    ]);
-    expect(
-      (await runArchiveSetup({ configDir: dir, kingdom: b.url, log: () => {} })).projects[0],
-    ).toEqual({ projectId: P1, status: 'configured' });
-    expect(
-      (await runArchiveSetup({ configDir: dir, kingdomUrl: a.url, log: () => {} })).projects.map(
-        (p) => p.status,
-      ),
-    ).toEqual(['configured', 'configured']);
+    const offline = await inspect({ archive: () => archive.client() });
+    expect(offline.kingdoms?.map((item) => item.status)).toEqual(['unverified', 'unverified']);
+    expect(offline.archive?.status).toBe('unverified');
 
-    const asked: string[][] = [];
-    const prompts = {
-      ask: async () => '',
-      confirm: async () => false,
-      secret: async () => '',
-      choose: async (_: string, options: string[]) => {
-        asked.push(options);
-        return asked.length === 1 ? 1 : options.length - 1;
-      },
-    };
-    const prompted = await runArchiveSetup({ configDir: dir, prompts, log: () => {} });
-    expect(asked[0]).toEqual([
-      `${a.url} as ${a.ownerKey} (${first.id}, connected)`,
-      `${b.url} as ${b.ownerKey} (${second.id}, connected)`,
-    ]);
-    expect(prompted.kingdom.id).toBe(second.id);
-    expect(prompted.projects).toEqual([
-      { projectId: P1, status: 'configured' },
-      { projectId: P2, status: 'skipped', reason: 'Skipped.' },
-    ]);
-
-    const config = await new ConfigStore(dir).load();
-    const doctor = await inspectReadiness(config, {
-      configDir: dir,
-      transport: fetch,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
-    expect(doctor.kingdoms?.map((item) => [item.id, item.status])).toEqual([
-      [first.id, 'connected'],
-      [second.id, 'connected'],
-    ]);
     b.revokeAll();
-    const degraded = await inspectReadiness(config, {
-      configDir: dir,
-      transport: fetch,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
+    archive.fail(true);
+    const degraded = await inspect({ transport: fetch, archive: () => archive.client() });
     expect(degraded.kingdoms?.map((item) => [item.id, item.status])).toEqual([
       [first.id, 'connected'],
       [second.id, 'unavailable'],
     ]);
+    expect(degraded.configurationReady).toBe(false);
     expect(
       degraded.issues
-        .filter((item) => item.code === 'kingdom-unavailable')
-        .map((item) => item.scope),
-    ).toEqual([`kingdom:${second.id}`]);
-    expect(degraded.archives?.find((item) => item.projectId === P1)?.status).toBe(
-      'verification-failing',
+        .filter((item) => /^(archive|kingdom)/.test(item.code))
+        .map((item) => [item.scope, item.code]),
+    ).toEqual([
+      [`kingdom:${second.id}`, 'kingdom-unavailable'],
+      ['archive', 'archive-unreachable'],
+    ]);
+    expect(degraded.archive?.status).toBe('unreachable');
+
+    const unset = await inspect({ archive: () => undefined });
+    expect(unset.archive?.status).toBe('not-set-up');
+    expect(unset.issues.map((item) => item.code)).toContain('archive-not-set-up');
+    expect(unset.issues.find((item) => item.code === 'archive-not-set-up')?.severity).toBe(
+      'warning',
     );
-    expect(degraded.archives?.find((item) => item.projectId === P2)?.status).toBe('configured');
-    await disconnectKingdom(new ConfigStore(dir), second.id);
-    const unpaired = await inspectReadiness(await new ConfigStore(dir).load(), {
-      configDir: dir,
-      environment: {},
-      which: () => '/controlled/cli',
-    });
-    expect(unpaired.archives?.find((item) => item.projectId === P1)?.status).toBe(
-      'verification-failing',
-    );
+    expect((await inspect()).archive).toBeUndefined();
   } finally {
     a.server.stop(true);
     b.server.stop(true);
+    archive.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });

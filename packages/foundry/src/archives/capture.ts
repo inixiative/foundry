@@ -5,7 +5,6 @@ import {
   type ArchiveSnapshot,
   archiveSnapshotSchema,
 } from '@inixiative/archive';
-import type { LocalArchiveStore } from '@inixiative/archive/local';
 import {
   configuredModel,
   type EventStream,
@@ -14,6 +13,7 @@ import {
   threadTitle,
 } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
+import type { ArchiveWriter } from './local';
 
 /** The person operating this Foundry: its local account. */
 export function localActor(): ArchiveActor | undefined {
@@ -202,53 +202,92 @@ export function captureThread(
   });
 }
 
+const RETRY_MS = 30_000;
+
+/**
+ * Writes each journalled thread to the local Archive. The journal stays the source of truth, so a
+ * failed write (no local Archive yet, server down) is recorded and the thread captured again later.
+ */
 export class ArchiveCapture {
   private readonly pending = new Set<string>();
   private readonly unsubscribe: () => void;
+  private readonly retry: ReturnType<typeof setInterval>;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private flushing: Promise<void> = Promise.resolve();
+  /** Stands in for the Archive's source id while it is unreachable; such snapshots are never written. */
+  private readonly unsentSourceId = crypto.randomUUID();
   private closed = false;
   readonly errors = new Map<string, string>();
   constructor(
     readonly journal: LocalSessionStore,
-    readonly archives: LocalArchiveStore,
+    private readonly writer: () => ArchiveWriter | undefined,
     events: EventStream,
-    private readonly captured?: (id: string, snapshot: ArchiveSnapshot) => void,
+    /** Each thread's snapshot as built, whether or not the Archive accepted it. */
+    private readonly captured?: (snapshot: ArchiveSnapshot) => void,
   ) {
     this.unsubscribe = events.subscribe((event) => {
       if (event.kind === 'journal' && event.outcome !== 'failed') this.schedule(event.threadId);
     });
+    this.retry = setInterval(() => {
+      for (const threadId of this.errors.keys()) this.schedule(threadId);
+    }, RETRY_MS);
+    this.retry.unref();
     for (const thread of journal.threads()) this.schedule(thread.id);
     journal.onClose(() => this.close());
   }
   schedule(threadId: string) {
     if (this.closed) return;
     this.pending.add(threadId);
-    this.timer ??= setTimeout(() => this.flush(), 250);
+    this.timer ??= setTimeout(() => void this.flush(), 250);
     this.timer.unref();
   }
-  flush() {
+  /** Captures every pending thread; flushes run one at a time so revisions land in order. */
+  flush(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
-    for (const threadId of this.pending) {
+    const threads = [...this.pending];
+    this.pending.clear();
+    const run = this.flushing.then(() => this.write(threads));
+    this.flushing = run.catch(() => {});
+    return run;
+  }
+  private async write(threads: string[]) {
+    if (this.closed) return;
+    const writer = this.writer();
+    const sourceId = await writer?.sourceId().catch(() => undefined);
+    for (const threadId of threads) {
+      let snapshot: ArchiveSnapshot;
       try {
-        const snapshot = captureThread(this.journal, this.archives.sourceId, threadId);
-        const result = this.archives.capture(snapshot);
+        snapshot = captureThread(this.journal, sourceId ?? this.unsentSourceId, threadId);
+      } catch {
+        this.errors.set(threadId, 'Archive capture failed to read the source journal.');
+        continue;
+      }
+      this.captured?.(snapshot);
+      if (!writer) {
+        this.errors.set(
+          threadId,
+          'No local Archive is set up; run bun run archive setup. The source journal is retained.',
+        );
+        continue;
+      }
+      try {
+        if (!sourceId) throw Error('Archive unreachable');
+        await writer.capture(snapshot);
         this.errors.delete(threadId);
-        this.captured?.(result.id, snapshot);
       } catch {
         this.errors.set(
           threadId,
-          'Archive capture failed; source journal retained. Retry capture after resolving the error.',
+          'Archive capture failed; the source journal is retained and capture retries every 30 seconds.',
         );
       }
     }
-    this.pending.clear();
   }
   close() {
     if (this.closed) return;
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
+    clearInterval(this.retry);
     this.unsubscribe();
-    this.archives.close();
   }
 }

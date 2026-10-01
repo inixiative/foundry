@@ -53,7 +53,7 @@ export function KingdomSettings() {
   const runtimes = state?.runtimes ?? [];
   return html`<section class="settings-card kingdom-connection">
     <h2 class="settings-card-title">Kingdom connections</h2>
-    <p class="settings-desc">Connect this Foundry to one or more Kingdoms. Sign in there, compare the pairing code, and approve the runtime. Each Kingdom's jobs and archives go only to that Kingdom. Credentials stay on this machine.</p>
+    <p class="settings-desc">Connect this Foundry to one or more Kingdoms. Sign in there, compare the pairing code, and approve the runtime. Each Kingdom's jobs go only to that Kingdom. Credentials stay on this machine.</p>
     ${error && html`<p role="alert">${error}</p>`}
     ${
       !state

@@ -1,117 +1,48 @@
 import { tokenCount } from '@inixiative/archive';
-import type {
-  ContextSource,
-  CredentialResolver,
-  OwnershipScope,
-  SourceLoadHint,
-} from '@inixiative/foundry-core';
+import { localArchive } from '@inixiative/archive/remote';
+import type { ContextSource, OwnershipScope, SourceLoadHint } from '@inixiative/foundry-core';
 import { z } from 'zod';
-import { credentialReferenceSchema, FoundryCredentials } from '../providers/credentials';
-import { type ArchiveDestination, kingdomOwnerFields } from './config';
-import { archiveRequest, kingdomFields } from './publish';
+import type { ArchiveConnector } from './local';
 
-export const archiveContextSchema = z
-  .strictObject({
-    projectId: z.string().min(1),
-    kind: z.enum(['archive', 'kingdom']),
-    tokenEnv: z
-      .string()
-      .regex(/^[A-Z][A-Z0-9_]+$/)
-      .optional(),
-    credential: credentialReferenceSchema.optional(),
-    connectionId: z
-      .string()
-      .regex(/^[a-z0-9-]+$/)
-      .max(120)
-      .optional(),
-    ...kingdomOwnerFields,
-    budget: z.number().int().min(128).max(16000).default(2048),
-  })
-  .superRefine((value, ctx) => {
-    if (Boolean(value.tokenEnv) === Boolean(value.credential))
-      ctx.addIssue({ code: 'custom', message: 'Choose exactly one credential source' });
-    if (
-      value.kind === 'archive' &&
-      (value.credential?.type === 'kingdom-runtime' ||
-        value.connectionId ||
-        value.ownerModel ||
-        value.organizationId ||
-        value.spaceId)
-    )
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Runtime credentials, connections and owners require Kingdom',
-      });
-  });
-const resultSchema = z.object({
-  data: z.object({
-    archives: z.array(
-      z.object({
-        archiveId: z.union([z.uuid(), z.string().regex(/^[a-f0-9]{64}$/)]),
-        revision: z.number().int(),
-        digest: z.string(),
-        title: z.string(),
-        chunks: z.array(
-          z.object({
-            entryId: z.string(),
-            sourceRef: z.string(),
-            start: z.number().int(),
-            end: z.number().int(),
-            text: z.string(),
-          }),
-        ),
-      }),
-    ),
-  }),
+export const archiveContextSchema = z.strictObject({
+  projectId: z.string().min(1),
+  budget: z.number().int().min(128).max(16000).default(2048),
 });
 
+/** Historical session evidence for the bound project, searched in the local Archive. */
 export class ArchiveContextSource implements ContextSource {
   readonly focusable = true;
   constructor(
     readonly id: string,
-    private readonly url: string,
     private readonly config: z.infer<typeof archiveContextSchema>,
     private readonly owner?: OwnershipScope,
-    private readonly transport: typeof fetch = fetch,
-    private readonly credentials: CredentialResolver = new FoundryCredentials(),
+    private readonly connect: ArchiveConnector = () => localArchive(),
   ) {}
   bind(scope: OwnershipScope): ContextSource {
-    return new ArchiveContextSource(
-      this.id,
-      this.url,
-      this.config,
-      scope,
-      this.transport,
-      this.credentials,
-    );
+    return new ArchiveContextSource(this.id, this.config, scope, this.connect);
   }
   async load(hint?: SourceLoadHint): Promise<string> {
     if (!this.owner?.projectId || this.owner.projectId !== this.config.projectId) return '';
-    const destination = { ...this.config, url: this.url } as ArchiveDestination;
-    const result = resultSchema.parse(
-      await archiveRequest(
-        destination,
-        'search',
-        {
-          ...(destination.kind === 'archive'
-            ? { projectId: destination.projectId }
-            : kingdomFields(destination)),
-          query: hint?.focus?.slice(0, 1000) ?? '',
-          budget: this.config.budget,
-        },
-        this.transport,
-        this.credentials,
-      ),
-    );
+    const archive = this.connect();
+    if (!archive) return '';
+    const result = await archive.search({
+      projectId: this.config.projectId,
+      query: hint?.focus?.slice(0, 1000) ?? '',
+      budget: this.config.budget,
+    });
     const records: unknown[] = [];
-    for (const archive of result.data.archives)
-      for (const chunk of archive.chunks) {
+    for (const found of result.archives)
+      for (const { entryId, sourceRef, start, end, text } of found.chunks) {
         const entry = {
-          archiveId: archive.archiveId,
-          revision: archive.revision,
-          digest: archive.digest,
-          title: archive.title,
-          ...chunk,
+          archiveId: found.archiveId,
+          revision: found.revision,
+          digest: found.digest,
+          title: found.title,
+          entryId,
+          sourceRef,
+          start,
+          end,
+          text,
         };
         if (
           tokenCount(

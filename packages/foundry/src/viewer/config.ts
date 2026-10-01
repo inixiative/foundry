@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import type { CredentialReference } from '@inixiative/foundry-core';
 import {
   type Harness,
   type LLMProvider,
@@ -457,15 +456,9 @@ export interface DataSourceConfig {
     | 'inline'
     | 'supermemory'
     | 'archive';
+  /** Searches the local Archive for this project; `uri` is unused. */
   archive?: {
     projectId: string;
-    kind: 'archive' | 'kingdom';
-    connectionId?: string;
-    ownerModel?: 'User' | 'OrganizationUser' | 'Organization' | 'Space' | 'SpaceUser';
-    organizationId?: string;
-    spaceId?: string;
-    tokenEnv?: string;
-    credential?: CredentialReference;
     budget?: number;
   };
   label: string;

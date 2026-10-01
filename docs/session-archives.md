@@ -1,197 +1,102 @@
 # Session archives
 
-Foundry captures recorded work locally without calling a model. Kingdom hosts selected archives under the owner fixed by the runtime credential: a user, organization or space. Categorization suggests labels; it never grants access.
+Foundry captures recorded work into this machine's local Archive (`@inixiative/archive`) without calling a model. Foundry keeps no archive store of its own and publishes nowhere: the local Archive server holds the database, and it publishes onward to hosted Archives itself. Hosted Archives are reached through Kingdom as an integration. Categorization suggests labels; it never grants access.
 
 ```mermaid
 flowchart LR
   J[Foundry durable journal] --> C[Automatic capture]
-  I[Claude Code / Codex JSONL] --> C
-  C --> L[Local immutable archive revisions]
-  L --> T[Lossless token chunks + source references]
-  L --> Q[Durable upload queue]
-  Q --> K[Kingdom owner: user, organization or space]
-  K --> H[Forwarded hosted Archive]
-  K --> R[Authorized browser and agent retrieval]
+  C -- "@inixiative/archive/remote" --> L[Local Archive server<br/>Docker Compose + Postgres]
+  X[Archive collectors<br/>Claude Code / Codex history] --> L
+  L -- "serve --sync" --> H[Hosted Archives, through Kingdom]
+  L --> R[Foundry viewer and archive context source]
 ```
+
+## Set up the local Archive
+
+One Archive runs per machine, in Docker Compose (`archive up`). From the Foundry repository:
+
+```sh
+bun run archive setup         # starts the local Archive if it is not answering, then checks it; --yes skips the prompt
+bun run doctor                # includes the local Archive: not-set-up | unverified | reachable | unreachable
+```
+
+`archive setup` runs the Archive CLI's `up` in a subprocess: it creates the token at `~/.local/share/archive/server.token`, then starts the bundled Compose file (the Archive and its Postgres, HTTP on `127.0.0.1:4700`). Docker must be running. Settings → Archives shows the same status, a **Set up an Archive** button that does the same thing, and the Archive's integrations (read-only; the Archive owns them). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item, along with Kingdom pairing.
+
+Foundry finds the local Archive the way every Archive client does (`localArchive()`): `ARCHIVE_URL` or `http://127.0.0.1:4700`, with the token from `ARCHIVE_TOKEN` or `server.token`. Foundry never imports the Archive CLI or server, which bind their own Prisma client; it spawns the CLI.
 
 ## Local capture
 
-Starting a Foundry viewer with its durable session store schedules existing journal threads for capture, then captures changes after journal events. The archive database lives at `<configDir>/archives/archives.sqlite` (`.foundry/archives/archives.sqlite` by default). This does not start agents or make inference calls. A viewer without a durable journal has no automatic archive capture.
+Starting a Foundry viewer with its durable session store schedules existing journal threads for capture, then captures changes after journal events. This does not start agents or make inference calls. A viewer without a durable journal has no automatic archive capture.
+
+The journal is the source of truth. When the local Archive is not set up or does not answer, the thread's capture error is recorded and capture retries every 30 seconds; once an Archive appears (even one started from a terminal while Foundry runs), the next retry captures every waiting thread. Each capture is a whole-thread snapshot, so re-capturing is safe. Thread context (linked PRs and tickets) is derived from each snapshot as it is built, whether or not the Archive accepted it.
 
 The local viewer exposes:
 
-- `GET /api/archives`: archive metadata, capture errors, publication errors.
+- `GET /api/archives/status`: `{ configured, reachable, url, integrations? }`.
+- `POST /api/archives/setup`: starts the local Archive when it is not answering, then returns its status (502 with `error` when `archive up` fails).
+- `GET /api/archives`: the local Archive's listings, per-thread capture errors and its status.
 - `GET /api/archives/:id`: latest snapshot and chunks.
-- `POST /api/archives/search`: `{ids, query, budget}`; budget is per archive locally.
-- `POST /api/archives/capture`: retry journal capture.
+- `POST /api/archives/search`: `{ query, projectId?, budget?, limit? }`, passed to the Archive's search.
+- `POST /api/archives/capture`: recapture every journal thread now.
 
-The local viewer's existing authentication applies. A local archive does not become shared merely because it was captured.
+The local viewer's existing authentication applies.
 
-## Import old sessions
+## Archive commands
 
-From the Foundry repository, using Bun:
+Every `bun run archive` command except `setup` is the Archive CLI, run with your arguments:
 
 ```sh
 bun run archive preview --directory /absolute/path/history --source codex --limit 100
 bun run archive import --file /absolute/path/session.jsonl --source codex --project-id my-project
-bun run archive import --file /absolute/path/session.jsonl --source claude-code --project-id my-project
+bun run archive collect --directory ~/.claude/projects --source claude-code --project-root /exact/cwd --project-id my-project --watch
 bun run archive list
-bun run archive search --id ARCHIVE_ID --query 'schema migration'
+bun run archive search --query 'schema migration'
 bun run archive export --id ARCHIVE_ID > session.archive.json
 ```
 
-Preview recursively inventories JSONL files under the explicit directory, reports importable sessions and rejected files, and ignores symlinks. It does not create an archive store or upload anything. `--file` previews one transcript; `--limit` bounds a directory preview (default 100, maximum 1000), and `truncated` reports an incomplete inventory.
+See the Archive README for collectors (`archive agents`), tags, references, retention and the onward publication the local Archive runs (`serve --sync`).
 
-Use `--store /absolute/path/archives.sqlite` to select the store. Each store maintains a stable source UUID; back it up with the archive database. Reimport into the same store updates the same source session rather than inventing another identity. Changing imported content creates a new revision. Malformed JSON, conflicting duplicate records, or mixed session identities reject the import. `--session-id` can supply an ID when an export lacks it. `--title` sets a human-readable title; automatic titles skip recognized generated setup blocks.
+## Kingdom pairing
 
-Imports stream individual JSONL files up to 1 GB, with at most 64 million characters in a raw record; normalized snapshots are limited to 64 MB, 50,000 records, and 2 million characters per entry. Oversized sessions fail explicitly and remain in their source file. Directory watching for external CLI history is not implemented. Foundry journal capture is automatic; historical CLI import is explicit.
-
-## Guided setup
-
-From nothing to a paired Kingdom and a destination per registered project (`settings.json` → `projects`). A Foundry can be paired with many Kingdoms, and a Kingdom with many Foundries:
+A Foundry can be paired with many Kingdoms, and a Kingdom with many Foundries:
 
 ```sh
 bun run kingdom pair --url https://kingdom-prod-api-prod.up.railway.app   # prints the approval URL + code, opens it on macOS
 bun run kingdom pair --url https://other-kingdom.example                   # adds a second Kingdom; the first is untouched
 bun run kingdom status        # every paired Kingdom: connected | unavailable (one heartbeat each)
 bun run kingdom disconnect --kingdom ID|URL   # deletes that Kingdom's local credential; revoke the runtime there too
-bun run archive setup         # guided: choose or pair a Kingdom, then choose a destination per project
-bun run doctor                # includes each Kingdom's state and per-project archive state
 ```
 
-`kingdom pair` is the terminal form of Settings → Kingdom: same device-code flow, same `<configDir>/kingdom-runtime-<installationId>.json` (0600), polled at Kingdom's interval and checked with one heartbeat. The heartbeat names the owner Kingdom approved the runtime for; the pairing is recorded in the `kingdomRuntimes` setting as `{ url, owner, installationId, credentialFile }`. Each Kingdom API origin + owner pairs once, and its id (printed by `pair` and `status`) is derived from them, so it survives re-pairing. Pairing the same Kingdom as the same owner again is refused after approval (revoke that new runtime in Kingdom); `--replace` re-pairs one paired Kingdom instead, chosen by `--kingdom ID|URL` or `--url`, or the only one, and approval must come from the same owner. `disconnect` needs `--kingdom` when several are paired. Without `--url` pairing uses `KINGDOM_URL`, then hosted production; `--no-open` skips the browser; `--config-dir` defaults to `FOUNDRY_CONFIG_DIR` or `.foundry`. A settings file with the former single `kingdomRuntime` key does not load; remove it and pair again.
+`kingdom pair` is the terminal form of Settings → Kingdom: same device-code flow, same `<configDir>/kingdom-runtime-<installationId>.json` (0600), polled at Kingdom's interval and checked with one heartbeat. The heartbeat names the owner Kingdom approved the runtime for; the pairing is recorded in the `kingdomRuntimes` setting as `{ url, owner, installationId, credentialFile }`. Each Kingdom API origin + owner pairs once, and its id (printed by `pair` and `status`) is derived from them, so it survives re-pairing. Pairing the same Kingdom as the same owner again is refused after approval (revoke that new runtime in Kingdom); `--replace` re-pairs one paired Kingdom instead, chosen by `--kingdom ID|URL` or `--url`, or the only one, and approval must come from the same owner. `disconnect` needs `--kingdom` when several are paired. Without `--url` pairing uses `KINGDOM_URL`, then hosted production; `--no-open` skips the browser; `--config-dir` defaults to `FOUNDRY_CONFIG_DIR` or `.foundry`.
 
-Each paired Kingdom has its own heartbeat and job worker. A job is polled from, run for and reported to the Kingdom that issued it; its private state lives under `runtime-jobs/<installationId>_<jobId>`. One Kingdom refusing or unreachable never stops another. The viewer stays unlocked while at least one paired Kingdom authorizes this Foundry.
+Each paired Kingdom has its own heartbeat and job worker. A job is polled from, run for and reported to the Kingdom that issued it; its private state lives under `runtime-jobs/<installationId>_<jobId>`. A finished job is recorded in the local Archive before it is reported; with no local Archive set up the record is skipped. One Kingdom refusing or unreachable never stops another. The viewer stays unlocked while at least one paired Kingdom authorizes this Foundry. A running viewer holds settings in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`, and `bun run daemon:start` restarts the daemon.
 
-`archive setup` with no destination flags runs the guided flow (the flag form below is unchanged). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item. Destinations belong to one paired Kingdom: with several paired, setup asks which (non-interactive: `--kingdom ID|URL`, required), and a project published through another Kingdom still counts as unconfigured for this one. For each project with no destination on that Kingdom it lists the Kingdom connections carrying that project ID (`remote/connections`, as Settings → Archives does), plus Kingdom-stored archives, a direct Archive server (URL + hidden token, saved as a managed credential) or skip. Every choice is verified before `archives.json` is written.
-
-Non-interactive (`--yes`, or no TTY): `--kingdom-url URL` selects the Kingdom paired at that address, or pairs it when none is (approval is still in the browser); `--project ID` (repeatable) narrows the projects; a project connects to `--connection ID`, else its only matching Kingdom connection, else `--archive-url URL` with the token read from `--archive-token-env VAR` (default `ARCHIVE_TOKEN`); `--connection kingdom` selects Kingdom-stored archives. Several matches without `--connection` are skipped, never guessed. Output is JSON with per-project `configured | connected | skipped | failed`.
-
-A running viewer holds settings and archive routing in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`. `bun run daemon:start` restarts the daemon. `doctor` sends one heartbeat and one search per destination; `--offline` skips them.
-
-## Publish to Kingdom
-
-Pair a runtime with Kingdom. Kingdom takes the archive owner from its `kingdom_runtime_…` credential; `ownerModel`, `organizationId` and `spaceId` narrow it to an organization or space that owner manages. Put the credential in an environment variable available to Foundry, or use the enrolled identity (see Foundry credentials below); archive config never stores the secret.
-
-`<configDir>/archives.json` is an array:
-
-```json
-[
-  {
-    "kind": "kingdom",
-    "projectId": "my-project",
-    "url": "https://kingdom.example/",
-    "ownerModel": "Space",
-    "spaceId": "22222222-2222-4222-8222-222222222222",
-    "tokenEnv": "KINGDOM_ARCHIVE_TOKEN"
-  }
-]
-```
-
-Use real IDs; omit the owner fields to publish under the credential's own owner. Only archives whose explicit local `projectId` matches a destination are uploaded. Multiple destinations are explicit separate copies, with independent ownership and shares. Restart Foundry to load changed configuration. Destinations with unknown fields are rejected: the viewer reports the invalid file in Settings → Archives and publishes nothing until it is fixed or removed and the destinations are reconnected. All archived text, including recorded tool results and phase request context, goes to the selected destination; there is no automatic secret scrubber.
-
-For one imported archive, save one destination object (without the outer array) and run:
-
-```sh
-bun run archive publish --id ARCHIVE_ID --destination /absolute/path/destination.json
-```
-
-The automatic publisher also checks imported archives already in the same store on startup. It retains immutable local versions, persists the pending upload before sending, and replays that exact version when an acknowledgment is lost. Failed automatic uploads retry every 30 seconds. Uploaded changes use a previous-digest check, so a conflicting remote revision returns 409 and is not silently overwritten. Inspect both histories before resolving such a conflict. Only HTTPS and loopback HTTP are accepted; redirects are refused.
+Hosted Archives connect through Kingdom as an integration; the local Archive publishes to them. Foundry does not hold hosted Archive credentials or destinations.
 
 ## Feed archives into Foundry context
 
-Add an enabled `archive` source to Foundry's existing source configuration, then attach it to a layer used by the relevant agents:
+Add an enabled `archive` source to Foundry's source configuration, then attach it to a layer used by the relevant agents:
 
 ```json
 {
   "id": "session-history",
   "type": "archive",
   "label": "Session history",
-  "uri": "https://kingdom.example/",
+  "uri": "",
   "enabled": true,
-  "archive": {
-    "kind": "kingdom",
-    "projectId": "my-project",
-    "tokenEnv": "KINGDOM_ARCHIVE_TOKEN",
-    "budget": 2048
-  }
+  "archive": { "projectId": "my-project", "budget": 2048 }
 }
 ```
 
-The layer's `sourceIds` contains `session-history`. Its prompt should describe this as historical evidence to assess, not current instructions. Retrieval uses the current focus, checks the runtime credential and owner access on each source load, and only loads for the configured local project. Returned records include archive ID, revision, digest, entry ID, source reference, and exact character offsets. The serialized context wrapper is included in its token budget. Previously delivered content cannot be recalled from an agent's conversation when a share is revoked.
+The layer's `sourceIds` contains `session-history`. Its prompt should describe this as historical evidence to assess, not current instructions. Retrieval searches the local Archive with the current focus and only loads for the configured local project; with no local Archive set up it returns nothing. Returned records include archive ID, revision, digest, entry ID, source reference and exact character offsets. The serialized context wrapper is included in its token budget.
+
+## Archive console
+
+For capture and browsing without model workers, run `bun run archive:viewer` in a configured project, or invoke `packages/foundry/src/archives/viewer.ts` with that project as the working directory. `FOUNDRY_CONFIG_DIR` optionally selects the configuration directory; `VIEWER_PORT` defaults to 4500. The console uses the normal viewer, durable journal and automatic archive capture. It does not run model agents.
 
 ## Fidelity and current scope
 
 - Capture retains recorded user/assistant messages, turn outcomes, public native text observations with delta/snapshot form, public tool evidence, and phase events. Recorded phase request context is included. Central injected context, raw checkpoint traces and private reasoning are not reconstructed.
 - Entries carry Archive's `model` and `effort` from what Foundry recorded running: the executor's answers and tool calls from its native configuration (observed over requested), decision phases (route, advice, guard outcome) from the `served` model each role's request records. A phase whose participants ran on different models carries none. Each snapshot's `actor` is the local account operating Foundry (`kind: 'user'`).
-- Claude/Codex imports include supported public text and tool records. Public reasoning summaries are included only when present in the export. Images, encrypted payloads, private thinking and unsupported records are omitted and coverage reports this.
-- Tokenization uses `cl100k_base` as a named reference encoding. These counts are not interchangeable with every model's billing or context accounting. Chunks preserve text; they are not summaries or compression. Search is lexical, with no paid embedding or categorization service.
+- All archived text, including recorded tool results and phase request context, goes to the local Archive and from there to whatever it publishes to; there is no automatic secret scrubber.
 - Oracle `goalIds`/`runIds` can be supplied in the portable snapshot and survive storage and retrieval. This does not implement Oracle scheduling, goal ownership, or automatic discovery of Oracle relationships.
-- Kingdom currently provides explicit user read shares for a session and all its revisions. Archive shares are not yet resources in the external-connection Signet system.
-
-
-## Standalone Archive integration (2026-09-20)
-
-The portable implementation now lives in the sibling `archive` repository under MIT. Foundry installs it from npm under its existing `@inixiative/archive` import name (`npm:@inixiative/archive@^0.2.1`), the same alias Kingdom uses. Foundry retains journal capture and viewer wiring. 
-
-Direct BYO connection:
-
-```sh
-bun run archive connect --url https://your-archive.example --project-id my-project --token-env ARCHIVE_TOKEN
-```
-
-Kingdom connection:
-
-```sh
-bun run archive connect --kind kingdom --url https://kingdom.example --project-id my-project --token-env KINGDOM_ARCHIVE_TOKEN
-```
-
-The commands verify access and save `.foundry/archives.json`; `routes` previews publishing, and `sync` publishes matching local archives. The durable viewer loads this same configuration. Put credentials in its environment and restart after configuration changes. Exact-project external collection is available through `collect --directory HISTORY --source codex --project-root EXACT_CWD --project-id my-project --watch`. Use `claude-code` for Claude.
-
-For direct context retrieval set `archive.kind` to `archive` and retain `projectId`, `tokenEnv`, and `budget`. For Kingdom set `kind` to `kingdom`, with optional owner fields and `connectionId`. Standalone tokens and Kingdom runtime credentials are distinct; tags do not grant access or select a destination.
-
-## Connection controls and Archive console
-
-Settings → Archives lists configured destinations and checks their access. Connect Archive validates the URL and named credential environment variable before saving, reloads routing immediately, and queues matching local records. Retrieve context previews the same project-scoped, token-budgeted evidence used by `ArchiveContextSource`. It accepts only an already configured destination.
-
-For capture/browsing without model workers, run `bun run archive:viewer` in a configured project, or invoke `packages/foundry/src/archives/viewer.ts` with that project as the working directory. `FOUNDRY_CONFIG_DIR` optionally selects the configuration directory; `VIEWER_PORT` defaults to 4500. The console uses the normal viewer, durable journal, automatic archive capture and publisher. It does not run model agents. The normal `bun run start` worker launcher still requires its configured decision-model credentials.
-
-The compatibility facade now uses the published `@inixiative/archive@0.2.1` npm package, including ChatGPT partial-text imports and exact hosted tag filtering. Every destination and source names its `kind`. Use the explicit project ID consistently in journal metadata, destination configuration and retrieval configuration.
-
-## Foundry credentials
-
-In **Settings → Archives**, choose **Foundry managed credential** for a direct Archive server. Enter the Archive URL, local project ID and access token once. Foundry verifies access before saving the connection. The connection and context-source settings contain only `{ "type": "managed", "id": "<UUID>" }`; the secret lives in an owned `0600` file under `.foundry/credentials/` (`0700` directory), using the same private-file custody as native runtime enrollment. This is private local storage, not an encrypted OS keychain. Resolution checks the service, normalized destination URL and project and reads the file afresh for each request. Environment-variable connections remain supported.
-
-Core exports `CredentialReference`, `CredentialScope` and `CredentialResolver`. Foundry supplies the resolver; standalone Archive has no dependency on Foundry Core or enrollment. Inference provider keys and native Claude/Codex subscription credentials are not Archive credentials.
-
-For **Connected Kingdom identity**, first connect in **Settings → Kingdom** (or `bun run kingdom pair`), then choose the paired Kingdom. Archive lists the hosted destinations Kingdom has bound to that Kingdom's owner (`remote/connections`). Choose one, or Kingdom-stored archives. The destination saves `credential: { "type": "kingdom-runtime", "owner": "<owner key>" }`; requests reuse the installation credential paired with that Kingdom origin and owner, only for the archive service. Kingdom checks current installation validity and owner authority for every request; hosted-server tokens remain on Kingdom. With a `connectionId`, requests go to Kingdom's `remote/…` actions, and an external destination must have an explicit matching `projectId` in `ARCHIVE_REMOTE_BINDINGS` to accept publication. External archives do not support per-session shares.
-
-A direct project source can use the same credential reference:
-
-```json
-{
-  "id": "archive-history",
-  "type": "archive",
-  "uri": "https://archive.example/",
-  "enabled": true,
-  "archive": {
-    "kind": "archive",
-    "projectId": "personal",
-    "credential": { "type": "managed", "id": "<saved-credential-UUID>" },
-    "budget": 2048
-  }
-}
-```
-
-For a Kingdom source use its API origin as `uri`, `kind: "kingdom"`, optional owner fields and hosted `connectionId`, and `credential: { "type": "kingdom-runtime", "owner": "<owner key>" }` naming the paired Kingdom owner. The owning local project must still match before any context request is sent. Reconnect a direct destination to replace its credential; update source references that also use the old credential. Old references are not silently redirected to a new secret.
-
-The Foundry CLI uses the same resolver for sync, publish and remote search:
-
-```sh
-bun run archive connect --kingdom-identity --connection-id my-archive --project-id my-project   # --kingdom ID|URL when several are paired
-bun run archive connect --kingdom-identity --owner-model Space --space-id UUID --project-id my-project
-bun run archive sync
-bun run archive search --remote --query "migration"
-```
-
-For a saved direct credential use `connect --kind archive --url https://archive.example --project-id personal --credential-id <UUID>`. Secrets are never CLI arguments. `--config` selects the connection file and its parent Foundry credential directory; otherwise `FOUNDRY_CONFIG_DIR` or `.foundry` is used. Standalone Archive's own CLI keeps its independent environment-token setup.

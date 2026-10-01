@@ -28,7 +28,6 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
-import { FoundryCredentials } from '../providers/credentials';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from '../viewer/config';
@@ -51,7 +50,6 @@ export type SourceResolver = (sourceId: string, config: FoundryConfig) => Contex
 export interface SourceResolverDeps {
   /** Project memory store backing every "file" source. */
   memory: FileMemory;
-  configDir?: string;
 }
 
 /**
@@ -70,14 +68,7 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
 
     switch (srcCfg.type) {
       case 'archive':
-        return new ArchiveContextSource(
-          srcCfg.id,
-          srcCfg.uri,
-          archiveContextSchema.parse(srcCfg.archive),
-          undefined,
-          fetch,
-          new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntimes),
-        );
+        return new ArchiveContextSource(srcCfg.id, archiveContextSchema.parse(srcCfg.archive));
       case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
       case 'file':

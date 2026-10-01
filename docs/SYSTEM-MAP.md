@@ -12,7 +12,7 @@ flowchart LR
     F["Foundry + foundry-core<br/>(viewer :4500, daemon)"]
     AS["agent-session<br/>(npm library)"]
     CLI["Claude Code / Codex CLIs<br/>(subscription logins)"]
-    LA["Local Archive<br/>(SQLite, :4411)"]
+    LA["Local Archive<br/>(Compose + Postgres, :4700)"]
   end
   subgraph hosted["Hosted"]
     K["Kingdom<br/>(identity, owners, integrations, Signets)"]
@@ -22,12 +22,11 @@ flowchart LR
   F -- "npm import" --> AS
   AS -- "spawn + stdio / JSON-RPC" --> CLI
   CLI -- "MCP (foundry_* tools)" --> F
-  F -- "npm import (@inixiative/archive)" --> LA
+  F -- "HTTP /api/v1/archive/* (@inixiative/archive/remote)" --> LA
   F -- "HTTP /api/v1/access/* (runtime bearer)<br/>pair, heartbeat, jobs, runs" --> K
   F -- "HTTP + DPoP: Signet request / execute" --> K
-  F -- "HTTP /api/v1/archive/* (+ remote/*)" --> K
   F -. "WebSocket liveness (draft #42)" .-> K
-  F -- "HTTP /api/v1/archive/* (BYO token)" --> HA
+  LA -- "serve --sync" --> HA
   K -- "HTTP forward /api/v1/archive/*" --> HA
   O -- "npm import (foundry-core)" --> F
   O -- "HTTP verifyAuthority via SignetClient" --> K
@@ -44,7 +43,7 @@ flowchart LR
 - **Release:** base of the `agentic` lane of the `@inixiative/config` train.
 
 ### Foundry + foundry-core (`inixiative/foundry`, `@inixiative/foundry-core` 0.2.0 MIT, `@inixiative/foundry` 0.2.0 BSL)
-- **Owns:** the local workspace. That covers threads, context layers, middleware (decision roles on warm subscription sessions), the capability gate, the viewer and daemon, the MCP server for agents, Kingdom pairing on the client side, runtime jobs, and Archive capture and publication. It is subscription-only by default (`apiTokens` opt-in).
+- **Owns:** the local workspace. That covers threads, context layers, middleware (decision roles on warm subscription sessions), the capability gate, the viewer and daemon, the MCP server for agents, Kingdom pairing on the client side, runtime jobs, and capture into the local Archive (it keeps no archive store and publishes nowhere; the local Archive publishes onward). It is subscription-only by default (`apiTokens` opt-in).
 - **Not its job:**
   - Session transports and pools. It should consume agent-session for these.
   - Identity, owners and Signet issuance (Kingdom).
@@ -149,9 +148,6 @@ flowchart LR
   - `providers/session-backed.ts:71,85,176` keeps its own warm-session pool.
   - Draft #41 moves decisions onto agent-session primed sessions. agent-session 0.3.0 is now on npm, so it is no longer blocked on the release.
 - **Connection as a term:**
-  - CLI: `packages/foundry/src/archives/cli.ts:30,46` (`--connection`, `--connection-id`)
-  - Config: `archives/config.ts:34` (`connectionId`)
-  - Route: `/api/archives/connections`
   - `providers/kingdom-authentication.ts:97`
   - `providers/connection-check-job.ts`
 - **README:**
@@ -198,9 +194,9 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 - It is subscription-only by default (`packages/foundry/src/start.ts:135-140`, `subscription-policy.ts:38-63`), with `apiTokens` as the opt-in (`viewer/config.ts:32-33`).
 
 **2. Local Archive: works.**
-- The viewer captures into `.foundry/archives/archives.sqlite` (`archives/cli.ts:54-55`).
-- Standalone: `archive init && archive serve` (loopback :4411), plus `archive agents add-collector … && archive agents install` for always-on capture.
-- `bun run archive --help` in a fresh worktree lists the whole Archive CLI plus the Foundry `setup`/`connect` extensions.
+- One local Archive per machine runs in Docker Compose (`archive up`, loopback :4700); `bun run archive setup` starts it. The viewer captures into it over HTTP and retries while it is down.
+- `archive agents add-collector … && archive agents install` adds always-on capture of Claude Code and Codex history.
+- `bun run archive …` passes every command except `setup` to the Archive CLI.
 
 **3. Sign in to Kingdom with owners: works.**
 - The five-way owner landed in Kingdom #80.
@@ -224,8 +220,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 
 **5. Prompted hosted-Archive setup once hosting is connected: partial.**
 - **What exists:**
-  - Foundry's first-run `bun run setup` asks "Pair with Kingdom and set up session archives now?" (`packages/foundry/src/setup.ts:89`).
-  - `bun run archive setup` pairs if needed, then offers Kingdom-stored, Kingdom-forwarded or a direct Archive server for each project (`archives/setup.ts:46-199`).
+  - Foundry's first-run `bun run setup` starts the local Archive and offers Kingdom pairing. Foundry holds no hosted destinations: the local Archive publishes to hosted Archives, which are reached through Kingdom as an integration (Kingdom side not built yet).
 - **Kingdom:**
   - On main, remote Archives come only from the operator env `ARCHIVE_REMOTE_BINDINGS` (`apps/api/src/modules/archive/services/remoteArchives.ts:23`).
   - Open PR #86 adds self-service "Connect an Archive server" as an `archiveServer` integration.

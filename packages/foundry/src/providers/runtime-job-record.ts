@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { localArchive } from '@inixiative/archive/remote';
 import { archiveRuntimeJob } from './archive-runtime-job';
 import { readPrivateJson, writePrivateJson } from './kingdom-credential-file';
 import { jobStateSchema, type RuntimeJob, type RuntimeJobState } from './runtime-job-contracts';
@@ -46,7 +47,7 @@ export class RuntimeJobRecord {
   /** Archives the terminal state, then reports it. Archive failure precedes any report. */
   async finish(): Promise<void> {
     const state = jobStateSchema.parse(this.state);
-    await archiveRuntimeJob(this.context.runtimeDirectory, this.job, state, this.title);
+    await archiveRuntimeJob(this.job, state, this.title, localArchive());
     await this.report(state.phase === 'finished' ? 'completed' : 'failed');
   }
 }
