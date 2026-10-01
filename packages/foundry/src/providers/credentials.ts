@@ -1,11 +1,11 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { destinationUrl } from '@inixiative/archive/config';
 import type {
   CredentialReference,
   CredentialResolver,
   CredentialScope,
 } from '@inixiative/foundry-core';
-import { destinationUrl } from '@inixiative/session-archive/config';
 import { z } from 'zod';
 import { ownerKey, ownerKeySchema } from './kingdom-client';
 import {

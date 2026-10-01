@@ -1,10 +1,10 @@
+import { tokenCount } from '@inixiative/archive';
 import type {
   ContextSource,
   CredentialResolver,
   OwnershipScope,
   SourceLoadHint,
 } from '@inixiative/foundry-core';
-import { tokenCount } from '@inixiative/session-archive';
 import { z } from 'zod';
 import { credentialReferenceSchema, FoundryCredentials } from '../providers/credentials';
 import { type ArchiveDestination, kingdomOwnerFields } from './config';

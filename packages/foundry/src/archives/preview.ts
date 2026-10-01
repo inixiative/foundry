@@ -1,1 +1,1 @@
-export * from '@inixiative/session-archive/preview';
+export * from '@inixiative/archive/preview';
