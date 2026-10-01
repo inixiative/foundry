@@ -49,17 +49,16 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
   const installationId = crypto.randomUUID();
   const secret = 'kingdom_runtime_' + 'a'.repeat(43);
   await writePrivateJson(credentialFile, { secret });
-  const credentials = new FoundryCredentials(dir, () => ({
-    url: 'https://kingdom.example',
-    installationId,
-    credentialFile,
-  }));
+  const owner = 'Organization::11111111-1111-4111-8111-111111111111:';
+  const credentials = new FoundryCredentials(dir, () => [
+    { url: 'https://kingdom.example', owner, installationId, credentialFile },
+  ]);
   const destination = {
     kind: 'kingdom' as const,
     url: 'https://kingdom.example/',
     projectId: 'inixiative',
     connectionId: 'inixiative',
-    credential: { type: 'kingdom-runtime' as const },
+    credential: { type: 'kingdom-runtime' as const, owner },
   };
   let calls = 0;
   const transport = (async (url: any, init: any) => {
@@ -84,20 +83,21 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
     await expect(archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials)).rejects.toThrow(
       '401',
     );
-    await expect(credentials.resolve({ type: 'kingdom-runtime' }, scope)).rejects.toThrow('scope');
-    const identity = await credentials.kingdomIdentity((async () =>
-      Response.json({
-        data: { installationId, expiresAt: new Date(Date.now() + 60000).toISOString() },
-      })) as typeof fetch);
-    expect(identity).toEqual({ url: 'https://kingdom.example' });
+    await expect(credentials.resolve({ type: 'kingdom-runtime', owner }, scope)).rejects.toThrow('scope');
     await expect(
-      credentials.kingdomIdentity((async () =>
+      credentials.resolve({ type: 'kingdom-runtime', owner: `User:${crypto.randomUUID()}::` }, { ...scope, url: destination.url }),
+    ).rejects.toThrow('scope');
+    const heartbeat = (id: string, identityOwner: object) =>
+      (async () =>
         Response.json({
-          data: {
-            installationId: crypto.randomUUID(),
-            expiresAt: new Date(Date.now() + 60000).toISOString(),
-          },
-        })) as typeof fetch),
+          data: { installationId: id, userId: null, owner: identityOwner, expiresAt: new Date(Date.now() + 60000).toISOString() },
+        })) as unknown as typeof fetch;
+    const organization = { ownerModel: 'Organization', organizationId: '11111111-1111-4111-8111-111111111111' };
+    const identity = await credentials.kingdomIdentity(undefined, heartbeat(installationId, organization));
+    expect(identity).toEqual({ id: expect.any(String), url: 'https://kingdom.example', owner });
+    await expect(credentials.kingdomIdentity(undefined, heartbeat(crypto.randomUUID(), organization))).rejects.toThrow('unavailable');
+    await expect(
+      credentials.kingdomIdentity(undefined, heartbeat(installationId, { ownerModel: 'User', userId: crypto.randomUUID() })),
     ).rejects.toThrow('mismatch');
   } finally {
     rmSync(dir, { recursive: true, force: true });

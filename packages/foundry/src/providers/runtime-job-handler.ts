@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { RuntimeJob } from "./runtime-job-contracts";
-import type { KingdomRuntimeSettings } from "./kingdom-runtime-connection";
+import type { KingdomInstallation } from "./kingdom-runtime-connection";
 import { connectionCheckJobHandler } from "./connection-check-job";
 
 /** Enrolled runtime identity returned by `runtimeHeartbeat`. */
@@ -12,7 +12,7 @@ export type RuntimeIdentity = { installationId: string; userId: string | null; o
 export type RuntimeJobRequest = (action: string, body: unknown) => Promise<unknown>;
 
 export interface RuntimeJobContext {
-  readonly settings: KingdomRuntimeSettings;
+  readonly settings: KingdomInstallation;
   /** Private 0700 job directory, created and ownership-checked by the worker. */
   readonly directory: string;
   /** Private runtime root holding the installation credential and the local Archive. */

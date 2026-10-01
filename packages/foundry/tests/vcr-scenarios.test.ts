@@ -141,7 +141,7 @@ test.skipIf(!kingdomUp)("kingdom runtime heartbeat: an unenrolled installation c
   expect(await scenario(vcr, "heartbeat", async () => {
     const directory = root(), credentialFile = join(directory, "runtime.json");
     writeFileSync(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"x".repeat(43)}` }), { mode: 0o600 });
-    const connection = new KingdomRuntimeConnection({ url: LIVE.kingdomUrl, installationId: crypto.randomUUID(), credentialFile }, () => 0,
+    const connection = new KingdomRuntimeConnection({ url: LIVE.kingdomUrl, owner: `User:${crypto.randomUUID()}::`, installationId: crypto.randomUUID(), credentialFile }, () => 0,
       httpCassettes(vcr.queue("runtime-heartbeat", "unenrolled"), "runtime-heartbeat"));
     const error = await connection.check().then(() => undefined, (e: Error) => e.message);
     connection.stop();

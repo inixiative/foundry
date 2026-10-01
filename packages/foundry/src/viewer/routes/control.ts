@@ -164,7 +164,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const body = await c.req.json<FoundryConfig>();
     await configStore.load();
     return writeSettings(c, configStore,
-      (expected) => configStore.update((current) => ({ ...body, kingdomRuntime: current.kingdomRuntime }), expected),
+      (expected) => configStore.update((current) => ({ ...body, kingdomRuntimes: current.kingdomRuntimes }), expected),
       () => ({ ok: true }));
   });
 

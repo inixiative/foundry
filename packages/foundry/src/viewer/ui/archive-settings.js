@@ -12,6 +12,8 @@ export function ArchiveSettings() {
   const [secret, setSecret] = useState('');
   const [tokenEnv, setTokenEnv] = useState('ARCHIVE_TOKEN');
   const [kingdom, setKingdom] = useState(null);
+  const [paired, setPaired] = useState([]);
+  const [kingdomId, setKingdomId] = useState('');
   const [connectionId, setConnectionId] = useState('');
   const request = async (path, body) => {
     const response = await fetch(
@@ -40,10 +42,23 @@ export function ArchiveSettings() {
   useEffect(() => {
     load();
   }, []);
-  const discover = async () => {
+  const choose = async () => {
+    try {
+      const response = await fetch('/api/kingdom/status');
+      const runtimes = response.ok ? (await response.json()).runtimes : [];
+      setPaired(runtimes);
+      const id = runtimes.some((runtime) => runtime.id === kingdomId) ? kingdomId : (runtimes[0]?.id ?? '');
+      setKingdomId(id);
+      if (id) await discover(id);
+      else setKingdom(null);
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+  const discover = async (id = kingdomId) => {
     setBusy(true);
     try {
-      setKingdom(await request('kingdom'));
+      setKingdom(await request(`kingdom?kingdom=${encodeURIComponent(id)}`));
       setConnectionId('');
       setError('');
     } catch (error) {
@@ -63,6 +78,7 @@ export function ArchiveSettings() {
         ownerModel: connection.ownerModel ?? null,
         organizationId: connection.organizationId ?? null,
         spaceId: connection.spaceId ?? null,
+        owner: connection.credential?.type === 'kingdom-runtime' ? connection.credential.owner : null,
         query,
       });
       setEvidence(result.evidence || 'No matching evidence.');
@@ -80,7 +96,7 @@ export function ArchiveSettings() {
               kind: 'kingdom',
               url: kingdom.url,
               ...(connectionId ? { connectionId } : {}),
-              credential: { type: 'kingdom-runtime' },
+              credential: { type: 'kingdom-runtime', owner: kingdom.owner },
             }
           : { kind: 'archive', url, ...(mode === 'managed' ? { secret } : { tokenEnv }) };
       await request('connect', { ...destination, projectId });
@@ -97,10 +113,10 @@ export function ArchiveSettings() {
     ${connections.map(
       (
         connection,
-      ) => html`<div key=${[connection.projectId, connection.url, connection.connectionId, connection.ownerModel, connection.organizationId, connection.spaceId].join(':')}>
+      ) => html`<div key=${[connection.projectId, connection.url, connection.connectionId, connection.ownerModel, connection.organizationId, connection.spaceId, connection.credential?.owner].join(':')}>
       <strong>${connection.projectId}</strong> — ${connection.status}
       <p>${connection.url}${connection.connectionId ? ` · ${connection.connectionId}` : ''}</p>
-      <p>${connection.credential?.type === 'kingdom-runtime' ? 'Foundry Kingdom identity' : connection.credential?.type === 'managed' ? 'Foundry managed credential' : 'Environment credential'}</p>
+      <p>${connection.credential?.type === 'kingdom-runtime' ? `Foundry Kingdom identity (${connection.credential.owner})` : connection.credential?.type === 'managed' ? 'Foundry managed credential' : 'Environment credential'}</p>
       <button onClick=${() => retrieve(connection)}>Retrieve context</button>
     </div>`,
     )}
@@ -112,7 +128,7 @@ export function ArchiveSettings() {
       <label>Connect using<select value=${mode} onChange=${(event) => {
         setMode(event.target.value);
         setSecret('');
-        if (event.target.value === 'kingdom') discover();
+        if (event.target.value === 'kingdom') choose();
       }}>
         <option value="managed">Foundry managed credential</option>
         <option value="kingdom">Connected Kingdom identity</option>
@@ -121,8 +137,18 @@ export function ArchiveSettings() {
       ${
         mode === 'kingdom'
           ? html`
-        <p>${kingdom ? kingdom.url : html`<a href="/kingdom">Pair with Kingdom first</a> to use your enrolled identity, then refresh.`}</p>
-        <button type="button" disabled=${busy} onClick=${discover}>Refresh Kingdom archives</button>
+        ${
+          paired.length
+            ? html`<label>Kingdom<select value=${kingdomId} onChange=${(event) => {
+                setKingdomId(event.target.value);
+                setConnectionId('');
+                discover(event.target.value);
+              }}>
+              ${paired.map((runtime) => html`<option key=${runtime.id} value=${runtime.id}>${runtime.url} as ${runtime.owner}</option>`)}
+            </select></label>`
+            : html`<p><a href="/kingdom">Pair with Kingdom first</a> to use your enrolled identity, then refresh.</p>`
+        }
+        <button type="button" disabled=${busy} onClick=${choose}>Refresh Kingdom archives</button>
         ${
           kingdom &&
           html`<label>Destination<select value=${connectionId} onChange=${(event) => {

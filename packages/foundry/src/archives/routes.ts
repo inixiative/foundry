@@ -25,7 +25,7 @@ export function registerArchiveRoutes(
 ) {
   const credentials = new FoundryCredentials(
     configDir,
-    async () => (await new ConfigStore(configDir).load()).kingdomRuntime,
+    async () => (await new ConfigStore(configDir).load()).kingdomRuntimes,
   );
   const configPath = join(configDir, 'archives.json');
   let destinations: ArchiveDestination[] = [];
@@ -92,9 +92,11 @@ export function registerArchiveRoutes(
   for (const archive of store.list()) void publish(archive.id);
   app.get('/api/archives/kingdom', async (c) => {
     try {
-      return c.json(await listKingdomConnections(credentials, fetch, journal.threads().length));
+      return c.json(
+        await listKingdomConnections(credentials, c.req.query('kingdom'), fetch, journal.threads().length),
+      );
     } catch {
-      return c.json({ error: 'Connect Foundry to Kingdom in Settings → Kingdom first.' }, 503);
+      return c.json({ error: 'Pair the chosen Kingdom in Settings → Kingdom first.' }, 503);
     }
   });
   app.get('/api/archives/connections', async (c) =>
@@ -134,6 +136,7 @@ export function registerArchiveRoutes(
         ownerModel: z.string().nullable().optional(),
         organizationId: z.string().nullable().optional(),
         spaceId: z.string().nullable().optional(),
+        owner: z.string().nullable().optional(),
         query: z.string().max(1000).default(''),
       })
       .safeParse(await c.req.json());
@@ -145,7 +148,9 @@ export function registerArchiveRoutes(
         (['connectionId', 'ownerModel', 'organizationId', 'spaceId'] as const).every(
           (key) =>
             parsed.data[key] === undefined || (d.kind === 'archive' ? null : (d[key] ?? null)) === parsed.data[key],
-        ),
+        ) &&
+        (parsed.data.owner === undefined ||
+          (d.credential?.type === 'kingdom-runtime' ? d.credential.owner : null) === parsed.data.owner),
     );
     const destination = matches.length === 1 ? matches[0] : undefined;
     if (!destination) return c.json({ error: 'Archive connection unavailable' }, 404);

@@ -14,10 +14,6 @@ const jobLock = async (root: string, jobId: string) => {
 };
 
 describe("runtimeJobsInFlight", () => {
-  test("no runtime directory means nothing is running", async () => {
-    expect(await runtimeJobsInFlight(undefined)).toBe(false);
-  });
-
   test("an unenrolled runtime with no jobs directory is idle", async () => {
     expect(await runtimeJobsInFlight(await runtimeDir())).toBe(false);
   });
