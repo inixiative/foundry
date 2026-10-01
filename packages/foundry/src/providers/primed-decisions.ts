@@ -148,11 +148,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     { mode: 0o600 },
   );
   // The warm process shares the user's Codex login like any decision process: a shared registration for its lifetime.
+  // It runs on a private home kept across hosts in the receipt directory: the login only, no user instructions.
   const auth = new NativeAuthentication({
-    directory: root,
+    directory: config.directory,
     sources: [source],
     defaultSourceId: source.id,
     shared: true,
+    privateHome: true,
   });
   let releaseFailures = 0;
   const host = new CodexPrimedSessions({

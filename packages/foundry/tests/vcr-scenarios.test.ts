@@ -17,7 +17,14 @@ import {
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
-import { httpCassettes, ProcessCassettes, type VCR, vcrMode, webSocketCassettes } from '../src/vcr';
+import {
+  httpCassettes,
+  ProcessCassettes,
+  type ProcessTranscript,
+  type VCR,
+  vcrMode,
+  webSocketCassettes,
+} from '../src/vcr';
 import {
   ANSWER,
   answerPrompt,
@@ -25,6 +32,7 @@ import {
   codexVcr,
   DECIDED,
   decisionMessages,
+  FIXTURES_DIR,
   kingdomVcr,
   LIVE,
   recordedAppServerTransport,
@@ -236,6 +244,26 @@ test(
     });
   },
   LIVE_TIMEOUT,
+);
+
+// Replay-only: a live run checks its fresh recordings in the replay pass that follows.
+test.skipIf(recording)(
+  'codex primed decisions load no instruction source: the private home holds the login only',
+  () => {
+    const sources = (['launch', 'role'] as const).flatMap((name) => {
+      const frames = (
+        JSON.parse(readFileSync(join(FIXTURES_DIR, 'codex', `primed.${name}.json`), 'utf8')) as {
+          body: ProcessTranscript;
+        }
+      ).body.frames;
+      return frames.flatMap((frame) => {
+        const result = JSON.parse(frame.data)?.result;
+        return result?.thread ? [result.instructionSources] : [];
+      });
+    });
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.every((list) => Array.isArray(list) && list.length === 0)).toBe(true);
+  },
 );
 
 test(
