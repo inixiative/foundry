@@ -12,7 +12,12 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
-import { assertPrivateProfile, assertProfile, writeProfileConfiguration } from './private-profile';
+import {
+  assertPrivateProfile,
+  assertProfile,
+  writeCredentialHome,
+  writeProfileConfiguration,
+} from './private-profile';
 
 export type NativeAuthenticationSource = {
   /** Local identities, never provider account names or secrets. */
@@ -87,6 +92,8 @@ export interface NativeAuthenticationProvider {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+/** A private home reads credentials from its linked auth.json; Codex's keyring entry is keyed by the home's path. */
+const PRIVATE_HOME_CONFIG = 'cli_auth_credentials_store = "file"\n';
 
 /** Foundry-owned launch configuration. No model calls, credential export or
  * background daemon. Native runtimes own native refresh; gateway helpers own
@@ -96,13 +103,17 @@ export class NativeAuthentication {
   private selections = new Map<string, string>();
   private revoked = new Set<string>();
   /** `shared`: concurrent holders of a native profile (bounded decision processes on one login). They
-   * exclude, and are excluded by, the exclusive lock that a warm worker holds. */
+   * exclude, and are excluded by, the exclusive lock that a warm worker holds.
+   * `privateHome`: Codex native profiles run on a Foundry-owned CODEX_HOME under `directory` that holds only the
+   * profile's login, so the user's instructions, memories, skills, config and history never reach the child. The
+   * profile keeps the lock and stays the one refresh target. */
   constructor(
     private options: {
       directory: string;
       sources: NativeAuthenticationSource[];
       defaultSourceId?: string;
       shared?: boolean;
+      privateHome?: boolean;
     },
   ) {
     this.options = { ...options };
@@ -161,6 +172,13 @@ export class NativeAuthentication {
     }
     if (options.defaultSourceId && !this.sources.has(options.defaultSourceId))
       throw Error('Unknown default authentication source');
+    if (
+      options.privateHome &&
+      [...this.sources.values()].some(
+        (source) => source.runtime !== 'codex' || source.mode !== 'native-profile',
+      )
+    )
+      throw Error('A private home requires Codex native profiles');
   }
   select(threadId: string, sourceId: string): void {
     if (!this.sources.has(sourceId)) throw Error('Unknown authentication source');
@@ -199,6 +217,9 @@ export class NativeAuthentication {
     const ownerId = crypto.randomUUID();
     const shared = source.mode === 'native-profile' && this.options.shared === true;
     const sharedLocks = join(directory, '.foundry-auth-shared');
+    const home = this.options.privateHome
+      ? join(this.options.directory, source.id, 'codex-home')
+      : undefined;
     let active = false;
     let released = false;
     const check = () => {
@@ -251,9 +272,11 @@ export class NativeAuthentication {
         // A default login location is selected by leaving the override unset.
         Object.assign(
           env,
-          source.mode === 'native-profile'
-            ? profileEnvironment(runtime, directory)
-            : { [runtime === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: directory },
+          home
+            ? { CODEX_HOME: home }
+            : source.mode === 'native-profile'
+              ? profileEnvironment(runtime, directory)
+              : { [runtime === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: directory },
         );
         if (source.mode === 'gateway') {
           if (source.credential.type === 'environment') {
@@ -338,6 +361,18 @@ export class NativeAuthentication {
             unlinkSync(join(sharedLocks, `${ownerId}.json`));
             throw Error('Native profile is in use or unavailable; release its owner before reuse');
           }
+          if (home)
+            try {
+              writeCredentialHome(home, directory, PRIVATE_HOME_CONFIG);
+            } catch {
+              unlinkSync(join(sharedLocks, `${ownerId}.json`));
+              try {
+                rmdirSync(sharedLocks);
+              } catch {
+                /* Another holder remains. */
+              }
+              throw Error('Could not prepare the private native home');
+            }
         } else {
           try {
             mkdirSync(lock, { mode: 0o700 });
@@ -351,6 +386,7 @@ export class NativeAuthentication {
           try {
             for (const [path, contents] of files)
               writeProfileConfiguration(directory, path, contents);
+            if (home) writeCredentialHome(home, directory, PRIVATE_HOME_CONFIG);
             writeFileSync(join(lock, 'owner.json'), owner, { mode: 0o600 });
           } catch {
             try {

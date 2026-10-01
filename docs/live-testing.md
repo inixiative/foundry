@@ -18,7 +18,7 @@ The live tiers resolve `claude`, `codex` and `node` exactly as `daemon:install` 
 
 Each process may make at most 40 live calls (`FOUNDRY_VCR_MAX_LIVE`). A full live run makes about 20: the status probes many tests share are recorded once per run and replayed after that. If local Kingdom (`FOUNDRY_VCR_KINGDOM_URL`, default `http://127.0.0.1:8200`) is down, its scenarios are skipped and its cassettes are not refreshed; the age limit catches that eventually.
 
-**Limit: the live tier runs the real login, not Foundry's profile composition.** Tests build Foundry against temporary profiles, so the recorder runs the real CLI with the account's own HOME, drops a temporary `CLAUDE_CONFIG_DIR`/`CODEX_HOME` and uses the daemon's PATH. The CLI protocol, the login, latency and launchd behaviour are live. How Foundry composes profile environments is covered by the unit tests.
+**Limit: the live tier runs the real login, not Foundry's profile composition.** Tests build Foundry against temporary profiles, so the recorder runs the real CLI with the account's own HOME, drops a temporary `CLAUDE_CONFIG_DIR`/`CODEX_HOME` and uses the daemon's PATH. A composed private Codex home (the decision host's) stays private: the recorder runs it on a copy of its config with the account's `~/.codex/auth.json` linked in, so live decisions prove that no user instructions load. The CLI protocol, the login, latency and launchd behaviour are live. How Foundry composes profile environments is covered by the unit tests.
 
 ## The VCR
 
