@@ -12,6 +12,8 @@ Open http://localhost:4400.
 
 For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
 
+How Foundry fits with Kingdom, Oracle, Archive and agent-session, and how far the end-to-end journey works today: [system map](docs/SYSTEM-MAP.md).
+
 ## What this is
 
 Foundry is a framework for building agent systems where you control the context, permissions, and routing — not just the prompt.
