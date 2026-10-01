@@ -1,11 +1,58 @@
+import { userInfo } from 'node:os';
 import {
+  type ArchiveActor,
   type ArchiveEntry,
   type ArchiveSnapshot,
   archiveSnapshotSchema,
 } from '@inixiative/archive';
 import type { LocalArchiveStore } from '@inixiative/archive/local';
-import { type EventStream, threadTitle } from '@inixiative/foundry-core';
+import {
+  configuredModel,
+  type EventStream,
+  type NativeEvidence,
+  type ServedModel,
+  threadTitle,
+} from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
+
+/** The person operating this Foundry: its local account. */
+export function localActor(): ArchiveActor | undefined {
+  try {
+    const { username } = userInfo();
+    return username ? { kind: 'user', id: username } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Archive's `model` / `effort` fields for an entry; values Archive would refuse are left off, never clipped. */
+const stamp = (served: ServedModel | undefined) =>
+  served && served.model.length <= 200
+    ? {
+        model: served.model,
+        ...(served.effort && served.effort.length <= 40 ? { effort: served.effort } : {}),
+      }
+    : {};
+
+/** The one model and effort a decision phase record says answered; none when absent or mixed. */
+function phaseServed(record: unknown): ServedModel | undefined {
+  const found = new Map<string, ServedModel>();
+  const walk = (value: unknown) => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) return value.forEach(walk);
+    for (const [key, nested] of Object.entries(value)) {
+      const served = nested as Partial<ServedModel> | undefined;
+      if (key === 'served' && typeof served?.model === 'string')
+        found.set(JSON.stringify([served.model, served.effort]), {
+          model: served.model,
+          ...(typeof served.effort === 'string' ? { effort: served.effort } : {}),
+        });
+      else walk(nested);
+    }
+  };
+  walk(record);
+  return found.size === 1 ? [...found.values()][0] : undefined;
+}
 
 export function captureThread(
   journal: LocalSessionStore,
@@ -16,6 +63,26 @@ export function captureThread(
   if (!thread) throw new Error('Unknown archive source thread');
   const entries: ArchiveEntry[] = [];
   const records = journal.archiveRecords(threadId);
+  const actor = localActor();
+  // What each native call ran on, by admission, and what the central executor ran on, by turn.
+  const byAdmission = new Map<string, ServedModel>();
+  const byTurn = new Map<string, ServedModel>();
+  const learn = (evidence: NativeEvidence | undefined) => {
+    const served = configuredModel(evidence?.configuration);
+    if (served && evidence?.admissionId) byAdmission.set(evidence.admissionId, served);
+    return served;
+  };
+  for (const message of records.messages) {
+    if (message.actor !== 'agent') continue;
+    const served = learn(message.meta?.native as NativeEvidence | undefined);
+    if (served) byTurn.set(message.turnId, served);
+  }
+  const servedFor = (evidence: NativeEvidence) =>
+    (evidence.admissionId ? byAdmission.get(evidence.admissionId) : undefined) ??
+    // Auxiliary sessions (decision roles) never inherit the executor's model.
+    ((evidence.owner?.providerSessionKey ?? threadId) === threadId && evidence.owner?.messageId
+      ? byTurn.get(evidence.owner.messageId)
+      : undefined);
   for (const message of records.messages)
     entries.push({
       id: message.id,
@@ -24,6 +91,7 @@ export function captureThread(
       text: message.content,
       timestamp: message.timestamp,
       sourceRef: `message:${message.id}`,
+      ...(message.actor === 'agent' ? stamp(byTurn.get(message.turnId)) : {}),
     });
   for (const { record } of records.tools)
     entries.push({
@@ -51,6 +119,7 @@ export function captureThread(
         native.push(evidence);
       }
     }
+  for (const evidence of native) learn(evidence);
   for (const [index, evidence] of native.entries()) {
     if (!evidence || typeof evidence !== 'object') continue;
     if (!evidence.toolName && evidence.toolOutput === undefined && !evidence.toolInput) {
@@ -69,14 +138,16 @@ export function captureThread(
           }),
           timestamp: evidence.observedAt ?? null,
           sourceRef: `native:${index}`,
+          ...stamp(servedFor(evidence)),
         });
       continue;
     }
+    const kind = evidence.toolOutput !== undefined ? 'tool-result' : 'tool-call';
     entries.push({
       id: `native:${index}`,
       turnId: evidence.owner?.messageId,
       callId: evidence.callId,
-      kind: evidence.toolOutput !== undefined ? 'tool-result' : 'tool-call',
+      kind,
       text: JSON.stringify({
         tool: evidence.toolName,
         input: evidence.toolInput,
@@ -86,6 +157,7 @@ export function captureThread(
       }),
       timestamp: evidence.observedAt ?? null,
       sourceRef: `native:${index}`,
+      ...(kind === 'tool-call' ? stamp(servedFor(evidence)) : {}),
     });
   }
   for (const phase of records.phases)
@@ -96,6 +168,8 @@ export function captureThread(
       text: JSON.stringify({ phase: phase.phase, record: phase.record }),
       timestamp: phase.storedAt,
       sourceRef: `phase:${phase.id}`,
+      // Decision roles' answers: route, advice and guard outcomes record what served them.
+      ...stamp(phaseServed(phase.record)),
     });
   for (const turn of records.turns)
     entries.push({
@@ -114,6 +188,7 @@ export function captureThread(
     sessionId: threadId,
     title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
+    ...(actor ? { actor } : {}),
     tags: thread.meta.tags,
     capturedAt: Date.now(),
     coverage: {

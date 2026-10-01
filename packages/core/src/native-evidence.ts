@@ -206,3 +206,29 @@ export function freezeEvidence<T>(value: T): T {
   freeze(copy);
   return copy;
 }
+/** The model and effort a call ran on. */
+export interface ServedModel {
+  readonly model: string;
+  readonly effort?: string;
+}
+/** What a native configuration says ran: the engine's acknowledgment over the request. */
+export function configuredModel(
+  configuration: NativeEvidence['configuration'] | undefined,
+): ServedModel | undefined {
+  if (!configuration) return undefined;
+  const model = configuration.observedModel ?? configuration.requestedModel;
+  const effort =
+    configuration.observedEffort === null
+      ? undefined
+      : (configuration.observedEffort ?? configuration.requestedEffort);
+  return model ? { model, ...(effort ? { effort } : {}) } : undefined;
+}
+/** What served a completion: its native configuration, else the model the provider reports. */
+export function servedModel(
+  result: Pick<import('./types').CompletionResult, 'model' | 'native'>,
+): ServedModel | undefined {
+  return (
+    configuredModel(result.native?.configuration) ??
+    (result.model ? { model: result.model } : undefined)
+  );
+}

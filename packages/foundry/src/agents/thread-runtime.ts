@@ -1176,6 +1176,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                   ? requestRows.get(rest.domain)!.id
                   : null,
               requestState: request?.status ?? 'not-recorded',
+              ...(request?.status === 'supplied' && request.served
+                ? { served: request.served }
+                : {}),
             })),
           });
           Object.assign(entry, {

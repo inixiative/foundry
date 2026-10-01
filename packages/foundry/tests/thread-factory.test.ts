@@ -641,3 +641,35 @@ describe('parseJSON', () => {
     expect(result.key).toBe('value');
   });
 });
+
+test('a tool-using executor keeps the native configuration its completion reports', async () => {
+  const { ToolRegistry } = await import('@inixiative/foundry-core');
+  const { HttpApi } = await import('../src/tools/http-api');
+  const tools = new ToolRegistry();
+  tools.register(new HttpApi({ baseUrl: 'http://127.0.0.1:1' }), 'api');
+  const native = {
+    schema: 1 as const,
+    nativeOutcome: 'completed' as const,
+    configuration: {
+      requestedModel: 'opus',
+      observedModel: 'claude-opus-5-5',
+      requestedEffort: 'high',
+      turnBudgetEnforcement: 'unavailable' as const,
+      tokenBudget: 'unavailable' as const,
+      effortBudget: 'unavailable' as const,
+    },
+  };
+  const provider: LLMProvider = {
+    id: 'mock',
+    async complete() {
+      return { content: 'done', model: 'opus', native };
+    },
+  };
+  const config = minimalConfig();
+  const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
+  const executor = buildAgents(config, stack, { provider, tools }).get('executor-answer') as
+    | import('@inixiative/foundry-core').Executor<string, string>
+    | undefined;
+  const result = await executor!.run('Rename the column', undefined, { recordNative: () => {} });
+  expect(result.meta?.native).toEqual(native);
+});

@@ -1,6 +1,7 @@
 import type { LayerInstanceState, LogicalMessageIdentity } from './context-layer';
 import { computeHash } from './context-layer';
 import type { AssembledContext, PromptBlock } from './context-stack';
+import type { ServedModel } from './native-evidence';
 import type { LLMMessage } from './types';
 
 export type InjectionSegmentKind =
@@ -52,6 +53,8 @@ export type ParticipantRequest =
       readonly providerId: string;
       readonly messages: readonly LLMMessage[];
       readonly capturedAt: number;
+      /** The model and effort that answered, when the provider answered before the phase sealed. */
+      readonly served?: ServedModel;
     }
   | { readonly status: 'not-sent'; readonly phase: string; readonly reason: string }
   /** A call may have been made, but its input was never observed (e.g. the caller threw first). Not "not-sent". */

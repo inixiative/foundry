@@ -21,8 +21,10 @@ import {
   type LLMMessage,
   type LLMProvider,
   type ParticipantRequest,
+  type ServedModel,
   type Signal,
   type SignalBus,
+  servedModel,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 
@@ -58,6 +60,8 @@ export interface AdviseOpts {
    * and one turn. A late, failed or timed-out completion cannot change what was observed.
    */
   observeRequest?: (request: AdviceRequestEvidence) => void;
+  /** Observes the model and effort that answered, once the provider returns. */
+  observeServed?: (served: ServedModel) => void;
   /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
   timeoutMs?: number;
 }
@@ -1125,15 +1129,16 @@ export class DomainLibrarian {
 
     let content: string;
     try {
-      content = (
-        await this._llm.complete(messages, {
-          ...this._llmOpts,
-          stablePrefix,
-          ...(opts?.timeoutMs !== undefined
-            ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) }
-            : {}),
-        })
-      ).content;
+      const result = await this._llm.complete(messages, {
+        ...this._llmOpts,
+        stablePrefix,
+        ...(opts?.timeoutMs !== undefined
+          ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) }
+          : {}),
+      });
+      const served = servedModel(result);
+      if (served) opts?.observeServed?.(served);
+      content = result.content;
     } catch (err) {
       // Model failure: advise nothing, but say why so the composer records an error, not silence.
       return {
@@ -1233,18 +1238,19 @@ export class DomainLibrarian {
     // The exact input, frozen before the provider sees it; retained on every outcome below.
     const evidence = frozenRequest('guard', this._llm.id, messages);
     opts?.observeRequest?.(evidence);
-    const request: ParticipantRequest = { status: 'supplied', ...evidence };
+    let request: ParticipantRequest = { status: 'supplied', ...evidence };
 
     let content: string;
     try {
       // Guards observe completed actions; queued decision capacity serves blocked turns first.
-      content = (
-        await this._llm.complete(messages, {
-          ...this._llmOpts,
-          priority: DECISION_PRIORITY.guard,
-          stablePrefix,
-        })
-      ).content;
+      const result = await this._llm.complete(messages, {
+        ...this._llmOpts,
+        priority: DECISION_PRIORITY.guard,
+        stablePrefix,
+      });
+      const served = servedModel(result);
+      if (served) request = { ...request, served };
+      content = result.content;
     } catch (err) {
       // A rejected call is not a completed check. Whether a model ran, or native work is still
       // running, is only known when the provider classifies it; otherwise it is unknown.

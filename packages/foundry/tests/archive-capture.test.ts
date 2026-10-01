@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { userInfo } from 'node:os';
 import { LocalArchiveStore } from '@inixiative/archive/local';
 import { startArchiveServer } from '@inixiative/archive/server';
 import { EventStream } from '@inixiative/foundry-core';
@@ -364,5 +365,120 @@ test('viewer connection setup verifies access, reloads publishing routes and ret
     await hosted.close();
     delete process.env.ARCHIVE_CONNECT_VIEWER_TOKEN;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('capture stamps what Foundry ran: the executor per turn, decision roles per phase, and the local actor', () => {
+  const journal = new LocalSessionStore(':memory:'),
+    archives = new LocalArchiveStore(':memory:');
+  const t = thread();
+  journal.saveThread(t);
+  journal.beginTurn(t, 'turn-a', 'Rename the column');
+  const owner = (providerSessionKey: string) => ({
+    threadId: t.id,
+    projectId: 'project-a',
+    messageId: 'turn-a',
+    generation: 'g',
+    dispatchId: 'd',
+    providerSessionKey,
+  });
+  const executor = {
+    schema: 1 as const,
+    admissionId: 'executor',
+    nativeOutcome: 'unknown' as const,
+    owner: owner(t.id),
+  };
+  journal.registerNative(t, executor);
+  journal.appendNative(t, {
+    ...executor,
+    toolName: 'Read',
+    toolInput: { file_path: 'a.ts' },
+    callId: 'c1',
+    observedAt: 2,
+  });
+  journal.appendNative(t, { ...executor, toolName: 'Read', toolOutput: 'x', callId: 'c1' });
+  const route = {
+    schema: 1 as const,
+    admissionId: 'route',
+    nativeOutcome: 'unknown' as const,
+    owner: owner(`${t.id}:aux:cartographer`),
+  };
+  journal.registerNative(t, route);
+  journal.appendNative(t, { ...route, text: 'routing', observedAt: 3 });
+  journal.completeTurn(
+    t,
+    'turn-a',
+    'Renamed',
+    {
+      native: {
+        ...executor,
+        nativeOutcome: 'completed',
+        configuration: {
+          requestedModel: 'opus',
+          observedModel: 'claude-opus-5-5',
+          requestedEffort: 'high',
+          turnBudgetEnforcement: 'unavailable',
+          tokenBudget: 'unavailable',
+          effortBudget: 'unavailable',
+        },
+      },
+    },
+    { id: 'trace-a', messageId: 'turn-a', startedAt: 1, root: {}, summary: {}, spans: [] },
+  );
+  const supplied = (served?: object) => ({
+    status: 'supplied',
+    phase: 'advice',
+    providerId: 'decisions',
+    messages: [],
+    capturedAt: 1,
+    ...(served ? { served } : {}),
+  });
+  const phase = (id: string, record: Record<string, unknown>) =>
+    journal.appendPhase(t, {
+      id,
+      turnId: 'turn-a',
+      dispatchId: 'd',
+      phase: id as 'route' | 'advice',
+      record,
+    });
+  phase('route', { routing: { request: supplied({ model: 'gpt-6-luna', effort: 'low' }) } });
+  phase('advice', {
+    participants: [
+      { id: 'architecture', request: supplied({ model: 'gpt-6-luna', effort: 'low' }) },
+      { id: 'security', request: supplied({ model: 'claude-opus-5-5' }) },
+    ],
+  });
+  try {
+    const snapshot = captureThread(journal, archives.sourceId, t.id);
+    const entry = (sourceRef: string) => {
+      const found = snapshot.entries.find((e) => e.sourceRef === sourceRef);
+      if (!found) throw Error(`missing ${sourceRef}`);
+      return { model: found.model, effort: found.effort, kind: found.kind };
+    };
+    const answer = snapshot.entries.find((e) => e.kind === 'assistant' && e.text === 'Renamed');
+    expect(answer).toMatchObject({ model: 'claude-opus-5-5', effort: 'high' });
+    expect(snapshot.entries.find((e) => e.kind === 'user')).not.toHaveProperty('model');
+    const call = snapshot.entries.find((e) => e.kind === 'tool-call');
+    expect(call).toMatchObject({ model: 'claude-opus-5-5', effort: 'high' });
+    expect(snapshot.entries.find((e) => e.kind === 'tool-result')).not.toHaveProperty('model');
+    // A decision role's native text never inherits the executor's model.
+    const routing = snapshot.entries.find(
+      (e) => e.kind === 'assistant' && e.text.includes('routing'),
+    );
+    expect(routing).not.toHaveProperty('model');
+    expect(entry('phase:route')).toEqual({ model: 'gpt-6-luna', effort: 'low', kind: 'event' });
+    // Mixed participants name no single model for the record.
+    expect(entry('phase:advice').model).toBeUndefined();
+    expect(snapshot.actor).toEqual({ kind: 'user', id: userInfo().username });
+    archives.capture(snapshot);
+    expect(archives.list()[0]?.models).toEqual(
+      expect.arrayContaining([
+        { model: 'claude-opus-5-5', effort: 'high', entries: 2 },
+        { model: 'gpt-6-luna', effort: 'low', entries: 1 },
+      ]),
+    );
+  } finally {
+    archives.close();
+    journal.close();
   }
 });

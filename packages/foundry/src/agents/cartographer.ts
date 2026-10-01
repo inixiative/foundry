@@ -22,8 +22,10 @@ import {
   type ContextStack,
   type LLMMessage,
   type LLMProvider,
+  type ServedModel,
   type Signal,
   type SignalBus,
+  servedModel,
 } from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +68,8 @@ export interface RouteRequestEvidence {
 export interface RouteOpts {
   /** Observes the exact messages supplied to the routing provider, once, before the call. Invocation-scoped. */
   observeRequest?: (request: RouteRequestEvidence) => void;
+  /** Observes the model and effort that answered, once the provider returns. */
+  observeServed?: (served: ServedModel) => void;
   /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
   timeoutMs?: number;
 }
@@ -411,6 +415,8 @@ export class Cartographer {
           ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) }
           : {}),
       });
+      const served = servedModel(result);
+      if (served) opts?.observeServed?.(served);
       const parsed = parseJSON<RouteResult>(result.content);
       return {
         layers: parsed.layers ?? [],

@@ -43,6 +43,7 @@ import {
   newId,
   type ParticipantRequest,
   type PromptBlock,
+  type ServedModel,
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
@@ -535,6 +536,7 @@ export class FlowOrchestrator {
     // Invocation-scoped: the exact routing input, observed at the Cartographer's call boundary. A
     // timed-out or failed route keeps its request; an empty map or a never-started route records why.
     let observed: RouteRequestEvidence | null = null;
+    let served: ServedModel | null = null;
     const finish = (
       partial: Omit<RoutingOutcome, 'startedAt' | 'finishedAt' | 'elapsedMs' | 'request'>,
     ): RoutingOutcome => {
@@ -546,6 +548,7 @@ export class FlowOrchestrator {
             providerId: observed.providerId,
             messages: observed.messages,
             capturedAt: observed.capturedAt,
+            ...(served ? { served } : {}),
           }
         : {
             status: 'not-sent',
@@ -560,6 +563,9 @@ export class FlowOrchestrator {
       .route(message, threadState, {
         observeRequest: (evidence) => {
           observed = evidence;
+        },
+        observeServed: (value) => {
+          served = value;
         },
         timeoutMs: Math.min(this._routingTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
       })
@@ -627,6 +633,7 @@ export class FlowOrchestrator {
     // never be misattributed. A timed-out or failed call keeps its request; a call never made
     // records why. Recorded input is what the provider interface was given, not native receipt.
     let observed: AdviceRequestEvidence | null = null;
+    let served: ServedModel | null = null;
     const request = (
       decision: ContributionDecision,
       reason: string | undefined,
@@ -638,6 +645,7 @@ export class FlowOrchestrator {
             providerId: observed.providerId,
             messages: observed.messages,
             capturedAt: observed.capturedAt,
+            ...(served ? { served } : {}),
           }
         : {
             status: 'not-sent',
@@ -671,6 +679,9 @@ export class FlowOrchestrator {
         threadKnowledge: p.threadKnowledge,
         observeRequest: (evidence) => {
           observed = evidence;
+        },
+        observeServed: (value) => {
+          served = value;
         },
         timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
       })

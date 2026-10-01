@@ -581,7 +581,7 @@ function buildAgent(
                   tokens: result.tokens,
                 });
               }
-
+              if (result.native) meta?.recordNative?.(result.native);
               return result.content;
             } else if (meta?.onDelta && typeof deps.provider.stream === 'function') {
               // Streaming path — forward text deltas to the sink, accumulate
