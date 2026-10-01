@@ -1,17 +1,26 @@
 import type { Hono } from "hono";
+import { z } from "zod";
 import { ConfigStore } from "../config";
-import { KingdomRuntimeConnection } from "../../providers/kingdom-runtime-connection";
+import { kingdomRuntimeId } from "../../providers/kingdom-runtime-connection";
+import { overallStatus, type KingdomRuntimeConnections } from "../../providers/kingdom-runtime-connections";
 import { beginKingdomPairing, completeKingdomPairing, disconnectKingdom, kingdomPairInputSchema, pollKingdomPairing, type KingdomPairing } from "../../providers/kingdom-pairing";
 import type { RuntimeJobRegistry } from "../../providers/runtime-job-handler";
 
-export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, sessionCount: () => number, activate: (connection: KingdomRuntimeConnection | null) => void, connected: () => boolean, handlers?: RuntimeJobRegistry) {
-  let pending: KingdomPairing | undefined;
+const pairSchema = kingdomPairInputSchema.extend({ replace: z.string().optional() }).strict();
+const disconnectSchema = z.object({ id: z.string().min(1) }).strict();
+
+export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: string, sessionCount: () => number, connections: KingdomRuntimeConnections, handlers?: RuntimeJobRegistry) {
+  let pending: (KingdomPairing & { replace?: string }) | undefined;
   let busy = false, lastPoll = 0;
   const status = async () => {
     const config = await store.load();
     if (pending && Date.parse(pending.expiresAt) <= Date.now()) pending = undefined;
-    if (!pending && config.kingdomRuntime) return { status: connected() ? "connected" : "unavailable", url: config.kingdomRuntime.url, installationId: config.kingdomRuntime.installationId };
-    return pending ? { status: "pending", url: pending.url, userCode: pending.userCode, verificationUrl: pending.verificationUrl, expiresAt: pending.expiresAt } : { status: "disconnected" };
+    const runtimes = (config.kingdomRuntimes ?? []).map(runtime => {
+      const id = kingdomRuntimeId(runtime);
+      return { id, url: runtime.url, owner: runtime.owner, installationId: runtime.installationId, status: connections.get(id)?.connected ? "connected" as const : "unavailable" as const };
+    });
+    return { status: overallStatus(runtimes), runtimes,
+      ...(pending ? { pending: { url: pending.url, userCode: pending.userCode, verificationUrl: pending.verificationUrl, expiresAt: pending.expiresAt, ...(pending.replace ? { replace: pending.replace } : {}) } } : {}) };
   };
   app.use("/api/kingdom/*", async (c, next) => { c.header("Cache-Control", "no-store"); return next(); });
   app.get("/api/kingdom/status", async c => c.json(await status()));
@@ -19,10 +28,14 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     if (busy) return c.json({ error: "Connection operation in progress" }, 409);
     busy = true;
     try {
-      const parsed = kingdomPairInputSchema.safeParse(await c.req.json());
+      const parsed = pairSchema.safeParse(await c.req.json());
       if (!parsed.success) return c.json({ error: "Enter an HTTPS Kingdom API address (HTTP is allowed only on localhost) and a runtime name." }, 400);
-      if ((await status()).status === "pending") return c.json({ error: "Already connected or pairing; cancel pending pairing first." }, 409);
-      pending = await beginKingdomPairing(parsed.data, configDir);
+      const current = await status();
+      if (current.pending) return c.json({ error: "Already pairing; cancel pending pairing first." }, 409);
+      const { replace, ...input } = parsed.data;
+      if (replace && !current.runtimes.some(runtime => runtime.id === replace && runtime.url === input.url))
+        return c.json({ error: "The Kingdom to pair again is not paired at that address." }, 400);
+      pending = { ...await beginKingdomPairing(input, configDir), ...(replace ? { replace } : {}) };
       lastPoll = 0;
       return c.json(await status());
     } catch { return c.json({ error: "Could not start pairing. Check your Kingdom API address and private configuration directory." }, 400); }
@@ -33,13 +46,13 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
     busy = true;
     try {
       const current = await status();
-      if (!pending || current.status !== "pending" || Date.now() - lastPoll < 5000) return c.json(current);
+      if (!pending || !current.pending || Date.now() - lastPoll < 5000) return c.json(current);
       lastPoll = Date.now();
       const data = await pollKingdomPairing(pending);
       if (data.status === "pending") return c.json(current);
-      const { connection } = await completeKingdomPairing(store, configDir, pending, data.installationId,
-        { connect: settings => new KingdomRuntimeConnection(settings, sessionCount, fetch, handlers), start: true });
-      activate(connection);
+      const { settings } = await completeKingdomPairing(store, configDir, pending, data.installationId,
+        { sessionCount: sessionCount(), handlers, ...(pending.replace ? { replace: pending.replace } : {}) });
+      await connections.set(settings);
       pending = undefined;
       return c.json(await status());
     } catch { return c.json({ error: "Connection not completed. Retry, or check the runtime in Kingdom before starting again." }, 503); }
@@ -52,10 +65,14 @@ export function registerKingdomRoutes(app: Hono, store: ConfigStore, configDir: 
   });
   app.post("/api/kingdom/disconnect", async c => {
     if (busy) return c.json({ error: "Connection operation in progress" }, 409);
+    const parsed = disconnectSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Choose the paired Kingdom to disconnect." }, 400);
     busy = true;
     try {
-      pending = undefined;
-      await disconnectKingdom(store, () => activate(null));
+      const removed = await disconnectKingdom(store, parsed.data.id).catch(() => undefined);
+      if (!removed) return c.json({ error: "That Kingdom is not paired." }, 404);
+      connections.remove(removed.id);
+      if (pending?.replace === removed.id) pending = undefined;
       return c.json(await status());
     } finally { busy = false; }
   });

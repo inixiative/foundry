@@ -16,16 +16,15 @@ import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 
 const secret = 'kingdom_runtime_' + 'b'.repeat(43);
 const spaceId = '33333333-3333-4333-8333-333333333333';
+const owner = 'User:44444444-4444-4444-8444-444444444444::';
 
 async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-kingdom-archive-'));
   const credentialFile = join(dir, 'runtime.json');
   await writePrivateJson(credentialFile, { secret });
-  const credentials = new FoundryCredentials(dir, () => ({
-    url: 'https://kingdom.example',
-    installationId: crypto.randomUUID(),
-    credentialFile,
-  }));
+  const credentials = new FoundryCredentials(dir, () => [
+    { url: 'https://kingdom.example', owner, installationId: crypto.randomUUID(), credentialFile },
+  ]);
   const journal = new LocalSessionStore(':memory:'),
     store = new LocalArchiveStore(':memory:');
   const t = {
@@ -60,7 +59,7 @@ test('Kingdom storage sends only owner fields', async () => {
     projectId: 'project-a',
     ownerModel: 'Space',
     spaceId,
-    credential: { type: 'kingdom-runtime' },
+    credential: { type: 'kingdom-runtime', owner },
   });
   try {
     await verifyArchiveDestination(destination, f.credentials, f.transport);
@@ -88,7 +87,7 @@ test('Kingdom forwarding routes through remote actions with the connection ident
     url: 'https://kingdom.example/',
     projectId: 'project-a',
     connectionId: 'hosted',
-    credential: { type: 'kingdom-runtime' },
+    credential: { type: 'kingdom-runtime', owner },
   });
   try {
     await verifyArchiveDestination(destination, f.credentials, f.transport);
@@ -119,7 +118,7 @@ test('destinations with unknown fields are rejected and surfaced without crashin
     url: 'https://kingdom.example/',
     projectId: 'project-a',
     ownerId: crypto.randomUUID(),
-    credential: { type: 'kingdom-runtime' },
+    credential: { type: 'kingdom-runtime', owner },
   };
   const journal = new LocalSessionStore(':memory:');
   try {

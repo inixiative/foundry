@@ -174,7 +174,8 @@ async function configureLoop(config: FoundryConfig) {
     const c = counts();
     const hasPrompts = Object.values(config.projects).some(p => p.prompts);
     const docsStatus = config.sources["docs-src"] ? "configured" : "not scanned";
-    const archiveStatus = config.kingdomRuntime ? "Kingdom paired" : "Kingdom not paired";
+    const paired = config.kingdomRuntimes?.length ?? 0;
+    const archiveStatus = paired ? `${paired} Kingdom${paired === 1 ? "" : "s"} paired` : "Kingdom not paired";
     const idx = await choose("What would you like to configure?", [
       `Provider & defaults  (${config.defaults.provider} / ${config.defaults.model})`,
       `Prompts              (${hasPrompts ? "configured" : "not set up"})`,
@@ -233,8 +234,8 @@ async function configureArchives(config: FoundryConfig) {
   } finally {
     // Pairing writes settings.json directly; keep this session's copy from overwriting it.
     const saved = await new ConfigStore(FOUNDRY_DIR).load().catch(() => undefined);
-    if (saved?.kingdomRuntime) config.kingdomRuntime = saved.kingdomRuntime;
-    else if (saved) delete config.kingdomRuntime;
+    if (saved?.kingdomRuntimes) config.kingdomRuntimes = saved.kingdomRuntimes;
+    else if (saved) delete config.kingdomRuntimes;
   }
 }
 

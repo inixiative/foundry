@@ -39,7 +39,7 @@ test("installed tarball exposes only the named seam and performs no import-time 
 test("consumer handler runs through controlled worker; unknown kind still refuses", async () => {
   const directory = await mkdtemp(join(tmpdir(), "runtime-package-consumer-"));
   try {
-    const settings: KingdomRuntimeSettings = { url: "https://kingdom.invalid", installationId: id(), credentialFile: join(directory, "installation.json") };
+    const settings: KingdomRuntimeSettings = { url: "https://kingdom.invalid", owner: `Organization::${id()}:`, installationId: id(), credentialFile: join(directory, "installation.json") };
     await writeFile(settings.credentialFile, JSON.stringify({ secret: "kingdom_runtime_" + "a".repeat(43) }), { mode: 0o600 });
     let executed = 0;
     const handler: RuntimeJobHandler<{ value: string }> = {

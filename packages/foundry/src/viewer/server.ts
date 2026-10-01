@@ -1,4 +1,5 @@
-import { KingdomRuntimeConnection, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import type { KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import { KingdomRuntimeConnections } from "../providers/kingdom-runtime-connections";
 import { RuntimeJobRegistry } from "../providers/runtime-job-handler";
 import { registerKingdomRoutes } from "./routes/kingdom";
 import { Hono } from "hono";
@@ -70,7 +71,7 @@ export interface ViewerConfig {
   actionQueue?: ActionQueue;
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
-  kingdomRuntime?: KingdomRuntimeSettings;
+  kingdomRuntimes?: KingdomRuntimeSettings[];
   /** Job kinds this runtime may execute. Defaults to the framework built-ins. */
   runtimeJobs?: RuntimeJobRegistry;
   /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
@@ -93,8 +94,7 @@ export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4400 } = config;
   const runtimeJobs = config.runtimeJobs ?? new RuntimeJobRegistry();
   const app = new Hono();
-  let kingdomConnection = config.kingdomRuntime
-    ? new KingdomRuntimeConnection(config.kingdomRuntime, () => directory.all().length, fetch, runtimeJobs) : null;
+  const kingdomRuntimes = new KingdomRuntimeConnections(config.kingdomRuntimes ?? [], () => directory.all().length, fetch, runtimeJobs);
 
   // Mutable tunnel holder — routes can start/stop at runtime
   const tunnelHolder: { tunnel: FoundryTunnel | null } = { tunnel: null };
@@ -116,8 +116,8 @@ export function createViewer(config: ViewerConfig) {
   });
 
   app.use("*", async (c, next) => {
-    if (kingdomConnection && c.req.path !== "/api/health" && c.req.path !== "/kingdom" && !c.req.path.startsWith("/api/kingdom/") && !c.req.path.startsWith("/ui/")) {
-      try { await kingdomConnection.check(); }
+    if (kingdomRuntimes.size && c.req.path !== "/api/health" && c.req.path !== "/kingdom" && !c.req.path.startsWith("/api/kingdom/") && !c.req.path.startsWith("/ui/")) {
+      try { await kingdomRuntimes.check(); }
       catch { return c.req.path === "/" ? c.redirect("/kingdom") : c.json({ error: "Kingdom runtime authorization unavailable", recoveryUrl: "/kingdom" }, 503); }
     }
     return next();
@@ -126,7 +126,7 @@ export function createViewer(config: ViewerConfig) {
   const localStore = config.localStore === undefined
     ? new LocalSessionStore(join(config.configDir ?? ".foundry", "sessions.sqlite")) : config.localStore;
   const directory = new ViewerThreadDirectory(harness.thread, config.projectRegistry, config.threadFactory);
-  const kingdomLost = () => !!kingdomConnection && !kingdomConnection.connected;
+  const kingdomLost = () => !kingdomRuntimes.authorized;
   const revoke = () => closeAllConnections(socket.registry, 1008, "Kingdom runtime unavailable");
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({ directory, eventStream, actionQueue: config.actionQueue,
@@ -158,7 +158,7 @@ export function createViewer(config: ViewerConfig) {
     onThreadChange: thread => { localStore?.saveThread(thread); streams.threadsChanged(thread.id); },
   });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
-  registerKingdomRoutes(app, configStore, config.configDir ?? ".foundry", () => directory.all().length, connection => { kingdomConnection?.stop(); kingdomConnection = connection; }, () => kingdomConnection?.connected ?? false, runtimeJobs);
+  registerKingdomRoutes(app, configStore, config.configDir ?? ".foundry", () => directory.all().length, kingdomRuntimes, runtimeJobs);
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
@@ -271,12 +271,11 @@ export function createViewer(config: ViewerConfig) {
       }) })),
     // Losing Kingdom authorization closes the socket; the client reconnects (and is refused at upgrade until it returns).
     admit: async () => {
-      if (!kingdomConnection) return true;
-      try { await kingdomConnection.check(); return true; } catch { revoke(); return false; }
+      try { await kingdomRuntimes.check(); return true; } catch { revoke(); return false; }
     },
   });
   const kingdomWatch = makeUnrefInterval({ intervalMs: 15_000, tick: () => {
-    if (kingdomConnection && socket.registry.byId.size) void kingdomConnection.check().catch(revoke);
+    if (kingdomRuntimes.size && socket.registry.byId.size) void kingdomRuntimes.check().catch(revoke);
   } });
 
   /** Serve HTTP and the `/ws` upgrade; pass as Bun.serve's fetch with `websocket`. */
@@ -288,24 +287,22 @@ export function createViewer(config: ViewerConfig) {
     if (activeTunnel ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined)
       : !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
       return new Response("Unauthorized", { status: 401 });
-    if (kingdomConnection) {
-      try { await kingdomConnection.check(); }
-      catch { return new Response("Kingdom runtime unavailable", { status: 503 }); }
-    }
+    try { await kingdomRuntimes.check(); }
+    catch { return new Response("Kingdom runtime unavailable", { status: 503 }); }
     return socket.accept(req, server);
   };
 
   return { app, fetch: handleRequest, websocket: socket.websocket, socket, streams, port, actions, configStore, analyticsStore, analyticsReady, tunnelHolder, localStore, directory,
     startSocket() { socket.startStaleSweep(); kingdomWatch.start(); },
     stopSocket() { kingdomWatch.stop(); socket.shutdown(); },
-    get kingdomConnection() { return kingdomConnection; } };
+    kingdomRuntimes };
 }
 
 /** Start the viewer server. */
 export async function startViewer(config: ViewerConfig) {
   const initialStore = config.configStore ?? new ConfigStore(config.configDir ?? ".foundry");
   const saved = await initialStore.load();
-  config = { ...config, kingdomRuntime: config.kingdomRuntime ?? saved.kingdomRuntime };
+  config = { ...config, kingdomRuntimes: config.kingdomRuntimes ?? saved.kingdomRuntimes };
   if (!config.tunnel && saved.tunnel?.enabled) config = { ...config, tunnel: {
     port: config.port ?? 4400, provider: saved.tunnel.provider, subdomain: saved.tunnel.subdomain,
     configDir: config.configDir,
@@ -325,17 +322,17 @@ export async function startViewer(config: ViewerConfig) {
 
   let server: ReturnType<typeof Bun.serve<WSData>>;
   try {
-    await viewer.kingdomConnection?.start().catch(() => log.warn("[Kingdom] Runtime unavailable; reconnect at /kingdom"));
+    for (const id of await viewer.kingdomRuntimes.start()) log.warn(`[Kingdom] Paired Kingdom ${id} unavailable; reconnect at /kingdom`);
     server = Bun.serve<WSData>({ port, hostname: "127.0.0.1", idleTimeout: 240, fetch: viewer.fetch, websocket: viewer.websocket });
   } catch (error) {
-    viewer.kingdomConnection?.stop();
+    viewer.kingdomRuntimes.stop();
     localStore?.close();
     throw error;
   }
   viewer.startSocket();
   const stopServer = server.stop.bind(server);
   server.stop = (closeActiveConnections?: boolean) => {
-    viewer.kingdomConnection?.stop();
+    viewer.kingdomRuntimes.stop();
     void tunnelHolder.tunnel?.stop();
     viewer.stopSocket();
     return stopServer(closeActiveConnections);
@@ -353,5 +350,5 @@ export async function startViewer(config: ViewerConfig) {
     }
   }
 
-  return { server, actions, analyticsStore, tunnelHolder, localStore, get kingdomConnection() { return viewer.kingdomConnection; } };
+  return { server, actions, analyticsStore, tunnelHolder, localStore, kingdomRuntimes: viewer.kingdomRuntimes };
 }

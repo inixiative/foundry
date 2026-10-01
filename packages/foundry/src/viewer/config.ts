@@ -1,7 +1,7 @@
 import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionSettings } from "../providers/subscription-policy";
 import { DECISION_MODEL } from "../providers/decision-provider";
 import type { CredentialReference } from '@inixiative/foundry-core';
-import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
+import { kingdomRuntimesSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
 import { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "../providers/kingdom-authentication";
 import { validateKingdomAccess, type KingdomAccessSource } from "../providers/kingdom-access-client";
 import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
@@ -86,7 +86,8 @@ export interface FoundryConfig {
 
   /** Tunnel configuration — expose the viewer over a public URL. */
   tunnel?: TunnelSettingsConfig;
-  kingdomRuntime?: KingdomRuntimeSettings;
+  /** Every paired Kingdom, once per Kingdom + owner; credentials stay in private files. */
+  kingdomRuntimes?: KingdomRuntimeSettings[];
 
   /** MCP server configuration — mid-session bridge for Claude Code. */
   mcp?: McpSettingsConfig;
@@ -713,7 +714,8 @@ export function registerConfigValidator(validate: (config: FoundryConfig) => voi
 
 export function validateConfig(config: FoundryConfig): void {
   resolveSubscriptionPolicy(config);
-  if (config.kingdomRuntime) kingdomRuntimeSchema.parse(config.kingdomRuntime);
+  if ("kingdomRuntime" in config) throw Error("kingdomRuntime is not a setting; remove it, then pair again with bun run kingdom pair");
+  if (config.kingdomRuntimes) kingdomRuntimesSchema.parse(config.kingdomRuntimes);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");
   for (const source of validateKingdomAccess(config.kingdomAccess ?? [])) {

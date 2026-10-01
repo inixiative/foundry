@@ -34,14 +34,14 @@ if (update.action === "skipped") log(`not staging ${short(update.target)}: ${upd
 if (update.action === "failed") log(`update skipped — ${update.detail}`);
 
 const settings = await readSettings();
-const credentialFile = settings?.kingdomRuntime?.credentialFile;
+const runtimes: { credentialFile: string }[] = Array.isArray(settings?.kingdomRuntimes) ? settings.kingdomRuntimes : [];
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
     repoRoot,
     configDir,
     intervalMs: checkSeconds * 1000,
-    runtimeDirectory: credentialFile ? dirname(resolve(credentialFile)) : undefined,
+    runtimeDirectories: [...new Set(runtimes.map((runtime) => dirname(resolve(runtime.credentialFile))))],
     log,
   });
 
