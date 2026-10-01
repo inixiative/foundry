@@ -117,3 +117,19 @@ test('a failed build stages nothing, and only stable and the release before it a
     await rm(f.root, { recursive: true, force: true });
   }
 });
+
+test('a failed fetch reports what git said', async () => {
+  const f = await fixture();
+  try {
+    await f.commit('a');
+    await f.autoUpdate('apply');
+    await $`git -C ${f.repo} remote set-url origin ${join(f.root, 'missing.git')}`.quiet();
+    const result = await stageUpdate(f.repo, f.config, 'main', prepare);
+    expect(result.action).toBe('failed');
+    expect((result as { detail: string }).detail).toContain(
+      'does not appear to be a git repository',
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
