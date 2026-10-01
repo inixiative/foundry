@@ -200,7 +200,7 @@ export async function liveWatchFixture(dir: string) {
   const viewer = createViewer({
     harness,
     eventStream: events,
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
     threadFactory: factory,
     projectRegistry: projects,
     configStore,

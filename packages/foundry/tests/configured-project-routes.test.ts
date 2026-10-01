@@ -119,7 +119,7 @@ for (const operation of ['create', 'fork'] as const) {
         withStreams({
           harness: new Harness(main),
           eventStream: events,
-          interventions: new InterventionLog(main.signals),
+          interventions: new InterventionLog(),
           threadFactory: factory,
           projectRegistry: registry,
           db: null,

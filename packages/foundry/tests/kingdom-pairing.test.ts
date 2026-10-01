@@ -93,7 +93,7 @@ async function viewerFixture() {
     localStore: null,
     harness: new Harness(thread),
     eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
   });
   const base = `http://127.0.0.1:${viewer.server.port}`;
   const post = (action: string, body: unknown = {}) =>

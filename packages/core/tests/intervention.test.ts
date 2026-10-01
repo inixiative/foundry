@@ -10,8 +10,9 @@ describe('InterventionLog', () => {
       emitted.push(s);
     });
 
-    const log = new InterventionLog(signals);
+    const log = new InterventionLog();
     const intervention = await log.intervene(
+      { id: 'thread-a', signals },
       'trace-1',
       'span-1',
       { category: 'feature' },
@@ -20,6 +21,7 @@ describe('InterventionLog', () => {
       'was actually a bug',
     );
 
+    expect(intervention.threadId).toBe('thread-a');
     expect(intervention.traceId).toBe('trace-1');
     expect(intervention.spanId).toBe('span-1');
     expect(intervention.actual).toEqual({ category: 'feature' });
@@ -36,13 +38,40 @@ describe('InterventionLog', () => {
     expect(emitted[0].source).toBe('operator:aron');
   });
 
+  test("each correction is emitted on its own thread's bus, never another thread's", async () => {
+    const a = new SignalBus(),
+      b = new SignalBus();
+    const onA: Signal[] = [],
+      onB: Signal[] = [];
+    a.on('correction', (s) => {
+      onA.push(s);
+    });
+    b.on('correction', (s) => {
+      onB.push(s);
+    });
+    const log = new InterventionLog();
+
+    const made = await log.intervene(
+      { id: 'b', signals: b },
+      'trace-b',
+      'span',
+      null,
+      'fix-b',
+      'op',
+    );
+
+    expect(made.threadId).toBe('b');
+    expect(onA).toHaveLength(0);
+    expect(onB.map((s) => (s.content as { correction: unknown }).correction)).toEqual(['fix-b']);
+  });
+
   test('history returns newest first', async () => {
     const signals = new SignalBus();
-    const log = new InterventionLog(signals);
+    const log = new InterventionLog();
 
-    await log.intervene('t1', 's1', null, 'fix-1', 'op');
-    await log.intervene('t2', 's2', null, 'fix-2', 'op');
-    await log.intervene('t3', 's3', null, 'fix-3', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't1', 's1', null, 'fix-1', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't2', 's2', null, 'fix-2', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't3', 's3', null, 'fix-3', 'op');
 
     const history = log.history;
     expect(history.length).toBe(3);
@@ -52,11 +81,11 @@ describe('InterventionLog', () => {
 
   test('forTrace filters by traceId', async () => {
     const signals = new SignalBus();
-    const log = new InterventionLog(signals);
+    const log = new InterventionLog();
 
-    await log.intervene('t1', 's1', null, 'fix', 'op');
-    await log.intervene('t2', 's2', null, 'fix', 'op');
-    await log.intervene('t1', 's3', null, 'fix', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't1', 's1', null, 'fix', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't2', 's2', null, 'fix', 'op');
+    await log.intervene({ id: 'thread-a', signals }, 't1', 's3', null, 'fix', 'op');
 
     expect(log.forTrace('t1').length).toBe(2);
     expect(log.forTrace('t2').length).toBe(1);
@@ -65,9 +94,9 @@ describe('InterventionLog', () => {
 
   test('recentCorrections returns correction content', async () => {
     const signals = new SignalBus();
-    const log = new InterventionLog(signals);
+    const log = new InterventionLog();
 
-    await log.intervene('t1', 's1', 'wrong', 'right', 'op', 'reason');
+    await log.intervene({ id: 'thread-a', signals }, 't1', 's1', 'wrong', 'right', 'op', 'reason');
 
     const corrections = log.recentCorrections();
     expect(corrections.length).toBe(1);
@@ -78,10 +107,10 @@ describe('InterventionLog', () => {
 
   test('history is bounded by maxHistory', async () => {
     const signals = new SignalBus();
-    const log = new InterventionLog(signals, 3);
+    const log = new InterventionLog(3);
 
     for (let i = 0; i < 5; i++) {
-      await log.intervene(`t${i}`, 's', null, `fix-${i}`, 'op');
+      await log.intervene({ id: 'thread-a', signals }, `t${i}`, 's', null, `fix-${i}`, 'op');
     }
 
     expect(log.history.length).toBe(3);

@@ -61,7 +61,7 @@ function setup() {
     const deps = withStreams({
       harness,
       eventStream,
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       db: null,
       configStore: new ConfigStore(dir),
       localStore,
@@ -213,7 +213,7 @@ test('G4: viewer startup restores a projectless thread, rename and terminal arch
     const viewer = createViewer({
       harness: new Harness(main),
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       configDir: dir,
     });
     return { ...viewer, main };

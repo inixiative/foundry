@@ -792,7 +792,7 @@ function SelectedReviewHistory({ trace }) {
 // Span detail (when a specific span is selected within the trace)
 // ---------------------------------------------------------------------------
 
-function SpanDetail({ span, traceId }) {
+function SpanDetail({ span, traceId, threadId }) {
   const isOverrideable = span.kind === 'route' || span.kind === 'classify';
 
   return html`
@@ -844,7 +844,7 @@ function SpanDetail({ span, traceId }) {
         isOverrideable
           ? html`
         <${Section} title="Correction" open=${false}>
-          <${OverrideForm} traceId=${traceId} spanId=${span.id} />
+          <${OverrideForm} threadId=${threadId} traceId=${traceId} spanId=${span.id} />
         </${Section}>
       `
           : null
@@ -853,7 +853,7 @@ function SpanDetail({ span, traceId }) {
   `;
 }
 
-function OverrideForm({ traceId, spanId }) {
+function OverrideForm({ threadId, traceId, spanId }) {
   const [correction, setCorrection] = useState('');
   const [reason, setReason] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -868,7 +868,7 @@ function OverrideForm({ traceId, spanId }) {
         value=${reason} onInput=${(e) => setReason(e.target.value)} />
       <button class="override-submit" disabled=${!correction.trim()}
         onClick=${async () => {
-          await submitIntervention(traceId, spanId, correction, reason);
+          await submitIntervention(threadId, traceId, spanId, correction, reason);
           setSubmitted(true);
         }}
       >Submit Correction</button>
@@ -1630,7 +1630,7 @@ export function DetailDrawer({
           onClick=${() => {
             selectedSpanId.value = null;
           }}>← Back to trace</button>
-        <${SpanDetail} span=${span} traceId=${trace.id} />
+        <${SpanDetail} span=${span} traceId=${trace.id} threadId=${trace.selectedTurn.threadId} />
       </div>
     `;
   } else if (trace) {

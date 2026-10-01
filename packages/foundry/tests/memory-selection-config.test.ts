@@ -107,7 +107,7 @@ test('the project settings route rejects an invalid policy with 400 and leaves t
   const viewer = createViewer({
     harness,
     eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
     configStore: store,
     configDir: dir,
     threadFactory: factory,

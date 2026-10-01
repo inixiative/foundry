@@ -22,7 +22,7 @@ function setup() {
   const actions = new ActionHandler({
     harness: new Harness(main),
     eventStream: new EventStream(),
-    interventions: new InterventionLog(main.signals),
+    interventions: new InterventionLog(),
     resolveThread: (id) => threads.get(id),
   });
   const run = (kind: ActionKind, target?: string, threadId?: string) =>

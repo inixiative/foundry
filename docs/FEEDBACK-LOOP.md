@@ -61,9 +61,7 @@ flowchart LR
 
 **What exists:**
 
-- **Viewer correction form.** The "Correction" form in the trace drawer (`viewer/ui/detail-drawer.js:613-639`) posts to `POST /api/interventions` (`viewer/routes/runtime.ts:623-643`). That emits a `correction` signal (`packages/core/src/intervention.ts:67-107`). Two gaps:
-  - The log is kept in memory only.
-  - It is bound to the **main thread's** bus (`start.ts:422,564`).
+- **Viewer correction form.** The "Correction" form in the trace drawer (`viewer/ui/detail-drawer.js:613-639`) posts to `POST /api/threads/:threadId/interventions` (`viewer/routes/runtime.ts`). That emits a `correction` signal on that thread's bus (`packages/core/src/intervention.ts`). The log is kept in memory only.
 - **User messages** enter at `POST /api/messages/send` (`viewer/routes/runtime.ts:514-560`). Nothing inspects them for feedback.
 - **`oracle mine`** detects corrections in Claude Code transcripts. It uses an interrupt marker or an opener regex (`oracle:src/session-miner.ts:216-272`) and appends results to `.oracle/corrections.jsonl` (`oracle:src/cli.ts:218-225`). It has three gaps:
   - no dedupe
@@ -117,12 +115,11 @@ flowchart LR
 
 - Foundry memory already stores scoped records (`thread | project | global`, `packages/core/src/tools.ts:303-324`).
 - Memory also separates **pinned** kinds, which are injected every turn, from **audit-only** kinds, which are retained but never injected (`packages/core/src/adapters/file-memory.ts:46-56`).
-- `correction` is a pinned kind. So today every correction signal, including advisory guard findings (`domain-librarian.ts:953-970`), is already injected into its thread every turn (`start.ts:390`). **That is an automatic resolution, and it should go.**
+- `correction` is a pinned kind. So today every correction signal is already injected into its thread every turn (`start.ts:390`). **That is an automatic resolution, and it should go.** Advisory guard findings are already separate: they are `guard_finding`, an audit-only kind (#53).
 
 **Smallest change:**
 
 - Store feedback items as `feedback_item` and events as `feedback_event`. Both are audit-only kinds: searchable through `foundry_memory`, never injected.
-- Advisory guard findings get their own audit-only kind.
 - Capture then changes no behavior by construction.
 
 ## 2. Routing: scope and destination
@@ -312,8 +309,8 @@ Every resolution is still explicit.
 
 ## Findings to fix regardless
 
-- **Guard findings are pinned.** Advisory guard findings are emitted as `correction` signals (`domain-librarian.ts:955`). Because `correction` is a pinned kind, each finding is injected into its thread on every later turn (`file-memory.ts:48`, `start.ts:390`).
-- **Viewer corrections go to the wrong thread.** They always land on the main thread's bus (`start.ts:422,564`).
+- ~~**Guard findings are pinned.**~~ Fixed in #53: advisory findings are `guard_finding`, an audit-only kind.
+- ~~**Viewer corrections go to the wrong thread.**~~ Fixed in #53: corrections post to `/api/threads/:threadId/interventions` and land on that thread's bus.
 - **`oracle mine` writes duplicates nobody reads.** It appends the same corrections on every run, and nothing reads `corrections.jsonl` (`oracle:src/cli.ts:218-225`).
 - **Session-mined fixtures overwrite each other.** Fixtures from different sessions get the same name, `session__<repo>__<n>.json` (`oracle:src/session-miner.ts:351-358`, `oracle:src/fixture-store.ts:97-100`).
 - **Imported sessions have no `turnId`.** Archive's Claude and Codex importers never set it, so references into mined history have to use `(archiveId, revision, entryId)`.

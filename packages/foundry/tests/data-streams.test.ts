@@ -56,7 +56,7 @@ function fixture(options: { actionQueue?: ActionQueue; tunnelToken?: string } = 
   const viewer = createViewer({
     harness,
     eventStream: events,
-    interventions: new InterventionLog(main.signals),
+    interventions: new InterventionLog(),
     configDir: dir,
     localStore: null,
     projectRegistry: projects,
@@ -527,7 +527,7 @@ test('losing Kingdom authorization closes sockets on the next append or open and
     localStore: null,
     harness: new Harness(thread),
     eventStream: events,
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
     kingdomRuntimes: [
       {
         url: `http://127.0.0.1:${kingdom.port}`,

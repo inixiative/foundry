@@ -216,7 +216,7 @@ test('flow opens are authorized by thread; a viewer without a journal says so in
   const viewer = createViewer({
     harness,
     eventStream: new EventStream(),
-    interventions: new InterventionLog(main.signals),
+    interventions: new InterventionLog(),
     configDir: dir,
     localStore: null,
   });

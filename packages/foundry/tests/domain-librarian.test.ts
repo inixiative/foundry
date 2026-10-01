@@ -229,7 +229,7 @@ describe('DomainLibrarian', () => {
       expect(emitted[0].source).toBe('convention-librarian');
     });
 
-    it('emits correction signal for advisory findings', async () => {
+    it('emits a guard_finding signal, not a correction, for advisory findings', async () => {
       const llm = mockLLM(
         JSON.stringify({
           findings: [
@@ -253,7 +253,7 @@ describe('DomainLibrarian', () => {
       });
 
       expect(emitted).toHaveLength(1);
-      expect(emitted[0].kind).toBe('correction');
+      expect(emitted[0].kind).toBe('guard_finding');
     });
   });
 

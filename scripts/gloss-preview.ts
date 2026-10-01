@@ -6,7 +6,6 @@ import {
   EventStream,
   Harness,
   InterventionLog,
-  SignalBus,
   Thread,
 } from '../packages/core/src/index';
 import { ConfigStore } from '../packages/foundry/src/viewer/config';
@@ -80,7 +79,7 @@ export async function createGlossPreview(port = 0) {
   const { server } = await startViewer({
     harness: new Harness(thread),
     eventStream: new EventStream(),
-    interventions: new InterventionLog(new SignalBus()),
+    interventions: new InterventionLog(),
     configStore,
     configDir: join(root, '.foundry'),
     port,

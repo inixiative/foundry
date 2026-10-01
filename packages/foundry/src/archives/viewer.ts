@@ -26,7 +26,7 @@ const events = new EventStream();
 const viewer = await startViewer({
   harness: new Harness(thread),
   eventStream: events,
-  interventions: new InterventionLog(thread.signals),
+  interventions: new InterventionLog(),
   projectRegistry: projects,
   configStore,
   configDir,

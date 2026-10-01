@@ -198,7 +198,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     const viewer = createViewer({
       harness,
       eventStream: events,
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       configStore,
       configDir,
       threadFactory: factory,

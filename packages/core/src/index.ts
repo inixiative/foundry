@@ -152,7 +152,7 @@ export {
 // IDs (UUID v7 — carries its own creation timestamp)
 export { idAtTime, newId, timeFromId } from './id';
 // Interventions
-export { type Intervention, InterventionLog } from './intervention';
+export { type Intervention, InterventionLog, type InterventionThread } from './intervention';
 // Message utilities
 export {
   assembledToMessages,

@@ -34,7 +34,7 @@ test('an added project inherits global agents and layers and brings only its exi
     const actions = new ActionHandler({
       harness: new Harness(main),
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       resolveThread: () => main,
     });
     const app = new Hono();

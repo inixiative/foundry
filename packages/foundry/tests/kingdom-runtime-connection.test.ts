@@ -56,7 +56,7 @@ test('two HTTP viewers bind separate Kingdom identities and deny use after revoc
           localStore: null,
           harness: new Harness(thread),
           eventStream: new EventStream(),
-          interventions: new InterventionLog(thread.signals),
+          interventions: new InterventionLog(),
           kingdomRuntimes: [
             {
               url: `http://127.0.0.1:${kingdom.port}`,

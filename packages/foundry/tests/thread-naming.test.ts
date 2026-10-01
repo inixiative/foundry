@@ -209,7 +209,7 @@ test('the message route feeds completed turns to the namer and a PATCH name over
     withStreams({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       db: null,
       configStore: new ConfigStore('/tmp/unused-naming-config'),
       namer: routed,

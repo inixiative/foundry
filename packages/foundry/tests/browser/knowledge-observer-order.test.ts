@@ -88,7 +88,7 @@ async function fixture(name: string) {
     const viewer = createViewer({
       harness: new Harness(main),
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       configStore,
       configDir,
     });
