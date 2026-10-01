@@ -1,8 +1,8 @@
-import { Decider, type DeciderConfig, type Decision } from "./decider";
-import type { AgentConfig } from "./base-agent";
-import type { Classification } from "./classifier";
-import type { ContextStack } from "./context-stack";
-import type { ExecuteMeta } from "./executor";
+import type { AgentConfig } from './base-agent';
+import type { Classification } from './classifier';
+import type { ContextStack } from './context-stack';
+import { Decider, type DeciderConfig, type Decision } from './decider';
+import type { ExecuteMeta } from './executor';
 
 /** The raw message plus the classification already computed upstream. */
 export interface ClarifyPayload {
@@ -20,7 +20,7 @@ export interface ClarificationResult {
 export type ClarifyHandler = (
   context: string,
   payload: ClarifyPayload,
-  meta?: ExecuteMeta
+  meta?: ExecuteMeta,
 ) => Promise<Decision<ClarificationResult>>;
 
 export interface ClarifierConfig extends AgentConfig {

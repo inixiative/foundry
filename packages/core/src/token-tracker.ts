@@ -1,4 +1,4 @@
-import { type TokenCounts, sumTokenCounts, totalTokenCount } from "./token-counts";
+import { sumTokenCounts, type TokenCounts, totalTokenCount } from './token-counts';
 
 // ---------------------------------------------------------------------------
 // Token & Cost Tracking
@@ -111,33 +111,33 @@ export interface UsageSummary {
 
 export const DEFAULT_COST_TABLE: CostTable = {
   anthropic: {
-    "claude-opus-4-7": { inputPer1M: 5, outputPer1M: 25 },
-    "claude-opus-4-6": { inputPer1M: 5, outputPer1M: 25 },
-    "claude-sonnet-4-6": { inputPer1M: 3, outputPer1M: 15 },
-    "claude-haiku-4-5-20251001": { inputPer1M: 1, outputPer1M: 5 },
+    'claude-opus-4-7': { inputPer1M: 5, outputPer1M: 25 },
+    'claude-opus-4-6': { inputPer1M: 5, outputPer1M: 25 },
+    'claude-sonnet-4-6': { inputPer1M: 3, outputPer1M: 15 },
+    'claude-haiku-4-5-20251001': { inputPer1M: 1, outputPer1M: 5 },
   },
   openai: {
-    "gpt-5.4": { inputPer1M: 2.5, outputPer1M: 15 },
-    "gpt-5.4-mini": { inputPer1M: 0.75, outputPer1M: 4.5 },
-    "gpt-5.3-codex": { inputPer1M: 1.75, outputPer1M: 14 },
-    "o4-mini": { inputPer1M: 1.1, outputPer1M: 4.4 }, // retired Feb 2026 — kept for historical cost tracking
+    'gpt-5.4': { inputPer1M: 2.5, outputPer1M: 15 },
+    'gpt-5.4-mini': { inputPer1M: 0.75, outputPer1M: 4.5 },
+    'gpt-5.3-codex': { inputPer1M: 1.75, outputPer1M: 14 },
+    'o4-mini': { inputPer1M: 1.1, outputPer1M: 4.4 }, // retired Feb 2026 — kept for historical cost tracking
   },
   gemini: {
-    "gemini-3.1-pro-preview": { inputPer1M: 2, outputPer1M: 12 },
-    "gemini-3-flash-preview": { inputPer1M: 0.5, outputPer1M: 3 },
-    "gemini-3.1-flash-lite-preview": { inputPer1M: 0.25, outputPer1M: 1.5 },
+    'gemini-3.1-pro-preview': { inputPer1M: 2, outputPer1M: 12 },
+    'gemini-3-flash-preview': { inputPer1M: 0.5, outputPer1M: 3 },
+    'gemini-3.1-flash-lite-preview': { inputPer1M: 0.25, outputPer1M: 1.5 },
   },
   meta: {
     // The -contributor ids are the same models, ~21x cheaper because Meta trains
     // on the traffic. Tracking both makes the saving show up next to what bought it.
-    "muse-spark-1.3": { inputPer1M: 1.25, outputPer1M: 4.25 },
-    "muse-spark-1.3-contributor": { inputPer1M: 0.1, outputPer1M: 0.2 },
-    "muse-spark-1.2": { inputPer1M: 1.25, outputPer1M: 4.25 },
-    "muse-spark-1.2-contributor": { inputPer1M: 0.1, outputPer1M: 0.2 },
-    "muse-spark-1.1": { inputPer1M: 1.25, outputPer1M: 4.25 },
+    'muse-spark-1.3': { inputPer1M: 1.25, outputPer1M: 4.25 },
+    'muse-spark-1.3-contributor': { inputPer1M: 0.1, outputPer1M: 0.2 },
+    'muse-spark-1.2': { inputPer1M: 1.25, outputPer1M: 4.25 },
+    'muse-spark-1.2-contributor': { inputPer1M: 0.1, outputPer1M: 0.2 },
+    'muse-spark-1.1': { inputPer1M: 1.25, outputPer1M: 4.25 },
   },
   // Claude Code provider tracks usage via session output, not cost table
-  "claude-code": {},
+  'claude-code': {},
 };
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,8 @@ export const DEFAULT_COST_TABLE: CostTable = {
 // ---------------------------------------------------------------------------
 
 /** Heuristic patterns that indicate source code rather than prose. */
-const CODE_SIGNALS = /[{}();=]|=>|function\s|import\s|export\s|const\s|let\s|var\s|class\s|def\s|return\s/;
+const CODE_SIGNALS =
+  /[{}();=]|=>|function\s|import\s|export\s|const\s|let\s|var\s|class\s|def\s|return\s/;
 
 /**
  * Estimate the number of tokens in `text` without a full tokenizer.
@@ -210,15 +211,13 @@ export class TokenTracker {
    *
    * Throws if budget.haltAt is exceeded (when configured).
    */
-  record(
-    entry: Omit<UsageEntry, "timestamp" | "cost">
-  ): UsageEntry {
+  record(entry: Omit<UsageEntry, 'timestamp' | 'cost'>): UsageEntry {
     const cost = this._computeCost(
       entry.provider,
       entry.model,
       entry.tokens.input,
       entry.tokens.output,
-      entry.cached
+      entry.cached,
     );
 
     const full: UsageEntry = {
@@ -276,7 +275,7 @@ export class TokenTracker {
 
   /** Full usage summary across all dimensions. */
   summary(): UsageSummary {
-    const tokens = sumTokenCounts(this._entries.map(e => e.tokens));
+    const tokens = sumTokenCounts(this._entries.map((e) => e.tokens));
     return {
       tokens,
       totalInput: tokens.input,
@@ -284,10 +283,10 @@ export class TokenTracker {
       totalTokens: totalTokenCount(tokens),
       totalCost: this._entries.reduce((s, e) => s + e.cost, 0),
       totalCalls: this._entries.length,
-      byProvider: this._groupBy("provider"),
-      byModel: this._groupBy("model"),
-      byAgent: this._groupBy("agentId"),
-      byThread: this._groupBy("threadId"),
+      byProvider: this._groupBy('provider'),
+      byModel: this._groupBy('model'),
+      byAgent: this._groupBy('agentId'),
+      byThread: this._groupBy('threadId'),
       budget: this._buildBudgetStatus(),
     };
   }
@@ -329,7 +328,7 @@ export class TokenTracker {
     model: string,
     input: number,
     output: number,
-    cached?: boolean
+    cached?: boolean,
   ): number {
     const pricing = this._costTable[provider]?.[model];
     if (!pricing) return 0;
@@ -337,19 +336,20 @@ export class TokenTracker {
     // Cached input tokens are typically free or heavily discounted
     const effectiveInput = cached ? input * 0.1 : input;
     return (
-      (effectiveInput / 1_000_000) * pricing.inputPer1M +
-      (output / 1_000_000) * pricing.outputPer1M
+      (effectiveInput / 1_000_000) * pricing.inputPer1M + (output / 1_000_000) * pricing.outputPer1M
     );
   }
 
   private _aggregate(entries: UsageEntry[]): TokenUsage {
-    const tokens = sumTokenCounts(entries.map(e => e.tokens));
-    return { ...tokens, total: totalTokenCount(tokens), estimatedCost: entries.reduce((sum, e) => sum + e.cost, 0) };
+    const tokens = sumTokenCounts(entries.map((e) => e.tokens));
+    return {
+      ...tokens,
+      total: totalTokenCount(tokens),
+      estimatedCost: entries.reduce((sum, e) => sum + e.cost, 0),
+    };
   }
 
-  private _groupBy(
-    field: "provider" | "model" | "agentId" | "threadId"
-  ): UsageBreakdown[] {
+  private _groupBy(field: 'provider' | 'model' | 'agentId' | 'threadId'): UsageBreakdown[] {
     const groups = new Map<string, UsageEntry[]>();
     for (const entry of this._entries) {
       const key = entry[field];
@@ -365,7 +365,7 @@ export class TokenTracker {
   }
 
   private _buildBudgetStatus(): BudgetStatus {
-    const usedTokens = totalTokenCount(sumTokenCounts(this._entries.map(e => e.tokens)));
+    const usedTokens = totalTokenCount(sumTokenCounts(this._entries.map((e) => e.tokens)));
     const usedCost = this._entries.reduce((s, e) => s + e.cost, 0);
 
     const limitTokens = this._budget.maxTokens;
@@ -435,8 +435,8 @@ export class BudgetExceededError extends Error {
     if (status.limitCost != null) {
       parts.push(`$${status.usedCost.toFixed(4)}/$${status.limitCost.toFixed(2)}`);
     }
-    super(`Budget exceeded: ${parts.join(", ")} (${(status.percentage * 100).toFixed(1)}%)`);
-    this.name = "BudgetExceededError";
+    super(`Budget exceeded: ${parts.join(', ')} (${(status.percentage * 100).toFixed(1)}%)`);
+    this.name = 'BudgetExceededError';
     this.status = status;
   }
 }

@@ -1,20 +1,20 @@
-import type { Harness, EventStream, InterventionLog, Thread } from "@inixiative/foundry-core";
-import type { RuntimeAdapter } from "../providers/runtime";
+import type { EventStream, Harness, InterventionLog, Thread } from '@inixiative/foundry-core';
+import type { RuntimeAdapter } from '../providers/runtime';
 
 // ---------------------------------------------------------------------------
 // Operator actions — commands that the viewer can send to the system
 // ---------------------------------------------------------------------------
 
 export type ActionKind =
-  | "thread:pause"
-  | "thread:resume"
-  | "thread:archive"
-  | "thread:inspect"
-  | "layer:warm"
-  | "layer:invalidate"
-  | "agent:dispatch"
-  | "runtime:command"
-  | "system:snapshot";
+  | 'thread:pause'
+  | 'thread:resume'
+  | 'thread:archive'
+  | 'thread:inspect'
+  | 'layer:warm'
+  | 'layer:invalidate'
+  | 'agent:dispatch'
+  | 'runtime:command'
+  | 'system:snapshot';
 
 export interface OperatorAction {
   readonly kind: ActionKind;
@@ -56,7 +56,9 @@ export class ActionHandler {
     this._harness = opts.harness;
     this._events = opts.eventStream;
     this._interventions = opts.interventions;
-    this._resolveThread = opts.resolveThread ?? (id => id === opts.harness.thread.id ? opts.harness.thread : undefined);
+    this._resolveThread =
+      opts.resolveThread ??
+      ((id) => (id === opts.harness.thread.id ? opts.harness.thread : undefined));
     this._onThreadChange = opts.onThreadChange;
   }
 
@@ -72,16 +74,21 @@ export class ActionHandler {
       this._actionLog.shift();
     }
 
-    if (action.kind === "runtime:command") return this._runtimeCommand(action);
-    const threadAction = action.kind.startsWith("thread:");
+    if (action.kind === 'runtime:command') return this._runtimeCommand(action);
+    const threadAction = action.kind.startsWith('thread:');
     if (threadAction && action.target && action.threadId && action.target !== action.threadId) {
-      return { ok: false, action: action.kind, message: "Conflicting thread targets" };
+      return { ok: false, action: action.kind, message: 'Conflicting thread targets' };
     }
-    const threadId = (threadAction ? action.target : undefined) ?? action.threadId ?? this._harness.thread.id;
+    const threadId =
+      (threadAction ? action.target : undefined) ?? action.threadId ?? this._harness.thread.id;
     const thread = this._resolveThread(threadId);
     if (!thread) return { ok: false, action: action.kind, message: `Thread ${threadId} not found` };
-    if (thread.disposed && action.kind !== "thread:inspect" && action.kind !== "system:snapshot") {
-      return { ok: false, action: action.kind, message: `Thread ${threadId} is disposed; create a new thread to restore it` };
+    if (thread.disposed && action.kind !== 'thread:inspect' && action.kind !== 'system:snapshot') {
+      return {
+        ok: false,
+        action: action.kind,
+        message: `Thread ${threadId} is disposed; create a new thread to restore it`,
+      };
     }
     const result = await this._executeThread(action, thread);
     if (result.ok) this._onThreadChange?.(thread);
@@ -90,21 +97,21 @@ export class ActionHandler {
 
   private async _executeThread(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     switch (action.kind) {
-      case "thread:pause":
+      case 'thread:pause':
         return this._pauseThread(action, thread);
-      case "thread:resume":
+      case 'thread:resume':
         return this._resumeThread(action, thread);
-      case "thread:archive":
+      case 'thread:archive':
         return this._archiveThread(action, thread);
-      case "thread:inspect":
+      case 'thread:inspect':
         return this._inspectThread(action, thread);
-      case "layer:warm":
+      case 'layer:warm':
         return this._warmLayer(action, thread);
-      case "layer:invalidate":
+      case 'layer:invalidate':
         return this._invalidateLayer(action, thread);
-      case "agent:dispatch":
+      case 'agent:dispatch':
         return this._dispatchAgent(action, thread);
-      case "system:snapshot":
+      case 'system:snapshot':
         return this._systemSnapshot(thread);
       default:
         return { ok: false, action: action.kind, message: `Unknown action: ${action.kind}` };
@@ -119,14 +126,18 @@ export class ActionHandler {
   // -- Handlers --
 
   private _pauseThread(action: OperatorAction, thread: Thread): ActionResult {
-    thread.meta.status = "waiting";
+    thread.meta.status = 'waiting';
     thread.stop();
-    return { ok: true, action: action.kind, message: `Thread ${thread.id} cache lifecycle paused; current work is not interrupted` };
+    return {
+      ok: true,
+      action: action.kind,
+      message: `Thread ${thread.id} cache lifecycle paused; current work is not interrupted`,
+    };
   }
 
   private _resumeThread(action: OperatorAction, thread: Thread): ActionResult {
     thread.start();
-    thread.meta.status = thread.activeDispatches > 0 ? "active" : "idle";
+    thread.meta.status = thread.activeDispatches > 0 ? 'active' : 'idle';
     return { ok: true, action: action.kind, message: `Thread ${thread.id} resumed` };
   }
 
@@ -152,13 +163,13 @@ export class ActionHandler {
       dispatchCount: thread.dispatches.length,
       signalCount: thread.signals.recent().length,
     };
-    return { ok: true, action: action.kind, message: "Thread state", data };
+    return { ok: true, action: action.kind, message: 'Thread state', data };
   }
 
   private async _warmLayer(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     const layerId = action.target;
     if (!layerId) {
-      return { ok: false, action: action.kind, message: "layer:warm requires a target layer ID" };
+      return { ok: false, action: action.kind, message: 'layer:warm requires a target layer ID' };
     }
     const layer = thread.stack.layers.find((l) => l.id === layerId);
     if (!layer) {
@@ -168,14 +179,22 @@ export class ActionHandler {
       await layer.warm();
       return { ok: true, action: action.kind, message: `Layer ${layerId} warmed` };
     } catch (err) {
-      return { ok: false, action: action.kind, message: `Layer ${layerId} warming failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        action: action.kind,
+        message: `Layer ${layerId} warming failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 
   private _invalidateLayer(action: OperatorAction, thread: Thread): ActionResult {
     const layerId = action.target;
     if (!layerId) {
-      return { ok: false, action: action.kind, message: "layer:invalidate requires a target layer ID" };
+      return {
+        ok: false,
+        action: action.kind,
+        message: 'layer:invalidate requires a target layer ID',
+      };
     }
     const layer = thread.stack.layers.find((l) => l.id === layerId);
     if (!layer) {
@@ -188,7 +207,11 @@ export class ActionHandler {
   private async _dispatchAgent(action: OperatorAction, thread: Thread): Promise<ActionResult> {
     const agentId = action.target;
     if (!agentId) {
-      return { ok: false, action: action.kind, message: "agent:dispatch requires a target agent ID" };
+      return {
+        ok: false,
+        action: action.kind,
+        message: 'agent:dispatch requires a target agent ID',
+      };
     }
     try {
       const result = await thread.dispatch(agentId, action.payload ?? {});
@@ -210,12 +233,20 @@ export class ActionHandler {
   private _runtimeCommand(action: OperatorAction): ActionResult {
     const runtimeId = action.target;
     if (!runtimeId) {
-      return { ok: false, action: action.kind, message: "runtime:command requires a target runtime ID" };
+      return {
+        ok: false,
+        action: action.kind,
+        message: 'runtime:command requires a target runtime ID',
+      };
     }
     const runtime = this._runtimes.get(runtimeId);
     if (!runtime) {
-      const available = [...this._runtimes.keys()].join(", ") || "none";
-      return { ok: false, action: action.kind, message: `Runtime ${runtimeId} not found. Available: ${available}` };
+      const available = [...this._runtimes.keys()].join(', ') || 'none';
+      return {
+        ok: false,
+        action: action.kind,
+        message: `Runtime ${runtimeId} not found. Available: ${available}`,
+      };
     }
     return {
       ok: false,
@@ -248,6 +279,6 @@ export class ActionHandler {
         contextHash: d.contextHash,
       })),
     };
-    return { ok: true, action: "system:snapshot", message: "System snapshot", data };
+    return { ok: true, action: 'system:snapshot', message: 'System snapshot', data };
   }
 }

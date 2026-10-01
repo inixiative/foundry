@@ -12,10 +12,10 @@
 // has it open. Re-opening a stream already open on a connection re-sends its snapshot.
 // An append goes to every connection holding the stream; appendTo addresses one
 // client's connections (a result meant only for the tab that requested it).
-import { sendTo, sendToStreamLocal } from "./delivery";
-import type { WSRegistry } from "./registry";
-import { subscribeToStream, unsubscribeFromStream } from "./subscriptions";
-import type { StreamFamily, StreamSource, WSSocket } from "./types";
+import { sendTo, sendToStreamLocal } from './delivery';
+import type { WSRegistry } from './registry';
+import { subscribeToStream, unsubscribeFromStream } from './subscriptions';
+import type { StreamFamily, StreamSource, WSSocket } from './types';
 
 const MAX_STREAM_NAME = 256;
 
@@ -31,13 +31,18 @@ export type DataStreams = {
   stopAll: () => void;
 };
 
-export const createDataStreams = (registry: WSRegistry, families: StreamFamily[],
-  admit: () => Promise<boolean> = async () => true): DataStreams => {
+export const createDataStreams = (
+  registry: WSRegistry,
+  families: StreamFamily[],
+  admit: () => Promise<boolean> = async () => true,
+): DataStreams => {
   const sources = new Map<string, StreamSource>();
-  const familyFor = (stream: unknown) => typeof stream === "string" && stream.length > 0 && stream.length <= MAX_STREAM_NAME
-    ? families.find(family => family.matches(stream)) : undefined;
+  const familyFor = (stream: unknown) =>
+    typeof stream === 'string' && stream.length > 0 && stream.length <= MAX_STREAM_NAME
+      ? families.find((family) => family.matches(stream))
+      : undefined;
   const appendTo = (stream: string) => (payload: unknown) =>
-    sendToStreamLocal(registry, stream, { category: "data", action: "append", stream, payload });
+    sendToStreamLocal(registry, stream, { category: 'data', action: 'append', stream, payload });
 
   const stop = (stream: string) => {
     const source = sources.get(stream);
@@ -49,12 +54,12 @@ export const createDataStreams = (registry: WSRegistry, families: StreamFamily[]
   return {
     async open(ws, stream) {
       const family = familyFor(stream);
-      const granted = !!family && await admit() && await family.authorize(stream);
+      const granted = !!family && (await admit()) && (await family.authorize(stream));
       // The socket may have closed while authorization was pending.
       if (!registry.byId.has(ws.data.connectionId)) return;
       if (!family || !granted) {
         unsubscribeFromStream(registry, ws, stream);
-        sendTo(ws, { type: "openRejected", stream });
+        sendTo(ws, { type: 'openRejected', stream });
         return;
       }
       let source = sources.get(stream);
@@ -63,26 +68,28 @@ export const createDataStreams = (registry: WSRegistry, families: StreamFamily[]
         sources.set(stream, source);
       }
       let payload: unknown;
-      try { payload = source.snapshot(); }
-      catch (error) {
+      try {
+        payload = source.snapshot();
+      } catch (error) {
         if (!registry.byStream.has(stream)) stop(stream);
         throw error;
       }
       // Snapshot and subscription happen in one synchronous step: every later append follows the snapshot.
       subscribeToStream(registry, ws, stream);
-      sendTo(ws, { type: "opened", stream });
-      sendTo(ws, { category: "data", action: "snapshot", stream, payload });
+      sendTo(ws, { type: 'opened', stream });
+      sendTo(ws, { category: 'data', action: 'snapshot', stream, payload });
     },
     close(ws, stream) {
       unsubscribeFromStream(registry, ws, stream);
-      sendTo(ws, { type: "closed", stream });
+      sendTo(ws, { type: 'closed', stream });
     },
     idle: stop,
-    isOpen: stream => registry.byStream.has(stream),
+    isOpen: (stream) => registry.byStream.has(stream),
     appendTo(clientId, stream, payload) {
       for (const id of registry.byStream.get(stream) ?? []) {
         const ws = registry.byId.get(id);
-        if (ws?.data.clientId === clientId) sendTo(ws, { category: "data", action: "append", stream, payload });
+        if (ws?.data.clientId === clientId)
+          sendTo(ws, { category: 'data', action: 'append', stream, payload });
       }
     },
     stopAll() {

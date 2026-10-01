@@ -12,13 +12,8 @@
         "reason": "candidate-selected",
         "candidateId": "hydrate-auth-context",
         "catalogRevision": "fixture-auth-v1",
-        "candidateIds": [
-          "hydrate-auth-context",
-          "request-regression-test"
-        ],
-        "learningIds": [
-          "redirect-origin"
-        ],
+        "candidateIds": ["hydrate-auth-context", "request-regression-test"],
+        "learningIds": ["redirect-origin"],
         "stages": [
           {
             "stage": "intervene",
@@ -58,9 +53,7 @@
         "outcome": "no-intervention",
         "reason": "gate-no",
         "catalogRevision": "fixture-tests-v1",
-        "candidateIds": [
-          "request-regression-test"
-        ],
+        "candidateIds": ["request-regression-test"],
         "learningIds": [],
         "stages": [
           {
@@ -90,9 +83,7 @@
         "outcome": "review",
         "reason": "gate-uncertain",
         "catalogRevision": "fixture-ambiguous-v1",
-        "candidateIds": [
-          "request-context"
-        ],
+        "candidateIds": ["request-context"],
         "learningIds": [],
         "stages": [
           {

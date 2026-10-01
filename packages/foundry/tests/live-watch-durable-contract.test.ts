@@ -1,28 +1,28 @@
-import { expect, test } from "bun:test";
-import { StreamBufferRegistry } from "../src/viewer/stream-buffer";
+import { expect, test } from 'bun:test';
+import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
 // @ts-expect-error Native browser JavaScript has no declaration file.
-import { mergeLiveSnapshot, liveThreadStatus } from "../src/viewer/ui/live-state.js";
+import { mergeMessageHistory } from '../src/viewer/ui/conversation-state.js';
 // @ts-expect-error Native browser JavaScript has no declaration file.
-import { mergeMessageHistory } from "../src/viewer/ui/conversation-state.js";
+import { liveThreadStatus, mergeLiveSnapshot } from '../src/viewer/ui/live-state.js';
 
-test("durable observer answer outranks its earlier bounded watch projection", () => {
+test('durable observer answer outranks its earlier bounded watch projection', () => {
   const registry = new StreamBufferRegistry();
-  const buffer = registry.open("turn-A", "thread-A", "project-A");
-  buffer.append("EARLIER_RUNNING_PREVIEW");
-  const active = { buffers: registry.forThread("thread-A") };
-  const output = "FULL_DURABLE_START:" + "x".repeat(40_000) + ":FULL_DURABLE_END";
-  const meta = { executionOutcome: "completed", turnStatus: "completed", persistence: "committed" };
+  const buffer = registry.open('turn-A', 'thread-A', 'project-A');
+  buffer.append('EARLIER_RUNNING_PREVIEW');
+  const active = { buffers: registry.forThread('thread-A') };
+  const output = 'FULL_DURABLE_START:' + 'x'.repeat(40_000) + ':FULL_DURABLE_END';
+  const meta = { executionOutcome: 'completed', turnStatus: 'completed', persistence: 'committed' };
   buffer.complete({ content: output, meta });
-  const bounded = { buffers: registry.forThread("thread-A") };
+  const bounded = { buffers: registry.forThread('thread-A') };
   const watched = mergeLiveSnapshot([], bounded);
-  expect(watched[0].terminalSource).toBe("watch");
+  expect(watched[0].terminalSource).toBe('watch');
   expect(watched[0].content.length).toBeLessThan(output.length);
 
   const durable = {
-    id: "journal-message-A",
-    actor: "agent",
-    threadId: "thread-A",
-    turnId: "turn-A",
+    id: 'journal-message-A',
+    actor: 'agent',
+    threadId: 'thread-A',
+    turnId: 'turn-A',
     content: output,
     seq: 2,
     meta,
@@ -33,5 +33,5 @@ test("durable observer answer outranks its earlier bounded watch projection", ()
   const stale = mergeLiveSnapshot(recovered, active);
   expect(stale[0].content).toBe(output);
   expect(stale[0].streaming).toBe(false);
-  expect(liveThreadStatus(stale)).not.toBe("active");
+  expect(liveThreadStatus(stale)).not.toBe('active');
 });

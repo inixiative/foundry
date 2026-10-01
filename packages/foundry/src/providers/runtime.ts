@@ -1,6 +1,6 @@
-import type { AssembledContext } from "@inixiative/foundry-core";
-import { join, resolve, relative } from "path";
-import { writeFile, unlink } from "fs/promises";
+import type { AssembledContext } from '@inixiative/foundry-core';
+import { unlink, writeFile } from 'fs/promises';
+import { join, relative, resolve } from 'path';
 
 // ---------------------------------------------------------------------------
 // Runtime hook types — for wrapping agent runtimes (Claude Code, Codex, etc.)
@@ -14,14 +14,14 @@ export interface RuntimeEvent {
 }
 
 export type RuntimeEventKind =
-  | "session_start"
-  | "session_end"
-  | "tool_call"
-  | "tool_result"
-  | "completion"
-  | "error"
-  | "user_input"
-  | "context_inject";
+  | 'session_start'
+  | 'session_end'
+  | 'tool_call'
+  | 'tool_result'
+  | 'completion'
+  | 'error'
+  | 'user_input'
+  | 'context_inject';
 
 /** Callback for runtime events. */
 export type RuntimeEventHandler = (event: RuntimeEvent) => void | Promise<void>;
@@ -83,20 +83,16 @@ export interface RuntimeAdapter {
 
 /** Extract unique layer IDs from assembled blocks. */
 function extractLayerIds(assembled: AssembledContext): string[] {
-  return [
-    ...new Set(
-      assembled.blocks.filter((b) => b.id).map((b) => b.id as string)
-    ),
-  ];
+  return [...new Set(assembled.blocks.filter((b) => b.id).map((b) => b.id as string))];
 }
 
 /** Validate that a file path stays within a root directory. */
 function safePath(root: string, filename: string): string {
   // Strip directory separators — filename must be a simple name
-  const safe = filename.replace(/[\/\\]/g, "_");
+  const safe = filename.replace(/[/\\]/g, '_');
   const filePath = join(root, safe);
   const rel = relative(resolve(root), resolve(filePath));
-  if (rel.startsWith("..") || rel.includes("/..")) {
+  if (rel.startsWith('..') || rel.includes('/..')) {
     throw new Error(`Invalid injection file path: ${filename}`);
   }
   return filePath;
@@ -124,10 +120,10 @@ abstract class BaseRuntime implements RuntimeAdapter {
   async inject(injection: ContextInjection): Promise<() => Promise<void>> {
     const filePath = safePath(this._projectRoot, this._filename);
 
-    await writeFile(filePath, injection.formatted, "utf-8");
+    await writeFile(filePath, injection.formatted, 'utf-8');
 
     this._emit({
-      kind: "context_inject",
+      kind: 'context_inject',
       timestamp: Date.now(),
       data: {
         file: filePath,
@@ -158,9 +154,12 @@ abstract class BaseRuntime implements RuntimeAdapter {
     for (const handler of snapshot) {
       try {
         const result = handler(event);
-        if (result && typeof (result as Promise<void>).catch === "function") {
+        if (result && typeof (result as Promise<void>).catch === 'function') {
           (result as Promise<void>).catch((err) => {
-            console.warn(`[Runtime] async handler error for "${event.kind}":`, (err as Error).message ?? err);
+            console.warn(
+              `[Runtime] async handler error for "${event.kind}":`,
+              (err as Error).message ?? err,
+            );
           });
         }
       } catch (err) {
@@ -169,10 +168,7 @@ abstract class BaseRuntime implements RuntimeAdapter {
     }
   }
 
-  protected _buildMeta(
-    formatted: string,
-    assembled: AssembledContext
-  ): ContextInjection["meta"] {
+  protected _buildMeta(formatted: string, assembled: AssembledContext): ContextInjection['meta'] {
     return {
       layerIds: extractLayerIds(assembled),
       tokenEstimate: Math.ceil(formatted.length / 4),
@@ -196,7 +192,7 @@ export interface ClaudeCodeConfig {
    * - "append": Append directly to CLAUDE.md (riskier, harder to teardown)
    * - "env": Set CLAUDE_CONTEXT env var (if supported)
    */
-  strategy?: "file" | "append" | "env";
+  strategy?: 'file' | 'append' | 'env';
   /** Hook scripts directory for Claude Code hooks. */
   hooksDir?: string;
 }
@@ -209,34 +205,34 @@ export interface ClaudeCodeConfig {
  * (PreToolUse, PostToolUse, Notification hooks).
  */
 export class ClaudeCodeRuntime extends BaseRuntime {
-  readonly id = "claude-code";
-  readonly runtime = "claude-code";
+  readonly id = 'claude-code';
+  readonly runtime = 'claude-code';
 
   constructor(config: ClaudeCodeConfig) {
-    super(config.projectRoot, config.contextFile ?? ".foundry-context.md");
+    super(config.projectRoot, config.contextFile ?? '.foundry-context.md');
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
     const lines: string[] = [];
-    lines.push("# Foundry Context");
-    lines.push("");
+    lines.push('# Foundry Context');
+    lines.push('');
 
     for (const block of assembled.blocks) {
-      if (block.role === "system") {
-        lines.push("## System");
+      if (block.role === 'system') {
+        lines.push('## System');
         lines.push(block.text);
-        lines.push("");
-      } else if (block.role === "layer") {
+        lines.push('');
+      } else if (block.role === 'layer') {
         lines.push(`## ${block.id}`);
         lines.push(`> ${block.text}`);
-        lines.push("");
-      } else if (block.role === "content") {
+        lines.push('');
+      } else if (block.role === 'content') {
         lines.push(block.text);
-        lines.push("");
+        lines.push('');
       }
     }
 
-    const formatted = lines.join("\n");
+    const formatted = lines.join('\n');
     return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 
@@ -261,30 +257,30 @@ export class ClaudeCodeRuntime extends BaseRuntime {
    */
   generateHookScript(): string {
     return [
-      "#!/usr/bin/env node",
-      "// Generated by Foundry — reports tool events for observation",
-      "// Security: callback URL is read from env to avoid leaking auth tokens into files.",
-      "const CALLBACK = process.env.FOUNDRY_HOOK_CALLBACK;",
-      "if (!CALLBACK) process.exit(0); // Silently exit if not configured",
-      "",
+      '#!/usr/bin/env node',
+      '// Generated by Foundry — reports tool events for observation',
+      '// Security: callback URL is read from env to avoid leaking auth tokens into files.',
+      'const CALLBACK = process.env.FOUNDRY_HOOK_CALLBACK;',
+      'if (!CALLBACK) process.exit(0); // Silently exit if not configured',
+      '',
       "const input = JSON.parse(process.env.CLAUDE_HOOK_INPUT || '{}');",
-      "const event = {",
+      'const event = {',
       "  kind: 'tool_result',",
-      "  timestamp: Date.now(),",
-      "  data: {",
-      "    tool: input.tool_name,",
-      "    input: input.tool_input,",
-      "    output: input.tool_output,",
-      "    session: input.session_id,",
-      "  }",
-      "};",
-      "",
-      "fetch(CALLBACK, {",
+      '  timestamp: Date.now(),',
+      '  data: {',
+      '    tool: input.tool_name,',
+      '    input: input.tool_input,',
+      '    output: input.tool_output,',
+      '    session: input.session_id,',
+      '  }',
+      '};',
+      '',
+      'fetch(CALLBACK, {',
       "  method: 'POST',",
       "  headers: { 'content-type': 'application/json' },",
-      "  body: JSON.stringify(event),",
-      "}).catch(() => {});",
-    ].join("\n");
+      '  body: JSON.stringify(event),',
+      '}).catch(() => {});',
+    ].join('\n');
   }
 }
 
@@ -307,33 +303,33 @@ export interface CodexConfig {
  * observes via the Codex event stream / output parsing.
  */
 export class CodexRuntime extends BaseRuntime {
-  readonly id = "codex";
-  readonly runtime = "codex";
+  readonly id = 'codex';
+  readonly runtime = 'codex';
 
   constructor(config: CodexConfig) {
-    super(config.projectRoot, config.instructionsFile ?? ".foundry-instructions.md");
+    super(config.projectRoot, config.instructionsFile ?? '.foundry-instructions.md');
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
     const lines: string[] = [];
-    lines.push("# Foundry Context for Codex");
-    lines.push("");
+    lines.push('# Foundry Context for Codex');
+    lines.push('');
 
     for (const block of assembled.blocks) {
-      if (block.role === "system") {
+      if (block.role === 'system') {
         lines.push(block.text);
-        lines.push("");
-      } else if (block.role === "layer") {
+        lines.push('');
+      } else if (block.role === 'layer') {
         lines.push(`### ${block.id}`);
         lines.push(block.text);
-        lines.push("");
-      } else if (block.role === "content") {
+        lines.push('');
+      } else if (block.role === 'content') {
         lines.push(block.text);
-        lines.push("");
+        lines.push('');
       }
     }
 
-    const formatted = lines.join("\n");
+    const formatted = lines.join('\n');
     return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 }
@@ -356,31 +352,31 @@ export interface CursorConfig {
  * Foundry injects context by writing rules files in the project root.
  */
 export class CursorRuntime extends BaseRuntime {
-  readonly id = "cursor";
-  readonly runtime = "cursor";
+  readonly id = 'cursor';
+  readonly runtime = 'cursor';
 
   constructor(config: CursorConfig) {
-    super(config.projectRoot, config.rulesFile ?? ".foundry-cursorrules");
+    super(config.projectRoot, config.rulesFile ?? '.foundry-cursorrules');
   }
 
   prepareInjection(assembled: AssembledContext): ContextInjection {
     const lines: string[] = [];
 
     for (const block of assembled.blocks) {
-      if (block.role === "system") {
+      if (block.role === 'system') {
         lines.push(block.text);
-        lines.push("");
-      } else if (block.role === "layer") {
+        lines.push('');
+      } else if (block.role === 'layer') {
         lines.push(`[${block.id}]`);
         lines.push(block.text);
-        lines.push("");
-      } else if (block.role === "content") {
+        lines.push('');
+      } else if (block.role === 'content') {
         lines.push(block.text);
-        lines.push("");
+        lines.push('');
       }
     }
 
-    const formatted = lines.join("\n");
+    const formatted = lines.join('\n');
     return { formatted, meta: this._buildMeta(formatted, assembled) };
   }
 }

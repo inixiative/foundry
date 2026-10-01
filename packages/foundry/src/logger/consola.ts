@@ -3,13 +3,13 @@
 // ---------------------------------------------------------------------------
 
 import {
+  getLogBroadcasts,
+  getLogScopes,
+  LOG_LEVEL_VALUES,
   type Logger,
   type LoggerConfig,
   type LogLevel,
-  LOG_LEVEL_VALUES,
-  getLogScopes,
-  getLogBroadcasts,
-} from "./scope";
+} from './scope';
 
 /** Map our levels to consola's numeric levels. */
 const CONSOLA_LEVELS: Record<LogLevel, number> = {
@@ -26,7 +26,7 @@ function resolveLevel(config?: LoggerConfig): LogLevel {
   if (config?.level) return config.level;
   const env = process.env.LOG_LEVEL as LogLevel | undefined;
   if (env && env in LOG_LEVEL_VALUES) return env;
-  return "info";
+  return 'info';
 }
 
 /**
@@ -43,10 +43,8 @@ function resolveLevel(config?: LoggerConfig): LogLevel {
  * const log = createConsolaLogger();
  * log.info("server started");
  */
-export async function createConsolaLogger(
-  config?: LoggerConfig,
-): Promise<Logger> {
-  const { createConsola } = await import("consola");
+export async function createConsolaLogger(config?: LoggerConfig): Promise<Logger> {
+  const { createConsola } = await import('consola');
   const level = resolveLevel(config);
   const timestamps = config?.timestamps !== false;
 
@@ -64,17 +62,15 @@ export async function createConsolaLogger(
     if (timestamps) parts.push(`[${new Date().toISOString()}]`);
     const scopes = getLogScopes();
     if (scopes.length > 0) {
-      parts.push(scopes.map((s) => `[${s}]`).join(" "));
+      parts.push(scopes.map((s) => `[${s}]`).join(' '));
     }
-    return parts.join(" ");
+    return parts.join(' ');
   }
 
   function broadcast(lvl: string, args: unknown[]): void {
     const targets = getLogBroadcasts();
     if (targets.length === 0) return;
-    const msg = args
-      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
-      .join(" ");
+    const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
     for (const fn of targets) {
       try {
         fn(lvl, msg);
@@ -84,10 +80,7 @@ export async function createConsolaLogger(
     }
   }
 
-  function wrap(
-    method: (...args: unknown[]) => void,
-    lvl: string,
-  ): (...args: unknown[]) => void {
+  function wrap(method: (...args: unknown[]) => void, lvl: string): (...args: unknown[]) => void {
     return (...args: unknown[]) => {
       const p = prefix();
       broadcast(lvl, p ? [p, ...args] : args);
@@ -100,12 +93,12 @@ export async function createConsolaLogger(
   }
 
   const logger: Logger = {
-    fatal: wrap(base.fatal.bind(base), "fatal"),
-    error: wrap(base.error.bind(base), "error"),
-    warn: wrap(base.warn.bind(base), "warn"),
-    info: wrap(base.info.bind(base), "info"),
-    debug: wrap(base.debug.bind(base), "debug"),
-    trace: wrap(base.trace.bind(base), "trace"),
+    fatal: wrap(base.fatal.bind(base), 'fatal'),
+    error: wrap(base.error.bind(base), 'error'),
+    warn: wrap(base.warn.bind(base), 'warn'),
+    info: wrap(base.info.bind(base), 'info'),
+    debug: wrap(base.debug.bind(base), 'debug'),
+    trace: wrap(base.trace.bind(base), 'trace'),
     box(message: string) {
       base.box(message);
     },

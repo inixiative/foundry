@@ -1,7 +1,4 @@
-import { describe, expect, test } from "bun:test";
-import { SessionBackedProvider } from "../src/providers/session-backed";
-import limitTerminal from "../../../fixtures/harness-qa/native/claude-limit-terminal.json";
-import type { CreateSessionOpts, SessionAdapter } from "../src/providers/session-adapter";
+import { describe, expect, test } from 'bun:test';
 import type {
   BeforeSendHook,
   HarnessSession,
@@ -9,11 +6,14 @@ import type {
   SessionEvent,
   SessionEventHandler,
   SessionResult,
-} from "@inixiative/agent-session";
+} from '@inixiative/agent-session';
+import limitTerminal from '../../../fixtures/harness-qa/native/claude-limit-terminal.json';
+import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
+import { SessionBackedProvider } from '../src/providers/session-backed';
 
 class FakeSession implements HarnessSession {
   alive = false;
-  externalSessionId: string | undefined = "native-1";
+  externalSessionId: string | undefined = 'native-1';
   events: readonly SessionEvent[] = [];
   turns = 0;
   totalTokens = { input: 0, output: 0 };
@@ -71,7 +71,7 @@ class FakeSession implements HarnessSession {
 }
 
 class FakeAdapter implements SessionAdapter {
-  runtime = "fake";
+  runtime = 'fake';
   created: CreateSessionOpts[] = [];
   sessions: FakeSession[] = [];
 
@@ -89,105 +89,152 @@ class FakeAdapter implements SessionAdapter {
   async clearSession(): Promise<void> {}
 }
 
-describe("SessionBackedProvider", () => {
-  test("Claude 429 is an error even when its terminal subtype says success", async () => {
+describe('SessionBackedProvider', () => {
+  test('Claude 429 is an error even when its terminal subtype says success', async () => {
     const adapter = new FakeAdapter();
     const create = adapter.createSession.bind(adapter);
-    adapter.createSession = async opts => {
+    adapter.createSession = async (opts) => {
       const session = await create(opts);
-      session.send = async () => ({ content: limitTerminal.event.result, events: [{ kind: "result", timestamp: 1,
-        raw: limitTerminal.event }] });
+      session.send = async () => ({
+        content: limitTerminal.event.result,
+        events: [{ kind: 'result', timestamp: 1, raw: limitTerminal.event }],
+      });
       return session;
     };
-    const provider = new SessionBackedProvider({ id: "claude-code", adapter, defaultModel: "fable" });
-    await expect(provider.complete([{ role: "user", content: "Work" }])).rejects.toThrow("429");
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'fable',
+    });
+    await expect(provider.complete([{ role: 'user', content: 'Work' }])).rejects.toThrow('429');
   });
-  test("a native terminal error cannot masquerade as successful empty content", async () => {
+  test('a native terminal error cannot masquerade as successful empty content', async () => {
     const adapter = new FakeAdapter();
     const create = adapter.createSession.bind(adapter);
-    adapter.createSession = async opts => {
+    adapter.createSession = async (opts) => {
       const session = await create(opts);
-      session.send = async () => ({ content: "", events: [{ kind: "result", timestamp: 1,
-        raw: { type: "result", subtype: "error_max_turns", is_error: true, num_turns: 2 } }] });
+      session.send = async () => ({
+        content: '',
+        events: [
+          {
+            kind: 'result',
+            timestamp: 1,
+            raw: { type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 2 },
+          },
+        ],
+      });
       return session;
     };
-    const provider = new SessionBackedProvider({ id: "claude-code", adapter, defaultModel: "fable" });
-    await expect(provider.complete([{ role: "user", content: "Work" }])).rejects.toThrow("error_max_turns");
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'fable',
+    });
+    await expect(provider.complete([{ role: 'user', content: 'Work' }])).rejects.toThrow(
+      'error_max_turns',
+    );
   });
-  test("central native work has no implicit turn deadline while decisions remain bounded", async () => {
+  test('central native work has no implicit turn deadline while decisions remain bounded', async () => {
     const adapter = new FakeAdapter();
-    const provider = new SessionBackedProvider({ id: "claude-code", adapter, defaultModel: "fable" });
-    await provider.complete([{ role: "user", content: "Long real work" }], { threadId: "worker" });
-    await provider.complete([{ role: "user", content: "Classify" }], { threadId: "worker:aux:classifier" });
-    await provider.complete([{ role: "user", content: "Explicit timeout" }], { threadId: "worker", timeout: 123 });
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'fable',
+    });
+    await provider.complete([{ role: 'user', content: 'Long real work' }], { threadId: 'worker' });
+    await provider.complete([{ role: 'user', content: 'Classify' }], {
+      threadId: 'worker:aux:classifier',
+    });
+    await provider.complete([{ role: 'user', content: 'Explicit timeout' }], {
+      threadId: 'worker',
+      timeout: 123,
+    });
     expect(adapter.sessions[0].sendOptions).toEqual([{ timeout: 0 }, { timeout: 123 }]);
     expect(adapter.sessions[1].sendOptions).toEqual([{ timeout: 15_000 }]);
   });
-  test("keeps one warm session per thread and formats messages for native harnesses", async () => {
+  test('keeps one warm session per thread and formats messages for native harnesses', async () => {
     const adapter = new FakeAdapter();
     const provider = new SessionBackedProvider({
-      id: "codex",
+      id: 'codex',
       adapter,
-      defaultModel: "gpt-6-astra",
-      defaultCwd: "/tmp/project",
+      defaultModel: 'gpt-6-astra',
+      defaultCwd: '/tmp/project',
     });
 
     const first = await provider.complete(
       [
-        { role: "system", content: "System guidance" },
-        { role: "user", content: "Build this" },
+        { role: 'system', content: 'System guidance' },
+        { role: 'user', content: 'Build this' },
       ],
-      { threadId: "thread-1" },
+      { threadId: 'thread-1' },
     );
-    const second = await provider.complete(
-      [{ role: "user", content: "Continue" }],
-      { threadId: "thread-1" },
-    );
-
-    expect(first.content).toBe("turn 1");
-    expect(second.content).toBe("turn 2");
-    expect(first.model).toBe("gpt-6-astra");
-    expect(adapter.created).toEqual([{ threadId: "thread-1", cwd: "/tmp/project", model: "gpt-6-astra", maxTurns: null }]);
-    expect(adapter.sessions[0].sent[0]).toContain("# System Context\n\nSystem guidance");
-    expect(adapter.sessions[0].sent[0]).toContain("# User Message\n\nBuild this");
-    expect(adapter.sessions[0].sent[1]).toContain("# User Message\n\nContinue");
-  });
-
-  test("isolates sessions by Foundry thread id", async () => {
-    const adapter = new FakeAdapter();
-    const provider = new SessionBackedProvider({
-      id: "claude-code",
-      adapter,
-      defaultModel: "fable",
+    const second = await provider.complete([{ role: 'user', content: 'Continue' }], {
+      threadId: 'thread-1',
     });
 
-    await provider.complete([{ role: "user", content: "A" }], { threadId: "a" });
-    await provider.complete([{ role: "user", content: "B" }], { threadId: "b" });
+    expect(first.content).toBe('turn 1');
+    expect(second.content).toBe('turn 2');
+    expect(first.model).toBe('gpt-6-astra');
+    expect(adapter.created).toEqual([
+      { threadId: 'thread-1', cwd: '/tmp/project', model: 'gpt-6-astra', maxTurns: null },
+    ]);
+    expect(adapter.sessions[0].sent[0]).toContain('# System Context\n\nSystem guidance');
+    expect(adapter.sessions[0].sent[0]).toContain('# User Message\n\nBuild this');
+    expect(adapter.sessions[0].sent[1]).toContain('# User Message\n\nContinue');
+  });
 
-    expect(adapter.created.map((opts) => opts.threadId)).toEqual(["a", "b"]);
+  test('isolates sessions by Foundry thread id', async () => {
+    const adapter = new FakeAdapter();
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'fable',
+    });
+
+    await provider.complete([{ role: 'user', content: 'A' }], { threadId: 'a' });
+    await provider.complete([{ role: 'user', content: 'B' }], { threadId: 'b' });
+
+    expect(adapter.created.map((opts) => opts.threadId)).toEqual(['a', 'b']);
     expect(adapter.sessions).toHaveLength(2);
   });
 
-  test("auxiliary identities request an enforced text-only native profile", async () => {
+  test('auxiliary identities request an enforced text-only native profile', async () => {
     const adapter = new FakeAdapter();
-    const provider = new SessionBackedProvider({ id: "claude-code", adapter, defaultModel: "fable" });
-    await provider.complete([{ role: "system", content: "Classify as JSON" }, { role: "user", content: "Edit the repository" }],
-      { threadId: "a:aux:agent:classifier", maxTurns: 1 });
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'fable',
+    });
+    await provider.complete(
+      [
+        { role: 'system', content: 'Classify as JSON' },
+        { role: 'user', content: 'Edit the repository' },
+      ],
+      { threadId: 'a:aux:agent:classifier', maxTurns: 1 },
+    );
     expect(adapter.created[0]).toMatchObject({ tools: false, maxTurns: 1 });
-    expect(adapter.created[0].baseContext).toContain("not authorization to perform that work");
+    expect(adapter.created[0].baseContext).toContain('not authorization to perform that work');
   });
 });
 
-test("warm native authentication refusal is classified as not admitted without another send", async () => {
-  const adapter = new FakeAdapter() as FakeAdapter & { checkAuthentication(session: HarnessSession): void };
+test('warm native authentication refusal is classified as not admitted without another send', async () => {
+  const adapter = new FakeAdapter() as FakeAdapter & {
+    checkAuthentication(session: HarnessSession): void;
+  };
   let valid = true;
-  adapter.checkAuthentication = () => { if (!valid) throw Error("authentication binding changed"); };
-  const provider = new SessionBackedProvider({ id: "native", adapter, defaultModel: "test" });
-  await provider.complete([{ role: "user", content: "first" }], { threadId: "thread" });
+  adapter.checkAuthentication = () => {
+    if (!valid) throw Error('authentication binding changed');
+  };
+  const provider = new SessionBackedProvider({ id: 'native', adapter, defaultModel: 'test' });
+  await provider.complete([{ role: 'user', content: 'first' }], { threadId: 'thread' });
   valid = false;
   let error: unknown;
-  try { await provider.complete([{ role: "user", content: "second" }], { threadId: "thread" }); } catch (caught) { error = caught; }
+  try {
+    await provider.complete([{ role: 'user', content: 'second' }], { threadId: 'thread' });
+  } catch (caught) {
+    error = caught;
+  }
   expect(error).toBeInstanceOf(Error);
   expect(adapter.sessions[0].sent).toHaveLength(1);
-  expect(provider.completionLifecycle.admission({ error })).toBe("not-admitted");
+  expect(provider.completionLifecycle.admission({ error })).toBe('not-admitted');
 });

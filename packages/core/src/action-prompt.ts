@@ -14,9 +14,9 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type PromptKind = "approval" | "choice" | "input" | "confirm";
-export type PromptUrgency = "low" | "normal" | "high" | "critical";
-export type PromptStatus = "pending" | "approved" | "rejected" | "expired" | "auto-resolved";
+export type PromptKind = 'approval' | 'choice' | 'input' | 'confirm';
+export type PromptUrgency = 'low' | 'normal' | 'high' | 'critical';
+export type PromptStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'auto-resolved';
 
 export interface ActionOption {
   readonly id: string;
@@ -27,7 +27,7 @@ export interface ActionOption {
 }
 
 export interface ActionResolution {
-  readonly by: "human" | "policy" | "timeout";
+  readonly by: 'human' | 'policy' | 'timeout';
   readonly action: string; // "approved", "rejected", or an option ID
   readonly input?: string; // for "input" kind prompts
   readonly timestamp: number;
@@ -80,7 +80,10 @@ export type PromptPolicy = (prompt: ActionPrompt) => ActionResolution | null;
 
 export class ActionQueue {
   private _prompts = new Map<string, ActionPrompt>();
-  private _waiters = new Map<string, { resolve: (r: ActionResolution) => void; timer?: ReturnType<typeof setTimeout> }>();
+  private _waiters = new Map<
+    string,
+    { resolve: (r: ActionResolution) => void; timer?: ReturnType<typeof setTimeout> }
+  >();
   private _listeners: PromptListener[] = [];
   private _settleListeners: PromptListener[] = [];
   private _policies: PromptPolicy[] = [];
@@ -103,7 +106,11 @@ export class ActionQueue {
 
   private _settled(prompt: ActionPrompt): void {
     for (const fn of this._settleListeners) {
-      try { fn(prompt); } catch { /* listener errors don't block */ }
+      try {
+        fn(prompt);
+      } catch {
+        /* listener errors don't block */
+      }
     }
   }
 
@@ -131,10 +138,10 @@ export class ActionQueue {
       message: opts.message,
       options: opts.options,
       capability: opts.capability,
-      urgency: opts.urgency ?? "normal",
+      urgency: opts.urgency ?? 'normal',
       expiresAt: opts.timeoutMs ? Date.now() + opts.timeoutMs : undefined,
       meta: opts.meta,
-      status: "pending",
+      status: 'pending',
     };
 
     this._prompts.set(id, prompt);
@@ -143,7 +150,7 @@ export class ActionQueue {
     for (const policy of this._policies) {
       const resolution = policy(prompt);
       if (resolution) {
-        prompt.status = "auto-resolved";
+        prompt.status = 'auto-resolved';
         prompt.resolution = resolution;
         return resolution;
       }
@@ -155,13 +162,13 @@ export class ActionQueue {
 
       if (opts.timeoutMs) {
         timer = setTimeout(() => {
-          if (prompt.status !== "pending") return;
+          if (prompt.status !== 'pending') return;
           const resolution: ActionResolution = {
-            by: "timeout",
-            action: "rejected",
+            by: 'timeout',
+            action: 'rejected',
             timestamp: Date.now(),
           };
-          prompt.status = "expired";
+          prompt.status = 'expired';
           prompt.resolution = resolution;
           this._waiters.delete(id);
           resolve(resolution);
@@ -174,8 +181,12 @@ export class ActionQueue {
 
     // Notify listeners (viewer badge, event stream, etc.)
     for (const fn of this._listeners) {
-      if (prompt.status !== "pending") break;
-      try { fn(prompt); } catch { /* listener errors don't block */ }
+      if (prompt.status !== 'pending') break;
+      try {
+        fn(prompt);
+      } catch {
+        /* listener errors don't block */
+      }
     }
 
     return settled;
@@ -184,21 +195,25 @@ export class ActionQueue {
   /**
    * Resolve a pending prompt. Called by the viewer UI or external systems.
    */
-  resolve(promptId: string, action: string, opts?: { by?: "human" | "policy"; input?: string }): boolean {
+  resolve(
+    promptId: string,
+    action: string,
+    opts?: { by?: 'human' | 'policy'; input?: string },
+  ): boolean {
     const prompt = this._prompts.get(promptId);
-    if (!prompt || prompt.status !== "pending") return false;
+    if (!prompt || prompt.status !== 'pending') return false;
 
     const resolution: ActionResolution = {
-      by: opts?.by ?? "human",
+      by: opts?.by ?? 'human',
       action,
       input: opts?.input,
       timestamp: Date.now(),
     };
 
-    prompt.status = action === "approved" || action === "confirmed" ? "approved" : "rejected";
+    prompt.status = action === 'approved' || action === 'confirmed' ? 'approved' : 'rejected';
     // For choice prompts, mark as approved if any option selected
-    if (prompt.kind === "choice" && prompt.options?.some((o) => o.id === action)) {
-      prompt.status = "approved";
+    if (prompt.kind === 'choice' && prompt.options?.some((o) => o.id === action)) {
+      prompt.status = 'approved';
     }
     prompt.resolution = resolution;
 
@@ -215,7 +230,7 @@ export class ActionQueue {
 
   /** Get all pending prompts. */
   pending(): ActionPrompt[] {
-    return [...this._prompts.values()].filter((p) => p.status === "pending");
+    return [...this._prompts.values()].filter((p) => p.status === 'pending');
   }
 
   /** Get all prompts for a thread (including resolved). */
@@ -227,7 +242,7 @@ export class ActionQueue {
   pendingCount(threadId?: string): number {
     let count = 0;
     for (const p of this._prompts.values()) {
-      if (p.status === "pending" && (!threadId || p.threadId === threadId)) count++;
+      if (p.status === 'pending' && (!threadId || p.threadId === threadId)) count++;
     }
     return count;
   }
@@ -242,7 +257,7 @@ export class ActionQueue {
     const cutoff = Date.now() - maxAgeMs;
     let pruned = 0;
     for (const [id, p] of this._prompts) {
-      if (p.status !== "pending" && p.timestamp < cutoff) {
+      if (p.status !== 'pending' && p.timestamp < cutoff) {
         this._prompts.delete(id);
         pruned++;
       }

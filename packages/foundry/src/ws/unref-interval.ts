@@ -7,7 +7,13 @@ export type UnrefInterval = {
   stop: () => void;
 };
 
-export const makeUnrefInterval = ({ intervalMs, tick }: { intervalMs: number; tick: () => void }): UnrefInterval => {
+export const makeUnrefInterval = ({
+  intervalMs,
+  tick,
+}: {
+  intervalMs: number;
+  tick: () => void;
+}): UnrefInterval => {
   let timer: ReturnType<typeof setInterval> | null = null;
   return {
     start: () => {

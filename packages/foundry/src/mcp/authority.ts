@@ -10,13 +10,18 @@
 // carry authorization; scope comes only from here.
 // ---------------------------------------------------------------------------
 
-import type { Thread, OwnershipScope } from "@inixiative/foundry-core";
-import { normalizeScope } from "@inixiative/foundry-core";
-import type { ThreadRuntime, ThreadRuntimeManager } from "../agents/thread-runtime";
-import type { DomainLibrarian } from "../agents/domain-librarian";
+import type { OwnershipScope, Thread } from '@inixiative/foundry-core';
+import { normalizeScope } from '@inixiative/foundry-core';
+import type { DomainLibrarian } from '../agents/domain-librarian';
+import type { ThreadRuntime, ThreadRuntimeManager } from '../agents/thread-runtime';
 
 /** Why an authority no longer holds. Names only the owner's own condition. */
-export type AuthorityRefusal = "disposed" | "replaced" | "generation-replaced" | "project-changed" | "revoked";
+export type AuthorityRefusal =
+  | 'disposed'
+  | 'replaced'
+  | 'generation-replaced'
+  | 'project-changed'
+  | 'revoked';
 
 /** Summary of a same-project live thread the owner is authorized to see. */
 export interface AuthorizedThreadSummary {
@@ -84,33 +89,43 @@ export interface BindAuthorityOptions {
  */
 export function bindLiveAuthority(options: BindAuthorityOptions): LiveAuthority {
   const { thread, registry, runtime } = options;
-  if (thread.disposed) throw new Error(`Thread "${thread.id}" is disposed; no MCP authority can be bound to it`);
+  if (thread.disposed)
+    throw new Error(`Thread "${thread.id}" is disposed; no MCP authority can be bound to it`);
   const pinnedRuntime: ThreadRuntime | undefined = runtime ? runtime.get(thread.id) : undefined;
   if (runtime && (!pinnedRuntime || pinnedRuntime.thread !== thread || pinnedRuntime.disposed)) {
-    throw new Error(`Thread "${thread.id}" is not the live runtime's registered thread; refusing to bind MCP authority`);
+    throw new Error(
+      `Thread "${thread.id}" is not the live runtime's registered thread; refusing to bind MCP authority`,
+    );
   }
   const projectId = thread.meta.projectId || undefined;
   let revoked: AuthorityRefusal | null = null;
   const lifetimes: SharedRevocation[] = [];
-  let hook: (() => void) | undefined = thread.onDispose(() => { revoked ??= "disposed"; });
+  let hook: (() => void) | undefined = thread.onDispose(() => {
+    revoked ??= 'disposed';
+  });
   // The hook is an eager latch only; check() re-reads thread.disposed itself.
-  const unsubscribe = () => { hook?.(); hook = undefined; };
+  const unsubscribe = () => {
+    hook?.();
+    hook = undefined;
+  };
 
   const check = (): AuthorityRefusal | null => {
     if (revoked) return revoked;
-    for (const lifetime of lifetimes) if (lifetime.reason) return revoked = lifetime.reason;
-    if (thread.disposed) return revoked = "disposed";
+    for (const lifetime of lifetimes) if (lifetime.reason) return (revoked = lifetime.reason);
+    if (thread.disposed) return (revoked = 'disposed');
     if (pinnedRuntime) {
       const current = runtime!.get(thread.id);
-      if (current !== pinnedRuntime || pinnedRuntime.disposed) return revoked = "generation-replaced";
+      if (current !== pinnedRuntime || pinnedRuntime.disposed)
+        return (revoked = 'generation-replaced');
     }
-    if (registry && registry.threads.get(thread.id) !== thread) return revoked = "replaced";
-    if ((thread.meta.projectId || undefined) !== projectId) return revoked = "project-changed";
+    if (registry && registry.threads.get(thread.id) !== thread) return (revoked = 'replaced');
+    if ((thread.meta.projectId || undefined) !== projectId) return (revoked = 'project-changed');
     return null;
   };
 
   const liveThreads = (): Thread[] => {
-    if (runtime) return [...runtime.runtimes.values()].filter(r => !r.disposed).map(r => r.thread);
+    if (runtime)
+      return [...runtime.runtimes.values()].filter((r) => !r.disposed).map((r) => r.thread);
     if (registry) return [...registry.threads.values()];
     return [];
   };
@@ -126,12 +141,22 @@ export function bindLiveAuthority(options: BindAuthorityOptions): LiveAuthority 
       // An absent project authorizes nothing beyond the owner's own context.
       if (!projectId || check()) return [];
       return liveThreads()
-        .filter(t => t !== thread && !t.disposed && t.meta.projectId === projectId)
-        .map(t => ({ threadId: t.id, description: t.meta.description ?? "", status: t.meta.status ?? "idle", tags: [...(t.meta.tags ?? [])] }));
+        .filter((t) => t !== thread && !t.disposed && t.meta.projectId === projectId)
+        .map((t) => ({
+          threadId: t.id,
+          description: t.meta.description ?? '',
+          status: t.meta.status ?? 'idle',
+          tags: [...(t.meta.tags ?? [])],
+        }));
     },
-    domains: () => pinnedRuntime && !check() ? pinnedRuntime.domainLibrarians : undefined,
-    revoke: (reason) => { revoked ??= reason; unsubscribe(); },
+    domains: () => (pinnedRuntime && !check() ? pinnedRuntime.domainLibrarians : undefined),
+    revoke: (reason) => {
+      revoked ??= reason;
+      unsubscribe();
+    },
     detach: unsubscribe,
-    bindLifetime: (lifetime) => { if (!lifetimes.includes(lifetime)) lifetimes.push(lifetime); },
+    bindLifetime: (lifetime) => {
+      if (!lifetimes.includes(lifetime)) lifetimes.push(lifetime);
+    },
   };
 }

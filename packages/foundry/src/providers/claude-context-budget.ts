@@ -16,10 +16,12 @@ export function claudeContextEnvironment(
   const maxTokens = budget.maxTokens ?? 200_000;
   const compactAt = budget.compactAt ?? 0.8;
   if (!Number.isInteger(maxTokens) || maxTokens < 100_000 || maxTokens > 1_000_000) {
-    throw new Error("Claude contextBudget.maxTokens must be an integer between 100000 and 1000000");
+    throw new Error('Claude contextBudget.maxTokens must be an integer between 100000 and 1000000');
   }
   if (!Number.isFinite(compactAt) || compactAt < 0.01 || compactAt >= 1) {
-    throw new Error("Claude contextBudget.compactAt must be >= 0.01 and < 1 to leave compaction headroom");
+    throw new Error(
+      'Claude contextBudget.compactAt must be >= 0.01 and < 1 to leave compaction headroom',
+    );
   }
   const result: Record<string, string | undefined> = {
     ...env,

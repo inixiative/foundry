@@ -1,7 +1,7 @@
-import { Decider, type DeciderConfig, type Decision } from "./decider";
-import type { AgentConfig } from "./base-agent";
-import type { ContextStack } from "./context-stack";
-import type { ExecuteMeta } from "./executor";
+import type { AgentConfig } from './base-agent';
+import type { ContextStack } from './context-stack';
+import { Decider, type DeciderConfig, type Decision } from './decider';
+import type { ExecuteMeta } from './executor';
 
 /**
  * A routing decision — "where should this go?"
@@ -16,7 +16,7 @@ export interface Route {
 export type RouteHandler<TPayload> = (
   context: string,
   payload: TPayload,
-  meta?: ExecuteMeta
+  meta?: ExecuteMeta,
 ) => Promise<Decision<Route>>;
 
 export interface RouterConfig<TPayload = unknown> extends AgentConfig {

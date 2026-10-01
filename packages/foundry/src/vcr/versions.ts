@@ -1,7 +1,7 @@
 // Ported from the template's cliVersion.ts and fetchVersion.ts: the version callbacks that
 // stamp a cassette with what it was recorded against.
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
@@ -14,13 +14,17 @@ type CliVersionOptions = {
 
 /** Resolved on the PATH the live run uses (`FOUNDRY_VCR_PATH`), which is the daemon's resolution. */
 export const cliVersion = async (cmd: string, opts: CliVersionOptions = {}): Promise<string> => {
-  const command = opts.command ?? "--version";
+  const command = opts.command ?? '--version';
   const regex = opts.regex ?? DEFAULT_SEMVER;
-  const env = { ...process.env, ...(process.env.FOUNDRY_VCR_PATH ? { PATH: process.env.FOUNDRY_VCR_PATH } : {}) };
+  const env = {
+    ...process.env,
+    ...(process.env.FOUNDRY_VCR_PATH ? { PATH: process.env.FOUNDRY_VCR_PATH } : {}),
+  };
   const { stdout, stderr } = await execAsync(`${cmd} ${command}`, { env });
   const output = `${stdout}\n${stderr}`;
   const match = output.match(regex);
-  if (!match) throw new Error(`cliVersion("${cmd} ${command}"): no version match in "${output.trim()}"`);
+  if (!match)
+    throw new Error(`cliVersion("${cmd} ${command}"): no version match in "${output.trim()}"`);
   return match[1]!;
 };
 
@@ -34,8 +38,11 @@ type FetchVersionOptions = {
   extract?: (res: Response) => string | Promise<string>;
 };
 
-export const fetchVersion = async (url: string, opts: FetchVersionOptions = {}): Promise<string> => {
-  const res = await fetch(url, { redirect: "follow", ...opts.init });
+export const fetchVersion = async (
+  url: string,
+  opts: FetchVersionOptions = {},
+): Promise<string> => {
+  const res = await fetch(url, { redirect: 'follow', ...opts.init });
   if (!res.ok) throw new Error(`fetchVersion(${url}): ${res.status} ${res.statusText}`);
 
   if (opts.extract) return opts.extract(res);
@@ -43,19 +50,21 @@ export const fetchVersion = async (url: string, opts: FetchVersionOptions = {}):
   if (opts.header) {
     const value = res.headers.get(opts.header);
     if (!value) throw new Error(`fetchVersion(${url}): header "${opts.header}" missing`);
-    return value.replace(/"/g, "");
+    return value.replace(/"/g, '');
   }
 
   const text = await res.text();
-  const hasher = new Bun.CryptoHasher("sha256");
+  const hasher = new Bun.CryptoHasher('sha256');
   hasher.update(text);
-  return hasher.digest("hex").slice(0, 12);
+  return hasher.digest('hex').slice(0, 12);
 };
 
 /** Numeric semver comparison; missing parts count as zero. */
 export const compareVersions = (a: string, b: string): number => {
-  const parse = (value: string) => (value.match(/\d+(?:\.\d+)*/)?.[0] ?? "0").split(".").map(Number);
-  const left = parse(a), right = parse(b);
+  const parse = (value: string) =>
+    (value.match(/\d+(?:\.\d+)*/)?.[0] ?? '0').split('.').map(Number);
+  const left = parse(a),
+    right = parse(b);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
     const diff = (left[i] ?? 0) - (right[i] ?? 0);
     if (diff) return Math.sign(diff);

@@ -2,15 +2,15 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Hono } from 'hono';
 import { EventStream } from '@inixiative/foundry-core';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
-import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { Hono } from 'hono';
 import { captureThread } from '../src/archives/capture';
 import { archiveDestinationSchema } from '../src/archives/config';
 import { archiveContextSchema } from '../src/archives/context-source';
 import { publishArchive, verifyArchiveDestination } from '../src/archives/publish';
 import { registerArchiveRoutes } from '../src/archives/routes';
+import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { FoundryCredentials } from '../src/providers/credentials';
 import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 
@@ -29,7 +29,14 @@ async function fixture() {
     store = new LocalArchiveStore(':memory:');
   const t = {
     id: 'kingdom-contract',
-    meta: { description: 'Contract', projectId: 'project-a', tags: [], status: 'idle' as const, createdAt: 1, lastActiveAt: 1 },
+    meta: {
+      description: 'Contract',
+      projectId: 'project-a',
+      tags: [],
+      status: 'idle' as const,
+      createdAt: 1,
+      lastActiveAt: 1,
+    },
   };
   journal.saveThread(t);
   journal.beginTurn(t, 'turn-a', 'Kingdom wire contract');
@@ -39,7 +46,9 @@ async function fixture() {
     const body = JSON.parse(init.body);
     calls.push({ url: String(url), body, authorization: init.headers.authorization });
     if (String(url).endsWith('/connections'))
-      return Response.json({ data: [{ id: 'hosted', name: 'Hosted', groups: [], projectId: 'project-a' }] });
+      return Response.json({
+        data: [{ id: 'hosted', name: 'Hosted', groups: [], projectId: 'project-a' }],
+      });
     if (String(url).endsWith('/search')) return Response.json({ data: { archives: [] } });
     return Response.json({ data: { digest: archive.digest } });
   }) as typeof fetch;
@@ -71,7 +80,12 @@ test('Kingdom storage sends only owner fields', async () => {
       },
       {
         url: 'https://kingdom.example/api/v1/archive/ingest',
-        body: { ownerModel: 'Space', spaceId, previousDigest: null, snapshot: f.store.read(f.archive.id)!.snapshot },
+        body: {
+          ownerModel: 'Space',
+          spaceId,
+          previousDigest: null,
+          snapshot: f.store.read(f.archive.id)!.snapshot,
+        },
       },
     ]);
     expect(f.calls.every((call) => call.authorization === `Bearer ${secret}`)).toBe(true);
@@ -100,7 +114,11 @@ test('Kingdom forwarding routes through remote actions with the connection ident
       },
       {
         url: 'https://kingdom.example/api/v1/archive/remote/ingest',
-        body: { connectionId: 'hosted', previousDigest: null, snapshot: f.store.read(f.archive.id)!.snapshot },
+        body: {
+          connectionId: 'hosted',
+          previousDigest: null,
+          snapshot: f.store.read(f.archive.id)!.snapshot,
+        },
       },
     ]);
     await expect(
@@ -125,10 +143,16 @@ test('destinations with unknown fields are rejected and surfaced without crashin
     expect(archiveDestinationSchema.safeParse(invalid).success).toBe(false);
     expect(archiveDestinationSchema.safeParse({ ...invalid, kind: undefined }).success).toBe(false);
     expect(
-      archiveContextSchema.safeParse({ kind: 'kingdom', projectId: 'project-a', ownerId: invalid.ownerId, tokenEnv: 'ARCHIVE_TOKEN' })
-        .success,
+      archiveContextSchema.safeParse({
+        kind: 'kingdom',
+        projectId: 'project-a',
+        ownerId: invalid.ownerId,
+        tokenEnv: 'ARCHIVE_TOKEN',
+      }).success,
     ).toBe(false);
-    await expect(publishArchive(f.store, f.archive.id, invalid as any, f.transport, f.credentials)).rejects.toThrow();
+    await expect(
+      publishArchive(f.store, f.archive.id, invalid as any, f.transport, f.credentials),
+    ).rejects.toThrow();
     expect(f.calls).toHaveLength(0);
 
     writeFileSync(join(f.dir, 'archives.json'), JSON.stringify([invalid]));
@@ -138,7 +162,9 @@ test('destinations with unknown fields are rejected and surfaced without crashin
       const listed = await (await app.request('/api/archives/connections')).json();
       expect(listed.connections).toEqual([]);
       expect(listed.configurationError).toContain('archives.json');
-      expect((await (await app.request('/api/archives')).json()).configurationError).toContain('archives.json');
+      expect((await (await app.request('/api/archives')).json()).configurationError).toContain(
+        'archives.json',
+      );
     } finally {
       registered.store.close();
     }

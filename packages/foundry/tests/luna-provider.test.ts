@@ -1,59 +1,85 @@
-import { expect, test } from "bun:test";
-import { OpenAIProvider } from "../src/providers/openai";
+import { expect, test } from 'bun:test';
+import { OpenAIProvider } from '../src/providers/openai';
 
-test("Luna decisions bound completion tokens and ask for no thinking, per the registry map", async () => {
+test('Luna decisions bound completion tokens and ask for no thinking, per the registry map', async () => {
   const original = globalThis.fetch;
   const bodies: any[] = [];
   globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
-    const body = JSON.parse(init.body as string); bodies.push(body);
+    const body = JSON.parse(init.body as string);
+    bodies.push(body);
     return body.stream
-      ? new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
-      : Response.json({ choices: [{ message: { content: "ok" } }], model: body.model });
+      ? new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        )
+      : Response.json({ choices: [{ message: { content: 'ok' } }], model: body.model });
   }) as typeof fetch;
   try {
-    const provider = new OpenAIProvider({ apiKey: "controlled-key" });
-    await provider.complete([{ role: "user", content: "Decide" }], { maxTokens: 256 });
-    for await (const _event of provider.stream([{ role: "user", content: "Decide" }], { maxTokens: 256 })) {}
+    const provider = new OpenAIProvider({ apiKey: 'controlled-key' });
+    await provider.complete([{ role: 'user', content: 'Decide' }], { maxTokens: 256 });
+    for await (const _event of provider.stream([{ role: 'user', content: 'Decide' }], {
+      maxTokens: 256,
+    })) {
+    }
     for (const body of bodies) {
-      expect(body.model).toBe("gpt-6-luna");
-      expect(body.reasoning_effort).toBe("none");
+      expect(body.model).toBe('gpt-6-luna');
+      expect(body.reasoning_effort).toBe('none');
       expect(body.max_completion_tokens).toBe(256);
       expect(body.max_tokens).toBeUndefined();
     }
     // gpt-4o is not in the map, so it gets no reasoning parameters at all.
-    await provider.complete([{ role: "user", content: "Legacy" }], { model: "gpt-4o", maxTokens: 128 });
+    await provider.complete([{ role: 'user', content: 'Legacy' }], {
+      model: 'gpt-4o',
+      maxTokens: 128,
+    });
     expect(bodies[2].max_tokens).toBe(128);
     expect(bodies[2].reasoning_effort).toBeUndefined();
     // Astra rejects "none", so the map's own fallback is sent instead.
-    await provider.complete([{ role: "user", content: "Astra" }], { model: "gpt-6-astra", maxTokens: 128 });
-    expect(bodies[3].reasoning_effort).toBe("low");
-  } finally { globalThis.fetch = original; }
+    await provider.complete([{ role: 'user', content: 'Astra' }], {
+      model: 'gpt-6-astra',
+      maxTokens: 128,
+    });
+    expect(bodies[3].reasoning_effort).toBe('low');
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
-test("provider rejection does not echo response secrets and remains settled", async () => {
+test('provider rejection does not echo response secrets and remains settled', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = (async () => new Response("PRIVATE_PROVIDER_RESPONSE", { status: 401 })) as typeof fetch;
+  globalThis.fetch = (async () =>
+    new Response('PRIVATE_PROVIDER_RESPONSE', { status: 401 })) as typeof fetch;
   try {
-    const provider = new OpenAIProvider({ apiKey: "controlled-key" });
-    const error = await provider.complete([{ role: "user", content: "Decide" }]).catch(error => error);
-    expect(error.message).toBe("OpenAI API 401");
-    expect(provider.completionLifecycle.settlement({ error })).toBe("settled");
-  } finally { globalThis.fetch = original; }
+    const provider = new OpenAIProvider({ apiKey: 'controlled-key' });
+    const error = await provider
+      .complete([{ role: 'user', content: 'Decide' }])
+      .catch((error) => error);
+    expect(error.message).toBe('OpenAI API 401');
+    expect(provider.completionLifecycle.settlement({ error })).toBe('settled');
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
-
-test("native-style zero timeout does not immediately abort API knowledge reviews", async () => {
+test('native-style zero timeout does not immediately abort API knowledge reviews', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
     await Bun.sleep(5);
     expect(init.signal?.aborted).toBe(false);
     const body = JSON.parse(init.body as string);
-    return body.stream ? new Response('data: [DONE]\n\n') : Response.json({choices:[{message:{content:"ok"}}],model:body.model});
+    return body.stream
+      ? new Response('data: [DONE]\n\n')
+      : Response.json({ choices: [{ message: { content: 'ok' } }], model: body.model });
   }) as typeof fetch;
   try {
-    const provider = new OpenAIProvider({apiKey:"controlled-key"});
-    await provider.complete([{role:"user",content:"Review"}],{maxTokens:1600,timeout:0});
-    for await (const _event of provider.stream([{role:"user",content:"Review"}],{maxTokens:1600,timeout:0})) {}
-  } finally { globalThis.fetch=original; }
+    const provider = new OpenAIProvider({ apiKey: 'controlled-key' });
+    await provider.complete([{ role: 'user', content: 'Review' }], { maxTokens: 1600, timeout: 0 });
+    for await (const _event of provider.stream([{ role: 'user', content: 'Review' }], {
+      maxTokens: 1600,
+      timeout: 0,
+    })) {
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
 });

@@ -1,33 +1,39 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from 'bun:test';
+import type {
+  CompletionOpts,
+  CompletionResult,
+  LLMMessage,
+  LLMProvider,
+} from '@inixiative/foundry-core';
+import { ContextLayer, ContextStack, TokenTracker } from '@inixiative/foundry-core';
 import {
-  ThreadFactory,
-  buildLayers,
   buildAgents,
+  buildLayers,
   keywordClassify,
   keywordRoute,
   parseJSON,
   type SourceResolver,
-} from "../src/agents/thread-factory";
-import { auxiliarySessionId } from "../src/agents/thread-runtime";
-import { ContextLayer, ContextStack } from "@inixiative/foundry-core";
-import type { LLMProvider, CompletionResult, LLMMessage, CompletionOpts } from "@inixiative/foundry-core";
-import { TokenTracker } from "@inixiative/foundry-core";
-import type { FoundryConfig } from "../src/viewer/config";
+  ThreadFactory,
+} from '../src/agents/thread-factory';
+import { auxiliarySessionId } from '../src/agents/thread-runtime';
+import type { FoundryConfig } from '../src/viewer/config';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mockProvider(response: string = '{"category":"general"}'): LLMProvider & { calls: LLMMessage[][] } {
+function mockProvider(
+  response: string = '{"category":"general"}',
+): LLMProvider & { calls: LLMMessage[][] } {
   const calls: LLMMessage[][] = [];
   return {
-    id: "mock",
+    id: 'mock',
     calls,
     async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
       calls.push(messages);
       return {
         content: response,
-        model: "mock-model",
+        model: 'mock-model',
         tokens: { input: 100, output: 50 },
       };
     },
@@ -39,19 +45,19 @@ const noopResolver: SourceResolver = () => null;
 function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
   return {
     defaults: {
-      provider: "mock",
-      model: "mock-model",
+      provider: 'mock',
+      model: 'mock-model',
       temperature: 0,
       maxTokens: 1024,
     },
     providers: {},
     agents: {
-      "executor-answer": {
-        id: "executor-answer",
-        kind: "executor",
-        prompt: "You are a helpful assistant.",
-        provider: "mock",
-        model: "mock-model",
+      'executor-answer': {
+        id: 'executor-answer',
+        kind: 'executor',
+        prompt: 'You are a helpful assistant.',
+        provider: 'mock',
+        model: 'mock-model',
         temperature: 0,
         maxTokens: 1024,
         visibleLayers: [],
@@ -62,8 +68,8 @@ function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
     },
     layers: {
       system: {
-        id: "system",
-        prompt: "System layer",
+        id: 'system',
+        prompt: 'System layer',
         sourceIds: [],
         staleness: 0,
         maxTokens: 0,
@@ -80,21 +86,21 @@ function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
 // buildLayers()
 // ---------------------------------------------------------------------------
 
-describe("buildLayers", () => {
-  test("builds layers from config", () => {
+describe('buildLayers', () => {
+  test('builds layers from config', () => {
     const config = minimalConfig({
       layers: {
         system: {
-          id: "system",
-          prompt: "System prompt",
+          id: 'system',
+          prompt: 'System prompt',
           sourceIds: [],
           staleness: 0,
           maxTokens: 0,
           enabled: true,
         },
         conventions: {
-          id: "conventions",
-          prompt: "Conventions",
+          id: 'conventions',
+          prompt: 'Conventions',
           sourceIds: [],
           staleness: 0,
           maxTokens: 0,
@@ -107,24 +113,24 @@ describe("buildLayers", () => {
     expect(layers.length).toBe(2);
 
     const ids = layers.map((l) => l.id);
-    expect(ids).toContain("system");
-    expect(ids).toContain("conventions");
+    expect(ids).toContain('system');
+    expect(ids).toContain('conventions');
   });
 
-  test("skips disabled layers", () => {
+  test('skips disabled layers', () => {
     const config = minimalConfig({
       layers: {
         system: {
-          id: "system",
-          prompt: "System",
+          id: 'system',
+          prompt: 'System',
           sourceIds: [],
           staleness: 0,
           maxTokens: 0,
           enabled: true,
         },
         disabled: {
-          id: "disabled",
-          prompt: "Should not appear",
+          id: 'disabled',
+          prompt: 'Should not appear',
           sourceIds: [],
           staleness: 0,
           maxTokens: 0,
@@ -134,27 +140,27 @@ describe("buildLayers", () => {
     });
 
     const layers = buildLayers(config, { sourceResolver: noopResolver });
-    expect(layers.map((l) => l.id)).not.toContain("disabled");
+    expect(layers.map((l) => l.id)).not.toContain('disabled');
   });
 
-  test("resolves sources via sourceResolver", async () => {
+  test('resolves sources via sourceResolver', async () => {
     const config = minimalConfig({
       layers: {
         docs: {
-          id: "docs",
-          prompt: "Documentation",
-          sourceIds: ["doc-source"],
+          id: 'docs',
+          prompt: 'Documentation',
+          sourceIds: ['doc-source'],
           staleness: 0,
           maxTokens: 0,
           enabled: true,
         },
       },
       sources: {
-        "doc-source": {
-          id: "doc-source",
-          type: "inline",
-          label: "Docs",
-          uri: "test docs content",
+        'doc-source': {
+          id: 'doc-source',
+          type: 'inline',
+          label: 'Docs',
+          uri: 'test docs content',
           enabled: true,
         },
       },
@@ -170,15 +176,15 @@ describe("buildLayers", () => {
     const stack = new ContextStack(layers);
     await stack.warmAll();
 
-    const docsLayer = stack.getLayer("docs");
+    const docsLayer = stack.getLayer('docs');
     expect(docsLayer).toBeDefined();
-    expect(docsLayer!.content).toBe("test docs content");
+    expect(docsLayer!.content).toBe('test docs content');
   });
 
-  test("creates fallback system layer when no layers configured", () => {
+  test('creates fallback system layer when no layers configured', () => {
     const layers = buildLayers(minimalConfig({ layers: {} }), { sourceResolver: noopResolver });
     expect(layers.length).toBe(1);
-    expect(layers[0].id).toBe("system");
+    expect(layers[0].id).toBe('system');
   });
 });
 
@@ -186,16 +192,16 @@ describe("buildLayers", () => {
 // buildAgents()
 // ---------------------------------------------------------------------------
 
-describe("buildAgents", () => {
-  test("builds agents from config", () => {
+describe('buildAgents', () => {
+  test('builds agents from config', () => {
     const config = minimalConfig({
       agents: {
-        "my-executor": {
-          id: "my-executor",
-          kind: "executor",
-          prompt: "Execute tasks",
-          provider: "mock",
-          model: "mock-model",
+        'my-executor': {
+          id: 'my-executor',
+          kind: 'executor',
+          prompt: 'Execute tasks',
+          provider: 'mock',
+          model: 'mock-model',
           temperature: 0,
           maxTokens: 1024,
           visibleLayers: [],
@@ -210,18 +216,18 @@ describe("buildAgents", () => {
     const agents = buildAgents(config, stack, { provider: mockProvider() });
 
     expect(agents.size).toBe(1);
-    expect(agents.has("my-executor")).toBe(true);
+    expect(agents.has('my-executor')).toBe(true);
   });
 
-  test("skips disabled agents", () => {
+  test('skips disabled agents', () => {
     const config = minimalConfig({
       agents: {
         active: {
-          id: "active",
-          kind: "executor",
-          prompt: "Active",
-          provider: "mock",
-          model: "mock-model",
+          id: 'active',
+          kind: 'executor',
+          prompt: 'Active',
+          provider: 'mock',
+          model: 'mock-model',
           temperature: 0,
           maxTokens: 1024,
           visibleLayers: [],
@@ -230,11 +236,11 @@ describe("buildAgents", () => {
           enabled: true,
         },
         inactive: {
-          id: "inactive",
-          kind: "executor",
-          prompt: "Inactive",
-          provider: "mock",
-          model: "mock-model",
+          id: 'inactive',
+          kind: 'executor',
+          prompt: 'Inactive',
+          provider: 'mock',
+          model: 'mock-model',
           temperature: 0,
           maxTokens: 1024,
           visibleLayers: [],
@@ -249,19 +255,19 @@ describe("buildAgents", () => {
     const agents = buildAgents(config, stack, { provider: mockProvider() });
 
     expect(agents.size).toBe(1);
-    expect(agents.has("active")).toBe(true);
-    expect(agents.has("inactive")).toBe(false);
+    expect(agents.has('active')).toBe(true);
+    expect(agents.has('inactive')).toBe(false);
   });
 
-  test("builds classifier agent kind", () => {
+  test('builds classifier agent kind', () => {
     const config = minimalConfig({
       agents: {
         classifier: {
-          id: "classifier",
-          kind: "classifier",
-          prompt: "",
-          provider: "mock",
-          model: "mock-model",
+          id: 'classifier',
+          kind: 'classifier',
+          prompt: '',
+          provider: 'mock',
+          model: 'mock-model',
           temperature: 0,
           maxTokens: 256,
           visibleLayers: [],
@@ -274,18 +280,18 @@ describe("buildAgents", () => {
 
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
-    expect(agents.has("classifier")).toBe(true);
+    expect(agents.has('classifier')).toBe(true);
   });
 
-  test("builds router agent kind", () => {
+  test('builds router agent kind', () => {
     const config = minimalConfig({
       agents: {
         router: {
-          id: "router",
-          kind: "router",
-          prompt: "",
-          provider: "mock",
-          model: "mock-model",
+          id: 'router',
+          kind: 'router',
+          prompt: '',
+          provider: 'mock',
+          model: 'mock-model',
           temperature: 0,
           maxTokens: 256,
           visibleLayers: [],
@@ -298,7 +304,7 @@ describe("buildAgents", () => {
 
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
-    expect(agents.has("router")).toBe(true);
+    expect(agents.has('router')).toBe(true);
   });
 });
 
@@ -306,69 +312,71 @@ describe("buildAgents", () => {
 // ThreadFactory
 // ---------------------------------------------------------------------------
 
-describe("ThreadFactory", () => {
-  test("creates thread with correct ID", () => {
+describe('ThreadFactory', () => {
+  test('creates thread with correct ID', () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
     const factory = new ThreadFactory({ stack, agents });
 
-    const thread = factory.create("t1");
-    expect(thread.id).toBe("t1");
+    const thread = factory.create('t1');
+    expect(thread.id).toBe('t1');
   });
 
-  test("registers agents on created thread", () => {
+  test('registers agents on created thread', () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
     const factory = new ThreadFactory({ stack, agents });
 
-    const thread = factory.create("t1");
-    expect(thread.getAgent("executor-answer")).toBeDefined();
+    const thread = factory.create('t1');
+    expect(thread.getAgent('executor-answer')).toBeDefined();
   });
 
-  test("threads get independent stacks and agent instances from the project template", () => {
+  test('threads get independent stacks and agent instances from the project template', () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
     const factory = new ThreadFactory({ stack, agents });
 
-    const t1 = factory.create("t1");
-    const t2 = factory.create("t2");
+    const t1 = factory.create('t1');
+    const t2 = factory.create('t2');
 
     expect(t1.stack).not.toBe(t2.stack);
     expect(t1.stack).not.toBe(stack);
-    expect(t1.stack.getLayer("system")).not.toBe(stack.getLayer("system"));
+    expect(t1.stack.getLayer('system')).not.toBe(stack.getLayer('system'));
     expect(t1.stack.layers.map((l) => l.id)).toEqual(stack.layers.map((l) => l.id));
 
-    expect(t1.getAgent("executor-answer")).toBeDefined();
-    expect(t1.getAgent("executor-answer")).not.toBe(t2.getAgent("executor-answer"));
-    expect(t1.getAgent("executor-answer")).not.toBe(agents.get("executor-answer"));
+    expect(t1.getAgent('executor-answer')).toBeDefined();
+    expect(t1.getAgent('executor-answer')).not.toBe(t2.getAgent('executor-answer'));
+    expect(t1.getAgent('executor-answer')).not.toBe(agents.get('executor-answer'));
   });
 
-  test("seeds new threads from the warm template without sharing layer instances", async () => {
+  test('seeds new threads from the warm template without sharing layer instances', async () => {
     const config = minimalConfig();
-    const resolver: SourceResolver = () => ({ id: "seed", load: async () => "TEMPLATE-CONTENT" });
-    const stack = new ContextStack(buildLayers(
-      minimalConfig({ layers: { system: { ...config.layers.system, sourceIds: ["seed"] } } }),
-      { sourceResolver: resolver },
-    ));
+    const resolver: SourceResolver = () => ({ id: 'seed', load: async () => 'TEMPLATE-CONTENT' });
+    const stack = new ContextStack(
+      buildLayers(
+        minimalConfig({ layers: { system: { ...config.layers.system, sourceIds: ['seed'] } } }),
+        { sourceResolver: resolver },
+      ),
+    );
     await stack.warmAll();
     const agents = buildAgents(config, stack, { provider: mockProvider() });
     const factory = new ThreadFactory({ stack, agents });
 
-    const t1 = factory.create("t1");
-    const layer = t1.stack.getLayer("system")!;
+    const t1 = factory.create('t1');
+    const layer = t1.stack.getLayer('system')!;
     expect(layer.isWarm).toBe(true);
-    expect(layer.content).toBe("TEMPLATE-CONTENT");
-    expect(layer.prompt).toBe("System layer");
+    expect(layer.content).toBe('TEMPLATE-CONTENT');
+    expect(layer.prompt).toBe('System layer');
 
-    layer.set("THREAD-LOCAL-EDIT");
-    expect(stack.getLayer("system")!.content).toBe("TEMPLATE-CONTENT");
-    expect(factory.create("t2").stack.getLayer("system")!.content).toBe("TEMPLATE-CONTENT");
+    layer.set('THREAD-LOCAL-EDIT');
+    expect(stack.getLayer('system')!.content).toBe('TEMPLATE-CONTENT');
+    expect(factory.create('t2').stack.getLayer('system')!.content).toBe('TEMPLATE-CONTENT');
   });
 
-  test("concurrent dispatch on two threads sees only its own sentinel context", async () => {
+  test('concurrent dispatch on two threads sees only its own sentinel context', async () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     await stack.warmAll();
@@ -377,78 +385,84 @@ describe("ThreadFactory", () => {
     // so the two dispatches genuinely overlap rather than run serially.
     const calls: LLMMessage[][] = [];
     let release!: () => void;
-    const bothArrived = new Promise<void>((r) => { release = r; });
+    const bothArrived = new Promise<void>((r) => {
+      release = r;
+    });
     const provider: LLMProvider = {
-      id: "barrier",
+      id: 'barrier',
       async complete(messages: LLMMessage[]): Promise<CompletionResult> {
         calls.push(messages);
         if (calls.length === 2) release();
         await bothArrived;
         const system = messages[0].content;
-        const seen = system.includes("SENTINEL-A") ? "A" : system.includes("SENTINEL-B") ? "B" : "none";
-        return { content: `saw:${seen}`, model: "mock-model", tokens: { input: 1, output: 1 } };
+        const seen = system.includes('SENTINEL-A')
+          ? 'A'
+          : system.includes('SENTINEL-B')
+            ? 'B'
+            : 'none';
+        return { content: `saw:${seen}`, model: 'mock-model', tokens: { input: 1, output: 1 } };
       },
     };
 
     const agents = buildAgents(config, stack, { provider });
     const factory = new ThreadFactory({ stack, agents });
-    const a = factory.create("a");
-    const b = factory.create("b");
-    a.stack.getLayer("system")!.set("SENTINEL-A");
-    b.stack.getLayer("system")!.set("SENTINEL-B");
+    const a = factory.create('a');
+    const b = factory.create('b');
+    a.stack.getLayer('system')!.set('SENTINEL-A');
+    b.stack.getLayer('system')!.set('SENTINEL-B');
 
     const [ra, rb] = await Promise.all([
-      a.dispatch("executor-answer", "from a"),
-      b.dispatch("executor-answer", "from b"),
+      a.dispatch('executor-answer', 'from a'),
+      b.dispatch('executor-answer', 'from b'),
     ]);
 
-    expect(ra.output).toBe("saw:A");
-    expect(rb.output).toBe("saw:B");
+    expect(ra.output).toBe('saw:A');
+    expect(rb.output).toBe('saw:B');
     expect(calls).toHaveLength(2);
     const byPayload = (p: string) => calls.find((m) => m[1].content === p)![0].content;
-    expect(byPayload("from a")).toContain("SENTINEL-A");
-    expect(byPayload("from a")).not.toContain("SENTINEL-B");
-    expect(byPayload("from b")).toContain("SENTINEL-B");
-    expect(byPayload("from b")).not.toContain("SENTINEL-A");
-    expect(stack.getLayer("system")!.content).not.toContain("SENTINEL");
+    expect(byPayload('from a')).toContain('SENTINEL-A');
+    expect(byPayload('from a')).not.toContain('SENTINEL-B');
+    expect(byPayload('from b')).toContain('SENTINEL-B');
+    expect(byPayload('from b')).not.toContain('SENTINEL-A');
+    expect(stack.getLayer('system')!.content).not.toContain('SENTINEL');
   });
 
   test("a private layer added to one thread never reaches another thread's dispatch", async () => {
-    const provider = mockProvider("ok");
+    const provider = mockProvider('ok');
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     await stack.warmAll();
     const agents = buildAgents(config, stack, { provider });
     const factory = new ThreadFactory({ stack, agents });
 
-    const a = factory.create("a");
-    const b = factory.create("b");
-    const privateState = new ContextLayer({ id: "thread-state", prompt: "Thread state" });
-    privateState.set("PRIVATE-TO-A");
+    const a = factory.create('a');
+    const b = factory.create('b');
+    const privateState = new ContextLayer({ id: 'thread-state', prompt: 'Thread state' });
+    privateState.set('PRIVATE-TO-A');
     a.stack.addLayer(privateState, 0);
 
-    await b.dispatch("executor-answer", "hello from b");
+    await b.dispatch('executor-answer', 'hello from b');
 
-    expect(b.stack.getLayer("thread-state")).toBeUndefined();
-    expect(factory.create("c").stack.getLayer("thread-state")).toBeUndefined();
-    expect(provider.calls[0][0].content).not.toContain("PRIVATE-TO-A");
+    expect(b.stack.getLayer('thread-state')).toBeUndefined();
+    expect(factory.create('c').stack.getLayer('thread-state')).toBeUndefined();
+    expect(provider.calls[0][0].content).not.toContain('PRIVATE-TO-A');
 
-    await a.dispatch("executor-answer", "hello from a");
-    expect(provider.calls[1][0].content).toContain("PRIVATE-TO-A");
+    await a.dispatch('executor-answer', 'hello from a');
+    expect(provider.calls[1][0].content).toContain('PRIVATE-TO-A');
   });
 
-  test("passes thread config (description, tags)", () => {
+  test('passes thread config (description, tags)', () => {
     const config = minimalConfig();
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider: mockProvider() });
     const factory = new ThreadFactory({ stack, agents });
 
-    const thread = factory.create("t1", { description: "Test thread", tags: ["test"] });
-    expect(thread.id).toBe("t1");
+    const thread = factory.create('t1', { description: 'Test thread', tags: ['test'] });
+    expect(thread.id).toBe('t1');
   });
 
-  test("token tracker records usage from agent completions", async () => {
-    const provider = mockProvider("hello world");
+  test('token tracker records usage from agent completions', async () => {
+    const provider = mockProvider('hello world');
     const tracker = new TokenTracker();
     const config = minimalConfig();
 
@@ -456,66 +470,90 @@ describe("ThreadFactory", () => {
     const agents = buildAgents(config, stack, { provider, tokenTracker: tracker });
     const factory = new ThreadFactory({ stack, agents });
 
-    const thread = factory.create("t1");
-    await thread.dispatch("executor-answer", "test input");
+    const thread = factory.create('t1');
+    await thread.dispatch('executor-answer', 'test input');
 
     const summary = tracker.summary();
     expect(summary.totalInput).toBe(100);
     expect(summary.totalOutput).toBe(50);
-    expect(summary.byAgent.find((b) => b.key === "executor-answer")).toBeDefined();
+    expect(summary.byAgent.find((b) => b.key === 'executor-answer')).toBeDefined();
   });
 
-  test("classifier and router use per-thread auxiliary session identity and the thread cwd", async () => {
+  test('classifier and router use per-thread auxiliary session identity and the thread cwd', async () => {
     const optsLog: CompletionOpts[] = [];
     const provider: LLMProvider = {
-      id: "mock",
+      id: 'mock',
       async complete(_messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
         optsLog.push(opts ?? {});
-        return { content: '{"category":"bug","destination":"artificer"}', model: "mock-model" };
+        return { content: '{"category":"bug","destination":"artificer"}', model: 'mock-model' };
       },
     };
     const config = minimalConfig({
       agents: {
-        classifier: { id: "classifier", kind: "classifier", prompt: "Classify", provider: "mock", model: "mock-model", temperature: 0, maxTokens: 256, visibleLayers: [], peers: [], maxDepth: 1, enabled: true },
-        router: { id: "router", kind: "router", prompt: "Route", provider: "mock", model: "mock-model", temperature: 0, maxTokens: 256, visibleLayers: [], peers: [], maxDepth: 1, enabled: true },
-        artificer: { ...minimalConfig().agents["executor-answer"], id: "artificer" },
+        classifier: {
+          id: 'classifier',
+          kind: 'classifier',
+          prompt: 'Classify',
+          provider: 'mock',
+          model: 'mock-model',
+          temperature: 0,
+          maxTokens: 256,
+          visibleLayers: [],
+          peers: [],
+          maxDepth: 1,
+          enabled: true,
+        },
+        router: {
+          id: 'router',
+          kind: 'router',
+          prompt: 'Route',
+          provider: 'mock',
+          model: 'mock-model',
+          temperature: 0,
+          maxTokens: 256,
+          visibleLayers: [],
+          peers: [],
+          maxDepth: 1,
+          enabled: true,
+        },
+        artificer: { ...minimalConfig().agents['executor-answer'], id: 'artificer' },
       },
     });
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider }) });
-    const a = factory.create("a", { cwd: "/work/a" });
-    const b = factory.create("b", { cwd: "/work/b" });
+    const a = factory.create('a', { cwd: '/work/a' });
+    const b = factory.create('b', { cwd: '/work/b' });
 
-    await a.dispatch("classifier", "fix the bug");
-    await a.dispatch("router", { payload: "fix the bug", classification: { category: "bug" } });
-    await b.dispatch("classifier", "fix the bug");
+    await a.dispatch('classifier', 'fix the bug');
+    await a.dispatch('router', { payload: 'fix the bug', classification: { category: 'bug' } });
+    await b.dispatch('classifier', 'fix the bug');
 
     expect(optsLog.map((o) => o.threadId)).toEqual([
-      auxiliarySessionId("a", "agent:classifier"),
-      auxiliarySessionId("a", "agent:router"),
-      auxiliarySessionId("b", "agent:classifier"),
+      auxiliarySessionId('a', 'agent:classifier'),
+      auxiliarySessionId('a', 'agent:router'),
+      auxiliarySessionId('b', 'agent:classifier'),
     ]);
-    expect(optsLog.map((o) => o.cwd)).toEqual(["/work/a", "/work/a", "/work/b"]);
-    expect(optsLog.every((o) => o.threadId !== "a" && o.threadId !== "b")).toBe(true);
+    expect(optsLog.map((o) => o.cwd)).toEqual(['/work/a', '/work/a', '/work/b']);
+    expect(optsLog.every((o) => o.threadId !== 'a' && o.threadId !== 'b')).toBe(true);
   });
 
-  test("executor agent calls provider with correct messages", async () => {
-    const provider = mockProvider("response text");
+  test('executor agent calls provider with correct messages', async () => {
+    const provider = mockProvider('response text');
     const config = minimalConfig();
 
     const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
     const agents = buildAgents(config, stack, { provider });
     const factory = new ThreadFactory({ stack, agents });
 
-    const thread = factory.create("t1");
-    await thread.dispatch("executor-answer", "user question");
+    const thread = factory.create('t1');
+    await thread.dispatch('executor-answer', 'user question');
 
     expect(provider.calls.length).toBe(1);
     const messages = provider.calls[0];
-    expect(messages[0].role).toBe("system");
-    expect(messages[0].content).toContain("You are a helpful assistant.");
-    expect(messages[1].role).toBe("user");
-    expect(messages[1].content).toBe("user question");
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain('You are a helpful assistant.');
+    expect(messages[1].role).toBe('user');
+    expect(messages[1].content).toBe('user question');
   });
 });
 
@@ -523,95 +561,99 @@ describe("ThreadFactory", () => {
 // Shared fallback handlers
 // ---------------------------------------------------------------------------
 
-describe("keywordClassify", () => {
-  test("classifies bug-related keywords", () => {
-    expect(keywordClassify("fix the auth bug").value.category).toBe("bug");
-    expect(keywordClassify("there's an error").value.category).toBe("bug");
+describe('keywordClassify', () => {
+  test('classifies bug-related keywords', () => {
+    expect(keywordClassify('fix the auth bug').value.category).toBe('bug');
+    expect(keywordClassify("there's an error").value.category).toBe('bug');
   });
 
-  test("classifies feature-related keywords", () => {
-    expect(keywordClassify("add a new feature").value.category).toBe("feature");
-    expect(keywordClassify("build the dashboard").value.category).toBe("feature");
+  test('classifies feature-related keywords', () => {
+    expect(keywordClassify('add a new feature').value.category).toBe('feature');
+    expect(keywordClassify('build the dashboard').value.category).toBe('feature');
   });
 
-  test("classifies refactor keywords", () => {
-    expect(keywordClassify("refactor the auth module").value.category).toBe("refactor");
-    expect(keywordClassify("clean up the code").value.category).toBe("refactor");
+  test('classifies refactor keywords', () => {
+    expect(keywordClassify('refactor the auth module').value.category).toBe('refactor');
+    expect(keywordClassify('clean up the code').value.category).toBe('refactor');
   });
 
-  test("classifies question keywords", () => {
-    expect(keywordClassify("how does auth work?").value.category).toBe("question");
-    expect(keywordClassify("why is it slow?").value.category).toBe("question");
+  test('classifies question keywords', () => {
+    expect(keywordClassify('how does auth work?').value.category).toBe('question');
+    expect(keywordClassify('why is it slow?').value.category).toBe('question');
   });
 
-  test("classifies convention keywords", () => {
-    expect(keywordClassify("update the coding convention").value.category).toBe("convention");
-    expect(keywordClassify("change the style guide").value.category).toBe("convention");
+  test('classifies convention keywords', () => {
+    expect(keywordClassify('update the coding convention').value.category).toBe('convention');
+    expect(keywordClassify('change the style guide').value.category).toBe('convention');
   });
 
-  test("falls back to general", () => {
-    expect(keywordClassify("hello world").value.category).toBe("general");
+  test('falls back to general', () => {
+    expect(keywordClassify('hello world').value.category).toBe('general');
   });
 
-  test("returns confidence 0.7", () => {
-    expect(keywordClassify("anything").confidence).toBe(0.7);
+  test('returns confidence 0.7', () => {
+    expect(keywordClassify('anything').confidence).toBe(0.7);
   });
 });
 
-describe("keywordRoute", () => {
+describe('keywordRoute', () => {
   const config = minimalConfig();
-  config.agents = { artificer: { ...config.agents["executor-answer"], id: "artificer" } };
+  config.agents = { artificer: { ...config.agents['executor-answer'], id: 'artificer' } };
 
-  test("uses the configured executor instead of inventing artificer", () => {
-    expect(keywordRoute({ category: "bug" }, minimalConfig()).value.destination).toBe("executor-answer");
-    expect(() => keywordRoute({ category: "bug" }, minimalConfig({ agents: {} }))).toThrow("no enabled executor");
+  test('uses the configured executor instead of inventing artificer', () => {
+    expect(keywordRoute({ category: 'bug' }, minimalConfig()).value.destination).toBe(
+      'executor-answer',
+    );
+    expect(() => keywordRoute({ category: 'bug' }, minimalConfig({ agents: {} }))).toThrow(
+      'no enabled executor',
+    );
   });
 
-  test("routes bugs to artificer", () => {
-    const route = keywordRoute({ category: "bug" }, config);
-    expect(route.value.destination).toBe("artificer");
+  test('routes bugs to artificer', () => {
+    const route = keywordRoute({ category: 'bug' }, config);
+    expect(route.value.destination).toBe('artificer');
   });
 
-  test("routes features to artificer", () => {
-    const route = keywordRoute({ category: "feature" }, config);
-    expect(route.value.destination).toBe("artificer");
+  test('routes features to artificer', () => {
+    const route = keywordRoute({ category: 'feature' }, config);
+    expect(route.value.destination).toBe('artificer');
   });
 
-  test("routes questions to artificer", () => {
-    const route = keywordRoute({ category: "question" }, config);
-    expect(route.value.destination).toBe("artificer");
+  test('routes questions to artificer', () => {
+    const route = keywordRoute({ category: 'question' }, config);
+    expect(route.value.destination).toBe('artificer');
   });
 
-  test("unknown category falls back to general", () => {
-    const route = keywordRoute({ category: "unknown" }, config);
-    expect(route.value.destination).toBe("artificer");
+  test('unknown category falls back to general', () => {
+    const route = keywordRoute({ category: 'unknown' }, config);
+    expect(route.value.destination).toBe('artificer');
   });
 });
 
-describe("parseJSON", () => {
-  test("parses plain JSON", () => {
+describe('parseJSON', () => {
+  test('parses plain JSON', () => {
     const result = parseJSON('{"category": "bug"}');
-    expect(result.category).toBe("bug");
+    expect(result.category).toBe('bug');
   });
 
-  test("parses fenced JSON", () => {
+  test('parses fenced JSON', () => {
     const result = parseJSON('```json\n{"category": "feature"}\n```');
-    expect(result.category).toBe("feature");
+    expect(result.category).toBe('feature');
   });
 
-  test("extracts braced JSON from surrounding text", () => {
+  test('extracts braced JSON from surrounding text', () => {
     const result = parseJSON('Here is the result: {"category": "refactor"} done');
-    expect(result.category).toBe("refactor");
+    expect(result.category).toBe('refactor');
   });
 
-  test("returns fallback on garbage input", () => {
-    const result = parseJSON("not json at all");
-    expect(result.category).toBe("general");
-    expect(result.reasoning).toBe("parse failure");
+  test('returns fallback on garbage input', () => {
+    const result = parseJSON('not json at all');
+    expect(result.category).toBe('general');
+    expect(result.reasoning).toBe('parse failure');
   });
 
-  test("handles fenced block without json tag", () => {
+  test('handles fenced block without json tag', () => {
     const result = parseJSON('```\n{"key": "value"}\n```');
-    expect(result.key).toBe("value");
+    expect(result.key).toBe('value');
   });
 });

@@ -1,6 +1,6 @@
-import type { TokenCounts } from "./token-counts";
-import { computeHash } from "./context-layer";
-import { ContextStack, type LayerFilter, type AssembledContext } from "./context-stack";
+import { computeHash } from './context-layer';
+import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';
+import type { TokenCounts } from './token-counts';
 
 export interface ExecutionResult<T = unknown> {
   readonly output: T;
@@ -72,9 +72,7 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
   }
 
   getContext(): string {
-    return this._layerFilter
-      ? this._stack.slice(this._layerFilter)
-      : this._stack.merge();
+    return this._layerFilter ? this._stack.slice(this._layerFilter) : this._stack.merge();
   }
 
   /**
@@ -99,7 +97,7 @@ export abstract class BaseAgent<TPayload = unknown, TResult = unknown> {
   abstract run(
     payload: TPayload,
     filterOverride?: LayerFilter,
-    meta?: Record<string, unknown>
+    meta?: Record<string, unknown>,
   ): Promise<ExecutionResult<TResult>>;
 
   /**

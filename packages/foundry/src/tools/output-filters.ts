@@ -20,45 +20,47 @@
 //   });
 // ---------------------------------------------------------------------------
 
-import type { OutputFilter } from "@inixiative/foundry-core";
+import type { OutputFilter } from '@inixiative/foundry-core';
 
 // -- Individual filters --
 
 /** Strip ANSI escape codes (colors, cursor movement, etc.) */
 export const stripAnsi: OutputFilter = (stdout) =>
   // eslint-disable-next-line no-control-regex
-  stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 
 /** Collapse repeated blank lines into one. */
-export const collapseBlankLines: OutputFilter = (stdout) =>
-  stdout.replace(/\n{3,}/g, "\n\n");
+export const collapseBlankLines: OutputFilter = (stdout) => stdout.replace(/\n{3,}/g, '\n\n');
 
 /** Collapse all runs of whitespace (spaces, tabs) within lines. */
 export const collapseWhitespace: OutputFilter = (stdout) =>
-  stdout.split("\n").map((line) => line.replace(/[ \t]+/g, " ").trimEnd()).join("\n");
+  stdout
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trimEnd())
+    .join('\n');
 
 /** Strip common progress/spinner lines that waste tokens. */
 export const stripProgress: OutputFilter = (stdout) =>
   stdout
-    .split("\n")
+    .split('\n')
     .filter((line) => {
       const trimmed = line.trim();
       // Spinner patterns
-      if (/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏|\/\\-]/.test(trimmed) && trimmed.length < 80) return false;
+      if (/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏|/\\-]/.test(trimmed) && trimmed.length < 80) return false;
       // Progress bar patterns
       if (/[█▓▒░]{3,}/.test(trimmed)) return false;
-      if (/\d+%\s*[\[|]/.test(trimmed)) return false;
+      if (/\d+%\s*[[|]/.test(trimmed)) return false;
       // "downloading..." / "installing..." single-word status
       if (/^(downloading|installing|resolving|linking|fetching)\.\.\./i.test(trimmed)) return false;
       return true;
     })
-    .join("\n");
+    .join('\n');
 
 /** Deduplicate consecutive identical lines (e.g., repeated warnings). */
 export const dedup: OutputFilter = (stdout) => {
-  const lines = stdout.split("\n");
+  const lines = stdout.split('\n');
   const result: string[] = [];
-  let lastLine = "";
+  let lastLine = '';
   let dupeCount = 0;
 
   for (const line of lines) {
@@ -66,7 +68,7 @@ export const dedup: OutputFilter = (stdout) => {
       dupeCount++;
     } else {
       if (dupeCount > 0) {
-        result.push(`  ... (repeated ${dupeCount} more time${dupeCount > 1 ? "s" : ""})`);
+        result.push(`  ... (repeated ${dupeCount} more time${dupeCount > 1 ? 's' : ''})`);
       }
       result.push(line);
       lastLine = line;
@@ -74,10 +76,10 @@ export const dedup: OutputFilter = (stdout) => {
     }
   }
   if (dupeCount > 0) {
-    result.push(`  ... (repeated ${dupeCount} more time${dupeCount > 1 ? "s" : ""})`);
+    result.push(`  ... (repeated ${dupeCount} more time${dupeCount > 1 ? 's' : ''})`);
   }
 
-  return result.join("\n");
+  return result.join('\n');
 };
 
 /**
@@ -85,9 +87,9 @@ export const dedup: OutputFilter = (stdout) => {
  * Collapses long file lists into counts per status.
  */
 export const gitStatus: OutputFilter = (stdout, command) => {
-  if (!command.includes("git status") && !command.includes("git diff --stat")) return stdout;
+  if (!command.includes('git status') && !command.includes('git diff --stat')) return stdout;
 
-  const lines = stdout.split("\n");
+  const lines = stdout.split('\n');
   if (lines.length < 30) return stdout; // Short output, don't compress
 
   // Count by status prefix
@@ -95,8 +97,9 @@ export const gitStatus: OutputFilter = (stdout, command) => {
   const kept: string[] = [];
 
   for (const line of lines) {
-    const match = line.match(/^\s*(modified|new file|deleted|renamed|copied|untracked):/i)
-      ?? line.match(/^\s*([MADRCU?!])\s/);
+    const match =
+      line.match(/^\s*(modified|new file|deleted|renamed|copied|untracked):/i) ??
+      line.match(/^\s*([MADRCU?!])\s/);
 
     if (match) {
       const status = match[1].toLowerCase();
@@ -108,12 +111,12 @@ export const gitStatus: OutputFilter = (stdout, command) => {
 
   if (Object.keys(counts).length > 0) {
     const summary = Object.entries(counts)
-      .map(([status, count]) => `  ${status}: ${count} file${count > 1 ? "s" : ""}`)
-      .join("\n");
-    kept.push("File changes:", summary);
+      .map(([status, count]) => `  ${status}: ${count} file${count > 1 ? 's' : ''}`)
+      .join('\n');
+    kept.push('File changes:', summary);
   }
 
-  return kept.join("\n");
+  return kept.join('\n');
 };
 
 /**
@@ -121,11 +124,11 @@ export const gitStatus: OutputFilter = (stdout, command) => {
  * Keeps pass/fail summary, collapses individual test details.
  */
 export const testOutput: OutputFilter = (stdout, command) => {
-  if (!command.includes("test") && !command.includes("jest") && !command.includes("vitest")) {
+  if (!command.includes('test') && !command.includes('jest') && !command.includes('vitest')) {
     return stdout;
   }
 
-  const lines = stdout.split("\n");
+  const lines = stdout.split('\n');
   if (lines.length < 20) return stdout;
 
   const kept: string[] = [];
@@ -145,7 +148,7 @@ export const testOutput: OutputFilter = (stdout, command) => {
       continue;
     }
     // Collapse passing tests
-    if (/pass|✓|✔|PASS/i.test(trimmed) && !trimmed.includes("Tests:")) {
+    if (/pass|✓|✔|PASS/i.test(trimmed) && !trimmed.includes('Tests:')) {
       inPassingBlock = true;
       passingCount++;
       continue;
@@ -173,15 +176,14 @@ export const testOutput: OutputFilter = (stdout, command) => {
     kept.push(`  ... ${passingCount} passing tests (collapsed)`);
   }
 
-  return kept.join("\n");
+  return kept.join('\n');
 };
 
 // -- Composition --
 
 /** Compose multiple filters into one (applied left to right). */
 export function compose(...filters: OutputFilter[]): OutputFilter {
-  return (stdout, command) =>
-    filters.reduce((output, filter) => filter(output, command), stdout);
+  return (stdout, command) => filters.reduce((output, filter) => filter(output, command), stdout);
 }
 
 /**
