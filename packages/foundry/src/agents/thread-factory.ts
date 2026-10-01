@@ -31,6 +31,7 @@ import {
 import { toolUseLoop } from "./tool-loop";
 import type { SessionAdapter } from "../providers/session-adapter";
 import { auxiliarySessionId, type ThreadRuntimeManager } from "./thread-runtime";
+import { DECISION_DEADLINE_MS } from "../providers/decision-budget";
 import { nativeBridgeSource, type NativeToolJournal } from "../mcp/native-bridge";
 import type {
   FoundryConfig,
@@ -343,7 +344,8 @@ function buildAgent(
                 },
                 { role: "user", content: payload },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
+              { ...opts, maxTokens: 256, maxTurns: 1, timeout: Math.min(opts.timeout ?? DECISION_DEADLINE_MS, DECISION_DEADLINE_MS),
+                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
             );
             const parsed = parseJSON(result.content);
             if (!parsed || typeof parsed.category !== "string" || !parsed.category.trim() || parsed.reasoning === "parse failure") {
@@ -366,12 +368,11 @@ function buildAgent(
         id,
         stack,
         handler: async (ctx, input, meta) => {
-          const payload = typeof input === "string" ? input : input.payload;
-          const classification = typeof input === "string" ? null : input.classification;
-
-          if (!classification) {
-            return keywordRoute(keywordClassify(payload).value, config);
-          }
+          // Routing runs concurrently with classification on the frozen message, so it normally has no
+          // classification; a conditional route stage that ran after the classifier still receives one.
+          const payload = typeof input === "string" ? input : String(input?.payload ?? "");
+          const classified = typeof input === "object" && input !== null && !!input.classification;
+          const classification = classified ? input.classification : keywordClassify(payload).value;
 
           if (!agentCfg.prompt) return keywordRoute(classification, config);
           try {
@@ -383,10 +384,11 @@ function buildAgent(
                 },
                 {
                   role: "user",
-                  content: `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`,
+                  content: classified ? `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}` : `Message: ${payload}`,
                 },
               ],
-              { ...opts, maxTokens: 256, maxTurns: 1, ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
+              { ...opts, maxTokens: 256, maxTurns: 1, timeout: Math.min(opts.timeout ?? DECISION_DEADLINE_MS, DECISION_DEADLINE_MS),
+                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider) },
             );
             const parsed = parseJSON(result.content);
             const target = typeof parsed?.destination === "string" ? config.agents[parsed.destination] : undefined;

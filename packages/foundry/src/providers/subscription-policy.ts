@@ -15,14 +15,26 @@ export const subscriptionSettingsSchema = z.object({
   directory: z.string().startsWith("/").optional(), maxCalls: z.number().int().min(1).max(10_000).optional(),
   maxQueued: z.number().int().min(1).max(1_024).optional(), maxQueuedPerThread: z.number().int().min(1).max(1_024).optional(),
   maxConcurrent: z.number().int().min(1).max(32).optional(), callTimeoutMs: z.number().int().min(100).max(30_000).optional(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  hedgeAfterMs: z.number().int().min(500).max(30_000).optional(),
 }).strict();
 export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
 export interface SubscriptionPolicy {
   model: string; expectedObservedModel?: string; directory: string; maxCalls: number; maxQueued: number; maxQueuedPerThread: number;
   maxConcurrent: number; callTimeoutMs: number;
+  /** Codex decision reasoning effort. */
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Codex decisions still running after this long are hedged on a second branch. */
+  hedgeAfterMs?: number;
 }
-/** Sized for many threads: each turn fans out classifier, router and every expert; tool calls add guards. */
-export const SUBSCRIPTION_DEFAULTS = { maxCalls: 10_000, maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 8, callTimeoutMs: 30_000 } as const;
+/**
+ * Sized for many threads: each turn fans out classifier, router, Cartographer and every expert at once
+ * (nine decisions with six experts), and tool calls add guards. Concurrency is turns on one warm process.
+ * Decisions run at low effort: the model's default (medium) adds ~0.5 s per decision.
+ */
+export const SUBSCRIPTION_DEFAULTS = { maxCalls: 10_000, maxQueued: 256, maxQueuedPerThread: 32, maxConcurrent: 16, callTimeoutMs: 30_000, effort: "low",
+  /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */
+  hedgeAfterMs: 4_000 } as const;
 
 export interface SubscriptionResolution {
   policy: SubscriptionPolicy;
@@ -77,6 +89,7 @@ export function resolveSubscriptionPolicy(config: FoundryConfig, options: { star
     maxQueuedPerThread: Math.min(settings.maxQueuedPerThread ?? SUBSCRIPTION_DEFAULTS.maxQueuedPerThread, settings.maxQueued ?? SUBSCRIPTION_DEFAULTS.maxQueued),
     maxConcurrent: settings.maxConcurrent ?? (decision.runtime === "codex" ? SUBSCRIPTION_DEFAULTS.maxConcurrent : 1),
     callTimeoutMs: settings.callTimeoutMs ?? SUBSCRIPTION_DEFAULTS.callTimeoutMs,
+    ...(decision.runtime === "codex" ? { effort: settings.effort ?? SUBSCRIPTION_DEFAULTS.effort, hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs } : {}),
   };
   if (options.startup) {
     for (const source of [worker, decision]) {

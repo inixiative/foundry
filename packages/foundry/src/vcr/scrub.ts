@@ -63,6 +63,13 @@ export function scrubText(text: string, context: ScrubContext = {}): string {
 
 const redactIdentity = (value: string) => value === "" ? value : UUID.test(value) ? REDACTED_UUID : value.includes("@") ? REDACTED_EMAIL : "REDACTED";
 const REDACTED_VALUES = ["REDACTED", REDACTED_UUID, REDACTED_EMAIL, ""];
+/**
+ * A login method is a closed enum, not identity: the Codex app-server's `account.type` is exactly what
+ * `codex login status` recordings keep ("Logged in using ChatGPT"), and Foundry refuses anything but a
+ * ChatGPT login. Kept only for the `type` field and only for these values; every other account field stays redacted.
+ */
+const LOGIN_METHODS = new Set(["chatgpt", "apiKey", "amazonBedrock"]);
+const keptLoginMethod = (key: string | undefined, value: string) => key === "type" && LOGIN_METHODS.has(value);
 
 export function scrubValue<T>(value: T, context: ScrubContext = {}): T {
   // Under an identity or secret key every string leaf is identity, however deeply nested ({ account: { name } }).
@@ -70,6 +77,7 @@ export function scrubValue<T>(value: T, context: ScrubContext = {}): T {
     const hidden = sensitive || (key !== undefined && (IDENTITY_KEY.test(key) || SECRET_KEY.test(key)));
     if (typeof node === "string") {
       if (key && SECRET_KEY.test(key)) return "REDACTED";
+      if (hidden && keptLoginMethod(key, node)) return node;
       if (hidden) return redactIdentity(node);
       return scrubText(node, context);
     }
@@ -122,7 +130,7 @@ export function findLeaks(text: string): string[] {
   const walk = (node: unknown, key?: string, sensitive = false): void => {
     const hidden = sensitive || (key !== undefined && (IDENTITY_KEY.test(key) || SECRET_KEY.test(key)));
     if (typeof node === "string") {
-      if (hidden && !REDACTED_VALUES.includes(node)) found.push(`unredacted ${key ?? "identity"}`);
+      if (hidden && !REDACTED_VALUES.includes(node) && !keptLoginMethod(key, node)) found.push(`unredacted ${key ?? "identity"}`);
       else for (let start = node.indexOf("{"); start !== -1; start = node.indexOf("{", start + 1)) {
         try { walk(JSON.parse(node.slice(start))); break; } catch { /* Not JSON from here. */ }
       }

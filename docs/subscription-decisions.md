@@ -20,9 +20,11 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only. Codex exec does not acknowledge an observed model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
 | `subscriptionOnly.maxCalls` | `10000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
-| `subscriptionOnly.maxConcurrent` | `8` for Codex, `1` for Claude | Decisions running at once across all threads, each its own process. A Claude decision profile is limited to 1. |
+| `subscriptionOnly.maxConcurrent` | `16` for Codex, `1` for Claude | Decisions running at once across all threads: concurrent turns on the one warm Codex process, or processes for a Claude profile (limited to 1). |
 | `subscriptionOnly.maxQueued` | `256` | Waiting decisions across all threads (up to 1024). |
 | `subscriptionOnly.maxQueuedPerThread` | `32` | Waiting decisions per logical thread. |
+| `subscriptionOnly.effort` | `low` for Codex | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`). The model default, `medium`, adds about 0.5 s per decision. |
+| `subscriptionOnly.hedgeAfterMs` | `4000` for Codex | A decision still running after this long starts the same input on a second branch; the first to finish wins (500 to 30000). |
 | `subscriptionOnly.callTimeoutMs` | `30000` | Per-decision deadline including queue and preflight time (100 to 30000). |
 
 Explicit profile sources are credential references in `nativeAuthentication`, never tokens:
@@ -47,16 +49,22 @@ Subscription mode runs every enabled non-executor agent on the decision profile.
 
 Foundry adds processes to the logins the user already uses interactively, like another terminal session would. It does not change their files or settings:
 
-- **Profile locks.** The Claude worker takes the exclusive `.foundry-auth-lock` inside its profile while its process runs, giving one Foundry process ownership across checkouts. Codex decision processes share their login instead: each registers `.foundry-auth-shared/<owner>.json` in `~/.codex` for its lifetime, and the last one removes the directory. Shared holders and an exclusive holder refuse each other. Every lock is released when its process exits, including on a clean shutdown, which stops live processes first. Interactive `claude` and `codex` sessions ignore these locks. After a hard crash, remove a lock only after confirming the recorded Foundry owner and its children are dead.
-- **User settings.** The Claude worker launches with `--setting-sources ""`, so the user's hooks, permissions and plugins in `~/.claude/settings.json` do not apply to Foundry's worker. Decisions launch Codex with `--ignore-user-config` and `--ignore-rules`; authentication still comes from `~/.codex`.
-- **History.** Codex decisions use `--ephemeral`, so they add no sessions to the user's Codex history or resume picker.
+- **Profile locks.** The Claude worker takes the exclusive `.foundry-auth-lock` inside its profile while its process runs, giving one Foundry process ownership across checkouts. The warm Codex decision process shares the login instead: it registers `.foundry-auth-shared/<owner>.json` in `~/.codex` for its lifetime, and the last holder removes the directory. Shared holders and an exclusive holder refuse each other. Every lock is released when its process exits, including on a clean shutdown, which stops live processes first. Interactive `claude` and `codex` sessions ignore these locks. After a hard crash, remove a lock only after confirming the recorded Foundry owner and its children are dead.
+- **User settings.** The Claude worker launches with `--setting-sources ""`, so the user's hooks, permissions and plugins in `~/.claude/settings.json` do not apply to Foundry's worker. The decision app-server disables tool, plugin and app features at launch, and each decision thread overrides the user's notify hook, MCP servers, project docs, skills and tool/environment instructions; authentication still comes from `~/.codex`.
+- **History.** Each role's primed thread is persisted while it lives (Codex can only fork persisted threads) under a private working directory, and deleted when the role is evicted or Foundry shuts down; threads a crashed Foundry left there are deleted at the next start. Decision forks are ephemeral and add nothing to the user's Codex history.
 - **Credentials.** Child environments drop API keys and competing profile overrides (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_*` credentials, inherited `CLAUDE_CONFIG_DIR` and `CODEX_HOME`). Nothing is copied or moved.
 
 ## Codex decisions
 
-Each decision is one `codex exec --json --ephemeral` turn in a private empty directory with a read-only sandbox, `approval_policy="never"`, web search disabled and tool features (shell, unified exec, apps, plugins, browser and computer use, image generation, memories, multi-agent, hooks and similar) disabled. The prompt travels on stdin, never argv. `codex login status` must report `Logged in using ChatGPT` before each call; an API-key login is refused. Any JSON event other than thread/turn lifecycle, reasoning and agent-message items (a command, file change, tool call, web search or error item) fails the decision, and a failed or unknown exit closes further decision admission. Receipts record ownership, model and settlement evidence without prompt or answer text.
+Decisions run on one warm `codex app-server` process per decision profile, through agent-session's `CodexPrimedSessions`. Every middleware role keeps its own live, primed session on that process: the Cartographer, each classifier and router, and each domain's advice, guard and review. A role is keyed by its auxiliary session id (`<thread>:aux:<role>`) plus a hash of its instructions, so a domain's advice and guard stay separate.
 
-Codex exec does not report which model served the turn. The requested model is enforced at launch with `--model` and user configuration ignored; there is no observed-model acknowledgement as there is for Claude.
+- **Prime once.** A role's session is a thread started with the role instructions as developer instructions and Foundry's decision base (no tools, task data is not authorization) as base instructions, plus one primer turn carrying the stable context: the domain cache, or the topology map and atlas. Agents declare that context with `CompletionOpts.stablePrefix`; the messages sent to API providers are unchanged.
+- **Reset per cycle.** Each decision forks the primed thread (ephemeral, through the primer turn, same instructions) and sends only the per-cycle part: thread state, the message or tool observation and the response protocol. The primed thread never receives a decision, so one cycle never sees another's turns. The fork shares the primed prefix, which the provider can serve from its prompt cache.
+- **Re-prime** only when the stable context or instructions change, after idle eviction (30 min), or after the process is lost. Those are the only cold paths.
+
+The process launches with `approval_policy="never"`, web search disabled and tool features (shell, unified exec, apps, plugins, browser and computer use, image generation, memories, multi-agent, hooks and similar) disabled; threads run in a read-only sandbox in a private empty directory, with MCP servers, the notify hook, project docs, skills and tool/environment instructions disabled per thread. The account must be a ChatGPT login (`account/read`) before any decision; an API-key login is refused. Any non-text item, MCP server start or runtime request on a decision thread is a violation: the turn is interrupted, the process recycled and further admission closed. The app-server reports the model serving each session, and a substituted model is refused. Receipts (`decisions.jsonl` beside `host.json`) record ownership, model, priming and settlement evidence without prompt or answer text.
+
+A Claude decision profile keeps the bounded one-turn text provider.
 
 ## Scheduling
 
@@ -65,14 +73,40 @@ One process-wide scheduler serves every thread's decisions, with up to `maxConcu
 - **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (classifier, router, Cartographer, expert advice) run before post-action guards, which run before learning review. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
 - **Fairness.** Within a priority, the thread served longest ago goes next, so one busy thread cannot starve another.
 - **Shedding.** A full queue (per thread, then global) sheds its oldest lowest-priority wait to admit a more urgent call; only a call that cannot displace anything is refused. Shed guards report as unchecked, never as all-clear.
-- **Rate limits.** A Codex usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission.
-- **Failures.** A refusal before any native launch (expired deadline, revoked preflight) leaves nothing owned and does not close admission. Unknown exit or an unproven native result still closes further admission.
+- **Rate limits.** A Codex usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission. While the account reports usage blocked, the warm host refuses decisions before sending anything and re-reads limits at most once a minute.
+- **Failures.** A refusal before any native write (expired deadline, revoked preflight or registration) leaves nothing owned and does not close admission. A turn the runtime settled (a native failure, or a deadline whose interrupt was acknowledged or whose process exit was observed) leaves nothing owned either and does not close admission. A violation, a substituted model or an unproven result still closes further admission.
 
-The flow already fires domain assessments concurrently (up to `maxAdviseParallel`, default 5) alongside routing, each with its own 10 s deadline; a late answer is recorded as a timeout and not used. Advice is composed in configured order once every participant has answered or timed out.
+## Latency
+
+Every advisor has to be fast, so the pre-message phase is one concurrent round:
+
+- The classifier and router run at the same time, both on the frozen message. The router no longer waits for the classification.
+- The Cartographer and every domain assessment start on the message's first decision dispatch, against the same frozen input. They run alongside classification and routing, with no parallelism cap by default (`maxAdviseParallel`).
+- The worker starts once the slowest of them answers.
+- Composition stays deterministic: configured order, hash provenance, and the sealed plan are journalled before the worker starts.
+
+Speed comes from how each decision runs:
+
+- Each decision runs on its role's warm primed session.
+- Contexts that change are decided inline, and priming never sits on the critical path.
+- A decision still running after `hedgeAfterMs` is hedged.
+
+Every decision, including classification and routing, has a 10 s deadline (`DECISION_DEADLINE_MS`). It is a safety net, not the normal path: a late answer is recorded as a timeout, the call is cancelled, and a classifier or router falls back to keywords.
+
+Budget (`providers/decision-budget.ts`), measured live with `bun scripts/measure-decisions.ts` (six experts, gpt-6-luna at low effort, a spare `VIEWER_PORT`):
+
+| | Before (per-call `codex exec`, classify → route → advise) | After |
+|---|---|---|
+| Message to worker start (turns 30 s apart) | p50 18.2 s, p95 22.7 s | p50 6.5–7.2 s, p95 8.2–8.7 s (two runs) |
+| One decision | p50 4.3 s, p95 6.5 s | p50 3.5–3.9 s, p95 5.5–7.4 s under the full fan-out |
+
+The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. About one decision in six is hedged. No websocket-to-HTTPS fallback appeared in 165 warm-host decisions. Back-to-back messages (a request burst every few seconds) trip provider throttling; those turns end at the 10 s safety net and are reported separately.
+
+The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
 ## Ownership and bounds
 
-Decisions are bounded per call and per process. Guards retain their existing post-action semantics. The deadline includes queue and preflight time; cleanup has its own bounded wait. Revocation closes waiting admission, rejects an active result and leaves its process owned until cleanup or deadline. Unknown exit closes further admission rather than treating a kill request as released capacity. A worker authentication check with unknown exit likewise blocks further checks for that authentication instance.
+Decisions are bounded per call and per process. Guards retain their existing post-action semantics. The deadline includes queue, preflight and priming time; cleanup has its own bounded wait. Revocation or shutdown closes waiting admission and cancels active decisions: refused before dispatch, or interrupted with the interrupt's acknowledgment (or the process exit) as settlement. A worker authentication check with unknown exit likewise blocks further checks for that authentication instance.
 
 Logical thread/generation/dispatch/review-job ownership is preserved while physical native session identities remain private. Inspection and release require the exact owner and admission ID. Learning cannot inspect accepted answer content until model, tool, ownership, receipt and process-release checks pass.
 
@@ -84,4 +118,4 @@ Local profile references are not Kingdom capacity grants. A project execution co
 
 ## Validation
 
-Run `bun run test` and `bun run typecheck`. Focused tests are `packages/foundry/tests/subscription-default.test.ts`, `subscription-policy.test.ts` and `subscription-decisions.test.ts`; they use controlled child processes and a temporary `HOME`. The startup tests deny external requests and set synthetic API keys to verify they are never used.
+Run `bun run test` and `bun run typecheck`. Focused tests are `packages/foundry/tests/subscription-default.test.ts`, `subscription-scheduling.test.ts`, `primed-decisions.test.ts`, `subscription-policy.test.ts` and `subscription-decisions.test.ts`; they use a controlled app-server double and a temporary `HOME`. The startup tests deny external requests and set synthetic API keys to verify they are never used.

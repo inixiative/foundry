@@ -1,0 +1,34 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "contents": [
+      true,
+      true
+    ],
+    "launches": 1,
+    "persistedThreads": 1,
+    "forks": 2,
+    "primerCarriedContext": true,
+    "cyclesSentOnlyTheMessage": true,
+    "receipts": [
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "warm"
+      },
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "warm"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-01T00:30:31.063Z",
+    "agentSession": "0.3.0",
+    "environment": "terminal"
+  }
+}

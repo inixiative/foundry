@@ -2,17 +2,13 @@
   "version": "0.155.1",
   "status": 200,
   "body": {
-    "content": "{\"category\":\"feature\"}",
-    "observed": [
-      "unknown",
-      "completed"
-    ],
-    "attempts": 1
+    "decided": true,
+    "native": "completed"
   },
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-09-30T19:28:21.361Z",
+    "recordedAt": "2026-10-01T00:31:33.342Z",
     "agentSession": "0.3.0",
     "environment": "terminal"
   }

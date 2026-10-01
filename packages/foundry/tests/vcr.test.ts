@@ -131,9 +131,10 @@ describe("drift classification", () => {
   const init = { type: "system", subtype: "init", model: "m" }, result = { type: "result", subtype: "success", result: "x" };
   it("treats thinking, rate-limit notices and reconnects as notices, and protocol shape as drift", () => {
     const before = transcript(init, result);
-    const noisy = transcript(init, { type: "system", subtype: "thinking_tokens", estimated_tokens: 1 }, { type: "rate_limit_event" }, result);
+    const noisy = transcript({ type: "system", subtype: "ui_invalidate" }, { type: "system", subtype: "commands_changed", commands: [] }, init,
+      { type: "system", subtype: "thinking_tokens", estimated_tokens: 1 }, { type: "rate_limit_event" }, result);
     expect(compareSignatures(before, noisy)).toEqual([]);
-    expect(volatileDifferences(before, noisy)).toEqual(["new stdout:rate_limit_event", "new stdout:system:thinking_tokens"]);
+    expect(volatileDifferences(before, noisy)).toEqual(["new stdout:rate_limit_event", "new stdout:system:commands_changed", "new stdout:system:thinking_tokens", "new stdout:system:ui_invalidate"]);
     const changed = transcript({ ...init, model: 1 }, { type: "result", subtype: "error_max_turns" });
     const tool = transcript(init, { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash" }] } }, result);
     expect(compareSignatures(transcript(init, { type: "assistant", message: { content: [{ type: "text", text: "x" }] } }, result), tool))
@@ -330,4 +331,12 @@ describe("scrubbing and freshness", () => {
     expect(problems("x.pending.json")[0]).toContain("unreviewed live drift");
     expect(checkFreshness(dir, { now, installed: { claude: "2.1.281" }, agentSession: "0.2.0" }).map(f => f.cassette).filter((c, i, all) => all.indexOf(c) === i).sort()).toEqual(["leak.json", "old.json", "under-blessed.json", "x.pending.json"]);
   });
+});
+
+it("a login method survives scrubbing; every other account field, and any other value under account, is redacted", () => {
+  const scrubbed = scrubValue({ account: { type: "chatgpt", email: "someone@example.com", planType: "pro" }, requiresOpenaiAuth: true });
+  expect(scrubbed).toEqual({ account: { type: "chatgpt", email: "redacted@example.invalid", planType: "REDACTED" }, requiresOpenaiAuth: true });
+  expect(scrubValue({ account: { type: "enterprise-team-x" } })).toEqual({ account: { type: "REDACTED" } });
+  expect(findLeaks(JSON.stringify(scrubbed))).toEqual([]);
+  expect(findLeaks(JSON.stringify({ account: { type: "enterprise-team-x" } }))).toContain("unredacted type");
 });

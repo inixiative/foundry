@@ -272,7 +272,8 @@ export interface GuardReport {
 export interface FlowTimingConfig {
   /**
    * Concurrency bound for domain assessment. Every enabled domain is still
-   * consulted; this only limits how many assess at once. Positive integer. Default: 5.
+   * consulted; this only limits how many assess at once. Positive integer.
+   * Default: every domain at once, so advice costs one decision's latency.
    */
   maxAdviseParallel?: number;
   /** Deadline per domain assessment. A late answer is recorded as a timeout. Default: 10 000 ms. */
@@ -365,7 +366,7 @@ export class FlowOrchestrator {
     this._librarian = config.librarian;
     this._stack = config.stack;
     this._signals = config.signals;
-    this._maxAdviseParallel = positiveInteger("maxAdviseParallel", config.maxAdviseParallel, 5);
+    this._maxAdviseParallel = positiveInteger("maxAdviseParallel", config.maxAdviseParallel, Number.MAX_SAFE_INTEGER);
     this._adviseTimeoutMs = positiveFiniteMs("adviseTimeoutMs", config.adviseTimeoutMs, 10_000)!;
     this._routingTimeoutMs = positiveFiniteMs("routingTimeoutMs", config.routingTimeoutMs, 10_000)!;
     this._planTimeoutMs = positiveFiniteMs("planTimeoutMs", config.planTimeoutMs, undefined);
@@ -515,7 +516,8 @@ export class FlowOrchestrator {
     };
     const empty = { layers: [] as string[], domains: [] as string[], confidence: 0 };
 
-    const task = this._cartographer.route(message, threadState, { observeRequest: (evidence) => { observed = evidence; } }).then(
+    const task = this._cartographer.route(message, threadState, { observeRequest: (evidence) => { observed = evidence; },
+      timeoutMs: Math.min(this._routingTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY) }).then(
       (result) => ({ kind: "result" as const, result }),
       (err: unknown) => ({ kind: "error" as const, error: (err as Error)?.message ?? String(err) }),
     );
@@ -602,6 +604,7 @@ export class FlowOrchestrator {
         cache: p.cache,
         threadKnowledge: p.threadKnowledge,
         observeRequest: (evidence) => { observed = evidence; },
+        timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
       })
       .then(
         (result) => ({ kind: "result" as const, result }),

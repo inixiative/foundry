@@ -497,8 +497,51 @@ export class Harness {
     };
 
     try {
-      // Run each stage in order
+      // Decision stages (classify, route) read the same frozen input concurrently: neither waits for
+      // the other, and the router receives the message, not the classification. Their results are
+      // applied in configured stage order, so the outcome does not depend on which answered first.
+      const decisionStages = flow.stages.filter(stage => !stage.background && stage.invocation === "always"
+        && (stage.role === "classify" || stage.role === "route") && stage.agentId !== "routed" && this.thread.getAgent(stage.agentId));
+      if (decisionStages.length) {
+        const layerFilter = this.buildLayerFilter(undefined, undefined, requestedLayers);
+        const settled = await Promise.allSettled(decisionStages.map(async stage => {
+          const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role as any, {
+            agentId: stage.agentId, threadId: this.thread.id, input: message.payload, annotations: { invocation: stage.invocation },
+          });
+          try {
+            const result = await this.thread.dispatch(stage.agentId, message.payload, layerFilter, {
+              role: stage.role, messageId: message.id, invocation: stage.invocation,
+              recordInjection: artifact => { span.annotations.injection = artifact; },
+              nativeObservation: opts?.nativeObservation,
+              recordNative: evidence => { span.annotations.native = evidence; },
+              recordCompleted: output => { span.annotations.executorCompletion = { output }; },
+            });
+            if (result.meta?.injection) span.annotations.injection = result.meta.injection;
+            trace.endSpan(span, result.output);
+            return result;
+          } catch (error) { trace.endSpan(span, undefined, error); throw error; }
+        }));
+        for (const [index, stage] of decisionStages.entries()) {
+          const outcome = settled[index]!;
+          if (outcome.status === "rejected") throw outcome.reason;
+          invokedAgents.push({ id: stage.agentId, mode: stage.invocation });
+          stageResults.set(stage.agentId, outcome.value);
+          if (stage.role === "classify") {
+            classification = outcome.value.output as Decision<Classification>;
+            if (classification?.value) {
+              await this.thread.signals.emit({
+                id: newId("sig-classify"), kind: "classification", source: `harness:${stage.agentId}`,
+                content: classification.value, confidence: classification.confidence, timestamp: Date.now(),
+              });
+            }
+          } else route = outcome.value.output as Decision<Route>;
+        }
+      }
+      const concurrent = new Set(decisionStages);
+
+      // Run the remaining stages in order
       for (const stage of flow.stages) {
+        if (concurrent.has(stage)) continue;
         // Should this stage run?
         if (stage.invocation === "on-demand") {
           const resolvedId = stage.agentId === "routed"
@@ -566,7 +609,8 @@ export class Harness {
           annotations: { invocation: stage.invocation },
         });
 
-        // Route and clarify stages receive classification context; others get raw payload
+        // A conditional route stage runs after classification and receives it; clarify stages also
+        // receive the classification; others get raw payload
         const stagePayload = stage.role === "route" && classification
           ? { payload: message.payload, classification: classification.value }
           : stage.role === "clarify"
