@@ -77,7 +77,7 @@ test('thread names: the agent name shows until a person names the thread; branch
   const viewer = createViewer({
     harness,
     eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
     configStore,
     configDir: dir,
     threadFactory: factory,
