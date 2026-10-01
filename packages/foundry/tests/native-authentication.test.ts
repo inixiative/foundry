@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, chmodSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, existsSync, chmodSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NativeAuthentication, type NativeAuthenticationLaunch, type NativeAuthenticationSource } from "../src/providers/native-authentication";
@@ -189,4 +189,44 @@ test("gateway setup refuses a symlink config and preserves its target", async ()
   const second = track(await auth.prepare("thread", "codex"));
   expect(() => second.launch(["codex"], {})).toThrow("private regular files");
   expect(readFileSync(target, "utf8")).toBe("keep");
+});
+
+test("a private Codex home holds only the profile's login, linked so refreshes land in the profile", async () => {
+  const directory = root(), profile = join(directory, "native"), state = join(directory, "state");
+  mkdirSync(profile, { mode: 0o700 }); mkdirSync(state, { mode: 0o700 });
+  writeFileSync(join(profile, "auth.json"), '{"tokens":"first"}', { mode: 0o600 });
+  writeFileSync(join(profile, "AGENTS.md"), "user instructions", { mode: 0o600 });
+  writeFileSync(join(profile, "config.toml"), 'model = "user-model"\n', { mode: 0o600 });
+  mkdirSync(join(profile, "memories"));
+  const source: NativeAuthenticationSource = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "codex", mode: "native-profile", profileDirectory: profile };
+  const auth = new NativeAuthentication({ directory: state, sources: [source], defaultSourceId: source.id, shared: true, privateHome: true });
+  const first = track(await auth.prepare("decisions", "codex"));
+  const { env } = first.launch(["codex", "app-server"], { CODEX_HOME: "/elsewhere", PATH: "/bin" });
+  const home = env.CODEX_HOME!;
+  expect(home).toBe(join(state, source.id, "codex-home"));
+  expect(readdirSync(home).sort()).toEqual(["auth.json", "config.toml"]);
+  expect(readFileSync(join(home, "config.toml"), "utf8")).toBe('cli_auth_credentials_store = "file"\n');
+  expect(readlinkSync(join(home, "auth.json"))).toBe(join(realpathSync(profile), "auth.json"));
+  // The profile keeps the lock: the shared registration sits beside the one login.
+  expect(readdirSync(join(profile, ".foundry-auth-shared"))).toHaveLength(1);
+  // Codex rewrites auth.json in place (truncate, not rename): a refresh in the home is the profile's refresh, and back.
+  writeFileSync(join(home, "auth.json"), '{"tokens":"refreshed"}');
+  expect(readFileSync(join(profile, "auth.json"), "utf8")).toBe('{"tokens":"refreshed"}');
+  writeFileSync(join(profile, "auth.json"), '{"tokens":"interactive"}');
+  expect(readFileSync(join(home, "auth.json"), "utf8")).toBe('{"tokens":"interactive"}');
+  first.release();
+  expect(existsSync(join(profile, ".foundry-auth-shared"))).toBe(false);
+  // A replaced link or a stray copy is restored to the link on the next launch; what it pointed at is untouched.
+  const outside = join(directory, "outside"); writeFileSync(outside, "keep", { mode: 0o600 });
+  rmSync(join(home, "auth.json")); symlinkSync(outside, join(home, "auth.json"));
+  const second = track(await auth.prepare("decisions", "codex"));
+  second.launch(["codex", "app-server"], {});
+  expect(readlinkSync(join(home, "auth.json"))).toBe(join(realpathSync(profile), "auth.json"));
+  expect(readFileSync(outside, "utf8")).toBe("keep");
+});
+
+test("a private home is refused for Claude and gateway sources", () => {
+  const claude: NativeAuthenticationSource = { id: crypto.randomUUID(), connectionId: crypto.randomUUID(), runtime: "claude", mode: "native-profile", profileDirectory: "/tmp/claude" };
+  for (const source of [claude, gateway("codex")])
+    expect(() => new NativeAuthentication({ directory: root(), sources: [source], privateHome: true })).toThrow("private home requires Codex native profiles");
 });

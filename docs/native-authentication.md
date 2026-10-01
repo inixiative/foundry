@@ -63,6 +63,8 @@ Refresh is distinct from buying capacity, consuming account resets or switching 
 
 For an existing native login, use a source with the same UUID fields and runtime, `"mode": "native-profile"`, and `"profileDirectory": "/absolute/path/to/existing/profile"`. Foundry references that directory; it does not copy, export, sign in or refresh credentials itself. Existing profile settings may select another endpoint/account, so the binding describes the chosen profile rather than independently proving provider identity.
 
+`privateHome: true` (Codex native profiles only; the decision host uses it) runs the child on a Foundry-owned `CODEX_HOME` at `<directory>/<source UUID>/codex-home` instead of the profile. It holds Foundry's `config.toml` and the profile's `auth.json` as a symlink, so the profile stays the one refresh target and lock holder while none of its instructions, memories, config or history reach the child. Claude cannot do the same: a different `CLAUDE_CONFIG_DIR` selects a different keychain credential.
+
 ## Concurrency, history and revocation
 
 Gateway profiles live under `.foundry/runtime-profiles/<source UUID>/<binding hash>`. Separate threads can run concurrently. A filesystem lock prevents two Foundry processes from owning the same profile simultaneously. Configuration is written only after acquiring ownership. Profile history is retained after exit to support cold resumption; configuration/source changes produce a new history namespace. Retired profiles need explicit lifecycle cleanup after confirming they are unused.

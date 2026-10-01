@@ -1,5 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NativeEvidence } from "@inixiative/foundry-core";
@@ -145,11 +145,16 @@ test("Codex decisions run on one warm, tool-free app-server with the prompt neve
     expect(launch!.argv).toContain("shell_tool");
     expect(launch!.argv.filter((_, i) => launch!.argv[i - 1] === "-c")).toEqual(['approval_policy="never"', 'web_search="disabled"']);
     expect(launch!.argv.join(" ")).not.toContain("private-input");
-    expect(Object.keys(launch!.env).filter(key => /API_KEY|CODEX_HOME|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
+    expect(Object.keys(launch!.env).filter(key => /API_KEY|CLAUDE_CONFIG_DIR/.test(key))).toEqual([]);
+    // A private home under the receipt directory: the login by link, none of the user's instructions or config.
+    const home = launch!.env.CODEX_HOME!;
+    expect(home).toBe(join(root, "receipts", defaultProfileSource("codex").id, "codex-home"));
+    expect(readdirSync(home).sort()).toEqual(["auth.json", "config.toml"]);
+    expect(readlinkSync(join(home, "auth.json"))).toBe(join(realpathSync(root), ".codex", "auth.json"));
     const requests = launch!.stdin.split("\n").filter(Boolean).map(line => JSON.parse(line) as { method?: string; params?: Record<string, any> });
     const start = requests.find(r => r.method === "thread/start")!.params!;
     expect(start).toMatchObject({ model: LIVE.codexModel, sandbox: "read-only", approvalPolicy: "never", ephemeral: true,
-      config: { "mcp_servers.node_repl.enabled": false, notify: [] } });
+      config: { project_doc_max_bytes: 0, notify: [] } });
     expect(start.developerInstructions).toContain("Classify the user message");
     expect(start.baseInstructions).toContain("Foundry's internal decision middleware");
     expect(requests.some(r => r.method === "account/read")).toBe(true);

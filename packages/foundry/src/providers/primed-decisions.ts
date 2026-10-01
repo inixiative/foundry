@@ -77,7 +77,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   writeFileSync(join(root, "host.json"), JSON.stringify({ schema: 1, hostId, runtime: "codex", transport: "codex-app-server", mode: config.spawn ? "controlled-transport" : "native-subscription",
     sourceId: source.id, connectionId: source.connectionId, model: config.model, maxConcurrent: config.maxConcurrent, startedAt: Date.now() }, null, 2), { mode: 0o600 });
   // The warm process shares the user's Codex login like any decision process: a shared registration for its lifetime.
-  const auth = new NativeAuthentication({ directory: root, sources: [source], defaultSourceId: source.id, shared: true });
+  // It runs on a private home kept across hosts in the receipt directory: the login only, no user instructions.
+  const auth = new NativeAuthentication({ directory: config.directory, sources: [source], defaultSourceId: source.id, shared: true, privateHome: true });
   let releaseFailures = 0;
   const host = new CodexPrimedSessions({ model: config.model, effort: config.effort, hedgeAfterMs: config.hedgeAfterMs, cwd, baseInstructions: PRIMED_DECISION_CONTEXT,
     maxConcurrent: config.maxConcurrent, timeoutMs: config.callTimeoutMs, clientName: "foundry-decisions", onEvent: config.onEvent,

@@ -6,7 +6,7 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VCR, vcrMode, httpCassettes, webSocketCassettes } from "../src/vcr";
+import { VCR, vcrMode, httpCassettes, webSocketCassettes, type ProcessTranscript } from "../src/vcr";
 import { buildNativeTextProvider, subscriptionStatus } from "../src/providers/native-text-provider";
 import { createPrimedDecisionHost, primedRequest } from "../src/providers/primed-decisions";
 import { buildSubscriptionDecisions } from "../src/providers/subscription-decisions";
@@ -15,7 +15,7 @@ import { ClaudeCodeSessionAdapter, CodexSessionAdapter, InMemoryExternalSessionS
 import { SessionBackedProvider } from "../src/providers/session-backed";
 import { KingdomRuntimeConnection } from "../src/providers/kingdom-runtime-connection";
 import { ProcessCassettes } from "../src/vcr";
-import { ANSWER, DECIDED, LIVE, answerPrompt, decisionMessages, claudeVcr, codexVcr, kingdomVcr, recordedAppServerTransport, recordedClaudeTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
+import { ANSWER, DECIDED, FIXTURES_DIR, LIVE, answerPrompt, decisionMessages, claudeVcr, codexVcr, kingdomVcr, recordedAppServerTransport, recordedClaudeTransport, sameAsLive, settleRecordings } from "./helpers/vcr";
 
 const recording = vcrMode() === "record";
 const roots: string[] = [];
@@ -106,6 +106,16 @@ test("codex primed decisions: one warm app-server on the ChatGPT login; a role p
   expect(out).toEqual({ contents: [true, true], launches: 1, persistedThreads: 1, forks: 2, primerCarriedContext: true, cyclesSentOnlyTheMessage: true,
     receipts: [{ valid: true, settled: true, prime: "warm" }, { valid: true, settled: true, prime: "warm" }] });
 }, LIVE_TIMEOUT);
+
+// Replay-only: a live run checks its fresh recordings in the replay pass that follows.
+test.skipIf(recording)("codex primed decisions load no instruction source: the private home holds the login only", () => {
+  const sources = (["launch", "role"] as const).flatMap(name => {
+    const frames = (JSON.parse(readFileSync(join(FIXTURES_DIR, "codex", `primed.${name}.json`), "utf8")) as { body: ProcessTranscript }).body.frames;
+    return frames.flatMap(frame => { const result = JSON.parse(frame.data)?.result; return result?.thread ? [result.instructionSources] : []; });
+  });
+  expect(sources.length).toBeGreaterThan(0);
+  expect(sources.every(list => Array.isArray(list) && list.length === 0)).toBe(true);
+});
 
 test("claude worker session: two turns on one persistent stream-json process behind the subscription status gate", async () => {
   const vcr = claudeVcr();
