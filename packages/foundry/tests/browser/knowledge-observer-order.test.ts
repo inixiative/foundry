@@ -68,6 +68,27 @@ async function fixture(name: string) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(8_000);
   page.on("pageerror", (e: Error) => errors.push(e.message));
+  // Per thread: history fetches issued whose body the caller has not finished applying.
+  await page.addInitScript(() => {
+    const pending: Record<string, number> = {};
+    (window as unknown as { __historyPending: Record<string, number> }).__historyPending = pending;
+    const fetchOriginal = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      const thread = url.pathname.match(/^\/api\/threads\/([^/]+)\/history$/)?.[1]
+        ?? (url.pathname === "/api/messages" ? url.searchParams.get("threadId") : null);
+      if (!thread) return fetchOriginal(input, init);
+      pending[thread] = (pending[thread] ?? 0) + 1;
+      // A macrotask runs after the caller's await continuation has applied the body.
+      const done = () => { setTimeout(() => { pending[thread] -= 1; }, 0); };
+      try {
+        const response = await fetchOriginal(input, init);
+        const json = response.json.bind(response);
+        response.json = () => json().finally(done);
+        return response;
+      } catch (error) { done(); throw error; }
+    };
+  });
   const report: any = { passed: false, output, errors, checks: [] as unknown[], responses: [] as unknown[],
     scope: "Actual viewer/store/browser with controlled ordered HTTP responses; no learning runtime or native work." };
   page.on("request", (request: any) => {
@@ -92,6 +113,18 @@ async function fixture(name: string) {
     select: (threadId: string) => page.evaluate((id: string) => { location.hash = `#thread=${id}`; }, threadId),
     messages: (threadId: string) => page.evaluate((id: string) => JSON.parse(localStorage.getItem(`foundry:msgs:${id}`) ?? "[]"), threadId),
     active: () => page.evaluate(async () => { const s = await import(`${location.origin}/ui/store.js`); return { active: s.activeThreadId.value, contents: s.messages.value.map((m: any) => m.content) }; }),
+    historyIdle: (threadId: string) => page.waitForFunction((id: string) =>
+      !(window as unknown as { __historyPending?: Record<string, number> }).__historyPending?.[id], threadId),
+    // Rows a prior session left in browser storage, present before the next document's viewer boots,
+    // so no write from the live tab can race them.
+    seedBeforeBoot: (rows: Record<string, unknown[]>) => page.addInitScript((seed: Record<string, unknown[]>) => {
+      if (sessionStorage.getItem("fixture:seeded")) return;
+      sessionStorage.setItem("fixture:seeded", "1");
+      for (const [id, add] of Object.entries(seed)) {
+        const key = `foundry:msgs:${id}`;
+        localStorage.setItem(key, JSON.stringify([...JSON.parse(localStorage.getItem(key) ?? "[]"), ...add]));
+      }
+    }, rows),
     settle: () => page.evaluate(() => new Promise<void>(r => setTimeout(() => requestAnimationFrame(() => r()), 50))),
   };
   // Every held response is released before the server stops, so a failed
@@ -258,11 +291,11 @@ test("a late history response after a thread switch writes only into its own thr
     await f.page.goto(`${f.origin}/#thread=a`);
     await f.page.getByText("A_REPLY_1").waitFor();
     // Browser-only evidence in both threads: legacy rows without identity and a completed-unsaved result.
-    await f.page.evaluate(() => {
-      const add = (id: string, rows: unknown[]) => { const cur = JSON.parse(localStorage.getItem(`foundry:msgs:${id}`) ?? "[]"); localStorage.setItem(`foundry:msgs:${id}`, JSON.stringify([...cur, ...rows])); };
-      add("a", [{ actor: "user", content: "A legacy browser-only", timestamp: 3 },
-        { actor: "agent", turnId: "a-unsaved", content: "A_COMPLETED_UNSAVED", timestamp: 4, storage: "browser-only", meta: { executionOutcome: "completed", persistence: "failed" } }]);
-      add("b", [{ actor: "user", content: "B legacy browser-only", timestamp: 3 }]);
+    // Seeded under the next document: the live tab still writes its own copy of this key.
+    await f.store.seedBeforeBoot({
+      a: [{ actor: "user", content: "A legacy browser-only", timestamp: 3 },
+        { actor: "agent", turnId: "a-unsaved", content: "A_COMPLETED_UNSAVED", timestamp: 4, storage: "browser-only", meta: { executionOutcome: "completed", persistence: "failed" } }],
+      b: [{ actor: "user", content: "B legacy browser-only", timestamp: 3 }],
     });
     await f.page.reload();
     await f.page.getByText("A_COMPLETED_UNSAVED").waitFor();
@@ -279,7 +312,7 @@ test("a late history response after a thread switch writes only into its own thr
     await f.store.select("b");
     await f.page.getByText("B_REPLY_1").waitFor();
     lateA.release();
-    await f.store.settle();
+    await f.store.historyIdle("a");
     const activeB = await f.store.active();
     expect(activeB.active).toBe("b");
     expect(activeB.contents).toEqual(["B first", "B_REPLY_1", "B legacy browser-only"]);
@@ -302,7 +335,7 @@ test("a late history response after a thread switch writes only into its own thr
     await f.page.evaluate(async () => { const s = await import(`${location.origin}/ui/store.js`); s.requestReconcile("a", 0); });
     await f.page.getByText("A_REPLY_3").waitFor();
     olderA.release();
-    await f.store.settle();
+    await f.store.historyIdle("a");
     expect((await f.store.active()).contents).toContain("A_REPLY_3");
     expect(await f.page.locator(".chat-agent:not(.chat-thinking)").count()).toBe(4);
     f.report.checks.push({ case: "older-history-response-dropped", passed: true });
