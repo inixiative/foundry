@@ -15,8 +15,8 @@
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
-    "pretest:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5442/foundry_test bunx prisma db push --skip-generate",
-    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5442/foundry_test bun test tests/db/ --max-concurrency=1",
+    "pretest:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5932/foundry_test bunx prisma db push --skip-generate",
+    "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5932/foundry_test bun test tests/db/ --max-concurrency=1",
     "test:all": "bun run test && bun run test:db",
     "typecheck": "bun run --bun tsc --noEmit",
     "start": "bun run src/start.ts",

@@ -83,10 +83,10 @@ export interface ViewerConfig {
  * Right: detail drawer (span detail, layer detail, corrections)
  *
  * Run with: bun run src/viewer/server.ts
- * Open: http://localhost:4400
+ * Open: http://localhost:4500
  */
 export function createViewer(config: ViewerConfig) {
-  const { harness, eventStream, interventions, port = 4400 } = config;
+  const { harness, eventStream, interventions, port = 4500 } = config;
   const runtimeJobs = config.runtimeJobs ?? new RuntimeJobRegistry();
   const app = new Hono();
   const kingdomRuntimes = new KingdomRuntimeConnections(
@@ -436,7 +436,7 @@ export async function startViewer(config: ViewerConfig) {
     config = {
       ...config,
       tunnel: {
-        port: config.port ?? 4400,
+        port: config.port ?? 4500,
         provider: saved.tunnel.provider,
         subdomain: saved.tunnel.subdomain,
         configDir: config.configDir,

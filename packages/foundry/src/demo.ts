@@ -3,7 +3,7 @@
  *
  * Wires up layers, agents, harness, and viewer.
  * Sends messages through the system so you can watch
- * traces flow in the viewer at http://localhost:4400
+ * traces flow in the viewer at http://localhost:4500
  */
 
 import { FileMemory, inlineSource } from './adapters';
@@ -263,7 +263,7 @@ const interventions = new InterventionLog();
 
 // -- 11. Start viewer --
 
-startViewer({ harness, eventStream, interventions, port: 4400 });
+startViewer({ harness, eventStream, interventions, port: 4500 });
 
 // -- 12. Send demo messages --
 
@@ -293,7 +293,7 @@ for (const [i, msg] of demoMessages.entries()) {
 }
 
 console.log('\n--- Demo complete ---');
-console.log('Viewer running at http://localhost:4400');
+console.log('Viewer running at http://localhost:4500');
 console.log('Try clicking traces to drill in, or override a classification.\n');
 
 // Keep the process alive for the viewer

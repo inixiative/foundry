@@ -14,7 +14,7 @@ import { resolveSubscriptionPolicy } from './providers/subscription-policy';
  * context layers, and the viewer dashboard.
  *
  * Run with: bun run start
- * Open:     http://localhost:${VIEWER_PORT || 4400}
+ * Open:     http://localhost:${VIEWER_PORT || 4500}
  */
 
 import { ContextStack, type SignalBus, ToolRegistry } from '@inixiative/foundry-core';
@@ -706,7 +706,7 @@ if (config.projects) {
   console.log(`Projects: ${[...projectRegistry.all.keys()].join(', ') || '(none)'}`);
 }
 
-const port = parseInt(process.env.VIEWER_PORT || '4400');
+const port = parseInt(process.env.VIEWER_PORT || '4500');
 
 const viewer = await startViewer({
   harness,

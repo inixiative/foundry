@@ -1,5 +1,5 @@
 // Live pre-message latency on the machine's own logins, through a Foundry
-// instance on a spare VIEWER_PORT (never the daemon's 4400).
+// instance on a spare VIEWER_PORT (never the daemon's 4500).
 //
 //   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--experts 6] [--gap-ms 30000]
 //
@@ -35,7 +35,7 @@ const port = Number(arg('port', '4471')),
   runs = Number(arg('runs', '10')),
   expertCount = Number(arg('experts', '6')),
   gapMs = Number(arg('gap-ms', '30000'));
-if (port === 4400) throw Error('4400 belongs to the daemon; choose a spare port');
+if (port === 4500) throw Error('4500 belongs to the daemon; choose a spare port');
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing', 'performance', 'docs'].slice(
   0,
   expertCount,

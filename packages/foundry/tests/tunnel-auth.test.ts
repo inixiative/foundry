@@ -113,7 +113,7 @@ test('stopping a tunnel preserves the HTTP authentication boundary', async () =>
     interventions: new InterventionLog(),
     configDir: dir,
     localStore: null,
-    tunnel: { port: 4400, token, configDir: dir },
+    tunnel: { port: 4500, token, configDir: dir },
   });
   const response = await viewer.app.request('http://localhost/api/tunnel/stop', {
     method: 'POST',
@@ -136,7 +136,7 @@ test('trusted HTTPS tunnel origin works behind loopback proxy and does not trust
   const app = new Hono();
   app.use('*', tunnelAuth(token, 'https://public-viewer.test'));
   app.get('/api/threads', (c) => c.json({ ok: true }));
-  const login = await app.request('http://127.0.0.1:4400/auth', {
+  const login = await app.request('http://127.0.0.1:4500/auth', {
     method: 'POST',
     headers: {
       origin: 'https://public-viewer.test',
@@ -149,7 +149,7 @@ test('trusted HTTPS tunnel origin works behind loopback proxy and does not trust
   const cookie = login.headers.get('set-cookie')!.split(';')[0];
   expect(
     authenticatedRequest(
-      new Request('http://127.0.0.1:4400/ws', {
+      new Request('http://127.0.0.1:4500/ws', {
         headers: { cookie, origin: 'https://public-viewer.test' },
       }),
       token,
@@ -158,7 +158,7 @@ test('trusted HTTPS tunnel origin works behind loopback proxy and does not trust
   ).toBe(true);
   expect(
     (
-      await app.request('http://127.0.0.1:4400/api/threads', {
+      await app.request('http://127.0.0.1:4500/api/threads', {
         headers: {
           cookie,
           origin: 'https://evil.test',
