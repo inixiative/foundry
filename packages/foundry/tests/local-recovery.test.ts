@@ -11,11 +11,23 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
-import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { LocalSessionStore, type StoredMessage } from '../src/persistence/local-session-store';
+import type { PersistedTraceRecord } from '../src/persistence/trace-record';
 import { ConfigStore } from '../src/viewer/config';
+import type { threadToJSON } from '../src/viewer/http-helpers';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
 import { createViewer } from '../src/viewer/server';
 import { connectStreams, withStreams } from './helpers/data-stream';
+
+/** A message route response: the fields these tests read. */
+type TurnBody = { traceId: string; trace: unknown; meta: { injection: { userMessage?: string } } };
+/** The full-history route's rows carry the stored trace summary and the injection meta. */
+type HistoryBody = {
+  messages: (StoredMessage & {
+    trace?: unknown;
+    meta: { injection: { userMessage?: string } } & Record<string, unknown>;
+  })[];
+};
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -88,7 +100,7 @@ test('G4: completed HTTP turn and exact artifact survive route/store reconstruct
     body: JSON.stringify({ id: 'turn-persist', threadId: 'main', message: 'Original input' }),
   });
   expect(response.status).toBe(200);
-  const result = await response.json();
+  const result = (await response.json()) as TurnBody;
   first.localStore.close();
   first.thread.dispose();
   const second = make();
@@ -96,8 +108,10 @@ test('G4: completed HTTP turn and exact artifact survive route/store reconstruct
     second.localStore.close();
     second.thread.dispose();
   });
-  const history = await (await second.app.request('/api/messages?threadId=main')).json();
-  expect(history.messages.map((m: { content: string }) => m.content)).toEqual([
+  const history = (await (
+    await second.app.request('/api/messages?threadId=main')
+  ).json()) as HistoryBody;
+  expect(history.messages.map((m) => m.content)).toEqual([
     'Original input',
     'Actual output: Original input',
   ]);
@@ -105,7 +119,7 @@ test('G4: completed HTTP turn and exact artifact survive route/store reconstruct
   expect(history.messages[1].trace).toEqual(result.trace);
   const trace = await second.app.request(`/api/traces/${result.traceId}`);
   expect(trace.status).toBe(200);
-  expect((await trace.json()).messageId).toBe('turn-persist');
+  expect(((await trace.json()) as PersistedTraceRecord).messageId).toBe('turn-persist');
 });
 
 test('G4: retrying an accepted turn ID cannot repeat native execution', async () => {
@@ -140,7 +154,9 @@ test('G4: streamed completion and failures remain visible in durable history', a
     body: JSON.stringify({ id: 'failed-turn', threadId: 'main', message: 'FAIL' }),
   });
   expect(failed.status).toBe(500);
-  const history = await (await runtime.app.request('/api/messages?threadId=main')).json();
+  const history = (await (
+    await runtime.app.request('/api/messages?threadId=main')
+  ).json()) as HistoryBody;
   expect(history.messages).toHaveLength(4);
   expect(history.messages[1].meta.injection.userMessage).toBe('Stream input');
   expect(history.messages[3]).toMatchObject({ kind: 'error', meta: { turnStatus: 'failed' } });
@@ -169,15 +185,17 @@ for (const streaming of [false, true]) {
       second.localStore.close();
       second.thread.dispose();
     });
-    const history = await (await second.app.request('/api/messages?threadId=main')).json();
+    const history = (await (
+      await second.app.request('/api/messages?threadId=main')
+    ).json()) as HistoryBody;
     const failed = history.messages.at(-1);
     expect(failed).toMatchObject({ kind: 'error', traceId: body.traceId, meta: body.meta });
-    const storedTrace = await (await second.app.request(`/api/traces/${body.traceId}`)).json();
+    const storedTrace = (await (
+      await second.app.request(`/api/traces/${body.traceId}`)
+    ).json()) as PersistedTraceRecord & { root: { status: string } };
     expect(storedTrace.messageId).toBe('failure-evidence');
     expect(storedTrace.root.status).toBe('error');
-    expect(
-      storedTrace.spans.find((span: { kind: string }) => span.kind === 'execute'),
-    ).toMatchObject({
+    expect(storedTrace.spans.find((span) => span.kind === 'execute')).toMatchObject({
       status: 'error',
       error: { message: 'Provider failed' },
       annotations: { injection: body.meta.injection },
@@ -230,10 +248,14 @@ test('G4: viewer startup restores a projectless thread, rename and terminal arch
     for (const thread of second.directory.all()) thread.dispose();
     second.localStore!.close();
   });
-  const history = await (await second.app.request('/api/threads')).json();
-  expect(
-    history.threads.find((t: { threadId: string }) => t.threadId === 'restored-orphan').meta,
-  ).toMatchObject({ description: 'Human renamed', tags: ['qa'], status: 'archived' });
+  const history = (await (await second.app.request('/api/threads')).json()) as {
+    threads: ReturnType<typeof threadToJSON>[];
+  };
+  expect(history.threads.find((t) => t.threadId === 'restored-orphan')?.meta).toMatchObject({
+    description: 'Human renamed',
+    tags: ['qa'],
+    status: 'archived',
+  });
   expect(second.directory.get('restored-orphan')?.disposed).toBe(true);
   const rejected = await second.app.request('/api/messages', {
     method: 'POST',

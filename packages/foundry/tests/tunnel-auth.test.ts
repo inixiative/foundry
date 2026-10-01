@@ -34,7 +34,12 @@ const fixture = () => {
 
 test('forwarding headers and URL credentials cannot bypass authentication', async () => {
   const app = fixture();
-  for (const headers of [{ 'x-forwarded-for': '127.0.0.1' }, { 'x-real-ip': '10.1.2.3' }, {}])
+  const forwarded: Record<string, string>[] = [
+    { 'x-forwarded-for': '127.0.0.1' },
+    { 'x-real-ip': '10.1.2.3' },
+    {},
+  ];
+  for (const headers of forwarded)
     expect((await app.request('https://viewer.test/api/threads', { headers })).status).toBe(401);
   expect((await app.request(`https://viewer.test/ws?authorization=${token}`)).status).toBe(401);
   expect(

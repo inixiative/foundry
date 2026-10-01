@@ -59,7 +59,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let exited = false;
-    const child = (this.statusChild = this.statusSpawn
+    const child = this.statusSpawn
       ? this.statusSpawn(this.workerSource.profileDirectory)
       : Bun.spawn(['claude', 'auth', 'status', '--json'], {
           env: withProfile(
@@ -70,7 +70,8 @@ export class SubscriptionAuthentication extends NativeAuthentication {
           stdin: 'ignore',
           stdout: 'pipe',
           stderr: 'pipe',
-        }));
+        });
+    this.statusChild = child;
     const exit = child.exited.then(
       () => {
         exited = true;

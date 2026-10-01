@@ -120,24 +120,39 @@ async function run(
       fixture: Boolean(fixture),
     };
     writeFileSync(`${reportDir}/report.json`, JSON.stringify(report, null, 2));
-    if (report.cleanupFailures.length)
-      throw new Error(`cleanup failures: ${report.cleanupFailures.join('; ')}`);
   }
+  if (report.cleanupFailures.length)
+    throw new Error(`cleanup failures: ${report.cleanupFailures.join('; ')}`);
   return report;
 }
 
 test('viewer page loads the edited drawer and runs selectionSummary in the browser without errors', async () => {
   const report = await run('memory-selection-browser', undefined, async (page, server) => {
     await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
-    await page.waitForFunction(async () => (await import('/ui/store.js')).inflight.value === 0);
-    const result = await page.evaluate(async (snapshot: any) => {
-      await import('/ui/detail-drawer.js');
-      const { selectionSummary } = await import('/ui/inspector-data.js');
-      return {
-        summary: selectionSummary(snapshot),
-        nullFor: selectionSummary({ id: 'system', included: true, content: 'x' }),
-      };
-    }, layer);
+    // Page-served module URLs travel as arguments: they resolve in the browser, not in this checkout.
+    await page.waitForFunction(
+      async (store: string) => (await import(store)).inflight.value === 0,
+      '/ui/store.js',
+    );
+    const result = await page.evaluate(
+      async ({
+        snapshot,
+        drawer,
+        inspector,
+      }: {
+        snapshot: unknown;
+        drawer: string;
+        inspector: string;
+      }) => {
+        await import(drawer);
+        const { selectionSummary } = await import(inspector);
+        return {
+          summary: selectionSummary(snapshot),
+          nullFor: selectionSummary({ id: 'system', included: true, content: 'x' }),
+        };
+      },
+      { snapshot: layer, drawer: '/ui/detail-drawer.js', inspector: '/ui/inspector-data.js' },
+    );
     expect(result.nullFor).toBeNull();
     expect(result.summary.selected.map((s: any) => s.id)).toEqual(['conv', 'old']);
     expect(result.summary.selected[1].detail).toContain('excerpt chars 2191-2491');

@@ -14,8 +14,12 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import type { SessionAdapter } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { starterConfig } from '../src/viewer/config';
-// @ts-expect-error Browser helper intentionally remains JavaScript.
-import { knowledgeInspectionSummary } from '../src/viewer/ui/inspector-data.js';
+import { knowledgeInspectionSummary as inspectKnowledge } from '../src/viewer/ui/inspector-data.js';
+
+/** The recorded lifecycle strings the knowledge inspector shows per domain. */
+type KnowledgeInspection = { domains: Array<{ lifecycle: Record<string, string> }> };
+const knowledgeInspectionSummary = (snapshot: object): KnowledgeInspection =>
+  inspectKnowledge(snapshot);
 
 // Production runtime/provider/SQLite; the native transport alone is controlled.
 const closes: Array<() => void> = [];

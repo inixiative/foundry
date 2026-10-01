@@ -192,11 +192,11 @@ export function buildSubscriptionDecisions(
       }, backoffUntil - Date.now());
       return;
     }
-    for (
-      let pending: Pending | undefined;
-      !closed && active < maxConcurrent && (pending = next());
-    )
+    while (!closed && active < maxConcurrent) {
+      const pending = next();
+      if (!pending) return;
       void start(pending);
+    }
   };
   const start = async (pending: Pending) => {
     active++;

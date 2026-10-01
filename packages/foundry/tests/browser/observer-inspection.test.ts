@@ -481,7 +481,7 @@ test('Turn Context shows historical pending learning that stays fixed after comm
     // Post-review sits beside the frozen preparation and shows current understanding, labeled as such.
     const historical = await panel.evaluate((el: Element) => {
       const c = el.cloneNode(true) as Element;
-      c.querySelectorAll('.selected-review-history').forEach((n) => n.remove());
+      for (const n of c.querySelectorAll('.selected-review-history')) n.remove();
       return c.textContent ?? '';
     });
     expect(historical).not.toContain(fact);

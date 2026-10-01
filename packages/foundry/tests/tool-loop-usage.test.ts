@@ -10,8 +10,10 @@ describe('tool-loop token usage', () => {
         id: 'script',
         kind: 'script',
         capability: 'exec:process',
-        async evaluate() {
-          return { ok: true, summary: 'done', data: { result: 1, logs: [], durationMs: 0 } };
+        async evaluate<T>() {
+          // The caller picks T; this stub's fixed result stands in for it.
+          const result = 1 as unknown as T;
+          return { ok: true, summary: 'done', data: { result, logs: [], durationMs: 0 } };
         },
       };
       tools.register(tool, 'Evaluate script');

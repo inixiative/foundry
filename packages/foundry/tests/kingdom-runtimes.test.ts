@@ -95,7 +95,7 @@ test('each paired Kingdom connects and works on its own: one refusing never stop
       owner: object;
       allowed: boolean;
       jobs: string[];
-      reports: { jobId: string }[];
+      reports: { jobId: string; status?: string }[];
     }
   >();
   for (const [index, [url, owner, ownerRef]] of (

@@ -40,7 +40,7 @@ const variants = (path: string | undefined) => {
   return [...out].filter((value) => value.length > 1).sort((a, b) => b.length - a.length);
 };
 
-const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The real account home, even when a test points HOME at a temporary profile. */
 export const accountHome = () => userInfo().homedir;
@@ -50,15 +50,18 @@ function pathRules(context: ScrubContext): [RegExp, string][] {
   const cached = ruleCache.get(context.cwd ?? '');
   if (cached) return cached;
   const rules: [RegExp, string][] = [];
-  for (const cwd of variants(context.cwd)) rules.push([new RegExp(escape(cwd), 'g'), '{{cwd}}']);
-  for (const temp of variants(tmpdir())) rules.push([new RegExp(escape(temp), 'g'), '{{tmp}}']);
-  for (const home of variants(accountHome())) rules.push([new RegExp(escape(home), 'g'), '~']);
+  for (const cwd of variants(context.cwd))
+    rules.push([new RegExp(escapeRegExp(cwd), 'g'), '{{cwd}}']);
+  for (const temp of variants(tmpdir()))
+    rules.push([new RegExp(escapeRegExp(temp), 'g'), '{{tmp}}']);
+  for (const home of variants(accountHome()))
+    rules.push([new RegExp(escapeRegExp(home), 'g'), '~']);
   const user = userInfo().username;
-  if (user.length > 2) rules.push([new RegExp(`\\b${escape(user)}\\b`, 'gi'), 'user']);
+  if (user.length > 2) rules.push([new RegExp(`\\b${escapeRegExp(user)}\\b`, 'gi'), 'user']);
   // The machine name, bare or qualified (MacBookPro, MacBookPro.lan, MacBookPro.local).
   const host = hostname().split('.')[0]!;
   if (host.length > 2)
-    rules.push([new RegExp(`\\b${escape(host)}(\\.[A-Za-z0-9-]+)*\\b`, 'gi'), 'host']);
+    rules.push([new RegExp(`\\b${escapeRegExp(host)}(\\.[A-Za-z0-9-]+)*\\b`, 'gi'), 'host']);
   ruleCache.set(context.cwd ?? '', rules);
   return rules;
 }
@@ -175,8 +178,9 @@ export function findLeaks(text: string): string[] {
             /* Not JSON from here. */
           }
         }
-    } else if (Array.isArray(node)) node.forEach((item) => walk(item, key, hidden));
-    else if (node && typeof node === 'object')
+    } else if (Array.isArray(node)) {
+      for (const item of node) walk(item, key, hidden);
+    } else if (node && typeof node === 'object')
       for (const [childKey, child] of Object.entries(node)) walk(child, childKey, hidden);
   };
   try {

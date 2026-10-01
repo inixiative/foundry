@@ -14,8 +14,18 @@ import { Hono } from 'hono';
 import { ActionHandler } from '../src/viewer/actions';
 import { AIAssist } from '../src/viewer/ai-assist';
 import { ConfigStore, createProject, defaultConfig } from '../src/viewer/config';
-import { FoundrySelfChatStore, type SelfChatFocus } from '../src/viewer/foundry-self-chat';
+import {
+  FoundrySelfChatStore,
+  type SelfChatFocus,
+  type SelfChatMessage,
+} from '../src/viewer/foundry-self-chat';
 import { registerControlRoutes } from '../src/viewer/routes/control';
+
+type FileListing = { files: string[]; dirs: string[] };
+type FileContent = { content: string; size: number; path: string };
+type ErrorBody = { error: string };
+type OkBody = { ok: boolean };
+type ChatHistory = { messages: SelfChatMessage[] };
 
 // ---------------------------------------------------------------------------
 // Stubs
@@ -374,7 +384,7 @@ describe('control routes', () => {
       new Request(`http://test/api/browse?path=${encodeURIComponent(projectDir)}&files=1`),
     );
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as FileListing;
     expect(data.files).toContain('a.md');
     expect(data.files).toContain('b.md');
     expect(data.dirs).toContain('sub');
@@ -385,7 +395,7 @@ describe('control routes', () => {
     const res = await app.fetch(
       new Request(`http://test/api/browse?path=${encodeURIComponent(projectDir)}`),
     );
-    const data = await res.json();
+    const data = (await res.json()) as FileListing;
     expect(data.files).toEqual([]);
   });
 
@@ -398,7 +408,7 @@ describe('control routes', () => {
       new Request(`http://test/api/files?path=${encodeURIComponent(target)}`),
     );
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as FileContent;
     expect(data.content).toBe('hello\nworld');
     expect(data.size).toBeGreaterThan(0);
     expect(data.path).toBe(resolve(target));
@@ -413,7 +423,7 @@ describe('control routes', () => {
         new Request(`http://test/api/files?path=${encodeURIComponent(target)}`),
       );
       expect(res.status).toBe(403);
-      const data = await res.json();
+      const data = (await res.json()) as ErrorBody;
       expect(data.error).toContain('outside allowed roots');
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -435,13 +445,13 @@ describe('control routes', () => {
       }),
     );
     expect(writeRes.status).toBe(200);
-    const writeData = await writeRes.json();
+    const writeData = (await writeRes.json()) as OkBody;
     expect(writeData.ok).toBe(true);
 
     const readRes = await app.fetch(
       new Request(`http://test/api/files?path=${encodeURIComponent(target)}`),
     );
-    const readData = await readRes.json();
+    const readData = (await readRes.json()) as FileContent;
     expect(readData.content).toBe('written content');
   });
 
@@ -480,7 +490,7 @@ describe('control routes', () => {
   test('GET /api/self-chat returns empty initially', async () => {
     const res = await app.fetch(new Request('http://test/api/self-chat'));
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as ChatHistory;
     expect(data.messages).toEqual([]);
   });
 
@@ -493,7 +503,7 @@ describe('control routes', () => {
       }),
     );
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as ChatHistory;
     expect(data.messages.length).toBe(2);
     expect(data.messages[0].role).toBe('user');
     expect(data.messages[0].content).toBe('hello');
@@ -544,11 +554,11 @@ describe('control routes', () => {
       new Request('http://test/api/self-chat', { method: 'DELETE' }),
     );
     expect(clearRes.status).toBe(200);
-    const data = await clearRes.json();
+    const data = (await clearRes.json()) as ChatHistory;
     expect(data.messages).toEqual([]);
 
     const afterRes = await app.fetch(new Request('http://test/api/self-chat'));
-    expect((await afterRes.json()).messages).toEqual([]);
+    expect(((await afterRes.json()) as ChatHistory).messages).toEqual([]);
   });
 
   test('POST /api/self-chat with assistTools routes through tool-use loop', async () => {
@@ -610,7 +620,7 @@ describe('control routes', () => {
       }),
     );
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as ChatHistory;
     expect(data.messages.length).toBe(2);
     expect(data.messages[1].content).toBe('done');
     expect(dispatched).toEqual(['pwd']);

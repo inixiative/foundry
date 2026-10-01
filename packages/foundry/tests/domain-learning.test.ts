@@ -59,7 +59,6 @@ function setup(opts: SetupOpts = {}) {
       model: 'mock',
       prompt: 'Execute',
       temperature: 0,
-      maxTokens: 256,
       visibleLayers: [],
       peers: [],
       maxDepth: 1,
@@ -127,7 +126,7 @@ function setup(opts: SetupOpts = {}) {
 }
 
 const planOf = (result: { meta?: Record<string, unknown> }) =>
-  (result.meta?.injection as { plan?: InjectionPlan } | undefined)?.plan!;
+  (result.meta as { injection: { plan: InjectionPlan } }).injection.plan;
 
 describe('per-domain thread knowledge and causal learning', () => {
   test('fixed-context comparison retains advice but admits no learning reviews', async () => {
@@ -453,7 +452,7 @@ describe('per-domain thread knowledge and causal learning', () => {
       /thread/,
     );
     const tampered = structuredClone(snapshot);
-    tampered.domains.security.content = 'TAMPERED';
+    (tampered.domains.security as { content: string }).content = 'TAMPERED';
     expect(() => owned2.restoreKnowledge(tampered)).toThrow(/hash/);
     const badRevision = structuredClone(snapshot);
     (badRevision.domains.security as { revision: number }).revision = -1;

@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test';
-// @ts-expect-error untyped viewer module (plain JS); the package tsconfig resolves it
 import {
   guardOutcomes,
   learningEntries,

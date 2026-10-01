@@ -30,7 +30,7 @@ test('older page rows with tied timestamps sort before the cached newer rows by 
     row(2, 'agent', 4, T),
   ];
   const merged = mergeMessageHistory(cached, older);
-  expect(merged.map((m) => m.id)).toEqual([
+  expect(merged.map((m: { id: string; turnId?: string }) => m.id)).toEqual([
     'm-1-user',
     'm-1-agent',
     'm-2-user',
@@ -48,7 +48,9 @@ test('a repeated older page changes nothing and appends nothing', () => {
   const older = [row(1, 'user', 1, T), row(1, 'agent', 2, T)];
   const once = mergeMessageHistory(cached, older);
   const twice = mergeMessageHistory(once, older);
-  expect(twice.map((m) => m.id)).toEqual(once.map((m) => m.id));
+  expect(twice.map((m: { id: string; turnId?: string }) => m.id)).toEqual(
+    once.map((m: { id: string; turnId?: string }) => m.id),
+  );
   expect(twice).toHaveLength(4);
 });
 
@@ -68,7 +70,7 @@ test('rows without seq keep timestamp ordering; a browser-only row without seq s
     meta: { executionOutcome: 'completed', persistence: 'failed' },
   };
   const merged = mergeMessageHistory([browserOnly], server);
-  expect(merged.map((m) => m.turnId)).toEqual([
+  expect(merged.map((m: { id: string; turnId?: string }) => m.turnId)).toEqual([
     'turn-1',
     'turn-1',
     'turn-live',
@@ -82,5 +84,8 @@ test('rows without seq keep timestamp ordering; a browser-only row without seq s
       { ...row(8, 'user', 0, T + 8000), seq: undefined },
     ],
   );
-  expect(legacy.map((m) => m.turnId)).toEqual(['turn-8', 'turn-9']);
+  expect(legacy.map((m: { id: string; turnId?: string }) => m.turnId)).toEqual([
+    'turn-8',
+    'turn-9',
+  ]);
 });

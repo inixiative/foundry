@@ -162,7 +162,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   expect(domainLib.threadKnowledge.revision).toBe(1);
   expect(domainLib.threadKnowledge.content).toContain('OWN_V1');
   const turnId = 'turn-1';
-  const result = await turn(turnId, 'Add preferred names');
+  await turn(turnId, 'Add preferred names');
   expect(toolEmitted).toBe(2);
   // The manager's one controlled auxiliary provider serves routing, advice and guard; each recorded request must equal the matching actual call of turn 2.
   const auxiliaryCall = (marker: string) => {
@@ -320,7 +320,6 @@ test('older journal rows without captures read back as not recorded; nothing is 
   closes.push(() => reopened.close());
   const [row] = reopened.learningHistory('legacy', 10);
   expect((row!.signal.content as any).request).toBeUndefined();
-  // @ts-expect-error The browser's plain-JS inspector has no declaration file.
   const { learningEntries } = await import('../src/viewer/ui/inspector-data.js');
   expect(learningEntries([row])[0]!.request).toEqual({ state: 'not-recorded' });
 });

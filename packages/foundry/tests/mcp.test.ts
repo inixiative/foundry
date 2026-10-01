@@ -64,8 +64,6 @@ describe('Foundry MCP Server', () => {
   });
 
   it('foundry_query finds matching layers by keyword', async () => {
-    const server = createFoundryMcpServer({ thread });
-
     // Access the tool handler directly through the server's internal tool registry
     // We test the underlying logic via the findMatchingLayers helper
     const stack = thread.stack;
@@ -90,10 +88,14 @@ describe('Foundry MCP Server', () => {
   it('signal bus receives signals emitted via MCP tool', () => {
     const signals = thread.signals;
     const received: any[] = [];
-    signals.on('security_concern', (s) => received.push(s));
+    signals.on('security_concern', (s) => {
+      received.push(s);
+    });
 
     // Simulate what the MCP signal tool does
     signals.emit({
+      id: 'sig-mcp',
+      timestamp: Date.now(),
       kind: 'security_concern',
       source: 'session-mcp',
       content: 'Found hardcoded API key in config.ts',

@@ -406,8 +406,12 @@ describe('Herald', () => {
     herald = new Herald(session, { canInject: false });
 
     const signals: any[] = [];
-    t1.signals.onAny((s) => signals.push(s));
-    t2.signals.onAny((s) => signals.push(s));
+    t1.signals.onAny((s) => {
+      signals.push(s);
+    });
+    t2.signals.onAny((s) => {
+      signals.push(s);
+    });
 
     // Trigger patterns that would normally generate recommendations + injections
     await t1.dispatch('worker', 'task');

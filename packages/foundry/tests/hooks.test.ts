@@ -5,9 +5,8 @@ import {
   type HookPoint,
   HookRegistry,
   type HookResult,
-  type TokenTracker,
 } from '@inixiative/foundry-core';
-import { budgetGuardHook, planModeHook } from '../src/agents/builtin-hooks';
+import { budgetGuardHook, type HookTokenTracker, planModeHook } from '../src/agents/builtin-hooks';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,20 +21,6 @@ function makeContext(overrides?: Partial<HookContext>): HookContext {
     meta: {},
     timestamp: Date.now(),
     ...overrides,
-  };
-}
-
-function makeHandler(
-  id: string,
-  points: HookPoint[],
-  result: HookResult,
-  opts?: { priority?: number },
-): HookHandler {
-  return {
-    id,
-    points,
-    priority: opts?.priority,
-    handler: async (_ctx: HookContext) => result,
   };
 }
 
@@ -624,7 +609,7 @@ describe('HookRegistry', () => {
   // 11. budgetGuardHook
   describe('budgetGuardHook', () => {
     test('aborts when budget is exceeded', async () => {
-      const tracker: TokenTracker = {
+      const tracker: HookTokenTracker = {
         used: 10000,
         limit: 10000,
       };
@@ -641,7 +626,7 @@ describe('HookRegistry', () => {
     });
 
     test('aborts when usage exceeds limit', async () => {
-      const tracker: TokenTracker = {
+      const tracker: HookTokenTracker = {
         used: 12000,
         limit: 10000,
       };
@@ -655,7 +640,7 @@ describe('HookRegistry', () => {
     });
 
     test('continues with warning annotation when at warning threshold', async () => {
-      const tracker: TokenTracker = {
+      const tracker: HookTokenTracker = {
         used: 8500,
         limit: 10000,
         warningThreshold: 0.8,
@@ -672,7 +657,7 @@ describe('HookRegistry', () => {
     });
 
     test('continues without annotation when well under budget', async () => {
-      const tracker: TokenTracker = {
+      const tracker: HookTokenTracker = {
         used: 1000,
         limit: 10000,
       };
@@ -688,7 +673,7 @@ describe('HookRegistry', () => {
     });
 
     test('uses default warning threshold of 0.8 when not specified', async () => {
-      const tracker: TokenTracker = {
+      const tracker: HookTokenTracker = {
         used: 7999,
         limit: 10000,
         // no warningThreshold => defaults to 0.8
@@ -704,7 +689,7 @@ describe('HookRegistry', () => {
     });
 
     test('hook has priority 10', () => {
-      const tracker: TokenTracker = { used: 0, limit: 1000 };
+      const tracker: HookTokenTracker = { used: 0, limit: 1000 };
       const hook = budgetGuardHook(tracker);
       expect(hook.priority).toBe(10);
     });

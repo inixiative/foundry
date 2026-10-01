@@ -6,6 +6,7 @@ const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
 
+type EvaluatingPage = { evaluate<T>(fn: () => T | Promise<T>): Promise<T> };
 type Row = {
   actor: string;
   turnId?: string;
@@ -56,11 +57,11 @@ test("a second tab on the thread keeps the first tab's unsaved completion and pi
         const s = await import(`${location.origin}/ui/store.js`);
         return s.historyPaging.value.main?.loading === false;
       });
-    const memory = (page: any) =>
+    const memory = (page: EvaluatingPage) =>
       page.evaluate(
         async () => (await import(`${location.origin}/ui/store.js`)).messages.value as Row[],
       );
-    const stored = (page: any) =>
+    const stored = (page: EvaluatingPage) =>
       page.evaluate(() => JSON.parse(localStorage.getItem('foundry:msgs:main') ?? '[]') as Row[]);
     const send = async (text: string) => {
       const before = (await stored(a)).filter(

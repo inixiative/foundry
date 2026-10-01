@@ -1,6 +1,9 @@
 import fixtures from '../fixtures/typesafe-shadow.json';
 import { ActionQueue, CapabilityGate } from '../packages/core/src';
-import { TypeSafeDecisionClient } from '../packages/foundry/src/providers/typesafe';
+import {
+  type TypeSafeContent,
+  TypeSafeDecisionClient,
+} from '../packages/foundry/src/providers/typesafe';
 import { TypeSafeShadowRunner } from '../packages/foundry/src/providers/typesafe-shadow';
 
 const args = process.argv.slice(2);
@@ -47,7 +50,8 @@ for (const fixture of fixtures) {
   });
   try {
     const runner = new TypeSafeShadowRunner({ client, catalog: () => fixture.catalog });
-    const result = await runner.run(fixture.state, {
+    // JSON import typing widens absent keys to `?: undefined`; the fixture states are plain content.
+    const result = await runner.run(fixture.state as TypeSafeContent, {
       agentId: 'jev-shadow-experiment',
       threadId: `fixture:${fixture.id}`,
     });

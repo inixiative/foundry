@@ -10,10 +10,33 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
-import { LocalSessionStore } from '../src/persistence/local-session-store';
+import {
+  LocalSessionStore,
+  type MessageSummary,
+  type StoredMessage,
+} from '../src/persistence/local-session-store';
 import { ConfigStore } from '../src/viewer/config';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
 import { withStreams } from './helpers/data-stream';
+
+/** The history index route's page. */
+type HistoryPage = {
+  threadId: string;
+  source: string;
+  messages: MessageSummary[];
+  hasMore: boolean;
+  oldestReached: boolean;
+  nextCursor: string | null;
+};
+/** The turn detail route's body: the fields these tests read. */
+type TurnDetailBody = {
+  turnId: string;
+  trace: { id: string };
+  injection: { text: string };
+  nativeHistory: unknown[];
+  artifacts: { kind: string; href?: string }[];
+};
+type ErrorBody = { error: string };
 
 // G6 history index: a bounded summary index with stable cursors that reaches the
 // oldest record, plus lazily fetched owned turn detail. `/api/messages` is unchanged.
@@ -288,7 +311,7 @@ test('history route pages with opaque cursors and refuses malformed or cross-thr
   seedLong(store!, main, other);
   const first = await app.request('/api/threads/main/history?limit=30');
   expect(first.status).toBe(200);
-  const body = await first.json();
+  const body = (await first.json()) as HistoryPage;
   expect(body.threadId).toBe('main');
   expect(body.source).toBe('journal');
   expect(body.messages).toHaveLength(30);
@@ -298,7 +321,7 @@ test('history route pages with opaque cursors and refuses malformed or cross-thr
   expect(JSON.stringify(body).length).toBeLessThan(60_000);
   for (const row of body.messages) expect(row.meta?.injection).toBeUndefined();
 
-  const ids: string[] = body.messages.map((m: { id: string }) => m.id);
+  const ids: string[] = body.messages.map((m) => m.id);
   let cursor = body.nextCursor,
     pages = 1;
   while (cursor) {
@@ -306,8 +329,8 @@ test('history route pages with opaque cursors and refuses malformed or cross-thr
       `/api/threads/main/history?limit=30&before=${encodeURIComponent(cursor)}`,
     );
     expect(res.status).toBe(200);
-    const page = await res.json();
-    ids.push(...page.messages.map((m: { id: string }) => m.id));
+    const page = (await res.json()) as HistoryPage;
+    ids.push(...page.messages.map((m) => m.id));
     cursor = page.nextCursor;
     pages++;
     if (!page.hasMore) expect(page.oldestReached).toBe(true);
@@ -321,17 +344,19 @@ test('history route pages with opaque cursors and refuses malformed or cross-thr
       .sort(),
   );
 
-  const otherFirst = await (await app.request('/api/threads/other/history?limit=5')).json();
-  expect(otherFirst.messages.every((m: { threadId: string }) => m.threadId === 'other')).toBe(true);
+  const otherFirst = (await (
+    await app.request('/api/threads/other/history?limit=5')
+  ).json()) as HistoryPage;
+  expect(otherFirst.messages.every((m) => m.threadId === 'other')).toBe(true);
   const cross = await app.request(
-    `/api/threads/main/history?before=${encodeURIComponent(otherFirst.nextCursor)}`,
+    `/api/threads/main/history?before=${encodeURIComponent(otherFirst.nextCursor ?? '')}`,
   );
   expect(cross.status).toBe(400);
-  expect((await cross.json()).error).toMatch(/cursor/);
+  expect(((await cross.json()) as ErrorBody).error).toMatch(/cursor/);
   expect((await app.request('/api/threads/main/history?before=not-a-cursor')).status).toBe(400);
   expect((await app.request('/api/threads/main/history?limit=0')).status).toBe(400);
   expect((await app.request('/api/threads/main/history?limit=501')).status).toBe(400);
-  const empty = await (await app.request('/api/threads/unknown/history')).json();
+  const empty = (await (await app.request('/api/threads/unknown/history')).json()) as HistoryPage;
   expect(empty.messages).toEqual([]);
   expect(empty.oldestReached).toBe(true);
   expect(empty.hasMore).toBe(false);
@@ -342,33 +367,32 @@ test('detail route and unchanged full-history route', async () => {
   seedLong(store!, main, other);
   const detail = await app.request('/api/threads/main/turns/t-main-010/detail');
   expect(detail.status).toBe(200);
-  const body = await detail.json();
+  const body = (await detail.json()) as TurnDetailBody;
   expect(body.turnId).toBe('t-main-010');
   expect(body.trace.id).toBe('trace-t-main-010');
   expect(body.injection.text).toBe(HEAVY);
   expect(body.nativeHistory).toHaveLength(1);
-  expect(body.artifacts.map((a: { kind: string }) => a.kind)).toEqual(
+  expect(body.artifacts.map((a) => a.kind)).toEqual(
     expect.arrayContaining(['trace', 'turn-detail', 'injection', 'native-event']),
   );
-  expect(body.artifacts.find((a: { kind: string }) => a.kind === 'trace').href).toBe(
-    '/api/traces/trace-t-main-010',
-  );
+  expect(body.artifacts.find((a) => a.kind === 'trace')?.href).toBe('/api/traces/trace-t-main-010');
   expect((await app.request('/api/threads/other/turns/t-main-010/detail')).status).toBe(404);
   expect((await app.request('/api/threads/main/turns/nope/detail')).status).toBe(404);
 
-  const legacy = await (await app.request('/api/messages?threadId=main&limit=1000')).json();
+  const legacy = (await (await app.request('/api/messages?threadId=main&limit=1000')).json()) as {
+    messages: StoredMessage[];
+  };
   expect(legacy.messages).toHaveLength(83);
-  const nativeRow = legacy.messages.find(
-    (m: { turnId: string; actor: string }) => m.turnId === 't-main-010' && m.actor === 'agent',
-  );
-  expect(nativeRow.meta.injection.text).toBe(HEAVY);
-  expect(nativeRow.meta.nativeHistory).toHaveLength(1);
+  const nativeRow = legacy.messages.find((m) => m.turnId === 't-main-010' && m.actor === 'agent');
+  const nativeMeta = nativeRow?.meta as { injection: { text: string }; nativeHistory: unknown[] };
+  expect(nativeMeta.injection.text).toBe(HEAVY);
+  expect(nativeMeta.nativeHistory).toHaveLength(1);
 });
 
 test('without a journal the index and detail routes fail explicitly instead of claiming empty history', async () => {
   const { app } = setup(false);
   const index = await app.request('/api/threads/main/history');
   expect(index.status).toBe(503);
-  expect((await index.json()).error).toMatch(/journal|unavailable/);
+  expect(((await index.json()) as ErrorBody).error).toMatch(/journal|unavailable/);
   expect((await app.request('/api/threads/main/turns/x/detail')).status).toBe(503);
 });

@@ -56,7 +56,7 @@ test('an added project inherits global agents and layers and brings only its exi
       body: JSON.stringify({ path: repo, label: 'added' }),
     });
     expect(response.status).toBe(201);
-    const { id } = await response.json();
+    const { id } = (await response.json()) as { id: string };
 
     const saved = await new ConfigStore(dir).load();
     const project = saved.projects[id]!;

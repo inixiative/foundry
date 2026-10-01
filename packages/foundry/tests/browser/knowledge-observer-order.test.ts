@@ -151,7 +151,7 @@ async function fixture(name: string) {
       (window as unknown as { __historyPending: Record<string, number> }).__historyPending =
         pending;
       const fetchOriginal = window.fetch.bind(window);
-      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), location.href);
         const thread =
           url.pathname.match(/^\/api\/threads\/([^/]+)\/history$/)?.[1] ??
@@ -173,7 +173,7 @@ async function fixture(name: string) {
           done();
           throw error;
         }
-      };
+      }) as typeof fetch;
     });
     const report: any = {
       passed: false,

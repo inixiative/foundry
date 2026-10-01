@@ -14,7 +14,6 @@ import { showToast } from './store.js';
 
 export const analyticsOpen = signal(false);
 const analyticsData = signal(null);
-const analyticsPeriod = signal('hourly');
 const analyticsTab = signal('overview'); // overview | threads | calls | models
 
 // ---------------------------------------------------------------------------
@@ -60,10 +59,6 @@ function fmtPct(n) {
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString();
-}
-
-function fmtDate(ts) {
-  return new Date(ts).toLocaleDateString();
 }
 
 // ---------------------------------------------------------------------------

@@ -241,7 +241,7 @@ describe('CorpusCompiler', () => {
 
     // Create a doc with confidence 0.65 and 3 sources
     const entries = Array.from({ length: 3 }, () => makeEntry());
-    entries.forEach((e) => compiler.ingest(e));
+    for (const e of entries) compiler.ingest(e);
 
     const doc = compiler.promote(
       entries.map((e) => e.id),

@@ -95,7 +95,9 @@ describe('ClaudeCodeRuntime', () => {
   test('emits context_inject event on inject', async () => {
     const runtime = new ClaudeCodeRuntime({ projectRoot: tmpDir });
     const events: RuntimeEvent[] = [];
-    runtime.onEvent((e) => events.push(e));
+    runtime.onEvent((e) => {
+      events.push(e);
+    });
 
     const injection = runtime.prepareInjection(makeAssembled(SAMPLE_BLOCKS));
     const teardown = await runtime.inject(injection);
@@ -110,7 +112,9 @@ describe('ClaudeCodeRuntime', () => {
   test('onEvent unsubscribe works', async () => {
     const runtime = new ClaudeCodeRuntime({ projectRoot: tmpDir });
     const events: RuntimeEvent[] = [];
-    const unsub = runtime.onEvent((e) => events.push(e));
+    const unsub = runtime.onEvent((e) => {
+      events.push(e);
+    });
 
     const injection = runtime.prepareInjection(makeAssembled(SAMPLE_BLOCKS));
     unsub();
@@ -231,7 +235,9 @@ describe('CursorRuntime', () => {
   test('emits events and supports unsubscribe', async () => {
     const runtime = new CursorRuntime({ projectRoot: tmpDir });
     const events: RuntimeEvent[] = [];
-    const unsub = runtime.onEvent((e) => events.push(e));
+    const unsub = runtime.onEvent((e) => {
+      events.push(e);
+    });
 
     const injection = runtime.prepareInjection(makeAssembled(SAMPLE_BLOCKS));
     await runtime.inject(injection);

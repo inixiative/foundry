@@ -111,6 +111,7 @@ beforeAll(() => {
     },
   });
 
+  if (mockServer.port === undefined) throw new Error('mock MuninnDB server bound no TCP port');
   mockPort = mockServer.port;
 });
 

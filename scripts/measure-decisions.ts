@@ -48,9 +48,8 @@ writeFileSync(
 );
 
 async function start(label: string) {
-  const env = { ...process.env, VIEWER_PORT: String(port), FOUNDRY_STARTUP_SELF_TEST: '0' };
-  delete env.DATABASE_URL;
-  delete env.REDIS_URL;
+  const { DATABASE_URL: _database, REDIS_URL: _redis, ...inherited } = process.env;
+  const env = { ...inherited, VIEWER_PORT: String(port), FOUNDRY_STARTUP_SELF_TEST: '0' };
   const child = Bun.spawn(['bun', join(foundry, 'packages/foundry/src/start.ts')], {
     cwd: project,
     env,

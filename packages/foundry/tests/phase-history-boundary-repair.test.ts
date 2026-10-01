@@ -4,7 +4,6 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-// @ts-expect-error untyped viewer module (plain JS)
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
 import { durabilityFixture, untilSettled } from './phase-history-durability.test';
 
@@ -14,7 +13,6 @@ const closes: Array<() => void> = [];
 afterEach(() => {
   for (const close of closes.splice(0).reverse()) close();
 });
-const GUARD = '## Response protocol (guard phase)';
 
 test('appendPhase: exact replay with null correlations is idempotent; any contradicted association is refused and the original row is untouched', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase-identity-'));

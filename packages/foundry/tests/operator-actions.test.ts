@@ -143,7 +143,7 @@ test('production action route preserves thread scope for layer commands', async 
     body: JSON.stringify({ kind: 'layer:warm', target: 'domain', threadId: selected.id }),
   });
   expect(response.status).toBe(200);
-  expect((await response.json()).ok).toBe(true);
+  expect(((await response.json()) as { ok: boolean }).ok).toBe(true);
   expect(layer.content).toBe('selected only');
   expect(actions.history.at(-1)?.threadId).toBe(selected.id);
   for (const scope of [{ threadId: 123 }, { threadId: '' }, { target: 123 }, { target: '' }]) {

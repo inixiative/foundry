@@ -1053,19 +1053,12 @@ test("a factory that returns a foreign thread's server is refused, closed and ac
   foreign.meta.projectId = 'project-B';
   cleanups.push(() => foreign.dispose());
   let created = 0;
-  let closedForeign = 0;
   const bridge = await createLiveBridge({
     launchRoot: f.dir,
     maxSessions: 2,
     createMcp: () => {
       created++;
-      if (created === 2) {
-        const bad = createFoundryMcp({ thread: foreign });
-        bad.server.server.onclose = () => {
-          closedForeign++;
-        };
-        return bad;
-      }
+      if (created === 2) return createFoundryMcp({ thread: foreign });
       return createFoundryMcp({ thread: f.owner, sessionManager: f.manager, tools: f.tools });
     },
   });

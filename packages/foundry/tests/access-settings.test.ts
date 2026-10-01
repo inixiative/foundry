@@ -3,8 +3,22 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import type {
+  KingdomAccessClient,
+  KingdomAccessSource,
+} from '../src/providers/kingdom-access-client';
 import { ConfigStore, defaultConfig } from '../src/viewer/config';
 import { registerAccessRoutes } from '../src/viewer/routes/access';
+
+type AccessSettings = {
+  sources: (KingdomAccessSource & { credentialStatus: 'available' | 'unavailable' })[];
+  revision: string;
+  applyMode: string;
+};
+type AccessCheck = {
+  status: string;
+  description: Awaited<ReturnType<KingdomAccessClient['describe']>>;
+};
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), 'foundry-access-settings-'));
@@ -24,7 +38,8 @@ async function fixture() {
     signetId: crypto.randomUUID(),
     projectIds: [projectId],
   };
-  const get = async () => (await app.request('/api/access/sources')).json();
+  const get = async () =>
+    (await (await app.request('/api/access/sources')).json()) as AccessSettings;
   const put = (body: unknown) =>
     app.request(`/api/access/sources/${source.id}`, {
       method: 'PUT',
@@ -59,7 +74,7 @@ test('grant editing preserves unrelated settings, reports missing private files,
     await writeFile(f.source.credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
     const response = await f.app.request('/api/access/sources');
     expect(response.headers.get('cache-control')).toBe('no-store');
-    settings = await response.json();
+    settings = (await response.json()) as AccessSettings;
     expect(settings.sources[0].credentialStatus).toBe('available');
     expect(JSON.stringify(settings)).not.toContain(secret);
     expect((await f.store.load()).defaults).toEqual(f.config.defaults);
@@ -157,12 +172,12 @@ test('explicit checks use only the saved origin and private token, expose metada
         method: 'POST',
         body: JSON.stringify({ url: 'https://ignored.example' }),
       });
-    const result = await (await check()).json();
+    const result = (await (await check()).json()) as AccessCheck;
     expect(result.status).toBe('available');
     expect(result.description.remainingRequests).toBe(3);
     expect(result.description.operations[0].resources).toHaveLength(1);
     rejected = true;
-    const failed = await (await check()).json();
+    const failed = (await (await check()).json()) as AccessCheck;
     expect(failed.status).toBe('needs-authentication');
     expect(JSON.stringify(failed)).not.toContain('PRIVATE');
     expect(calls).toBe(2);

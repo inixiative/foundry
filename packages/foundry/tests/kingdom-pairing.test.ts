@@ -77,6 +77,13 @@ function mockKingdom(owner: Record<string, string> = organization) {
   };
 }
 
+type KingdomState = {
+  status: string;
+  pending?: unknown;
+  runtimes: { id: string; url: string; installationId: string; status: string }[];
+};
+const kingdomState = async (response: Response) => (await response.json()) as KingdomState;
+
 async function viewerFixture() {
   const root = await mkdtemp(join(tmpdir(), 'foundry-pairing-'));
   const thread = new Thread('pairing', new ContextStack());
@@ -95,7 +102,7 @@ async function viewerFixture() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-  const status = async () => (await fetch(`${base}/api/kingdom/status`)).json();
+  const status = async () => kingdomState(await fetch(`${base}/api/kingdom/status`));
   const settings = async () => JSON.parse(await readFile(join(root, 'settings.json'), 'utf8'));
   return { root, viewer, base, post, status, settings };
 }
@@ -115,7 +122,7 @@ test('Foundry pairs without exposing secrets, activates immediately, re-pairs re
         ...(runtimeId ? { replace: runtimeId } : {}),
       });
       expect(start.status).toBe(200);
-      const pairing = await start.json();
+      const pairing = await kingdomState(start);
       expect(pairing.pending).toMatchObject({ url: kingdom.url, userCode: 'ABCDEF012345' });
       expect(JSON.stringify(pairing)).not.toContain('secret');
       expect(JSON.stringify(pairing)).not.toContain('deviceCode');
@@ -123,7 +130,7 @@ test('Foundry pairs without exposing secrets, activates immediately, re-pairs re
       const { id, hash } = kingdom.approve();
       const done = await post('poll');
       expect(done.status).toBe(200);
-      const connected = await done.json();
+      const connected = await kingdomState(done);
       expect(connected.status).toBe('connected');
       expect(connected.runtimes).toHaveLength(1);
       expect(connected.runtimes[0]).toMatchObject({
@@ -170,7 +177,7 @@ test('Foundry pairs without exposing secrets, activates immediately, re-pairs re
           ),
         ).toEqual([id]);
         expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-        expect((await (await post('cancel')).json()).status).toBe('connected');
+        expect((await kingdomState(await post('cancel'))).status).toBe('connected');
       }
       kingdom.identities.delete(hash);
       expect((await fetch(`${base}/api/tunnel`)).status).toBe(503);
@@ -183,7 +190,7 @@ test('Foundry pairs without exposing secrets, activates immediately, re-pairs re
     }
     expect((await post('disconnect')).status).toBe(400);
     expect((await post('disconnect', { id: '000000000000' })).status).toBe(404);
-    expect((await (await post('disconnect', { id: runtimeId })).json()).status).toBe(
+    expect((await kingdomState(await post('disconnect', { id: runtimeId }))).status).toBe(
       'disconnected',
     );
     expect(viewer.kingdomRuntimes.size).toBe(0);

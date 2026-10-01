@@ -109,18 +109,21 @@ export function bindLiveAuthority(options: BindAuthorityOptions): LiveAuthority 
     hook = undefined;
   };
 
-  const check = (): AuthorityRefusal | null => {
-    if (revoked) return revoked;
-    for (const lifetime of lifetimes) if (lifetime.reason) return (revoked = lifetime.reason);
-    if (thread.disposed) return (revoked = 'disposed');
+  const refusal = (): AuthorityRefusal | null => {
+    for (const lifetime of lifetimes) if (lifetime.reason) return lifetime.reason;
+    if (thread.disposed) return 'disposed';
     if (pinnedRuntime) {
       const current = runtime!.get(thread.id);
-      if (current !== pinnedRuntime || pinnedRuntime.disposed)
-        return (revoked = 'generation-replaced');
+      if (current !== pinnedRuntime || pinnedRuntime.disposed) return 'generation-replaced';
     }
-    if (registry && registry.threads.get(thread.id) !== thread) return (revoked = 'replaced');
-    if ((thread.meta.projectId || undefined) !== projectId) return (revoked = 'project-changed');
+    if (registry && registry.threads.get(thread.id) !== thread) return 'replaced';
+    if ((thread.meta.projectId || undefined) !== projectId) return 'project-changed';
     return null;
+  };
+  // Latches: once revoked, the authority stays revoked.
+  const check = (): AuthorityRefusal | null => {
+    revoked ??= refusal();
+    return revoked;
   };
 
   const liveThreads = (): Thread[] => {

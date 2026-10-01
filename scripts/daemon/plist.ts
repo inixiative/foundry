@@ -24,7 +24,7 @@ export interface PlistOptions {
   };
 }
 
-const escape = (value: string) =>
+const escapeXml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const buildPlist = (options: PlistOptions): string => {
@@ -33,20 +33,23 @@ export const buildPlist = (options: PlistOptions): string => {
   const supervisor = `${repoRoot}/scripts/daemon/supervisor.ts`;
   const program = job?.programArguments ?? [bunPath, 'run', supervisor];
   const extra = Object.entries(job?.environment ?? {})
-    .map(([key, value]) => `\n    <key>${escape(key)}</key>\n    <string>${escape(value)}</string>`)
+    .map(
+      ([key, value]) =>
+        `\n    <key>${escapeXml(key)}</key>\n    <string>${escapeXml(value)}</string>`,
+    )
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${escape(job?.label ?? DAEMON_LABEL)}</string>
+  <string>${escapeXml(job?.label ?? DAEMON_LABEL)}</string>
   <key>ProgramArguments</key>
   <array>
-${program.map((arg) => `    <string>${escape(arg)}</string>`).join('\n')}
+${program.map((arg) => `    <string>${escapeXml(arg)}</string>`).join('\n')}
   </array>
   <key>WorkingDirectory</key>
-  <string>${escape(repoRoot)}</string>
+  <string>${escapeXml(repoRoot)}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -56,13 +59,13 @@ ${program.map((arg) => `    <string>${escape(arg)}</string>`).join('\n')}
   <key>ProcessType</key>
   <string>Interactive</string>
   <key>StandardOutPath</key>
-  <string>${escape(job?.stdoutPath ?? `${logDir}/foundry.out.log`)}</string>
+  <string>${escapeXml(job?.stdoutPath ?? `${logDir}/foundry.out.log`)}</string>
   <key>StandardErrorPath</key>
-  <string>${escape(job?.stderrPath ?? `${logDir}/foundry.err.log`)}</string>
+  <string>${escapeXml(job?.stderrPath ?? `${logDir}/foundry.err.log`)}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>${escape(pathEntries.join(':'))}</string>
+    <string>${escapeXml(pathEntries.join(':'))}</string>
     <key>VIEWER_PORT</key>
     <string>${port}</string>
     <key>FOUNDRY_DAEMON</key>

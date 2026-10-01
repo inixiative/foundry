@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { InjectionArtifact } from '@inixiative/foundry-core';
+import type { DeliveryRecord, InjectionArtifact } from '@inixiative/foundry-core';
 import type { LearningRecord } from '../src/agents/domain-librarian';
 import type { InjectionPlan } from '../src/agents/flow-orchestrator';
 import {
@@ -16,8 +16,13 @@ import {
 } from './helpers/m0-domain-loop';
 
 type Turn = Awaited<ReturnType<Awaited<ReturnType<typeof m0Scenario>>['send']>>;
-const artifact = (turn: Turn) =>
-  turn.body.meta.injection as InjectionArtifact & { plan: InjectionPlan };
+type MessageBody = {
+  output: string;
+  error: string;
+  meta: { injection: InjectionArtifact & { plan: InjectionPlan }; delivery: DeliveryRecord };
+};
+const body = (turn: Turn) => turn.body as MessageBody;
+const artifact = (turn: Turn) => body(turn).meta.injection;
 const text = (value: unknown) => JSON.stringify(value);
 
 test('M0-M3: two production factory domains learn different interpretations and consume only their owned state on subsequent turns', async () => {
@@ -25,7 +30,7 @@ test('M0-M3: two production factory domains learn different interpretations and 
   try {
     const first = await f.send('a', 'a-migration', 'Perform the migration');
     expect(first.status).toBe(200);
-    expect(first.body.output).toContain('legacy-read=PASS');
+    expect(body(first).output).toContain('legacy-read=PASS');
     const frozen = text(first);
     await f.checkpoint('first prepared input and actual completion');
     for (const d of domains) await f.committed('a', d);
@@ -116,7 +121,7 @@ test('M4: failed executor evidence is rejected by both post hooks and cannot bec
     const failed = await f.send('a', 'executor-failed');
     await f.settled();
     expect(failed.status).toBe(500);
-    expect(failed.body.error).toContain('CONTROLLED_EXECUTOR_FAILURE');
+    expect(body(failed).error).toContain('CONTROLLED_EXECUTOR_FAILURE');
     expect(f.calls.filter((c) => c.phase === 'post')).toHaveLength(0);
     for (const d of domains) {
       expect(f.current.manager.get('a')!.knowledgeSnapshot().domains[d].revision).toBe(0);
@@ -155,7 +160,7 @@ for (const raw of [
     try {
       const first = await f.send('a', 'invalid-review', 'Perform the migration');
       await f.settled();
-      expect(first.body.output).toContain('legacy-read=PASS');
+      expect(body(first).output).toContain('legacy-read=PASS');
       expect(f.current.manager.get('a')!.knowledgeSnapshot().domains.architecture.revision).toBe(0);
       expect(f.current.localStore!.knowledge('a')!.domains.testing.content).toBe(
         interpretation('a', 'testing'),
@@ -315,7 +320,7 @@ test('M4: real SQLite commit failure preserves completed central output and the 
     held.resolve(learned('a', 'architecture'));
     await runtime.learningSettled();
     expect(completed.status).toBe(200);
-    expect(completed.body.output).toBe('CONTINUED_WITHOUT_REPEATING_MIGRATION');
+    expect(body(completed).output).toBe('CONTINUED_WITHOUT_REPEATING_MIGRATION');
     expect(f.current.localStore!.turn('learning-storage-failure')!.status).toBe('completed');
     expect(f.current.localStore!.knowledge('a')).toEqual(before);
     expect(text(f.current.localStore!.traceForTurn('durable-base'))).toBe(old);
@@ -370,7 +375,7 @@ test('M4: committed knowledge survives publication failure and reconstructs with
     };
     held.resolve(learned('a', 'architecture'));
     await runtime.learningSettled();
-    expect(completed.body.output).toContain('legacy-read=PASS');
+    expect(body(completed).output).toContain('legacy-read=PASS');
     expect(f.current.localStore!.knowledge('a')!.domains.architecture.content).toBe(
       interpretation('a', 'architecture'),
     );
@@ -408,7 +413,7 @@ test('M3-M4: pending review does not serialize immediate work; first post-commit
     const original = text(first.trace);
     const immediate = await f.send('a', 'pending-continue');
     expect(immediate.status).toBe(200);
-    expect(immediate.body.meta.delivery.learningBarrier).toMatchObject({
+    expect(body(immediate).meta.delivery.learningBarrier).toMatchObject({
       outcome: 'pending',
       waitedMs: 0,
     });

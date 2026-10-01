@@ -2,10 +2,8 @@ import { expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
-// @ts-expect-error native browser JS
 import { failurePresentation } from '../src/viewer/ui/inspector-data.js';
 // Browser modules are intentionally native JS, exercised by the same tests and app.
-// @ts-expect-error no declaration for browser JS
 import {
   applyTurnFrame,
   liveThreadStatus,

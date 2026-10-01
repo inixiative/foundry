@@ -4,6 +4,7 @@ import { ContextLayer, type ContextSource } from '../src/context-layer';
 import { ContextStack } from '../src/context-stack';
 import { Decider, type Decision } from '../src/decider';
 import { Executor } from '../src/executor';
+import type { InjectionArtifact } from '../src/messages';
 import { type Route, Router } from '../src/router';
 
 function source(id: string, content: string): ContextSource {
@@ -77,7 +78,7 @@ describe('Executor', () => {
     });
 
     const result = await executor.run('build the loop');
-    const injection = result.meta?.injection;
+    const injection = result.meta?.injection as InjectionArtifact | undefined;
 
     expect(injection).toBeDefined();
     expect(injection?.userMessage).toBe('build the loop');

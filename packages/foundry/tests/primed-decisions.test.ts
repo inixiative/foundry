@@ -97,7 +97,7 @@ test('routing declares the topology map (and atlas) as its stable prefix', async
     llm,
   });
   await carto.route('Where are the auth docs?', 'state');
-  const prefix = calls[0]!.opts?.stablePrefix!;
+  const prefix = calls[0]!.opts!.stablePrefix!;
   expect(prefix).toStartWith('## Available context (topology map)\n');
   expect(calls[0]!.messages[1]!.content.startsWith(prefix)).toBe(true);
   expect(calls[0]!.messages[1]!.content.slice(prefix.length)).toContain(

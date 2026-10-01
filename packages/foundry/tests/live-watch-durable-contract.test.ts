@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
-// @ts-expect-error Native browser JavaScript has no declaration file.
 import { mergeMessageHistory } from '../src/viewer/ui/conversation-state.js';
-// @ts-expect-error Native browser JavaScript has no declaration file.
 import { liveThreadStatus, mergeLiveSnapshot } from '../src/viewer/ui/live-state.js';
 
 test('durable observer answer outranks its earlier bounded watch projection', () => {

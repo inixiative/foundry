@@ -133,7 +133,7 @@ describe('Harness', () => {
   });
 
   test('works without classifier', async () => {
-    const { harness, thread, stack } = makeHarness();
+    const { thread } = makeHarness();
     const h = new Harness(thread);
     h.setRouter('router');
     h.setDefaultExecutor('executor-answer');
@@ -189,7 +189,7 @@ describe('Harness', () => {
   });
 
   test('trace history is bounded', async () => {
-    const { thread, stack } = makeHarness();
+    const { thread } = makeHarness();
     const h = new Harness(thread, { maxTraces: 3 });
     h.setDefaultExecutor('executor-answer');
 
@@ -283,7 +283,7 @@ test('classification and routing run concurrently on the frozen message; results
     expect(inputs).toEqual({ classifier: 'fix login', router: 'fix login' });
     expect(result.classification?.value).toEqual({ category: 'bug', tags: [] });
     expect(result.route?.value.destination).toBe('worker');
-    expect(result.invokedAgents.map((a) => a.id)).toEqual(['classifier', 'router', 'worker']);
+    expect(result.invokedAgents?.map((a) => a.id)).toEqual(['classifier', 'router', 'worker']);
     expect(classifications).toEqual([{ category: 'bug', tags: [] }]);
     const spans = result.trace.root.children.map((s) => [s.name, s.status]);
     expect(spans).toEqual([

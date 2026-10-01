@@ -55,8 +55,10 @@ test('device routes expose only enrolled local identity and explicitly registere
       body: JSON.stringify({ name: 'Test machine' }),
     });
     expect(response.status).toBe(200);
-    const inventory = await (await app.request('/api/devices')).json();
-    expect(inventory.device.name).toBe('Test machine');
+    const inventory = (await (await app.request('/api/devices')).json()) as ReturnType<
+      typeof localInventory
+    >;
+    expect(inventory.device?.name).toBe('Test machine');
     expect(inventory.checkouts[0].projectId).toBe('A');
   } finally {
     rmSync(dir, { recursive: true, force: true });

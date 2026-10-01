@@ -107,7 +107,6 @@ export class PlaywrightBrowser implements BrowserTool {
     let pw: any;
     try {
       // Dynamic import — playwright is a peer dependency
-      // @ts-expect-error - peer dep; resolves only where installed
       pw = await import('playwright');
     } catch {
       throw new Error('Playwright is not installed. Install it with: bun add playwright');
