@@ -110,8 +110,8 @@ export class SignetClient {
   async renew(options: SignetRequestOptions = {}): Promise<void> {
     const signal = requestSignal(options.signal); await this.credentials(true, signal); signal.throwIfAborted();
   }
-  async post(action: "describe" | "execute" | "closeTask" | "runtimeJobStep" | "verifyAuthority" | "settleTask", body: unknown, onDispatch?: () => void, options: SignetRequestOptions = {}) {
-    if (!["describe", "execute", "closeTask", "runtimeJobStep", "verifyAuthority", "settleTask"].includes(action)) throw Error("Unsupported Signet action");
+  async post(action: "describe" | "execute" | "closeTask" | "verifyAuthority" | "settleTask", body: unknown, onDispatch?: () => void, options: SignetRequestOptions = {}) {
+    if (!["describe", "execute", "closeTask", "verifyAuthority", "settleTask"].includes(action)) throw Error("Unsupported Signet action");
     const signal = requestSignal(options.signal);
     signal.throwIfAborted();
     const credential = await this.credentials(false, signal, action !== "settleTask");

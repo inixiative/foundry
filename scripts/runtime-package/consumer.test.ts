@@ -17,7 +17,7 @@ const { RuntimeJobRegistry, RuntimeJobWorker, KingdomRuntimeConnection, SignetCl
 
 // Compile-time contract checks: the seam exposes no arbitrary Signet action or credential helper.
 type SignetAction = Parameters<InstanceType<typeof SignetClient>["post"]>[0];
-const allowedAction: SignetAction = "runtimeJobStep";
+const allowedAction: SignetAction = "settleTask";
 // @ts-expect-error A package export must not widen the existing Signet operation set.
 const unavailableAction: SignetAction = "oracleUnapprovedAction";
 void allowedAction; void unavailableAction;
