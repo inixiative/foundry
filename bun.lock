@@ -30,7 +30,7 @@
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
-        "@inixiative/agent-session": "^0.3.0",
+        "@inixiative/agent-session": "^0.3.1",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.4",
         "@inixiative/session-archive": "npm:@inixiative/archive@^0.5.1",
@@ -80,7 +80,7 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.3.0", "", {}, "sha512-dlG+ULnzk0K5unPBJJa40gwz5072xGUdMVk/ao+lu6emMz7eY0yk5Ps6wwMFg1XLsK1HqxolklgBtOIS7prH7g=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.3.1", "", {}, "sha512-A6NL4ZJkB46YEEJxcXEwggxk8McO9T4QOS+YO7k57bkZRBfcREFW/sS2OJ1n65KQIZ8U3fbHgRmEMs73stUw1w=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
 
