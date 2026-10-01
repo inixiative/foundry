@@ -1,20 +1,19 @@
 // Lightweight adapters — re-exported from core
 export {
+  claudemdSource,
   FileMemory,
   fileSource,
+  HttpMemory,
   inlineSource,
+  MarkdownDocs,
   type MemoryEntry,
-} from "@inixiative/foundry-core";
-export { SqliteMemory, type SqliteEntry } from "@inixiative/foundry-core";
-export { MarkdownDocs, claudemdSource } from "@inixiative/foundry-core";
-export { HttpMemory } from "@inixiative/foundry-core";
-
-// Heavy-infra adapters (optional peer deps)
-export { RedisMemory, type RedisClient, type RedisEntry } from "./redis-memory";
-export { PostgresMemory } from "./postgres-memory";
-
-// Hosted / SaaS
-export { SupermemoryAdapter, type SupermemoryConfig } from "./supermemory";
-
+  type SqliteEntry,
+  SqliteMemory,
+} from '@inixiative/foundry-core';
 // Neural memory (self-hosted)
-export { MuninnMemory, type MuninnConfig } from "./muninn-memory";
+export { type MuninnConfig, MuninnMemory } from './muninn-memory';
+export { PostgresMemory } from './postgres-memory';
+// Heavy-infra adapters (optional peer deps)
+export { type RedisClient, type RedisEntry, RedisMemory } from './redis-memory';
+// Hosted / SaaS
+export { SupermemoryAdapter, type SupermemoryConfig } from './supermemory';

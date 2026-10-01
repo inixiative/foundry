@@ -1,4 +1,5 @@
-import type { TokenCounts } from "@inixiative/foundry-core";
+import type { TokenCounts } from '@inixiative/foundry-core';
+
 // ---------------------------------------------------------------------------
 // Herald — cross-thread awareness, information boundaries, multi-user bridge
 //
@@ -22,12 +23,10 @@ import type { TokenCounts } from "@inixiative/foundry-core";
 // always current, never blocking the critical path.
 // ---------------------------------------------------------------------------
 
-import type { SessionManager } from "./session";
-import type { Thread, ThreadStatus, Dispatch } from "@inixiative/foundry-core";
-import { newId } from "@inixiative/foundry-core";
-import type { Signal, SignalKind } from "@inixiative/foundry-core";
-import { ContextLayer } from "@inixiative/foundry-core";
-import { WorkstreamOverloadDetector } from "./workstream-detector";
+import type { Dispatch, Signal, SignalKind, Thread, ThreadStatus } from '@inixiative/foundry-core';
+import { ContextLayer, newId } from '@inixiative/foundry-core';
+import type { SessionManager } from './session';
+import { WorkstreamOverloadDetector } from './workstream-detector';
 
 // ---------------------------------------------------------------------------
 // Information Visibility Tiers (VISION.md §6)
@@ -39,16 +38,16 @@ import { WorkstreamOverloadDetector } from "./workstream-detector";
  * Each promotion is explicit (human decision, not automatic).
  */
 export type VisibilityTier =
-  | "personal-private"  // individual preferences, shortcuts, taste (gitignored)
-  | "personal-public"   // role, expertise, decisions (queryable by others)
-  | "team"              // shared conventions, architecture, priorities
-  | "org";              // cross-team policies, brand, security standards
+  | 'personal-private' // individual preferences, shortcuts, taste (gitignored)
+  | 'personal-public' // role, expertise, decisions (queryable by others)
+  | 'team' // shared conventions, architecture, priorities
+  | 'org'; // cross-team policies, brand, security standards
 
 /** Metadata about a context layer's visibility. */
 export interface LayerVisibility {
   layerId: string;
   tier: VisibilityTier;
-  ownerId?: string;  // user ID for personal layers
+  ownerId?: string; // user ID for personal layers
 }
 
 // ---------------------------------------------------------------------------
@@ -84,13 +83,13 @@ export interface ThreadSnapshot {
 export interface HeraldPattern {
   id: string;
   kind:
-    | "duplication"
-    | "contradiction"
-    | "convergence"
-    | "cross_pollination"
-    | "resource_imbalance"
-    | "workstream_overload";
-  severity: "info" | "warning" | "critical";
+    | 'duplication'
+    | 'contradiction'
+    | 'convergence'
+    | 'cross_pollination'
+    | 'resource_imbalance'
+    | 'workstream_overload';
+  severity: 'info' | 'warning' | 'critical';
   threads: string[];
   description: string;
   recommendation: string;
@@ -110,17 +109,17 @@ export interface HeraldPattern {
 export interface HeraldRecommendation {
   targetThreadId: string;
   pattern: HeraldPattern;
-  action: "pause" | "redirect" | "inject_context" | "merge" | "inform" | "split";
+  action: 'pause' | 'redirect' | 'inject_context' | 'merge' | 'inform' | 'split';
   payload?: unknown;
 }
 
 /** Pluggable pattern detector — implement one per cross-cutting concern. */
 export interface PatternDetector {
   readonly id: string;
-  readonly kind: HeraldPattern["kind"];
+  readonly kind: HeraldPattern['kind'];
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    history: ReadonlyArray<HeraldPattern>
+    history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[];
 }
 
@@ -183,12 +182,12 @@ function sameThreadSet(a: string[], b: string[]): boolean {
  * short time window, or share identical context hashes.
  */
 export class DuplicationDetector implements PatternDetector {
-  readonly id = "builtin:duplication";
-  readonly kind = "duplication" as const;
+  readonly id = 'builtin:duplication';
+  readonly kind = 'duplication' as const;
 
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    _history: ReadonlyArray<HeraldPattern>
+    _history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[] {
     const patterns: HeraldPattern[] = [];
     const now = Date.now();
@@ -211,12 +210,12 @@ export class DuplicationDetector implements PatternDetector {
     for (const [agentId, threads] of agentThreadMap) {
       if (threads.length >= 2) {
         patterns.push({
-          id: nextPatternId("dup"),
-          kind: "duplication",
-          severity: "warning",
+          id: nextPatternId('dup'),
+          kind: 'duplication',
+          severity: 'warning',
           threads,
           description: `Agent "${agentId}" dispatched from ${threads.length} threads simultaneously`,
-          recommendation: "Pause redundant threads to avoid duplicate work",
+          recommendation: 'Pause redundant threads to avoid duplicate work',
           evidence: { agentId, threadCount: threads.length },
           timestamp: now,
         });
@@ -232,16 +231,15 @@ export class DuplicationDetector implements PatternDetector {
           a.contextHash &&
           b.contextHash &&
           a.contextHash === b.contextHash &&
-          a.contextHash !== "" // skip empty hashes
+          a.contextHash !== '' // skip empty hashes
         ) {
           patterns.push({
-            id: nextPatternId("dup"),
-            kind: "duplication",
-            severity: "info",
+            id: nextPatternId('dup'),
+            kind: 'duplication',
+            severity: 'info',
             threads: [a.threadId, b.threadId],
             description: `Threads "${a.threadId}" and "${b.threadId}" share identical context`,
-            recommendation:
-              "Consider merging these threads or sharing a context layer",
+            recommendation: 'Consider merging these threads or sharing a context layer',
             evidence: { contextHash: a.contextHash },
             timestamp: now,
           });
@@ -258,21 +256,19 @@ export class DuplicationDetector implements PatternDetector {
  * Looks for correction signals that may conflict with another thread's output.
  */
 export class ContradictionDetector implements PatternDetector {
-  readonly id = "builtin:contradiction";
-  readonly kind = "contradiction" as const;
+  readonly id = 'builtin:contradiction';
+  readonly kind = 'contradiction' as const;
 
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    _history: ReadonlyArray<HeraldPattern>
+    _history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[] {
     const patterns: HeraldPattern[] = [];
     const now = Date.now();
 
     // Check for correction signals that contradict another thread
     for (let i = 0; i < snapshots.length; i++) {
-      const corrections = snapshots[i].recentSignals.filter(
-        (s) => s.kind === "correction"
-      );
+      const corrections = snapshots[i].recentSignals.filter((s) => s.kind === 'correction');
       if (corrections.length === 0) continue;
 
       for (let j = 0; j < snapshots.length; j++) {
@@ -281,18 +277,15 @@ export class ContradictionDetector implements PatternDetector {
         // If this thread emitted a correction and the other thread has recent
         // dispatches by the same source, flag it
         for (const corr of corrections) {
-          const conflicting = other.recentDispatches.some(
-            (d) => d.agentId === corr.source
-          );
+          const conflicting = other.recentDispatches.some((d) => d.agentId === corr.source);
           if (conflicting) {
             patterns.push({
-              id: nextPatternId("contra"),
-              kind: "contradiction",
-              severity: "warning",
+              id: nextPatternId('contra'),
+              kind: 'contradiction',
+              severity: 'warning',
               threads: [snapshots[i].threadId, other.threadId],
               description: `Correction in "${snapshots[i].threadId}" may contradict output in "${other.threadId}" from agent "${corr.source}"`,
-              recommendation:
-                "Inform both threads of the contradiction so they can reconcile",
+              recommendation: 'Inform both threads of the contradiction so they can reconcile',
               evidence: {
                 correctionSource: corr.source,
                 correctionContent: corr.content,
@@ -313,12 +306,12 @@ export class ContradictionDetector implements PatternDetector {
  * dispatches with matching context hashes despite different descriptions.
  */
 export class ConvergenceDetector implements PatternDetector {
-  readonly id = "builtin:convergence";
-  readonly kind = "convergence" as const;
+  readonly id = 'builtin:convergence';
+  readonly kind = 'convergence' as const;
 
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    _history: ReadonlyArray<HeraldPattern>
+    _history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[] {
     const patterns: HeraldPattern[] = [];
     const now = Date.now();
@@ -345,13 +338,12 @@ export class ConvergenceDetector implements PatternDetector {
 
     if (convergentThreads.size >= 3) {
       patterns.push({
-        id: nextPatternId("conv"),
-        kind: "convergence",
-        severity: "info",
+        id: nextPatternId('conv'),
+        kind: 'convergence',
+        severity: 'info',
         threads: [...convergentThreads],
-        description: `${convergentThreads.size} threads converging on layers: ${convergentLayers.join(", ")}`,
-        recommendation:
-          "Consider merging these threads or creating a shared context layer",
+        description: `${convergentThreads.size} threads converging on layers: ${convergentLayers.join(', ')}`,
+        recommendation: 'Consider merging these threads or creating a shared context layer',
         evidence: { layers: convergentLayers },
         timestamp: now,
       });
@@ -363,21 +355,18 @@ export class ConvergenceDetector implements PatternDetector {
         const a = snapshots[i];
         const b = snapshots[j];
         if (a.description === b.description) continue; // same description is not interesting
-        if (a.description === "" || b.description === "") continue;
+        if (a.description === '' || b.description === '') continue;
 
         const aHashes = new Set(a.recentDispatches.map((d) => d.contextHash));
-        const overlap = b.recentDispatches.filter((d) =>
-          aHashes.has(d.contextHash)
-        );
+        const overlap = b.recentDispatches.filter((d) => aHashes.has(d.contextHash));
         if (overlap.length > 0) {
           patterns.push({
-            id: nextPatternId("conv"),
-            kind: "convergence",
-            severity: "info",
+            id: nextPatternId('conv'),
+            kind: 'convergence',
+            severity: 'info',
             threads: [a.threadId, b.threadId],
             description: `Threads "${a.threadId}" and "${b.threadId}" have different goals but matching dispatch contexts`,
-            recommendation:
-              "These threads may benefit from coordination or merging",
+            recommendation: 'These threads may benefit from coordination or merging',
             evidence: {
               descriptions: [a.description, b.description],
               matchingHashes: overlap.length,
@@ -397,12 +386,12 @@ export class ConvergenceDetector implements PatternDetector {
  * based on tag matching.
  */
 export class CrossPollinationDetector implements PatternDetector {
-  readonly id = "builtin:cross_pollination";
-  readonly kind = "cross_pollination" as const;
+  readonly id = 'builtin:cross_pollination';
+  readonly kind = 'cross_pollination' as const;
 
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    _history: ReadonlyArray<HeraldPattern>
+    _history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[] {
     const patterns: HeraldPattern[] = [];
     const now = Date.now();
@@ -413,13 +402,13 @@ export class CrossPollinationDetector implements PatternDetector {
           if (source.threadId === target.threadId) continue;
           // Check if signal kind matches any of the target's tags
           const tagMatch = target.tags.some(
-            (tag) => tag === signal.kind || signal.kind.includes(tag)
+            (tag) => tag === signal.kind || signal.kind.includes(tag),
           );
           if (tagMatch) {
             patterns.push({
-              id: nextPatternId("xpol"),
-              kind: "cross_pollination",
-              severity: "info",
+              id: nextPatternId('xpol'),
+              kind: 'cross_pollination',
+              severity: 'info',
               threads: [source.threadId, target.threadId],
               description: `Signal "${signal.kind}" from "${source.threadId}" is relevant to "${target.threadId}" (matching tags)`,
               recommendation: `Inject context from "${source.threadId}" into "${target.threadId}"`,
@@ -427,7 +416,7 @@ export class CrossPollinationDetector implements PatternDetector {
                 signalKind: signal.kind,
                 signalSource: signal.source,
                 matchingTags: target.tags.filter(
-                  (tag) => tag === signal.kind || signal.kind.includes(tag)
+                  (tag) => tag === signal.kind || signal.kind.includes(tag),
                 ),
               },
               timestamp: now,
@@ -446,12 +435,12 @@ export class CrossPollinationDetector implements PatternDetector {
  * or is idle while peers with similar work are active.
  */
 export class ResourceImbalanceDetector implements PatternDetector {
-  readonly id = "builtin:resource_imbalance";
-  readonly kind = "resource_imbalance" as const;
+  readonly id = 'builtin:resource_imbalance';
+  readonly kind = 'resource_imbalance' as const;
 
   detect(
     snapshots: ReadonlyArray<ThreadSnapshot>,
-    _history: ReadonlyArray<HeraldPattern>
+    _history: ReadonlyArray<HeraldPattern>,
   ): HeraldPattern[] {
     const patterns: HeraldPattern[] = [];
     const now = Date.now();
@@ -466,8 +455,7 @@ export class ResourceImbalanceDetector implements PatternDetector {
       description: s.description,
     }));
 
-    const avg =
-      counts.reduce((sum, c) => sum + c.count, 0) / counts.length;
+    const avg = counts.reduce((sum, c) => sum + c.count, 0) / counts.length;
 
     // Flag threads with 3x average dispatches (overloaded)
     for (const c of counts) {
@@ -478,12 +466,12 @@ export class ResourceImbalanceDetector implements PatternDetector {
 
         if (underloaded.length > 0) {
           patterns.push({
-            id: nextPatternId("imbal"),
-            kind: "resource_imbalance",
-            severity: "warning",
+            id: nextPatternId('imbal'),
+            kind: 'resource_imbalance',
+            severity: 'warning',
             threads: [c.threadId, ...underloaded],
             description: `Thread "${c.threadId}" is overloaded (${c.count} dispatches vs avg ${avg.toFixed(1)})`,
-            recommendation: "Redirect some work to underutilized threads",
+            recommendation: 'Redirect some work to underutilized threads',
             evidence: {
               overloaded: c.threadId,
               overloadedCount: c.count,
@@ -497,17 +485,15 @@ export class ResourceImbalanceDetector implements PatternDetector {
     }
 
     // Idle thread while others with similar descriptions are active
-    const idle = counts.filter((c) => c.status === "idle" && c.description);
-    const active = counts.filter(
-      (c) => c.status === "active" && c.description
-    );
+    const idle = counts.filter((c) => c.status === 'idle' && c.description);
+    const active = counts.filter((c) => c.status === 'active' && c.description);
     for (const i of idle) {
       for (const a of active) {
         if (i.description === a.description) {
           patterns.push({
-            id: nextPatternId("imbal"),
-            kind: "resource_imbalance",
-            severity: "info",
+            id: nextPatternId('imbal'),
+            kind: 'resource_imbalance',
+            severity: 'info',
             threads: [i.threadId, a.threadId],
             description: `Thread "${i.threadId}" is idle while "${a.threadId}" is active with similar work`,
             recommendation: `Redirect work from "${a.threadId}" to idle thread "${i.threadId}"`,
@@ -546,7 +532,7 @@ export class ResourceImbalanceDetector implements PatternDetector {
 export class Herald {
   private _session: SessionManager;
   private _config: Required<
-    Omit<HeraldConfig, "detectors" | "visibility" | "triggerSignals" | "autoSplit">
+    Omit<HeraldConfig, 'detectors' | 'visibility' | 'triggerSignals' | 'autoSplit'>
   > & { autoSplit: boolean };
   private _detectors: PatternDetector[] = [];
   private _patterns: HeraldPattern[] = [];
@@ -601,20 +587,23 @@ export class Herald {
     }
 
     // Signal kinds that trigger re-evaluation
-    this._triggerSignals = new Set(config?.triggerSignals ?? [
-      "classification",
-      "dispatch",
-      "context_loaded",
-      "context_evicted",
-      "correction",
-      "security_concern",
-      "architecture_observation",
-    ]);
+    this._triggerSignals = new Set(
+      config?.triggerSignals ?? [
+        'classification',
+        'dispatch',
+        'context_loaded',
+        'context_evicted',
+        'correction',
+        'security_concern',
+        'architecture_observation',
+      ],
+    );
 
     // Summary layer — compact cross-thread state
     this._summaryLayer = new ContextLayer({
-      id: "__herald-summary",
-      prompt: "Cross-thread awareness summary. Active threads, recent patterns, and relevant warnings from the Herald.",
+      id: '__herald-summary',
+      prompt:
+        'Cross-thread awareness summary. Active threads, recent patterns, and relevant warnings from the Herald.',
     });
     this._writeSummary();
   }
@@ -636,7 +625,7 @@ export class Herald {
   start(): void {
     // Subscribe to session events to track new/removed threads
     const unsub = this._session.onSession((event) => {
-      if (event.type === "thread:added" || event.type === "thread:spawned") {
+      if (event.type === 'thread:added' || event.type === 'thread:spawned') {
         this._subscribeToThread(event.threadId);
       }
     });
@@ -695,7 +684,7 @@ export class Herald {
 
   /** Get a layer's visibility tier. Returns "team" as default if unregistered. */
   getVisibility(layerId: string): LayerVisibility {
-    return this._visibility.get(layerId) ?? { layerId, tier: "team" };
+    return this._visibility.get(layerId) ?? { layerId, tier: 'team' };
   }
 
   /**
@@ -724,18 +713,18 @@ export class Herald {
     const tier = layerVis.tier;
 
     switch (requestTier) {
-      case "personal-private":
+      case 'personal-private':
         // Can see everything at your own tier + below
-        if (tier === "personal-private") return layerVis.ownerId === requesterId;
+        if (tier === 'personal-private') return layerVis.ownerId === requesterId;
         return true; // personal-public, team, org all visible
-      case "personal-public":
-        if (tier === "personal-private") return false; // can't see others' private
+      case 'personal-public':
+        if (tier === 'personal-private') return false; // can't see others' private
         return true;
-      case "team":
-        if (tier === "personal-private") return false;
+      case 'team':
+        if (tier === 'personal-private') return false;
         return true; // personal-public, team, org all visible
-      case "org":
-        return tier === "org"; // only org-level
+      case 'org':
+        return tier === 'org'; // only org-level
     }
   }
 
@@ -745,13 +734,13 @@ export class Herald {
   private _writeSummary(): void {
     const threads = this._session.active;
     if (threads.length <= 1) {
-      this._summaryLayer.set("Single thread active. No cross-thread concerns.");
+      this._summaryLayer.set('Single thread active. No cross-thread concerns.');
       return;
     }
 
     const lines: string[] = [`Active threads: ${threads.length}`];
     for (const t of threads) {
-      const desc = t.meta.description || "(no description)";
+      const desc = t.meta.description || '(no description)';
       const status = t.meta.status;
       lines.push(`  - ${t.id} [${status}]: ${desc}`);
     }
@@ -759,13 +748,13 @@ export class Herald {
     // Recent patterns
     const recentPatterns = this._patterns.slice(-5);
     if (recentPatterns.length > 0) {
-      lines.push("", "Recent cross-thread patterns:");
+      lines.push('', 'Recent cross-thread patterns:');
       for (const p of recentPatterns) {
         lines.push(`  - [${p.severity}] ${p.description}`);
       }
     }
 
-    this._summaryLayer.set(lines.join("\n"));
+    this._summaryLayer.set(lines.join('\n'));
   }
 
   // -- Manual trigger --
@@ -798,7 +787,7 @@ export class Herald {
     // Generate recommendations for warning/critical patterns
     const newRecs: HeraldRecommendation[] = [];
     for (const pattern of newPatterns) {
-      if (pattern.severity === "info") continue;
+      if (pattern.severity === 'info') continue;
 
       const recs = this._recommend(pattern);
       newRecs.push(...recs);
@@ -944,11 +933,11 @@ export class Herald {
     if (!thread) return;
 
     thread.signals.emit({
-      id: newId("herald"),
-      kind: "herald" as SignalKind,
-      source: "herald",
+      id: newId('herald'),
+      kind: 'herald' as SignalKind,
+      source: 'herald',
       content: rec,
-      confidence: rec.pattern.severity === "critical" ? 1.0 : 0.7,
+      confidence: rec.pattern.severity === 'critical' ? 1.0 : 0.7,
       timestamp: Date.now(),
     });
   }
@@ -964,14 +953,12 @@ export class Herald {
         (existing) =>
           existing.kind === pattern.kind &&
           sameThreadSet(existing.threads, pattern.threads) &&
-          pattern.timestamp - existing.timestamp < DEDUP_WINDOW_MS
+          pattern.timestamp - existing.timestamp < DEDUP_WINDOW_MS,
       );
 
       // Also check within the current batch
       const isDupInBatch = result.some(
-        (r) =>
-          r.kind === pattern.kind &&
-          sameThreadSet(r.threads, pattern.threads)
+        (r) => r.kind === pattern.kind && sameThreadSet(r.threads, pattern.threads),
       );
 
       if (!isDup && !isDupInBatch) {
@@ -986,16 +973,16 @@ export class Herald {
   private _recommend(pattern: HeraldPattern): HeraldRecommendation[] {
     const recs: HeraldRecommendation[] = [];
 
-    const actionMap: Record<HeraldPattern["kind"], HeraldRecommendation["action"]> = {
-      duplication: "pause",
-      contradiction: "inform",
-      convergence: "merge",
-      cross_pollination: "inject_context",
-      resource_imbalance: "redirect",
+    const actionMap: Record<HeraldPattern['kind'], HeraldRecommendation['action']> = {
+      duplication: 'pause',
+      contradiction: 'inform',
+      convergence: 'merge',
+      cross_pollination: 'inject_context',
+      resource_imbalance: 'redirect',
       // Auto-split is off by default — until we calibrate the heuristic, the
       // overload pattern just informs the operator. Flip `autoSplit: true`
       // on Herald construction to actually fork sub-threads.
-      workstream_overload: this._config.autoSplit ? "split" : "inform",
+      workstream_overload: this._config.autoSplit ? 'split' : 'inform',
     };
 
     const action = actionMap[pattern.kind];

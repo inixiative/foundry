@@ -1,8 +1,8 @@
-import type { Thread, Trace } from "@inixiative/foundry-core";
+import type { Thread, Trace } from '@inixiative/foundry-core';
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
 export function validateId(id: string, label: string): string | null {
-  if (!id || typeof id !== "string") return `${label} is required`;
+  if (!id || typeof id !== 'string') return `${label} is required`;
   if (id.length > 128) return `${label} too long (max 128 chars)`;
   if (!/^[a-zA-Z0-9_.-]+$/.test(id)) {
     return `${label} contains invalid characters (use alphanumeric, dash, underscore, dot)`;

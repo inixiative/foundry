@@ -1,6 +1,6 @@
-import { join, relative, basename, extname } from "node:path";
-import type { ContextSource } from "../context-layer";
-import type { HydrationAdapter, ContextRef } from "../hydrator";
+import { basename, extname, join, relative } from 'node:path';
+import type { ContextSource } from '../context-layer';
+import type { ContextRef, HydrationAdapter } from '../hydrator';
 
 /**
  * Markdown directory adapter.
@@ -22,7 +22,7 @@ export class MarkdownDocs {
    * @param dir — root directory to scan
    * @param glob — file pattern (default: all .md files recursively)
    */
-  constructor(dir: string, glob: string = "**/*.md") {
+  constructor(dir: string, glob: string = '**/*.md') {
     this.dir = dir;
     this.glob = glob;
   }
@@ -55,7 +55,7 @@ export class MarkdownDocs {
   async readFile(relPath: string): Promise<string> {
     const absPath = join(this.dir, relPath);
     const file = Bun.file(absPath);
-    if (!(await file.exists())) return "";
+    if (!(await file.exists())) return '';
     return file.text();
   }
 
@@ -79,13 +79,13 @@ export class MarkdownDocs {
       id,
       async load() {
         const files = await docs.load();
-        if (files.size === 0) return "";
+        if (files.size === 0) return '';
 
         const parts: string[] = [];
         for (const [path, content] of files) {
           parts.push(`## ${path}\n\n${content}`);
         }
-        return parts.join("\n\n---\n\n");
+        return parts.join('\n\n---\n\n');
       },
     };
   }
@@ -130,25 +130,25 @@ export class MarkdownDocs {
       id,
       async load() {
         const files = await docs.load();
-        if (files.size === 0) return "";
+        if (files.size === 0) return '';
 
         const lines: string[] = [];
         const paths = [...files.keys()].sort();
 
         for (const path of paths) {
-          const content = files.get(path) ?? "";
+          const content = files.get(path) ?? '';
           if (!content.trim()) continue;
 
           const { title, headings } = extractHeadings(content, maxHeadings);
           const displayTitle = title ?? basename(path, extname(path));
           lines.push(`${path} — ${displayTitle}`);
           if (headings.length > 0) {
-            lines.push(`  H2: ${headings.join(", ")}`);
+            lines.push(`  H2: ${headings.join(', ')}`);
           }
-          lines.push("");
+          lines.push('');
         }
 
-        return lines.join("\n").trimEnd();
+        return lines.join('\n').trimEnd();
       },
     };
   }
@@ -157,7 +157,7 @@ export class MarkdownDocs {
   asAdapter(): HydrationAdapter {
     const docs = this;
     return {
-      system: "markdown",
+      system: 'markdown',
       async hydrate(ref: ContextRef): Promise<string> {
         return docs.readFile(ref.locator);
       },
@@ -178,7 +178,7 @@ function extractHeadings(
 ): { title: string | null; headings: string[] } {
   let title: string | null = null;
   const headings: string[] = [];
-  const lines = content.split("\n");
+  const lines = content.split('\n');
 
   for (const line of lines) {
     if (title === null) {
@@ -206,7 +206,7 @@ export function claudemdSource(id: string, path: string): ContextSource {
     id,
     async load() {
       const file = Bun.file(path);
-      if (!(await file.exists())) return "";
+      if (!(await file.exists())) return '';
       return file.text();
     },
   };

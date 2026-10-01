@@ -7,29 +7,38 @@
  * Visual: ▐▐▐▐▐ where each sliver is 4px wide, colored per-layer.
  */
 
-import { html } from "./lib.js";
-import { layerColor, selectedSpanId } from "./store.js";
+import { html } from './lib.js';
+import { layerColor, selectedSpanId } from './store.js';
 
 export function LayerBand({ layerIds, contextHash, onClick }) {
   if (!layerIds || layerIds.length === 0) return null;
 
   return html`
-    <div class="layer-band" title="Context: ${layerIds.join(", ")}">
+    <div class="layer-band" title="Context: ${layerIds.join(', ')}">
       <span class="layer-band-label">${layerIds.length}</span>
       <div class="layer-band-slivers">
-        ${layerIds.map(id => html`
+        ${layerIds.map(
+          (id) => html`
           <span
             key=${id}
             class="layer-sliver"
             style="background: ${layerColor(id)}"
             title=${id}
-            onClick=${(e) => { e.stopPropagation(); onClick && onClick(id); }}
+            onClick=${(e) => {
+              e.stopPropagation();
+              onClick && onClick(id);
+            }}
           ></span>
-        `)}
+        `,
+        )}
       </div>
-      ${contextHash ? html`
+      ${
+        contextHash
+          ? html`
         <span class="layer-band-hash">${contextHash.slice(0, 8)}</span>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }

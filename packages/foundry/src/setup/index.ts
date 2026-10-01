@@ -1,10 +1,10 @@
 export {
-  scanRepoDocs,
-  formatPlan,
   DOCS_ADVISE_PROMPT,
   type DocsCandidate,
-  type DocsSetupPlan,
   type DocsConfigSnippet,
+  type DocsSetupPlan,
   type DocsStrategy,
+  formatPlan,
   type ScanOptions,
-} from "./scan-docs";
+  scanRepoDocs,
+} from './scan-docs';

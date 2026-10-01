@@ -1,7 +1,7 @@
-import type { Job, Queue } from "bullmq";
-import type Redis from "ioredis";
-import type { PostgresMemory } from "../adapters/postgres-memory";
-import type { ContextStack } from "@inixiative/foundry-core";
+import type { ContextStack } from '@inixiative/foundry-core';
+import type { Job, Queue } from 'bullmq';
+import type Redis from 'ioredis';
+import type { PostgresMemory } from '../adapters/postgres-memory';
 
 export type JobsQueue = Queue & { redis: Redis };
 
@@ -19,14 +19,14 @@ export type WorkerContext = {
 export class SupersededError extends Error {
   constructor(jobId: string | undefined) {
     super(`Job ${jobId} was superseded`);
-    this.name = "SupersededError";
+    this.name = 'SupersededError';
   }
 }
 
 export const JobType = {
-  cron: "cron",
-  adhoc: "adhoc",
-  cronTrigger: "cronTrigger",
+  cron: 'cron',
+  adhoc: 'adhoc',
+  cronTrigger: 'cronTrigger',
 } as const;
 
 export type JobType = (typeof JobType)[keyof typeof JobType];
@@ -38,9 +38,14 @@ export type JobData<TPayload = unknown> = {
   dedupeKey?: string;
 };
 
-export type JobHandlerArgs<TPayload = void> = [TPayload] extends [undefined] ? [] : [payload: TPayload];
+export type JobHandlerArgs<TPayload = void> = [TPayload] extends [undefined]
+  ? []
+  : [payload: TPayload];
 
-export type JobHandler<TPayload = void> = (ctx: WorkerContext, ...args: JobHandlerArgs<TPayload>) => Promise<void>;
+export type JobHandler<TPayload = void> = (
+  ctx: WorkerContext,
+  ...args: JobHandlerArgs<TPayload>
+) => Promise<void>;
 
 export type JobOptions = {
   priority?: number;

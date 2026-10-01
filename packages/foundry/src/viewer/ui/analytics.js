@@ -5,9 +5,8 @@
  * recent call log with per-span cost, and budget status.
  */
 
-import { html, useState, useEffect, useCallback } from "./lib.js";
-import { signal } from "./lib.js";
-import { showToast } from "./store.js";
+import { html, signal, useCallback, useEffect, useState } from './lib.js';
+import { showToast } from './store.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -15,8 +14,7 @@ import { showToast } from "./store.js";
 
 export const analyticsOpen = signal(false);
 const analyticsData = signal(null);
-const analyticsPeriod = signal("hourly");
-const analyticsTab = signal("overview"); // overview | threads | calls | models
+const analyticsTab = signal('overview'); // overview | threads | calls | models
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -24,15 +22,15 @@ const analyticsTab = signal("overview"); // overview | threads | calls | models
 
 async function loadAnalytics() {
   try {
-    const res = await fetch("/api/analytics");
+    const res = await fetch('/api/analytics');
     if (!res.ok) {
       analyticsData.value = null;
-      showToast(`Analytics unavailable: ${res.status}`, "error");
+      showToast(`Analytics unavailable: ${res.status}`, 'error');
       return;
     }
     analyticsData.value = await res.json();
   } catch (err) {
-    showToast(`Analytics failed to load: ${err.message}`, "error");
+    showToast(`Analytics failed to load: ${err.message}`, 'error');
   }
 }
 
@@ -41,21 +39,21 @@ async function loadAnalytics() {
 // ---------------------------------------------------------------------------
 
 function fmt$(n) {
-  if (n == null) return "Unavailable";
+  if (n == null) return 'Unavailable';
   if (n < 0.01) return `$${n.toFixed(4)}`;
   if (n < 1) return `$${n.toFixed(3)}`;
   return `$${n.toFixed(2)}`;
 }
 
 function fmtTokens(n) {
-  if (n == null) return "Unavailable";
+  if (n == null) return 'Unavailable';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return `${n}`;
 }
 
 function fmtPct(n) {
-  if (n == null) return "0%";
+  if (n == null) return '0%';
   return `${(n * 100).toFixed(1)}%`;
 }
 
@@ -63,16 +61,13 @@ function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }
 
-function fmtDate(ts) {
-  return new Date(ts).toLocaleDateString();
-}
-
 // ---------------------------------------------------------------------------
 // Overview — session totals + budget
 // ---------------------------------------------------------------------------
 
 function Overview({ data }) {
-  if (!data?.session) return html`<div class="analytics-empty">No analytics data yet. Make some LLM calls to see costs.</div>`;
+  if (!data?.session)
+    return html`<div class="analytics-empty">No analytics data yet. Make some LLM calls to see costs.</div>`;
 
   const s = data.session;
   const b = s.budget;
@@ -84,20 +79,24 @@ function Overview({ data }) {
     <div class="analytics-overview">
       <!-- Hero stats -->
       <div class="stats-grid">
-        <${StatCard} label="Recorded cost" value=${fmt$(o?.unavailableCostCalls ? null : o?.knownCost ?? s.totalCost)} accent="blue" />
+        <${StatCard} label="Recorded cost" value=${fmt$(o?.unavailableCostCalls ? null : (o?.knownCost ?? s.totalCost))} accent="blue" />
         <${StatCard} label="Recorded tokens" value=${fmtTokens(o?.knownTokens ?? s.totalTokens)} accent="green" />
         <${StatCard} label="Recorded calls" value=${o?.calls ?? s.totalCalls} accent="purple" />
-        <${StatCard} label="Avg $/Call" value=${fmt$(o?.unavailableCostCalls ? null : (o?.calls ? o.knownCost / o.calls : 0))} accent="orange" />
+        <${StatCard} label="Avg $/Call" value=${fmt$(o?.unavailableCostCalls ? null : o?.calls ? o.knownCost / o.calls : 0)} accent="orange" />
       </div>
       ${o ? html`<p class="analytics-availability">Recorded history: known subtotals only. Usage unavailable for ${o.unavailableUsageCalls} calls; cost unavailable for ${o.unavailableCostCalls} calls. Persistence: ${o.persistence}.</p>` : null}
 
       <!-- Budget gauge -->
-      ${(b.limitTokens || b.limitCost) && !o?.unavailableCostCalls ? html`
+      ${
+        (b.limitTokens || b.limitCost) && !o?.unavailableCostCalls
+          ? html`
         <div class="budget-section">
           <div class="section-label">BUDGET</div>
           <${BudgetGauge} budget=${b} />
         </div>
-      ` : null}
+      `
+          : null
+      }
 
       <!-- Token breakdown -->
       <div class="breakdown-row">
@@ -114,32 +113,44 @@ function Overview({ data }) {
       <div class="breakdown-row">
         <div class="breakdown-half">
           <div class="section-label">CACHE READ TOKENS</div>
-          <div class="breakdown-value">${cacheRead == null ? "—" : fmtTokens(cacheRead)}</div>
+          <div class="breakdown-value">${cacheRead == null ? '—' : fmtTokens(cacheRead)}</div>
         </div>
         <div class="breakdown-half">
           <div class="section-label">CACHE WRITE TOKENS</div>
-          <div class="breakdown-value">${cacheWrite == null ? "—" : fmtTokens(cacheWrite)}</div>
+          <div class="breakdown-value">${cacheWrite == null ? '—' : fmtTokens(cacheWrite)}</div>
         </div>
       </div>
       <!-- Top models -->
-      ${data.topModels?.length > 0 ? html`
+      ${
+        data.topModels?.length > 0
+          ? html`
         <div class="ranked-section">
           <div class="section-label">TOP MODELS BY SPEND</div>
-          ${data.topModels.slice(0, 5).map(m => html`
+          ${data.topModels.slice(0, 5).map(
+            (m) => html`
             <${RankedRow} key=${m.key} item=${m} unpriced=${!!o?.unavailableCostCalls} />
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
 
       <!-- Top agents -->
-      ${data.topAgents?.length > 0 ? html`
+      ${
+        data.topAgents?.length > 0
+          ? html`
         <div class="ranked-section">
           <div class="section-label">TOP AGENTS BY SPEND</div>
-          ${data.topAgents.slice(0, 5).map(a => html`
+          ${data.topAgents.slice(0, 5).map(
+            (a) => html`
             <${RankedRow} key=${a.key} item=${a} unpriced=${!!o?.unavailableCostCalls} />
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -155,7 +166,7 @@ function StatCard({ label, value, accent }) {
 
 function BudgetGauge({ budget }) {
   const pct = Math.min(budget.percentage * 100, 100);
-  const cls = budget.exceeded ? "exceeded" : budget.warning ? "warning" : "ok";
+  const cls = budget.exceeded ? 'exceeded' : budget.warning ? 'warning' : 'ok';
 
   return html`
     <div class="budget-gauge">
@@ -165,8 +176,8 @@ function BudgetGauge({ budget }) {
       <div class="budget-labels">
         <span>${fmtPct(budget.percentage)} used</span>
         <span>
-          ${budget.limitCost != null ? `${fmt$(budget.usedCost)} / ${fmt$(budget.limitCost)}` : ""}
-          ${budget.limitTokens != null ? ` ${fmtTokens(budget.usedTokens)} / ${fmtTokens(budget.limitTokens)} tokens` : ""}
+          ${budget.limitCost != null ? `${fmt$(budget.usedCost)} / ${fmt$(budget.limitCost)}` : ''}
+          ${budget.limitTokens != null ? ` ${fmtTokens(budget.usedTokens)} / ${fmtTokens(budget.limitTokens)} tokens` : ''}
         </span>
       </div>
     </div>
@@ -181,7 +192,7 @@ function RankedRow({ item, unpriced }) {
       <span class="ranked-cost">${fmt$(unpriced ? null : item.cost)}</span>
       <span class="ranked-tokens">${fmtTokens(item.tokens)}</span>
       <span class="ranked-calls">${item.calls} calls</span>
-      <span class="ranked-pct">${unpriced ? "—" : fmtPct(item.percentage)}</span>
+      <span class="ranked-pct">${unpriced ? '—' : fmtPct(item.percentage)}</span>
     </div>
   `;
 }
@@ -205,7 +216,8 @@ function Threads({ data }) {
           <span class="th-calls">Calls</span>
           <span class="th-avg">Avg/Call</span>
         </div>
-        ${threads.map(t => html`
+        ${threads.map(
+          (t) => html`
           <div key=${t.threadId} class="thread-row">
             <span class="th-id" title=${t.threadId}>${t.threadId}</span>
             <span class="th-cost">${fmt$(data.observations?.unavailableCostCalls ? null : t.cost)}</span>
@@ -213,7 +225,8 @@ function Threads({ data }) {
             <span class="th-calls">${t.calls}</span>
             <span class="th-avg">${fmt$(data.observations?.unavailableCostCalls ? null : t.avgCostPerCall)}</span>
           </div>
-        `)}
+        `,
+        )}
       </div>
     </div>
   `;
@@ -242,19 +255,21 @@ function Calls({ data }) {
           <span class="cl-cache-write">Cache write</span>
           <span class="cl-cached">Response cache</span>
         </div>
-        ${calls.map((c, i) => html`
+        ${calls.map(
+          (c, i) => html`
           <div key=${i} class="call-row ${c.cached ? 'cached' : ''}">
             <span class="cl-time">${fmtTime(c.timestamp)}</span>
-            <span class="cl-model" title=${c.model}>${c.model.split("/").pop()}</span>
-            <span class="cl-agent">${c.agentId ?? "-"}</span>
+            <span class="cl-model" title=${c.model}>${c.model.split('/').pop()}</span>
+            <span class="cl-agent">${c.agentId ?? '-'}</span>
             <span class="cl-in" data-label="Input">${fmtTokens(c.input)}</span>
             <span class="cl-out" data-label="Output">${fmtTokens(c.output)}</span>
             <span class="cl-cost" data-label="Cost">${fmt$(c.cost)}</span>
-            <span class="cl-cache-read" data-label="Cache read" title=${JSON.stringify(c.providerUsage ?? {})}>${c.cacheRead == null ? "—" : fmtTokens(c.cacheRead)}</span>
-            <span class="cl-cache-write" data-label="Cache write" title=${`5m: ${c.cacheWrite5m ?? "unreported"}; 1h: ${c.cacheWrite1h ?? "unreported"}`}>${c.cacheWrite == null ? "—" : fmtTokens(c.cacheWrite)}</span>
-            <span class="cl-cached">${c.cached ? "hit" : ""}</span>
+            <span class="cl-cache-read" data-label="Cache read" title=${JSON.stringify(c.providerUsage ?? {})}>${c.cacheRead == null ? '—' : fmtTokens(c.cacheRead)}</span>
+            <span class="cl-cache-write" data-label="Cache write" title=${`5m: ${c.cacheWrite5m ?? 'unreported'}; 1h: ${c.cacheWrite1h ?? 'unreported'}`}>${c.cacheWrite == null ? '—' : fmtTokens(c.cacheWrite)}</span>
+            <span class="cl-cached">${c.cached ? 'hit' : ''}</span>
           </div>
-        `)}
+        `,
+        )}
       </div>
     </div>
   `;
@@ -274,24 +289,33 @@ function Models({ data }) {
 
   return html`
     <div class="analytics-models">
-      ${byProvider.length > 0 ? html`
+      ${
+        byProvider.length > 0
+          ? html`
         <div class="section-label">BY PROVIDER</div>
         <div class="model-table">
-          ${byProvider.map(p => html`
+          ${byProvider.map(
+            (p) => html`
             <div key=${p.key} class="model-row">
               <span class="md-name">${p.key}</span>
               <span class="md-cost">${fmt$(data.observations?.unavailableCostCalls ? null : p.cost)}</span>
               <span class="md-tokens">${fmtTokens(p.total)} tokens</span>
               <span class="md-calls">${p.calls} calls</span>
             </div>
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
 
-      ${byModel.length > 0 ? html`
+      ${
+        byModel.length > 0
+          ? html`
         <div class="section-label" style="margin-top: 16px">BY MODEL</div>
         <div class="model-table">
-          ${byModel.map(m => html`
+          ${byModel.map(
+            (m) => html`
             <div key=${m.key} class="model-row">
               <span class="md-name">${m.key}</span>
               <span class="md-cost">${fmt$(data.observations?.unavailableCostCalls ? null : m.cost)}</span>
@@ -299,9 +323,12 @@ function Models({ data }) {
               <span class="md-out">${fmtTokens(m.output)} out</span>
               <span class="md-calls">${m.calls} calls</span>
             </div>
-          `)}
+          `,
+          )}
         </div>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -326,41 +353,47 @@ export function Analytics() {
   if (!open) return null;
 
   const tabs = [
-    { id: "overview", label: "Overview" },
-    { id: "threads", label: "Threads" },
-    { id: "calls", label: "Call Log" },
-    { id: "models", label: "Models" },
+    { id: 'overview', label: 'Overview' },
+    { id: 'threads', label: 'Threads' },
+    { id: 'calls', label: 'Call Log' },
+    { id: 'models', label: 'Models' },
   ];
 
   return html`
     <div class="analytics-overlay fullscreen" onClick=${(e) => {
-      if (e.target.classList.contains("analytics-overlay")) analyticsOpen.value = false;
+      if (e.target.classList.contains('analytics-overlay')) analyticsOpen.value = false;
     }}>
       <div class="analytics-panel">
         <div class="analytics-header">
           <span class="analytics-title">Analytics</span>
           <div class="analytics-tabs">
-            ${tabs.map(t => html`
+            ${tabs.map(
+              (t) => html`
               <button
                 key=${t.id}
                 class="analytics-tab ${tab === t.id ? 'active' : ''}"
-                onClick=${() => { analyticsTab.value = t.id; }}
+                onClick=${() => {
+                  analyticsTab.value = t.id;
+                }}
               >${t.label}</button>
-            `)}
+            `,
+            )}
           </div>
           <button
             class="fullscreen-close"
-            onClick=${() => { analyticsOpen.value = false; }}
+            onClick=${() => {
+              analyticsOpen.value = false;
+            }}
             aria-label="Close analytics"
           >\u00d7</button>
         </div>
 
         <div class="analytics-body">
-          ${tab !== "overview" && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
-          ${tab === "overview" ? html`<${Overview} data=${data} />` : null}
-          ${tab === "threads" ? html`<${Threads} data=${data} />` : null}
-          ${tab === "calls" ? html`<${Calls} data=${data} />` : null}
-          ${tab === "models" ? html`<${Models} data=${data} />` : null}
+          ${tab !== 'overview' && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
+          ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}
+          ${tab === 'threads' ? html`<${Threads} data=${data} />` : null}
+          ${tab === 'calls' ? html`<${Calls} data=${data} />` : null}
+          ${tab === 'models' ? html`<${Models} data=${data} />` : null}
         </div>
       </div>
     </div>

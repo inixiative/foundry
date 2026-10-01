@@ -1,16 +1,12 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from 'bun:test';
 import {
   ContextLayer,
   type ContextSource,
   ContextStack,
-  Thread,
   Executor,
-} from "@inixiative/foundry-core";
-import {
-  SessionManager,
-  type SessionEvent,
-  type ThreadBlueprint,
-} from "../src/agents/session";
+  Thread,
+} from '@inixiative/foundry-core';
+import { type SessionEvent, SessionManager, type ThreadBlueprint } from '../src/agents/session';
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
@@ -18,82 +14,82 @@ function source(id: string, content: string): ContextSource {
 
 function makeThread(id: string): Thread {
   const layer = new ContextLayer({
-    id: "docs",
-        sources: [source("docs", "context")],
+    id: 'docs',
+    sources: [source('docs', 'context')],
   });
-  layer.set("context");
+  layer.set('context');
   const stack = new ContextStack([layer]);
   const thread = new Thread(id, stack);
   thread.register(
     new Executor({
-      id: "worker",
+      id: 'worker',
       stack,
       handler: async (ctx, payload) => `${id}: ${payload}`,
-    })
+    }),
   );
   return thread;
 }
 
-describe("SessionManager", () => {
-  describe("thread management", () => {
-    test("add and get thread", () => {
+describe('SessionManager', () => {
+  describe('thread management', () => {
+    test('add and get thread', () => {
       const sm = new SessionManager();
-      const thread = makeThread("main");
+      const thread = makeThread('main');
       sm.add(thread);
-      expect(sm.get("main")).toBe(thread);
+      expect(sm.get('main')).toBe(thread);
       expect(sm.threads.size).toBe(1);
     });
 
-    test("remove thread", () => {
+    test('remove thread', () => {
       const sm = new SessionManager();
-      sm.add(makeThread("main"));
-      expect(sm.remove("main")).toBe(true);
-      expect(sm.get("main")).toBeUndefined();
-      expect(sm.remove("nonexistent")).toBe(false);
+      sm.add(makeThread('main'));
+      expect(sm.remove('main')).toBe(true);
+      expect(sm.get('main')).toBeUndefined();
+      expect(sm.remove('nonexistent')).toBe(false);
     });
 
-    test("active and archived", () => {
+    test('active and archived', () => {
       const sm = new SessionManager();
-      const a = makeThread("a");
-      const b = makeThread("b");
+      const a = makeThread('a');
+      const b = makeThread('b');
       sm.add(a);
       sm.add(b);
       b.archive();
 
       expect(sm.active.length).toBe(1);
-      expect(sm.active[0].id).toBe("a");
+      expect(sm.active[0].id).toBe('a');
       expect(sm.archived.length).toBe(1);
-      expect(sm.archived[0].id).toBe("b");
+      expect(sm.archived[0].id).toBe('b');
     });
   });
 
-  describe("blueprints and resolve", () => {
-    test("resolve returns existing thread", async () => {
+  describe('blueprints and resolve', () => {
+    test('resolve returns existing thread', async () => {
       const sm = new SessionManager();
-      const thread = makeThread("main");
+      const thread = makeThread('main');
       sm.add(thread);
 
-      const resolved = await sm.resolve("main");
+      const resolved = await sm.resolve('main');
       expect(resolved).toBe(thread);
     });
 
-    test("resolve spawns from string blueprint", async () => {
+    test('resolve spawns from string blueprint', async () => {
       const sm = new SessionManager();
       sm.addBlueprint({
-        match: "feature-auth",
+        match: 'feature-auth',
         create(id) {
           return makeThread(id);
         },
       });
 
-      const thread = await sm.resolve("feature-auth");
+      const thread = await sm.resolve('feature-auth');
       expect(thread).toBeDefined();
-      expect(thread!.id).toBe("feature-auth");
+      expect(thread!.id).toBe('feature-auth');
       // Should be registered now
-      expect(sm.get("feature-auth")).toBe(thread);
+      expect(sm.get('feature-auth')).toBe(thread);
     });
 
-    test("resolve spawns from regex blueprint", async () => {
+    test('resolve spawns from regex blueprint', async () => {
       const sm = new SessionManager();
       sm.addBlueprint({
         match: /^feature-.*/,
@@ -102,20 +98,20 @@ describe("SessionManager", () => {
         },
       });
 
-      const t1 = await sm.resolve("feature-auth");
-      const t2 = await sm.resolve("feature-billing");
-      expect(t1?.id).toBe("feature-auth");
-      expect(t2?.id).toBe("feature-billing");
+      const t1 = await sm.resolve('feature-auth');
+      const t2 = await sm.resolve('feature-billing');
+      expect(t1?.id).toBe('feature-auth');
+      expect(t2?.id).toBe('feature-billing');
     });
 
-    test("resolve returns undefined for no match", async () => {
+    test('resolve returns undefined for no match', async () => {
       const sm = new SessionManager();
-      expect(await sm.resolve("unknown")).toBeUndefined();
+      expect(await sm.resolve('unknown')).toBeUndefined();
     });
 
-    test("resolve tracks parent-child relationship", async () => {
+    test('resolve tracks parent-child relationship', async () => {
       const sm = new SessionManager();
-      const parent = makeThread("main");
+      const parent = makeThread('main');
       sm.add(parent);
 
       sm.addBlueprint({
@@ -125,30 +121,30 @@ describe("SessionManager", () => {
         },
       });
 
-      const child = await sm.resolve("child-1", parent);
-      expect(sm.parentOf("child-1")).toBe(parent);
-      expect(sm.childrenOf("main").length).toBe(1);
-      expect(sm.childrenOf("main")[0]).toBe(child);
+      const child = await sm.resolve('child-1', parent);
+      expect(sm.parentOf('child-1')).toBe(parent);
+      expect(sm.childrenOf('main').length).toBe(1);
+      expect<Thread | undefined>(sm.childrenOf('main')[0]).toBe(child);
     });
   });
 
-  describe("dispatch", () => {
-    test("dispatch to thread agent", async () => {
+  describe('dispatch', () => {
+    test('dispatch to thread agent', async () => {
       const sm = new SessionManager();
-      const thread = makeThread("main");
+      const thread = makeThread('main');
       sm.add(thread);
 
-      const result = await sm.dispatch("main", "hello", {
+      const result = await sm.dispatch('main', 'hello', {
         sourceThread: thread,
-        agentId: "worker",
+        agentId: 'worker',
       });
       // Since "main" is a registered thread, dispatches to its worker
-      expect(result.output).toBe("main: hello");
+      expect(result.output).toBe('main: hello');
     });
 
-    test("dispatch to new thread via blueprint", async () => {
+    test('dispatch to new thread via blueprint', async () => {
       const sm = new SessionManager();
-      const main = makeThread("main");
+      const main = makeThread('main');
       sm.add(main);
 
       sm.addBlueprint({
@@ -158,81 +154,79 @@ describe("SessionManager", () => {
         },
       });
 
-      const result = await sm.dispatch("feature-auth", "hello", {
+      const result = await sm.dispatch('feature-auth', 'hello', {
         sourceThread: main,
       });
-      expect(result.output).toBe("feature-auth: hello");
+      expect(result.output).toBe('feature-auth: hello');
     });
 
-    test("dispatch throws for unresolvable destination", async () => {
+    test('dispatch throws for unresolvable destination', async () => {
       const sm = new SessionManager();
-      expect(sm.dispatch("unknown", "test")).rejects.toThrow(
-        "Cannot resolve destination"
-      );
+      expect(sm.dispatch('unknown', 'test')).rejects.toThrow('Cannot resolve destination');
     });
   });
 
-  describe("events", () => {
-    test("emits session events", async () => {
+  describe('events', () => {
+    test('emits session events', async () => {
       const sm = new SessionManager();
       const events: SessionEvent[] = [];
       sm.onSession((e) => events.push(e));
 
-      sm.add(makeThread("main"));
-      sm.remove("main");
+      sm.add(makeThread('main'));
+      sm.remove('main');
 
       expect(events.length).toBe(2);
-      expect(events[0].type).toBe("thread:added");
-      expect(events[1].type).toBe("thread:removed");
+      expect(events[0].type).toBe('thread:added');
+      expect(events[1].type).toBe('thread:removed');
     });
 
-    test("emits thread:spawned on resolve", async () => {
+    test('emits thread:spawned on resolve', async () => {
       const sm = new SessionManager();
       const events: SessionEvent[] = [];
       sm.onSession((e) => events.push(e));
 
       sm.addBlueprint({
-        match: "test",
+        match: 'test',
         create(id) {
           return makeThread(id);
         },
       });
 
-      await sm.resolve("test");
-      const spawned = events.find((e) => e.type === "thread:spawned");
+      await sm.resolve('test');
+      const spawned = events.find((e) => e.type === 'thread:spawned');
       expect(spawned).toBeDefined();
-      expect(spawned!.threadId).toBe("test");
+      expect(spawned!.threadId).toBe('test');
     });
   });
 
-  describe("evict", () => {
-    test("evicts idle threads past threshold", async () => {
+  describe('evict', () => {
+    test('evicts idle threads past threshold', async () => {
       const sm = new SessionManager();
-      const thread = makeThread("old");
+      const thread = makeThread('old');
       sm.add(thread);
 
       // Artificially age the thread
       (thread.meta as any).lastActiveAt = Date.now() - 60000;
 
       const evicted = sm.evict(30000); // 30s threshold
-      expect(evicted).toContain("old");
-      expect(sm.get("old")).toBeUndefined();
+      expect(evicted).toContain('old');
+      expect(sm.get('old')).toBeUndefined();
     });
 
-    test("does not evict active threads", async () => {
+    test('does not evict active threads', async () => {
       const sm = new SessionManager();
-      const thread = makeThread("active");
+      const thread = makeThread('active');
       sm.add(thread);
-      (thread.meta as any).status = "active";
+      (thread.meta as any).status = 'active';
       (thread.meta as any).lastActiveAt = Date.now() - 60000;
 
       const evicted = sm.evict(30000);
       expect(evicted.length).toBe(0);
     });
 
-    test("does not evict threads with active children", async () => {
+    test('does not evict threads with active children', async () => {
       const sm = new SessionManager();
-      const parent = makeThread("parent");
+      const parent = makeThread('parent');
       sm.add(parent);
       (parent.meta as any).lastActiveAt = Date.now() - 60000;
 
@@ -243,17 +237,17 @@ describe("SessionManager", () => {
         },
       });
 
-      const child = await sm.resolve("child-1", parent);
-      (child!.meta as any).status = "active";
+      const child = await sm.resolve('child-1', parent);
+      (child!.meta as any).status = 'active';
 
       const evicted = sm.evict(30000);
       expect(evicted.length).toBe(0);
-      expect(sm.get("parent")).toBeDefined();
+      expect(sm.get('parent')).toBeDefined();
     });
 
-    test("evicts children along with parent", async () => {
+    test('evicts children along with parent', async () => {
       const sm = new SessionManager();
-      const parent = makeThread("parent");
+      const parent = makeThread('parent');
       sm.add(parent);
       (parent.meta as any).lastActiveAt = Date.now() - 60000;
 
@@ -264,20 +258,20 @@ describe("SessionManager", () => {
         },
       });
 
-      await sm.resolve("child-1", parent);
+      await sm.resolve('child-1', parent);
 
       const evicted = sm.evict(30000);
-      expect(evicted).toContain("parent");
-      expect(evicted).toContain("child-1");
+      expect(evicted).toContain('parent');
+      expect(evicted).toContain('child-1');
     });
   });
 
-  describe("stats", () => {
-    test("returns correct counts", async () => {
+  describe('stats', () => {
+    test('returns correct counts', async () => {
       const sm = new SessionManager();
-      sm.add(makeThread("a"));
-      sm.add(makeThread("b"));
-      const c = makeThread("c");
+      sm.add(makeThread('a'));
+      sm.add(makeThread('b'));
+      const c = makeThread('c');
       c.archive();
       sm.add(c);
 
@@ -289,25 +283,25 @@ describe("SessionManager", () => {
     });
   });
 
-  describe("inheritLayers", () => {
-    test("shares layers by reference", () => {
-      const parent = makeThread("parent");
+  describe('inheritLayers', () => {
+    test('shares layers by reference', () => {
+      const parent = makeThread('parent');
       const childStack = SessionManager.inheritLayers(parent, {
-        share: ["docs"],
+        share: ['docs'],
       });
 
       // Same instance
-      expect(childStack.getLayer("docs")).toBe(parent.stack.getLayer("docs"));
+      expect(childStack.getLayer('docs')).toBe(parent.stack.getLayer('docs'));
     });
 
-    test("copies layers as snapshots", () => {
-      const parent = makeThread("parent");
+    test('copies layers as snapshots', () => {
+      const parent = makeThread('parent');
       const childStack = SessionManager.inheritLayers(parent, {
-        copy: ["docs"],
+        copy: ['docs'],
       });
 
-      const parentLayer = parent.stack.getLayer("docs")!;
-      const childLayer = childStack.getLayer("docs")!;
+      const parentLayer = parent.stack.getLayer('docs')!;
+      const childLayer = childStack.getLayer('docs')!;
 
       // Different instance, same content
       expect(childLayer).not.toBe(parentLayer);

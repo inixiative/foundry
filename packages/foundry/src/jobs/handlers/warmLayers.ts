@@ -1,4 +1,4 @@
-import { makeSingletonJob } from "../makeSingletonJob";
+import { makeSingletonJob } from '../makeSingletonJob';
 
 export type WarmLayersPayload = {
   /** Warm a specific thread's stack. Omit to warm all. */
@@ -17,7 +17,7 @@ export const warmLayers = makeSingletonJob<WarmLayersPayload>(async (ctx, payloa
   const threadId = payload?.threadId;
 
   if (!stacks || stacks.size === 0) {
-    log("No stacks available — skipping layer warming");
+    log('No stacks available — skipping layer warming');
     return;
   }
 

@@ -1,8 +1,8 @@
 // Copied from the template's apps/api/src/ws/subscriptions.ts. The connection's
 // own `streams` set and the byStream reverse-index are two halves of one fact;
 // both mutate together so delivery and cleanup stay consistent.
-import { deindexFrom, indexInto, type WSRegistry } from "./registry";
-import type { WSSocket } from "./types";
+import { deindexFrom, indexInto, type WSRegistry } from './registry';
+import type { WSSocket } from './types';
 
 export const subscribeToStream = (registry: WSRegistry, ws: WSSocket, stream: string): void => {
   ws.data.streams.add(stream);

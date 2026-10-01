@@ -1,20 +1,51 @@
-import { resolveSubscriptionPolicy, SUBSCRIPTION_DECISIONS, type SubscriptionSettings } from "../providers/subscription-policy";
-import { DECISION_MODEL } from "../providers/decision-provider";
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync } from 'node:fs';
+import { rename, rm, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import type { CredentialReference } from '@inixiative/foundry-core';
-import { kingdomRuntimesSchema, type KingdomRuntimeSettings } from "../providers/kingdom-runtime-connection";
-import { KingdomAuthentication, type KingdomInferenceSource, type KingdomInferenceAssignment } from "../providers/kingdom-authentication";
-import { validateKingdomAccess, type KingdomAccessSource } from "../providers/kingdom-access-client";
-import { NativeAuthentication, type NativeAuthenticationSource } from "../providers/native-authentication";
-import type { ClaudeContextBudget } from "../providers/claude-context-budget";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, existsSync } from "node:fs";
-import { rename, rm, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
-import { newId, validateMemorySelection, type Harness, type LLMProvider, type MemorySelectionPolicy } from "@inixiative/foundry-core";
-import { providerConfigsFromRegistry, type ModelCapability, type ProviderType } from "../models/registry";
-import { resolveProjectView, type ResolvedLayerDefinition, type ResolvedProjectView } from "./config-resolve";
-import { validateLearningSettings, type LearningSettings } from "../agents/learning-config";
-import { isThreadKnowledgeLayerId } from "../agents/domain-librarian";
+import {
+  type Harness,
+  type LLMProvider,
+  type MemorySelectionPolicy,
+  newId,
+  validateMemorySelection,
+} from '@inixiative/foundry-core';
+import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
+import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
+import {
+  type ModelCapability,
+  type ProviderType,
+  providerConfigsFromRegistry,
+} from '../models/registry';
+import type { ClaudeContextBudget } from '../providers/claude-context-budget';
+import { DECISION_MODEL } from '../providers/decision-provider';
+import {
+  type KingdomAccessSource,
+  validateKingdomAccess,
+} from '../providers/kingdom-access-client';
+import {
+  KingdomAuthentication,
+  type KingdomInferenceAssignment,
+  type KingdomInferenceSource,
+} from '../providers/kingdom-authentication';
+import {
+  type KingdomRuntimeSettings,
+  kingdomRuntimesSchema,
+} from '../providers/kingdom-runtime-connection';
+import {
+  NativeAuthentication,
+  type NativeAuthenticationSource,
+} from '../providers/native-authentication';
+import {
+  resolveSubscriptionPolicy,
+  SUBSCRIPTION_DECISIONS,
+  type SubscriptionSettings,
+} from '../providers/subscription-policy';
+import {
+  type ResolvedLayerDefinition,
+  type ResolvedProjectView,
+  resolveProjectView,
+} from './config-resolve';
 
 // ---------------------------------------------------------------------------
 // Settings config model — serializable representation of system configuration
@@ -50,8 +81,8 @@ export interface FoundryConfig {
     nativeAuthenticationId?: string;
     kingdomOwnerKey?: string;
     /** Explicit native selection; MCP stays default. Applies on construction only. */
-    codexEngine?: "mcp" | "app-server";
-    codexEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+    codexEngine?: 'mcp' | 'app-server';
+    codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;
     /** Classifier/router model. Defaults to same as executor if omitted. */
@@ -120,7 +151,7 @@ export interface ProjectPrompts {
 
 export interface ProjectSettingsConfig {
   /** Opt-in maintenance; existing margins remain readable when disabled. */
-  gloss?: { enabled: boolean; display: "margin" | "hover" | "inline" };
+  gloss?: { enabled: boolean; display: 'margin' | 'hover' | 'inline' };
   /** Auto-generated UUID. Never manually specified. */
   id: string;
   /** Path to project root directory. The only truly required field. */
@@ -132,7 +163,7 @@ export interface ProjectSettingsConfig {
   /** Optional description. */
   description?: string;
   /** Override global defaults for this project. Omitted fields inherit from global. */
-  defaults?: Partial<FoundryConfig["defaults"]>;
+  defaults?: Partial<FoundryConfig['defaults']>;
   /**
    * Base identity prompts — composed into CLAUDE.md, .cursorrules, etc.
    * This is the project's "front door" — the first thing any model reads.
@@ -185,9 +216,9 @@ export interface ModelConfig {
   id: string;
   label: string;
   /** Suggested use: "fast" for middleware, "standard" for general, "powerful" for execution. */
-  tier: "fast" | "standard" | "powerful";
+  tier: 'fast' | 'standard' | 'powerful';
   /** Cost tier for display. */
-  costTier?: "low" | "medium" | "high";
+  costTier?: 'low' | 'medium' | 'high';
   /** Context window size. */
   contextWindow?: number;
   /** What this model is worth using for. Always includes "judgment". */
@@ -211,14 +242,14 @@ export interface ModelConfig {
  *
  * See docs/EXECUTION_ENVIRONMENTS.md for guidance on when to use each.
  */
-export type ExecutionEnv = "bash" | "just-bash" | "typescript" | "browser" | "hybrid";
+export type ExecutionEnv = 'bash' | 'just-bash' | 'typescript' | 'browser' | 'hybrid';
 
 /**
  * Browser-specific configuration for agents with browser access.
  */
 export interface BrowserConfig {
   /** Browser interaction mode. */
-  mode: "playwright-mcp" | "js-execute" | "hybrid";
+  mode: 'playwright-mcp' | 'js-execute' | 'hybrid';
   /** Whether to share authenticated browser sessions across agents. */
   shareSession?: boolean;
   /** Allowed URL patterns (glob). Empty = allow all. */
@@ -231,7 +262,8 @@ export interface BrowserConfig {
   maxNavigations?: number;
 }
 
-export interface BrowserConfigOverride extends Omit<Partial<BrowserConfig>, "allowedUrls" | "blockedUrls"> {
+export interface BrowserConfigOverride
+  extends Omit<Partial<BrowserConfig>, 'allowedUrls' | 'blockedUrls'> {
   allowedUrls?: ListPatch<string>;
   blockedUrls?: ListPatch<string>;
 }
@@ -276,9 +308,9 @@ export interface AgentSettingsConfig {
   /** Whether this agent can use tools (true) or is text-only (false). Default: true for executors, false for classifier/router. */
   tools?: boolean;
   /** Extended thinking / reasoning effort. "none" | "low" | "medium" | "high" | number (budget tokens). */
-  thinking?: "none" | "low" | "medium" | "high" | number;
+  thinking?: 'none' | 'low' | 'medium' | 'high' | number;
   /** Permission level for code execution runtimes. Default: "bypass". */
-  permissions?: "bypass" | "restricted";
+  permissions?: 'bypass' | 'restricted';
   /**
    * Execution environment for this agent's tool calls.
    * Default: "bash" (via Claude Code provider).
@@ -299,13 +331,22 @@ export interface AgentSettingsConfig {
    * - "on-demand": available but only invoked when middleware/router explicitly requests it
    * - "conditional": runs when its condition matches the current classification/route context
    */
-  invocation?: "always" | "on-demand" | "conditional";
+  invocation?: 'always' | 'on-demand' | 'conditional';
   /** Condition for "conditional" invocation. Ignored for other modes. */
   condition?: InvocationCondition;
 }
 
 export interface AgentSettingsOverride
-  extends Omit<Partial<AgentSettingsConfig>, "visibleLayers" | "ownedLayers" | "guardTriggers" | "peers" | "browser" | "condition" | "description"> {
+  extends Omit<
+    Partial<AgentSettingsConfig>,
+    | 'visibleLayers'
+    | 'ownedLayers'
+    | 'guardTriggers'
+    | 'peers'
+    | 'browser'
+    | 'condition'
+    | 'description'
+  > {
   /** Override description file path for this project. */
   description?: string;
   visibleLayers?: ListPatch<string>;
@@ -358,7 +399,7 @@ export interface LayerSettingsConfig {
    * "domain-knowledge" (configured/published cache) or "thread-knowledge"
    * (generated, thread-private) are accepted; the prompt is always an instruction.
    */
-  segment?: "domain-knowledge" | "thread-knowledge";
+  segment?: 'domain-knowledge' | 'thread-knowledge';
   /** Data source IDs that feed this layer. */
   sourceIds: string[];
   /** Staleness threshold in ms (0 = never stale). */
@@ -373,13 +414,13 @@ export interface LayerSettingsConfig {
    * - "on-demand": only included when explicitly requested via route.contextSlice or middleware
    * - "conditional": included when its condition matches classification/route context
    */
-  activation?: "always" | "on-demand" | "conditional";
+  activation?: 'always' | 'on-demand' | 'conditional';
   /** Condition for "conditional" activation. Ignored for other modes. */
   condition?: InvocationCondition;
 }
 
 export interface LayerSettingsOverride
-  extends Omit<Partial<LayerSettingsConfig>, "sourceIds" | "writers" | "condition"> {
+  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
   sourceIds?: ListPatch<string>;
   writers?: ListPatch<string>;
   condition?: InvocationConditionOverride | null;
@@ -406,8 +447,27 @@ export interface InvocationConditionOverride {
 
 export interface DataSourceConfig {
   id: string;
-  type: "file" | "sqlite" | "postgres" | "redis" | "http" | "markdown" | "inline" | "supermemory" | "archive";
-  archive?: { projectId: string; kind: "archive" | "kingdom"; connectionId?: string; ownerModel?: "User" | "OrganizationUser" | "Organization" | "Space" | "SpaceUser"; organizationId?: string; spaceId?: string; tokenEnv?: string; credential?: CredentialReference; budget?: number };
+  type:
+    | 'file'
+    | 'sqlite'
+    | 'postgres'
+    | 'redis'
+    | 'http'
+    | 'markdown'
+    | 'inline'
+    | 'supermemory'
+    | 'archive';
+  archive?: {
+    projectId: string;
+    kind: 'archive' | 'kingdom';
+    connectionId?: string;
+    ownerModel?: 'User' | 'OrganizationUser' | 'Organization' | 'Space' | 'SpaceUser';
+    organizationId?: string;
+    spaceId?: string;
+    tokenEnv?: string;
+    credential?: CredentialReference;
+    budget?: number;
+  };
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;
@@ -419,7 +479,7 @@ export interface DataSourceConfig {
    * project/global publications; "project" = publications only;
    * "global" = globally published knowledge, identical for every project.
    */
-  scope?: "thread" | "project" | "global";
+  scope?: 'thread' | 'project' | 'global';
   /**
    * Memory-backed sources only. Also expose unowned legacy records written
    * before ownership existed. Off by default: legacy records are preserved
@@ -439,10 +499,9 @@ export interface TunnelSettingsConfig {
   /** Whether the tunnel is enabled. */
   enabled: boolean;
   /** Tunnel provider. Default: "localtunnel". */
-  provider?: "localtunnel" | "cloudflared";
+  provider?: 'localtunnel' | 'cloudflared';
   /** Subdomain hint (localtunnel only, not guaranteed). */
   subdomain?: string;
-
 }
 
 export interface McpSettingsConfig {
@@ -455,7 +514,7 @@ export interface McpSettingsConfig {
    * - "sse": The viewer embeds the MCP server and exposes `/mcp` endpoints.
    *   Single server shared across sessions. Requires the viewer to be running.
    */
-  transport?: "stdio" | "sse";
+  transport?: 'stdio' | 'sse';
   /**
    * Projects where `.mcp.json` has been written for Claude Code auto-discovery.
    * Keyed by project ID. Value is the absolute path to the `.mcp.json` file.
@@ -470,10 +529,10 @@ export interface McpSettingsConfig {
 /** Create a project config from just a path. Everything else is derived. */
 export function createProject(
   projectPath: string,
-  overrides?: Partial<Omit<ProjectSettingsConfig, "id" | "path">>,
+  overrides?: Partial<Omit<ProjectSettingsConfig, 'id' | 'path'>>,
 ): ProjectSettingsConfig {
   return {
-    id: newId("proj"),
+    id: newId('proj'),
     path: projectPath,
     label: overrides?.label ?? basename(projectPath),
     enabled: true,
@@ -488,8 +547,8 @@ export function createProject(
 export function defaultConfig(): FoundryConfig {
   return {
     defaults: {
-      provider: "claude-code",
-      model: "fable",
+      provider: 'claude-code',
+      model: 'fable',
       classifierProvider: SUBSCRIPTION_DECISIONS,
       classifierModel: DECISION_MODEL,
     },
@@ -508,13 +567,13 @@ export function defaultConfig(): FoundryConfig {
  * Used by auto-bootstrap when no config exists.
  */
 export function starterConfig(
-  providerId: string = "claude-code",
-  model: string = "sonnet",
+  providerId: string = 'claude-code',
+  model: string = 'sonnet',
 ): FoundryConfig {
   const config = defaultConfig();
   config.defaults.provider = providerId;
   config.defaults.model = model;
-  if (providerId !== "claude-code") {
+  if (providerId !== 'claude-code') {
     // Subscription mode runs the worker on Claude Code; any other worker is the API-token mode.
     config.apiTokens = true;
     delete config.defaults.classifierProvider;
@@ -538,52 +597,55 @@ export function defaultProjectAgents(
   const cm = classifierModel ?? executorModel;
   return {
     classifier: {
-      id: "classifier",
-      kind: "classifier",
-      flowRole: "context-routing",
-      prompt: "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
+      id: 'classifier',
+      kind: 'classifier',
+      flowRole: 'context-routing',
+      prompt:
+        'Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {"category": "...", "subcategory": "...", "reasoning": "..."}',
       provider: cp,
       model: cm,
       temperature: 0,
       tools: false,
-      visibleLayers: ["system"],
+      visibleLayers: ['system'],
       ownedLayers: [],
       peers: [],
       maxDepth: 1,
-      invocation: "always" as const,
+      invocation: 'always' as const,
       enabled: true,
     },
     router: {
-      id: "router",
-      kind: "router",
-      flowRole: "context-routing",
-      prompt: "Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {\"destination\": \"artificer\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
+      id: 'router',
+      kind: 'router',
+      flowRole: 'context-routing',
+      prompt:
+        'Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {"destination": "artificer", "contextSlice": ["layer1"], "priority": 5, "reasoning": "..."}',
       provider: cp,
       model: cm,
       temperature: 0,
       tools: false,
-      visibleLayers: ["system"],
+      visibleLayers: ['system'],
       ownedLayers: [],
       peers: [],
       maxDepth: 1,
-      invocation: "always" as const,
+      invocation: 'always' as const,
       enabled: true,
     },
     artificer: {
-      id: "artificer",
-      kind: "executor",
-      flowRole: "execution",
-      prompt: "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
+      id: 'artificer',
+      kind: 'executor',
+      flowRole: 'execution',
+      prompt:
+        "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
       provider: providerId,
       model: executorModel,
       temperature: 0,
       tools: true,
-      permissions: "bypass" as const,
+      permissions: 'bypass' as const,
       visibleLayers: [],
       ownedLayers: [],
       peers: [],
       maxDepth: 5,
-      invocation: "on-demand" as const,
+      invocation: 'on-demand' as const,
       enabled: true,
     },
   };
@@ -593,23 +655,23 @@ export function defaultProjectAgents(
 export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
   return {
     system: {
-      id: "system",
-      prompt: "Core system instructions.",
-      sourceIds: ["system-prompt"],
+      id: 'system',
+      prompt: 'Core system instructions.',
+      sourceIds: ['system-prompt'],
       staleness: 0,
       enabled: true,
     },
     conventions: {
-      id: "conventions",
-      prompt: "Project conventions and coding standards.",
-      sourceIds: ["conventions-src"],
+      id: 'conventions',
+      prompt: 'Project conventions and coding standards.',
+      sourceIds: ['conventions-src'],
       staleness: 60_000,
       enabled: true,
     },
     memory: {
-      id: "memory",
-      prompt: "Working memory — recent context, signals, decisions.",
-      sourceIds: ["memory-src"],
+      id: 'memory',
+      prompt: 'Working memory — recent context, signals, decisions.',
+      sourceIds: ['memory-src'],
       staleness: 30_000,
       enabled: true,
     },
@@ -619,43 +681,51 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
 
 /** Reads the active project's own docs and agent conventions; empty outside a project. */
 export const PROJECT_LAYER: LayerSettingsConfig = {
-  id: "project",
+  id: 'project',
   prompt: "This project's own documentation and agent conventions.",
-  sourceIds: ["project-docs", "project-ai"],
+  sourceIds: ['project-docs', 'project-ai'],
   staleness: 300_000,
   enabled: true,
 };
 
 /** A project's own sources: the only settings a project gets when added; everything else is inherited. */
 export function projectSources(projectPath: string): Record<string, DataSourceConfig> {
-  const dirs = { "project-docs": ["docs", "Project docs"], "project-ai": ["AI", "Project agent conventions"] } as const;
-  return Object.fromEntries(Object.entries(dirs)
-    .filter(([, [dir]]) => existsSync(join(projectPath, dir)))
-    .map(([id, [dir, label]]) => [id, { id, type: "markdown", label, uri: join(projectPath, dir), enabled: true }]));
+  const dirs = {
+    'project-docs': ['docs', 'Project docs'],
+    'project-ai': ['AI', 'Project agent conventions'],
+  } as const;
+  return Object.fromEntries(
+    Object.entries(dirs)
+      .filter(([, [dir]]) => existsSync(join(projectPath, dir)))
+      .map(([id, [dir, label]]) => [
+        id,
+        { id, type: 'markdown', label, uri: join(projectPath, dir), enabled: true },
+      ]),
+  );
 }
 
 /** Default global sources for a fresh install rooted at projectPath. */
 export function defaultProjectSources(projectPath: string): Record<string, DataSourceConfig> {
   return {
-    "system-prompt": {
-      id: "system-prompt",
-      type: "inline",
-      label: "System prompt",
-      uri: "You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.",
+    'system-prompt': {
+      id: 'system-prompt',
+      type: 'inline',
+      label: 'System prompt',
+      uri: 'You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.',
       enabled: true,
     },
-    "conventions-src": {
-      id: "conventions-src",
-      type: "markdown",
-      label: "Project conventions",
-      uri: join(projectPath, "docs"),
+    'conventions-src': {
+      id: 'conventions-src',
+      type: 'markdown',
+      label: 'Project conventions',
+      uri: join(projectPath, 'docs'),
       enabled: true,
     },
-    "memory-src": {
-      id: "memory-src",
-      type: "file",
-      label: "Working memory",
-      uri: join(projectPath, ".foundry/memory"),
+    'memory-src': {
+      id: 'memory-src',
+      type: 'file',
+      label: 'Working memory',
+      uri: join(projectPath, '.foundry/memory'),
       enabled: true,
     },
   };
@@ -699,10 +769,14 @@ function mergeProviderConfigs(
  * to global definitions and every project override before any live or persisted publication. */
 function validateLayerDefinition(owner: string, id: string, layer: unknown): void {
   if (isThreadKnowledgeLayerId(id))
-    throw new Error(`invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`);
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`,
+    );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
-  if (segment !== undefined && segment !== "domain-knowledge" && segment !== "thread-knowledge")
-    throw new Error(`invalid layer ${JSON.stringify(id)} in ${owner}: segment must be "domain-knowledge" or "thread-knowledge"`);
+  if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: segment must be "domain-knowledge" or "thread-knowledge"`,
+    );
 }
 
 /**
@@ -710,48 +784,98 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
  * FoundryConfig registers its check here; nothing in config.ts knows the field.
  */
 const configValidators: ((config: FoundryConfig) => void)[] = [];
-export function registerConfigValidator(validate: (config: FoundryConfig) => void): void { configValidators.push(validate); }
+export function registerConfigValidator(validate: (config: FoundryConfig) => void): void {
+  configValidators.push(validate);
+}
 
 export function validateConfig(config: FoundryConfig): void {
   resolveSubscriptionPolicy(config);
-  if ("kingdomRuntime" in config) throw Error("kingdomRuntime is not a setting; remove it, then pair again with bun run kingdom pair");
+  if ('kingdomRuntime' in config)
+    throw Error(
+      'kingdomRuntime is not a setting; remove it, then pair again with bun run kingdom pair',
+    );
   if (config.kingdomRuntimes) kingdomRuntimesSchema.parse(config.kingdomRuntimes);
   for (const validate of configValidators) validate(config);
-  if (config.tunnel && "password" in config.tunnel) throw Error("Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings");
+  if (config.tunnel && 'password' in config.tunnel)
+    throw Error(
+      'Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings',
+    );
   for (const source of validateKingdomAccess(config.kingdomAccess ?? [])) {
-    if (source.projectIds.some(id => !config.projects[id] || config.projects[id]!.enabled === false))
-      throw Error("Kingdom access references an unavailable project");
+    if (
+      source.projectIds.some((id) => !config.projects[id] || config.projects[id]!.enabled === false)
+    )
+      throw Error('Kingdom access references an unavailable project');
   }
-  if (config.kingdomInference || config.defaults.kingdomOwnerKey || config.kingdomInferenceAssignments) {
-    if (config.defaults.nativeAuthenticationId || Object.keys(config.nativeAuthenticationSelections ?? {}).length) throw Error("Choose Kingdom bindings or local native sources for this Foundry instance");
-    if (!["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Kingdom bindings require a native runtime provider");
-    new KingdomAuthentication({ directory: join(process.cwd(), ".foundry", "kingdom"), sources: config.kingdomInference ?? [], defaultOwnerKey: config.defaults.kingdomOwnerKey, assignments: config.kingdomInferenceAssignments });
+  if (
+    config.kingdomInference ||
+    config.defaults.kingdomOwnerKey ||
+    config.kingdomInferenceAssignments
+  ) {
+    if (
+      config.defaults.nativeAuthenticationId ||
+      Object.keys(config.nativeAuthenticationSelections ?? {}).length
+    )
+      throw Error('Choose Kingdom bindings or local native sources for this Foundry instance');
+    if (!['claude-code', 'codex'].includes(config.defaults.provider))
+      throw Error('Kingdom bindings require a native runtime provider');
+    new KingdomAuthentication({
+      directory: join(process.cwd(), '.foundry', 'kingdom'),
+      sources: config.kingdomInference ?? [],
+      defaultOwnerKey: config.defaults.kingdomOwnerKey,
+      assignments: config.kingdomInferenceAssignments,
+    });
   }
-  if (config.nativeAuthentication || config.defaults.nativeAuthenticationId || config.nativeAuthenticationSelections) {
-    const authentication = new NativeAuthentication({ directory: join(process.cwd(), ".foundry", "runtime-profiles"),
-      sources: config.nativeAuthentication ?? [], defaultSourceId: config.defaults.nativeAuthenticationId });
-    for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {})) authentication.select(threadId, sourceId);
-    if (config.defaults.nativeAuthenticationId && !["claude-code", "codex"].includes(config.defaults.provider)) throw Error("Native authentication requires a native runtime provider");
+  if (
+    config.nativeAuthentication ||
+    config.defaults.nativeAuthenticationId ||
+    config.nativeAuthenticationSelections
+  ) {
+    const authentication = new NativeAuthentication({
+      directory: join(process.cwd(), '.foundry', 'runtime-profiles'),
+      sources: config.nativeAuthentication ?? [],
+      defaultSourceId: config.defaults.nativeAuthenticationId,
+    });
+    for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
+      authentication.select(threadId, sourceId);
+    if (
+      config.defaults.nativeAuthenticationId &&
+      !['claude-code', 'codex'].includes(config.defaults.provider)
+    )
+      throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
-  for (const [id, layer] of Object.entries(config.layers ?? {})) validateLayerDefinition("global layers", id, layer);
+  for (const [id, layer] of Object.entries(config.layers ?? {}))
+    validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
-    for (const [id, layer] of Object.entries((project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {}))
+    for (const [id, layer] of Object.entries(
+      (project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {},
+    ))
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
       if (!src || src.selection === undefined || src.selection === false) continue;
-      try { validateMemorySelection(src.selection); }
-      catch (err) { throw new Error(`invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`); }
+      try {
+        validateMemorySelection(src.selection);
+      } catch (err) {
+        throw new Error(
+          `invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`,
+        );
+      }
     }
   };
-  check("global sources", config.sources);
-  for (const [pid, project] of Object.entries(config.projects ?? {})) check(`project ${JSON.stringify(pid)} sources`, project?.sources as Record<string, DataSourceConfig> | undefined);
+  check('global sources', config.sources);
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    check(
+      `project ${JSON.stringify(pid)} sources`,
+      project?.sources as Record<string, DataSourceConfig> | undefined,
+    );
 }
 
 /** A mutation named a settings revision that is no longer current. */
 export class ConfigRevisionError extends Error {
-  constructor() { super("Settings changed elsewhere. Reload before saving."); }
+  constructor() {
+    super('Settings changed elsewhere. Reload before saving.');
+  }
 }
 
 type ConfigDraft = (draft: FoundryConfig) => FoundryConfig | void;
@@ -771,18 +895,22 @@ export class ConfigStore {
     this._config = defaultConfig();
   }
 
-  get directory(): string { return this._dir; }
+  get directory(): string {
+    return this._dir;
+  }
 
   /** Increments whenever the committed config changes. */
-  get revision(): number { return this._revision; }
+  get revision(): number {
+    return this._revision;
+  }
 
   /** Load config from disk, merging with defaults. */
   load(): Promise<FoundryConfig> {
     return this._serialize(async () => {
-      const path = join(this._dir, "settings.json");
+      const path = join(this._dir, 'settings.json');
       const file = Bun.file(path);
       if (await file.exists()) {
-        const saved = await file.json() as Partial<FoundryConfig>;
+        const saved = (await file.json()) as Partial<FoundryConfig>;
         const defaults = defaultConfig();
         // Merge saved over defaults into a candidate; validate before it becomes live.
         // An invalid persisted policy fails loudly, keeps the last working live
@@ -793,8 +921,11 @@ export class ConfigStore {
           providers: mergeProviderConfigs(defaults.providers, saved.providers),
           projects: { ...saved.projects },
         };
-        try { validateConfig(candidate); }
-        catch (err) { throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`); }
+        try {
+          validateConfig(candidate);
+        } catch (err) {
+          throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`);
+        }
         if (JSON.stringify(candidate) !== JSON.stringify(this._config)) this._revision++;
         this._config = candidate;
       }
@@ -826,28 +957,33 @@ export class ConfigStore {
   }
 
   /** Patch a section of the config. */
-  patch(section: string, data: Record<string, unknown>, expectedRevision?: number): Promise<FoundryConfig> {
+  patch(
+    section: string,
+    data: Record<string, unknown>,
+    expectedRevision?: number,
+  ): Promise<FoundryConfig> {
     const patch = structuredClone(data);
     return this.update((next) => {
-      if (section === "defaults") {
-        next.defaults = { ...next.defaults, ...patch } as FoundryConfig["defaults"];
-      } else if (section === "providers") {
-        next.providers = { ...next.providers, ...patch } as FoundryConfig["providers"];
-      } else if (section === "agents") {
-        next.agents = { ...next.agents, ...patch } as FoundryConfig["agents"];
-      } else if (section === "layers") {
-        next.layers = { ...next.layers, ...patch } as FoundryConfig["layers"];
-      } else if (section === "sources") {
-        next.sources = { ...next.sources, ...patch } as FoundryConfig["sources"];
-      } else if (section === "projects") {
-        next.projects = { ...next.projects, ...patch } as FoundryConfig["projects"];
-      } else if (section === "mcp") {
+      if (section === 'defaults') {
+        next.defaults = { ...next.defaults, ...patch } as FoundryConfig['defaults'];
+      } else if (section === 'providers') {
+        next.providers = { ...next.providers, ...patch } as FoundryConfig['providers'];
+      } else if (section === 'agents') {
+        next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
+      } else if (section === 'layers') {
+        next.layers = { ...next.layers, ...patch } as FoundryConfig['layers'];
+      } else if (section === 'sources') {
+        next.sources = { ...next.sources, ...patch } as FoundryConfig['sources'];
+      } else if (section === 'projects') {
+        next.projects = { ...next.projects, ...patch } as FoundryConfig['projects'];
+      } else if (section === 'mcp') {
         next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
-      } else if (section === "learning") {
+      } else if (section === 'learning') {
         next.learning = { ...next.learning, ...patch } as LearningSettings;
-      } else if (section === "apiTokens") {
+      } else if (section === 'apiTokens') {
         // Explicit opt-in to API-key providers; absent or false is subscription-only.
-        if (patch.enabled === true) next.apiTokens = true; else delete next.apiTokens;
+        if (patch.enabled === true) next.apiTokens = true;
+        else delete next.apiTokens;
       }
     }, expectedRevision);
   }
@@ -877,8 +1013,8 @@ export class ConfigStore {
       if (!agents[id]) {
         agents[id] = {
           id,
-          kind: agent.constructor.name.toLowerCase().replace("agent", ""),
-          prompt: agent.prompt ?? "",
+          kind: agent.constructor.name.toLowerCase().replace('agent', ''),
+          prompt: agent.prompt ?? '',
           provider: agent.llm?.provider ?? this._config.defaults.provider,
           model: agent.llm?.model ?? this._config.defaults.model,
           temperature: agent.llm?.temperature,
@@ -897,7 +1033,7 @@ export class ConfigStore {
         // an existing configured definition is never overwritten and no absent field is added.
         layers[layer.id] = {
           id: layer.id,
-          prompt: layer.prompt ?? "",
+          prompt: layer.prompt ?? '',
           sourceIds: layer.sources.map((s) => s.id),
           staleness: layer.staleness ?? 0,
           enabled: true,
@@ -938,18 +1074,30 @@ export class ConfigStore {
 
   private async _commit(candidate: FoundryConfig): Promise<FoundryConfig> {
     validateConfig(candidate);
-    const path = join(this._dir, "settings.json");
+    const path = join(this._dir, 'settings.json');
     const temporary = `${path}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporary, JSON.stringify(candidate, null, 2), { mode: 0o600, flag: "wx" });
+      await writeFile(temporary, JSON.stringify(candidate, null, 2), { mode: 0o600, flag: 'wx' });
       await rename(temporary, path);
-    } finally { await rm(temporary, { force: true }); }
+    } finally {
+      await rm(temporary, { force: true });
+    }
     this._config = candidate;
     this._revision++;
     return candidate;
   }
 }
 
-function deletableSection(config: FoundryConfig, section: string): Record<string, unknown> | undefined {
-  if (section === "providers" || section === "agents" || section === "layers" || section === "sources" || section === "projects") return config[section];
+function deletableSection(
+  config: FoundryConfig,
+  section: string,
+): Record<string, unknown> | undefined {
+  if (
+    section === 'providers' ||
+    section === 'agents' ||
+    section === 'layers' ||
+    section === 'sources' ||
+    section === 'projects'
+  )
+    return config[section];
 }

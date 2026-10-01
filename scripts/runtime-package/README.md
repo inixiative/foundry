@@ -22,8 +22,8 @@ In that temporary directory create this package manifest (update tarball version
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/bun": "^1.4.2",
+    "typescript": "6.0.3",
+    "@types/bun": "1.4.2",
     "@types/node": "^25.5.2"
   }
 }

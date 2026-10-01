@@ -22,17 +22,17 @@
 
 import type {
   BrowserTool,
-  ToolResult,
-  PageSnapshot,
-  PageElement,
   NavigateOpts,
-} from "@inixiative/foundry-core";
+  PageElement,
+  PageSnapshot,
+  ToolResult,
+} from '@inixiative/foundry-core';
 
 export interface PlaywrightBrowserConfig {
   /** Run headless. Default: true. */
   headless?: boolean;
   /** Browser type: chromium, firefox, webkit. Default: chromium. */
-  browserType?: "chromium" | "firefox" | "webkit";
+  browserType?: 'chromium' | 'firefox' | 'webkit';
   /** Viewport size. */
   viewport?: { width: number; height: number };
   /** User agent string override. */
@@ -72,12 +72,12 @@ const sharedContexts = new Map<string, PwContext>();
 
 export class PlaywrightBrowser implements BrowserTool {
   readonly id: string;
-  readonly kind = "browser" as const;
+  readonly kind = 'browser' as const;
   readonly capabilities = {
-    navigate: "browser:navigate" as const,
-    interact: "browser:interact" as const,
-    execute: "browser:execute" as const,
-    screenshot: "browser:screenshot" as const,
+    navigate: 'browser:navigate' as const,
+    interact: 'browser:interact' as const,
+    execute: 'browser:execute' as const,
+    screenshot: 'browser:screenshot' as const,
   };
 
   private _config: Required<PlaywrightBrowserConfig>;
@@ -87,17 +87,17 @@ export class PlaywrightBrowser implements BrowserTool {
   private _navCount = 0;
 
   constructor(config?: PlaywrightBrowserConfig & { id?: string }) {
-    this.id = config?.id ?? "browser";
+    this.id = config?.id ?? 'browser';
     this._config = {
       headless: config?.headless ?? true,
-      browserType: config?.browserType ?? "chromium",
+      browserType: config?.browserType ?? 'chromium',
       viewport: config?.viewport ?? { width: 1280, height: 720 },
-      userAgent: config?.userAgent ?? "",
+      userAgent: config?.userAgent ?? '',
       allowedUrls: config?.allowedUrls ?? [],
       blockedUrls: config?.blockedUrls ?? [],
       maxNavigations: config?.maxNavigations ?? 50,
       timeout: config?.timeout ?? 30_000,
-      contextId: config?.contextId ?? "",
+      contextId: config?.contextId ?? '',
     };
   }
 
@@ -107,12 +107,9 @@ export class PlaywrightBrowser implements BrowserTool {
     let pw: any;
     try {
       // Dynamic import — playwright is a peer dependency
-      // @ts-ignore - peer dep; resolves only where installed
-      pw = await import("playwright");
+      pw = await import('playwright');
     } catch {
-      throw new Error(
-        "Playwright is not installed. Install it with: bun add playwright"
-      );
+      throw new Error('Playwright is not installed. Install it with: bun add playwright');
     }
 
     const launcher = pw[this._config.browserType] ?? pw.chromium;
@@ -144,22 +141,30 @@ export class PlaywrightBrowser implements BrowserTool {
 
   async navigate(
     url: string,
-    opts?: NavigateOpts
+    opts?: NavigateOpts,
   ): Promise<ToolResult<{ url: string; title: string }>> {
     const page = this._ensurePage();
 
     if (!this._isUrlAllowed(url)) {
-      return { ok: false, summary: `URL blocked by policy: ${url}`, error: "URL not in allowedUrls or is in blockedUrls" };
+      return {
+        ok: false,
+        summary: `URL blocked by policy: ${url}`,
+        error: 'URL not in allowedUrls or is in blockedUrls',
+      };
     }
 
     if (this._navCount >= this._config.maxNavigations) {
-      return { ok: false, summary: `Navigation limit reached (${this._config.maxNavigations})`, error: "maxNavigations exceeded" };
+      return {
+        ok: false,
+        summary: `Navigation limit reached (${this._config.maxNavigations})`,
+        error: 'maxNavigations exceeded',
+      };
     }
 
     try {
       await page.goto(url, {
         timeout: opts?.timeout ?? this._config.timeout,
-        waitUntil: "domcontentloaded",
+        waitUntil: 'domcontentloaded',
       });
       this._navCount++;
 
@@ -204,7 +209,7 @@ export class PlaywrightBrowser implements BrowserTool {
         estimatedTokens,
       };
     } catch (err) {
-      return { ok: false, summary: "Failed to get page snapshot", error: (err as Error).message };
+      return { ok: false, summary: 'Failed to get page snapshot', error: (err as Error).message };
     }
   }
 
@@ -242,27 +247,28 @@ export class PlaywrightBrowser implements BrowserTool {
     const page = this._ensurePage();
     try {
       const result = await page.evaluate<T>(script);
-      const summary = typeof result === "object"
-        ? `JS executed — returned ${JSON.stringify(result).length} chars of data`
-        : `JS executed — returned: ${String(result).slice(0, 100)}`;
+      const summary =
+        typeof result === 'object'
+          ? `JS executed — returned ${JSON.stringify(result).length} chars of data`
+          : `JS executed — returned: ${String(result).slice(0, 100)}`;
       return { ok: true, data: result, summary };
     } catch (err) {
-      return { ok: false, summary: "JS execution failed", error: (err as Error).message };
+      return { ok: false, summary: 'JS execution failed', error: (err as Error).message };
     }
   }
 
   async screenshot(): Promise<ToolResult<{ base64: string; mimeType: string }>> {
     const page = this._ensurePage();
     try {
-      const buffer = await page.screenshot({ type: "png", fullPage: false });
-      const base64 = buffer.toString("base64");
+      const buffer = await page.screenshot({ type: 'png', fullPage: false });
+      const base64 = buffer.toString('base64');
       return {
         ok: true,
-        data: { base64, mimeType: "image/png" },
+        data: { base64, mimeType: 'image/png' },
         summary: `Screenshot captured (${Math.round(buffer.length / 1024)}KB)`,
       };
     } catch (err) {
-      return { ok: false, summary: "Screenshot failed", error: (err as Error).message };
+      return { ok: false, summary: 'Screenshot failed', error: (err as Error).message };
     }
   }
 
@@ -291,7 +297,7 @@ export class PlaywrightBrowser implements BrowserTool {
 
   private _ensurePage(): PwPage {
     if (!this._page) {
-      throw new Error("Browser not launched. Call launch() first.");
+      throw new Error('Browser not launched. Call launch() first.');
     }
     return this._page;
   }
@@ -319,10 +325,10 @@ export class PlaywrightBrowser implements BrowserTool {
   private _matchGlob(url: string, pattern: string): boolean {
     // Simple glob matching: * matches any chars except /, ** matches anything
     const regex = pattern
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*\*/g, "<<<GLOBSTAR>>>")
-      .replace(/\*/g, "[^/]*")
-      .replace(/<<<GLOBSTAR>>>/g, ".*");
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '<<<GLOBSTAR>>>')
+      .replace(/\*/g, '[^/]*')
+      .replace(/<<<GLOBSTAR>>>/g, '.*');
     return new RegExp(`^${regex}$`).test(url);
   }
 
@@ -331,8 +337,8 @@ export class PlaywrightBrowser implements BrowserTool {
     if (!node) return elements;
 
     const el: PageElement = {
-      role: node.role || "unknown",
-      name: node.name || "",
+      role: node.role || 'unknown',
+      name: node.name || '',
     };
     if (node.value) el.value = node.value;
 

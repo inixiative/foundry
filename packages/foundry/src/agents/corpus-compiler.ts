@@ -1,15 +1,15 @@
 import {
   ContextLayer,
+  type ContextStack,
   computeHash,
-  ContextStack,
   estimateTokens,
   newId,
-  type SignalBus,
   type Signal,
+  type SignalBus,
   type SignalKind,
-} from "@inixiative/foundry-core";
-import { writeFile, readFile, mkdir } from "fs/promises";
-import { join } from "path";
+} from '@inixiative/foundry-core';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,7 +30,7 @@ export interface FluidEntry {
 export interface FormalDoc {
   id: string;
   title: string;
-  kind: "convention" | "adr" | "skill" | "security" | "taste" | "reference";
+  kind: 'convention' | 'adr' | 'skill' | 'security' | 'taste' | 'reference';
   content: string;
   sources: string[];
   version: number;
@@ -42,12 +42,7 @@ export interface FormalDoc {
   updatedAt: number;
 }
 
-export type DocState =
-  | "draft"
-  | "development"
-  | "active"
-  | "deprecated"
-  | "archived";
+export type DocState = 'draft' | 'development' | 'active' | 'deprecated' | 'archived';
 
 /** The final compiled corpus — immutable snapshot. */
 export interface CompiledCorpus {
@@ -63,7 +58,7 @@ export interface CompiledCorpus {
   }>;
   totalTokens: number;
   /** Eligible docs left out whole because they did not fit the budget. */
-  excluded: Array<{ docId: string; tokens: number; reason: "budget" }>;
+  excluded: Array<{ docId: string; tokens: number; reason: 'budget' }>;
   compiledAt: number;
   attribution: Array<{
     layerId: string;
@@ -73,11 +68,7 @@ export interface CompiledCorpus {
 }
 
 /** Tier classification for corpus promotion. */
-export type CorpusTier =
-  | "personal_private"
-  | "personal_public"
-  | "team"
-  | "org";
+export type CorpusTier = 'personal_private' | 'personal_public' | 'team' | 'org';
 
 export interface CorpusCompilerConfig {
   /** Max tokens for compiled output. Default 50000. */
@@ -92,10 +83,10 @@ export interface CorpusCompilerConfig {
 
 /** Audiences that may see a doc at each tier (docs/VISION.md §5). Untiered docs are personal_private. */
 const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
-  personal_private: ["personal_private"],
-  personal_public: ["personal_private", "personal_public", "team"],
-  team: ["personal_private", "personal_public", "team"],
-  org: ["personal_private", "personal_public", "team", "org"],
+  personal_private: ['personal_private'],
+  personal_public: ['personal_private', 'personal_public', 'team'],
+  team: ['personal_private', 'personal_public', 'team'],
+  org: ['personal_private', 'personal_public', 'team', 'org'],
 };
 
 function generateId(prefix: string): string {
@@ -137,7 +128,7 @@ export class CorpusCompiler {
   ingest(entry: FluidEntry): void {
     // Simple dedup: skip if identical content already exists from same source
     const isDupe = this._fluid.some(
-      (e) => e.content === entry.content && e.source === entry.source
+      (e) => e.content === entry.content && e.source === entry.source,
     );
     if (!isDupe) {
       this._fluid.push(entry);
@@ -152,9 +143,7 @@ export class CorpusCompiler {
         kind: signal.kind,
         source: signal.source,
         content:
-          typeof signal.content === "string"
-            ? signal.content
-            : JSON.stringify(signal.content),
+          typeof signal.content === 'string' ? signal.content : JSON.stringify(signal.content),
         timestamp: signal.timestamp,
         refs: signal.refs,
         confidence: signal.confidence,
@@ -173,15 +162,12 @@ export class CorpusCompiler {
   /** Promote fluid entries to a formal document. */
   promote(
     entryIds: string[],
-    doc: Omit<
-      FormalDoc,
-      "id" | "version" | "sources" | "createdAt" | "updatedAt"
-    >
+    doc: Omit<FormalDoc, 'id' | 'version' | 'sources' | 'createdAt' | 'updatedAt'>,
   ): FormalDoc {
     const now = Date.now();
     const formalDoc: FormalDoc = {
       ...doc,
-      id: generateId("doc"),
+      id: generateId('doc'),
       version: 1,
       sources: entryIds,
       createdAt: now,
@@ -196,10 +182,7 @@ export class CorpusCompiler {
    * Auto-promote: group fluid entries by kind, create docs for clusters
    * above a threshold count. Returns newly created docs.
    */
-  autoPromote(opts?: {
-    minEntries?: number;
-    minConfidence?: number;
-  }): FormalDoc[] {
+  autoPromote(opts?: { minEntries?: number; minConfidence?: number }): FormalDoc[] {
     const minEntries = opts?.minEntries ?? 3;
     const minConfidence = opts?.minConfidence ?? this._minConfidence;
 
@@ -222,15 +205,14 @@ export class CorpusCompiler {
       // Merge content, deduplicating identical lines
       const lines = new Set<string>();
       for (const e of entries) {
-        for (const line of e.content.split("\n")) {
+        for (const line of e.content.split('\n')) {
           const trimmed = line.trim();
           if (trimmed) lines.add(trimmed);
         }
       }
 
       const avgConfidence =
-        entries.reduce((sum, e) => sum + (e.confidence ?? 0.5), 0) /
-        entries.length;
+        entries.reduce((sum, e) => sum + (e.confidence ?? 0.5), 0) / entries.length;
 
       const docKind = this._mapSignalKindToDocKind(kind);
 
@@ -239,10 +221,10 @@ export class CorpusCompiler {
         {
           title: `Auto-promoted ${kind} conventions`,
           kind: docKind,
-          content: [...lines].join("\n"),
-          state: "draft",
+          content: [...lines].join('\n'),
+          state: 'draft',
           confidence: avgConfidence,
-        }
+        },
       );
 
       created.push(doc);
@@ -269,7 +251,7 @@ export class CorpusCompiler {
     return [...this._docs.values()].filter((d) => d.state === state);
   }
 
-  docsByKind(kind: FormalDoc["kind"]): FormalDoc[] {
+  docsByKind(kind: FormalDoc['kind']): FormalDoc[] {
     return [...this._docs.values()].filter((d) => d.kind === kind);
   }
 
@@ -278,21 +260,23 @@ export class CorpusCompiler {
   // -----------------------------------------------------------------------
 
   /** Compile active formal docs visible to an audience; the default is the owner's own view. */
-  compile(audience: CorpusTier = "personal_private"): CompiledCorpus {
+  compile(audience: CorpusTier = 'personal_private'): CompiledCorpus {
     this._compilationCount++;
 
     // Filter docs: active state + confidence threshold + visible to the audience
     const eligible = [...this._docs.values()].filter(
-      (d) => d.state === "active" && d.confidence >= this._minConfidence
-        && VISIBLE_TO[d.tier ?? "personal_private"].includes(audience)
+      (d) =>
+        d.state === 'active' &&
+        d.confidence >= this._minConfidence &&
+        VISIBLE_TO[d.tier ?? 'personal_private'].includes(audience),
     );
 
     // Sort by confidence descending; id breaks ties so the snapshot is deterministic
     eligible.sort((a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id));
 
     // Build layers
-    const layers: CompiledCorpus["layers"] = [];
-    const excluded: CompiledCorpus["excluded"] = [];
+    const layers: CompiledCorpus['layers'] = [];
+    const excluded: CompiledCorpus['excluded'] = [];
     let totalTokens = 0;
 
     for (const doc of eligible) {
@@ -300,7 +284,7 @@ export class CorpusCompiler {
 
       // A doc is one instruction unit: whole or not at all
       if (totalTokens + tokens > this._maxTokens) {
-        excluded.push({ docId: doc.id, tokens, reason: "budget" });
+        excluded.push({ docId: doc.id, tokens, reason: 'budget' });
         continue;
       }
 
@@ -315,7 +299,7 @@ export class CorpusCompiler {
     }
 
     // Build attribution trace
-    const attribution: CompiledCorpus["attribution"] = layers.map((layer) => {
+    const attribution: CompiledCorpus['attribution'] = layers.map((layer) => {
       const docIds = layer.sources;
       const entryIds: string[] = [];
       for (const docId of docIds) {
@@ -330,19 +314,26 @@ export class CorpusCompiler {
     });
 
     // Hash the manifest, not just the text: same content for a different audience or budget is a different corpus
-    const contentHash = computeHash(JSON.stringify({
-      audience,
-      maxTokens: this._maxTokens,
-      minConfidence: this._minConfidence,
-      layers: layers.map((l) => {
-        const doc = this._docs.get(l.sources[0])!;
-        return { docId: doc.id, version: doc.version, tier: doc.tier ?? "personal_private", content: l.content };
+    const contentHash = computeHash(
+      JSON.stringify({
+        audience,
+        maxTokens: this._maxTokens,
+        minConfidence: this._minConfidence,
+        layers: layers.map((l) => {
+          const doc = this._docs.get(l.sources[0])!;
+          return {
+            docId: doc.id,
+            version: doc.version,
+            tier: doc.tier ?? 'personal_private',
+            content: l.content,
+          };
+        }),
+        excluded: excluded.map((e) => e.docId),
       }),
-      excluded: excluded.map((e) => e.docId),
-    }));
+    );
 
     return {
-      id: generateId("corpus"),
+      id: generateId('corpus'),
       version: `${this._compilationCount}.0`,
       contentHash,
       layers,
@@ -375,11 +366,11 @@ export class CorpusCompiler {
       compilationCount: this._compilationCount,
     };
 
-    await writeFile(join(dir, "corpus.json"), JSON.stringify(data, null, 2));
+    await writeFile(join(dir, 'corpus.json'), JSON.stringify(data, null, 2));
   }
 
   async load(dir: string): Promise<void> {
-    const raw = await readFile(join(dir, "corpus.json"), "utf-8");
+    const raw = await readFile(join(dir, 'corpus.json'), 'utf-8');
     const data = JSON.parse(raw);
 
     this._fluid = data.fluid ?? [];
@@ -395,16 +386,16 @@ export class CorpusCompiler {
   canPromoteTier(docId: string, targetTier: CorpusTier): boolean {
     const doc = this._docs.get(docId);
     if (!doc) return false;
-    if (doc.state !== "active") return false;
+    if (doc.state !== 'active') return false;
 
     switch (targetTier) {
-      case "personal_public":
+      case 'personal_public':
         return doc.confidence >= 0.6;
-      case "team":
+      case 'team':
         return doc.confidence >= 0.7 && doc.sources.length >= 5;
-      case "org":
+      case 'org':
         return doc.confidence >= 0.8 && doc.sources.length >= 10;
-      case "personal_private":
+      case 'personal_private':
         return true; // Base tier, always allowed
     }
   }
@@ -425,20 +416,18 @@ export class CorpusCompiler {
   // Private helpers
   // -----------------------------------------------------------------------
 
-  private _mapSignalKindToDocKind(
-    kind: string
-  ): FormalDoc["kind"] {
+  private _mapSignalKindToDocKind(kind: string): FormalDoc['kind'] {
     switch (kind) {
-      case "convention":
-        return "convention";
-      case "adr":
-        return "adr";
-      case "security":
-        return "security";
-      case "taste":
-        return "taste";
+      case 'convention':
+        return 'convention';
+      case 'adr':
+        return 'adr';
+      case 'security':
+        return 'security';
+      case 'taste':
+        return 'taste';
       default:
-        return "reference";
+        return 'reference';
     }
   }
 }

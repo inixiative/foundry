@@ -1,15 +1,15 @@
-import { HttpCompletionSettlement } from "./http-settlement";
-import { parseClaudeUsage } from "@inixiative/agent-session";
+import { parseClaudeUsage } from '@inixiative/agent-session';
 import type {
-  LLMProvider,
-  LLMMessage,
   CompletionOpts,
   CompletionResult,
-  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
-} from "@inixiative/foundry-core";
-import { splitSystemMessage } from "@inixiative/foundry-core";
+  LLMMessage,
+  LLMProvider,
+  LLMStreamEvent,
+} from '@inixiative/foundry-core';
+import { splitSystemMessage } from '@inixiative/foundry-core';
+import { HttpCompletionSettlement } from './http-settlement';
 
 export interface AnthropicConfig {
   apiKey: string;
@@ -21,15 +21,15 @@ export interface AnthropicConfig {
   baseUrl?: string;
 }
 
-const DEFAULT_BASE = "https://api.anthropic.com";
-const API_VERSION = "2023-06-01";
+const DEFAULT_BASE = 'https://api.anthropic.com';
+const API_VERSION = '2023-06-01';
 
 /**
  * Anthropic Messages API adapter.
  * Uses raw fetch — zero SDK dependency.
  */
 export class AnthropicProvider implements LLMProvider {
-  readonly id = "anthropic";
+  readonly id = 'anthropic';
   private readonly _settlement = new HttpCompletionSettlement();
   readonly completionLifecycle = this._settlement.lifecycle;
 
@@ -40,15 +40,12 @@ export class AnthropicProvider implements LLMProvider {
 
   constructor(config: AnthropicConfig) {
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? "claude-sonnet-4-20250514";
+    this._defaultModel = config.defaultModel ?? 'claude-sonnet-4-20250514';
     this._defaultMaxTokens = config.defaultMaxTokens ?? 1024;
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, "");
+    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
   }
 
-  async complete(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): Promise<CompletionResult> {
+  async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
     const { system, turns } = splitSystemMessage(messages);
     const model = opts?.model ?? this._defaultModel;
     const maxTokens = opts?.maxTokens ?? this._defaultMaxTokens;
@@ -65,19 +62,20 @@ export class AnthropicProvider implements LLMProvider {
     if (opts?.stop) body.stop_sequences = opts.stop;
 
     // Extended thinking → Anthropic thinking API
-    if (opts?.thinking && opts.thinking !== "none") {
+    if (opts?.thinking && opts.thinking !== 'none') {
       const budgetMap: Record<string, number> = { low: 2048, medium: 8192, high: 32768 };
-      const budget = typeof opts.thinking === "number" ? opts.thinking : budgetMap[opts.thinking] ?? 8192;
-      body.thinking = { type: "enabled", budget_tokens: budget };
+      const budget =
+        typeof opts.thinking === 'number' ? opts.thinking : (budgetMap[opts.thinking] ?? 8192);
+      body.thinking = { type: 'enabled', budget_tokens: budget };
       body.max_tokens = Math.max(maxTokens, budget + 1024);
     }
 
     const res = await fetch(`${this._baseUrl}/v1/messages`, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-api-key": this._apiKey,
-        "anthropic-version": API_VERSION,
+        'content-type': 'application/json',
+        'x-api-key': this._apiKey,
+        'anthropic-version': API_VERSION,
       },
       body: JSON.stringify(body),
     });
@@ -95,9 +93,9 @@ export class AnthropicProvider implements LLMProvider {
     };
 
     const content = data.content
-      .filter((b) => b.type === "text")
+      .filter((b) => b.type === 'text')
       .map((b) => b.text)
-      .join("");
+      .join('');
 
     return {
       content,
@@ -114,10 +112,7 @@ export class AnthropicProvider implements LLMProvider {
    * Parses SSE events: message_start, content_block_delta,
    * message_delta (for usage/stop_reason), and message_stop.
    */
-  async *stream(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): AsyncGenerator<LLMStreamEvent> {
+  async *stream(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent> {
     const { system, turns } = splitSystemMessage(messages);
     const model = opts?.model ?? this._defaultModel;
     const maxTokens = opts?.maxTokens ?? this._defaultMaxTokens;
@@ -135,23 +130,23 @@ export class AnthropicProvider implements LLMProvider {
     if (opts?.stop) body.stop_sequences = opts.stop;
 
     const res = await fetch(`${this._baseUrl}/v1/messages`, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "x-api-key": this._apiKey,
-        "anthropic-version": API_VERSION,
+        'content-type': 'application/json',
+        'x-api-key': this._apiKey,
+        'anthropic-version': API_VERSION,
       },
       body: JSON.stringify(body),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      yield { type: "error", error: `Anthropic API ${res.status}: ${text}` };
+      yield { type: 'error', error: `Anthropic API ${res.status}: ${text}` };
       return;
     }
 
     if (!res.body) {
-      yield { type: "error", error: "No response body for streaming" };
+      yield { type: 'error', error: 'No response body for streaming' };
       return;
     }
 
@@ -160,8 +155,8 @@ export class AnthropicProvider implements LLMProvider {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
-    let eventType = "";
+    let buffer = '';
+    let eventType = '';
 
     try {
       while (true) {
@@ -169,35 +164,35 @@ export class AnthropicProvider implements LLMProvider {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
+        const lines = buffer.split('\n');
         // Keep the last potentially incomplete line in the buffer
-        buffer = lines.pop() ?? "";
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith("event: ")) {
+          if (line.startsWith('event: ')) {
             eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
+          } else if (line.startsWith('data: ')) {
             const data = line.slice(6);
             try {
               const parsed = JSON.parse(data);
 
-              if (eventType === "message_start" && parsed.message?.usage) {
+              if (eventType === 'message_start' && parsed.message?.usage) {
                 usage = { ...usage, ...parsed.message.usage };
-              } else if (eventType === "content_block_delta") {
+              } else if (eventType === 'content_block_delta') {
                 const text = parsed.delta?.text;
                 if (text) {
-                  yield { type: "text", text };
+                  yield { type: 'text', text };
                 }
-              } else if (eventType === "message_delta") {
+              } else if (eventType === 'message_delta') {
                 if (parsed.usage) usage = { ...usage, ...parsed.usage };
                 if (parsed.delta?.stop_reason) {
                   finishReason = parsed.delta.stop_reason;
                 }
-              } else if (eventType === "message_stop") {
+              } else if (eventType === 'message_stop') {
                 // Final event — yield usage and done
               }
             } catch (err) {
-              console.warn("[Anthropic] malformed stream chunk:", (err as Error).message);
+              console.warn('[Anthropic] malformed stream chunk:', (err as Error).message);
             }
           }
         }
@@ -207,9 +202,9 @@ export class AnthropicProvider implements LLMProvider {
     }
 
     const tokens = parseClaudeUsage(usage);
-    if (tokens) yield { type: "usage", tokens };
+    if (tokens) yield { type: 'usage', tokens };
 
-    yield { type: "done", finishReason };
+    yield { type: 'done', finishReason };
   }
 }
 
@@ -219,7 +214,7 @@ export class AnthropicProvider implements LLMProvider {
  * by overriding baseUrl.
  */
 export class VoyageEmbeddingProvider implements EmbeddingProvider {
-  readonly id = "voyage";
+  readonly id = 'voyage';
 
   private _apiKey: string;
   private _model: string;
@@ -231,8 +226,8 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
     baseUrl?: string;
   }) {
     this._apiKey = config.apiKey;
-    this._model = config.model ?? "voyage-3";
-    this._baseUrl = (config.baseUrl ?? "https://api.voyageai.com").replace(/\/$/, "");
+    this._model = config.model ?? 'voyage-3';
+    this._baseUrl = (config.baseUrl ?? 'https://api.voyageai.com').replace(/\/$/, '');
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
@@ -248,9 +243,9 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
     if (input.length === 0) return [];
 
     const res = await fetch(`${this._baseUrl}/v1/embeddings`, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
+        'content-type': 'application/json',
         authorization: `Bearer ${this._apiKey}`,
       },
       body: JSON.stringify({ model: this._model, input }),
@@ -266,9 +261,7 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
       usage: { total_tokens: number };
     };
 
-    const tokensPerItem = Math.ceil(
-      (data.usage?.total_tokens ?? 0) / input.length
-    );
+    const tokensPerItem = Math.ceil((data.usage?.total_tokens ?? 0) / input.length);
 
     return data.data
       .sort((a, b) => a.index - b.index)

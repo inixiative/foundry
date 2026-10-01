@@ -10,16 +10,21 @@
 // The UI renders it as the "Analytics" tab — a first-class primitive.
 // ---------------------------------------------------------------------------
 
-import { mkdirSync, existsSync } from "fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile } from 'node:fs/promises';
 import type {
   TokenCounts,
   TokenTracker,
+  UsageBreakdown,
   UsageEntry,
   UsageSummary,
-  UsageBreakdown,
-} from "@inixiative/foundry-core";
-import { BudgetExceededError, newId, sumTokenCounts, totalTokenCount } from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
+import {
+  BudgetExceededError,
+  newId,
+  sumTokenCounts,
+  totalTokenCount,
+} from '@inixiative/foundry-core';
+import { existsSync, mkdirSync } from 'fs';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +46,18 @@ export interface AnalyticsSnapshot {
   /** Hourly/daily/weekly/monthly aggregates */
   readonly rollups: RollupSet;
   /** Historical known subtotals; missing observations are never zero usage. */
-  readonly observations: { calls: number; knownInput: number; knownOutput: number; knownTokens: number; knownCacheRead?: number; knownCacheWrite?: number; knownCost: number; unavailableUsageCalls: number; unavailableCostCalls: number; persistence: "pending" | "settled" | "failed" };
+  readonly observations: {
+    calls: number;
+    knownInput: number;
+    knownOutput: number;
+    knownTokens: number;
+    knownCacheRead?: number;
+    knownCacheWrite?: number;
+    knownCost: number;
+    unavailableUsageCalls: number;
+    unavailableCostCalls: number;
+    persistence: 'pending' | 'settled' | 'failed';
+  };
 }
 
 export interface TimeSeriesPoint extends TokenCounts {
@@ -65,7 +81,7 @@ export interface ThreadCostSummary extends TokenCounts {
 }
 
 /** Cache counters and provider tags stay absent when unreported. */
-export interface CallRecord extends Omit<TokenCounts, "input" | "output"> {
+export interface CallRecord extends Omit<TokenCounts, 'input' | 'output'> {
   readonly timestamp: number;
   readonly provider: string;
   readonly model: string;
@@ -94,7 +110,7 @@ export interface RollupSet {
   readonly monthly: TimeSeriesPoint[];
 }
 
-export type RollupPeriod = "hourly" | "daily" | "weekly" | "monthly";
+export type RollupPeriod = 'hourly' | 'daily' | 'weekly' | 'monthly';
 
 // ---------------------------------------------------------------------------
 // Persisted entry — extends UsageEntry with extra analytics fields
@@ -132,7 +148,7 @@ export class AnalyticsStore {
   /** Record a call from a UsageEntry (emitted by TokenTracker). */
   recordCall(entry: UsageEntry, extra?: { durationMs?: number }): PersistedCall {
     const call: PersistedCall = {
-      id: newId("call"),
+      id: newId('call'),
       timestamp: entry.timestamp,
       provider: entry.provider,
       model: entry.model,
@@ -147,23 +163,45 @@ export class AnalyticsStore {
     return this._record(call);
   }
 
-  recordUnavailable(entry: Pick<CallRecord, "provider" | "model" | "agentId" | "threadId" | "spanId">): PersistedCall {
-    return this._record({ ...entry, id: newId("call"), timestamp: Date.now(), input: null, output: null, cost: null });
+  recordUnavailable(
+    entry: Pick<CallRecord, 'provider' | 'model' | 'agentId' | 'threadId' | 'spanId'>,
+  ): PersistedCall {
+    return this._record({
+      ...entry,
+      id: newId('call'),
+      timestamp: Date.now(),
+      input: null,
+      output: null,
+      cost: null,
+    });
   }
 
   private _record(call: PersistedCall): PersistedCall {
-    this._calls.push(call); this._pending++;
-    this._writes = this._writes.then(async () => {
-      if (this._writeFailure) return;
-      await appendFile(`${this._dir}/calls.jsonl`, JSON.stringify(call) + "\n", { mode: 0o600 });
-    }).catch(error => { this._writeFailure = error; })
-      .finally(() => { this._pending--; });
+    this._calls.push(call);
+    this._pending++;
+    this._writes = this._writes
+      .then(async () => {
+        if (this._writeFailure) return;
+        await appendFile(`${this._dir}/calls.jsonl`, JSON.stringify(call) + '\n', { mode: 0o600 });
+      })
+      .catch((error) => {
+        this._writeFailure = error;
+      })
+      .finally(() => {
+        this._pending--;
+      });
     return call;
   }
 
   /** Acknowledges every original append, or exposes its original failure. */
-  async flush(): Promise<void> { await this._writes; if (this._writeFailure) throw this._writeFailure; }
-  disconnectTracker(): void { this._detach?.(); this._detach = undefined; }
+  async flush(): Promise<void> {
+    await this._writes;
+    if (this._writeFailure) throw this._writeFailure;
+  }
+  disconnectTracker(): void {
+    this._detach?.();
+    this._detach = undefined;
+  }
 
   /** Wire up a TokenTracker so all records auto-persist here. */
   connectTracker(tracker: TokenTracker): void {
@@ -171,7 +209,7 @@ export class AnalyticsStore {
     // system yet, so we intercept at the API level.
     this.disconnectTracker();
     const originalRecord = tracker.record;
-    const record: TokenTracker["record"] = (entry) => {
+    const record: TokenTracker['record'] = (entry) => {
       try {
         const result = originalRecord.call(tracker, entry);
         this.recordCall(result);
@@ -186,7 +224,9 @@ export class AnalyticsStore {
       }
     };
     tracker.record = record;
-    this._detach = () => { if (tracker.record === record) tracker.record = originalRecord; };
+    this._detach = () => {
+      if (tracker.record === record) tracker.record = originalRecord;
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -209,26 +249,26 @@ export class AnalyticsStore {
         knownCacheRead: known.cacheRead,
         knownCacheWrite: known.cacheWrite,
         knownCost: calls.reduce((n, c) => n + (c.cost ?? 0), 0),
-        unavailableUsageCalls: calls.filter(c => c.input === null || c.output === null).length,
-        unavailableCostCalls: calls.filter(c => c.cost === null).length,
-        persistence: this._writeFailure ? "failed" : this._pending ? "pending" : "settled",
+        unavailableUsageCalls: calls.filter((c) => c.input === null || c.output === null).length,
+        unavailableCostCalls: calls.filter((c) => c.cost === null).length,
+        persistence: this._writeFailure ? 'failed' : this._pending ? 'pending' : 'settled',
       },
-      timeSeries: this._buildTimeSeries(calls, "hourly"),
+      timeSeries: this._buildTimeSeries(calls, 'hourly'),
       threads: this._buildThreadSummaries(calls),
       recentCalls: calls.slice(-100).reverse(),
-      topModels: this._buildRanked(calls, "model"),
-      topAgents: this._buildRanked(calls, "agentId"),
+      topModels: this._buildRanked(calls, 'model'),
+      topAgents: this._buildRanked(calls, 'agentId'),
       rollups: {
-        hourly: this._buildTimeSeries(calls, "hourly"),
-        daily: this._buildTimeSeries(calls, "daily"),
-        weekly: this._buildTimeSeries(calls, "weekly"),
-        monthly: this._buildTimeSeries(calls, "monthly"),
+        hourly: this._buildTimeSeries(calls, 'hourly'),
+        daily: this._buildTimeSeries(calls, 'daily'),
+        weekly: this._buildTimeSeries(calls, 'weekly'),
+        monthly: this._buildTimeSeries(calls, 'monthly'),
       },
     };
   }
 
   /** Get calls filtered by dimension. */
-  callsBy(field: "provider" | "model" | "agentId" | "threadId", value: string): CallRecord[] {
+  callsBy(field: 'provider' | 'model' | 'agentId' | 'threadId', value: string): CallRecord[] {
     return this._calls.filter((c) => c[field] === value);
   }
 
@@ -255,15 +295,27 @@ export class AnalyticsStore {
   /** Load historical calls from disk. */
   async load(): Promise<void> {
     if (this._loaded) return;
-    if (!this._loading) this._loading = (async () => {
-      let content: string;
-      try { content = await readFile(`${this._dir}/calls.jsonl`, "utf8"); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") { this._loaded = true; return; } throw error; }
-      const loaded = content.trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as PersistedCall);
-      const existing = new Set(this._calls.map(c => c.id));
-      this._calls.unshift(...loaded.filter(c => !existing.has(c.id)));
-      this._loaded = true;
-    })();
+    if (!this._loading)
+      this._loading = (async () => {
+        let content: string;
+        try {
+          content = await readFile(`${this._dir}/calls.jsonl`, 'utf8');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            this._loaded = true;
+            return;
+          }
+          throw error;
+        }
+        const loaded = content
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as PersistedCall);
+        const existing = new Set(this._calls.map((c) => c.id));
+        this._calls.unshift(...loaded.filter((c) => !existing.has(c.id)));
+        this._loaded = true;
+      })();
     return this._loading;
   }
 
@@ -298,11 +350,11 @@ export class AnalyticsStore {
   private _bucketKey(timestamp: number, period: RollupPeriod): string {
     const d = new Date(timestamp);
     switch (period) {
-      case "hourly":
+      case 'hourly':
         return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:00`;
-      case "daily":
+      case 'daily':
         return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-      case "weekly": {
+      case 'weekly': {
         // ISO week: floor to Monday
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -310,19 +362,23 @@ export class AnalyticsStore {
         monday.setDate(diff);
         return `${monday.getFullYear()}-W${p2(Math.ceil(diff / 7))}`;
       }
-      case "monthly":
+      case 'monthly':
         return `${d.getFullYear()}-${p2(d.getMonth() + 1)}`;
     }
   }
 
   private _buildThreadSummaries(calls: CallRecord[]): ThreadCostSummary[] {
-    const map = new Map<string, TokenCounts & {
-      cost: number;
-      calls: number; lastActive: number;
-    }>();
+    const map = new Map<
+      string,
+      TokenCounts & {
+        cost: number;
+        calls: number;
+        lastActive: number;
+      }
+    >();
 
     for (const call of calls) {
-      const tid = call.threadId ?? "(no thread)";
+      const tid = call.threadId ?? '(no thread)';
       const existing = map.get(tid);
       if (existing) {
         Object.assign(existing, sumTokenCounts([existing, knownCounts(call)]));
@@ -352,7 +408,7 @@ export class AnalyticsStore {
       .sort((a, b) => b.cost - a.cost);
   }
 
-  private _buildRanked(calls: CallRecord[], field: "model" | "agentId"): RankedItem[] {
+  private _buildRanked(calls: CallRecord[], field: 'model' | 'agentId'): RankedItem[] {
     const map = new Map<string, { cost: number; tokens: number; calls: number }>();
     let totalCost = 0;
 

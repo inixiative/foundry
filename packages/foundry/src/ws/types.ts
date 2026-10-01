@@ -1,7 +1,7 @@
 // Copied from the template's apps/api/src/ws/types.ts and adapted: no identity
 // (the viewer authorizes the whole connection at upgrade), channels become data streams.
-import type { ServerWebSocket } from "bun";
-import type { SerializedQueue } from "./serialized-queue";
+import type { ServerWebSocket } from 'bun';
+import type { SerializedQueue } from './serialized-queue';
 
 export type WSData = {
   connectionId: string; // unique per connection (multiple tabs = multiple ids)
@@ -13,9 +13,9 @@ export type WSData = {
 
 // Inbound: client → server, one per frame.
 export type WSMessage =
-  | { action: "open"; stream: string }
-  | { action: "close"; stream: string }
-  | { action: "ping" };
+  | { action: 'open'; stream: string }
+  | { action: 'close'; stream: string }
+  | { action: 'ping' };
 
 export type WSSocket = ServerWebSocket<WSData>;
 

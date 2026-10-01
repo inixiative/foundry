@@ -1,20 +1,20 @@
-import { parseArgs } from 'node:util';
-import { dirname, join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 import { runCli } from '@inixiative/session-archive/cli';
 import { LocalArchiveStore } from '@inixiative/session-archive/local';
 import { FoundryCredentials } from '../providers/credentials';
+import { createTerminalPrompts } from '../setup/prompts';
 import { ConfigStore } from '../viewer/config';
 import { archiveDestinationSchema, readDestinations } from './config';
-import { runArchiveSetup } from './setup';
-import { createTerminalPrompts } from '../setup/prompts';
 import {
-  saveArchiveConnection,
   publishArchive,
   routingPreview,
+  saveArchiveConnection,
   searchRemotes,
   syncArchives,
 } from './publish';
+import { runArchiveSetup } from './setup';
 
 export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   const { values: v, positionals } = parseArgs({
@@ -52,7 +52,9 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
     },
   });
   const command = positionals[0];
-  const config = String(v.config ?? join(process.env.FOUNDRY_CONFIG_DIR ?? '.foundry', 'archives.json'));
+  const config = String(
+    v.config ?? join(process.env.FOUNDRY_CONFIG_DIR ?? '.foundry', 'archives.json'),
+  );
   const storePath = String(v.store ?? join(dirname(config), 'archives', 'archives.sqlite'));
   const credentials = new FoundryCredentials(
     dirname(resolve(config)),
@@ -78,7 +80,9 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
   }
   if (
     command === 'setup' &&
-    !['url', 'kind', 'project-id', 'kingdom-identity', 'credential-id', 'token-env'].some((key) => v[key] !== undefined)
+    !['url', 'kind', 'project-id', 'kingdom-identity', 'credential-id', 'token-env'].some(
+      (key) => v[key] !== undefined,
+    )
   ) {
     const prompts = !v.yes && process.stdin.isTTY ? createTerminalPrompts() : undefined;
     try {
@@ -136,7 +140,12 @@ export async function runFoundryArchiveCli(args = Bun.argv.slice(2)) {
     return;
   }
   if (command === 'search') {
-    const results = await searchRemotes(readDestinations(config), String(v.query ?? ''), 2048, credentials);
+    const results = await searchRemotes(
+      readDestinations(config),
+      String(v.query ?? ''),
+      2048,
+      credentials,
+    );
     output(results);
     if (results.some((r) => 'error' in r)) process.exitCode = 1;
     return;

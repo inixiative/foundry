@@ -1,9 +1,9 @@
-import Redis from "ioredis";
-import { type Job, Worker } from "bullmq";
-import type { PostgresMemory } from "../adapters/postgres-memory";
-import type { ContextStack } from "@inixiative/foundry-core";
-import { isValidHandlerName, jobHandlers } from "./handlers";
-import type { JobsQueue, WorkerContext } from "./types";
+import type { ContextStack } from '@inixiative/foundry-core';
+import { type Job, Worker } from 'bullmq';
+import Redis from 'ioredis';
+import type { PostgresMemory } from '../adapters/postgres-memory';
+import { isValidHandlerName, jobHandlers } from './handlers';
+import type { JobsQueue, WorkerContext } from './types';
 
 let jobsWorker: Worker | null = null;
 let workerRedis: Redis | null = null;
@@ -28,7 +28,7 @@ export async function initializeWorker(opts: WorkerInitOpts): Promise<Worker> {
   workerRedis = new Redis(redisUrl, { maxRetriesPerRequest: null });
 
   jobsWorker = new Worker(
-    "foundry-jobs",
+    'foundry-jobs',
     async (job: Job) => {
       if (!isValidHandlerName(job.name)) {
         console.error(`[Worker] Unknown job handler: ${job.name}`);
@@ -84,7 +84,7 @@ export async function initializeWorker(opts: WorkerInitOpts): Promise<Worker> {
 /** Gracefully shut down the worker. */
 export async function shutdownWorker(): Promise<void> {
   if (jobsWorker) {
-    console.log("[Worker] Shutting down...");
+    console.log('[Worker] Shutting down...');
     await jobsWorker.close();
     jobsWorker = null;
   }
@@ -92,5 +92,5 @@ export async function shutdownWorker(): Promise<void> {
     await workerRedis.quit();
     workerRedis = null;
   }
-  console.log("[Worker] Stopped");
+  console.log('[Worker] Stopped');
 }

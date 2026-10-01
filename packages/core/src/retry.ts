@@ -1,6 +1,6 @@
-import type { Middleware, DispatchContext, MiddlewareNext } from "./middleware";
-import { CapabilityDeniedError } from "./capability";
-import { BudgetExceededError } from "./token-tracker";
+import { CapabilityDeniedError } from './capability';
+import type { DispatchContext, Middleware, MiddlewareNext } from './middleware';
+import { BudgetExceededError } from './token-tracker';
 
 export interface RetryConfig {
   /** Maximum retry attempts. Default: 3. */
@@ -64,7 +64,7 @@ export function retryMiddleware(config: RetryConfig = {}): Middleware {
         const elapsed = Date.now() - startTime;
         if (elapsed >= giveUpAfterMs) break;
 
-        let delay = initialDelayMs * Math.pow(backoffFactor, attempt);
+        let delay = initialDelayMs * backoffFactor ** attempt;
         delay = Math.min(delay, maxDelayMs);
 
         if (jitter) {
@@ -79,8 +79,8 @@ export function retryMiddleware(config: RetryConfig = {}): Middleware {
         }
 
         onRetry?.(attempt + 1, error, delay);
-        ctx.annotations["retry:attempt"] = attempt + 1;
-        ctx.annotations["retry:lastError"] = String(error);
+        ctx.annotations['retry:attempt'] = attempt + 1;
+        ctx.annotations['retry:lastError'] = String(error);
 
         await sleep(delay);
       }

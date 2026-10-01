@@ -1,11 +1,11 @@
 import {
+  type BaseAgent,
   ContextLayer,
   ContextStack,
-  Thread,
-  type BaseAgent,
   type ExecutionResult,
   type LayerFilter,
-} from "@inixiative/foundry-core";
+  type Thread,
+} from '@inixiative/foundry-core';
 
 /**
  * A recipe for creating a thread on demand.
@@ -21,10 +21,7 @@ export interface ThreadBlueprint {
    * Build the thread. Receives the destination id and the parent thread
    * (if the route originated from an existing thread).
    */
-  create(
-    destinationId: string,
-    parent?: Thread
-  ): Thread | Promise<Thread>;
+  create(destinationId: string, parent?: Thread): Thread | Promise<Thread>;
 }
 
 /**
@@ -61,7 +58,7 @@ export class SessionManager {
   /** Register an existing thread. */
   add(thread: Thread): void {
     this._threads.set(thread.id, thread);
-    this._emit({ type: "thread:added", threadId: thread.id, timestamp: Date.now() });
+    this._emit({ type: 'thread:added', threadId: thread.id, timestamp: Date.now() });
   }
 
   /** Remove a thread. */
@@ -69,7 +66,7 @@ export class SessionManager {
     const removed = this._threads.delete(id);
     if (removed) {
       this._parentOf.delete(id);
-      this._emit({ type: "thread:removed", threadId: id, timestamp: Date.now() });
+      this._emit({ type: 'thread:removed', threadId: id, timestamp: Date.now() });
     }
     return removed;
   }
@@ -86,16 +83,12 @@ export class SessionManager {
 
   /** Threads currently active or idle (not archived). */
   get active(): Thread[] {
-    return [...this._threads.values()].filter(
-      (t) => t.meta.status !== "archived"
-    );
+    return [...this._threads.values()].filter((t) => t.meta.status !== 'archived');
   }
 
   /** Archived threads. */
   get archived(): Thread[] {
-    return [...this._threads.values()].filter(
-      (t) => t.meta.status === "archived"
-    );
+    return [...this._threads.values()].filter((t) => t.meta.status === 'archived');
   }
 
   /** Register a blueprint for lazy thread creation. */
@@ -127,10 +120,7 @@ export class SessionManager {
    * This is the core primitive. The Router says "send to X".
    * resolve("X") returns the thread, creating it if needed.
    */
-  async resolve(
-    destinationId: string,
-    parent?: Thread
-  ): Promise<Thread | undefined> {
+  async resolve(destinationId: string, parent?: Thread): Promise<Thread | undefined> {
     // Already exists?
     const existing = this._threads.get(destinationId);
     if (existing) return existing;
@@ -138,9 +128,7 @@ export class SessionManager {
     // Match a blueprint
     for (const bp of this._blueprints) {
       const matches =
-        typeof bp.match === "string"
-          ? bp.match === destinationId
-          : bp.match.test(destinationId);
+        typeof bp.match === 'string' ? bp.match === destinationId : bp.match.test(destinationId);
 
       if (matches) {
         const thread = await bp.create(destinationId, parent);
@@ -151,7 +139,7 @@ export class SessionManager {
         }
 
         this._emit({
-          type: "thread:spawned",
+          type: 'thread:spawned',
           threadId: thread.id,
           parentId: parent?.id,
           timestamp: Date.now(),
@@ -176,7 +164,7 @@ export class SessionManager {
       sourceThread?: Thread;
       agentId?: string;
       filterOverride?: LayerFilter;
-    }
+    },
   ): Promise<ExecutionResult> {
     const source = opts?.sourceThread;
 
@@ -189,16 +177,14 @@ export class SessionManager {
     const targetThread = await this.resolve(destinationId, source);
     if (!targetThread) {
       throw new Error(
-        `Cannot resolve destination: ${destinationId}. No thread or blueprint matches.`
+        `Cannot resolve destination: ${destinationId}. No thread or blueprint matches.`,
       );
     }
 
     // Dispatch to the target thread's specified agent, or its default
     const agentId = opts?.agentId ?? this._findDefaultAgent(targetThread);
     if (!agentId) {
-      throw new Error(
-        `Thread ${targetThread.id} has no agents registered`
-      );
+      throw new Error(`Thread ${targetThread.id} has no agents registered`);
     }
 
     return targetThread.dispatch(agentId, payload, opts?.filterOverride);
@@ -226,15 +212,15 @@ export class SessionManager {
     const evicted: string[] = [];
 
     for (const [id, thread] of this._threads) {
-      if (thread.meta.status === "active" || thread.meta.status === "waiting") continue;
+      if (thread.meta.status === 'active' || thread.meta.status === 'waiting') continue;
       if (now - thread.meta.lastActiveAt < maxIdleMs) continue;
 
       // Don't evict threads that have active children
       const children = this.childrenOf(id);
-      if (children.some((c) => c.meta.status === "active" || c.meta.status === "waiting")) continue;
+      if (children.some((c) => c.meta.status === 'active' || c.meta.status === 'waiting')) continue;
 
       // Archive if not already, then stop and remove
-      if (thread.meta.status !== "archived") {
+      if (thread.meta.status !== 'archived') {
         thread.archive();
       }
       thread.stop();
@@ -250,7 +236,7 @@ export class SessionManager {
       this._parentOf.delete(id);
       evicted.push(id, ...children.map((c) => c.id));
 
-      this._emit({ type: "thread:removed", threadId: id, timestamp: now });
+      this._emit({ type: 'thread:removed', threadId: id, timestamp: now });
     }
 
     return evicted;
@@ -260,10 +246,12 @@ export class SessionManager {
    * Get counts for monitoring.
    */
   get stats(): { total: number; active: number; archived: number; idle: number } {
-    let active = 0, archived = 0, idle = 0;
+    let active = 0,
+      archived = 0,
+      idle = 0;
     for (const thread of this._threads.values()) {
-      if (thread.meta.status === "archived") archived++;
-      else if (thread.meta.status === "active" || thread.meta.status === "waiting") active++;
+      if (thread.meta.status === 'archived') archived++;
+      else if (thread.meta.status === 'active' || thread.meta.status === 'waiting') active++;
       else idle++;
     }
     return { total: this._threads.size, active, archived, idle };
@@ -275,10 +263,7 @@ export class SessionManager {
    * Copy layers from a parent thread to a new stack, applying inheritance rules.
    * Utility for blueprint.create() implementations.
    */
-  static inheritLayers(
-    parent: Thread,
-    rules: LayerInheritance
-  ): ContextStack {
+  static inheritLayers(parent: Thread, rules: LayerInheritance): ContextStack {
     const stack = new ContextStack();
     const shareSet = new Set(rules.share ?? []);
     const copySet = new Set(rules.copy ?? []);
@@ -316,7 +301,7 @@ export class SessionManager {
 }
 
 export interface SessionEvent {
-  readonly type: "thread:added" | "thread:removed" | "thread:spawned";
+  readonly type: 'thread:added' | 'thread:removed' | 'thread:spawned';
   readonly threadId: string;
   readonly parentId?: string;
   readonly timestamp: number;

@@ -15,7 +15,7 @@
 // a human (or policy hook) approves.
 // ---------------------------------------------------------------------------
 
-import { ActionQueue, type ActionResolution } from "./action-prompt";
+import type { ActionQueue, ActionResolution } from './action-prompt';
 
 // ---------------------------------------------------------------------------
 // Built-in capabilities
@@ -27,34 +27,34 @@ import { ActionQueue, type ActionResolution } from "./action-prompt";
  */
 export type BuiltinCapability =
   // File system
-  | "file:read"
-  | "file:write"
-  | "file:delete"
+  | 'file:read'
+  | 'file:write'
+  | 'file:delete'
   // Network
-  | "net:fetch"
-  | "net:api"
+  | 'net:fetch'
+  | 'net:api'
   // LLM
-  | "llm:call"
-  | "llm:expensive"
+  | 'llm:call'
+  | 'llm:expensive'
   // Data stores
-  | "data:read"
-  | "data:write"
-  | "data:delete"
+  | 'data:read'
+  | 'data:write'
+  | 'data:delete'
   // Execution
-  | "exec:shell"
-  | "exec:process"
+  | 'exec:shell'
+  | 'exec:process'
   // Browser
-  | "browser:navigate"
-  | "browser:interact"
-  | "browser:execute"
-  | "browser:screenshot"
+  | 'browser:navigate'
+  | 'browser:interact'
+  | 'browser:execute'
+  | 'browser:screenshot'
   // Meta
-  | "prompt:auto-resolve";
+  | 'prompt:auto-resolve';
 
 /** Any string is a valid capability. Builtins are just conventions. */
 export type Capability = BuiltinCapability | (string & {});
 
-export type PermissionLevel = "allow" | "prompt" | "deny";
+export type PermissionLevel = 'allow' | 'prompt' | 'deny';
 
 // ---------------------------------------------------------------------------
 // PermissionPolicy
@@ -73,40 +73,40 @@ export interface PermissionPolicy {
 
 /** Convenience: deny dangerous ops, allow reads and cheap LLM. */
 export const RESTRICTED_POLICY: PermissionPolicy = {
-  defaults: "deny",
+  defaults: 'deny',
   capabilities: {
-    "file:read": "allow",
-    "data:read": "allow",
-    "net:fetch": "allow",
-    "llm:call": "allow",
-    "llm:expensive": "deny",
-    "exec:shell": "deny",
-    "exec:process": "deny",
-    "file:delete": "deny",
-    "data:delete": "deny",
-    "browser:navigate": "deny",
-    "browser:interact": "deny",
-    "browser:execute": "deny",
-    "browser:screenshot": "deny",
+    'file:read': 'allow',
+    'data:read': 'allow',
+    'net:fetch': 'allow',
+    'llm:call': 'allow',
+    'llm:expensive': 'deny',
+    'exec:shell': 'deny',
+    'exec:process': 'deny',
+    'file:delete': 'deny',
+    'data:delete': 'deny',
+    'browser:navigate': 'deny',
+    'browser:interact': 'deny',
+    'browser:execute': 'deny',
+    'browser:screenshot': 'deny',
   },
 };
 
 /** Convenience: browser-capable agent — allows navigation and interaction, prompts for JS execution. */
 export const BROWSER_POLICY: PermissionPolicy = {
-  defaults: "prompt",
+  defaults: 'prompt',
   capabilities: {
-    "file:read": "allow",
-    "data:read": "allow",
-    "net:fetch": "allow",
-    "llm:call": "allow",
-    "browser:navigate": "allow",
-    "browser:interact": "allow",
-    "browser:execute": "prompt",
-    "browser:screenshot": "allow",
-    "exec:shell": "deny",
-    "exec:process": "deny",
-    "file:delete": "deny",
-    "data:delete": "deny",
+    'file:read': 'allow',
+    'data:read': 'allow',
+    'net:fetch': 'allow',
+    'llm:call': 'allow',
+    'browser:navigate': 'allow',
+    'browser:interact': 'allow',
+    'browser:execute': 'prompt',
+    'browser:screenshot': 'allow',
+    'exec:shell': 'deny',
+    'exec:process': 'deny',
+    'file:delete': 'deny',
+    'data:delete': 'deny',
   },
 };
 
@@ -119,7 +119,7 @@ export class CapabilityDeniedError extends Error {
   readonly level: PermissionLevel;
   constructor(capability: string, level: PermissionLevel) {
     super(`Capability "${capability}" is ${level}`);
-    this.name = "CapabilityDeniedError";
+    this.name = 'CapabilityDeniedError';
     this.capability = capability;
     this.level = level;
   }
@@ -142,7 +142,9 @@ export class CapabilityGate {
     this._queue = queue;
   }
 
-  get policy(): PermissionPolicy { return this._policy; }
+  get policy(): PermissionPolicy {
+    return this._policy;
+  }
 
   /** Update policy at runtime. */
   setPolicy(policy: PermissionPolicy): void {
@@ -156,18 +158,18 @@ export class CapabilityGate {
   async check(capability: Capability, ctx: GateContext): Promise<ActionResolution> {
     const level = this._resolve(capability, ctx);
 
-    if (level === "allow") {
-      return { by: "policy", action: "approved", timestamp: Date.now() };
+    if (level === 'allow') {
+      return { by: 'policy', action: 'approved', timestamp: Date.now() };
     }
 
-    if (level === "deny") {
-      return { by: "policy", action: "rejected", timestamp: Date.now() };
+    if (level === 'deny') {
+      return { by: 'policy', action: 'rejected', timestamp: Date.now() };
     }
 
     // level === "prompt"
     const message = this._buildMessage(capability, ctx);
     return this._queue.prompt({
-      kind: "approval",
+      kind: 'approval',
       message,
       agentId: ctx.agentId,
       threadId: ctx.threadId,
@@ -183,8 +185,8 @@ export class CapabilityGate {
    */
   async require(capability: Capability, ctx: GateContext): Promise<void> {
     const resolution = await this.check(capability, ctx);
-    if (resolution.action !== "approved") {
-      throw new CapabilityDeniedError(capability, "deny");
+    if (resolution.action !== 'approved') {
+      throw new CapabilityDeniedError(capability, 'deny');
     }
   }
 
@@ -204,17 +206,25 @@ export class CapabilityGate {
     if (explicit) return explicit;
 
     // Cost threshold check for LLM calls
-    if (capability === "llm:call" && this._policy.costThreshold != null && ctx?.meta?.estimatedCost != null) {
+    if (
+      capability === 'llm:call' &&
+      this._policy.costThreshold != null &&
+      ctx?.meta?.estimatedCost != null
+    ) {
       if ((ctx.meta.estimatedCost as number) > this._policy.costThreshold) {
-        return "prompt";
+        return 'prompt';
       }
     }
 
     // Protected paths check for file ops
-    if ((capability === "file:write" || capability === "file:delete") && this._policy.protectedPaths?.length && ctx?.meta?.path) {
+    if (
+      (capability === 'file:write' || capability === 'file:delete') &&
+      this._policy.protectedPaths?.length &&
+      ctx?.meta?.path
+    ) {
       const path = ctx.meta.path as string;
       if (this._policy.protectedPaths.some((p) => path.includes(p))) {
-        return "prompt";
+        return 'prompt';
       }
     }
 
@@ -222,14 +232,14 @@ export class CapabilityGate {
   }
 
   private _buildMessage(capability: Capability, ctx: GateContext): string {
-    const detail = ctx.detail ? ` — ${ctx.detail}` : "";
+    const detail = ctx.detail ? ` — ${ctx.detail}` : '';
     return `Agent "${ctx.agentId}" requires capability "${capability}"${detail}`;
   }
 
-  private _urgencyFor(capability: Capability): "low" | "normal" | "high" | "critical" {
-    if (capability === "exec:shell" || capability === "exec:process") return "high";
-    if (capability.endsWith(":delete")) return "high";
-    if (capability === "llm:expensive") return "normal";
-    return "normal";
+  private _urgencyFor(capability: Capability): 'low' | 'normal' | 'high' | 'critical' {
+    if (capability === 'exec:shell' || capability === 'exec:process') return 'high';
+    if (capability.endsWith(':delete')) return 'high';
+    if (capability === 'llm:expensive') return 'normal';
+    return 'normal';
   }
 }

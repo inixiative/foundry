@@ -1,5 +1,5 @@
-import type { ExecutionResult } from "./base-agent";
-import type { ContextStackView } from "./context-stack";
+import type { ExecutionResult } from './base-agent';
+import type { ContextStackView } from './context-stack';
 
 export interface DispatchContext<TPayload = unknown> {
   readonly agentId: string;
@@ -28,10 +28,7 @@ export interface DispatchOutcome<TResult = unknown> {
 
 export type MiddlewareNext = () => Promise<ExecutionResult>;
 
-export type Middleware = (
-  ctx: DispatchContext,
-  next: MiddlewareNext
-) => Promise<ExecutionResult>;
+export type Middleware = (ctx: DispatchContext, next: MiddlewareNext) => Promise<ExecutionResult>;
 
 /**
  * When a middleware should run.
@@ -40,7 +37,7 @@ export type Middleware = (
  * - "conditional": runs only when its `when` predicate returns true
  *   (deep classification, expensive enrichment, guardrails)
  */
-export type MiddlewareTier = "always" | "conditional";
+export type MiddlewareTier = 'always' | 'conditional';
 
 export interface MiddlewareEntry {
   readonly id: string;
@@ -64,16 +61,12 @@ export class MiddlewareChain {
 
   /** Register always-on middleware. */
   use(id: string, fn: Middleware): void {
-    this._middleware.push({ id, tier: "always", fn });
+    this._middleware.push({ id, tier: 'always', fn });
   }
 
   /** Register conditional middleware with a predicate. */
-  useWhen(
-    id: string,
-    when: (ctx: DispatchContext) => boolean,
-    fn: Middleware
-  ): void {
-    this._middleware.push({ id, tier: "conditional", fn, when });
+  useWhen(id: string, when: (ctx: DispatchContext) => boolean, fn: Middleware): void {
+    this._middleware.push({ id, tier: 'conditional', fn, when });
   }
 
   remove(id: string): boolean {
@@ -84,13 +77,10 @@ export class MiddlewareChain {
   }
 
   /** Execute the chain. Conditional middleware only runs when its predicate matches. */
-  async execute(
-    ctx: DispatchContext,
-    handler: MiddlewareNext
-  ): Promise<ExecutionResult> {
+  async execute(ctx: DispatchContext, handler: MiddlewareNext): Promise<ExecutionResult> {
     // Build the active stack for this request
     const active = this._middleware.filter((m) => {
-      if (m.tier === "always") return true;
+      if (m.tier === 'always') return true;
       return m.when ? m.when(ctx) : false;
     });
 

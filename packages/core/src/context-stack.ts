@@ -1,5 +1,5 @@
-import { ContextLayer, computeHash, type LayerState } from "./context-layer";
-import type { OwnershipScope } from "./scope";
+import { type ContextLayer, computeHash, type LayerState } from './context-layer';
+import type { OwnershipScope } from './scope';
 
 export type LayerFilter = (layer: ContextLayer) => boolean;
 
@@ -25,7 +25,7 @@ export interface ContextStackView {
 
 /** A single block in the assembled prompt output. */
 export interface PromptBlock {
-  readonly role: "system" | "layer" | "content";
+  readonly role: 'system' | 'layer' | 'content';
   readonly id?: string;
   readonly text: string;
   /**
@@ -128,16 +128,12 @@ export class ContextStack {
   async warmAll(): Promise<void> {
     // Check staleness before deciding what to warm
     for (const l of this._layers) l.checkStaleness();
-    await Promise.all(
-      this._layers.filter((l) => !l.isWarm).map((l) => l.warm())
-    );
+    await Promise.all(this._layers.filter((l) => !l.isWarm).map((l) => l.warm()));
   }
 
   async refresh(): Promise<void> {
     for (const l of this._layers) l.checkStaleness();
-    await Promise.all(
-      this._layers.filter((l) => l.isStale).map((l) => l.warm())
-    );
+    await Promise.all(this._layers.filter((l) => l.isStale).map((l) => l.warm()));
   }
 
   // -- Merging --
@@ -147,7 +143,7 @@ export class ContextStack {
     return layers
       .filter((l) => l.isWarm && l.content.length > 0)
       .map((l) => l.content)
-      .join("\n\n");
+      .join('\n\n');
   }
 
   slice(filter: LayerFilter): string {
@@ -169,7 +165,7 @@ export class ContextStack {
     const blocks: PromptBlock[] = [];
 
     if (agentPrompt) {
-      blocks.push({ role: "system", text: agentPrompt });
+      blocks.push({ role: 'system', text: agentPrompt });
     }
 
     const layers = filter ? this._layers.filter(filter) : this._layers;
@@ -179,14 +175,19 @@ export class ContextStack {
 
       if (layer.prompt) {
         // A layer prompt is always an instruction; it never inherits the content segment.
-        blocks.push({ role: "layer", id: layer.id, text: layer.prompt });
+        blocks.push({ role: 'layer', id: layer.id, text: layer.prompt });
       }
       // The content block carries the layer's declared segment when it has one; legacy
       // layers leave it unset and the artifact builder falls back to its id heuristic.
-      blocks.push({ role: "content", id: layer.id, text: layer.content, ...(layer.segment ? { segment: layer.segment } : {}) });
+      blocks.push({
+        role: 'content',
+        id: layer.id,
+        text: layer.content,
+        ...(layer.segment ? { segment: layer.segment } : {}),
+      });
     }
 
-    const text = blocks.map((b) => b.text).join("\n\n");
+    const text = blocks.map((b) => b.text).join('\n\n');
     return { blocks, text };
   }
 

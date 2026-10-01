@@ -1,17 +1,25 @@
-import { test, expect } from 'bun:test';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { expect, test } from 'bun:test';
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Hono } from 'hono';
 import { EventStream } from '@inixiative/foundry-core';
 import { startArchiveServer } from '@inixiative/session-archive/server';
-import { FoundryCredentials } from '../src/providers/credentials';
-import { writePrivateJson } from '../src/providers/kingdom-credential-file';
+import { Hono } from 'hono';
+import { captureThread } from '../src/archives/capture';
 import { ArchiveContextSource } from '../src/archives/context-source';
 import { archiveRequest, kingdomFields, publishArchive } from '../src/archives/publish';
 import { registerArchiveRoutes } from '../src/archives/routes';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { captureThread } from '../src/archives/capture';
+import { FoundryCredentials } from '../src/providers/credentials';
+import { writePrivateJson } from '../src/providers/kingdom-credential-file';
 
 const temporary = () => mkdtempSync(join(tmpdir(), 'foundry-credentials-'));
 const scope = { service: 'archive', url: 'https://archive.example/', projectId: 'personal' };
@@ -66,7 +74,9 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
     expect(String(url)).toBe('https://kingdom.example/api/v1/archive/remote/search');
     expect(init.headers.authorization).toBe(`Bearer ${secret}`);
     expect(JSON.parse(init.body).connectionId).toBe('inixiative');
-    return calls === 1 ? Response.json({ data: { archives: [] } }) : Response.json({}, { status: 401 });
+    return calls === 1
+      ? Response.json({ data: { archives: [] } })
+      : Response.json({}, { status: 401 });
   }) as typeof fetch;
   try {
     await expect(
@@ -80,24 +90,45 @@ test('native Kingdom credentials stay on the enrolled origin and fail when the s
     ).rejects.toThrow('scope');
     expect(calls).toBe(0);
     await archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials);
-    await expect(archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials)).rejects.toThrow(
-      '401',
-    );
-    await expect(credentials.resolve({ type: 'kingdom-runtime', owner }, scope)).rejects.toThrow('scope');
     await expect(
-      credentials.resolve({ type: 'kingdom-runtime', owner: `User:${crypto.randomUUID()}::` }, { ...scope, url: destination.url }),
+      archiveRequest(destination, 'search', kingdomFields(destination), transport, credentials),
+    ).rejects.toThrow('401');
+    await expect(credentials.resolve({ type: 'kingdom-runtime', owner }, scope)).rejects.toThrow(
+      'scope',
+    );
+    await expect(
+      credentials.resolve(
+        { type: 'kingdom-runtime', owner: `User:${crypto.randomUUID()}::` },
+        { ...scope, url: destination.url },
+      ),
     ).rejects.toThrow('scope');
     const heartbeat = (id: string, identityOwner: object) =>
       (async () =>
         Response.json({
-          data: { installationId: id, userId: null, owner: identityOwner, expiresAt: new Date(Date.now() + 60000).toISOString() },
+          data: {
+            installationId: id,
+            userId: null,
+            owner: identityOwner,
+            expiresAt: new Date(Date.now() + 60000).toISOString(),
+          },
         })) as unknown as typeof fetch;
-    const organization = { ownerModel: 'Organization', organizationId: '11111111-1111-4111-8111-111111111111' };
-    const identity = await credentials.kingdomIdentity(undefined, heartbeat(installationId, organization));
+    const organization = {
+      ownerModel: 'Organization',
+      organizationId: '11111111-1111-4111-8111-111111111111',
+    };
+    const identity = await credentials.kingdomIdentity(
+      undefined,
+      heartbeat(installationId, organization),
+    );
     expect(identity).toEqual({ id: expect.any(String), url: 'https://kingdom.example', owner });
-    await expect(credentials.kingdomIdentity(undefined, heartbeat(crypto.randomUUID(), organization))).rejects.toThrow('unavailable');
     await expect(
-      credentials.kingdomIdentity(undefined, heartbeat(installationId, { ownerModel: 'User', userId: crypto.randomUUID() })),
+      credentials.kingdomIdentity(undefined, heartbeat(crypto.randomUUID(), organization)),
+    ).rejects.toThrow('unavailable');
+    await expect(
+      credentials.kingdomIdentity(
+        undefined,
+        heartbeat(installationId, { ownerModel: 'User', userId: crypto.randomUUID() }),
+      ),
     ).rejects.toThrow('mismatch');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -141,7 +172,9 @@ test('viewer stores only a credential reference and uses it for publication and 
     };
     journal.saveThread(t);
     journal.beginTurn(t, 'turn', 'Managed credential roundtrip');
-    const archive = registered.store.capture(captureThread(journal, registered.store.sourceId, t.id));
+    const archive = registered.store.capture(
+      captureThread(journal, registered.store.sourceId, t.id),
+    );
     const credentials = new FoundryCredentials(dir);
     await publishArchive(registered.store, archive.id, saved, fetch, credentials);
     const source = new ArchiveContextSource(
@@ -152,11 +185,23 @@ test('viewer stores only a credential reference and uses it for publication and 
       fetch,
       new FoundryCredentials(dir),
     );
-    expect(await source.bind({ projectId: 'personal' }).load()).toContain('Managed credential roundtrip');
+    expect(await source.bind({ projectId: 'personal' }).load()).toContain(
+      'Managed credential roundtrip',
+    );
     expect(await source.bind({ projectId: 'userevidence' }).load()).toBe('');
-    const cli = Bun.spawn([process.execPath, new URL('../src/archives/cli.ts', import.meta.url).pathname,
-      'search', '--remote', '--config', join(dir, 'archives.json'), '--query', 'Managed credential'],
-      {env:{PATH:process.env.PATH},stdout:'pipe',stderr:'pipe'});
+    const cli = Bun.spawn(
+      [
+        process.execPath,
+        new URL('../src/archives/cli.ts', import.meta.url).pathname,
+        'search',
+        '--remote',
+        '--config',
+        join(dir, 'archives.json'),
+        '--query',
+        'Managed credential',
+      ],
+      { env: { PATH: process.env.PATH }, stdout: 'pipe', stderr: 'pipe' },
+    );
     const cliOutput = await new Response(cli.stdout).text();
     expect(await cli.exited).toBe(0);
     expect(cliOutput).toContain('Managed credential roundtrip');

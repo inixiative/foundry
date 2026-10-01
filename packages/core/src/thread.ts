@@ -1,15 +1,14 @@
-import { ContextStack } from "./context-stack";
-import type { LayerFilter, ContextStackView } from "./context-stack";
-import { CacheLifecycle } from "./cache-lifecycle";
-import { BaseAgent, type ExecutionResult } from "./base-agent";
-import { MiddlewareChain, type DispatchContext } from "./middleware";
-import { SignalBus } from "./signal";
-import type { TokenTracker } from "./token-tracker";
-import type { ToolCallObservation } from "./tools";
-import type { InjectionArtifact } from "./messages";
-import { newId } from "./id";
+import type { BaseAgent, ExecutionResult } from './base-agent';
+import { CacheLifecycle } from './cache-lifecycle';
+import type { ContextStack, ContextStackView, LayerFilter } from './context-stack';
+import { newId } from './id';
+import type { InjectionArtifact } from './messages';
+import { type DispatchContext, MiddlewareChain } from './middleware';
+import { SignalBus } from './signal';
+import type { TokenTracker } from './token-tracker';
+import type { ToolCallObservation } from './tools';
 
-export type ThreadStatus = "idle" | "active" | "waiting" | "archived";
+export type ThreadStatus = 'idle' | 'active' | 'waiting' | 'archived';
 
 export interface ThreadMeta {
   /** Living description — what this thread is doing right now. */
@@ -53,7 +52,7 @@ export interface Dispatch<T = unknown> {
 
 export interface FanResult {
   readonly agentId: string;
-  readonly status: "fulfilled" | "rejected";
+  readonly status: 'fulfilled' | 'rejected';
   readonly result?: ExecutionResult;
   readonly error?: unknown;
 }
@@ -69,8 +68,10 @@ export interface BackgroundHandle {
  * observation signal; the thread never invents them.
  */
 export interface DispatchOptions {
-  nativeObservation?: Omit<import("./native-evidence").NativeObservation, "owner"> & { generation: string };
-  recordNative?: (evidence: import("./native-evidence").NativeEvidence) => void;
+  nativeObservation?: Omit<import('./native-evidence').NativeObservation, 'owner'> & {
+    generation: string;
+  };
+  recordNative?: (evidence: import('./native-evidence').NativeEvidence) => void;
   recordCompleted?: (output: unknown) => void;
   /** Streaming sink for executor text deltas. */
   onDelta?: (text: string) => void;
@@ -167,9 +168,9 @@ export class Thread {
 
     const now = Date.now();
     this.meta = {
-      description: opts?.description ?? "",
+      description: opts?.description ?? '',
       tags: opts?.tags ?? [],
-      status: "idle",
+      status: 'idle',
       cwd: opts?.cwd,
       branch: opts?.branch,
       parentThreadId: opts?.parentThreadId,
@@ -256,7 +257,7 @@ export class Thread {
 
   /** Archive this thread. Sets the terminal status, then disposes. */
   archive(): void {
-    this.meta.status = "archived";
+    this.meta.status = 'archived';
     this.meta.archivedAt = Date.now();
     this.dispose();
   }
@@ -277,7 +278,7 @@ export class Thread {
     // This dispatch's observation and middleware must retain the same logical
     // identity even if a caller later reuses/mutates its options object.
     opts = opts ? { ...opts } : undefined;
-    if (this.meta.status === "archived") {
+    if (this.meta.status === 'archived') {
       throw new Error(`Thread archived: ${this.id} cannot dispatch "${agentId}"`);
     }
     if (this._disposed) {
@@ -287,13 +288,13 @@ export class Thread {
     if (!agent) throw new Error(`Agent not found: ${agentId}`);
 
     this._activeDispatches++;
-    this.meta.status = "active";
+    this.meta.status = 'active';
     this.meta.lastActiveAt = Date.now();
 
     // Explicit identity for this dispatch. Middleware sees it, tool calls
     // executed on its behalf are observed with it, and the completion
     // observation carries it, so evidence never drifts to another completion.
-    const dispatchId = newId("dispatch");
+    const dispatchId = newId('dispatch');
     const ctx: DispatchContext<TPayload> = {
       agentId,
       payload,
@@ -315,33 +316,52 @@ export class Thread {
       messageId: ctx.messageId,
       dispatchId,
       observeTool: (observation: ToolCallObservation) => {
-        void this.signals.emit({
-          id: newId("sig-tool"),
-          kind: "tool_observation",
-          source: `thread:${this.id}`,
-          content: { threadId: this.id, dispatchId, agentId, ...observation, timestamp: Date.now() },
-          timestamp: Date.now(),
-        }).catch((err) => {
-          console.warn(`[Thread] tool observation failed for "${agentId}":`, (err as Error).message ?? err);
-        });
+        void this.signals
+          .emit({
+            id: newId('sig-tool'),
+            kind: 'tool_observation',
+            source: `thread:${this.id}`,
+            content: {
+              threadId: this.id,
+              dispatchId,
+              agentId,
+              ...observation,
+              timestamp: Date.now(),
+            },
+            timestamp: Date.now(),
+          })
+          .catch((err) => {
+            console.warn(
+              `[Thread] tool observation failed for "${agentId}":`,
+              (err as Error).message ?? err,
+            );
+          });
       },
       annotations: ctx.annotations,
       onDelta: opts?.onDelta,
       recordInjection: opts?.recordInjection,
       recordNative: opts?.recordNative,
       recordCompleted: opts?.recordCompleted,
-      nativeObservation: opts?.nativeObservation ? {
-        preflight: opts.nativeObservation.preflight,
-        bridge: opts.nativeObservation.bridge,
-        register: opts.nativeObservation.register, observe: opts.nativeObservation.observe,
-        owner: Object.freeze({ threadId: this.id, projectId: this.meta.projectId, generation: opts.nativeObservation.generation,
-          messageId: ctx.messageId, dispatchId }),
-      } : undefined,
+      nativeObservation: opts?.nativeObservation
+        ? {
+            preflight: opts.nativeObservation.preflight,
+            bridge: opts.nativeObservation.bridge,
+            register: opts.nativeObservation.register,
+            observe: opts.nativeObservation.observe,
+            owner: Object.freeze({
+              threadId: this.id,
+              projectId: this.meta.projectId,
+              generation: opts.nativeObservation.generation,
+              messageId: ctx.messageId,
+              dispatchId,
+            }),
+          }
+        : undefined,
     };
 
     try {
       const result = await this.middleware.execute(ctx, () =>
-        agent.run(payload, filterOverride, meta)
+        agent.run(payload, filterOverride, meta),
       );
 
       const durationMs = performance.now() - start;
@@ -350,8 +370,8 @@ export class Thread {
       if (this._tokenTracker && result.tokens) {
         const llm = agent.llm;
         this._tokenTracker.record({
-          provider: llm?.provider ?? "unknown",
-          model: llm?.model ?? "unknown",
+          provider: llm?.provider ?? 'unknown',
+          model: llm?.model ?? 'unknown',
           agentId,
           threadId: this.id,
           tokens: result.tokens,
@@ -389,8 +409,8 @@ export class Thread {
       this._activeDispatches--;
       // Only the last finishing dispatch returns the thread to idle, and a
       // late completion must not resurrect an archived (or paused) thread.
-      if (this._activeDispatches === 0 && this.meta.status === "active") {
-        this.meta.status = "idle";
+      if (this._activeDispatches === 0 && this.meta.status === 'active') {
+        this.meta.status = 'idle';
       }
     }
   }
@@ -405,12 +425,10 @@ export class Thread {
     filterOverride?: LayerFilter,
     opts?: DispatchOptions,
   ): BackgroundHandle {
-    const promise = this.dispatch(agentId, payload, filterOverride, opts).catch(
-      async (err) => {
-        console.warn(`[Thread] background dispatch "${agentId}" failed:`, (err as Error).message);
-        return { output: null, contextHash: "" } as ExecutionResult;
-      }
-    );
+    const promise = this.dispatch(agentId, payload, filterOverride, opts).catch(async (err) => {
+      console.warn(`[Thread] background dispatch "${agentId}" failed:`, (err as Error).message);
+      return { output: null, contextHash: '' } as ExecutionResult;
+    });
     return { agentId, promise };
   }
 
@@ -425,14 +443,14 @@ export class Thread {
     opts?: DispatchOptions,
   ): Promise<FanResult[]> {
     const settled = await Promise.allSettled(
-      agentIds.map((id) => this.dispatch(id, payload, filterOverride, opts))
+      agentIds.map((id) => this.dispatch(id, payload, filterOverride, opts)),
     );
 
     return settled.map((s, i) => {
-      if (s.status === "fulfilled") {
-        return { agentId: agentIds[i], status: "fulfilled" as const, result: s.value };
+      if (s.status === 'fulfilled') {
+        return { agentId: agentIds[i], status: 'fulfilled' as const, result: s.value };
       } else {
-        return { agentId: agentIds[i], status: "rejected" as const, error: s.reason };
+        return { agentId: agentIds[i], status: 'rejected' as const, error: s.reason };
       }
     });
   }
@@ -444,7 +462,7 @@ export class Thread {
     payload: unknown,
     opts: DispatchOptions | undefined,
     dispatchId: string,
-    outcome: Pick<DispatchObservation, "durationMs" | "ok" | "error" | "contextHash" | "output">,
+    outcome: Pick<DispatchObservation, 'durationMs' | 'ok' | 'error' | 'contextHash' | 'output'>,
   ): Promise<void> {
     const content: DispatchObservation = {
       threadId: this.id,
@@ -458,14 +476,17 @@ export class Thread {
     };
     try {
       await this.signals.emit({
-        id: newId("sig-dispatch"),
-        kind: "dispatch",
+        id: newId('sig-dispatch'),
+        kind: 'dispatch',
         source: opts?.role ? `harness:${agentId}` : `thread:${this.id}`,
         content,
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.warn(`[Thread] dispatch observation failed for "${agentId}":`, (err as Error).message ?? err);
+      console.warn(
+        `[Thread] dispatch observation failed for "${agentId}":`,
+        (err as Error).message ?? err,
+      );
     }
   }
 
@@ -481,11 +502,15 @@ export class Thread {
       },
       getContent: (id) => {
         const l = stack.getLayer(id);
-        return l?.isWarm ? l.content : "";
+        return l?.isWarm ? l.content : '';
       },
       getState: (id) => stack.getLayer(id)?.state,
-      get layerIds() { return stack.layers.map((l) => l.id); },
-      get estimatedTokens() { return stack.estimateTokens(); },
+      get layerIds() {
+        return stack.layers.map((l) => l.id);
+      },
+      get estimatedTokens() {
+        return stack.estimateTokens();
+      },
     };
   }
 
@@ -502,7 +527,9 @@ export class Thread {
    */
   start(): void {
     if (this._disposed) {
-      throw new Error(`Thread disposed: ${this.id} cannot be started; create a new thread to restore it`);
+      throw new Error(
+        `Thread disposed: ${this.id} cannot be started; create a new thread to restore it`,
+      );
     }
     this.lifecycle.start();
   }
@@ -515,7 +542,7 @@ export class Thread {
 /** Serialize a dispatch payload for observation, bounded in size. */
 function serializePayload(payload: unknown): string {
   let text: string;
-  if (typeof payload === "string") {
+  if (typeof payload === 'string') {
     text = payload;
   } else {
     try {
