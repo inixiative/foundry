@@ -3,7 +3,10 @@
 // releases each output once the same number of stdin events has happened, so request/response
 // protocols (Claude stream-json turns, `codex exec` stdin prompts, app-server JSON-RPC) replay
 // in the order they ran live, with no timers.
+import { lstatSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeCredentialHome } from '../providers/private-profile';
 import { accountHome, rehydrate, type ScrubContext, scrubLine, scrubText } from './scrub';
 import { type Fixture, VCR } from './vcr';
 
@@ -59,7 +62,8 @@ const encoder = new TextEncoder();
 const text = (data: string | Uint8Array) =>
   typeof data === 'string' ? data : new TextDecoder().decode(data);
 
-/** The account's own login, whatever temporary profile or HOME a test composed for Foundry. */
+/** The account's own login, whatever temporary profile or HOME a test composed for Foundry. A composed
+ * private Codex home stays private: it runs live on a copy of its config with the account's login linked in. */
 export function liveEnvironment(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
@@ -71,12 +75,29 @@ export function liveEnvironment(
       (value.startsWith(tmpdir()) ||
         value.startsWith('/private/var/') ||
         value.startsWith('/var/folders/'))
-    )
+    ) {
       delete live[key];
+      if (key === 'CODEX_HOME' && credentialHome(value)) {
+        writeCredentialHome(
+          `${value}-live`,
+          join(accountHome(), '.codex'),
+          readFileSync(join(value, 'config.toml'), 'utf8'),
+        );
+        live.CODEX_HOME = `${value}-live`;
+      }
+    }
   }
   if (process.env.FOUNDRY_VCR_PATH) live.PATH = process.env.FOUNDRY_VCR_PATH;
   return live;
 }
+
+const credentialHome = (home: string) => {
+  try {
+    return lstatSync(join(home, 'auth.json')).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 
 /** A spawn seam backed by queued cassettes: `vcr.queue(method, name)` once per expected launch. */
 export class ProcessCassettes {

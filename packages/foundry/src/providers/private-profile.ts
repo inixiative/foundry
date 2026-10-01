@@ -1,8 +1,17 @@
-import { lstatSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { isDefaultProfile } from './default-profiles';
 
-export function assertPrivateProfile(directory: string): void {
+function assertPrivateDirectory(directory: string): void {
   const stat = lstatSync(directory);
   if (
     !stat.isDirectory() ||
@@ -11,6 +20,10 @@ export function assertPrivateProfile(directory: string): void {
     (process.getuid && stat.uid !== process.getuid())
   )
     throw Error('Native profile must be an owned private directory (0700), not a symlink');
+}
+
+export function assertPrivateProfile(directory: string): void {
+  assertPrivateDirectory(directory);
   for (const name of ['auth.json', '.credentials.json', 'config.toml', 'settings.json']) {
     try {
       const file = lstatSync(join(directory, name));
@@ -63,6 +76,34 @@ export function assertProfile(directory: string, runtime: 'claude' | 'codex'): v
 
 export function writeProfileConfiguration(directory: string, path: string, content: string): void {
   assertPrivateProfile(directory);
+  writeAtomically(directory, path, content);
+}
+
+/** A Foundry-owned CODEX_HOME holding Foundry's config and the profile's `auth.json` by link, never by copy:
+ * Codex rewrites auth.json in place, so a token refresh lands in the profile and every holder of the login sees it.
+ * A copy would fork the login's single-use refresh token. Nothing else from the profile is reachable. */
+export function writeCredentialHome(home: string, profile: string, config: string): void {
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  assertPrivateDirectory(home);
+  writeAtomically(home, join(home, 'config.toml'), config);
+  const link = join(home, 'auth.json'),
+    target = join(profile, 'auth.json');
+  try {
+    if (readlinkSync(link) === target) return;
+  } catch {
+    /* Missing, or not a link: replaced below. */
+  }
+  const temporary = join(home, `.auth-${crypto.randomUUID()}`);
+  symlinkSync(target, temporary);
+  try {
+    renameSync(temporary, link);
+  } catch (error) {
+    unlinkSync(temporary);
+    throw error;
+  }
+}
+
+function writeAtomically(directory: string, path: string, content: string): void {
   const temporary = join(directory, `.config-${crypto.randomUUID()}`);
   try {
     writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
