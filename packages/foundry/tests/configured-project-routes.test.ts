@@ -56,7 +56,7 @@ for (const operation of ["create", "fork"] as const) {
       expect(runtime.get(source.id)!.domainLibrarians.size).toBe(0);
       const app = new Hono();
       registerRuntimeRoutes(app, withStreams({ harness: new Harness(main), eventStream: events,
-        interventions: new InterventionLog(main.signals), threadFactory: factory,
+        interventions: new InterventionLog(), threadFactory: factory,
         projectRegistry: registry, db: null, configStore: store }));
       const response = await app.request(operation === "create" ? "/api/threads" : "/api/threads/source/fork", {
         method: "POST", headers: { "content-type": "application/json" },

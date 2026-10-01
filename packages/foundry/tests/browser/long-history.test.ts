@@ -67,7 +67,7 @@ test("long history after-run: index pagination to the oldest record, lazy detail
     const harness = new Harness(main); harness.setDefaultExecutor("worker");
     const configDir = join(out, "state"); mkdirSync(configDir, { recursive: true });
     const configStore = new ConfigStore(configDir); await configStore.save(config);
-    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(main.signals), configStore, configDir, threadFactory: factory });
+    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(), configStore, configDir, threadFactory: factory });
     cleanup.unshift(["store", () => viewer.localStore?.close()]);
     const store = viewer.localStore!;
     // ---- seed via actual journal APIs (identical shape to the baseline fixture) ----

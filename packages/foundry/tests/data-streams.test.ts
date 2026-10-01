@@ -35,7 +35,7 @@ function fixture(options: { actionQueue?: ActionQueue; tunnelToken?: string } = 
   projects.get("P")!.addThread(projectThread);
   const harness = new Harness(main); harness.setDefaultExecutor("worker");
   const events = new EventStream();
-  const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(main.signals), configDir: dir,
+  const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(), configDir: dir,
     localStore: null, projectRegistry: projects, actionQueue: options.actionQueue,
     ...(options.tunnelToken ? { tunnel: { port: 4400, token: options.tunnelToken, configDir: dir } } : {}) });
   viewer.directory.add(other);
@@ -305,7 +305,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   await writeFile(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${"0".repeat(43)}` }), { mode: 0o600 });
   const thread = new Thread("kingdom-main", new ContextStack()), events = new EventStream();
   const viewer = await startViewer({ port: 0, configDir: root, analyticsDir: join(root, "analytics"), localStore: null,
-    harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(thread.signals),
+    harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(),
     kingdomRuntimes: [{ url: `http://127.0.0.1:${kingdom.port}`, owner: "Organization::11111111-1111-4111-8111-111111111111:", installationId: id, credentialFile }] });
   cleanup.push(async () => { viewer.server.stop(true); kingdom.stop(true); await rm(root, { recursive: true, force: true }); });
   const url = `ws://127.0.0.1:${viewer.server.port}/ws`;

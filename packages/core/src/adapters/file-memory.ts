@@ -47,7 +47,7 @@ export const DEFAULT_MEMORY_SELECTION: MemorySelectionPolicy = Object.freeze({
   budgetChars: 6000,
   pinnedKinds: Object.freeze(["instruction", "pin", "pinned", "convention", "correction", "decision", "requirement"]),
   auditOnlyKinds: Object.freeze(["dispatch", "classification", "context_loaded", "session_compacted",
-    "auxiliary_session_compacted", "info", "domain_learning", "tool_observation"]),
+    "auxiliary_session_compacted", "info", "domain_learning", "tool_observation", "guard_finding"]),
   recentLimit: 8,
   maxEntryChars: 1200,
   pinnedHardCapChars: 24_000,

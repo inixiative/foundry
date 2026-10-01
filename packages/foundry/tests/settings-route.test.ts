@@ -17,7 +17,7 @@ test("reading settings and writing them back never persists runtime-generated la
     const main = new Thread("main", new ContextStack([generated]));
     const harness = new Harness(main);
     const actions = new ActionHandler({ harness, eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals), resolveThread: () => main });
+      interventions: new InterventionLog(), resolveThread: () => main });
     const app = new Hono();
     registerControlRoutes(app, { harness, actions, configStore: store, aiAssist: null, analyticsStore: null,
       actionQueue: null, tunnelHolder: { tunnel: null }, port: 0, threadsChanged: () => {} });
@@ -47,7 +47,7 @@ test("settings writes accept an optional expected revision and reject stale ones
     const main = new Thread("main", new ContextStack());
     const harness = new Harness(main);
     const actions = new ActionHandler({ harness, eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals), resolveThread: () => main });
+      interventions: new InterventionLog(), resolveThread: () => main });
     const app = new Hono();
     registerControlRoutes(app, { harness, actions, configStore: store, aiAssist: null, analyticsStore: null,
       actionQueue: null, tunnelHolder: { tunnel: null }, port: 0, threadsChanged: () => {} });

@@ -27,7 +27,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
       allowed.set(`Bearer ${token}`, id);
       const thread = new Thread(`runtime-${index}`, new ContextStack());
       viewers.push(await startViewer({ port: 0, configDir: directory, analyticsDir: join(directory, "analytics"), localStore: null,
-        harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals),
+        harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(),
         kingdomRuntimes: [{ url: `http://127.0.0.1:${kingdom.port}`, owner: "Organization::11111111-1111-4111-8111-111111111111:", installationId: id, credentialFile }],
       }));
     }

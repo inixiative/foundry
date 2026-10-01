@@ -2,6 +2,12 @@ import type { Signal, SignalBus } from "./signal";
 import type { Trace, Span } from "./trace";
 import { newId } from "./id";
 
+/** The thread an intervention targets: its id and its own signal bus. */
+export interface InterventionThread {
+  readonly id: string;
+  readonly signals: SignalBus;
+}
+
 /**
  * An intervention — a manual override from a human operator.
  *
@@ -19,6 +25,9 @@ import { newId } from "./id";
 export interface Intervention {
   readonly id: string;
   readonly timestamp: number;
+
+  /** The thread the correction was made in; its signal bus receives the correction. */
+  readonly threadId: string;
 
   /** What trace this intervention targets. */
   readonly traceId: string;
@@ -44,7 +53,7 @@ export interface Intervention {
  *
  * When an operator overrides a decision, the InterventionLog:
  * - Records the intervention
- * - Emits a correction signal on the signal bus
+ * - Emits a correction signal on the bus of the thread it was made in
  * - Provides the intervention history for the UI
  *
  * The correction signal flows through the normal signal pipeline —
@@ -53,18 +62,17 @@ export interface Intervention {
  */
 export class InterventionLog {
   private _interventions: Intervention[] = [];
-  private _signals: SignalBus;
   private _maxHistory: number;
 
-  constructor(signals: SignalBus, maxHistory: number = 1000) {
-    this._signals = signals;
+  constructor(maxHistory: number = 1000) {
     this._maxHistory = maxHistory;
   }
 
   /**
-   * Record an intervention and emit a correction signal.
+   * Record an intervention and emit a correction signal on the thread's bus.
    */
   async intervene(
+    thread: InterventionThread,
     traceId: string,
     spanId: string,
     actual: unknown,
@@ -75,6 +83,7 @@ export class InterventionLog {
     const intervention: Intervention = {
       id: newId("int"),
       timestamp: Date.now(),
+      threadId: thread.id,
       traceId,
       spanId,
       actual,
@@ -89,7 +98,7 @@ export class InterventionLog {
     }
 
     // Emit as a correction signal so the system learns
-    await this._signals.emit({
+    await thread.signals.emit({
       id: `sig_${intervention.id}`,
       kind: "correction",
       source: `operator:${operator}`,

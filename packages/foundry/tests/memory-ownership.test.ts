@@ -234,7 +234,7 @@ test("the no-factory route fallback binds the new thread's memory to its own sco
 
     const app = new Hono();
     registerRuntimeRoutes(app, withStreams({
-      harness: new Harness(main), eventStream: new EventStream(), interventions: new InterventionLog(main.signals),
+      harness: new Harness(main), eventStream: new EventStream(), interventions: new InterventionLog(),
       projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-ownership-unused-config"),
     }));
     const response = await app.request("/api/threads", {
@@ -277,5 +277,42 @@ test("production executor tool calls carry the thread scope into the memory tool
     await a.signals.emit(signal("sentinel-a", "SENTINEL-A"));
     expect((await a.dispatch("worker", "search memory")).output).toContain("SENTINEL-A");
     expect((await b.dispatch("worker", "search memory")).output).not.toContain("SENTINEL-A");
+  } finally { runtime.disposeAll(); }
+});
+
+test("a viewer correction lands on the bus of the thread it was made in, not main's", async () => {
+  const { factory, runtime, memory } = await setup();
+  try {
+    const main = factory.create("main", { projectId: "P" });
+    const other = factory.create("other", { projectId: "P" });
+    const registry = new ProjectRegistry();
+    const project = registry.register({ id: "P", path: "/qa/p", label: "P", tags: [], runtime: "claude-code" });
+    project.addThread(main);
+    project.addThread(other);
+    const interventions = new InterventionLog();
+    const app = new Hono();
+    registerRuntimeRoutes(app, withStreams({
+      harness: new Harness(main), eventStream: new EventStream(), interventions,
+      projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-ownership-unused-config"),
+    }));
+    const post = (threadId: string) => app.request(`/api/threads/${threadId}/interventions`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ traceId: "trace-other", spanId: "span-1", correction: "OTHER-THREAD-CORRECTION", operator: "ui" }),
+    });
+
+    const response = await post("other");
+    expect(response.status).toBe(201);
+    expect((await response.json()).threadId).toBe("other");
+    expect((await post("missing")).status).toBe(404);
+
+    const written = memory.all("correction").filter(e => e.content.includes("OTHER-THREAD-CORRECTION"));
+    expect(written).toHaveLength(1);
+    expect(written[0]!.owner).toMatchObject({ threadId: "other", projectId: "P" });
+    expect(memory.view({ threadId: "main", projectId: "P" }).all("correction")).toHaveLength(0);
+    await other.stack.getLayer("memory")!.warm();
+    expect(other.stack.getLayer("memory")!.content).toContain("OTHER-THREAD-CORRECTION");
+
+    other.dispose();
+    expect((await post("other")).status).toBe(409);
   } finally { runtime.disposeAll(); }
 });

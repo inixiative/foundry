@@ -10,7 +10,7 @@ function setup() {
   const selected = new Thread("selected", new ContextStack());
   const threads = new Map([[main.id, main], [selected.id, selected]]);
   const actions = new ActionHandler({ harness: new Harness(main), eventStream: new EventStream(),
-    interventions: new InterventionLog(main.signals), resolveThread: id => threads.get(id) });
+    interventions: new InterventionLog(), resolveThread: id => threads.get(id) });
   const run = (kind: ActionKind, target?: string, threadId?: string) => actions.execute({ kind, target, threadId, timestamp: Date.now() });
   return { main, selected, threads, actions, run };
 }

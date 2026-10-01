@@ -138,7 +138,7 @@ export {
 export { Trace, type Span, type SpanKind, type SpanStatus, type TraceSummary, type StageSummary } from "./trace";
 
 // Interventions
-export { InterventionLog, type Intervention } from "./intervention";
+export { InterventionLog, type Intervention, type InterventionThread } from "./intervention";
 
 // Observability
 export { EventStream, type StreamEvent, type SessionEvent } from "./event-stream";

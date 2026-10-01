@@ -106,7 +106,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
     const main = factory.create("a", { projectId: "P", cwd: join(dir, "P") }); projects.get("P")!.addThread(main);
     const harness = new Harness(main); harness.setDefaultExecutor("worker");
     const configStore = new ConfigStore(dir); await configStore.save(config);
-    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(main.signals), configStore, configDir: dir, threadFactory: factory, projectRegistry: projects });
+    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(), configStore, configDir: dir, threadFactory: factory, projectRegistry: projects });
     for (const [id, projectId] of [["b", "P"], ["outside", "Q"]]) if (!manager.get(id)) {
       const thread = factory.create(id, { projectId, cwd: join(dir, projectId) }); projects.get(projectId)!.addThread(thread); viewer.directory.add(thread); }
     let closed = false; const close = () => { if (closed) return; closed = true; manager.disposeAll(); detach(); viewer.localStore?.close(); sql.close(); };

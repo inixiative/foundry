@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ContextStack, EventStream, Harness, InterventionLog, SignalBus, Thread } from "../packages/core/src/index";
+import { ContextStack, EventStream, Harness, InterventionLog, Thread } from "../packages/core/src/index";
 import { ConfigStore } from "../packages/foundry/src/viewer/config";
 import { startViewer } from "../packages/foundry/src/viewer/server";
 
@@ -31,7 +31,7 @@ export async function createGlossPreview(port = 0) {
     projects: { "gloss-sample": { id: "gloss-sample", path: root, label: "Gloss review sample", gloss: { enabled: false, display: "margin" } } } });
   const thread = new Thread("preview", new ContextStack());
   const { server } = await startViewer({ harness: new Harness(thread), eventStream: new EventStream(),
-    interventions: new InterventionLog(new SignalBus()), configStore, configDir: join(root, ".foundry"), port });
+    interventions: new InterventionLog(), configStore, configDir: join(root, ".foundry"), port });
   return { server, root, url: `http://localhost:${server.port}`,
     dispose: () => { server.stop(true); rmSync(root, { recursive: true, force: true }); } };
 }

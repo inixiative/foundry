@@ -45,7 +45,7 @@ function mockKingdom(owner: Record<string, string> = organization) {
 async function viewerFixture() {
   const root = await mkdtemp(join(tmpdir(), "foundry-pairing-"));
   const thread = new Thread("pairing", new ContextStack());
-  const viewer = await startViewer({ port: 0, configDir: root, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals) });
+  const viewer = await startViewer({ port: 0, configDir: root, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog() });
   const base = `http://127.0.0.1:${viewer.server.port}`;
   const post = (action: string, body: unknown = {}) => fetch(`${base}/api/kingdom/${action}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const status = async () => (await fetch(`${base}/api/kingdom/status`)).json();

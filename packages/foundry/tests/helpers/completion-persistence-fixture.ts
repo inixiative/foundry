@@ -27,7 +27,7 @@ export async function completionFixture() {
     const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider }) });
     const thread = factory.create("main");
     const harness = new Harness(thread); harness.setDefaultExecutor("worker");
-    const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(thread.signals),
+    const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(),
       configStore, configDir: dir, threadFactory: factory });
     const sql = (viewer.localStore as unknown as { db: Database }).db;
     // Abort the response insert after the successful trace insert: exercise rollback.

@@ -419,7 +419,6 @@ const thread = factory.create("main", {
 // main's thread-state and cache writes stay private to main.
 const stack = thread.stack;
 
-const signals = thread.signals;
 const mainRuntime = runtimeManager.get(thread.id)!;
 
 // ---------------------------------------------------------------------------
@@ -561,7 +560,7 @@ console.log(`Tools: ${tools.list().map((t) => t.id).join(", ")}`);
 // Lifecycle/signal bridges into eventStream and thread.start() are owned by
 // each thread's runtime (attached at factory.create).
 
-const interventions = new InterventionLog(signals);
+const interventions = new InterventionLog();
 
 // -- Project registry --
 const projectRegistry = new ProjectRegistry();

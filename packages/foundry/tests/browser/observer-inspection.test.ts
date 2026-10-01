@@ -61,7 +61,7 @@ async function fixture(name: string, withNative = false) {
   const harness = new Harness(thread); harness.setDefaultExecutor("worker");
   const configDir = join(output, "state");
   const configStore = new ConfigStore(configDir); await configStore.save(config);
-  const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(thread.signals), configStore, configDir, threadFactory: factory });
+  const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(), configStore, configDir, threadFactory: factory });
   setupCleanup.unshift(["store", () => viewer.localStore?.close()]);
   viewer.directory.restore([{ id: "side", meta: { ...thread.meta, description: "Side thread" } }]);
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: viewer.fetch, websocket: viewer.websocket });

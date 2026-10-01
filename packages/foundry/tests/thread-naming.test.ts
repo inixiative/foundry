@@ -14,7 +14,7 @@ function setup(id: string, description: string, complete: LLMProvider["complete"
   harness.setDefaultExecutor("worker");
   const app = new Hono();
   registerRuntimeRoutes(app, withStreams({ harness, eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals), db: null, configStore: new ConfigStore("/tmp/unused-naming-config"),
+    interventions: new InterventionLog(), db: null, configStore: new ConfigStore("/tmp/unused-naming-config"),
     namingProvider: { id: "namer", complete } }));
   const send = async () => {
     const response = await app.request("/api/messages", { method: "POST", headers: { "content-type": "application/json" },

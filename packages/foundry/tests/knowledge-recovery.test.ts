@@ -37,7 +37,7 @@ function setup(knowledge = "DURABLE-PRIVATE-SENTINEL") {
     const main = factory.create("main");
     const harness = new Harness(main); harness.setDefaultExecutor("worker");
     const configStore = new ConfigStore(dir); await configStore.save(config);
-    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(main.signals),
+    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(),
       configDir: dir, configStore, threadFactory: factory });
     let closed = false;
     const close = () => { if (closed) return; closed = true; runtime.disposeAll(); viewer.localStore?.close(); };

@@ -17,7 +17,7 @@ test("file editor allows project documents and denies credential reads, writes a
   const store = new ConfigStore(configDir), cfg = await store.load();
   cfg.projects.demo = { path: project } as typeof cfg.projects[string];
   await store.save(cfg);
-  const thread = new Thread("file-gate", new ContextStack()), viewer = createViewer({ configDir, configStore: store, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals) });
+  const thread = new Thread("file-gate", new ContextStack()), viewer = createViewer({ configDir, configStore: store, localStore: null, harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog() });
   const get = (path: string) => viewer.app.request(`http://localhost/api/files?path=${encodeURIComponent(path)}`);
   const put = (path: string) => viewer.app.request("http://localhost/api/files", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, content: "replacement" }) });
   try {

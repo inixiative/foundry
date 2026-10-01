@@ -952,7 +952,8 @@ export class DomainLibrarian {
 
   private async _emitFindings(findings: GuardFinding[], observation: ToolObservation): Promise<void> {
     for (const finding of findings) {
-      const kind = finding.severity === "critical" ? "security_concern" : "correction";
+      // A guard's advisory finding is audit evidence, not a human correction: it must never be pinned.
+      const kind = finding.severity === "critical" ? "security_concern" : "guard_finding";
       await this._signals.emit({
         id: `${this.domain}-guard-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         kind,

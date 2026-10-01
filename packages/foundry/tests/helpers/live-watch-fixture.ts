@@ -44,7 +44,7 @@ export async function liveWatchFixture(dir:string) {
   const thread=factory.create('watch-A',{projectId:'P',cwd:join(dir,'P')}),other=factory.create('watch-B',{projectId:'P',cwd:join(dir,'P')});
   thread.describe('Watched work');other.describe('Unrelated sentinel');projects.get('P')!.addThread(thread);projects.get('P')!.addThread(other);
   const harness=new Harness(thread);harness.setDefaultExecutor('worker');const configStore=new ConfigStore(dir);await configStore.save(config);
-  const viewer=createViewer({harness,eventStream:events,interventions:new InterventionLog(thread.signals),threadFactory:factory,projectRegistry:projects,configStore,configDir:dir,tokenTracker:new TokenTracker()});
+  const viewer=createViewer({harness,eventStream:events,interventions:new InterventionLog(),threadFactory:factory,projectRegistry:projects,configStore,configDir:dir,tokenTracker:new TokenTracker()});
   /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
   const send=(id:string,stream=true)=>{const client=connectStreams(viewer);
     const response=client.open(`thread:${thread.id}`).then(()=>viewer.app.request(`/api/messages${stream?'/send':''}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,threadId:thread.id,message:'Do the work',...(stream?{clientId:client.socket.data.clientId}:{})})}));

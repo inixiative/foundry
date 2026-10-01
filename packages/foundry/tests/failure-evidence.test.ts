@@ -27,7 +27,7 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
     const harness = new Harness(thread, { maxTraces }); harness.setDefaultExecutor("worker");
     const events = new EventStream();
     const configStore = new ConfigStore(dir); await configStore.save(config);
-    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(thread.signals),
+    const viewer = createViewer({ harness, eventStream: events, interventions: new InterventionLog(),
       configDir: dir, configStore, threadFactory: factory });
     let closed = false;
     const close = () => { if (closed) return; closed = true; viewer.localStore!.close(); for (const t of viewer.directory.all()) t.dispose(); };

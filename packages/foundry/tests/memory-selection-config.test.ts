@@ -62,7 +62,7 @@ test("the project settings route rejects an invalid policy with 400 and leaves t
   const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider: { id: "mock", complete: async () => ({ model: "mock", content: "" }) } }) });
   const thread = factory.create("main");
   const harness = new Harness(thread);
-  const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(thread.signals), configStore: store, configDir: dir, threadFactory: factory });
+  const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(), configStore: store, configDir: dir, threadFactory: factory });
   try {
     const liveBefore = structuredClone(store.config);
     const fileBefore = await Bun.file(join(dir, "settings.json")).text();

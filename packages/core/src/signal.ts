@@ -9,6 +9,7 @@ export type SignalKind =
   | "ci_rule"
   | "adr"
   | "security"
+  | "guard_finding"
   | (string & {});
 
 /**

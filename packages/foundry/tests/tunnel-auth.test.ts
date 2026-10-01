@@ -59,7 +59,7 @@ test("tunnel credential persists privately and refuses symlinks instead of readi
 test("stopping a tunnel preserves the HTTP authentication boundary", async () => {
   const dir = directory(), thread = new Thread("security-test", new ContextStack());
   const viewer = createViewer({ harness: new Harness(thread), eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals), configDir: dir, localStore: null,
+    interventions: new InterventionLog(), configDir: dir, localStore: null,
     tunnel: { port: 4400, token, configDir: dir } });
   const response = await viewer.app.request("http://localhost/api/tunnel/stop", { method: "POST", headers: { authorization: `Bearer ${token}` } });
   expect(response.status).toBe(200);

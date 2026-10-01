@@ -117,7 +117,7 @@ test("flow opens are authorized by thread; a viewer without a journal says so in
   const main = new Thread("main", new ContextStack());
   main.register(new Executor({ id: "worker", stack: main.stack, handler: async () => "ok" }));
   const harness = new Harness(main); harness.setDefaultExecutor("worker");
-  const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(main.signals), configDir: dir, localStore: null });
+  const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(), configDir: dir, localStore: null });
   cleanup.push(() => viewer.analyticsReady.catch(() => {}));
   const client = connectStreams(viewer);
   await client.open("flow:missing");

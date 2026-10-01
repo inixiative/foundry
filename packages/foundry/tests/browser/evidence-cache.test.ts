@@ -28,7 +28,7 @@ test("browser-only failure evidence survives quota fallback and reload, distinct
     const configDir = join(out, "state"); mkdirSync(configDir, { recursive: true });
     const configStore = new ConfigStore(configDir);
     const config = starterConfig("controlled", "controlled"); config.setupComplete = true; await configStore.save(config);
-    const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(thread.signals), configStore, configDir });
+    const viewer = createViewer({ harness, eventStream: new EventStream(), interventions: new InterventionLog(), configStore, configDir });
     cleanup.unshift(["store", () => viewer.localStore?.close()]);
     const store = viewer.localStore!;
     // Durable history: 30 completed turns, then one turn that the journal recorded as interrupted.

@@ -20,7 +20,7 @@ function setup() {
   const registry = new ProjectRegistry();
   const project = registry.register({ id: "project", path: "/qa/sample-project", label: "Sample project", tags: [], runtime: "claude-code" });
   const app = new Hono();
-  registerRuntimeRoutes(app, withStreams({ harness: new Harness(main), eventStream: events, interventions: new InterventionLog(main.signals),
+  registerRuntimeRoutes(app, withStreams({ harness: new Harness(main), eventStream: events, interventions: new InterventionLog(),
     threadFactory: factory, projectRegistry: registry, db: null, configStore: new ConfigStore("/tmp/foundry-gate-unused-config") }));
   const post = (path: string, body: unknown) => app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return { runtime, project, post };

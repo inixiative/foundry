@@ -29,7 +29,7 @@ function setup() {
     const harness = new Harness(thread); harness.setDefaultExecutor("worker");
     const localStore = new LocalSessionStore(path);
     const app = new Hono(), eventStream = new EventStream();
-    const deps = withStreams({ harness, eventStream, interventions: new InterventionLog(thread.signals),
+    const deps = withStreams({ harness, eventStream, interventions: new InterventionLog(),
       db: null, configStore: new ConfigStore(dir), localStore });
     registerRuntimeRoutes(app, deps);
     const socket = deps.socket;
@@ -119,7 +119,7 @@ test("G4: viewer startup restores a projectless thread, rename and terminal arch
   const make = () => {
     const main = new Thread("main", new ContextStack());
     const viewer = createViewer({ harness: new Harness(main), eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals), configDir: dir });
+      interventions: new InterventionLog(), configDir: dir });
     return { ...viewer, main };
   };
   const first = make();

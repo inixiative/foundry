@@ -13,7 +13,7 @@ const projectId = Object.keys(config.projects)[0];
 const thread = new Thread('archive-console', new ContextStack(), {description:'Archive connection console',projectId,tags:[]});
 if (projectId) projects.all.get(projectId)?.addThread(thread);
 const events = new EventStream();
-const viewer = await startViewer({harness:new Harness(thread),eventStream:events,interventions:new InterventionLog(thread.signals),projectRegistry:projects,configStore,configDir,port:Number(process.env.VIEWER_PORT ?? 4400)});
+const viewer = await startViewer({harness:new Harness(thread),eventStream:events,interventions:new InterventionLog(),projectRegistry:projects,configStore,configDir,port:Number(process.env.VIEWER_PORT ?? 4400)});
 console.log('Foundry Archive console ready. Model workers are not started.');
 process.once('SIGTERM',()=>{viewer.server.stop(true);process.exit(0)});
 process.once('SIGINT',()=>{viewer.server.stop(true);process.exit(0)});

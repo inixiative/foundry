@@ -32,7 +32,7 @@ async function fixture(name: string) {
   const main = new Thread("a", new ContextStack([layer]));
   const configDir = join(output, "state");
   const configStore = new ConfigStore(configDir); await configStore.save(config);
-  const viewer = createViewer({ harness: new Harness(main), eventStream: new EventStream(), interventions: new InterventionLog(main.signals), configStore, configDir });
+  const viewer = createViewer({ harness: new Harness(main), eventStream: new EventStream(), interventions: new InterventionLog(), configStore, configDir });
   setupCleanup.push(["threads", () => { for(const thread of viewer.directory.all()) thread.dispose(); }], ["store", () => viewer.localStore?.close()]);
   viewer.directory.restore([{ id: "b", meta: { ...main.meta, description: "Thread B" } }]);
   // Controlled responders: each returns a JSON body or a promise of one; holds are explicit.

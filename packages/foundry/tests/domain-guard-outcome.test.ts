@@ -16,7 +16,7 @@ function fixture(respond: Respond, options: { domain?: string; guardPrompt?: str
   const cache = new ContextLayer({ id: domain, segment: "domain-knowledge" });
   if (options.knowledge !== null) cache.set(options.knowledge ?? `DOMAIN_KNOWLEDGE(${domain}): preserve compatibility.`);
   const requests: LLMMessage[][] = [], emitted: Signal[] = [];
-  for (const kind of ["security_concern", "correction"]) signals.on(kind, s => { emitted.push(s); });
+  for (const kind of ["security_concern", "guard_finding"]) signals.on(kind, s => { emitted.push(s); });
   const lib = new DomainLibrarian({ domain, cache, signals, guardTriggers: ["Write"], ...(options.guardPrompt ? { guardPrompt: options.guardPrompt } : {}),
     llm: { id: `controlled-guard-${domain}`, async complete(messages) { requests.push(structuredClone(messages)); return { model: "controlled", content: await respond(messages) }; } } });
   return { lib, requests, emitted, cache, signals };
@@ -34,7 +34,7 @@ test("valid empty findings and actual findings both complete; findings are norma
   expect(result).toMatchObject({ ran: true, status: "completed", threadKnowledgeRevision: 0, findings: [
     { severity: "critical", description: "Schema drops legacy column", location: "contacts.ts:12" }, { severity: "advisory", description: "Add a migration test" }] });
   expect(result.findings[0]).toEqual({ severity: "critical", description: "Schema drops legacy column", location: "contacts.ts:12" });
-  expect(found.emitted.map(s => [s.kind, (s.content as any).severity])).toEqual([["security_concern", "critical"], ["correction", "advisory"]]);
+  expect(found.emitted.map(s => [s.kind, (s.content as any).severity])).toEqual([["security_concern", "critical"], ["guard_finding", "advisory"]]);
 });
 
 test("invalid schema is an explicit invalid-response with a bounded error that never echoes the answer; nothing is emitted", async () => {

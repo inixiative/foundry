@@ -47,7 +47,7 @@ function setup(withStore = true) {
   const localStore = withStore ? new LocalSessionStore(join(dir, "sessions.sqlite")) : null;
   if (localStore) cleanup.push(() => localStore.close());
   const app = new Hono();
-  registerRuntimeRoutes(app, withStreams({ harness, eventStream: new EventStream(), interventions: new InterventionLog(main.signals),
+  registerRuntimeRoutes(app, withStreams({ harness, eventStream: new EventStream(), interventions: new InterventionLog(),
     db: null, configStore: new ConfigStore(dir), localStore }));
   return { app, localStore, main, other };
 }

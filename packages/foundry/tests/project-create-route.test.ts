@@ -21,7 +21,7 @@ test("an added project inherits global agents and layers and brings only its exi
     await store.save(config);
     const main = new Thread("main", new ContextStack());
     const actions = new ActionHandler({ harness: new Harness(main), eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals), resolveThread: () => main });
+      interventions: new InterventionLog(), resolveThread: () => main });
     const app = new Hono();
     registerControlRoutes(app, { harness: new Harness(main), actions, configStore: store, aiAssist: null,
       analyticsStore: null, actionQueue: null, tunnelHolder: { tunnel: null }, port: 0, threadsChanged: () => {} });

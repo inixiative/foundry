@@ -198,6 +198,10 @@ export class Librarian {
         this._pushActivity(`Correction from ${source}: ${describeContent(content)}`);
         break;
 
+      case "guard_finding":
+        this._pushActivity(`Advisory from ${source}: ${describeContent(content)}`);
+        break;
+
       case "architecture_observation":
         if (describeContent(content, 400).toLowerCase().includes("cross-module")) {
           this._addFlag("cross-module");
