@@ -204,6 +204,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
 
   const configuration = {
     requestedModel: config.model,
+    ...(config.effort ? { requestedEffort: config.effort } : {}),
     requestedMaxTurns: 1,
     turnBudgetEnforcement: 'launch-option' as const,
     tokenBudget: 'unavailable' as const,

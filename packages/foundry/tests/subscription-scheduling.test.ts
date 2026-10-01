@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { servedModel } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
@@ -50,6 +51,7 @@ function scheduler(
     source: config.source,
     directory,
     model: config.model,
+    effort: config.effort,
     maxConcurrent: config.maxConcurrent ?? 1,
     callTimeoutMs: config.callTimeoutMs,
     spawn: transport.spawn,
@@ -96,6 +98,14 @@ test('decisions run concurrently up to the cap on one warm process sharing the C
   await primed.close();
   expect(transport.launches[0]!.exited).toBe(true);
   expect(existsSync(join(root, '.codex', '.foundry-auth-shared'))).toBe(false);
+});
+
+test('a decision reports the model and effort it ran on', async () => {
+  const { decisions } = scheduler(labelled(0), { effort: 'low' });
+  const result = await decisions.provider.complete([{ role: 'user', content: 'label:x' }], {
+    threadId: 'T:aux:domain:x',
+  });
+  expect(servedModel(result)).toEqual({ model: 'gpt-5.6-luna', effort: 'low' });
 });
 
 test('a blocked turn outranks guards, which outrank learning review', async () => {
