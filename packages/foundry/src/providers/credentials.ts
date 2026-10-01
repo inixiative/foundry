@@ -4,11 +4,18 @@ import { z } from 'zod';
 import type { CredentialReference, CredentialResolver, CredentialScope } from '@inixiative/foundry-core';
 import { destinationUrl } from '@inixiative/session-archive/config';
 import { installationCredentialSchema, readPrivateJson, writePrivateJson } from './kingdom-credential-file';
-import { kingdomRuntimeSchema, type KingdomRuntimeSettings } from './kingdom-runtime-connection';
+import { ownerKey, ownerKeySchema } from './kingdom-client';
+import {
+  kingdomRuntimeId,
+  kingdomRuntimeSchema,
+  readRuntimeIdentity,
+  selectKingdomRuntime,
+  type KingdomRuntimeSettings,
+} from './kingdom-runtime-connection';
 
 export const credentialReferenceSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('managed'), id: z.uuid() }),
-  z.strictObject({ type: z.literal('kingdom-runtime') }),
+  z.strictObject({ type: z.literal('kingdom-runtime'), owner: ownerKeySchema }),
 ]);
 const scopeSchema = z.strictObject({
   service: z.string().min(1),
@@ -26,7 +33,7 @@ export class FoundryCredentials implements CredentialResolver {
   private directory: string;
   constructor(
     configDir = process.env.FOUNDRY_CONFIG_DIR ?? '.foundry',
-    private runtime?: () => KingdomRuntimeSettings | undefined | Promise<KingdomRuntimeSettings | undefined>,
+    private runtimes?: () => KingdomRuntimeSettings[] | undefined | Promise<KingdomRuntimeSettings[] | undefined>,
   ) {
     this.directory = join(resolve(configDir), 'credentials');
   }
@@ -41,25 +48,12 @@ export class FoundryCredentials implements CredentialResolver {
     const parsed = credentialReferenceSchema.parse(reference);
     if (parsed.type === 'managed') await unlink(join(this.directory, `${parsed.id}.json`));
   }
-  async kingdomIdentity(transport: typeof fetch = fetch, sessionCount = 0) {
-    const settings = kingdomRuntimeSchema.parse(await this.runtime?.());
-    const { secret } = installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile));
-    const response = await transport(`${settings.url}/api/v1/access/runtimeHeartbeat`, {
-      method: 'POST',
-      redirect: 'error',
-      signal: AbortSignal.timeout(5000),
-      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionCount }),
-    });
-    if (!response.ok) throw Error('Kingdom enrollment unavailable');
-    const { data } = z
-      .object({
-        data: z.object({ installationId: z.uuid(), expiresAt: z.iso.datetime() }),
-      })
-      .parse(await response.json());
-    if (data.installationId !== settings.installationId || Date.parse(data.expiresAt) <= Date.now())
-      throw Error('Kingdom identity mismatch');
-    return { url: settings.url };
+  /** The paired Kingdom a selector names (id or API origin; the only one when omitted), checked with one heartbeat. */
+  async kingdomIdentity(selector?: string, transport: typeof fetch = fetch, sessionCount = 0) {
+    const runtime = kingdomRuntimeSchema.parse(selectKingdomRuntime(await this.runtimes?.(), selector));
+    const identity = await readRuntimeIdentity(runtime, { transport, sessionCount }).catch(() => { throw Error('Kingdom enrollment unavailable'); });
+    if (ownerKey(identity.owner) !== runtime.owner) throw Error('Kingdom identity mismatch');
+    return { id: kingdomRuntimeId(runtime), url: runtime.url, owner: runtime.owner };
   }
   async resolve(reference: CredentialReference, scope: CredentialScope): Promise<string> {
     const parsed = credentialReferenceSchema.parse(reference),
@@ -74,9 +68,10 @@ export class FoundryCredentials implements CredentialResolver {
         throw Error('Credential is outside the requested scope');
       return record.secret;
     }
-    const settings = kingdomRuntimeSchema.parse(await this.runtime?.());
-    if (requested.service !== 'archive' || destinationUrl(settings.url).href !== requested.url)
-      throw Error('Kingdom credential is outside the requested scope');
+    const settings = (await this.runtimes?.())?.find(
+      (runtime) => runtime.owner === parsed.owner && destinationUrl(runtime.url).href === requested.url,
+    );
+    if (requested.service !== 'archive' || !settings) throw Error('Kingdom credential is outside the requested scope');
     // Kingdom checks current installation expiry, revocation and owner authority on every request.
     return installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile)).secret;
   }

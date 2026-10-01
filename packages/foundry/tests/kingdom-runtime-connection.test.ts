@@ -28,7 +28,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
       const thread = new Thread(`runtime-${index}`, new ContextStack());
       viewers.push(await startViewer({ port: 0, configDir: directory, analyticsDir: join(directory, "analytics"), localStore: null,
         harness: new Harness(thread), eventStream: new EventStream(), interventions: new InterventionLog(thread.signals),
-        kingdomRuntime: { url: `http://127.0.0.1:${kingdom.port}`, installationId: id, credentialFile },
+        kingdomRuntimes: [{ url: `http://127.0.0.1:${kingdom.port}`, owner: "Organization::11111111-1111-4111-8111-111111111111:", installationId: id, credentialFile }],
       }));
     }
     const get = (index: number) => fetch(`http://127.0.0.1:${viewers[index].server.port}/api/tunnel`);
@@ -37,7 +37,7 @@ test("two HTTP viewers bind separate Kingdom identities and deny use after revoc
     expect(bodies.every(body => body.sessionCount === 1)).toBe(true);
     allowed.delete(`Bearer kingdom_runtime_${"0".repeat(43)}`);
     expect((await get(0)).status).toBe(503);
-    expect(viewers[0].kingdomConnection?.connected).toBe(false);
+    expect(viewers[0].kingdomRuntimes.all()[0]!.connected).toBe(false);
     expect((await get(1)).status).toBe(200);
     expect((await fetch(`http://127.0.0.1:${viewers[1].server.port}/api/tunnel`, { headers: { origin: "https://evil.test" } })).status).toBe(403);
   } finally {
@@ -52,7 +52,7 @@ test("connection identity mismatch and non-private credentials fail without retu
   const credentialFile = join(directory, "runtime.json"), secret = `kingdom_runtime_${"a".repeat(43)}`;
   await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
   const transport = (async () => Response.json({ data: { installationId: crypto.randomUUID(), userId: null, owner: { ownerModel: "Organization", organizationId: "11111111-1111-4111-8111-111111111111" }, expiresAt: new Date(Date.now() + 60000).toISOString() } })) as typeof fetch;
-  const connection = new KingdomRuntimeConnection({ url: "https://kingdom.test", installationId: crypto.randomUUID(), credentialFile }, () => 0, transport);
+  const connection = new KingdomRuntimeConnection({ url: "https://kingdom.test", owner: "Organization::11111111-1111-4111-8111-111111111111:", installationId: crypto.randomUUID(), credentialFile }, () => 0, transport);
   try {
     await expect(connection.check()).rejects.toThrow("Kingdom runtime unavailable");
     expect(connection.connected).toBe(false);

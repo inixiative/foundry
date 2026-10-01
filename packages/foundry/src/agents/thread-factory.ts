@@ -74,7 +74,7 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
 
     switch (srcCfg.type) {
       case "archive":
-        return new ArchiveContextSource(srcCfg.id, srcCfg.uri, archiveContextSchema.parse(srcCfg.archive), undefined, fetch, new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntime));
+        return new ArchiveContextSource(srcCfg.id, srcCfg.uri, archiveContextSchema.parse(srcCfg.archive), undefined, fetch, new FoundryCredentials(deps.configDir, () => cfg.kingdomRuntimes));
       case "inline":
         return inlineSource(srcCfg.id, srcCfg.uri);
       case "file":

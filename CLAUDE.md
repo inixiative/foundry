@@ -12,7 +12,7 @@ packages/
 
 **Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker) and the model registry (`model-registry.ts`: the capability vocabulary, the provider/model table and its lookups) — data and pure functions, so Oracle can reason about model fitness on a core-only dependency. No behavioral opinions, no specific agent implementations, no external service deps. Every adapter (`openai.ts`, `openai-compatible.ts`, `anthropic.ts`, `gemini.ts`, `claude-code.ts`, `codex.ts`) stays in foundry, because adapters do HTTP and process handling. If it makes a decision about *how* to use the primitives, it belongs in foundry.
 
-Oracle (eval/scoring) lives in its own repo (`../oracle`), linked to core via a `file:` dependency. It depends on core only, not foundry. Its roles: **Oracle** (scores), **Steward** (chain of custody), **Prospector** (mines session transcripts + merged PRs into fixtures and correction signal — see `oracle mine`).
+Oracle (eval/scoring) lives in its own repo (`../oracle`) and consumes the published `@inixiative/foundry-core` and `@inixiative/foundry/runtime` packages. See [the system map](docs/SYSTEM-MAP.md) for how the five apps divide responsibility. Its roles: **Oracle** (scores), **Steward** (chain of custody), **Prospector** (mines session transcripts + merged PRs into fixtures and correction signal — see `oracle mine`).
 
 ## Running
 
@@ -25,7 +25,6 @@ bun run test:live      # Same tests live against this machine's subscriptions; r
 bun run test:live:daemon  # Live smoke inside a throwaway LaunchAgent with the daemon's environment
 bun run typecheck      # Both packages
 bun run viewer         # Dashboard only
-bun run --cwd ../foundry-lab research  # Internal research CLI
 ```
 
 Tests that touch the agent CLIs or Kingdom replay real recordings (`packages/foundry/src/vcr`). Live runs are the truth: run `test:live` whenever a CLI, `@inixiative/agent-session` or a transport changes, and treat its drift findings as bugs to review. See [live-first testing](docs/live-testing.md).

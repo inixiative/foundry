@@ -12,8 +12,8 @@ export interface WatchOptions {
   repoRoot: string;
   configDir: string;
   intervalMs: number;
-  /** Holds the runtime-jobs directory; absent when this Foundry is not enrolled. */
-  runtimeDirectory?: string;
+  /** Each paired Kingdom's runtime-jobs directory; empty when this Foundry is not paired. */
+  runtimeDirectories: string[];
   /** Told how long the runtime expects to be gone, so presence reads "restarting" rather than "offline". */
   closeForUpdate?: (expectedBackWithinMs: number) => Promise<void> | void;
   log?: (message: string) => void;
@@ -34,7 +34,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
       if (result.action === "failed") log(`update skipped — ${result.detail}`);
       if (result.action === "staged") log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
       const { candidate } = await readState(options.configDir);
-      if (!candidate || (await runtimeJobsInFlight(options.runtimeDirectory))) return;
+      if (!candidate || (await Promise.all(options.runtimeDirectories.map(runtimeJobsInFlight))).includes(true)) return;
 
       log(`restarting onto candidate ${candidate.slice(0, 8)}`);
       try {

@@ -306,7 +306,7 @@ test("losing Kingdom authorization closes sockets on the next append or open and
   const thread = new Thread("kingdom-main", new ContextStack()), events = new EventStream();
   const viewer = await startViewer({ port: 0, configDir: root, analyticsDir: join(root, "analytics"), localStore: null,
     harness: new Harness(thread), eventStream: events, interventions: new InterventionLog(thread.signals),
-    kingdomRuntime: { url: `http://127.0.0.1:${kingdom.port}`, installationId: id, credentialFile } });
+    kingdomRuntimes: [{ url: `http://127.0.0.1:${kingdom.port}`, owner: "Organization::11111111-1111-4111-8111-111111111111:", installationId: id, credentialFile }] });
   cleanup.push(async () => { viewer.server.stop(true); kingdom.stop(true); await rm(root, { recursive: true, force: true }); });
   const url = `ws://127.0.0.1:${viewer.server.port}/ws`;
   const until = async (check: () => boolean) => { const end = performance.now() + 4000; while (!check() && performance.now() < end) await Bun.sleep(5); };

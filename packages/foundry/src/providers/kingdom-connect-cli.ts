@@ -1,8 +1,10 @@
 import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
-import { mkdir, lstat } from "node:fs/promises";
+import { mkdir, lstat, unlink } from "node:fs/promises";
 import { installationCredentialSchema, readPrivateJson, writePrivateJson } from "./kingdom-credential-file";
-import { KingdomRuntimeConnection, kingdomRuntimeSchema } from "./kingdom-runtime-connection";
+import { kingdomInstallationSchema, kingdomRuntimeId, readRuntimeIdentity } from "./kingdom-runtime-connection";
+import { ownerKey } from "./kingdom-client";
+import { saveKingdomRuntime } from "./kingdom-pairing";
 import { ConfigStore } from "../viewer/config";
 
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
@@ -12,21 +14,20 @@ const { values } = parseArgs({ args: process.argv.slice(2), options: {
 if (!values.url || !values["installation-id"] || !values["credential-file"])
   throw Error("Usage: bun scripts/connect-kingdom.ts --url KINGDOM_API_ORIGIN --installation-id UUID --credential-file PRIVATE_FILE [--config-dir DIR]");
 const directory = resolve(values["config-dir"]!);
-const settings = kingdomRuntimeSchema.parse({ url: values.url, installationId: values["installation-id"], credentialFile: resolve(values["credential-file"]) });
-const connection = new KingdomRuntimeConnection(settings, () => 0);
+const installation = kingdomInstallationSchema.parse({ url: values.url, installationId: values["installation-id"], credentialFile: resolve(values["credential-file"]) });
+const identity = await readRuntimeIdentity(installation);
+await mkdir(directory, { recursive: true, mode: 0o700 });
+const stat = await lstat(directory);
+if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 || (process.getuid && stat.uid !== process.getuid()))
+  throw Error("Foundry configuration directory must be owned and private (0700)");
+const secret = installationCredentialSchema.parse(await readPrivateJson(installation.credentialFile));
+const privatePath = join(directory, `kingdom-runtime-${installation.installationId}.json`);
+await writePrivateJson(privatePath, secret);
+const store = new ConfigStore(directory), runtime = { ...installation, credentialFile: privatePath, owner: ownerKey(identity.owner) };
+// Re-running for the same installation refreshes it; any other runtime for this Kingdom + owner needs --replace pairing.
+const current = (await store.load()).kingdomRuntimes?.find(item => item.installationId === installation.installationId);
+const refresh = !!current && kingdomRuntimeId(current) === kingdomRuntimeId(runtime);
 try {
-  await connection.check();
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const stat = await lstat(directory);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 || (process.getuid && stat.uid !== process.getuid()))
-    throw Error("Foundry configuration directory must be owned and private (0700)");
-  const store = new ConfigStore(directory);
-  const config = await store.load();
-  if (config.kingdomRuntime && config.kingdomRuntime.installationId !== settings.installationId)
-    throw Error("This Foundry is already enrolled; revoke and remove the old binding before replacing it");
-  const secret = installationCredentialSchema.parse(await readPrivateJson(settings.credentialFile));
-  const privatePath = join(directory, "kingdom-runtime.json");
-  await writePrivateJson(privatePath, secret);
-  await store.save({ ...config, kingdomRuntime: { ...settings, credentialFile: privatePath } });
-  console.log(JSON.stringify({ connected: true, installationId: settings.installationId, configDirectory: directory, restartViewer: true }));
-} finally { connection.stop(); }
+  const { id } = await saveKingdomRuntime(store, runtime, refresh);
+  console.log(JSON.stringify({ connected: true, id, installationId: installation.installationId, configDirectory: directory, restartViewer: true }));
+} catch (error) { if (current?.credentialFile !== privatePath) await unlink(privatePath).catch(() => {}); throw error; }

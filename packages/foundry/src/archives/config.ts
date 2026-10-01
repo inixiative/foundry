@@ -68,6 +68,7 @@ export function destinationIdentity(destination: ArchiveDestination) {
           destination.ownerModel ?? null,
           destination.organizationId ?? null,
           destination.spaceId ?? null,
+          destination.credential?.type === 'kingdom-runtime' ? destination.credential.owner : null,
         ],
   ]);
 }

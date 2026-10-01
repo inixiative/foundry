@@ -3,9 +3,10 @@ import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type { ConfigStore } from "../viewer/config";
-import { kingdomUrl } from "./kingdom-client";
+import { kingdomUrl, ownerKey } from "./kingdom-client";
 import { writePrivateJson } from "./kingdom-credential-file";
-import type { KingdomRuntimeConnection } from "./kingdom-runtime-connection";
+import { kingdomRuntimeId, readRuntimeIdentity, selectKingdomRuntime, type KingdomRuntimeSettings } from "./kingdom-runtime-connection";
+import type { RuntimeJobRegistry } from "./runtime-job-handler";
 import { RUNTIME_SECRET_PREFIX } from "./kingdom-secrets";
 
 /** Hosted production Kingdom API origin; the default offered by guided setup. */
@@ -44,30 +45,51 @@ export async function pollKingdomPairing(pairing: KingdomPairing, transport: typ
   return pollSchema.parse(await request(pairing.url, "pollRuntime", { deviceCode: pairing.deviceCode }, transport)).data;
 }
 
-/** Persists the approved credential, verifies it, then records it in settings; nothing is kept on failure. */
-export async function completeKingdomPairing(store: ConfigStore, configDir: string, pairing: KingdomPairing, installationId: string,
-  options: { connect: (settings: { url: string; installationId: string; credentialFile: string }) => KingdomRuntimeConnection; start: boolean }) {
-  const credentialFile = join(resolve(configDir), `kingdom-runtime-${installationId}.json`);
-  await writePrivateJson(credentialFile, { secret: pairing.secret });
-  const settings = { url: pairing.url, installationId, credentialFile };
-  const connection = options.connect(settings);
-  try {
-    await (options.start ? connection.start() : connection.check());
-    await store.load();
-    await store.update(draft => { draft.kingdomRuntime = settings; });
-  } catch (error) { connection.stop(); await unlink(credentialFile).catch(() => {}); throw error; }
-  if (!options.start) connection.stop();
-  return { settings, connection };
+/** Adds a paired Kingdom; `replace` swaps the one with the same Kingdom + owner. Deletes a replaced credential. */
+export async function saveKingdomRuntime(store: ConfigStore, runtime: KingdomRuntimeSettings, replace = false) {
+  const id = kingdomRuntimeId(runtime);
+  let replaced: KingdomRuntimeSettings | undefined;
+  await store.load();
+  await store.update(draft => {
+    const runtimes = draft.kingdomRuntimes ?? [];
+    replaced = runtimes.find(item => kingdomRuntimeId(item) === id);
+    if (replaced && !replace)
+      throw Error(`Already paired with ${runtime.url} as ${runtime.owner} (id ${id}). Pass --replace to pair it again, or run bun run kingdom disconnect --kingdom ${id}.`);
+    draft.kingdomRuntimes = [...runtimes.filter(item => item !== replaced), runtime];
+  });
+  if (replaced && replaced.credentialFile !== runtime.credentialFile) await unlink(replaced.credentialFile).catch(() => {});
+  return { id, replaced };
 }
 
-/** Removes the local binding and credential. Kingdom-side revocation stays with Kingdom. */
-export async function disconnectKingdom(store: ConfigStore, removed: () => void = () => {}) {
-  const { kingdomRuntime } = await store.load();
-  if (!kingdomRuntime) return undefined;
-  await store.update(draft => { delete draft.kingdomRuntime; });
-  removed();
-  await unlink(kingdomRuntime.credentialFile).catch(() => {});
-  return kingdomRuntime;
+/**
+ * Persists the approved credential, reads the owner Kingdom approved it for, then records the paired Kingdom.
+ * `replace` names the paired Kingdom being re-paired; approval must come from the same owner. Nothing is kept on failure.
+ */
+export async function completeKingdomPairing(store: ConfigStore, configDir: string, pairing: KingdomPairing, installationId: string,
+  options: { replace?: string; transport?: typeof fetch; sessionCount?: number; handlers?: RuntimeJobRegistry } = {}) {
+  const credentialFile = join(resolve(configDir), `kingdom-runtime-${installationId}.json`);
+  await writePrivateJson(credentialFile, { secret: pairing.secret });
+  try {
+    const identity = await readRuntimeIdentity({ url: pairing.url, installationId, credentialFile }, options);
+    const settings: KingdomRuntimeSettings = { url: pairing.url, owner: ownerKey(identity.owner), installationId, credentialFile };
+    if (options.replace && kingdomRuntimeId(settings) !== options.replace)
+      throw Error(`Kingdom approved this runtime for ${settings.owner}, not the paired Kingdom ${options.replace}; nothing was replaced. Revoke the new runtime in Kingdom's Foundry tab.`);
+    const { id } = await saveKingdomRuntime(store, settings, !!options.replace);
+    return { id, settings };
+  } catch (error) { await unlink(credentialFile).catch(() => {}); throw error; }
+}
+
+/** Removes one paired Kingdom's local binding and credential. Kingdom-side revocation stays with Kingdom. */
+export async function disconnectKingdom(store: ConfigStore, selector?: string) {
+  const { kingdomRuntimes } = await store.load();
+  if (!kingdomRuntimes?.length) return undefined;
+  const runtime = selectKingdomRuntime(kingdomRuntimes, selector);
+  await store.update(draft => {
+    const kept = (draft.kingdomRuntimes ?? []).filter(item => kingdomRuntimeId(item) !== kingdomRuntimeId(runtime));
+    if (kept.length) draft.kingdomRuntimes = kept; else delete draft.kingdomRuntimes;
+  });
+  await unlink(runtime.credentialFile).catch(() => {});
+  return { id: kingdomRuntimeId(runtime), ...runtime };
 }
 
 /** A local viewer answering on its port holds settings and archive routing in memory until restarted. */

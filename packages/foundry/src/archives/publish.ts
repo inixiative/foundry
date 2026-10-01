@@ -62,15 +62,21 @@ export async function verifyArchiveDestination(
   if (!Array.isArray(result.data?.archives)) throw Error('Archive protocol unavailable');
 }
 
-/** Hosted Archive destinations Kingdom has bound to the enrolled owner. */
+/** Hosted Archive destinations Kingdom has bound to a paired Kingdom's owner (`selector`: id or API origin). */
 export async function listKingdomConnections(
   credentials: FoundryCredentials,
+  selector?: string,
   transport: typeof fetch = fetch,
   sessionCount = 0,
 ) {
-  const identity = await credentials.kingdomIdentity(transport, sessionCount);
+  const identity = await credentials.kingdomIdentity(selector, transport, sessionCount);
   const result = await archiveRequest(
-    { ...identity, kind: 'kingdom', projectId: 'discovery', credential: { type: 'kingdom-runtime' } },
+    {
+      url: identity.url,
+      kind: 'kingdom',
+      projectId: 'discovery',
+      credential: { type: 'kingdom-runtime', owner: identity.owner },
+    },
     'remote/connections',
     {},
     transport,

@@ -487,7 +487,7 @@ A client opens only the streams it shows: `{ action: 'open', stream }` → `{ ty
 `{ category: 'data', action: 'snapshot' }`, then `append` frames until `{ action: 'close' }` or the
 socket closes. No sequence numbers or replay: after a reconnect the client re-opens its streams and
 gets fresh snapshots. The upgrade is authorized like HTTP (loopback, or tunnel bearer/cookie); each
-open re-checks the Kingdom runtime, and losing Kingdom authorization closes every socket.
+open re-checks the paired Kingdoms, and losing authorization from every paired Kingdom closes every socket.
 
 | Stream | Snapshot | Appends |
 |--------|----------|---------|
