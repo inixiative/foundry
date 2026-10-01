@@ -287,7 +287,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
     const viewer = createViewer({
       harness,
       eventStream: events,
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       configStore,
       configDir: dir,
       threadFactory: factory,

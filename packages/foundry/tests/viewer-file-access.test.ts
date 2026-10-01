@@ -38,7 +38,7 @@ test('file editor allows project documents and denies credential reads, writes a
       localStore: null,
       harness: new Harness(thread),
       eventStream: new EventStream(),
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
     });
   const get = (path: string) =>
     viewer.app.request(`http://localhost/api/files?path=${encodeURIComponent(path)}`);

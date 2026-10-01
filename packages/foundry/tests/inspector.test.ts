@@ -24,7 +24,7 @@ test('layer inspection returns contents without touching cache access time and r
     withStreams({
       harness: new Harness(thread),
       eventStream: new EventStream(),
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       db: null,
       configStore: new ConfigStore('/tmp/foundry-inspector-unused-settings.json'),
     }),

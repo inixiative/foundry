@@ -110,7 +110,7 @@ test('stopping a tunnel preserves the HTTP authentication boundary', async () =>
   const viewer = createViewer({
     harness: new Harness(thread),
     eventStream: new EventStream(),
-    interventions: new InterventionLog(thread.signals),
+    interventions: new InterventionLog(),
     configDir: dir,
     localStore: null,
     tunnel: { port: 4400, token, configDir: dir },

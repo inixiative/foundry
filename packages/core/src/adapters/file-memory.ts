@@ -71,6 +71,7 @@ export const DEFAULT_MEMORY_SELECTION: MemorySelectionPolicy = Object.freeze({
     'info',
     'domain_learning',
     'tool_observation',
+    'guard_finding',
   ]),
   recentLimit: 8,
   maxEntryChars: 1200,

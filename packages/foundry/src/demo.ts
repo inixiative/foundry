@@ -259,7 +259,7 @@ thread.start();
 
 // -- 10. Interventions --
 
-const interventions = new InterventionLog(signals);
+const interventions = new InterventionLog();
 
 // -- 11. Start viewer --
 

@@ -99,7 +99,7 @@ function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
     const viewer = createViewer({
       harness,
       eventStream: events,
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       configDir: dir,
       configStore,
       threadFactory: factory,

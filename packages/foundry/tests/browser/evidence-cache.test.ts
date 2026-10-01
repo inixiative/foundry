@@ -63,7 +63,7 @@ test("browser-only failure evidence survives quota fallback and reload, distinct
     const viewer = createViewer({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       configStore,
       configDir,
     });

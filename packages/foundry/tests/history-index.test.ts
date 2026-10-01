@@ -160,7 +160,7 @@ function setup(withStore = true) {
     withStreams({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       db: null,
       configStore: new ConfigStore(dir),
       localStore,

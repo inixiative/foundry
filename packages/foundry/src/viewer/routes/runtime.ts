@@ -832,7 +832,11 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     return c.json(interventions.history.slice(0, limit));
   });
 
-  app.post('/api/interventions', async (c) => {
+  // A correction lands on the bus of the thread it was made in, so it is captured in that thread's scope.
+  app.post('/api/threads/:threadId/interventions', async (c) => {
+    const thread = directory.get(c.req.param('threadId'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    if (thread.disposed) return c.json({ error: 'thread is archived or disposed' }, 409);
     const body = await c.req.json<Record<string, unknown>>();
     if (typeof body.traceId !== 'string') {
       return c.json({ error: 'traceId is required and must be a string' }, 400);
@@ -845,6 +849,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     }
 
     const result = await interventions.intervene(
+      thread,
       body.traceId,
       body.spanId,
       body.actual,

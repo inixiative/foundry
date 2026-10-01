@@ -131,7 +131,7 @@ async function fixture(name: string, withNative = false) {
     const viewer = createViewer({
       harness,
       eventStream: events,
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       configStore,
       configDir,
       threadFactory: factory,

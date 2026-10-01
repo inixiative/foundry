@@ -61,7 +61,7 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
     const viewer = createViewer({
       harness,
       eventStream: events,
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       configDir: dir,
       configStore,
       threadFactory: factory,

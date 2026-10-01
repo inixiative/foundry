@@ -195,6 +195,7 @@ describe('PostgresMemory', () => {
 
       await pg.writeIntervention({
         id: 'int-pg-1',
+        threadId: 'main',
         traceId: trace.id,
         spanId: span.id,
         actual: { category: 'feature' },

@@ -465,7 +465,8 @@ First-class cost tracking and usage analytics panel:
 |----------|--------|-------------|
 | `/api/traces` | GET | Paginated trace summaries |
 | `/api/traces/:id` | GET | Full trace with span tree |
-| `/api/interventions` | GET/POST | Intervention history / submit |
+| `/api/interventions` | GET | Intervention history |
+| `/api/threads/:threadId/interventions` | POST | Submit a correction on that thread's signal bus |
 | `/api/threads` | GET | Thread state, agents, layers |
 | `/api/events` | GET | Event stream (filterable) |
 | `/api/actions` | POST | Operator commands (pause, inspect, etc.) |

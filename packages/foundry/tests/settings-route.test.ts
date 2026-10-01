@@ -30,7 +30,7 @@ test('reading settings and writing them back never persists runtime-generated la
     const actions = new ActionHandler({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       resolveThread: () => main,
     });
     const app = new Hono();
@@ -81,7 +81,7 @@ test('settings writes accept an optional expected revision and reject stale ones
     const actions = new ActionHandler({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(main.signals),
+      interventions: new InterventionLog(),
       resolveThread: () => main,
     });
     const app = new Hono();

@@ -41,7 +41,7 @@ function fixture(
     cache.set(options.knowledge ?? `DOMAIN_KNOWLEDGE(${domain}): preserve compatibility.`);
   const requests: LLMMessage[][] = [],
     emitted: Signal[] = [];
-  for (const kind of ['security_concern', 'correction'])
+  for (const kind of ['security_concern', 'guard_finding'])
     signals.on(kind, (s) => {
       emitted.push(s);
     });
@@ -106,7 +106,7 @@ test('valid empty findings and actual findings both complete; findings are norma
   });
   expect(found.emitted.map((s) => [s.kind, (s.content as any).severity])).toEqual([
     ['security_concern', 'critical'],
-    ['correction', 'advisory'],
+    ['guard_finding', 'advisory'],
   ]);
 });
 

@@ -1510,9 +1510,9 @@ export async function executeAction(kind, target, payload) {
   }
 }
 
-export async function submitIntervention(traceId, spanId, correction, reason) {
+export async function submitIntervention(threadId, traceId, spanId, correction, reason) {
   try {
-    const res = await fetch('/api/interventions', {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/interventions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

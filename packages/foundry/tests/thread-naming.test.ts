@@ -27,7 +27,7 @@ function setup(id: string, description: string, complete: LLMProvider['complete'
     withStreams({
       harness,
       eventStream: new EventStream(),
-      interventions: new InterventionLog(thread.signals),
+      interventions: new InterventionLog(),
       db: null,
       configStore: new ConfigStore('/tmp/unused-naming-config'),
       namingProvider: { id: 'namer', complete },
