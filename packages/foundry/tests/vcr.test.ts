@@ -131,9 +131,10 @@ describe("drift classification", () => {
   const init = { type: "system", subtype: "init", model: "m" }, result = { type: "result", subtype: "success", result: "x" };
   it("treats thinking, rate-limit notices and reconnects as notices, and protocol shape as drift", () => {
     const before = transcript(init, result);
-    const noisy = transcript(init, { type: "system", subtype: "thinking_tokens", estimated_tokens: 1 }, { type: "rate_limit_event" }, result);
+    const noisy = transcript({ type: "system", subtype: "ui_invalidate" }, { type: "system", subtype: "commands_changed", commands: [] }, init,
+      { type: "system", subtype: "thinking_tokens", estimated_tokens: 1 }, { type: "rate_limit_event" }, result);
     expect(compareSignatures(before, noisy)).toEqual([]);
-    expect(volatileDifferences(before, noisy)).toEqual(["new stdout:rate_limit_event", "new stdout:system:thinking_tokens"]);
+    expect(volatileDifferences(before, noisy)).toEqual(["new stdout:rate_limit_event", "new stdout:system:commands_changed", "new stdout:system:thinking_tokens", "new stdout:system:ui_invalidate"]);
     const changed = transcript({ ...init, model: 1 }, { type: "result", subtype: "error_max_turns" });
     const tool = transcript(init, { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash" }] } }, result);
     expect(compareSignatures(transcript(init, { type: "assistant", message: { content: [{ type: "text", text: "x" }] } }, result), tool))

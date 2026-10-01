@@ -70,9 +70,9 @@ export function signatureOf(status: number, body: unknown): Signature {
 }
 
 /** Event kinds whose presence and shape follow model behavior or transient service state (thinking,
- * rate-limit notices, reconnect errors, CLI logging), not the protocol. Their changes are notices. */
+ * rate-limit notices, reconnect errors, CLI logging and UI chatter), not the protocol. Their changes are notices. */
 export const VOLATILE_KINDS = [
-  /^stdout:system:thinking_tokens$/, /^stdout:assistant:thinking$/, /^stdout:rate_limit_event$/, /^stdout:error$/, /^stderr$/,
+  /^stdout:system:thinking_tokens$/, /^stdout:system:commands_changed$/, /^stdout:system:ui_invalidate$/, /^stdout:assistant:thinking$/, /^stdout:rate_limit_event$/, /^stdout:error$/, /^stderr$/,
   /:reasoning$/, /^stdout:item\.completed:error$/, /^stdout:account\/rateLimits\/updated$/, /^stdout:mcpServer\/startupStatus\/updated$/,
 ];
 const volatile = (kind: string) => VOLATILE_KINDS.some(pattern => pattern.test(kind));

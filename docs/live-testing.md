@@ -86,7 +86,7 @@ A live run compares each new recording's structure with the committed cassette. 
 - **Protocol drift** is a new or missing event kind, a changed field or a changed exit code. The committed cassette is kept, the new recording is written as `<name>.pending.json`, and the run fails with the differences listed. It is never overwritten silently. Review each one:
   - if it is a CLI or protocol change that Foundry must handle, fix Foundry;
   - if it is an intended change, run `bun run vcr:accept`.
-- **Volatile differences** are printed as `notice:` lines but do not hold a recording back. These are changes that follow model behavior or transient service state: thinking tokens, rate-limit events, reconnect errors, CLI stderr logging and MCP startup chatter.
+- **Volatile differences** are printed as `notice:` lines but do not hold a recording back. These are changes that follow model behavior or transient service state: thinking tokens, rate-limit events, reconnect errors, CLI stderr logging, MCP startup chatter and Claude UI chatter (`system:commands_changed`, `system:ui_invalidate`).
 - Model text is not structure. It differs on every run. What a turn did is structure: an assistant turn's content-block types (text, tool_use) and a status probe's kept answer are part of the kind.
 - Once a recording drifts, the rest of that test's recordings (its outcome) are held back with it, so committed cassettes always come from one run.
 - **A failed live run** holds back every recording it changed as `.pending.json` and restores the committed cassettes, even when the structure matched. The replay pass then runs against the committed cassettes.
