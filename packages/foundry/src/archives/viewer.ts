@@ -30,7 +30,7 @@ const viewer = await startViewer({
   projectRegistry: projects,
   configStore,
   configDir,
-  port: Number(process.env.VIEWER_PORT ?? 4400),
+  port: Number(process.env.VIEWER_PORT ?? 4500),
 });
 console.log('Foundry Archive console ready. Model workers are not started.');
 process.once('SIGTERM', () => {

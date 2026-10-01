@@ -1,7 +1,7 @@
 # Context Inspection Fixture
 
 Run from the Foundry root: `bun run scripts/inspector-fixture.ts`.
-Set `INSPECTOR_QA_PORT` if port 4401 is occupied.
+Set `INSPECTOR_QA_PORT` if port 4501 is occupied.
 
 This starts the actual viewer and harness with a deterministic executor. It does
 not call Fable or Astra and is not a native runtime parity test. Settings are

@@ -56,7 +56,7 @@ if (services.detail) log(`services not started — ${services.detail}`);
 
 const release = await selectRelease(repoRoot, configDir);
 log(
-  `starting ${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? '4400'}`,
+  `starting ${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? '4500'}`,
 );
 try {
   await import(`${release.dir}/packages/foundry/src/start.ts`);

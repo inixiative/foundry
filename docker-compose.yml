@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: foundry
     ports:
-      - "5442:5432"
+      - "5932:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
     container_name: foundry_redis
     restart: unless-stopped
     ports:
-      - "6389:6379"
+      - "6879:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,8 +34,8 @@ services:
     container_name: foundry_muninndb
     restart: unless-stopped
     ports:
-      - "8475:8475"  # REST API
-      - "8476:8476"  # Web UI
+      - "8975:8475"  # REST API
+      - "8976:8476"  # Web UI
     volumes:
       - muninndb_data:/data
     healthcheck:

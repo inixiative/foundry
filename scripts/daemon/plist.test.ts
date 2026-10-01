@@ -5,7 +5,7 @@ const options = {
   repoRoot: '/Users/x/code/foundry',
   bunPath: '/opt/homebrew/bin/bun',
   logDir: '/Users/x/Library/Logs/foundry',
-  port: 4400,
+  port: 4500,
   pathEntries: ['/opt/homebrew/bin', '/usr/bin'],
 };
 

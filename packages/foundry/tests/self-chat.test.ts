@@ -362,7 +362,7 @@ describe('control routes', () => {
       analyticsStore: null,
       actionQueue: null,
       tunnelHolder: { tunnel: null },
-      port: 4400,
+      port: 4500,
       selfChatDir: configDir,
       threadsChanged: () => {},
     });
@@ -606,7 +606,7 @@ describe('control routes', () => {
       analyticsStore: null,
       actionQueue: null,
       tunnelHolder: { tunnel: null },
-      port: 4400,
+      port: 4500,
       selfChatDir: configDir,
       assistTools: tools,
       threadsChanged: () => {},

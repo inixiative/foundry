@@ -7,7 +7,7 @@
 // tunnel must carry a valid bearer token.
 //
 // Usage:
-//   const tunnel = new FoundryTunnel({ port: 4400, provider: "localtunnel" });
+//   const tunnel = new FoundryTunnel({ port: 4500, provider: "localtunnel" });
 //   const url = await tunnel.start();
 //   // ... later
 //   await tunnel.stop();

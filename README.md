@@ -8,7 +8,7 @@ bun run setup
 bun run start
 ```
 
-Open http://localhost:4400.
+Open http://localhost:4500.
 
 For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
 
@@ -64,8 +64,10 @@ GEMINI_API_KEY=AI...
 # Optional
 DATABASE_URL=postgresql://...   # Postgres persistence
 REDIS_URL=redis://...           # Redis adapter
-VIEWER_PORT=4400                # Dashboard port (default: 4400)
+VIEWER_PORT=4500                # Dashboard port (default: 4500)
 ```
+
+Local ports come from the `@inixiative/config` port registry (Foundry is block 5: viewer 4500, Postgres 5932, Redis 6879, MuninnDB 8975/8976; `bunx @inixiative/config ports foundry`).
 
 ## Running
 
@@ -79,7 +81,7 @@ bun run demo         # Demo mode with sample data
 Send messages through the viewer chat or the API:
 
 ```bash
-curl -X POST http://localhost:4400/api/messages \
+curl -X POST http://localhost:4500/api/messages \
   -H 'Content-Type: application/json' \
   -d '{"message": "What is the project structure?"}'
 ```

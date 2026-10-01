@@ -62,7 +62,7 @@ function fixture(options: { actionQueue?: ActionQueue; tunnelToken?: string } = 
     projectRegistry: projects,
     actionQueue: options.actionQueue,
     ...(options.tunnelToken
-      ? { tunnel: { port: 4400, token: options.tunnelToken, configDir: dir } }
+      ? { tunnel: { port: 4500, token: options.tunnelToken, configDir: dir } }
       : {}),
   });
   viewer.directory.add(other);
