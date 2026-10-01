@@ -15,7 +15,7 @@ import { PrismaClient } from '@prisma/client';
  */
 
 const TEST_DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5442/foundry_test';
+  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5932/foundry_test';
 
 let _prisma: PrismaClient | null = null;
 

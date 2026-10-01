@@ -567,7 +567,7 @@ bun run src/demo.ts                # Run the agent demo
 bun run src/eval-demo.ts           # Run the eval demo
 
 # Viewer
-bun run src/viewer/server.ts       # Open http://localhost:4400
+bun run src/viewer/server.ts       # Open http://localhost:4500
 
 # Typecheck
 bun run --bun tsc --noEmit

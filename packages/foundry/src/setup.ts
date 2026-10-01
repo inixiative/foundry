@@ -117,7 +117,7 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
   console.log('  No config found — starting fresh.\n');
 
   const { providerId, apiKey, model } = await pickProvider();
-  const port = await ask('Viewer port', '4400');
+  const port = await ask('Viewer port', '4500');
 
   const config = buildStarterConfig(providerId, model);
 
@@ -678,10 +678,10 @@ const sourceEditor: ItemEditor<any> = {
         uri = await ask('SQLite path', '.foundry/memory.db');
         break;
       case 'postgres':
-        uri = await ask('Connection string', 'postgresql://localhost:5432/foundry');
+        uri = await ask('Connection string', 'postgresql://localhost:5932/foundry');
         break;
       case 'redis':
-        uri = await ask('Redis URL', 'redis://localhost:6379');
+        uri = await ask('Redis URL', 'redis://localhost:6879');
         break;
       case 'http':
         uri = await ask('Base URL');
@@ -1207,7 +1207,7 @@ async function seedMemory() {
 // ---------------------------------------------------------------------------
 
 function printDone(config: FoundryConfig) {
-  const port = process.env.VIEWER_PORT || '4400';
+  const port = process.env.VIEWER_PORT || '4500';
   console.log();
   console.log('  ── Ready ──');
   console.log();

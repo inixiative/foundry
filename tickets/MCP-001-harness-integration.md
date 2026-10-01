@@ -30,7 +30,7 @@ Standalone (stdio — works today):
   Claude Code ──stdin/stdout──→ mcp/cli.ts ──→ own Thread + layers
 
 Integrated (SSE — not wired):
-  Claude Code ──HTTP/SSE──→ viewer:4400/mcp ──→ harness Thread + live signals
+  Claude Code ──HTTP/SSE──→ viewer:4500/mcp ──→ harness Thread + live signals
                                                   │
                                                   ├─ Shares signal bus with Librarian
                                                   ├─ Sees session manager (all threads)

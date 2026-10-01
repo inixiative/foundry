@@ -15,7 +15,7 @@ import type {
  * - Bayesian confidence (probabilistic truth tracking)
  * - Automatic associations (engram linking)
  *
- * Zero SDK — uses fetch directly against the REST API (port 8475).
+ * Zero SDK — uses fetch directly against the REST API (port 8975).
  * Self-hosted via Docker: ghcr.io/scrypster/muninndb:latest
  *
  * @see https://muninndb.com/docs/api/rest
@@ -29,7 +29,7 @@ export class MuninnMemory {
   readonly vault: string;
 
   constructor(opts: MuninnConfig) {
-    this._baseUrl = (opts.baseUrl ?? 'http://localhost:8475').replace(/\/$/, '') + '/api';
+    this._baseUrl = (opts.baseUrl ?? 'http://localhost:8975').replace(/\/$/, '') + '/api';
     this._timeout = opts.timeout ?? 15_000;
     this._token = opts.token;
     this.vault = opts.vault ?? 'default';
@@ -383,7 +383,7 @@ export class MuninnMemory {
 // ---------------------------------------------------------------------------
 
 export interface MuninnConfig {
-  /** REST API base URL. Default: http://localhost:8475 */
+  /** REST API base URL. Default: http://localhost:8975 */
   baseUrl?: string;
   /** Vault for scoping memories (per-project, per-user). Default: "default" */
   vault?: string;

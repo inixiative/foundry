@@ -76,7 +76,7 @@ const install = async () => {
       repoRoot,
       bunPath,
       logDir,
-      port: Number.parseInt(process.env.VIEWER_PORT ?? '4400', 10),
+      port: Number.parseInt(process.env.VIEWER_PORT ?? '4500', 10),
       pathEntries,
     }),
   );
@@ -84,7 +84,7 @@ const install = async () => {
 
   if (await isLoaded()) await $`launchctl bootout ${target}`.quiet().nothrow();
   await $`launchctl bootstrap ${domain} ${plistPath}`;
-  ok(`daemon installed and running — http://localhost:${process.env.VIEWER_PORT ?? '4400'}`);
+  ok(`daemon installed and running — http://localhost:${process.env.VIEWER_PORT ?? '4500'}`);
   info(`logs: ${logDir}/foundry.out.log`);
   info(`auto-update is off by default; set daemon.autoUpdate to "apply" in .foundry/settings.json`);
 };
@@ -121,7 +121,7 @@ const status = async () => {
   console.log(`daemon: loaded${pid ? `, running (pid ${pid})` : ', not running'}`);
   if (lastExit)
     info(`last exit code: ${lastExit}${lastExit === '75' ? ' (restarted for update)' : ''}`);
-  info(`viewer: http://localhost:${process.env.VIEWER_PORT ?? '4400'}`);
+  info(`viewer: http://localhost:${process.env.VIEWER_PORT ?? '4500'}`);
 };
 
 const commands: Record<string, () => Promise<void>> = { install, uninstall, start, stop, status };

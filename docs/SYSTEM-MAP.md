@@ -9,7 +9,7 @@ You work in **Foundry**, which runs on your own machine. Foundry wraps the nativ
 ```mermaid
 flowchart LR
   subgraph local["Your machine"]
-    F["Foundry + foundry-core<br/>(viewer :4400, daemon)"]
+    F["Foundry + foundry-core<br/>(viewer :4500, daemon)"]
     AS["agent-session<br/>(npm library)"]
     CLI["Claude Code / Codex CLIs<br/>(subscription logins)"]
     LA["Local Archive<br/>(SQLite, :4411)"]
@@ -53,7 +53,7 @@ flowchart LR
   - Being hosted.
 - **Interfaces:**
   - CLI: `start`, `setup`, `doctor`, `kingdom pair|status|disconnect`, `archive …`, `signet …`, `daemon:*`.
-  - HTTP and WebSocket viewer on :4400 (`packages/foundry/src/viewer/server.ts:93`).
+  - HTTP and WebSocket viewer on :4500 (`packages/foundry/src/viewer/server.ts:93`).
   - MCP server `foundry` (`packages/foundry/src/mcp/server.ts:228-375`).
   - npm: `@inixiative/foundry/runtime`, which exports the runtime job worker and `SignetClient`.
 - **Release:** `agentic` lane, npm.
@@ -193,7 +193,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 | 9 | Oracle verifies that layer changes improve outcomes | partial | Oracle, Foundry |
 
 **1. Run Foundry locally: works.**
-- `bun run start` serves the viewer on `VIEWER_PORT || 4400` (`packages/foundry/src/start.ts:572`).
+- `bun run start` serves the viewer on `VIEWER_PORT || 4500` (`packages/foundry/src/start.ts:572`).
 - `bun run daemon:install|start` runs it under launchd from `.foundry/releases/<sha>` (`scripts/daemon/supervisor.ts:55`).
 - It is subscription-only by default (`packages/foundry/src/start.ts:135-140`, `subscription-policy.ts:38-63`), with `apiTokens` as the opt-in (`viewer/config.ts:32-33`).
 
