@@ -1,14 +1,14 @@
-import type { AssembledContext, PromptBlock } from "./context-stack";
-import { computeHash } from "./context-layer";
-import type { LayerInstanceState, LogicalMessageIdentity } from "./context-layer";
-import type { LLMMessage } from "./types";
+import type { LayerInstanceState, LogicalMessageIdentity } from './context-layer';
+import { computeHash } from './context-layer';
+import type { AssembledContext, PromptBlock } from './context-stack';
+import type { LLMMessage } from './types';
 
 export type InjectionSegmentKind =
-  | "instructions"
-  | "domain-knowledge"
-  | "thread-knowledge"
-  | "routing"
-  | "guard-findings";
+  | 'instructions'
+  | 'domain-knowledge'
+  | 'thread-knowledge'
+  | 'routing'
+  | 'guard-findings';
 
 export interface InjectionBlock {
   readonly id: string;
@@ -47,26 +47,34 @@ export interface DecorationParticipant {
 /** What one participant supplied to its provider at one phase, or why it made no call. */
 export type ParticipantRequest =
   | {
-      readonly status: "supplied";
+      readonly status: 'supplied';
       readonly phase: string;
       readonly providerId: string;
       readonly messages: readonly LLMMessage[];
       readonly capturedAt: number;
     }
-  | { readonly status: "not-sent"; readonly phase: string; readonly reason: string }
+  | { readonly status: 'not-sent'; readonly phase: string; readonly reason: string }
   /** A call may have been made, but its input was never observed (e.g. the caller threw first). Not "not-sent". */
-  | { readonly status: "unobserved"; readonly phase: string; readonly reason: string };
+  | { readonly status: 'unobserved'; readonly phase: string; readonly reason: string };
 
 /**
  * The composed, immutable decoration delivered alongside a user message:
  * the blocks appended to the executor context plus who contributed them.
  */
 export interface MessageDecoration {
-  readonly input: { readonly hash: string; readonly capturedAt: number; readonly currentMessage?: LogicalMessageIdentity };
+  readonly input: {
+    readonly hash: string;
+    readonly capturedAt: number;
+    readonly currentMessage?: LogicalMessageIdentity;
+  };
   readonly blocks: PromptBlock[];
   readonly participants: DecorationParticipant[];
   readonly omissions: Array<{ readonly id: string; readonly reason: string }>;
-  readonly conflicts: Array<{ readonly kind: string; readonly id: string; readonly detail: string }>;
+  readonly conflicts: Array<{
+    readonly kind: string;
+    readonly id: string;
+    readonly detail: string;
+  }>;
 }
 
 /**
@@ -93,7 +101,7 @@ export interface DeliveryRecord {
      * How the delivered snapshot relates to the assessed one: the same revision, a later revision committed
      * between assessment and assembly, no owner mark on the delivered bytes, or an inconsistent pair.
      */
-    readonly relation?: "assessed" | "advanced" | "unknown" | "inconsistent";
+    readonly relation?: 'assessed' | 'advanced' | 'unknown' | 'inconsistent';
     /** True when the layer changed between assessment and delivery. */
     readonly drift: boolean;
   }>;
@@ -105,7 +113,7 @@ export interface DeliveryRecord {
    * `settled` and `timeout` are retained for historical artifacts.
    */
   readonly learningBarrier?: {
-    readonly outcome: "none" | "settled" | "timeout" | "pending" | "closed";
+    readonly outcome: 'none' | 'settled' | 'timeout' | 'pending' | 'closed';
     readonly closed?: ReadonlyArray<{ domain: string; reason: string }>;
     readonly waitedMs: number;
     readonly pending: Array<{ readonly domain: string; readonly reviews: number }>;
@@ -119,7 +127,7 @@ export interface InjectionArtifact {
   readonly projectId?: string;
   readonly messageId?: string;
   /** Integrity-bound initial provider callback; never a native acknowledgment. */
-  readonly providerBoundary?: import("./delivery-evidence").ProviderBoundaryReceipt;
+  readonly providerBoundary?: import('./delivery-evidence').ProviderBoundaryReceipt;
   readonly userMessage: string;
   readonly blocks: InjectionBlock[];
   /** Decoration delivered with this turn, when a decorator ran. */
@@ -132,12 +140,14 @@ export interface InjectionArtifact {
   readonly executorContext?: string;
   /** Initial provider messages, before native-runtime wrapping or tool followups. */
   readonly providerMessages?: LLMMessage[];
-  readonly layers?: Array<LayerInstanceState & {
-    id: string;
-    prompt?: string;
-    sourceIds: string[];
-    included: boolean;
-  }>;
+  readonly layers?: Array<
+    LayerInstanceState & {
+      id: string;
+      prompt?: string;
+      sourceIds: string[];
+      included: boolean;
+    }
+  >;
 }
 
 export interface BuildInjectionArtifactOpts {
@@ -155,26 +165,26 @@ function estimateTextTokens(text: string): number {
 }
 
 function segmentKindForBlock(block: PromptBlock): InjectionSegmentKind {
-  if (block.role === "system") return "instructions";
-  if (block.role === "layer") return "instructions";
-  if (block.id === "__thread-state" || block.id === "thread-state" || block.id === "memory") {
-    return "thread-knowledge";
+  if (block.role === 'system') return 'instructions';
+  if (block.role === 'layer') return 'instructions';
+  if (block.id === '__thread-state' || block.id === 'thread-state' || block.id === 'memory') {
+    return 'thread-knowledge';
   }
-  return "domain-knowledge";
+  return 'domain-knowledge';
 }
 
 function blockTitle(kind: InjectionSegmentKind): string {
   switch (kind) {
-    case "routing":
-      return "Tags / Routing";
-    case "instructions":
-      return "Instructions";
-    case "domain-knowledge":
-      return "Domain Knowledge";
-    case "thread-knowledge":
-      return "Thread State";
-    case "guard-findings":
-      return "Prior Guard Findings";
+    case 'routing':
+      return 'Tags / Routing';
+    case 'instructions':
+      return 'Instructions';
+    case 'domain-knowledge':
+      return 'Domain Knowledge';
+    case 'thread-knowledge':
+      return 'Thread State';
+    case 'guard-findings':
+      return 'Prior Guard Findings';
   }
 }
 
@@ -182,7 +192,7 @@ function makeBlock(
   kind: InjectionSegmentKind,
   source: string,
   text: string,
-  freshness?: InjectionBlock["freshness"],
+  freshness?: InjectionBlock['freshness'],
 ): InjectionBlock {
   return {
     id: `${kind}:${source}:${computeHash(text)}`,
@@ -206,7 +216,7 @@ export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): Inject
   const blocks: InjectionBlock[] = [];
 
   if (opts.routing?.trim()) {
-    blocks.push(makeBlock("routing", "route", opts.routing.trim()));
+    blocks.push(makeBlock('routing', 'route', opts.routing.trim()));
   }
 
   for (const block of [...opts.assembled.blocks, ...(opts.decoration?.blocks ?? [])]) {
@@ -214,18 +224,16 @@ export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): Inject
     // An explicit segment always wins; the id heuristic only classifies plain layers.
     const kind = (block.segment as InjectionSegmentKind | undefined) ?? segmentKindForBlock(block);
     const source = block.source ?? block.id ?? block.role;
-    blocks.push(makeBlock(kind, source, block.text, block.id ? opts.layerFreshness?.[block.id] : undefined));
+    blocks.push(
+      makeBlock(kind, source, block.text, block.id ? opts.layerFreshness?.[block.id] : undefined),
+    );
   }
 
   if (opts.guardFindings?.trim()) {
-    blocks.push(makeBlock("guard-findings", "guards", opts.guardFindings.trim()));
+    blocks.push(makeBlock('guard-findings', 'guards', opts.guardFindings.trim()));
   }
 
-  const sections = [
-    "# User Message",
-    opts.userMessage,
-    "# Foundry Injection",
-  ];
+  const sections = ['# User Message', opts.userMessage, '# Foundry Injection'];
 
   const byKind = new Map<InjectionSegmentKind, InjectionBlock[]>();
   for (const block of blocks) {
@@ -235,21 +243,21 @@ export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): Inject
   }
 
   const order: InjectionSegmentKind[] = [
-    "routing",
-    "instructions",
-    "domain-knowledge",
-    "thread-knowledge",
-    "guard-findings",
+    'routing',
+    'instructions',
+    'domain-knowledge',
+    'thread-knowledge',
+    'guard-findings',
   ];
 
   for (const kind of order) {
     const grouped = byKind.get(kind);
     if (!grouped?.length) continue;
     sections.push(`## ${blockTitle(kind)}`);
-    sections.push(grouped.map((block) => block.text).join("\n\n"));
+    sections.push(grouped.map((block) => block.text).join('\n\n'));
   }
 
-  const text = sections.join("\n\n");
+  const text = sections.join('\n\n');
   return {
     userMessage: opts.userMessage,
     blocks,
@@ -265,7 +273,7 @@ export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): Inject
  */
 export function assembledToMessages(
   assembled: AssembledContext,
-  userPayload: string
+  userPayload: string,
 ): LLMMessage[] {
   const messages: LLMMessage[] = [];
 
@@ -273,19 +281,19 @@ export function assembledToMessages(
     const systemParts: string[] = [];
 
     for (const block of assembled.blocks) {
-      if (block.role === "system") {
+      if (block.role === 'system') {
         systemParts.push(block.text);
-      } else if (block.role === "layer") {
+      } else if (block.role === 'layer') {
         systemParts.push(`[${block.id}]: ${block.text}`);
-      } else if (block.role === "content") {
+      } else if (block.role === 'content') {
         systemParts.push(block.text);
       }
     }
 
-    messages.push({ role: "system", content: systemParts.join("\n\n") });
+    messages.push({ role: 'system', content: systemParts.join('\n\n') });
   }
 
-  messages.push({ role: "user", content: userPayload });
+  messages.push({ role: 'user', content: userPayload });
 
   return messages;
 }
@@ -301,7 +309,7 @@ export function splitSystemMessage(messages: LLMMessage[]): {
   const turns: LLMMessage[] = [];
 
   for (const msg of messages) {
-    if (msg.role === "system") {
+    if (msg.role === 'system') {
       systemParts.push(msg.content);
     } else {
       turns.push(msg);
@@ -309,7 +317,7 @@ export function splitSystemMessage(messages: LLMMessage[]): {
   }
 
   return {
-    system: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
+    system: systemParts.length > 0 ? systemParts.join('\n\n') : undefined,
     turns,
   };
 }

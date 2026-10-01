@@ -6,7 +6,7 @@
 // truth: it is replayed on every (re)open because the server forgets a
 // connection's streams when it drops. Each re-open answers with a fresh
 // snapshot, which is the whole recovery story — no sequence numbers, no replay.
-import { createWebSocketClient } from "./ws-client.js";
+import { createWebSocketClient } from './ws-client.js';
 
 const HEARTBEAT_MS = 30_000;
 const PONG_TIMEOUT_MS = 5_000;
@@ -20,7 +20,10 @@ const OPEN_RETRY_MS = 1_000;
  *   reconnectDelayMs?: number }} handlers
  * A snapshot frame carries `requestedAt`: when the open it answers left this client.
  */
-export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onRejected, reconnectDelayMs }) {
+export function createDataStreamSocket(
+  url,
+  { onData, onStatus, onReconnect, onRejected, reconnectDelayMs },
+) {
   const streams = new Map();
   // Per stream, send times of opens not yet answered by a snapshot, oldest first (the server answers in order).
   const requested = new Map();
@@ -35,9 +38,9 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
   let reconnectAckTimer;
 
   const sendOpen = (stream) => {
-    if (socket.status() !== "open") return;
+    if (socket.status() !== 'open') return;
     requested.set(stream, [...(requested.get(stream) ?? []), Date.now()]);
-    socket.send({ action: "open", stream });
+    socket.send({ action: 'open', stream });
   };
 
   const replayStreams = () => {
@@ -67,26 +70,29 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
     reconnectDelayMs,
     onMessage: (frame) => {
       switch (frame.type) {
-        case "pong":
+        case 'pong':
           return void clearTimeout(pongTimer);
-        case "openRejected":
+        case 'openRejected':
           console.warn(`data stream open rejected: ${frame.stream}`);
           streams.delete(frame.stream);
           requested.delete(frame.stream);
           settleWaiters(frame.stream);
           onRejected?.(frame.stream);
           return void settleReconnectAck(frame.stream);
-        case "opened":
+        case 'opened':
           acked.add(frame.stream);
           settleWaiters(frame.stream);
           return void settleReconnectAck(frame.stream);
-        case "error":
+        case 'error':
           // The server dropped or failed this open: ask again while it is still wanted.
-          if (frame.action === "open") setTimeout(() => { if (streams.has(frame.stream)) sendOpen(frame.stream); }, OPEN_RETRY_MS);
+          if (frame.action === 'open')
+            setTimeout(() => {
+              if (streams.has(frame.stream)) sendOpen(frame.stream);
+            }, OPEN_RETRY_MS);
           return;
       }
-      if (frame.category !== "data") return;
-      if (frame.action === "snapshot") {
+      if (frame.category !== 'data') return;
+      if (frame.action === 'snapshot') {
         const queue = requested.get(frame.stream) ?? [];
         frame.requestedAt = queue.shift() ?? 0;
         if (!queue.length) requested.delete(frame.stream);
@@ -95,7 +101,7 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
       if (streams.has(frame.stream)) onData(frame);
     },
     onOpen: () => {
-      onStatus?.("open");
+      onStatus?.('open');
       replayStreams();
       const reconnecting = everOpened;
       everOpened = true;
@@ -110,7 +116,7 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
       clearTimeout(pongTimer);
       requested.clear();
       acked.clear();
-      onStatus?.("closed");
+      onStatus?.('closed');
     },
   });
 
@@ -122,8 +128,8 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
       // connection is dead (half-open) — drop it and let auto-reconnect + replay recover.
       heartbeat = setInterval(() => {
         clearTimeout(pongTimer);
-        if (socket.status() !== "open") return;
-        socket.send({ action: "ping" });
+        if (socket.status() !== 'open') return;
+        socket.send({ action: 'ping' });
         pongTimer = setTimeout(() => socket.reconnect(), PONG_TIMEOUT_MS);
       }, HEARTBEAT_MS);
     },
@@ -140,14 +146,22 @@ export function createDataStreamSocket(url, { onData, onStatus, onReconnect, onR
       requested.delete(stream);
       acked.delete(stream);
       settleWaiters(stream);
-      if (socket.status() === "open") socket.send({ action: "close", stream });
+      if (socket.status() === 'open') socket.send({ action: 'close', stream });
     },
     /** Resolves once the server has acknowledged the held stream on this connection, or after `timeoutMs`. */
-    opened: (stream, timeoutMs) => acked.has(stream) || !streams.has(stream) ? Promise.resolve()
-      : new Promise(resolve => {
-        const timer = setTimeout(resolve, timeoutMs);
-        ackWaiters.set(stream, [...(ackWaiters.get(stream) ?? []), () => { clearTimeout(timer); resolve(); }]);
-      }),
+    opened: (stream, timeoutMs) =>
+      acked.has(stream) || !streams.has(stream)
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            const timer = setTimeout(resolve, timeoutMs);
+            ackWaiters.set(stream, [
+              ...(ackWaiters.get(stream) ?? []),
+              () => {
+                clearTimeout(timer);
+                resolve();
+              },
+            ]);
+          }),
     /** Re-open every held stream for fresh snapshots. */
     resync: replayStreams,
     holds: (stream) => streams.has(stream),

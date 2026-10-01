@@ -1,14 +1,14 @@
-import type { PrismaClient } from "@prisma/client";
 import type {
+  ContextRef,
   ContextSource,
   HydrationAdapter,
-  ContextRef,
+  Intervention,
   Signal,
   Trace as TraceObj,
-  Intervention,
-} from "@inixiative/foundry-core";
-import { toOptionalPrismaJson, toPrismaJson } from "../persistence/prisma-json";
-import { serializeTrace, upsertTraceRecord } from "../persistence/trace-record";
+} from '@inixiative/foundry-core';
+import type { PrismaClient } from '@prisma/client';
+import { toOptionalPrismaJson, toPrismaJson } from '../persistence/prisma-json';
+import { serializeTrace, upsertTraceRecord } from '../persistence/trace-record';
 
 interface SearchEntryRow {
   id: string;
@@ -71,7 +71,7 @@ export class PostgresMemory {
   async entriesByKind(kind: string, limit: number = 100) {
     return this.prisma.entry.findMany({
       where: { kind },
-      orderBy: { timestamp: "desc" },
+      orderBy: { timestamp: 'desc' },
       take: limit,
     });
   }
@@ -79,7 +79,7 @@ export class PostgresMemory {
   async recentEntries(limit: number = 50, kind?: string) {
     return this.prisma.entry.findMany({
       where: kind ? { kind } : undefined,
-      orderBy: { timestamp: "desc" },
+      orderBy: { timestamp: 'desc' },
       take: limit,
     });
   }
@@ -91,7 +91,7 @@ export class PostgresMemory {
     return this.prisma.$queryRaw`
       SELECT id, kind, content, source, timestamp, meta, "updatedAt"
       FROM entries
-      WHERE content ILIKE ${"%" + escaped + "%"}
+      WHERE content ILIKE ${'%' + escaped + '%'}
       ORDER BY timestamp DESC
       LIMIT ${limit}
     ` as Promise<SearchEntryRow[]>;
@@ -129,26 +129,21 @@ export class PostgresMemory {
 
   async recentTraces(limit: number = 50) {
     return this.prisma.trace.findMany({
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
       take: limit,
       include: { spans: true },
     });
   }
 
   /** Query spans across all traces — e.g. find all error spans, all classify spans, etc. */
-  async querySpans(filter: {
-    kind?: string;
-    agentId?: string;
-    status?: string;
-    limit?: number;
-  }) {
+  async querySpans(filter: { kind?: string; agentId?: string; status?: string; limit?: number }) {
     return this.prisma.span.findMany({
       where: {
         kind: filter.kind,
         agentId: filter.agentId,
         status: filter.status,
       },
-      orderBy: { startedAt: "desc" },
+      orderBy: { startedAt: 'desc' },
       take: filter.limit ?? 100,
     });
   }
@@ -171,7 +166,7 @@ export class PostgresMemory {
   async recentSignals(limit: number = 50, kind?: string) {
     return this.prisma.signal.findMany({
       where: kind ? { kind } : undefined,
-      orderBy: { timestamp: "desc" },
+      orderBy: { timestamp: 'desc' },
       take: limit,
     });
   }
@@ -197,9 +192,9 @@ export class PostgresMemory {
   async writeMessage(msg: {
     id: string;
     threadId: string;
-    actor: "user" | "agent" | "system";
+    actor: 'user' | 'agent' | 'system';
     /** Sub-classification. Defaults to "text". */
-    kind?: "text" | "tool_call" | "tool_result" | "thinking" | "error" | "routing";
+    kind?: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'routing';
     /** Correlates every row produced within a single turn. */
     turnId?: string;
     content: string;
@@ -212,7 +207,7 @@ export class PostgresMemory {
         threadId: msg.threadId,
         turnId: msg.turnId,
         actor: msg.actor,
-        kind: msg.kind ?? "text",
+        kind: msg.kind ?? 'text',
         content: msg.content,
         traceId: msg.traceId,
         meta: toOptionalPrismaJson(msg.meta),
@@ -223,7 +218,7 @@ export class PostgresMemory {
   async threadMessages(threadId: string, limit: number = 100) {
     return this.prisma.message.findMany({
       where: { threadId },
-      orderBy: { id: "asc" },
+      orderBy: { id: 'asc' },
       take: limit,
     });
   }
@@ -237,10 +232,13 @@ export class PostgresMemory {
       id,
       async load() {
         const entries = await pg.recentEntries(limit, kind);
-        if (entries.length === 0) return "";
+        if (entries.length === 0) return '';
         return entries
-          .map((e: { kind: string; id: string; content: string }) => `[${e.kind}] ${e.id}: ${e.content}`)
-          .join("\n");
+          .map(
+            (e: { kind: string; id: string; content: string }) =>
+              `[${e.kind}] ${e.id}: ${e.content}`,
+          )
+          .join('\n');
       },
     };
   }
@@ -249,16 +247,16 @@ export class PostgresMemory {
   asAdapter(): HydrationAdapter {
     const pg = this;
     return {
-      system: "postgres",
+      system: 'postgres',
       async hydrate(ref: ContextRef): Promise<string> {
         const entry = await pg.getEntry(ref.locator);
-        return entry ? entry.content : "";
+        return entry ? entry.content : '';
       },
       async hydrateBatch(refs: ContextRef[]): Promise<string[]> {
         const results: string[] = [];
         for (const ref of refs) {
           const entry = await pg.getEntry(ref.locator);
-          results.push(entry ? entry.content : "");
+          results.push(entry ? entry.content : '');
         }
         return results;
       },
@@ -267,17 +265,15 @@ export class PostgresMemory {
 
   /** Signal writer — persists every signal to Postgres. */
   signalWriter() {
-    const pg = this;
     return async (signal: Signal): Promise<void> => {
-      await pg.writeSignal(signal);
+      await this.writeSignal(signal);
     };
   }
 
   /** Trace writer — persists completed traces to Postgres. */
   traceWriter() {
-    const pg = this;
     return async (trace: TraceObj): Promise<void> => {
-      await pg.writeTrace(trace);
+      await this.writeTrace(trace);
     };
   }
 }

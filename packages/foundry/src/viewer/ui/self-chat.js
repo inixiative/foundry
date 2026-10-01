@@ -4,9 +4,8 @@
  * (scope/tab/focus) and uses the default executor model.
  */
 
-import { html, useState, useEffect, useRef } from "./lib.js";
-import { signal } from "./lib.js";
-import { showToast } from "./store.js";
+import { html, signal, useEffect, useRef, useState } from './lib.js';
+import { showToast } from './store.js';
 
 export const selfChatCollapsed = signal(false);
 export const selfChatMessages = signal([]);
@@ -14,7 +13,7 @@ const selfChatSending = signal(false);
 
 export async function loadSelfChat() {
   try {
-    const res = await fetch("/api/self-chat");
+    const res = await fetch('/api/self-chat');
     const data = await res.json();
     selfChatMessages.value = data.messages || [];
   } catch {
@@ -24,28 +23,28 @@ export async function loadSelfChat() {
 
 async function clearSelfChat() {
   try {
-    const res = await fetch("/api/self-chat", { method: "DELETE" });
+    const res = await fetch('/api/self-chat', { method: 'DELETE' });
     const data = await res.json();
     selfChatMessages.value = data.messages || [];
-    showToast("Chat cleared", "ok");
+    showToast('Chat cleared', 'ok');
   } catch {
-    showToast("Failed to clear", "error");
+    showToast('Failed to clear', 'error');
   }
 }
 
 async function sendSelfChat(text, focus) {
   selfChatSending.value = true;
   try {
-    const res = await fetch("/api/self-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('/api/self-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, focus }),
     });
     const data = await res.json();
     if (data.messages) selfChatMessages.value = data.messages;
-    if (data.error) showToast(data.error, "error");
+    if (data.error) showToast(data.error, 'error');
   } catch (err) {
-    showToast(`Chat failed: ${err.message}`, "error");
+    showToast(`Chat failed: ${err.message}`, 'error');
   } finally {
     selfChatSending.value = false;
   }
@@ -61,7 +60,7 @@ function describeFocus(focus) {
   if (bits.length === 0) return null;
   const joined = [];
   bits.forEach((b, i) => {
-    if (i > 0) joined.push(" \u00B7 ");
+    if (i > 0) joined.push(' \u00B7 ');
     joined.push(b);
   });
   return joined;
@@ -71,10 +70,12 @@ export function SelfChatPane({ focus }) {
   const collapsed = selfChatCollapsed.value;
   const messages = selfChatMessages.value;
   const sending = selfChatSending.value;
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState('');
   const listRef = useRef(null);
 
-  useEffect(() => { loadSelfChat(); }, []);
+  useEffect(() => {
+    loadSelfChat();
+  }, []);
 
   useEffect(() => {
     if (listRef.current) {
@@ -86,12 +87,12 @@ export function SelfChatPane({ focus }) {
     e.preventDefault();
     const text = draft.trim();
     if (!text || sending) return;
-    setDraft("");
+    setDraft('');
     sendSelfChat(text, focus);
   };
 
   const onKeyDown = (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       onSubmit(e);
     }
   };
@@ -101,7 +102,9 @@ export function SelfChatPane({ focus }) {
       <div class="settings-chat collapsed">
         <button
           class="settings-chat-toggle"
-          onClick=${() => { selfChatCollapsed.value = false; }}
+          onClick=${() => {
+            selfChatCollapsed.value = false;
+          }}
           title="Expand AI helper"
         >AI helper</button>
       </div>
@@ -118,7 +121,9 @@ export function SelfChatPane({ focus }) {
         <button
           class="settings-chat-toggle"
           style="writing-mode: horizontal-tb; transform: none; padding: 2px 6px;"
-          onClick=${() => { selfChatCollapsed.value = true; }}
+          onClick=${() => {
+            selfChatCollapsed.value = true;
+          }}
           title="Collapse"
         >\u203A</button>
       </div>
@@ -126,29 +131,47 @@ export function SelfChatPane({ focus }) {
         <button class="settings-chat-action" onClick=${() => loadSelfChat()}>reload</button>
         <button class="settings-chat-action" onClick=${() => clearSelfChat()}>clear history</button>
       </div>
-      ${focusDesc ? html`
+      ${
+        focusDesc
+          ? html`
         <div class="settings-chat-focus">viewing: ${focusDesc}</div>
-      ` : null}
+      `
+          : null
+      }
       <div class="settings-chat-messages" ref=${listRef}>
-        ${messages.length === 0 ? html`
+        ${
+          messages.length === 0
+            ? html`
           <div class="settings-chat-msg system">
             Ask about customizing Foundry — agents, layers, providers, sources, or how anything works.
             I can see the full Foundry repo and the object you're currently looking at.
           </div>
-        ` : messages.map((m, i) => html`
+        `
+            : messages.map(
+                (m, i) => html`
           <div key=${i} class="settings-chat-msg ${m.role}">
-            ${m.role === "assistant" ? html`
+            ${
+              m.role === 'assistant'
+                ? html`
               <div class="settings-chat-msg-kind">foundry-self</div>
-            ` : null}
+            `
+                : null
+            }
             ${m.content}
           </div>
-        `)}
-        ${sending ? html`
+        `,
+              )
+        }
+        ${
+          sending
+            ? html`
           <div class="settings-chat-msg assistant">
             <div class="settings-chat-msg-kind">foundry-self</div>
             thinking\u2026
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
       <form class="settings-chat-form" onSubmit=${onSubmit}>
         <textarea

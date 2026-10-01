@@ -1,7 +1,7 @@
-import { computeHash } from "./context-layer";
-import { BaseAgent, type AgentConfig, type ExecutionResult } from "./base-agent";
-import type { ContextStack, LayerFilter } from "./context-stack";
-import type { ExecuteMeta } from "./executor";
+import { type AgentConfig, BaseAgent, type ExecutionResult } from './base-agent';
+import { computeHash } from './context-layer';
+import type { ContextStack, LayerFilter } from './context-stack';
+import type { ExecuteMeta } from './executor';
 
 export interface Decision<T = unknown> {
   readonly value: T;
@@ -17,11 +17,10 @@ export interface Decision<T = unknown> {
 export type DecideHandler<TPayload, TDecision> = (
   context: string,
   payload: TPayload,
-  meta?: ExecuteMeta
+  meta?: ExecuteMeta,
 ) => Promise<Decision<TDecision>>;
 
-export interface DeciderConfig<TPayload = unknown, TDecision = unknown>
-  extends AgentConfig {
+export interface DeciderConfig<TPayload = unknown, TDecision = unknown> extends AgentConfig {
   handler: DecideHandler<TPayload, TDecision>;
 }
 
@@ -51,7 +50,7 @@ export class Decider<TPayload = unknown, TDecision = unknown> extends BaseAgent<
   async run(
     payload: TPayload,
     filterOverride?: LayerFilter,
-    meta?: ExecuteMeta
+    meta?: ExecuteMeta,
   ): Promise<ExecutionResult<Decision<TDecision>>> {
     const context = this.getContextWith(filterOverride);
     const contextHash = computeHash(context);

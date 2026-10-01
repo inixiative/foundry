@@ -1,8 +1,8 @@
 export {
-  listWorktrees,
+  diffStat,
   findByBranch,
   findByPath,
-  getCurrentBranch,
-  diffStat,
   type GitWorktree,
-} from "./worktree";
+  getCurrentBranch,
+  listWorktrees,
+} from './worktree';

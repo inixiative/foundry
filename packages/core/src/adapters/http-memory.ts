@@ -1,6 +1,6 @@
-import type { ContextSource } from "../context-layer";
-import type { HydrationAdapter, ContextRef } from "../hydrator";
-import type { Signal } from "../signal";
+import type { ContextSource } from '../context-layer';
+import type { ContextRef, HydrationAdapter } from '../hydrator';
+import type { Signal } from '../signal';
 
 /**
  * HTTP/REST adapter.
@@ -23,9 +23,9 @@ export class HttpMemory {
     opts?: {
       headers?: Record<string, string>;
       timeout?: number;
-    }
+    },
   ) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.baseUrl = baseUrl.replace(/\/$/, '');
     this._headers = opts?.headers ?? {};
     this._timeout = opts?.timeout ?? 10_000;
   }
@@ -48,10 +48,10 @@ export class HttpMemory {
       throw new Error(`HTTP ${res.status}: ${res.statusText} (${url.pathname})`);
     }
 
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.includes("application/json")) {
+    const ct = res.headers.get('content-type') ?? '';
+    if (ct.includes('application/json')) {
       const json = await res.json();
-      return typeof json === "string" ? json : JSON.stringify(json, null, 2);
+      return typeof json === 'string' ? json : JSON.stringify(json, null, 2);
     }
 
     return res.text();
@@ -62,8 +62,8 @@ export class HttpMemory {
     const url = new URL(path, this.baseUrl);
 
     const res = await fetch(url.toString(), {
-      method: "POST",
-      headers: { ...this._headers, "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { ...this._headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this._timeout),
     });
@@ -72,10 +72,10 @@ export class HttpMemory {
       throw new Error(`HTTP ${res.status}: ${res.statusText} (${url.pathname})`);
     }
 
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.includes("application/json")) {
+    const ct = res.headers.get('content-type') ?? '';
+    if (ct.includes('application/json')) {
       const json = await res.json();
-      return typeof json === "string" ? json : JSON.stringify(json, null, 2);
+      return typeof json === 'string' ? json : JSON.stringify(json, null, 2);
     }
 
     return res.text();
@@ -85,11 +85,7 @@ export class HttpMemory {
    * Create a ContextSource that fetches from a GET endpoint.
    * The response body becomes the context content.
    */
-  asSource(
-    id: string,
-    path: string,
-    params?: Record<string, string>
-  ): ContextSource {
+  asSource(id: string, path: string, params?: Record<string, string>): ContextSource {
     const http = this;
     return {
       id,
@@ -98,7 +94,7 @@ export class HttpMemory {
           return await http.get(path, params);
         } catch (err) {
           console.warn(`[HttpMemory] source load failed for "${id}":`, (err as Error).message);
-          return "";
+          return '';
         }
       },
     };
@@ -108,7 +104,7 @@ export class HttpMemory {
    * Create a HydrationAdapter.
    * Refs use paths as locators, fetched via GET.
    */
-  asAdapter(system: string = "http"): HydrationAdapter {
+  asAdapter(system: string = 'http'): HydrationAdapter {
     const http = this;
     return {
       system,
@@ -118,7 +114,7 @@ export class HttpMemory {
           return await http.get(ref.locator, params);
         } catch (err) {
           console.warn(`[HttpMemory] hydrate failed for "${ref.locator}":`, (err as Error).message);
-          return "";
+          return '';
         }
       },
     };
@@ -128,11 +124,10 @@ export class HttpMemory {
    * Create a signal writer that POSTs signals to an endpoint.
    * Use this to forward signals to an external system.
    */
-  signalWriter(path: string = "/signals") {
-    const http = this;
+  signalWriter(path: string = '/signals') {
     return async (signal: Signal): Promise<void> => {
       try {
-        await http.post(path, signal);
+        await this.post(path, signal);
       } catch (err) {
         console.warn(`[HttpMemory] signal forwarding failed:`, (err as Error).message);
       }

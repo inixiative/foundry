@@ -15,10 +15,10 @@
 
 import {
   ContextLayer,
+  type ContextStack,
   type Signal,
   type SignalBus,
-  type ContextStack,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------
 // Thread State shape — the materialized view (~200-500 tokens)
@@ -68,7 +68,7 @@ export interface ThreadState {
 /** Fresh empty state — must be a function to avoid shared array references. */
 function emptyState(): ThreadState {
   return {
-    domain: "",
+    domain: '',
     recentActivity: [],
     inContext: [],
     injectedLayers: [],
@@ -83,7 +83,7 @@ const MAX_RECENT_ACTIVITY = 10;
 
 /** Render signal content for activity: strings as-is, objects as bounded JSON, never "[object Object]". */
 function describeContent(content: unknown, max = 80): string {
-  if (typeof content === "string") return content.slice(0, max);
+  if (typeof content === 'string') return content.slice(0, max);
   if (content === undefined || content === null) return String(content);
   try {
     return JSON.stringify(content).slice(0, max);
@@ -116,12 +116,13 @@ export class Librarian {
     this._stack = config.stack;
 
     // Create the thread-state layer — always warm
-    const layerId = config.layerId ?? "thread-state";
+    const layerId = config.layerId ?? 'thread-state';
     this._layer = new ContextLayer({
       id: layerId,
-      prompt: "Current thread state. Use this to determine what the thread is working on, what context is loaded, and what flags are active.",
+      prompt:
+        'Current thread state. Use this to determine what the thread is working on, what context is loaded, and what flags are active.',
       // Generated per-thread state, whatever id the configuration chose for it.
-      segment: "thread-knowledge",
+      segment: 'thread-knowledge',
     });
 
     // Set initial content
@@ -148,7 +149,7 @@ export class Librarian {
 
   /** Check if the domain has shifted from the current state. */
   domainShifted(newCategory: string): boolean {
-    return this._state.domain !== "" && this._state.domain !== newCategory;
+    return this._state.domain !== '' && this._state.domain !== newCategory;
   }
 
   /** Stop listening to signals. */
@@ -168,52 +169,56 @@ export class Librarian {
 
     // Route signal to the appropriate reducer
     switch (kind) {
-      case "classification":
+      case 'classification':
         this._handleClassification(content as any);
         break;
 
-      case "dispatch":
+      case 'dispatch':
         this._handleDispatch(content as any);
         break;
 
-      case "tool_observation":
-        if (source === "flow-orchestrator") this._handleGuardObservation(content as any);
+      case 'tool_observation':
+        if (source === 'flow-orchestrator') this._handleGuardObservation(content as any);
         else this._handleToolObservation(content as any);
         break;
 
-      case "context_loaded":
+      case 'context_loaded':
         this._handleContextLoaded(content as any);
         break;
 
-      case "context_evicted":
+      case 'context_evicted':
         this._handleContextEvicted(content as any);
         break;
 
-      case "security_concern":
-        this._addFlag("security-concern-active");
+      case 'security_concern':
+        this._addFlag('security-concern-active');
         this._pushActivity(`Security: ${describeContent(content)}`);
         break;
 
-      case "correction":
+      case 'correction':
         this._pushActivity(`Correction from ${source}: ${describeContent(content)}`);
         break;
 
-      case "guard_finding":
+      case 'guard_finding':
         this._pushActivity(`Advisory from ${source}: ${describeContent(content)}`);
         break;
 
-      case "architecture_observation":
-        if (describeContent(content, 400).toLowerCase().includes("cross-module")) {
-          this._addFlag("cross-module");
+      case 'architecture_observation':
+        if (describeContent(content, 400).toLowerCase().includes('cross-module')) {
+          this._addFlag('cross-module');
         }
         this._pushActivity(`Architecture: ${describeContent(content)}`);
         break;
 
-      case "domain_learning": {
-        const data = content as { domain?: string; decision?: string; revision?: number; reason?: string } | undefined;
-        const rev = data?.revision !== undefined ? ` rev ${data.revision}` : "";
-        const why = data?.reason ? ` (${String(data.reason).slice(0, 60)})` : "";
-        this._pushActivity(`Learning (${data?.domain ?? "?"}): ${data?.decision ?? "?"}${rev}${why}`);
+      case 'domain_learning': {
+        const data = content as
+          | { domain?: string; decision?: string; revision?: number; reason?: string }
+          | undefined;
+        const rev = data?.revision !== undefined ? ` rev ${data.revision}` : '';
+        const why = data?.reason ? ` (${String(data.reason).slice(0, 60)})` : '';
+        this._pushActivity(
+          `Learning (${data?.domain ?? '?'}): ${data?.decision ?? '?'}${rev}${why}`,
+        );
         break;
       }
 
@@ -234,7 +239,7 @@ export class Librarian {
   private _handleClassification(data: { category?: string; tags?: string[] }): void {
     if (!data) return;
 
-    const category = data.category ?? "";
+    const category = data.category ?? '';
     const tags = data.tags ?? [];
 
     // Domain shift detection: last classification wins
@@ -248,51 +253,74 @@ export class Librarian {
     // Clear stale flags on domain shift
     if (this.domainShifted(category)) {
       // Keep persistent flags (security), clear transient ones
-      this._state.flags = this._state.flags.filter((f) =>
-        f.startsWith("security") || f === "cross-module"
+      this._state.flags = this._state.flags.filter(
+        (f) => f.startsWith('security') || f === 'cross-module',
       );
     }
   }
 
-  private _handleDispatch(data: { agentId?: string; payload?: string; ok?: boolean; error?: string }): void {
+  private _handleDispatch(data: {
+    agentId?: string;
+    payload?: string;
+    ok?: boolean;
+    error?: string;
+  }): void {
     if (!data) return;
-    const target = data.agentId ?? "agent";
-    const on = data.payload ? ` on ${String(data.payload).slice(0, 50)}` : "";
-    const desc = data.ok === false
-      ? `Failed: ${target}${on} (${String(data.error ?? "unknown error").slice(0, 80)})`
-      : `Dispatched: ${target}${on}`;
+    const target = data.agentId ?? 'agent';
+    const on = data.payload ? ` on ${String(data.payload).slice(0, 50)}` : '';
+    const desc =
+      data.ok === false
+        ? `Failed: ${target}${on} (${String(data.error ?? 'unknown error').slice(0, 80)})`
+        : `Dispatched: ${target}${on}`;
     this._pushActivity(desc);
   }
 
-  private _handleGuardObservation(data?: { guardOutcomes?: Array<{ domain?: string; status?: string; findings?: number }> }): void {
+  private _handleGuardObservation(data?: {
+    guardOutcomes?: Array<{ domain?: string; status?: string; findings?: number }>;
+  }): void {
     if (!Array.isArray(data?.guardOutcomes)) {
-      this._pushActivity("Guard review: outcome not recorded");
+      this._pushActivity('Guard review: outcome not recorded');
       return;
     }
     if (data.guardOutcomes.length === 0) {
-      this._pushActivity("Guard review: no domains checked");
+      this._pushActivity('Guard review: no domains checked');
       return;
     }
     // Shared activity carries outcome metadata, not private guard inputs or error payloads.
     for (const outcome of data.guardOutcomes) {
-      const domain = typeof outcome?.domain === "string" ? outcome.domain.slice(0, 60) : "unknown";
-      const status = ["completed", "skipped", "cold-cache", "provider-error", "invalid-response"].includes(outcome?.status ?? "")
-        ? outcome.status : "outcome not recorded";
-      const count = status === "completed" && Number.isSafeInteger(outcome.findings) && outcome.findings! >= 0
-        ? `; ${outcome.findings} findings` : "";
+      const domain = typeof outcome?.domain === 'string' ? outcome.domain.slice(0, 60) : 'unknown';
+      const status = [
+        'completed',
+        'skipped',
+        'cold-cache',
+        'provider-error',
+        'invalid-response',
+      ].includes(outcome?.status ?? '')
+        ? outcome.status
+        : 'outcome not recorded';
+      const count =
+        status === 'completed' && Number.isSafeInteger(outcome.findings) && outcome.findings! >= 0
+          ? `; ${outcome.findings} findings`
+          : '';
       this._pushActivity(`Guard (${domain}): ${status}${count}`);
     }
   }
 
-  private _handleToolObservation(data: { tool?: string; input?: any; inputSummary?: string; ok?: boolean; output?: any }): void {
+  private _handleToolObservation(data: {
+    tool?: string;
+    input?: any;
+    inputSummary?: string;
+    ok?: boolean;
+    output?: any;
+  }): void {
     if (!data) return;
-    const tool = data.tool ?? "unknown";
-    let target = "";
+    const tool = data.tool ?? 'unknown';
+    let target = '';
     if (data.input?.file_path) target = ` ${data.input.file_path}`;
     else if (data.input?.command) target = ` ${String(data.input.command).slice(0, 60)}`;
     else if (data.input?.pattern) target = ` ${data.input.pattern}`;
-    else if (typeof data.inputSummary === "string") target = ` ${data.inputSummary.slice(0, 60)}`;
-    const status = data.ok === false ? " (failed)" : "";
+    else if (typeof data.inputSummary === 'string') target = ` ${data.inputSummary.slice(0, 60)}`;
+    const status = data.ok === false ? ' (failed)' : '';
 
     this._pushActivity(`${tool}${target}${status}`);
   }
@@ -302,7 +330,7 @@ export class Librarian {
 
     const record: InjectedLayerRecord = {
       id: data.layerId,
-      hash: data.hash ?? "",
+      hash: data.hash ?? '',
       messageNum: this._state.messageCount,
       injectedAt: Date.now(),
     };

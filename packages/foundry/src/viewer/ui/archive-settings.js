@@ -1,4 +1,4 @@
-import { html, useState, useEffect } from './lib.js';
+import { html, useEffect, useState } from './lib.js';
 
 export function ArchiveSettings() {
   const [connections, setConnections] = useState([]);
@@ -47,7 +47,9 @@ export function ArchiveSettings() {
       const response = await fetch('/api/kingdom/status');
       const runtimes = response.ok ? (await response.json()).runtimes : [];
       setPaired(runtimes);
-      const id = runtimes.some((runtime) => runtime.id === kingdomId) ? kingdomId : (runtimes[0]?.id ?? '');
+      const id = runtimes.some((runtime) => runtime.id === kingdomId)
+        ? kingdomId
+        : (runtimes[0]?.id ?? '');
       setKingdomId(id);
       if (id) await discover(id);
       else setKingdom(null);
@@ -78,7 +80,8 @@ export function ArchiveSettings() {
         ownerModel: connection.ownerModel ?? null,
         organizationId: connection.organizationId ?? null,
         spaceId: connection.spaceId ?? null,
-        owner: connection.credential?.type === 'kingdom-runtime' ? connection.credential.owner : null,
+        owner:
+          connection.credential?.type === 'kingdom-runtime' ? connection.credential.owner : null,
         query,
       });
       setEvidence(result.evidence || 'No matching evidence.');
@@ -153,7 +156,9 @@ export function ArchiveSettings() {
           kingdom &&
           html`<label>Destination<select value=${connectionId} onChange=${(event) => {
             setConnectionId(event.target.value);
-            const selected = kingdom.connections.find((connection) => connection.id === event.target.value);
+            const selected = kingdom.connections.find(
+              (connection) => connection.id === event.target.value,
+            );
             if (selected?.projectId) setProjectId(selected.projectId);
           }}>
           <option value="">Kingdom-stored archives</option>

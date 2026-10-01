@@ -25,11 +25,7 @@
  * data before we let it fork threads autonomously.
  */
 
-import type {
-  HeraldPattern,
-  PatternDetector,
-  ThreadSnapshot,
-} from "./herald";
+import type { HeraldPattern, PatternDetector, ThreadSnapshot } from './herald';
 
 // ---------------------------------------------------------------------------
 // Tunables — exposed so tests can construct a deterministic detector
@@ -64,7 +60,7 @@ export interface WorkstreamOverloadEvidence {
   distinctSignalSources: string[];
   windowMs: number;
   /** Which heuristic(s) tripped — useful for tuning thresholds against real data. */
-  triggers: Array<"agents" | "context" | "signals">;
+  triggers: Array<'agents' | 'context' | 'signals'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,22 +74,22 @@ export interface WorkstreamOverloadEvidence {
  */
 export const WORKSTREAM_DETECTOR_PROMPT = [
   "You are the workstream detector. Read the user's most recent message and the recent thread activity, and identify how many DISTINCT workstreams the thread is currently juggling.",
-  "",
-  "A workstream is a unit of work with its own goal, surface area, and acceptance criteria. Two asks are the SAME workstream if completing one inherently requires completing the other (e.g. \"fix the bug and add a test for it\" — the test is part of the fix). They are DIFFERENT workstreams if they touch unrelated surfaces, verbs, or modules and could meaningfully be handed to different operators (e.g. \"run a code review\" + \"redesign the dashboard tiles\" + \"fix a Prisma migration error\").",
-  "",
-  "Procedure:",
-  "1. List every concrete ask in the user message (and any unresolved follow-ups from recent thread activity).",
+  '',
+  'A workstream is a unit of work with its own goal, surface area, and acceptance criteria. Two asks are the SAME workstream if completing one inherently requires completing the other (e.g. "fix the bug and add a test for it" — the test is part of the fix). They are DIFFERENT workstreams if they touch unrelated surfaces, verbs, or modules and could meaningfully be handed to different operators (e.g. "run a code review" + "redesign the dashboard tiles" + "fix a Prisma migration error").',
+  '',
+  'Procedure:',
+  '1. List every concrete ask in the user message (and any unresolved follow-ups from recent thread activity).',
   "2. Group asks that share a goal/surface into one workstream; split asks that don't.",
-  "3. If only one workstream emerges, set multipleDetected=false and give the workstream a label.",
-  "4. If two or more emerge, set multipleDetected=true, pick the one the user opened with as primary, and recommend whether to focus / sequence / split.",
-  "",
-  "Rules:",
-  "- Be precision-biased. Prefer flagging fewer workstreams when uncertain. A false split is more disruptive than a missed split.",
-  "- Workstream IDs should be short kebab-case slugs (e.g. \"agentic-review\", \"dashboard-tiles\").",
-  "- recommendation is one sentence aimed at the operator (e.g. \"Tackle the dashboard change first since it unblocks visual review of the new tiles, then resume the review.\").",
-  "- Respond with JSON only, no prose, no code fences:",
+  '3. If only one workstream emerges, set multipleDetected=false and give the workstream a label.',
+  '4. If two or more emerge, set multipleDetected=true, pick the one the user opened with as primary, and recommend whether to focus / sequence / split.',
+  '',
+  'Rules:',
+  '- Be precision-biased. Prefer flagging fewer workstreams when uncertain. A false split is more disruptive than a missed split.',
+  '- Workstream IDs should be short kebab-case slugs (e.g. "agentic-review", "dashboard-tiles").',
+  '- recommendation is one sentence aimed at the operator (e.g. "Tackle the dashboard change first since it unblocks visual review of the new tiles, then resume the review.").',
+  '- Respond with JSON only, no prose, no code fences:',
   '  {"workstreams":[{"id":"...","label":"...","intent":"..."}],"primary":"...","multipleDetected":false,"recommendation":"...","confidence":0.0}',
-].join("\n");
+].join('\n');
 
 // ---------------------------------------------------------------------------
 // Detector
@@ -105,19 +101,16 @@ export const WORKSTREAM_DETECTOR_PROMPT = [
  * thread coordination so it owns the "split this thread" recommendation.
  */
 export class WorkstreamOverloadDetector implements PatternDetector {
-  readonly id = "builtin:workstream_overload";
-  readonly kind = "workstream_overload" as const;
+  readonly id = 'builtin:workstream_overload';
+  readonly kind = 'workstream_overload' as const;
 
   private _opts: Required<WorkstreamOverloadOptions>;
 
   constructor(opts: WorkstreamOverloadOptions = {}) {
     this._opts = {
-      distinctAgentThreshold:
-        opts.distinctAgentThreshold ?? DEFAULT_DISTINCT_AGENT_THRESHOLD,
-      contextHashDivergence:
-        opts.contextHashDivergence ?? DEFAULT_CONTEXT_HASH_DIVERGENCE,
-      distinctSignalSources:
-        opts.distinctSignalSources ?? DEFAULT_DISTINCT_SIGNAL_SOURCES,
+      distinctAgentThreshold: opts.distinctAgentThreshold ?? DEFAULT_DISTINCT_AGENT_THRESHOLD,
+      contextHashDivergence: opts.contextHashDivergence ?? DEFAULT_CONTEXT_HASH_DIVERGENCE,
+      distinctSignalSources: opts.distinctSignalSources ?? DEFAULT_DISTINCT_SIGNAL_SOURCES,
       windowMs: opts.windowMs ?? DEFAULT_WINDOW_MS,
     };
   }
@@ -131,12 +124,8 @@ export class WorkstreamOverloadDetector implements PatternDetector {
     const cutoff = now - this._opts.windowMs;
 
     for (const snap of snapshots) {
-      const recentDispatches = snap.recentDispatches.filter(
-        (d) => d.timestamp >= cutoff,
-      );
-      const recentSignals = snap.recentSignals.filter(
-        (s) => s.timestamp >= cutoff,
-      );
+      const recentDispatches = snap.recentDispatches.filter((d) => d.timestamp >= cutoff);
+      const recentSignals = snap.recentSignals.filter((s) => s.timestamp >= cutoff);
 
       const distinctAgents = unique(recentDispatches.map((d) => d.agentId));
       const distinctContextHashes = unique(
@@ -144,17 +133,16 @@ export class WorkstreamOverloadDetector implements PatternDetector {
       );
       const distinctSignalSources = unique(
         recentSignals
-          .filter((s) => s.kind !== "herald") // ignore our own injections
+          .filter((s) => s.kind !== 'herald') // ignore our own injections
           .map((s) => s.source),
       );
 
-      const triggers: WorkstreamOverloadEvidence["triggers"] = [];
-      if (distinctAgents.length >= this._opts.distinctAgentThreshold)
-        triggers.push("agents");
+      const triggers: WorkstreamOverloadEvidence['triggers'] = [];
+      if (distinctAgents.length >= this._opts.distinctAgentThreshold) triggers.push('agents');
       if (distinctContextHashes.length >= this._opts.contextHashDivergence)
-        triggers.push("context");
+        triggers.push('context');
       if (distinctSignalSources.length >= this._opts.distinctSignalSources)
-        triggers.push("signals");
+        triggers.push('signals');
 
       // Need at least two corroborating triggers to fire — single-axis
       // signals are too noisy. Two-trigger floor is the precision-bias
@@ -171,12 +159,12 @@ export class WorkstreamOverloadDetector implements PatternDetector {
 
       patterns.push({
         id: `herald_workstream_${snap.threadId}_${now}`,
-        kind: "workstream_overload",
-        severity: "warning",
+        kind: 'workstream_overload',
+        severity: 'warning',
         threads: [snap.threadId],
         description: `Thread "${snap.threadId}" is juggling multiple workstreams (${distinctAgents.length} distinct agents, ${distinctContextHashes.length} distinct contexts, ${distinctSignalSources.length} distinct signal sources in last ${Math.round(this._opts.windowMs / 60_000)}m).`,
         recommendation:
-          "Consider splitting this thread — focus on one workstream and fork the rest into sub-threads.",
+          'Consider splitting this thread — focus on one workstream and fork the rest into sub-threads.',
         evidence,
         timestamp: now,
       });

@@ -1,5 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-import { beforeAll, beforeEach, afterAll } from "bun:test";
+import { afterAll, beforeAll, beforeEach } from 'bun:test';
+import { PrismaClient } from '@prisma/client';
 
 /**
  * Test DB setup — follows inixiative/template pattern.
@@ -15,8 +15,7 @@ import { beforeAll, beforeEach, afterAll } from "bun:test";
  */
 
 const TEST_DATABASE_URL =
-  process.env.DATABASE_URL ??
-  "postgresql://postgres:postgres@localhost:5442/foundry_test";
+  process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5442/foundry_test';
 
 let _prisma: PrismaClient | null = null;
 
@@ -48,19 +47,13 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
   if (tables.length === 0) return;
 
   // Disable FK checks for clean truncation
-  await prisma.$executeRawUnsafe(
-    `SET session_replication_role = 'replica'`
-  );
+  await prisma.$executeRawUnsafe(`SET session_replication_role = 'replica'`);
 
   for (const { tablename } of tables) {
-    await prisma.$executeRawUnsafe(
-      `TRUNCATE TABLE "${tablename}" CASCADE`
-    );
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" CASCADE`);
   }
 
-  await prisma.$executeRawUnsafe(
-    `SET session_replication_role = 'origin'`
-  );
+  await prisma.$executeRawUnsafe(`SET session_replication_role = 'origin'`);
 }
 
 /**

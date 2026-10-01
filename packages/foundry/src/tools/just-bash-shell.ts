@@ -22,12 +22,12 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  ShellTool,
-  ShellResult,
-  ShellOpts,
   OutputFilter,
+  ShellOpts,
+  ShellResult,
+  ShellTool,
   ToolResult,
-} from "@inixiative/foundry-core";
+} from '@inixiative/foundry-core';
 
 export interface JustBashShellConfig {
   id?: string;
@@ -50,20 +50,22 @@ type JustBashInstance = {
   exec: (command: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
   writeFile?: (path: string, content: string) => void;
 };
-type JustBashFactory = (opts?: { files?: Record<string, string> }) => JustBashInstance | Promise<JustBashInstance>;
+type JustBashFactory = (opts?: {
+  files?: Record<string, string>;
+}) => JustBashInstance | Promise<JustBashInstance>;
 
 export class JustBashShell implements ShellTool {
   readonly id: string;
-  readonly kind = "shell" as const;
-  readonly capability = "exec:shell" as const;
+  readonly kind = 'shell' as const;
+  readonly capability = 'exec:shell' as const;
 
-  private _config: Required<Omit<JustBashShellConfig, "id" | "outputFilter">>;
+  private _config: Required<Omit<JustBashShellConfig, 'id' | 'outputFilter'>>;
   private _defaultFilter: OutputFilter | undefined;
   private _instance: JustBashInstance | null = null;
   private _factory: JustBashFactory | null = null;
 
   constructor(config?: JustBashShellConfig) {
-    this.id = config?.id ?? "shell";
+    this.id = config?.id ?? 'shell';
     this._defaultFilter = config?.outputFilter;
     this._config = {
       files: config?.files ?? {},
@@ -79,12 +81,10 @@ export class JustBashShell implements ShellTool {
     if (!this._factory) {
       try {
         // @ts-expect-error - peer dep may not be installed
-        const mod = await import("just-bash");
+        const mod = await import('just-bash');
         this._factory = mod.createJustBash ?? mod.default ?? mod;
       } catch {
-        throw new Error(
-          "just-bash is not installed. Install it with: bun add just-bash"
-        );
+        throw new Error('just-bash is not installed. Install it with: bun add just-bash');
       }
     }
 
@@ -116,7 +116,7 @@ export class JustBashShell implements ShellTool {
       const result = await Promise.race([
         instance.exec(command),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Command timed out after ${timeout}ms`)), timeout)
+          setTimeout(() => reject(new Error(`Command timed out after ${timeout}ms`)), timeout),
         ),
       ]);
 
@@ -161,8 +161,8 @@ export class JustBashShell implements ShellTool {
 
   async run(command: string, opts?: ShellOpts): Promise<string> {
     const result = await this.exec(command, opts);
-    if (!result.ok) throw new Error(result.error ?? "Command failed");
-    return result.data?.stdout ?? "";
+    if (!result.ok) throw new Error(result.error ?? 'Command failed');
+    return result.data?.stdout ?? '';
   }
 
   async which(command: string): Promise<string | null> {

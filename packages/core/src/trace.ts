@@ -1,4 +1,4 @@
-import type { TokenCounts } from "./token-counts";
+import type { TokenCounts } from './token-counts';
 /**
  * A single span in a message's journey through the system.
  * Each stage (classify, route, dispatch, writeback, middleware) creates a span.
@@ -47,24 +47,24 @@ export interface Span {
 }
 
 export type SpanKind =
-  | "ingress"
-  | "classify"
-  | "route"
-  | "dispatch"
-  | "execute"
-  | "decide"
-  | "middleware"
-  | "writeback"
-  | "egress"
-  | "fan"
+  | 'ingress'
+  | 'classify'
+  | 'route'
+  | 'dispatch'
+  | 'execute'
+  | 'decide'
+  | 'middleware'
+  | 'writeback'
+  | 'egress'
+  | 'fan'
   | (string & {});
 
-export type SpanStatus = "running" | "ok" | "error";
+export type SpanStatus = 'running' | 'ok' | 'error';
 
-import { newId } from "./id";
+import { newId } from './id';
 
 function nextSpanId(): string {
-  return newId("span");
+  return newId('span');
 }
 
 /**
@@ -93,12 +93,12 @@ export class Trace {
   /** Current active span stack — the innermost is where new children attach. */
   private _stack: Span[] = [];
 
-  constructor(messageId: string, detail?: Pick<Span, "input" | "threadId">) {
-    this.id = newId("trace");
+  constructor(messageId: string, detail?: Pick<Span, 'input' | 'threadId'>) {
+    this.id = newId('trace');
     this.messageId = messageId;
     this.startedAt = performance.now();
 
-    this.root = this._createSpan("ingress", "ingress", undefined, detail);
+    this.root = this._createSpan('ingress', 'ingress', undefined, detail);
     this._stack.push(this.root);
   }
 
@@ -122,10 +122,10 @@ export class Trace {
     span.durationMs = span.endedAt - span.startedAt;
 
     if (error) {
-      span.status = "error";
+      span.status = 'error';
       span.error = error;
     } else {
-      span.status = "ok";
+      span.status = 'ok';
     }
 
     if (output !== undefined) {
@@ -150,7 +150,7 @@ export class Trace {
   endSpan(span: Span, output?: unknown, error?: unknown): Span {
     span.endedAt = performance.now();
     span.durationMs = span.endedAt - span.startedAt;
-    span.status = error ? "error" : "ok";
+    span.status = error ? 'error' : 'ok';
     if (error) span.error = error;
     if (output !== undefined) (span as { output: unknown }).output = output;
     return span;
@@ -166,8 +166,8 @@ export class Trace {
         span.endedAt = now;
         span.durationMs = span.endedAt - span.startedAt;
       }
-      if (span.status === "running") {
-        span.status = "ok";
+      if (span.status === 'running') {
+        span.status = 'ok';
       }
     }
     this.endedAt = now;
@@ -238,7 +238,7 @@ export class Trace {
     name: string,
     kind: SpanKind,
     parentId?: string,
-    detail?: Partial<Span>
+    detail?: Partial<Span>,
   ): Span {
     const span: Span = {
       id: nextSpanId(),
@@ -252,7 +252,7 @@ export class Trace {
       input: detail?.input,
       output: undefined,
       startedAt: performance.now(),
-      status: "running",
+      status: 'running',
       annotations: detail?.annotations ?? {},
       children: [],
     };

@@ -1,5 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { existsSync, realpathSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Git worktree utilities — read-only detection of existing worktrees
@@ -27,10 +27,10 @@ export interface GitWorktree {
 // ---------------------------------------------------------------------------
 
 async function git(args: string[], cwd?: string): Promise<string> {
-  const proc = Bun.spawn(["git", ...args], {
+  const proc = Bun.spawn(['git', ...args], {
     cwd,
-    stdout: "pipe",
-    stderr: "pipe",
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
 
   const stdout = await new Response(proc.stdout).text();
@@ -63,7 +63,7 @@ function normalizePath(path: string): string {
 export async function listWorktrees(repoRoot: string): Promise<GitWorktree[]> {
   let output: string;
   try {
-    output = await git(["worktree", "list", "--porcelain"], repoRoot);
+    output = await git(['worktree', 'list', '--porcelain'], repoRoot);
   } catch {
     return [];
   }
@@ -73,17 +73,17 @@ export async function listWorktrees(repoRoot: string): Promise<GitWorktree[]> {
   const worktrees: GitWorktree[] = [];
   let current: Partial<GitWorktree> = {};
 
-  for (const line of output.split("\n")) {
-    if (line.startsWith("worktree ")) {
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
       if (current.path) {
         worktrees.push(current as GitWorktree);
       }
       current = { path: line.slice(9), isMain: worktrees.length === 0 };
-    } else if (line.startsWith("HEAD ")) {
+    } else if (line.startsWith('HEAD ')) {
       current.commit = line.slice(5);
-    } else if (line.startsWith("branch ")) {
-      current.branch = line.slice(7).replace("refs/heads/", "");
-    } else if (line === "detached") {
+    } else if (line.startsWith('branch ')) {
+      current.branch = line.slice(7).replace('refs/heads/', '');
+    } else if (line === 'detached') {
       current.branch = null;
     }
   }
@@ -100,18 +100,12 @@ export async function listWorktrees(repoRoot: string): Promise<GitWorktree[]> {
 // ---------------------------------------------------------------------------
 
 /** Find a worktree by branch name. */
-export function findByBranch(
-  worktrees: GitWorktree[],
-  branch: string,
-): GitWorktree | undefined {
+export function findByBranch(worktrees: GitWorktree[], branch: string): GitWorktree | undefined {
   return worktrees.find((w) => w.branch === branch);
 }
 
 /** Find the worktree whose path contains the given directory. */
-export function findByPath(
-  worktrees: GitWorktree[],
-  cwd: string,
-): GitWorktree | undefined {
+export function findByPath(worktrees: GitWorktree[], cwd: string): GitWorktree | undefined {
   const target = normalizePath(cwd);
 
   return [...worktrees]
@@ -129,7 +123,7 @@ export function findByPath(
 /** Get the current branch name (null if detached). */
 export async function getCurrentBranch(cwd?: string): Promise<string | null> {
   try {
-    const branch = await git(["branch", "--show-current"], cwd);
+    const branch = await git(['branch', '--show-current'], cwd);
     return branch || null;
   } catch {
     return null;
@@ -137,10 +131,6 @@ export async function getCurrentBranch(cwd?: string): Promise<string | null> {
 }
 
 /** Diff stat between two branches (for Herald cross-thread comparison). */
-export async function diffStat(
-  repoRoot: string,
-  base: string,
-  head: string,
-): Promise<string> {
-  return git(["diff", `${base}...${head}`, "--stat"], repoRoot);
+export async function diffStat(repoRoot: string, base: string, head: string): Promise<string> {
+  return git(['diff', `${base}...${head}`, '--stat'], repoRoot);
 }

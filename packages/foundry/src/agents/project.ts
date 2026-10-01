@@ -1,6 +1,6 @@
-import { Thread, type ThreadConfig, ContextStack } from "@inixiative/foundry-core";
-import type { RuntimeAdapter } from "../providers/runtime";
-import type { ProjectSettingsConfig } from "../viewer/config";
+import { type ContextStack, Thread, type ThreadConfig } from '@inixiative/foundry-core';
+import type { RuntimeAdapter } from '../providers/runtime';
+import type { ProjectSettingsConfig } from '../viewer/config';
 
 // ---------------------------------------------------------------------------
 // Project config — serializable, lives in the registry
@@ -16,17 +16,20 @@ export interface ProjectConfig {
   /** Categorization tags (e.g. "frontend", "production", "rust"). */
   tags: string[];
   /** Which runtime adapter to use for this project. */
-  runtime: "claude-code" | "codex" | "cursor";
+  runtime: 'claude-code' | 'codex' | 'cursor';
   /** Optional description of the project. */
   description?: string;
 }
 
 /** Map a provider ID to the runtime adapter it implies. */
-function inferRuntime(provider?: string): ProjectConfig["runtime"] {
+function inferRuntime(provider?: string): ProjectConfig['runtime'] {
   switch (provider) {
-    case "cursor": return "cursor";
-    case "codex": return "codex";
-    default: return "claude-code";
+    case 'cursor':
+      return 'cursor';
+    case 'codex':
+      return 'codex';
+    default:
+      return 'claude-code';
   }
 }
 
@@ -46,7 +49,7 @@ export function fromSettingsConfig(cfg: ProjectSettingsConfig): ProjectConfig {
 // Project — top-level container, owns threads
 // ---------------------------------------------------------------------------
 
-export type ProjectStatus = "active" | "idle" | "archived";
+export type ProjectStatus = 'active' | 'idle' | 'archived';
 
 /**
  * A Project is the top-level container in Foundry.
@@ -79,9 +82,9 @@ export class Project {
     this.label = config.label;
     this.tags = [...config.tags];
     this.runtimeId = config.runtime;
-    this.description = config.description ?? "";
+    this.description = config.description ?? '';
     this.createdAt = Date.now();
-    this.status = "idle";
+    this.status = 'idle';
   }
 
   // -- Runtime adapter --
@@ -102,7 +105,7 @@ export class Project {
     }
     const thread = new Thread(id, stack, opts);
     this._threads.set(id, thread);
-    this.status = "active";
+    this.status = 'active';
     return thread;
   }
 
@@ -113,11 +116,13 @@ export class Project {
     // Ownership is explicit: a thread belongs to exactly one project, and its
     // scoped memory sources and tool calls resolve that project lazily.
     if (thread.meta.projectId && thread.meta.projectId !== this.id) {
-      throw new Error(`Thread "${thread.id}" is owned by project "${thread.meta.projectId}", not "${this.id}"`);
+      throw new Error(
+        `Thread "${thread.id}" is owned by project "${thread.meta.projectId}", not "${this.id}"`,
+      );
     }
     thread.meta.projectId = this.id;
     this._threads.set(thread.id, thread);
-    this.status = "active";
+    this.status = 'active';
   }
 
   getThread(id: string): Thread | undefined {
@@ -129,7 +134,7 @@ export class Project {
     if (thread) {
       thread.archive();
       this._threads.delete(id);
-      if (this._threads.size === 0) this.status = "idle";
+      if (this._threads.size === 0) this.status = 'idle';
       return true;
     }
     return false;
@@ -145,15 +150,13 @@ export class Project {
 
   /** Get all active (non-archived) threads. */
   activeThreads(): Thread[] {
-    return [...this._threads.values()].filter(
-      (t) => t.meta.status !== "archived"
-    );
+    return [...this._threads.values()].filter((t) => t.meta.status !== 'archived');
   }
 
   // -- Lifecycle --
 
   archive(): void {
-    this.status = "archived";
+    this.status = 'archived';
     for (const thread of this._threads.values()) {
       thread.archive();
     }
@@ -163,7 +166,7 @@ export class Project {
 
   summary(): ProjectSummary {
     const threads = [...this._threads.values()];
-    const active = threads.filter((t) => t.meta.status !== "archived");
+    const active = threads.filter((t) => t.meta.status !== 'archived');
     return {
       id: this.id,
       path: this.path,
@@ -175,9 +178,8 @@ export class Project {
       threadCount: threads.length,
       activeThreadCount: active.length,
       createdAt: this.createdAt,
-      lastActiveAt: threads.length > 0
-        ? Math.max(...threads.map((t) => t.meta.lastActiveAt))
-        : this.createdAt,
+      lastActiveAt:
+        threads.length > 0 ? Math.max(...threads.map((t) => t.meta.lastActiveAt)) : this.createdAt,
     };
   }
 
@@ -189,7 +191,7 @@ export class Project {
       path: this.path,
       label: this.label,
       tags: this.tags,
-      runtime: this.runtimeId as ProjectConfig["runtime"],
+      runtime: this.runtimeId as ProjectConfig['runtime'],
       description: this.description,
       threadIds: [...this._threads.keys()],
       createdAt: this.createdAt,
@@ -285,7 +287,7 @@ export class ProjectRegistry {
         path: project.path,
         label: project.label,
         tags: project.tags,
-        runtime: project.runtimeId as ProjectConfig["runtime"],
+        runtime: project.runtimeId as ProjectConfig['runtime'],
         description: project.description,
       };
     }
@@ -297,10 +299,11 @@ export class ProjectRegistry {
     for (const config of Object.values(configs)) {
       if (!this._projects.has(config.id)) {
         // ProjectSettingsConfig has 'enabled' field; ProjectConfig doesn't
-        const pc: ProjectConfig = "enabled" in config
-          ? fromSettingsConfig(config as ProjectSettingsConfig)
-          : config as ProjectConfig;
-        if ("enabled" in config && !(config as ProjectSettingsConfig).enabled) continue;
+        const pc: ProjectConfig =
+          'enabled' in config
+            ? fromSettingsConfig(config as ProjectSettingsConfig)
+            : (config as ProjectConfig);
+        if ('enabled' in config && !(config as ProjectSettingsConfig).enabled) continue;
         this.register(pc);
       }
     }

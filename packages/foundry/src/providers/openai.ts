@@ -1,14 +1,14 @@
-import { HttpCompletionSettlement } from "./http-settlement";
-import { DECISION_MODEL, registryModel, type ModelReasoning } from "../models/registry";
 import type {
-  LLMProvider,
-  LLMMessage,
   CompletionOpts,
   CompletionResult,
-  LLMStreamEvent,
   EmbeddingProvider,
   EmbeddingResult,
-} from "@inixiative/foundry-core";
+  LLMMessage,
+  LLMProvider,
+  LLMStreamEvent,
+} from '@inixiative/foundry-core';
+import { DECISION_MODEL, type ModelReasoning, registryModel } from '../models/registry';
+import { HttpCompletionSettlement } from './http-settlement';
 
 export interface OpenAIConfig {
   apiKey: string;
@@ -29,7 +29,7 @@ export interface OpenAIConfig {
   reasoning?: (model: string) => ModelReasoning | undefined;
 }
 
-const DEFAULT_BASE = "https://api.openai.com";
+const DEFAULT_BASE = 'https://api.openai.com';
 
 /**
  * Resolve the versioned API root for an OpenAI-compatible host.
@@ -38,7 +38,7 @@ const DEFAULT_BASE = "https://api.openai.com";
  * produce exactly one version segment.
  */
 export function openAiApiRoot(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
   return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
@@ -64,57 +64,64 @@ export class OpenAIProvider implements LLMProvider {
   protected _reasoningFor: (model: string) => ModelReasoning | undefined;
 
   constructor(config: OpenAIConfig, id?: string) {
-    this.id = id ?? "openai";
+    this.id = id ?? 'openai';
     this._apiKey = config.apiKey;
     this._defaultModel = config.defaultModel ?? DECISION_MODEL;
     this._apiRoot = config.apiRoot?.trim() || openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
     this._extraHeaders = config.headers ?? {};
-    this._reasoningFor = config.reasoning ?? ((model) => registryModel("openai", model)?.reasoning);
+    this._reasoningFor = config.reasoning ?? ((model) => registryModel('openai', model)?.reasoning);
   }
 
   /** Versioned API root this adapter posts to. */
-  get apiRoot(): string { return this._apiRoot; }
+  get apiRoot(): string {
+    return this._apiRoot;
+  }
 
   protected _headers(): Record<string, string> {
     const headers: Record<string, string> = {
       ...this._extraHeaders,
-      "content-type": "application/json",
+      'content-type': 'application/json',
       authorization: `Bearer ${this._apiKey}`,
     };
-    if (this._organization) headers["openai-organization"] = this._organization;
+    if (this._organization) headers['openai-organization'] = this._organization;
     return headers;
   }
 
-  protected _body(messages: LLMMessage[], opts: CompletionOpts | undefined, model: string): Record<string, unknown> {
+  protected _body(
+    messages: LLMMessage[],
+    opts: CompletionOpts | undefined,
+    model: string,
+  ): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
     const reasoning = this._reasoningFor(model);
     if (reasoning) {
-      const asked = typeof opts?.thinking === "string" ? (opts.thinking as ModelReasoning["fallback"]) : undefined;
+      const asked =
+        typeof opts?.thinking === 'string'
+          ? (opts.thinking as ModelReasoning['fallback'])
+          : undefined;
       const effort = asked && reasoning.efforts.includes(asked) ? asked : reasoning.fallback;
       // The other params belong to adapters that are not chat completions.
-      if (reasoning.param === "reasoning.effort") body.reasoning = { effort };
-      else if (reasoning.param === "reasoning_effort") body.reasoning_effort = effort;
+      if (reasoning.param === 'reasoning.effort') body.reasoning = { effort };
+      else if (reasoning.param === 'reasoning_effort') body.reasoning_effort = effort;
     }
-    if (opts?.maxTokens !== undefined) body[reasoning?.outputField ?? "max_tokens"] = opts.maxTokens;
+    if (opts?.maxTokens !== undefined)
+      body[reasoning?.outputField ?? 'max_tokens'] = opts.maxTokens;
     if (opts?.temperature !== undefined) body.temperature = opts.temperature;
     if (opts?.topP !== undefined) body.top_p = opts.topP;
     if (opts?.stop && !reasoning?.rejectsStop) body.stop = opts.stop;
     return body;
   }
 
-  async complete(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): Promise<CompletionResult> {
+  async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
     const model = opts?.model ?? this._defaultModel;
     const body = this._body(messages, opts, model);
 
     const res = await fetch(`${this._apiRoot}/chat/completions`, {
-      method: "POST",
+      method: 'POST',
       headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
@@ -137,7 +144,7 @@ export class OpenAIProvider implements LLMProvider {
     const choice = data.choices[0];
 
     return {
-      content: choice?.message?.content ?? "",
+      content: choice?.message?.content ?? '',
       model: data.model,
       tokens: data.usage
         ? { input: data.usage.prompt_tokens, output: data.usage.completion_tokens }
@@ -154,15 +161,16 @@ export class OpenAIProvider implements LLMProvider {
    * and handles the `[DONE]` sentinel. Usage comes in the final
    * chunk if the API provides it.
    */
-  async *stream(
-    messages: LLMMessage[],
-    opts?: CompletionOpts
-  ): AsyncGenerator<LLMStreamEvent> {
+  async *stream(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? this._defaultModel;
-    const body = { ...this._body(messages, opts, model), stream: true, stream_options: { include_usage: true } };
+    const body = {
+      ...this._body(messages, opts, model),
+      stream: true,
+      stream_options: { include_usage: true },
+    };
 
     const res = await fetch(`${this._apiRoot}/chat/completions`, {
-      method: "POST",
+      method: 'POST',
       headers: this._headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts?.timeout && opts.timeout > 0 ? opts.timeout : 30_000),
@@ -170,12 +178,12 @@ export class OpenAIProvider implements LLMProvider {
 
     if (!res.ok) {
       await res.text();
-      yield { type: "error", error: `OpenAI API ${res.status}` };
+      yield { type: 'error', error: `OpenAI API ${res.status}` };
       return;
     }
 
     if (!res.body) {
-      yield { type: "error", error: "No response body for streaming" };
+      yield { type: 'error', error: 'No response body for streaming' };
       return;
     }
 
@@ -183,7 +191,7 @@ export class OpenAIProvider implements LLMProvider {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    let buffer = '';
 
     try {
       while (true) {
@@ -191,22 +199,22 @@ export class OpenAIProvider implements LLMProvider {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
+          if (!trimmed.startsWith('data: ')) continue;
 
           const data = trimmed.slice(6);
-          if (data === "[DONE]") continue;
+          if (data === '[DONE]') continue;
 
           try {
             const parsed = JSON.parse(data);
             const choice = parsed.choices?.[0];
 
             if (choice?.delta?.content) {
-              yield { type: "text", text: choice.delta.content };
+              yield { type: 'text', text: choice.delta.content };
             }
 
             if (choice?.finish_reason) {
@@ -216,7 +224,7 @@ export class OpenAIProvider implements LLMProvider {
             // Usage in the final chunk (when stream_options.include_usage is set)
             if (parsed.usage) {
               yield {
-                type: "usage",
+                type: 'usage',
                 tokens: {
                   input: parsed.usage.prompt_tokens ?? 0,
                   output: parsed.usage.completion_tokens ?? 0,
@@ -224,7 +232,7 @@ export class OpenAIProvider implements LLMProvider {
               };
             }
           } catch (err) {
-            console.warn("[OpenAI] malformed stream chunk:", (err as Error).message);
+            console.warn('[OpenAI] malformed stream chunk:', (err as Error).message);
           }
         }
       }
@@ -232,7 +240,7 @@ export class OpenAIProvider implements LLMProvider {
       reader.releaseLock();
     }
 
-    yield { type: "done", finishReason };
+    yield { type: 'done', finishReason };
   }
 }
 
@@ -242,7 +250,7 @@ export class OpenAIProvider implements LLMProvider {
  * and any OpenAI-compatible embedding endpoint.
  */
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
-  readonly id = "openai-embed";
+  readonly id = 'openai-embed';
 
   private _apiKey: string;
   private _model: string;
@@ -254,7 +262,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     baseUrl?: string;
   }) {
     this._apiKey = config.apiKey;
-    this._model = config.model ?? "text-embedding-3-small";
+    this._model = config.model ?? 'text-embedding-3-small';
     this._apiRoot = openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
   }
 
@@ -271,9 +279,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     if (input.length === 0) return [];
 
     const res = await fetch(`${this._apiRoot}/embeddings`, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
+        'content-type': 'application/json',
         authorization: `Bearer ${this._apiKey}`,
       },
       body: JSON.stringify({ model: this._model, input }),
@@ -289,9 +297,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       usage: { prompt_tokens: number; total_tokens: number };
     };
 
-    const tokensPerItem = Math.ceil(
-      (data.usage?.total_tokens ?? 0) / input.length
-    );
+    const tokensPerItem = Math.ceil((data.usage?.total_tokens ?? 0) / input.length);
 
     return data.data
       .sort((a, b) => a.index - b.index)
@@ -313,9 +319,9 @@ export function createCursorProvider(config: {
     {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
-      defaultModel: config.defaultModel ?? "cursor",
+      defaultModel: config.defaultModel ?? 'cursor',
     },
-    "cursor"
+    'cursor',
   );
 }
 
@@ -326,10 +332,10 @@ export function createOllamaProvider(config?: {
 }): OpenAIProvider {
   return new OpenAIProvider(
     {
-      apiKey: "ollama", // Ollama ignores auth
-      baseUrl: config?.baseUrl ?? "http://localhost:11434/v1",
-      defaultModel: config?.defaultModel ?? "llama3.2:3b",
+      apiKey: 'ollama', // Ollama ignores auth
+      baseUrl: config?.baseUrl ?? 'http://localhost:11434/v1',
+      defaultModel: config?.defaultModel ?? 'llama3.2:3b',
     },
-    "ollama"
+    'ollama',
   );
 }

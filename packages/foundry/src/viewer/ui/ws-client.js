@@ -5,7 +5,13 @@
 // open; the data-stream layer replays its state on every open instead of queueing.
 
 /** @returns {{ connect(): void, reconnect(): void, send(data: unknown): void, status(): "closed" | "connecting" | "open" }} */
-export function createWebSocketClient({ url, onMessage, onOpen, onClose, reconnectDelayMs = 3000 }) {
+export function createWebSocketClient({
+  url,
+  onMessage,
+  onOpen,
+  onClose,
+  reconnectDelayMs = 3000,
+}) {
   let ws = null;
 
   const connect = () => {
@@ -32,9 +38,9 @@ export function createWebSocketClient({ url, onMessage, onOpen, onClose, reconne
   };
 
   const status = () => {
-    if (ws?.readyState === WebSocket.OPEN) return "open";
-    if (ws?.readyState === WebSocket.CONNECTING) return "connecting";
-    return "closed";
+    if (ws?.readyState === WebSocket.OPEN) return 'open';
+    if (ws?.readyState === WebSocket.CONNECTING) return 'connecting';
+    return 'closed';
   };
 
   return { connect, reconnect, send, status };

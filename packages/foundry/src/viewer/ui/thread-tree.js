@@ -6,26 +6,49 @@
  * [+] buttons on layers/agents open creation forms in the detail drawer.
  */
 
-import { html, useState } from "./lib.js";
+import { analyticsOpen } from './analytics.js';
+import { eventsForThread } from './inspector-data.js';
+import { html, useState } from './lib.js';
+import { settingsOpen } from './settings.js';
 import {
-  threadData, allThreads, layerColor, liveEvents, mergedLayers, mergedAgents,
-  definitions, showToast, activeProjectId, promptCounts, createThread, projects,
-  activeThreadId, selectThread, worktrees, loadWorktrees, executeAction,
-  selectedEvent, currentTrace, selectedSpanId, detailDrawerOpen, compactPanel, dismissTraceSelection,
-} from "./store.js";
-import { eventsForThread } from "./inspector-data.js";
-import { settingsOpen } from "./settings.js";
-import { analyticsOpen } from "./analytics.js";
+  activeProjectId,
+  activeThreadId,
+  allThreads,
+  compactPanel,
+  createThread,
+  currentTrace,
+  definitions,
+  detailDrawerOpen,
+  dismissTraceSelection,
+  executeAction,
+  layerColor,
+  liveEvents,
+  loadWorktrees,
+  mergedAgents,
+  mergedLayers,
+  projects,
+  promptCounts,
+  selectedEvent,
+  selectedSpanId,
+  selectThread,
+  showToast,
+  threadData,
+  worktrees,
+} from './store.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
 // ---------------------------------------------------------------------------
 
-const INACTIVE_THREAD_STATES = new Set(["archived", "completed", "done"]);
-const ACTIVE_LAYER_STATES = new Set(["warm", "warming"]);
+const INACTIVE_THREAD_STATES = new Set(['archived', 'completed', 'done']);
+const ACTIVE_LAYER_STATES = new Set(['warm', 'warming']);
 
-function isActiveThread(t) { return !INACTIVE_THREAD_STATES.has(t.status); }
-function isActiveLayer(l) { return ACTIVE_LAYER_STATES.has(l.state); }
+function isActiveThread(t) {
+  return !INACTIVE_THREAD_STATES.has(t.status);
+}
+function isActiveLayer(l) {
+  return ACTIVE_LAYER_STATES.has(l.state);
+}
 
 // ---------------------------------------------------------------------------
 // Inactive fold — "N inactive" / "N uninstantiated"
@@ -38,7 +61,7 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
   return html`
     <div class="inactive-fold">
       <div class="inactive-fold-header" onClick=${() => setOpen(!open)}>
-        <span class="inactive-caret">${open ? "▼" : "▶"}</span>
+        <span class="inactive-caret">${open ? '▼' : '▶'}</span>
         <span class="inactive-label">${count} ${label}</span>
       </div>
       ${open ? html`<div class="inactive-fold-body">${children}</div>` : null}
@@ -52,14 +75,14 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
 
 function StatusDot({ status }) {
   const colors = {
-    active: "#4ade80",
-    idle: "#6c9eff",
-    waiting: "#facc15",
-    archived: "#555",
-    completed: "#555",
-    done: "#555",
+    active: '#4ade80',
+    idle: '#6c9eff',
+    waiting: '#facc15',
+    archived: '#555',
+    completed: '#555',
+    done: '#555',
   };
-  const color = colors[status] || "#555";
+  const color = colors[status] || '#555';
   return html`<span class="tree-status-dot" style="background: ${color}" title=${status}></span>`;
 }
 
@@ -69,38 +92,57 @@ function StatusDot({ status }) {
 
 function ThreadActions({ thread }) {
   const [open, setOpen] = useState(false);
-  const toggle = (e) => { e.stopPropagation(); setOpen(v => !v); };
+  const toggle = (e) => {
+    e.stopPropagation();
+    setOpen((v) => !v);
+  };
   const run = (kind) => (e) => {
     e.stopPropagation();
     setOpen(false);
     executeAction(kind, thread.id);
   };
 
-  const status = thread.status || "idle";
-  const canPause = status === "active" || status === "idle";
-  const canResume = status === "waiting";
+  const status = thread.status || 'idle';
+  const canPause = status === 'active' || status === 'idle';
+  const canResume = status === 'waiting';
   const isArchived = INACTIVE_THREAD_STATES.has(status);
 
   return html`
-    <div class="thread-actions ${open ? "thread-actions-open" : ""}">
+    <div class="thread-actions ${open ? 'thread-actions-open' : ''}">
       <button class="thread-action-btn thread-action-trigger" onClick=${toggle}
-        title="Actions" aria-expanded=${open}>${open ? "×" : "⋯"}</button>
-      ${open ? html`
-        ${canPause ? html`
-          <button class="thread-action-btn" onClick=${run("thread:pause")}
+        title="Actions" aria-expanded=${open}>${open ? '×' : '⋯'}</button>
+      ${
+        open
+          ? html`
+        ${
+          canPause
+            ? html`
+          <button class="thread-action-btn" onClick=${run('thread:pause')}
             title="Pause thread">pause</button>
-        ` : null}
-        ${canResume ? html`
-          <button class="thread-action-btn" onClick=${run("thread:resume")}
+        `
+            : null
+        }
+        ${
+          canResume
+            ? html`
+          <button class="thread-action-btn" onClick=${run('thread:resume')}
             title="Resume thread">resume</button>
-        ` : null}
-        ${!isArchived ? html`
-          <button class="thread-action-btn" onClick=${run("thread:archive")}
+        `
+            : null
+        }
+        ${
+          !isArchived
+            ? html`
+          <button class="thread-action-btn" onClick=${run('thread:archive')}
             title="Archive thread">archive</button>
-        ` : null}
-        <button class="thread-action-btn" onClick=${run("thread:inspect")}
+        `
+            : null
+        }
+        <button class="thread-action-btn" onClick=${run('thread:inspect')}
           title="Inspect thread state">inspect</button>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -114,51 +156,68 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
   const isSelected = selectedId === thread.id;
   const children = thread.children || [];
   const activeChildren = children.filter(isActiveThread);
-  const inactiveChildren = children.filter(c => !isActiveThread(c));
+  const inactiveChildren = children.filter((c) => !isActiveThread(c));
   const hasChildren = children.length > 0;
 
   return html`
     <div style="padding-left: ${depth * 16}px">
       <div
-        class="tree-node ${isSelected ? "selected" : ""} ${inactive ? "dimmed" : ""}"
+        class="tree-node ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
         onClick=${() => onSelect(thread.id)}
       >
-        ${hasChildren ? html`
+        ${
+          hasChildren
+            ? html`
           <span
             class="tree-caret"
-            onClick=${(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          >${expanded ? "▼" : "▶"}</span>
-        ` : html`<span class="tree-caret-spacer"></span>`}
+            onClick=${(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+          >${expanded ? '▼' : '▶'}</span>
+        `
+            : html`<span class="tree-caret-spacer"></span>`
+        }
         <${StatusDot} status=${thread.status} />
         <span class="tree-label" title=${thread.id}>${thread.description || thread.id}</span>
-        ${thread.branch ? html`
+        ${
+          thread.branch
+            ? html`
           <span class="thread-branch-badge" title=${thread.branch}>${thread.branch}</span>
-        ` : null}
+        `
+            : null
+        }
         ${(() => {
           const count = (promptCounts.value || {})[thread.id] || 0;
           return count > 0
-            ? html`<span class="prompt-badge ${count > 2 ? "urgent" : ""}" title="${count} pending prompt${count > 1 ? "s" : ""}">${count}</span>`
+            ? html`<span class="prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
             : null;
         })()}
         <${ThreadActions} thread=${thread} />
       </div>
 
-      ${expanded && hasChildren ? html`
-        ${activeChildren.map(child =>
-          html`<${ThreadNode}
+      ${
+        expanded && hasChildren
+          ? html`
+        ${activeChildren.map(
+          (child) =>
+            html`<${ThreadNode}
             key=${child.id} thread=${child} depth=${depth + 1}
             selectedId=${selectedId} onSelect=${onSelect}
-          />`
+          />`,
         )}
         <${InactiveFold} count=${inactiveChildren.length} label="inactive">
-          ${inactiveChildren.map(child =>
-            html`<${ThreadNode}
+          ${inactiveChildren.map(
+            (child) =>
+              html`<${ThreadNode}
               key=${child.id} thread=${child} depth=${depth + 1}
               selectedId=${selectedId} onSelect=${onSelect} inactive=${true}
-            />`
+            />`,
           )}
         </${InactiveFold}>
-      ` : null}
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -173,13 +232,20 @@ function SidebarSection({ title, count, defaultOpen = true, onAdd, children }) {
     <div class="sidebar-section">
       <div class="sidebar-section-header">
         <span class="sidebar-section-toggle" onClick=${() => setOpen(!open)}>
-          <span class="sidebar-caret">${open ? "▼" : "▶"}</span>
+          <span class="sidebar-caret">${open ? '▼' : '▶'}</span>
           <span class="sidebar-section-title">${title}</span>
           ${count != null ? html`<span class="sidebar-badge">${count}</span>` : null}
         </span>
-        ${onAdd ? html`
-          <button class="sidebar-add-btn sm" onClick=${(e) => { e.stopPropagation(); onAdd(); }} title="Add ${title.toLowerCase()}">+</button>
-        ` : null}
+        ${
+          onAdd
+            ? html`
+          <button class="sidebar-add-btn sm" onClick=${(e) => {
+            e.stopPropagation();
+            onAdd();
+          }} title="Add ${title.toLowerCase()}">+</button>
+        `
+            : null
+        }
       </div>
       ${open ? html`<div class="sidebar-section-body">${children}</div>` : null}
     </div>
@@ -195,8 +261,8 @@ function SidebarSection({ title, count, defaultOpen = true, onAdd, children }) {
 // ---------------------------------------------------------------------------
 
 function AddThreadForm({ onDone }) {
-  const [name, setName] = useState("");
-  const [selectedWorktree, setSelectedWorktree] = useState("");
+  const [name, setName] = useState('');
+  const [selectedWorktree, setSelectedWorktree] = useState('');
   const [saving, setSaving] = useState(false);
 
   const wts = worktrees.value;
@@ -204,7 +270,7 @@ function AddThreadForm({ onDone }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    const wt = wts.find(w => w.path === selectedWorktree);
+    const wt = wts.find((w) => w.path === selectedWorktree);
     const result = await createThread({
       description: name.trim() || undefined,
       worktreePath: selectedWorktree || undefined,
@@ -218,20 +284,28 @@ function AddThreadForm({ onDone }) {
     <form class="thread-add-form" onSubmit=${handleSubmit}>
       <input class="proj-input" placeholder="name (optional)" value=${name}
         onInput=${(e) => setName(e.target.value)} />
-      ${wts.length > 1 ? html`
+      ${
+        wts.length > 1
+          ? html`
         <select class="proj-input" value=${selectedWorktree}
           onChange=${(e) => setSelectedWorktree(e.target.value)}>
           <option value="">main worktree</option>
-          ${wts.filter(w => !w.isMain).map(w => html`
+          ${wts
+            .filter((w) => !w.isMain)
+            .map(
+              (w) => html`
             <option key=${w.path} value=${w.path}>
-              ${w.branch || w.path.split("/").pop()}
+              ${w.branch || w.path.split('/').pop()}
             </option>
-          `)}
+          `,
+            )}
         </select>
-      ` : null}
+      `
+          : null
+      }
       <div class="proj-form-actions">
         <button type="submit" class="proj-btn proj-btn-ok" disabled=${saving}>
-          ${saving ? "..." : "create"}
+          ${saving ? '...' : 'create'}
         </button>
         <button type="button" class="proj-btn" onClick=${onDone}>cancel</button>
       </div>
@@ -253,7 +327,7 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
 
   // Split layer instances into active/inactive
   const activeLayers = layerInstances.filter(isActiveLayer);
-  const inactiveLayers = layerInstances.filter(l => !isActiveLayer(l));
+  const inactiveLayers = layerInstances.filter((l) => !isActiveLayer(l));
 
   // All agent instances are active for now (future: track completion state)
   const activeAgents = agentInstances;
@@ -264,20 +338,25 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
 
   // Resolve project label for display
   const activeProjectLabel = activeProject
-    ? (projects.value.find(p => p.id === activeProject)?.label || activeProject)
+    ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
     : null;
 
   // Build the hierarchy: subagent threads (meta.parentThreadId) nest under
   // their parent; threads whose parent isn't in view stay at the root.
-  const nodeById = new Map(threads.map(t => [t.threadId, {
-    id: t.threadId,
-    status: t.meta?.status || "idle",
-    description: t.meta?.description || "",
-    branch: t.meta?.branch || null,
-    cwd: t.meta?.cwd || null,
-    parentThreadId: t.meta?.parentThreadId || null,
-    children: [],
-  }]));
+  const nodeById = new Map(
+    threads.map((t) => [
+      t.threadId,
+      {
+        id: t.threadId,
+        status: t.meta?.status || 'idle',
+        description: t.meta?.description || '',
+        branch: t.meta?.branch || null,
+        cwd: t.meta?.cwd || null,
+        parentThreadId: t.meta?.parentThreadId || null,
+        children: [],
+      },
+    ]),
+  );
   const threadNodes = [];
   for (const node of nodeById.values()) {
     const parent = node.parentThreadId ? nodeById.get(node.parentThreadId) : null;
@@ -288,7 +367,9 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
     }
   }
 
-  const handleSelect = (id) => { selectThread(id); };
+  const handleSelect = (id) => {
+    selectThread(id);
+  };
 
   const totalLayers = activeLayers.length + inactiveLayers.length + uninstantiatedLayers.length;
   const totalAgents = activeAgents.length + inactiveAgents.length + uninstantiatedAgents.length;
@@ -299,31 +380,45 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
       <div class="sidebar-threads">
         <div class="sidebar-header">
           <span class="sidebar-section-title">THREADS</span>
-          ${activeProject ? html`
+          ${
+            activeProject
+              ? html`
             <span class="sidebar-scope-chip scope-project" title=${activeProject}>
               ${activeProjectLabel}
             </span>
-          ` : html`
+          `
+              : html`
             <span class="sidebar-scope-chip scope-global">global</span>
-          `}
+          `
+          }
           <button class="sidebar-add-btn" onClick=${() => setAddingThread(true)} title="New thread">+</button>
         </div>
 
-        ${addingThread ? html`
+        ${
+          addingThread
+            ? html`
           <${AddThreadForm} onDone=${() => setAddingThread(false)} />
-        ` : null}
+        `
+            : null
+        }
 
         <div class="sidebar-threads-list">
-          ${threadNodes.length > 0 ? threadNodes.map(t => html`
+          ${
+            threadNodes.length > 0
+              ? threadNodes.map(
+                  (t) => html`
             <${ThreadNode}
               key=${t.id}
               thread=${t}
               selectedId=${selectedThread}
               onSelect=${handleSelect}
             />
-          `) : html`<div class="sidebar-empty">${
-            activeProject ? "No threads in this project" : "No threads"
-          }</div>`}
+          `,
+                )
+              : html`<div class="sidebar-empty">${
+                  activeProject ? 'No threads in this project' : 'No threads'
+                }</div>`
+          }
         </div>
       </div>
 
@@ -336,34 +431,40 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
         >
           <div class="layer-list scrollable-list">
             <!-- Active instances -->
-            ${activeLayers.map(l => html`
+            ${activeLayers.map(
+              (l) => html`
               <div class="layer-item" key=${l.id}
                 onClick=${() => onLayerClick && onLayerClick(l.id)}>
                 <span class="layer-dot" style="background: ${layerColor(l.id)}"></span>
                 <span class="layer-name">${l.id}</span>
                 <span class="layer-state ${l.state}">${l.state}</span>
               </div>
-            `)}
+            `,
+            )}
 
             <!-- Inactive instances -->
-            ${inactiveLayers.map(l => html`
+            ${inactiveLayers.map(
+              (l) => html`
               <div class="layer-item dimmed" key=${l.id}
                 onClick=${() => onLayerClick && onLayerClick(l.id)}>
                 <span class="layer-dot" style="background: ${layerColor(l.id)}; opacity: 0.4"></span>
                 <span class="layer-name">${l.id}</span>
                 <span class="layer-state ${l.state}">${l.state}</span>
               </div>
-            `)}
+            `,
+            )}
 
             <!-- Uninstantiated definitions -->
-            ${uninstantiatedLayers.map(l => html`
+            ${uninstantiatedLayers.map(
+              (l) => html`
               <div class="layer-item dimmed" key=${l.id}
                 onClick=${() => onLayerClick && onLayerClick(l.id)}>
                 <span class="layer-dot-empty" style="border-color: ${layerColor(l.id)}"></span>
                 <span class="layer-name">${l.id}</span>
                 <span class="layer-state-def">defined</span>
               </div>
-            `)}
+            `,
+            )}
 
             ${totalLayers === 0 ? html`<div class="sidebar-empty-sm">No layers</div>` : null}
           </div>
@@ -377,32 +478,38 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
         >
           <div class="agent-list scrollable-list">
             <!-- Active instances -->
-            ${activeAgents.map(a => html`
+            ${activeAgents.map(
+              (a) => html`
               <div class="agent-item" key=${a.id}
                 onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
                 <span class="agent-icon">◆</span>
                 <span class="agent-name">${a.agentId}</span>
               </div>
-            `)}
+            `,
+            )}
 
             <!-- Inactive instances -->
-            ${inactiveAgents.map(a => html`
+            ${inactiveAgents.map(
+              (a) => html`
               <div class="agent-item dimmed" key=${a.id}
                 onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
                 <span class="agent-icon">◇</span>
                 <span class="agent-name">${a.agentId}</span>
               </div>
-            `)}
+            `,
+            )}
 
             <!-- Uninstantiated definitions -->
-            ${uninstantiatedAgents.map(a => html`
+            ${uninstantiatedAgents.map(
+              (a) => html`
               <div class="agent-item dimmed" key=${a.id}
                 onClick=${() => onAgentClick && onAgentClick(a.id)}>
                 <span class="agent-icon">○</span>
                 <span class="agent-name">${a.id}</span>
                 <span class="agent-kind">${a.kind}</span>
               </div>
-            `)}
+            `,
+            )}
 
             ${totalAgents === 0 ? html`<div class="sidebar-empty-sm">No agents</div>` : null}
           </div>
@@ -412,34 +519,40 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
       <!-- ─── LIVE EVENTS + FOOTER ─── -->
       <div class="sidebar-bottom">
         <${SidebarSection}
-          title=${selectedThread ? "THREAD ACTIVITY" : "RUNTIME ACTIVITY"}
+          title=${selectedThread ? 'THREAD ACTIVITY' : 'RUNTIME ACTIVITY'}
           count=${events.length}
           defaultOpen=${false}
         >
           <div class="live-events-list">
-            ${events.slice(0, 30).map((ev, i) => html`
+            ${events.slice(0, 30).map(
+              (ev, i) => html`
               <button key=${i} class="live-event-row activity-event" title="Inspect event"
                 onClick=${() => {
                   dismissTraceSelection();
                   selectedSpanId.value = null;
                   selectedEvent.value = ev;
                   detailDrawerOpen.value = true;
-                  compactPanel.value = "detail";
+                  compactPanel.value = 'detail';
                 }}>
                 <span class="le-kind">${ev.kind}</span>
                 <span class="le-time">${ev._time}</span>
               </button>
-            `)}
+            `,
+            )}
             ${events.length === 0 ? html`<div class="sidebar-empty-sm">No events yet</div>` : null}
           </div>
         </${SidebarSection}>
 
         <div class="sidebar-footer">
           <button class="sidebar-footer-btn"
-            onClick=${() => { settingsOpen.value = true; }}
+            onClick=${() => {
+              settingsOpen.value = true;
+            }}
             title="Settings (s)">settings</button>
           <button class="sidebar-footer-btn"
-            onClick=${() => { analyticsOpen.value = true; }}
+            onClick=${() => {
+              analyticsOpen.value = true;
+            }}
             title="Analytics (a)">analytics</button>
         </div>
       </div>

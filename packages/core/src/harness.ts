@@ -1,19 +1,15 @@
-import { Thread, type FanResult, type BackgroundHandle } from "./thread";
-import type { ExecutionResult } from "./base-agent";
-import type { Decision } from "./decider";
-import type { Classification } from "./classifier";
-import type { Route } from "./router";
-import type { ClarificationResult, ClarifyPayload } from "./clarifier";
-import type { LayerFilter } from "./context-stack";
-import type { ContextLayer } from "./context-layer";
-import { Trace } from "./trace";
-import { BoundedSet } from "./bounded-set";
-import { newId } from "./id";
-import type {
-  InvocationCondition,
-  AgentModeConfig,
-  LayerModeConfig,
-} from "./types";
+import type { ExecutionResult } from './base-agent';
+import { BoundedSet } from './bounded-set';
+import type { ClarificationResult, ClarifyPayload } from './clarifier';
+import type { Classification } from './classifier';
+import type { ContextLayer } from './context-layer';
+import type { LayerFilter } from './context-stack';
+import type { Decision } from './decider';
+import { newId } from './id';
+import type { Route } from './router';
+import type { BackgroundHandle, FanResult, Thread } from './thread';
+import { Trace } from './trace';
+import type { AgentModeConfig, InvocationCondition, LayerModeConfig } from './types';
 
 export interface Message<T = unknown> {
   readonly id: string;
@@ -58,16 +54,16 @@ export interface PipelineStep<TIn = unknown, TOut = unknown> {
 
 export interface FlowStage {
   /** Agent ID for this stage. Use "routed" to use route.destination. */
-  agentId: string | "routed";
+  agentId: string | 'routed';
   /** Pipeline role (for tracing and UI). */
-  role: "classify" | "route" | "clarify" | "execute" | "enrich" | "guard" | "observe";
+  role: 'classify' | 'route' | 'clarify' | 'execute' | 'enrich' | 'guard' | 'observe';
   /**
    * When this stage runs:
    * - "always": every request
    * - "on-demand": only when explicitly requested by middleware or prior stage
    * - "conditional": when condition matches classification/route context
    */
-  invocation: "always" | "on-demand" | "conditional";
+  invocation: 'always' | 'on-demand' | 'conditional';
   /** Condition for conditional invocation. */
   condition?: InvocationCondition;
   /**
@@ -137,7 +133,7 @@ export function matchesCondition(
 // ---------------------------------------------------------------------------
 
 interface SendOptions {
-  nativeObservation?: import("./thread").DispatchOptions["nativeObservation"];
+  nativeObservation?: import('./thread').DispatchOptions['nativeObservation'];
   onDelta?: (text: string) => void;
   /** Final trace for this attempt, independent of the bounded history cache. */
   onTrace?: (trace: Trace) => void;
@@ -170,8 +166,10 @@ export class Harness {
   private _explicitFlow: FlowConfig | null = null;
 
   // Agent/layer invocation metadata (from config)
-  private _agentModes: Map<string, { invocation: string; condition?: InvocationCondition }> = new Map();
-  private _layerModes: Map<string, { activation: string; condition?: InvocationCondition }> = new Map();
+  private _agentModes: Map<string, { invocation: string; condition?: InvocationCondition }> =
+    new Map();
+  private _layerModes: Map<string, { activation: string; condition?: InvocationCondition }> =
+    new Map();
 
   private _pipeline: PipelineStep[] = [];
   private _traces: Trace[] = [];
@@ -187,9 +185,8 @@ export class Harness {
     this.thread = thread;
     this._maxTraces = opts?.maxTraces ?? 1000;
 
-    this._dedupCapacity = opts?.dedup === true ? 1000
-      : typeof opts?.dedup === "number" ? opts.dedup
-      : 0;
+    this._dedupCapacity =
+      opts?.dedup === true ? 1000 : typeof opts?.dedup === 'number' ? opts.dedup : 0;
     this._seenMessages = new BoundedSet<string>(Math.max(this._dedupCapacity, 1));
   }
 
@@ -229,10 +226,10 @@ export class Harness {
     layers: Record<string, LayerModeConfig>,
   ): void {
     for (const [id, cfg] of Object.entries(agents)) {
-      this.setAgentMode(id, cfg.invocation ?? "always", cfg.condition);
+      this.setAgentMode(id, cfg.invocation ?? 'always', cfg.condition);
     }
     for (const [id, cfg] of Object.entries(layers)) {
-      this.setLayerMode(id, cfg.activation ?? "always", cfg.condition);
+      this.setLayerMode(id, cfg.activation ?? 'always', cfg.condition);
     }
   }
 
@@ -277,10 +274,7 @@ export class Harness {
 
   // -- Entry point --
 
-  async send<T>(
-    message: Message<T>,
-    opts?: SendOptions,
-  ): Promise<HarnessResult> {
+  async send<T>(message: Message<T>, opts?: SendOptions): Promise<HarnessResult> {
     // Idempotency: return cached result for duplicate messages
     if (this._dedupCapacity > 0 && this._seenMessages.has(message.id)) {
       const cached = this._resultCache.get(message.id);
@@ -314,11 +308,8 @@ export class Harness {
    */
   async *sendStream<T>(
     message: Message<T>,
-    opts?: Pick<SendOptions, "onTrace" | "nativeObservation">,
-  ): AsyncGenerator<
-    | { kind: "delta"; text: string }
-    | { kind: "done"; result: HarnessResult }
-  > {
+    opts?: Pick<SendOptions, 'onTrace' | 'nativeObservation'>,
+  ): AsyncGenerator<{ kind: 'delta'; text: string } | { kind: 'done'; result: HarnessResult }> {
     // Bounded buffer so deltas emitted while we're yielding don't get lost.
     const pending: string[] = [];
     let resolveWaiter: (() => void) | null = null;
@@ -338,25 +329,36 @@ export class Harness {
     let failed = false;
 
     const runPromise = this.send(message, { ...opts, onDelta })
-      .then((r) => { finalResult = r; })
-      .catch((e) => { failed = true; thrown = e; })
+      .then((r) => {
+        finalResult = r;
+      })
+      .catch((e) => {
+        failed = true;
+        thrown = e;
+      })
       .finally(() => {
         done = true;
-        if (resolveWaiter) { const r = resolveWaiter; resolveWaiter = null; r(); }
+        if (resolveWaiter) {
+          const r = resolveWaiter;
+          resolveWaiter = null;
+          r();
+        }
       });
 
     while (!done || pending.length > 0) {
       if (pending.length > 0) {
-        yield { kind: "delta", text: pending.shift()! };
+        yield { kind: 'delta', text: pending.shift()! };
         continue;
       }
       if (done) break;
-      await new Promise<void>((r) => { resolveWaiter = r; });
+      await new Promise<void>((r) => {
+        resolveWaiter = r;
+      });
     }
 
     await runPromise;
     if (failed) throw thrown;
-    if (finalResult) yield { kind: "done", result: finalResult };
+    if (finalResult) yield { kind: 'done', result: finalResult };
   }
 
   /**
@@ -371,22 +373,20 @@ export class Harness {
     route?: Decision<Route>,
     requestedLayers?: ReadonlySet<string>,
   ): LayerFilter {
-    const routeSlice = route?.value?.contextSlice
-      ? new Set(route.value.contextSlice)
-      : null;
+    const routeSlice = route?.value?.contextSlice ? new Set(route.value.contextSlice) : null;
 
     return (layer: ContextLayer) => {
       const mode = this._layerModes.get(layer.id);
-      const activation = mode?.activation ?? "always";
+      const activation = mode?.activation ?? 'always';
 
       switch (activation) {
-        case "always":
+        case 'always':
           return true;
 
-        case "conditional":
+        case 'conditional':
           return matchesCondition(mode?.condition, classification, route);
 
-        case "on-demand":
+        case 'on-demand':
           // Included if router requested it via contextSlice, or middleware requested it
           if (routeSlice?.has(layer.id)) return true;
           if (requestedLayers?.has(layer.id)) return true;
@@ -414,8 +414,8 @@ export class Harness {
     if (this._classifierId) {
       stages.push({
         agentId: this._classifierId,
-        role: "classify",
-        invocation: "always",
+        role: 'classify',
+        invocation: 'always',
       });
     }
 
@@ -423,8 +423,8 @@ export class Harness {
     if (this._routerId) {
       stages.push({
         agentId: this._routerId,
-        role: "route",
-        invocation: "always",
+        role: 'route',
+        invocation: 'always',
       });
     }
 
@@ -435,27 +435,27 @@ export class Harness {
       if (agentId === this._routerId) continue;
       if (agentId === this._defaultExecutorId) continue;
 
-      if (mode.invocation === "conditional") {
+      if (mode.invocation === 'conditional') {
         stages.push({
           agentId,
-          role: "enrich",
-          invocation: "conditional",
+          role: 'enrich',
+          invocation: 'conditional',
           condition: mode.condition,
         });
-      } else if (mode.invocation === "on-demand") {
+      } else if (mode.invocation === 'on-demand') {
         stages.push({
           agentId,
-          role: "enrich",
-          invocation: "on-demand",
+          role: 'enrich',
+          invocation: 'on-demand',
         });
       }
     }
 
     // Execute stage (uses routed destination or default)
     stages.push({
-      agentId: "routed",
-      role: "execute",
-      invocation: "always",
+      agentId: 'routed',
+      role: 'execute',
+      invocation: 'always',
     });
 
     return {
@@ -471,7 +471,10 @@ export class Harness {
     flow: FlowConfig,
     opts?: SendOptions,
   ): Promise<HarnessResult> {
-    const trace = new Trace(message.id, { input: structuredClone(message.payload), threadId: this.thread.id });
+    const trace = new Trace(message.id, {
+      input: structuredClone(message.payload),
+      threadId: this.thread.id,
+    });
     const invokedAgents: Array<{ id: string; mode: string }> = [];
 
     const requestedAgents = new Set<string>();
@@ -486,13 +489,23 @@ export class Harness {
 
     // Build request context for middleware
     const reqCtx: RequestContext = {
-      get classification() { return classification; },
-      get route() { return route; },
+      get classification() {
+        return classification;
+      },
+      get route() {
+        return route;
+      },
       requestAgent: (id) => requestedAgents.add(id),
       requestLayer: (id) => requestedLayers.add(id),
-      get requestedAgents() { return requestedAgents; },
-      get requestedLayers() { return requestedLayers; },
-      get stageResults() { return stageResults; },
+      get requestedAgents() {
+        return requestedAgents;
+      },
+      get requestedLayers() {
+        return requestedLayers;
+      },
+      get stageResults() {
+        return stageResults;
+      },
       data,
     };
 
@@ -500,38 +513,69 @@ export class Harness {
       // Decision stages (classify, route) read the same frozen input concurrently: neither waits for
       // the other, and the router receives the message, not the classification. Their results are
       // applied in configured stage order, so the outcome does not depend on which answered first.
-      const decisionStages = flow.stages.filter(stage => !stage.background && stage.invocation === "always"
-        && (stage.role === "classify" || stage.role === "route") && stage.agentId !== "routed" && this.thread.getAgent(stage.agentId));
+      const decisionStages = flow.stages.filter(
+        (stage) =>
+          !stage.background &&
+          stage.invocation === 'always' &&
+          (stage.role === 'classify' || stage.role === 'route') &&
+          stage.agentId !== 'routed' &&
+          this.thread.getAgent(stage.agentId),
+      );
       if (decisionStages.length) {
         const layerFilter = this.buildLayerFilter(undefined, undefined, requestedLayers);
-        const settled = await Promise.allSettled(decisionStages.map(async stage => {
-          const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role as any, {
-            agentId: stage.agentId, threadId: this.thread.id, input: message.payload, annotations: { invocation: stage.invocation },
-          });
-          try {
-            const result = await this.thread.dispatch(stage.agentId, message.payload, layerFilter, {
-              role: stage.role, messageId: message.id, invocation: stage.invocation,
-              recordInjection: artifact => { span.annotations.injection = artifact; },
-              nativeObservation: opts?.nativeObservation,
-              recordNative: evidence => { span.annotations.native = evidence; },
-              recordCompleted: output => { span.annotations.executorCompletion = { output }; },
+        const settled = await Promise.allSettled(
+          decisionStages.map(async (stage) => {
+            const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role as any, {
+              agentId: stage.agentId,
+              threadId: this.thread.id,
+              input: message.payload,
+              annotations: { invocation: stage.invocation },
             });
-            if (result.meta?.injection) span.annotations.injection = result.meta.injection;
-            trace.endSpan(span, result.output);
-            return result;
-          } catch (error) { trace.endSpan(span, undefined, error); throw error; }
-        }));
+            try {
+              const result = await this.thread.dispatch(
+                stage.agentId,
+                message.payload,
+                layerFilter,
+                {
+                  role: stage.role,
+                  messageId: message.id,
+                  invocation: stage.invocation,
+                  recordInjection: (artifact) => {
+                    span.annotations.injection = artifact;
+                  },
+                  nativeObservation: opts?.nativeObservation,
+                  recordNative: (evidence) => {
+                    span.annotations.native = evidence;
+                  },
+                  recordCompleted: (output) => {
+                    span.annotations.executorCompletion = { output };
+                  },
+                },
+              );
+              if (result.meta?.injection) span.annotations.injection = result.meta.injection;
+              trace.endSpan(span, result.output);
+              return result;
+            } catch (error) {
+              trace.endSpan(span, undefined, error);
+              throw error;
+            }
+          }),
+        );
         for (const [index, stage] of decisionStages.entries()) {
           const outcome = settled[index]!;
-          if (outcome.status === "rejected") throw outcome.reason;
+          if (outcome.status === 'rejected') throw outcome.reason;
           invokedAgents.push({ id: stage.agentId, mode: stage.invocation });
           stageResults.set(stage.agentId, outcome.value);
-          if (stage.role === "classify") {
+          if (stage.role === 'classify') {
             classification = outcome.value.output as Decision<Classification>;
             if (classification?.value) {
               await this.thread.signals.emit({
-                id: newId("sig-classify"), kind: "classification", source: `harness:${stage.agentId}`,
-                content: classification.value, confidence: classification.confidence, timestamp: Date.now(),
+                id: newId('sig-classify'),
+                kind: 'classification',
+                source: `harness:${stage.agentId}`,
+                content: classification.value,
+                confidence: classification.confidence,
+                timestamp: Date.now(),
               });
             }
           } else route = outcome.value.output as Decision<Route>;
@@ -543,32 +587,32 @@ export class Harness {
       for (const stage of flow.stages) {
         if (concurrent.has(stage)) continue;
         // Should this stage run?
-        if (stage.invocation === "on-demand") {
-          const resolvedId = stage.agentId === "routed"
-            ? route?.value?.destination
-            : stage.agentId;
+        if (stage.invocation === 'on-demand') {
+          const resolvedId = stage.agentId === 'routed' ? route?.value?.destination : stage.agentId;
           if (!resolvedId || !requestedAgents.has(resolvedId)) continue;
         }
 
-        if (stage.invocation === "conditional") {
+        if (stage.invocation === 'conditional') {
           if (!matchesCondition(stage.condition, classification, route)) continue;
         }
 
         // Resolve agent ID
-        const agentId = stage.agentId === "routed"
-          ? (route?.value?.destination ?? flow.defaultExecutor)
-          : stage.agentId;
+        const agentId =
+          stage.agentId === 'routed'
+            ? (route?.value?.destination ?? flow.defaultExecutor)
+            : stage.agentId;
 
         if (!agentId) {
-          if (stage.role === "execute") {
+          if (stage.role === 'execute') {
             throw new Error(
-              "No target agent: router returned no destination and no default executor is configured",
+              'No target agent: router returned no destination and no default executor is configured',
             );
           }
           continue;
         }
         if (!this.thread.getAgent(agentId)) {
-          if (stage.role === "execute") throw new Error(`Execution target "${agentId}" is not registered`);
+          if (stage.role === 'execute')
+            throw new Error(`Execution target "${agentId}" is not registered`);
           continue;
         }
 
@@ -580,12 +624,17 @@ export class Harness {
           const bgStart = performance.now();
           const msgId = message.id;
           const bgStage = stage;
-          const { promise } = this.thread.dispatchBackground(agentId, message.payload, layerFilter, {
-            role: stage.role,
-            messageId: message.id,
-            invocation: "background",
-          });
-          invokedAgents.push({ id: agentId, mode: "background" });
+          const { promise } = this.thread.dispatchBackground(
+            agentId,
+            message.payload,
+            layerFilter,
+            {
+              role: stage.role,
+              messageId: message.id,
+              invocation: 'background',
+            },
+          );
+          invokedAgents.push({ id: agentId, mode: 'background' });
 
           // Wire callback — runs when the background dispatch completes
           promise.then((result) => {
@@ -611,52 +660,62 @@ export class Harness {
 
         // A conditional route stage runs after classification and receives it; clarify stages also
         // receive the classification; others get raw payload
-        const stagePayload = stage.role === "route" && classification
-          ? { payload: message.payload, classification: classification.value }
-          : stage.role === "clarify"
-            ? ({
-                message: typeof message.payload === "string" ? message.payload : JSON.stringify(message.payload),
-                classification: classification?.value ?? { category: "unknown" },
-              } satisfies ClarifyPayload)
-            : message.payload;
+        const stagePayload =
+          stage.role === 'route' && classification
+            ? { payload: message.payload, classification: classification.value }
+            : stage.role === 'clarify'
+              ? ({
+                  message:
+                    typeof message.payload === 'string'
+                      ? message.payload
+                      : JSON.stringify(message.payload),
+                  classification: classification?.value ?? { category: 'unknown' },
+                } satisfies ClarifyPayload)
+              : message.payload;
 
         // The thread observes this dispatch once at its boundary; the stage
         // only contributes correlation. Only the execute stage streams deltas:
         // classifier/router/enricher output isn't user-visible content.
         const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, {
-          onDelta: stage.role === "execute" ? opts?.onDelta : undefined,
+          onDelta: stage.role === 'execute' ? opts?.onDelta : undefined,
           role: stage.role,
           messageId: message.id,
           invocation: stage.invocation,
-          recordInjection: artifact => { stageSpan.annotations.injection = artifact; },
+          recordInjection: (artifact) => {
+            stageSpan.annotations.injection = artifact;
+          },
           nativeObservation: opts?.nativeObservation,
-          recordNative: evidence => { stageSpan.annotations.native = evidence; },
-          recordCompleted: output => { stageSpan.annotations.executorCompletion = { output }; },
+          recordNative: (evidence) => {
+            stageSpan.annotations.native = evidence;
+          },
+          recordCompleted: (output) => {
+            stageSpan.annotations.executorCompletion = { output };
+          },
         });
         invokedAgents.push({ id: agentId, mode: stage.invocation });
         stageResults.set(agentId, result);
 
         // Track the last execute-role agent for final result extraction
-        if (stage.role === "execute") {
+        if (stage.role === 'execute') {
           lastExecuteAgentId = agentId;
         }
 
         // Capture classification/route from appropriate stages
-        if (stage.role === "classify") {
+        if (stage.role === 'classify') {
           classification = result.output as Decision<Classification>;
           if (classification?.value) {
             await this.thread.signals.emit({
-              id: newId("sig-classify"),
-              kind: "classification",
+              id: newId('sig-classify'),
+              kind: 'classification',
               source: `harness:${agentId}`,
               content: classification.value,
               confidence: classification.confidence,
               timestamp: Date.now(),
             });
           }
-        } else if (stage.role === "route") {
+        } else if (stage.role === 'route') {
           route = result.output as Decision<Route>;
-        } else if (stage.role === "clarify") {
+        } else if (stage.role === 'clarify') {
           clarification = (result.output as Decision<ClarificationResult>).value;
         }
 
@@ -676,13 +735,13 @@ export class Harness {
         if (!this.thread.getAgent(agentId)) continue;
 
         const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
-        trace.start(`on-demand:${agentId}`, "enrich", { agentId });
+        trace.start(`on-demand:${agentId}`, 'enrich', { agentId });
         const result = await this.thread.dispatch(agentId, message.payload, layerFilter, {
-          role: "enrich",
+          role: 'enrich',
           messageId: message.id,
-          invocation: "on-demand",
+          invocation: 'on-demand',
         });
-        invokedAgents.push({ id: agentId, mode: "on-demand" });
+        invokedAgents.push({ id: agentId, mode: 'on-demand' });
         stageResults.set(agentId, result);
         trace.end(result.output);
       }
@@ -691,12 +750,11 @@ export class Harness {
       this._recordTrace(trace, opts?.onTrace);
 
       // Final result: from last execute-role agent, or last invoked agent
-      const finalAgentId = lastExecuteAgentId
-        ?? invokedAgents[invokedAgents.length - 1]?.id;
+      const finalAgentId = lastExecuteAgentId ?? invokedAgents[invokedAgents.length - 1]?.id;
       const finalResult = clarification?.needed
-        ? { output: null, contextHash: "" } as ExecutionResult
-        : (finalAgentId ? stageResults.get(finalAgentId) : undefined)
-          ?? { output: null, contextHash: "" } as ExecutionResult;
+        ? ({ output: null, contextHash: '' } as ExecutionResult)
+        : ((finalAgentId ? stageResults.get(finalAgentId) : undefined) ??
+          ({ output: null, contextHash: '' } as ExecutionResult));
 
       const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
       const activeLayers = this.thread.stack.layers.filter(layerFilter).map((l) => l.id);
@@ -713,7 +771,8 @@ export class Harness {
         activeLayers,
       };
     } catch (err) {
-      const error = err instanceof Error ? { name: err.name, message: err.message } : { message: String(err) };
+      const error =
+        err instanceof Error ? { name: err.name, message: err.message } : { message: String(err) };
       while (trace.current) trace.end(undefined, error);
       trace.finish();
       this._recordTrace(trace, opts?.onTrace);
@@ -731,11 +790,7 @@ export class Harness {
     return this.thread.dispatch(agentId, payload, filterOverride);
   }
 
-  async fan<T>(
-    agentIds: string[],
-    payload: T,
-    filterOverride?: LayerFilter,
-  ): Promise<FanResult[]> {
+  async fan<T>(agentIds: string[], payload: T, filterOverride?: LayerFilter): Promise<FanResult[]> {
     return this.thread.fan(agentIds, payload, filterOverride);
   }
 
@@ -747,15 +802,18 @@ export class Harness {
     route?: Decision<Route>,
   ): Promise<ExecutionResult> {
     const layerFilter = this.buildLayerFilter(classification, route);
-    return this.thread.dispatch(agentId, payload, layerFilter, { role: "enrich", invocation: "on-demand" });
+    return this.thread.dispatch(agentId, payload, layerFilter, {
+      role: 'enrich',
+      invocation: 'on-demand',
+    });
   }
 
   async runPipeline<T>(input: T, trace?: Trace): Promise<unknown> {
     let current: unknown = input;
-    const t = trace ?? new Trace("pipeline");
+    const t = trace ?? new Trace('pipeline');
 
     for (const step of this._pipeline) {
-      t.start(step.id, "middleware", { input: current });
+      t.start(step.id, 'middleware', { input: current });
       current = await step.run(current, this, t);
       t.end(current);
     }
@@ -804,7 +862,10 @@ export class Harness {
     if (this._traces.length > this._maxTraces) {
       this._traces.shift();
     }
-    try { onTrace?.(trace); }
-    catch (error) { console.warn("[Harness] trace observer failed:", error); }
+    try {
+      onTrace?.(trace);
+    } catch (error) {
+      console.warn('[Harness] trace observer failed:', error);
+    }
   }
 }

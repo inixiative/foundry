@@ -4,22 +4,32 @@
  * for pinned source hashes/transformations and vendor/licenses.json for licenses.
  */
 
+export {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from './vendor/hooks.module.js';
 // Preact core + hooks
 export {
-  h, render, Component, Fragment, createRef, toChildArray, cloneElement
-} from "./vendor/preact.module.js";
-
-export {
-  useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useReducer, useContext
-} from "./vendor/hooks.module.js";
+  Component,
+  cloneElement,
+  createRef,
+  Fragment,
+  h,
+  render,
+  toChildArray,
+} from './vendor/preact.module.js';
 
 // Signals — fine-grained reactivity, no VDOM diffing for hot paths
 // Local imports in signals/hooks use the SAME Preact instance as above.
-export {
-  signal, computed, effect, batch
-} from "./vendor/signals.module.js";
+export { batch, computed, effect, signal } from './vendor/signals.module.js';
 
 // HTM — tagged template JSX alternative, no build step
-import htm from "./vendor/htm.module.js";
-import { h as _h } from "./vendor/preact.module.js";
+import htm from './vendor/htm.module.js';
+import { h as _h } from './vendor/preact.module.js';
 export const html = htm.bind(_h);

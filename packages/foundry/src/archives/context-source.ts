@@ -1,7 +1,11 @@
-import type { ContextSource, OwnershipScope, SourceLoadHint } from '@inixiative/foundry-core';
+import type {
+  ContextSource,
+  CredentialResolver,
+  OwnershipScope,
+  SourceLoadHint,
+} from '@inixiative/foundry-core';
 import { tokenCount } from '@inixiative/session-archive';
 import { z } from 'zod';
-import type { CredentialResolver } from '@inixiative/foundry-core';
 import { credentialReferenceSchema, FoundryCredentials } from '../providers/credentials';
 import { type ArchiveDestination, kingdomOwnerFields } from './config';
 import { archiveRequest, kingdomFields } from './publish';
@@ -34,7 +38,10 @@ export const archiveContextSchema = z
         value.organizationId ||
         value.spaceId)
     )
-      ctx.addIssue({ code: 'custom', message: 'Runtime credentials, connections and owners require Kingdom' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Runtime credentials, connections and owners require Kingdom',
+      });
   });
 const resultSchema = z.object({
   data: z.object({
@@ -69,7 +76,14 @@ export class ArchiveContextSource implements ContextSource {
     private readonly credentials: CredentialResolver = new FoundryCredentials(),
   ) {}
   bind(scope: OwnershipScope): ContextSource {
-    return new ArchiveContextSource(this.id, this.url, this.config, scope, this.transport, this.credentials);
+    return new ArchiveContextSource(
+      this.id,
+      this.url,
+      this.config,
+      scope,
+      this.transport,
+      this.credentials,
+    );
   }
   async load(hint?: SourceLoadHint): Promise<string> {
     if (!this.owner?.projectId || this.owner.projectId !== this.config.projectId) return '';
@@ -79,7 +93,9 @@ export class ArchiveContextSource implements ContextSource {
         destination,
         'search',
         {
-          ...(destination.kind === 'archive' ? { projectId: destination.projectId } : kingdomFields(destination)),
+          ...(destination.kind === 'archive'
+            ? { projectId: destination.projectId }
+            : kingdomFields(destination)),
           query: hint?.focus?.slice(0, 1000) ?? '',
           budget: this.config.budget,
         },
@@ -98,8 +114,9 @@ export class ArchiveContextSource implements ContextSource {
           ...chunk,
         };
         if (
-          tokenCount(JSON.stringify({ kind: 'historical-session-evidence', records: [...records, entry] })) <=
-          this.config.budget
+          tokenCount(
+            JSON.stringify({ kind: 'historical-session-evidence', records: [...records, entry] }),
+          ) <= this.config.budget
         )
           records.push(entry);
       }

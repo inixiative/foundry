@@ -1,12 +1,12 @@
 import type {
   ContextStack,
-  ExecutionResult,
   DispatchContext,
+  ExecutionResult,
   Middleware,
-  SignalBus,
   Signal,
-} from "@inixiative/foundry-core";
-import { newId } from "@inixiative/foundry-core";
+  SignalBus,
+} from '@inixiative/foundry-core';
+import { newId } from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------
 // Reaction rules — what to do when a dispatch completes
@@ -30,7 +30,7 @@ export interface ReactionContext {
   /** Set a layer's content directly. */
   setLayer(layerId: string, content: string): void;
   /** Emit a signal — the Librarian reconciles it into thread-state. */
-  emit(signal: Omit<Signal, "id" | "timestamp">): void;
+  emit(signal: Omit<Signal, 'id' | 'timestamp'>): void;
 }
 
 /**
@@ -132,7 +132,7 @@ export class ReactiveMiddleware {
         emit: (signal) => {
           this._signals.emit({
             ...signal,
-            id: newId("sig"),
+            id: newId('sig'),
             timestamp: Date.now(),
           });
         },
@@ -166,18 +166,18 @@ export class ReactiveMiddleware {
  */
 export function lowConfidenceRule(threshold: number = 0.5): ReactionRule {
   return {
-    id: "low-confidence",
+    id: 'low-confidence',
     description: `Flag results with confidence below ${threshold}`,
     when: (_ctx, result) => {
       const output = result.output as any;
-      return typeof output?.confidence === "number" && output.confidence < threshold;
+      return typeof output?.confidence === 'number' && output.confidence < threshold;
     },
     act: (ctx) => {
       const output = ctx.result.output as any;
       ctx.emit({
-        kind: "info",
+        kind: 'info',
         source: `agent:${ctx.dispatch.agentId}`,
-        content: `Low confidence (${output.confidence}): ${output.reasoning ?? "no reason"}`,
+        content: `Low confidence (${output.confidence}): ${output.reasoning ?? 'no reason'}`,
         confidence: output.confidence,
       });
     },
@@ -190,18 +190,18 @@ export function lowConfidenceRule(threshold: number = 0.5): ReactionRule {
  */
 export function classificationOverrideRule(): ReactionRule {
   return {
-    id: "classification-override",
+    id: 'classification-override',
     description: "Record when router overrides classifier's category",
     when: (ctx, _result) => {
       // Fires on route stage — check if annotations show a mismatch
-      return ctx.agentId.includes("router") && ctx.annotations["classifierCategory"] !== undefined;
+      return ctx.agentId.includes('router') && ctx.annotations['classifierCategory'] !== undefined;
     },
     act: (ctx) => {
-      const original = ctx.dispatch.annotations["classifierCategory"];
+      const original = ctx.dispatch.annotations['classifierCategory'];
       const routed = (ctx.result.output as any)?.value?.destination;
       if (original && routed) {
         ctx.emit({
-          kind: "correction",
+          kind: 'correction',
           source: `agent:${ctx.dispatch.agentId}`,
           content: `Classifier said "${original}" but router chose "${routed}"`,
           confidence: 0.9,
@@ -240,13 +240,15 @@ export function emitOnPatternRule(
     description: `Emit "${signalKind}" signal when ${agentId} output matches ${pattern}`,
     when: (ctx, result) => {
       if (ctx.agentId !== agentId) return false;
-      const output = typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+      const output =
+        typeof result.output === 'string' ? result.output : JSON.stringify(result.output);
       return pattern.test(output);
     },
     act: (ctx) => {
-      const output = typeof ctx.result.output === "string"
-        ? ctx.result.output
-        : JSON.stringify(ctx.result.output);
+      const output =
+        typeof ctx.result.output === 'string'
+          ? ctx.result.output
+          : JSON.stringify(ctx.result.output);
       ctx.emit({
         kind: signalKind,
         source: `agent:${ctx.dispatch.agentId}`,

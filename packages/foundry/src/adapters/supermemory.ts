@@ -1,9 +1,4 @@
-import type {
-  ContextSource,
-  HydrationAdapter,
-  ContextRef,
-  Signal,
-} from "@inixiative/foundry-core";
+import type { ContextRef, ContextSource, HydrationAdapter, Signal } from '@inixiative/foundry-core';
 
 /**
  * Supermemory adapter — hosted memory + RAG engine.
@@ -29,9 +24,9 @@ export class SupermemoryAdapter {
 
   constructor(opts: SupermemoryConfig) {
     this._apiKey = opts.apiKey;
-    this._baseUrl = (opts.baseUrl ?? "https://api.supermemory.ai").replace(/\/$/, "");
+    this._baseUrl = (opts.baseUrl ?? 'https://api.supermemory.ai').replace(/\/$/, '');
     this._timeout = opts.timeout ?? 15_000;
-    this.containerTag = opts.containerTag ?? "default";
+    this.containerTag = opts.containerTag ?? 'default';
   }
 
   // ---------------------------------------------------------------------------
@@ -40,7 +35,7 @@ export class SupermemoryAdapter {
 
   private async _fetch(
     path: string,
-    init?: RequestInit & { params?: Record<string, string> }
+    init?: RequestInit & { params?: Record<string, string> },
   ): Promise<Response> {
     const url = new URL(path, this._baseUrl);
     if (init?.params) {
@@ -53,7 +48,7 @@ export class SupermemoryAdapter {
       ...init,
       headers: {
         Authorization: `Bearer ${this._apiKey}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         ...init?.headers,
       },
       signal: AbortSignal.timeout(this._timeout),
@@ -61,11 +56,12 @@ export class SupermemoryAdapter {
 
     if (!res.ok) {
       // Read body for status context but sanitize — never leak auth headers or tokens
-      const body = await res.text().catch(() => "");
-      const safeBody = body.length > 200 ? body.slice(0, 200) + "…" : body;
+      const body = await res.text().catch(() => '');
+      const safeBody = body.length > 200 ? body.slice(0, 200) + '…' : body;
       // Strip anything that looks like a Bearer token or API key from error output
-      const sanitized = safeBody.replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
-        .replace(/[a-zA-Z0-9_-]{32,}/g, "[REDACTED]");
+      const sanitized = safeBody
+        .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+        .replace(/[a-zA-Z0-9_-]{32,}/g, '[REDACTED]');
       throw new Error(`supermemory ${res.status}: ${res.statusText} ${sanitized}`);
     }
 
@@ -83,8 +79,8 @@ export class SupermemoryAdapter {
     customId?: string;
     metadata?: Record<string, unknown>;
   }): Promise<string> {
-    const res = await this._fetch("/v3/documents", {
-      method: "POST",
+    const res = await this._fetch('/v3/documents', {
+      method: 'POST',
       body: JSON.stringify({
         content: opts.content,
         containerTag: opts.containerTag ?? this.containerTag,
@@ -92,7 +88,7 @@ export class SupermemoryAdapter {
         metadata: opts.metadata,
       }),
     });
-    const data = await res.json() as { id: string };
+    const data = (await res.json()) as { id: string };
     return data.id;
   }
 
@@ -100,7 +96,7 @@ export class SupermemoryAdapter {
   async getDocument(id: string): Promise<SupermemoryDocument | null> {
     try {
       const res = await this._fetch(`/v3/documents/${encodeURIComponent(id)}`);
-      return await res.json() as SupermemoryDocument;
+      return (await res.json()) as SupermemoryDocument;
     } catch (err) {
       console.warn(`[supermemory] getDocument(${id}) failed:`, (err as Error).message);
       return null;
@@ -111,7 +107,7 @@ export class SupermemoryAdapter {
   async deleteDocument(id: string): Promise<boolean> {
     try {
       await this._fetch(`/v3/documents/${encodeURIComponent(id)}`, {
-        method: "DELETE",
+        method: 'DELETE',
       });
       return true;
     } catch (err) {
@@ -131,20 +127,20 @@ export class SupermemoryAdapter {
       containerTag?: string;
       limit?: number;
       threshold?: number;
-      searchMode?: "memories" | "hybrid" | "documents";
-    }
+      searchMode?: 'memories' | 'hybrid' | 'documents';
+    },
   ): Promise<SupermemorySearchResult[]> {
-    const res = await this._fetch("/v4/search", {
-      method: "POST",
+    const res = await this._fetch('/v4/search', {
+      method: 'POST',
       body: JSON.stringify({
         q: query,
         containerTag: opts?.containerTag ?? this.containerTag,
         limit: opts?.limit ?? 10,
         threshold: opts?.threshold ?? 0.5,
-        searchMode: opts?.searchMode ?? "memories",
+        searchMode: opts?.searchMode ?? 'memories',
       }),
     });
-    const data = await res.json() as { results: SupermemorySearchResult[] };
+    const data = (await res.json()) as { results: SupermemorySearchResult[] };
     return data.results ?? [];
   }
 
@@ -154,9 +150,9 @@ export class SupermemoryAdapter {
     opts?: {
       containerTag?: string;
       limit?: number;
-    }
+    },
   ): Promise<SupermemorySearchResult[]> {
-    return this.searchMemories(query, { ...opts, searchMode: "documents" });
+    return this.searchMemories(query, { ...opts, searchMode: 'documents' });
   }
 
   // ---------------------------------------------------------------------------
@@ -164,20 +160,17 @@ export class SupermemoryAdapter {
   // ---------------------------------------------------------------------------
 
   /** Get the auto-maintained user profile for a container. */
-  async profile(
-    containerTag?: string,
-    query?: string
-  ): Promise<SupermemoryProfile> {
+  async profile(containerTag?: string, query?: string): Promise<SupermemoryProfile> {
     const body: Record<string, unknown> = {
       containerTag: containerTag ?? this.containerTag,
     };
     if (query) body.q = query;
 
-    const res = await this._fetch("/v4/profile", {
-      method: "POST",
+    const res = await this._fetch('/v4/profile', {
+      method: 'POST',
       body: JSON.stringify(body),
     });
-    return await res.json() as SupermemoryProfile;
+    return (await res.json()) as SupermemoryProfile;
   }
 
   // ---------------------------------------------------------------------------
@@ -200,7 +193,7 @@ export class SupermemoryAdapter {
       limit?: number;
       /** Include profile? Default true. */
       includeProfile?: boolean;
-    }
+    },
   ): ContextSource {
     const sm = this;
     const tag = opts?.containerTag ?? this.containerTag;
@@ -216,34 +209,34 @@ export class SupermemoryAdapter {
           // Fetch profile and memories in parallel
           const [profileData, memories] = await Promise.all([
             includeProfile ? sm.profile(tag, opts?.query) : null,
-            sm.searchMemories(opts?.query ?? "", { containerTag: tag, limit }),
+            sm.searchMemories(opts?.query ?? '', { containerTag: tag, limit }),
           ]);
 
           // Profile section
           if (profileData?.profile) {
             const p = profileData.profile;
             if (p.static?.length) {
-              parts.push("## User Context\n" + p.static.join("\n"));
+              parts.push('## User Context\n' + p.static.join('\n'));
             }
             if (p.dynamic?.length) {
-              parts.push("## Recent Activity\n" + p.dynamic.join("\n"));
+              parts.push('## Recent Activity\n' + p.dynamic.join('\n'));
             }
           }
 
           // Memories section
           if (memories.length > 0) {
             const memLines = memories.map((m) => {
-              const text = m.memory ?? m.content ?? "";
+              const text = m.memory ?? m.content ?? '';
               return `- ${text}`;
             });
-            parts.push("## Memories\n" + memLines.join("\n"));
+            parts.push('## Memories\n' + memLines.join('\n'));
           }
         } catch (err) {
           console.warn(`[Supermemory] source load failed for "${id}":`, (err as Error).message);
-          return "";
+          return '';
         }
 
-        return parts.join("\n\n");
+        return parts.join('\n\n');
       },
     };
   }
@@ -259,7 +252,7 @@ export class SupermemoryAdapter {
    * - A document ID → fetches the document
    * - A search query prefixed with "?" → searches and returns top result
    */
-  asAdapter(system: string = "supermemory"): HydrationAdapter {
+  asAdapter(system: string = 'supermemory'): HydrationAdapter {
     const sm = this;
     return {
       system,
@@ -267,22 +260,25 @@ export class SupermemoryAdapter {
         try {
           const tag = (ref.meta?.containerTag as string) ?? sm.containerTag;
 
-          if (ref.locator.startsWith("?")) {
+          if (ref.locator.startsWith('?')) {
             // Search mode — locator is a query
             const query = ref.locator.slice(1);
             const results = await sm.searchMemories(query, {
               containerTag: tag,
               limit: 1,
             });
-            return results[0]?.memory ?? results[0]?.content ?? "";
+            return results[0]?.memory ?? results[0]?.content ?? '';
           }
 
           // Direct document fetch
           const doc = await sm.getDocument(ref.locator);
-          return doc?.content ?? doc?.summary ?? "";
+          return doc?.content ?? doc?.summary ?? '';
         } catch (err) {
-          console.warn(`[Supermemory] hydrate failed for "${ref.locator}":`, (err as Error).message);
-          return "";
+          console.warn(
+            `[Supermemory] hydrate failed for "${ref.locator}":`,
+            (err as Error).message,
+          );
+          return '';
         }
       },
 
@@ -308,7 +304,6 @@ export class SupermemoryAdapter {
     /** Signal kinds to persist. Default: all. */
     kinds?: string[];
   }) {
-    const sm = this;
     const tag = opts?.containerTag ?? this.containerTag;
     const allowedKinds = opts?.kinds ? new Set(opts.kinds) : null;
 
@@ -316,11 +311,10 @@ export class SupermemoryAdapter {
       if (allowedKinds && !allowedKinds.has(signal.kind)) return;
 
       try {
-        const content = typeof signal.content === "string"
-          ? signal.content
-          : JSON.stringify(signal.content);
+        const content =
+          typeof signal.content === 'string' ? signal.content : JSON.stringify(signal.content);
 
-        await sm.add({
+        await this.add({
           content: `[${signal.kind}] ${content}`,
           containerTag: tag,
           customId: signal.id,
@@ -332,7 +326,10 @@ export class SupermemoryAdapter {
           },
         });
       } catch (err) {
-        console.warn(`[Supermemory] signal write failed for "${signal.kind}":`, (err as Error).message);
+        console.warn(
+          `[Supermemory] signal write failed for "${signal.kind}":`,
+          (err as Error).message,
+        );
       }
     };
   }
