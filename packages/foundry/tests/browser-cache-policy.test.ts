@@ -131,6 +131,12 @@ test('no summary when nothing is uncached or volatile', () => {
 });
 
 // --- D1: browser-only evidence attached to a durable interrupted row (field-specific ownership) ---
+type Row = {
+  id: string;
+  content: string;
+  meta: { browserFailureEvidence?: { observedToolOutput?: string } };
+};
+
 import { isDurableRow, mergeMessageHistory } from '../src/viewer/ui/conversation-state.js';
 
 const marker = 'BROWSER_ONLY_FAILURE_TOOL_RESULT';
@@ -193,9 +199,10 @@ test('quota fallback persists the evidence row as a projection: evidence and ide
     },
   ]);
   expect(
-    reloaded.find((r) => r.id === 'agent-one')!.meta.browserFailureEvidence.observedToolOutput,
+    reloaded.find((r: Row) => r.id === 'agent-one')!.meta.browserFailureEvidence
+      ?.observedToolOutput,
   ).toBe(marker);
-  expect(reloaded.find((r) => r.id === 'agent-one')!.content).toBe('Interrupted');
+  expect(reloaded.find((r: Row) => r.id === 'agent-one')!.content).toBe('Interrupted');
 });
 
 test('when every write is refused, the evidence row is volatile with a notice that names the tab-only evidence', () => {

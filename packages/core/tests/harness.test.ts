@@ -283,7 +283,7 @@ test('classification and routing run concurrently on the frozen message; results
     expect(inputs).toEqual({ classifier: 'fix login', router: 'fix login' });
     expect(result.classification?.value).toEqual({ category: 'bug', tags: [] });
     expect(result.route?.value.destination).toBe('worker');
-    expect(result.invokedAgents.map((a) => a.id)).toEqual(['classifier', 'router', 'worker']);
+    expect(result.invokedAgents?.map((a) => a.id)).toEqual(['classifier', 'router', 'worker']);
     expect(classifications).toEqual([{ category: 'bug', tags: [] }]);
     const spans = result.trace.root.children.map((s) => [s.name, s.status]);
     expect(spans).toEqual([
