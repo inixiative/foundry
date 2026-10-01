@@ -340,14 +340,13 @@ test('thread list streams are scoped and send only real changes', async () => {
     thread: { threadId: 'created', meta: { description: 'New work' } },
   });
   const count = global.data('threads').length;
-  expect((await f.post('/api/threads/created', { description: 'Renamed' }, 'PATCH')).status).toBe(
-    200,
-  );
-  expect(global.data('threads').at(-1).payload.thread.meta.description).toBe('Renamed');
+  expect((await f.post('/api/threads/created', { name: 'Renamed' }, 'PATCH')).status).toBe(200);
+  expect(global.data('threads').at(-1).payload.thread.title).toEqual({
+    text: 'Renamed',
+    source: 'human',
+  });
   expect(global.data('threads')).toHaveLength(count + 1);
-  expect((await f.post('/api/threads/created', { description: 'Renamed' }, 'PATCH')).status).toBe(
-    200,
-  );
+  expect((await f.post('/api/threads/created', { name: 'Renamed' }, 'PATCH')).status).toBe(200);
   expect(global.data('threads')).toHaveLength(count + 1);
   expect(project.data('threads:P')).toHaveLength(1);
 

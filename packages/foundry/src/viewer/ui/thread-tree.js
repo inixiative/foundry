@@ -35,6 +35,7 @@ import {
   threadData,
   worktrees,
 } from './store.js';
+import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
@@ -179,14 +180,18 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
             : html`<span class="tree-caret-spacer"></span>`
         }
         <${StatusDot} status=${thread.status} />
-        <span class="tree-label" title=${thread.id}>${thread.description || thread.id}</span>
-        ${
-          thread.branch
-            ? html`
-          <span class="thread-branch-badge" title=${thread.branch}>${thread.branch}</span>
-        `
-            : null
-        }
+        <span class="tree-text">
+          <span class="tree-label" data-name-source=${thread.nameSource || ''}
+            title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
+          ${
+            thread.branch || thread.meta.context?.references?.length
+              ? html`<span class="tree-sub">
+            ${thread.branch ? html`<span class="thread-branch-badge" title=${thread.branch}>${thread.branch}</span>` : null}
+            <${ReferenceChips} meta=${thread.meta} cls="thread-meta-tag" />
+          </span>`
+              : null
+          }
+        </span>
         ${(() => {
           const count = (promptCounts.value || {})[thread.id] || 0;
           return count > 0
@@ -272,7 +277,7 @@ function AddThreadForm({ onDone }) {
     setSaving(true);
     const wt = wts.find((w) => w.path === selectedWorktree);
     const result = await createThread({
-      description: name.trim() || undefined,
+      name: name.trim() || undefined,
       worktreePath: selectedWorktree || undefined,
       branch: wt?.branch || undefined,
     });
@@ -348,8 +353,10 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
       {
         id: t.threadId,
         status: t.meta?.status || 'idle',
-        description: t.meta?.description || '',
-        branch: t.meta?.branch || null,
+        name: threadName(t),
+        nameSource: t.title?.source || null,
+        meta: t.meta || {},
+        branch: threadPlace(t.meta).branch,
         cwd: t.meta?.cwd || null,
         parentThreadId: t.meta?.parentThreadId || null,
         children: [],

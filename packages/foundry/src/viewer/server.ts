@@ -6,13 +6,16 @@ import type {
   Harness,
   InterventionLog,
   LLMProvider,
+  Thread,
   TokenTracker,
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
+import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
+import { ThreadContextTracker } from '../archives/thread-context';
 import { log } from '../logger';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
@@ -50,6 +53,8 @@ export interface ViewerConfig {
   assistProvider?: LLMProvider;
   /** Model for AI assist (optional). */
   assistModel?: string;
+  /** Decision provider that keeps agent thread names (optional; no naming without it). */
+  namingProvider?: LLMProvider;
   /** Token tracker for analytics (optional but recommended). */
   tokenTracker?: TokenTracker;
   /** Directory for analytics data persistence. Defaults to .foundry/analytics/ */
@@ -177,8 +182,31 @@ export function createViewer(config: ViewerConfig) {
       log.warn(`[Recovery] ${warning}`);
     for (const thread of directory.all()) localStore.saveThread(thread);
   }
+  const threadChanged = (thread: Thread) => {
+    try {
+      localStore?.saveThread(thread);
+      streams.threadsChanged(thread.id);
+    } catch (error) {
+      log.warn(`[Viewer] thread ${thread.id} metadata not saved: ${(error as Error).message}`);
+    }
+  };
+  const namer = config.namingProvider
+    ? new ThreadNamer({ provider: config.namingProvider, changed: threadChanged })
+    : undefined;
+  const threadContext = new ThreadContextTracker({
+    thread: (id) => directory.get(id),
+    changed: threadChanged,
+  });
+  // Archive capture covers every journalled thread at startup and after each turn.
   if (localStore)
-    registerArchiveRoutes(app, localStore, eventStream, config.configDir ?? '.foundry');
+    registerArchiveRoutes(
+      app,
+      localStore,
+      eventStream,
+      config.configDir ?? '.foundry',
+      (snapshot) => void threadContext.observe(snapshot),
+    );
+  else for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const knowledgePersistence =
     localStore && config.threadFactory?.runtime
       ? new KnowledgePersistence(
@@ -260,7 +288,8 @@ export function createViewer(config: ViewerConfig) {
     threadFactory: config.threadFactory,
     configStore,
     projectRegistry: config.projectRegistry,
-    namingProvider: config.assistProvider,
+    namer,
+    threadContext,
     deviceIdentityPath: config.deviceIdentityPath,
     localStore,
     directory,

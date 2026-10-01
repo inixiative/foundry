@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { OwnershipScope, Thread } from '@inixiative/foundry-core';
-import { normalizeScope } from '@inixiative/foundry-core';
+import { normalizeScope, threadTitle } from '@inixiative/foundry-core';
 import type { DomainLibrarian } from '../agents/domain-librarian';
 import type { ThreadRuntime, ThreadRuntimeManager } from '../agents/thread-runtime';
 
@@ -147,7 +147,7 @@ export function bindLiveAuthority(options: BindAuthorityOptions): LiveAuthority 
         .filter((t) => t !== thread && !t.disposed && t.meta.projectId === projectId)
         .map((t) => ({
           threadId: t.id,
-          description: t.meta.description ?? '',
+          description: threadTitle(t.meta)?.text ?? '',
           status: t.meta.status ?? 'idle',
           tags: [...(t.meta.tags ?? [])],
         }));

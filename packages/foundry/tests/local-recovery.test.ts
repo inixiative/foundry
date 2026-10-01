@@ -235,8 +235,7 @@ test('G4: viewer startup restores a projectless thread, rename and terminal arch
     ).status,
   ).toBe(201);
   expect(
-    (await request('/api/threads/restored-orphan', { description: 'Human renamed' }, 'PATCH'))
-      .status,
+    (await request('/api/threads/restored-orphan', { name: 'Human renamed' }, 'PATCH')).status,
   ).toBe(200);
   expect(
     (await request('/api/actions', { kind: 'thread:archive', target: 'restored-orphan' })).status,
@@ -252,7 +251,8 @@ test('G4: viewer startup restores a projectless thread, rename and terminal arch
     threads: ReturnType<typeof threadToJSON>[];
   };
   expect(history.threads.find((t) => t.threadId === 'restored-orphan')?.meta).toMatchObject({
-    description: 'Human renamed',
+    description: 'Original',
+    name: { text: 'Human renamed' },
     tags: ['qa'],
     status: 'archived',
   });

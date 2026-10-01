@@ -1051,13 +1051,13 @@ export async function deleteProject(id) {
   }
 }
 
-export async function createThread({ description, tags, worktreePath, branch } = {}) {
+export async function createThread({ name, description, tags, worktreePath, branch } = {}) {
   try {
     const projectId = activeProjectId.value || undefined;
     const res = await authFetch('/api/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, description, tags, worktreePath, branch }),
+      body: JSON.stringify({ projectId, name, description, tags, worktreePath, branch }),
     });
     if (res.ok) {
       const created = await res.json();
@@ -1124,7 +1124,7 @@ export async function forkThread(messageIndex) {
       return;
     }
     const newThread = await res.json();
-    showToast(`Forked → ${newThread.meta?.description || newThread.threadId}`, 'ok');
+    showToast(`Forked → ${newThread.title?.text || newThread.threadId}`, 'ok');
 
     // Pre-populate new thread's messages so switching is instant
     _persistLocal(
@@ -1135,6 +1135,24 @@ export async function forkThread(messageIndex) {
     selectThread(newThread.threadId);
   } catch (err) {
     showToast(`Fork failed: ${err.message}`, 'error');
+  }
+}
+
+/** Set a person's name on a thread (a hard override); an empty name hands naming back to the agent. */
+export async function renameThread(threadId, name) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() || null }),
+    });
+    if (res.ok) return true;
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || 'Failed to rename thread', 'error');
+    return false;
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, 'error');
+    return false;
   }
 }
 

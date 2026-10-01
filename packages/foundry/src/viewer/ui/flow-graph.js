@@ -161,7 +161,7 @@ export function threadGraph(
       threadId: t.threadId,
       parentId: t.meta?.parentThreadId ?? null,
       status: t.meta?.status ?? 'idle',
-      label: t.meta?.description || t.threadId,
+      label: t.title?.text || t.meta?.description || t.threadId,
       branch: t.meta?.branch ?? null,
       lastActiveAt: t.meta?.lastActiveAt ?? null,
       agents: Array.isArray(t.agents) ? t.agents.length : 0,

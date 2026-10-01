@@ -225,8 +225,12 @@ export {
   type FanResult,
   Thread,
   type ThreadConfig,
+  type ThreadContext,
   type ThreadMeta,
+  type ThreadName,
+  type ThreadReference,
   type ThreadStatus,
+  threadTitle,
 } from './thread';
 export { sumTokenCounts, type TokenCounts, totalTokenCount } from './token-counts';
 // Token & Cost Tracking

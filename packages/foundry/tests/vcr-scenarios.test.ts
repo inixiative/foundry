@@ -6,6 +6,8 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ContextStack, Thread } from '@inixiative/foundry-core';
+import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import { KingdomRuntimeConnection } from '../src/providers/kingdom-runtime-connection';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
 import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
@@ -264,6 +266,88 @@ test.skipIf(recording)(
     expect(sources.length).toBeGreaterThan(0);
     expect(sources.every((list) => Array.isArray(list) && list.length === 0)).toBe(true);
   },
+);
+
+test(
+  "codex thread naming: a thread's agent name is decided on its own primed decision session, off the turn",
+  async () => {
+    const vcr = codexVcr();
+    const out = await scenario(vcr, 'naming', async () => {
+      const transport = recordedAppServerTransport(['naming'], vcr);
+      const directory = root(),
+        receipts = join(directory, 'receipts');
+      mkdirSync(receipts, { mode: 0o700 });
+      const decisionSource = source('codex', directory);
+      const primed = createPrimedDecisionHost({
+        source: decisionSource,
+        directory: receipts,
+        model: LIVE.codexModel,
+        effort: 'low',
+        maxConcurrent: 2,
+        callTimeoutMs: 30_000,
+        spawn: transport.spawn,
+      });
+      const decisions = buildSubscriptionDecisions(
+        {
+          directory: receipts,
+          source: decisionSource,
+          model: LIVE.codexModel,
+          maxCalls: 2,
+          maxQueued: 2,
+          maxConcurrent: 2,
+          callTimeoutMs: 30_000,
+        },
+        primed.createRun,
+      );
+      const thread = new Thread('T', new ContextStack(), { description: '' });
+      try {
+        const role = [
+          { role: 'system' as const, content: NAMING_INSTRUCTIONS },
+          { role: 'user' as const, content: 'prime' },
+        ];
+        await primed.host.prime(primedRequest(role, {}, 'T:aux:naming').spec);
+        const decided = new Promise<void>((resolve) => {
+          new ThreadNamer({
+            provider: {
+              id: decisions.provider.id,
+              complete: (messages, opts) =>
+                decisions.provider.complete(messages, opts).finally(() => setTimeout(resolve, 0)),
+            },
+            changed: () => {},
+          }).turnCompleted(thread, {
+            user: 'Add a dark mode toggle to the settings page',
+            agent:
+              'Added a dark mode switch to src/settings/appearance.tsx and wired it to the theme store.',
+          });
+        });
+        await decided;
+        const title = thread.meta.agentName?.text ?? '';
+        return {
+          title,
+          short: title.length > 0 && title.split(/\s+/).length <= 8,
+          aboutTheWork: /dark|theme|mode/i.test(title),
+          launches: transport.launches.length,
+          receipts: readFileSync(primed.receiptsPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => {
+              const r = JSON.parse(line);
+              return { valid: r.valid, settled: r.settled };
+            }),
+        };
+      } finally {
+        await decisions.shutdown();
+        await primed.close();
+      }
+    });
+    expect(out).toMatchObject({
+      short: true,
+      aboutTheWork: true,
+      launches: 1,
+      receipts: [{ valid: true, settled: true }],
+    });
+  },
+  LIVE_TIMEOUT,
 );
 
 test(

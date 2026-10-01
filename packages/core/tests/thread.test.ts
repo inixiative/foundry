@@ -3,7 +3,7 @@ import { ContextLayer, type ContextSource } from '../src/context-layer';
 import { ContextStack } from '../src/context-stack';
 import { Decider } from '../src/decider';
 import { Executor } from '../src/executor';
-import { Thread } from '../src/thread';
+import { Thread, threadTitle } from '../src/thread';
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
@@ -37,6 +37,19 @@ describe('Thread', () => {
       const thread = makeThread();
       thread.describe('new description');
       expect(thread.meta.description).toBe('new description');
+    });
+
+    test("a person's name overrides the agent name, and clearing it shows the agent name again", () => {
+      const thread = makeThread();
+      expect(threadTitle(thread.meta)).toEqual({ text: 'test thread', source: 'description' });
+      thread.meta.agentName = { text: 'Fix flaky login test', updatedAt: 1 };
+      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'agent' });
+      thread.rename('  Login work  ');
+      expect(thread.meta.name).toMatchObject({ text: 'Login work' });
+      expect(threadTitle(thread.meta)).toEqual({ text: 'Login work', source: 'human' });
+      thread.rename('');
+      expect(thread.meta.name).toBeUndefined();
+      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'agent' });
     });
 
     test('tag adds unique tags', () => {

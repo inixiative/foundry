@@ -130,6 +130,23 @@ export async function getCurrentBranch(cwd?: string): Promise<string | null> {
   }
 }
 
+/** Origin remote URL, checked-out branch and worktree root of the checkout containing `cwd`. */
+export async function gitContext(
+  cwd: string,
+): Promise<{ remote?: string; branch?: string; worktree?: string }> {
+  const read = (args: string[]) => git(args, cwd).catch(() => '');
+  const [remote, branch, worktree] = await Promise.all([
+    read(['remote', 'get-url', 'origin']),
+    getCurrentBranch(cwd),
+    read(['rev-parse', '--show-toplevel']),
+  ]);
+  return {
+    ...(remote ? { remote } : {}),
+    ...(branch ? { branch } : {}),
+    ...(worktree ? { worktree } : {}),
+  };
+}
+
 /** Diff stat between two branches (for Herald cross-thread comparison). */
 export async function diffStat(repoRoot: string, base: string, head: string): Promise<string> {
   return git(['diff', `${base}...${head}`, '--stat'], repoRoot);
