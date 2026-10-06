@@ -83,7 +83,7 @@ flowchart LR
 - **Owns:** accounts and identity, the five-way owner, integrations (credentials live on the integration), Signets as structural gates, runtime (Foundry) registration and pairing, the hosted Archive browser and sharing, and the dashboard where Foundries, Archives and Oracle are connected.
 - **Not its job:** Oracle experiment machinery, Foundry runtime machinery, agent-session capacity machinery, demos, and Archive storage internals that duplicate Archive.
 - **Interfaces:**
-  - HTTP `POST /api/v1/<module>/<action>` (`apps/api/src/lib/routeTemplates/action.ts:37-44`). This includes `access/*` (runtime, Signets, runs, Oracle cycles), `archive/*` (with `remote/*`), `kastle/*` (owner dashboard) and `integration/*`.
+  - HTTP `POST /api/v1/<module>/<action>` (`apps/api/src/lib/routeTemplates/action.ts:37-44`). This includes `access/*` (runtime, Signets, runs, Oracle cycles), `archive/*` (with `remote/*`), `owner/*` (owner dashboard) and `integration/*`.
   - A generic WebSocket pub/sub (`apps/api/src/index.ts:37`).
   - No MCP.
 - **Release:** a deployed app, a consumer of both lanes (`config/versions.json:37-42`). Foundry's hosted default API is `https://kingdom-prod-api-prod.up.railway.app` (`packages/foundry/src/providers/kingdom-pairing.ts:12`). The prod schema is applied with `db push`.
@@ -95,20 +95,9 @@ flowchart LR
   - Contracts: `packages/access/src/oracleCycle.ts:11,36-70` (presets and a summary schema with `promotion: 'unproved'`), and `packages/access/src/runtimeDelegation.ts:12,14,44` (`oracleAdaptiveExperiment`, `oracle-hosted-controlled/v1`, evaluation limits).
   - Job kinds: `packages/access/src/runtimeJobs.ts:12-17`.
   - Prisma models `runtimeOracleCapacity`, `runtimeOracleCycle`, `runtimeJobDelegation` and `runtimeDelegatedAttempt`.
-  - `access` controllers: `accessBeginOracleCycle`, `accessReportOracleCycle`, `accessAdmitOraclePublication`, `accessRegisterOracleCapacity` and more. `kastle` controllers: `kastleStartOracleCycle`, `kastleCreateRuntimeDelegation.ts:53` and more.
-  - UI: "Start Oracle experiment" (`apps/web/app/components/kastle/OracleCycles.tsx:145`).
+  - `access` controllers: `accessBeginOracleCycle`, `accessReportOracleCycle`, `accessAdmitOraclePublication`, `accessRegisterOracleCapacity` and more. `owner` controllers: `ownerStartOracleCycle`, `ownerCreateRuntimeDelegation` and more.
+  - UI: "Start Oracle experiment" (`apps/web/app/components/owner/OracleCycles.tsx`).
   - Kingdom should know Oracle only as an integration. Today `foundry` and `oracle` are in the `Provider` enum (`packages/db/prisma/schema/integration.prisma:63-78`) but have no catalog entry (`packages/access/src/catalog.ts`).
-- **Demo code:** a synthetic appointment/allergy Signet demo.
-  - Service: `apps/api/src/modules/kastle/services/createSignetDemo.ts:24,37,45,84`.
-  - Job kind: `packages/access/src/runtimeJobs.ts:14,27-50` (`allergies: z.enum(['penicillin','latex'])`).
-  - UI: `apps/web/app/components/kastle/RuntimeJobs.tsx:77` ("Start synthetic appointment demo").
-  - Doc: `docs/SIGNET-BROWSER-DEMO.md`.
-  - The removal is claimed in `remove/signet-medical-demo`.
-- **Kastle naming:** 1708 lines in 293 files.
-  - Code: `apps/api/src/modules/kastle/` (142 files), `apps/web/app/components/kastle/` (30 files).
-  - Route prefix: `/v1/kastle` (`apps/api/src/routes/api.ts:63`).
-  - README: `README.md:3`.
-  - Runtime credential prefix: `runtimeBearerKeyHash.ts:9` accepts only `kastle_runtime_…`. **This breaks pairing** (see goal 4). The rename is planned in COORDINATION.md.
 - **Connection as a term:**
   - `apps/api/src/modules/archive/remoteRoutes.ts:15,35,49,55` (`/remote/connections`, `connectionId`)
   - `packages/db/src/lib/encryption/registry.ts:16,26` (`CONNECTION_SECRETS`)
@@ -119,7 +108,7 @@ flowchart LR
   - Kingdom stores archives itself (`SessionArchive`, `ArchiveRevision`, `ArchiveChunk` models; `services/ingestArchive.ts`).
   - It runs on `@inixiative/archive@0.2.1` (`apps/api/package.json:21`) plus `vendor/session-archive/*.tgz`, while the blessed version is 0.5.1.
   - Open question: Kingdom-stored archives and forwarding to a hosted Archive are two hosted paths. Pick one.
-- **Backwards-compat path:** `apps/api/src/modules/kastle/schemas/kastleSchemas.ts:72,79-80` still accepts legacy `access` policy JSON ("Choose resource grants or legacy access").
+- **Backwards-compat path:** `apps/api/src/modules/owner/schemas/ownerSchemas.ts` still accepts legacy `access` policy JSON ("Choose resource grants or legacy access").
 - **Process and lab files:**
   - `docs/validation/*.json` (about 30 run logs)
   - `docs/MACHINE-HANDOFF-2026-09-10.md`
@@ -128,7 +117,7 @@ flowchart LR
   - `docs/WORKSPACE-INTEGRATION-2026-09-21.md` ("Foundry Lab")
 - **Unclear owner:**
   - The inference gateway: `apps/api/src/modules/access/services/streamInference.ts:65` proxies API-key calls to Anthropic and OpenAI for run bindings. It overlaps agent-session's capacity routing, and its purpose under subscription-only execution needs a decision.
-  - Tribe coupling: the `RuntimeTribeBinding` and `RuntimeTribeAction` models and `modules/kastle/services/tribe/*` are bespoke models, not a catalog integration.
+  - Tribe coupling: the `RuntimeTribeBinding` and `RuntimeTribeAction` models and `modules/owner/services/tribe/*` are bespoke models, not a catalog integration.
 
 ### Foundry
 - **Oracle product material:**
@@ -156,8 +145,7 @@ flowchart LR
 
 ### Oracle
 - **Reaches into Kingdom source:**
-  - `scripts/fixtures/authority-consumer.ts:22-38` and `delegation-consumer.ts:40-42` import `apps/api/src/modules/kastle/...` from a Kingdom checkout (`KINGDOM_TEST_SOURCE`).
-  - They also mint `kastle_runtime_` secrets and call `kastle/createRuntimeDelegation` (`delegation-consumer.ts:122,333`).
+  - `scripts/fixtures/authority-consumer.ts:22-38` and `delegation-consumer.ts:40-42` import `apps/api/src/modules/owner/...` from a Kingdom checkout (`KINGDOM_TEST_SOURCE`).
 - **Needs Foundry to talk to Kingdom:** Kingdom's client (`SignetClient`) lives in `@inixiative/foundry/runtime`, so Oracle peer-depends on Foundry (`package.json` `peerDependencies`). Its README says "Foundry and Oracle never import each other". A Kingdom client package would remove this.
 - **Paid API only:** `src/providers.ts:42,125,174` (Anthropic and Gemini with `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) is the only way `oracle run` executes. There is no subscription path.
 - **One-off records and lab references:**
@@ -170,7 +158,6 @@ flowchart LR
 
 ### Archive
 - **Connection as a term:** `src/config.ts:42`, `src/client.ts:15-34`, `src/cli.ts:44` and `README.md:94` (`--connection-id`, `connectionId`) for Kingdom forwarding.
-- **Wrong credential prefix:** the README says the Kingdom credential is `kingdom_runtime_`, but Kingdom main issues and accepts `kastle_runtime_`.
 
 ## 4. End-to-end journey
 
@@ -200,16 +187,13 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 
 **3. Sign in to Kingdom with owners: works.**
 - The five-way owner landed in Kingdom #80.
-- Gap (Kingdom): the dashboard API and UI are still `kastle` (section 3).
 
-**4. Pair Foundry with Kingdom: partial, and broken on main.**
+**4. Pair Foundry with Kingdom: partial.**
 - **What exists:** a device-code flow on both sides.
   - Foundry: `providers/kingdom-pairing.ts:28-61`, `bun run kingdom pair`.
-  - Kingdom: `access/pairRuntime`, `pollRuntime`, `kastle/approveRuntime`.
+  - Kingdom: `access/pairRuntime`, `pollRuntime`, `owner/approveRuntime`.
 - `bun run kingdom status --config-dir <empty>` returns `{"status":"disconnected"}`.
-- **Blocker:** since Foundry #38, Foundry mints `kingdom_runtime_…` secrets (`packages/foundry/src/providers/kingdom-secrets.ts:1`). Kingdom main authenticates only `kastle_runtime_…` (`apps/api/src/modules/access/services/runtimeBearerKeyHash.ts:9`).
-  - As a result, approval succeeds, but the validating heartbeat and every runtime call fail authentication.
-  - I checked this against Kingdom `origin/main`, not against the deployed prod build.
+- Kingdom authenticates the `kingdom_runtime_…` secrets Foundry mints (Kingdom `bb4fc101`).
 - **Also missing:**
   - Only one binding: `kingdomRuntime` is a single object (`viewer/config.ts:89`), and a second pair is refused (`kingdom-cli.ts:30-31`). Multi-Kingdom work is on `feat/multi-kingdom`, not on main.
   - Liveness is HTTP heartbeat polling with a 45 s TTL (Kingdom `accessRuntimeHeartbeat.ts:18-22`). The socket is draft #42.
@@ -279,7 +263,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 ## 5. Goals per app
 
 **Kingdom**
-1. Accept `kingdom_runtime_` credentials. Rename `modules/kastle`, `/v1/kastle` and the web components to owner and Kingdom names (goals 3 and 4).
+1. Done: `kingdom_runtime_` credentials (`bb4fc101`) and the owner rename (`modules/owner`, `/v1/owner`, `components/owner`).
 2. Support one Foundry across many Kingdoms and many Foundries per owner, with liveness over the socket (goal 4).
 3. Merge #86. Add a hosting integration and the "set up hosted Archive" prompt and provisioning. Pick one hosted Archive path (stored or forwarded) (goal 5).
 4. Add per-owner AI provider integrations (Claude, OpenAI/Codex, Grok, Gemini, Meta Muse) that feed subscription pools. Decide what the API-key inference gateway is for (goal 6).
@@ -307,4 +291,4 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 **Oracle**
 1. Execute on subscription capacity through Foundry and agent-session instead of API keys (goal 9).
 2. Run baseline versus candidate-layer experiments and attach the evidence to layer proposals. Feed mined corrections into goal 8.
-3. Stop importing Kingdom source and minting `kastle_runtime_` in its fixtures. Depend on a Kingdom client rather than on Foundry. Move the `.oracle/qa/*` one-off records and handoff docs out. Add CI.
+3. Stop importing Kingdom source in its fixtures. Depend on a Kingdom client rather than on Foundry. Move the `.oracle/qa/*` one-off records and handoff docs out. Add CI.
