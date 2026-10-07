@@ -44,7 +44,7 @@ const proposalSchema = z
             operations: z.array(z.string()).min(1),
             lens: z
               .object({
-                documentIds: z.array(z.string().uuid()).optional(),
+                documentIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).optional(),
                 fields: z.array(z.enum(['id', 'title', 'content', 'tags', 'createdAt'])).optional(),
               })
               .strict()
