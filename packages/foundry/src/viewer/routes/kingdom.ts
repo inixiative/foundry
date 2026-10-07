@@ -13,7 +13,6 @@ import {
   type KingdomRuntimeConnections,
   overallStatus,
 } from '../../providers/kingdom-runtime-connections';
-import type { RuntimeJobRegistry } from '../../providers/runtime-job-handler';
 import type { ConfigStore } from '../config';
 
 const pairSchema = kingdomPairInputSchema.extend({ replace: z.string().optional() }).strict();
@@ -25,7 +24,6 @@ export function registerKingdomRoutes(
   configDir: string,
   sessionCount: () => number,
   connections: KingdomRuntimeConnections,
-  handlers?: RuntimeJobRegistry,
 ) {
   let pending: (KingdomPairing & { replace?: string }) | undefined;
   let busy = false,
@@ -120,7 +118,6 @@ export function registerKingdomRoutes(
         data.installationId,
         {
           sessionCount: sessionCount(),
-          handlers,
           ...(pending.replace ? { replace: pending.replace } : {}),
         },
       );

@@ -1,19 +1,11 @@
-/** Public extension seam for enrolled runtime jobs. Importing it starts no worker. */
+/** Public seam for a Foundry paired with Kingdom: the runtime connection and the Signet client. */
 
 export {
   type KingdomInstallation,
   KingdomRuntimeConnection,
   type KingdomRuntimeSettings,
   kingdomRuntimeSchema,
-} from '../providers/kingdom-runtime-connection';
-export { type RuntimeJob, runtimeJobSchema } from '../providers/runtime-job-contracts';
-export {
   type RuntimeIdentity,
-  type RuntimeJobContext,
-  type RuntimeJobHandler,
-  RuntimeJobRegistry,
-  type RuntimeJobRequest,
   type RuntimeOwner,
-} from '../providers/runtime-job-handler';
-export { RuntimeJobWorker } from '../providers/runtime-job-worker';
+} from '../providers/kingdom-runtime-connection';
 export { SignetClient, SignetHttpError } from '../providers/signet-client';

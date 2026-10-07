@@ -48,7 +48,6 @@ import {
   type SessionAdapter,
   SessionBackedProvider,
 } from './providers';
-import { RuntimeJobRegistry } from './providers/runtime-job-handler';
 import { DOCS_ADVISE_PROMPT } from './setup/scan-docs';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
@@ -725,7 +724,6 @@ const viewer = await startViewer({
   configStore,
   actionQueue,
   assistTools: tools,
-  runtimeJobs: new RuntimeJobRegistry(),
 });
 
 console.log(`Viewer: http://localhost:${port}`);

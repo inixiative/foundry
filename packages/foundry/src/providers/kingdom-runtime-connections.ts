@@ -3,7 +3,6 @@ import {
   type KingdomRuntimeSettings,
   kingdomRuntimeId,
 } from './kingdom-runtime-connection';
-import { RuntimeJobRegistry } from './runtime-job-handler';
 
 /** `connected` when every paired Kingdom is, `unavailable` when any is not, `disconnected` when none is paired. */
 export const overallStatus = (runtimes: readonly { status: string }[]) =>
@@ -23,7 +22,6 @@ export class KingdomRuntimeConnections {
     runtimes: readonly KingdomRuntimeSettings[],
     private sessionCount: () => number,
     private transport: typeof fetch = fetch,
-    private handlers: RuntimeJobRegistry = new RuntimeJobRegistry(),
   ) {
     for (const runtime of runtimes)
       this.connections.set(kingdomRuntimeId(runtime), this.create(runtime));
@@ -72,6 +70,6 @@ export class KingdomRuntimeConnections {
     for (const connection of this.all()) connection.stop();
   }
   private create(runtime: KingdomRuntimeSettings) {
-    return new KingdomRuntimeConnection(runtime, this.sessionCount, this.transport, this.handlers);
+    return new KingdomRuntimeConnection(runtime, this.sessionCount, this.transport);
   }
 }

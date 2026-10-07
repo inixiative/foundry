@@ -21,7 +21,6 @@ import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
 import type { KingdomRuntimeSettings } from '../providers/kingdom-runtime-connection';
 import { KingdomRuntimeConnections } from '../providers/kingdom-runtime-connections';
-import { RuntimeJobRegistry } from '../providers/runtime-job-handler';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -72,8 +71,6 @@ export interface ViewerConfig {
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
   kingdomRuntimes?: KingdomRuntimeSettings[];
-  /** Job kinds this runtime may execute. Defaults to the framework built-ins. */
-  runtimeJobs?: RuntimeJobRegistry;
   /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
   assistTools?: ToolRegistry;
   /** Durable local journal; null opts out for an explicitly transient viewer. */
@@ -92,13 +89,11 @@ export interface ViewerConfig {
  */
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4500 } = config;
-  const runtimeJobs = config.runtimeJobs ?? new RuntimeJobRegistry();
   const app = new Hono();
   const kingdomRuntimes = new KingdomRuntimeConnections(
     config.kingdomRuntimes ?? [],
     () => directory.all().length,
     fetch,
-    runtimeJobs,
   );
 
   // Mutable tunnel holder — routes can start/stop at runtime
@@ -246,7 +241,6 @@ export function createViewer(config: ViewerConfig) {
     config.configDir ?? '.foundry',
     () => directory.all().length,
     kingdomRuntimes,
-    runtimeJobs,
   );
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerGlossRoutes(app, configStore);

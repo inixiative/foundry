@@ -1,13 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Daemon entrypoint. Stages an update before launching — nothing is running
- * yet, so there is no in-flight job to interrupt — then boots a release (see
+ * Daemon entrypoint. Stages an update before launching, then boots a release (see
  * update.ts) and keeps watching, because a daemon left running for days would
  * otherwise never see main move. Local services come up first. A candidate
  * that fails to boot falls back to stable; a stable boot that fails on changed
  * settings restores the last settings that booted.
  */
-import { dirname, resolve } from 'node:path';
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
 import { recordBoot, rejectCandidate, selectRelease, stageUpdate } from './update';
@@ -35,18 +33,12 @@ if (update.action === 'skipped') log(`not staging ${short(update.target)}: ${upd
 if (update.action === 'failed') log(`update skipped — ${update.detail}`);
 
 const settings = await readSettings();
-const runtimes: { credentialFile: string }[] = Array.isArray(settings?.kingdomRuntimes)
-  ? settings.kingdomRuntimes
-  : [];
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
     repoRoot,
     configDir,
     intervalMs: checkSeconds * 1000,
-    runtimeDirectories: [
-      ...new Set(runtimes.map((runtime) => dirname(resolve(runtime.credentialFile)))),
-    ],
     log,
   });
 

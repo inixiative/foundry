@@ -12,7 +12,6 @@ import {
   selectKingdomRuntime,
 } from './kingdom-runtime-connection';
 import { RUNTIME_SECRET_PREFIX } from './kingdom-secrets';
-import type { RuntimeJobRegistry } from './runtime-job-handler';
 
 /** Hosted production Kingdom API origin; the default offered by guided setup. */
 export const HOSTED_KINGDOM_URL = 'https://kingdom-prod-api-prod.up.railway.app';
@@ -143,7 +142,6 @@ export async function completeKingdomPairing(
     replace?: string;
     transport?: typeof fetch;
     sessionCount?: number;
-    handlers?: RuntimeJobRegistry;
   } = {},
 ) {
   const credentialFile = join(resolve(configDir), `kingdom-runtime-${installationId}.json`);

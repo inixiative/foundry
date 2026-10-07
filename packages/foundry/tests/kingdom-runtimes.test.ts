@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -86,7 +86,7 @@ test('a selector names a paired Kingdom by id or API origin and never guesses be
   expect(() => selectKingdomRuntime([], undefined)).toThrow('bun run kingdom pair');
 });
 
-test('each paired Kingdom connects and works on its own: one refusing never stops the other, and jobs report only to the Kingdom that issued them', async () => {
+test('each paired Kingdom connects on its own: one refusing never stops the other', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'kingdom-runtimes-'));
   const kingdoms = new Map<
     string,
@@ -94,8 +94,6 @@ test('each paired Kingdom connects and works on its own: one refusing never stop
       runtime: KingdomRuntimeSettings;
       owner: object;
       allowed: boolean;
-      jobs: string[];
-      reports: { jobId: string; status?: string }[];
     }
   >();
   for (const [index, [url, owner, ownerRef]] of (
@@ -122,8 +120,6 @@ test('each paired Kingdom connects and works on its own: one refusing never stop
       runtime: runtime(url, owner, credentialFile),
       owner: ownerRef,
       allowed: true,
-      jobs: [crypto.randomUUID()],
-      reports: [],
     });
   }
   const [a, b] = [...kingdoms.values()];
@@ -148,29 +144,8 @@ test('each paired Kingdom connects and works on its own: one refusing never stop
           expiresAt: new Date(Date.now() + 60000).toISOString(),
         },
       });
-    if (action === 'pollRuntimeJob') {
-      const id = kingdom.jobs.shift();
-      return Response.json({
-        data: id
-          ? {
-              id,
-              installationId,
-              kind: 'connectionCheck',
-              status: 'claimed',
-              expiresAt: new Date(Date.now() + 60000).toISOString(),
-              payload: null,
-            }
-          : null,
-      });
-    }
-    if (action === 'reportRuntimeJob') {
-      kingdom.reports.push(JSON.parse(String(init?.body)));
-      return Response.json({ data: {} });
-    }
     return new Response('unknown', { status: 404 });
   }) as typeof fetch;
-  const jobA = a!.jobs[0]!,
-    jobB = b!.jobs[0]!;
   a!.allowed = false;
   const connections = new KingdomRuntimeConnections([a!.runtime, b!.runtime], () => 0, transport);
   try {
@@ -178,22 +153,11 @@ test('each paired Kingdom connects and works on its own: one refusing never stop
     expect(connections.get(kingdomRuntimeId(b!.runtime))?.connected).toBe(true);
     expect(connections.authorized).toBe(true);
     await connections.check();
-    const until = async (done: () => boolean) => {
-      const end = performance.now() + 4000;
-      while (!done() && performance.now() < end) await Bun.sleep(5);
-    };
-    await until(() => b!.reports.length > 0);
-    expect(b!.reports).toEqual([{ jobId: jobB, status: 'completed' }]);
-    expect(a!.reports).toEqual([]);
+    expect(connections.get(kingdomRuntimeId(a!.runtime))?.connected).toBe(false);
 
     a!.allowed = true;
     await connections.get(kingdomRuntimeId(a!.runtime))!.check();
-    await until(() => a!.reports.length > 0);
-    expect(a!.reports).toEqual([{ jobId: jobA, status: 'completed' }]);
-    expect(b!.reports).toEqual([{ jobId: jobB, status: 'completed' }]);
-    expect((await readdir(join(dir, 'runtime-jobs'))).sort()).toEqual(
-      [`${a!.runtime.installationId}_${jobA}`, `${b!.runtime.installationId}_${jobB}`].sort(),
-    );
+    expect(connections.get(kingdomRuntimeId(a!.runtime))?.connected).toBe(true);
 
     b!.allowed = false;
     await expect(connections.get(kingdomRuntimeId(b!.runtime))!.check()).rejects.toThrow();

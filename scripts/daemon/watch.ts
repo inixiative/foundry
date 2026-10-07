@@ -3,18 +3,15 @@
  *
  * The supervisor only stages updates at startup, so a daemon left running for
  * days never sees main move. This stages the candidate while running, then
- * exits 75 once no job is in flight so launchd relaunches onto it.
+ * exits 75 so launchd relaunches onto it.
  */
 
-import { runtimeJobsInFlight } from './idle';
 import { RESTART_EXIT_CODE, readState, stageUpdate } from './update';
 
 export interface WatchOptions {
   repoRoot: string;
   configDir: string;
   intervalMs: number;
-  /** Each paired Kingdom's runtime-jobs directory; empty when this Foundry is not paired. */
-  runtimeDirectories: string[];
   /** Told how long the runtime expects to be gone, so presence reads "restarting" rather than "offline". */
   closeForUpdate?: (expectedBackWithinMs: number) => Promise<void> | void;
   log?: (message: string) => void;
@@ -36,11 +33,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
       if (result.action === 'staged')
         log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
       const { candidate } = await readState(options.configDir);
-      if (
-        !candidate ||
-        (await Promise.all(options.runtimeDirectories.map(runtimeJobsInFlight))).includes(true)
-      )
-        return;
+      if (!candidate) return;
 
       log(`restarting onto candidate ${candidate.slice(0, 8)}`);
       try {
