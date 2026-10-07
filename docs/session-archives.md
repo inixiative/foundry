@@ -20,7 +20,7 @@ bun run archive setup         # starts the local Archive if it is not answering,
 bun run doctor                # includes the local Archive: not-set-up | unverified | reachable | unreachable
 ```
 
-`archive setup` runs the Archive CLI's `up` in a subprocess: it creates the token at `~/.local/share/archive/server.token`, then starts the bundled Compose file (the Archive and its Postgres, HTTP on `127.0.0.1:4700`). Docker must be running. Settings → Archives shows the same status, a **Set up an Archive** button that does the same thing, and the Archive's integrations (read-only; the Archive owns them). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item, along with Kingdom pairing.
+`archive setup` runs the Archive CLI's `up` in a subprocess: it creates the token at `~/.local/share/archive/server.token`, then starts the bundled Compose file (the Archive and its Postgres, HTTP on `127.0.0.1:4700`). Docker must be running. Settings → Archives (titled **Set up an Archive**) shows the same status, a button that does the same thing, a link per paired Kingdom to set up a hosted Archive there, and the Archive's integrations (read-only; the Archive owns them). `bun run setup` offers it on first run and as the **Kingdom & archives** menu item, along with Kingdom pairing.
 
 Foundry finds the local Archive the way every Archive client does (`localArchive()`): `ARCHIVE_URL` or `http://127.0.0.1:4700`, with the token from `ARCHIVE_TOKEN` or `server.token`. Foundry never imports the Archive CLI or server, which bind their own Prisma client; it spawns the CLI.
 
@@ -71,7 +71,7 @@ bun run kingdom disconnect --kingdom ID|URL   # deletes that Kingdom's local cre
 
 Each paired Kingdom has its own heartbeat. One Kingdom refusing or unreachable never stops another. The viewer stays unlocked while at least one paired Kingdom authorizes this Foundry. A running viewer holds settings in memory: the CLIs report `restartViewer: true` when one answers on `VIEWER_PORT`, and `bun run daemon:start` restarts the daemon.
 
-Hosted Archives connect through Kingdom as an integration; the local Archive publishes to them. Foundry does not hold hosted Archive credentials or destinations.
+Hosted Archives connect through Kingdom as an integration; the local Archive publishes to them. Foundry does not hold hosted Archive credentials or destinations. Settings → Archives links each paired Kingdom (https, or a loopback Kingdom in development) to `<Kingdom API>/dashboard?setupArchive=1`, which Kingdom redirects to its dashboard's Archives tab, where it deploys a hosted Archive on the owner's Railway or Render account.
 
 ## Feed archives into Foundry context
 
