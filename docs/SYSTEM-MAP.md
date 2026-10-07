@@ -23,7 +23,7 @@ flowchart LR
   AS -- "spawn + stdio / JSON-RPC" --> CLI
   CLI -- "MCP (foundry_* tools)" --> F
   F -- "HTTP /api/v1/archive/* (@inixiative/archive/remote)" --> LA
-  F -- "HTTP /api/v1/access/* (runtime bearer)<br/>pair, heartbeat, jobs, runs" --> K
+  F -- "HTTP /api/v1/access/* (runtime bearer, to be cut)<br/>pair, heartbeat, jobs, runs" --> K
   F -- "HTTP + DPoP: Signet request / execute" --> K
   F -. "WebSocket liveness (draft #42)" .-> K
   LA -- "serve --sync" --> HA
@@ -33,6 +33,20 @@ flowchart LR
   F -- "POST /api/cycles (summaries)" --> O
   O -. "link /dashboard?oracle=1" .-> K
 ```
+
+### Access model: Credential, Token, Signet (Aron, 2026-10-07)
+
+Each of these three does one job, and none stands in for another.
+
+| Layer | Who gives it to whom | What it allows |
+|---|---|---|
+| **Credential** | The owner gives it to Kingdom, which stores it encrypted on the Integration. | Kingdom calling the provider (GitHub, an Archive server, a model API). It is never handed out. |
+| **Token** | Kingdom gives it to a principal (user, org member, space member). | Calling Kingdom's own API with a role. Pure read/write on Kingdom itself. It never reaches an integration's resources. |
+| **Signet** | The owner (grantor) grants it to a grantee on one Integration. The grantee is an actor (a person) or an integration (a paired Foundry, Oracle). | Using that integration: resources, operations, lens (documents, fields), limits, expiry and revocation. Its access token or key enrollment is only how the grantee presents it. |
+
+**Anything that uses an integration goes through a Signet.** Foundry is an integration plus a Signet, and so is Oracle. Archive reads and writes are Signet operations on the Archive integration's `archiveLibrary`.
+
+Today's main still has a second grant path, the Foundry runtime key (`kingdom_runtime_`, `RuntimeInstallation`). It gives whole-owner authority on `access/*` and on `archive/ingest`. It is to be cut. Pairing a Foundry becomes a Signet enrollment on its `foundry` Integration.
 
 ## 2. The apps
 
@@ -80,10 +94,10 @@ flowchart LR
 - **Release:** `primitives` lane, npm.
 
 ### Kingdom (`inixiative/kingdom`, not published)
-- **Owns:** accounts and identity, the five-way owner, integrations (credentials live on the integration), Signets as structural gates, runtime (Foundry) registration and pairing, the hosted Archive browser and sharing, and the dashboard where Foundries, Archives and Oracle are connected.
+- **Owns:** accounts and identity, the five-way owner, integrations (credentials live on the integration), Signets as the only grant for using an integration (Foundry and Oracle included), the hosted Archive browser (Archive is an owner integration; shares are Signets), and the dashboard where Foundries, Archives and Oracle are connected.
 - **Not its job:** Oracle experiment machinery, Foundry runtime machinery, agent-session capacity machinery, demos, and Archive storage internals that duplicate Archive.
 - **Interfaces:**
-  - HTTP `POST /api/v1/<module>/<action>` (`apps/api/src/lib/routeTemplates/action.ts:37-44`). This includes `access/*` (runtime, Signets, runs, Oracle cycles), `archive/*` (with `remote/*`), `owner/*` (owner dashboard) and `integration/*`.
+  - HTTP `POST /api/v1/<module>/<action>` (`apps/api/src/lib/routeTemplates/action.ts:37-44`). This includes `access/*` (runtime, Signets, runs, Oracle cycles), `archive/*` (`ingest`, `list`, `read`, `search`, forwarded to the owner's Archive integration), `owner/*` (owner dashboard) and `integration/*`.
   - A generic WebSocket pub/sub (`apps/api/src/index.ts:37`).
   - No MCP.
 - **Release:** a deployed app, a consumer of both lanes (`config/versions.json:37-42`). Foundry's hosted default API is `https://kingdom-prod-api-prod.up.railway.app` (`packages/foundry/src/providers/kingdom-pairing.ts:12`). The prod schema is applied with `db push`.
@@ -104,10 +118,8 @@ flowchart LR
   - the `renewConnections` job (`apps/api/src/jobs/handlers/index.ts:8`)
   - the `connectionCheck` job kind (`runtimeJobs.ts:13`)
 - **Kingdom tests import Foundry source:** `apps/api/src/modules/access/tests/foundrySource.ts:6` resolves a sibling `../foundry` checkout. Kingdom PR #86 reports 2 failing tests because that sibling speaks an older contract. Kingdom should test against the published `@inixiative/foundry/runtime`, not a checkout.
-- **Duplicate Archive storage:**
-  - Kingdom stores archives itself (`SessionArchive`, `ArchiveRevision`, `ArchiveChunk` models; `services/ingestArchive.ts`).
-  - It runs on `@inixiative/archive@0.2.1` (`apps/api/package.json:21`) plus `vendor/session-archive/*.tgz`, while the blessed version is 0.5.1.
-  - Open question: Kingdom-stored archives and forwarding to a hosted Archive are two hosted paths. Pick one.
+- **Duplicate Archive storage:** resolved in Kingdom `59ee9b8a`. Kingdom's archive tables are gone; Archive is an owner integration through `@inixiative/archive/remote`, and shares are Signets.
+- **Two grant systems:** the runtime key (`RuntimeInstallation`, `kingdom_runtime_`) authorizes Foundry with whole-owner authority, next to Signets. Under the access model (section 1), Foundry and Oracle reach integrations only through Signets, and the runtime key goes.
 - **Backwards-compat path:** `apps/api/src/modules/owner/schemas/ownerSchemas.ts` still accepts legacy `access` policy JSON ("Choose resource grants or legacy access").
 - **Process and lab files:**
   - `docs/validation/*.json` (about 30 run logs)
