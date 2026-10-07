@@ -43,7 +43,6 @@
     "team": "bun run packages/foundry/src/development-team-cli.ts",
     "archive:viewer": "bun run packages/foundry/src/archives/viewer.ts",
     "signet": "bun run packages/foundry/src/providers/signet-cli.ts",
-    "runtime:worker": "bun run packages/foundry/src/providers/runtime-worker-cli.ts",
     "lint": "biome check .",
     "prepare": "lefthook install"
   },

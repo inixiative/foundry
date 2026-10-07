@@ -51,7 +51,6 @@ function mockKingdom(owner: Record<string, string> = organization) {
       const token = request.headers.get('authorization')?.replace('Bearer ', '') ?? '';
       const id = identities.get(createHash('sha256').update(token).digest('hex'));
       if (!id) return new Response('revoked', { status: 401 });
-      if (action === 'pollRuntimeJob') return Response.json({ data: null });
       return Response.json({
         data: {
           installationId: id,

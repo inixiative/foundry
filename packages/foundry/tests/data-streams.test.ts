@@ -498,8 +498,6 @@ test('losing Kingdom authorization closes sockets on the next append or open and
     hostname: '127.0.0.1',
     async fetch(request) {
       if (!allowed) return new Response('denied', { status: 401 });
-      if (new URL(request.url).pathname === '/api/v1/access/pollRuntimeJob')
-        return Response.json({ data: null });
       return Response.json({
         data: {
           installationId: id,

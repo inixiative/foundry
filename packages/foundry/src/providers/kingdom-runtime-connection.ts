@@ -3,8 +3,6 @@ import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { kingdomUrl, ownerKey, ownerKeySchema, ownerRefSchema } from './kingdom-client';
 import { installationCredentialSchema, readPrivateJson } from './kingdom-credential-file';
-import { type RuntimeIdentity, RuntimeJobRegistry } from './runtime-job-handler';
-import { RuntimeJobWorker } from './runtime-job-worker';
 
 /** An installation credential before Kingdom has named its owner (pairing, manual enrollment). */
 export const kingdomInstallationSchema = z
@@ -76,6 +74,21 @@ export function selectKingdomRuntime<T extends { url: string; owner: string }>(
   );
 }
 
+/** Kingdom's owner reference: the model plus whichever ids identify it. */
+export type RuntimeOwner = {
+  ownerModel: string;
+  userId?: string | null;
+  organizationId?: string | null;
+  spaceId?: string | null;
+};
+/** Enrolled runtime identity returned by `runtimeHeartbeat`. */
+export type RuntimeIdentity = {
+  installationId: string;
+  userId: string | null;
+  owner: RuntimeOwner;
+  expiresAt: string;
+};
+
 const identitySchema = z.object({
   data: z.object({
     installationId: z.string().uuid(),
@@ -91,13 +104,11 @@ export async function readRuntimeIdentity(
   options: {
     transport?: typeof fetch;
     sessionCount?: number;
-    handlers?: RuntimeJobRegistry;
     signal?: AbortSignal;
   } = {},
 ): Promise<RuntimeIdentity> {
   const { url, installationId, credentialFile } = installation;
-  const settings = kingdomInstallationSchema.parse({ url, installationId, credentialFile }),
-    handlers = options.handlers?.all() ?? [];
+  const settings = kingdomInstallationSchema.parse({ url, installationId, credentialFile });
   const { secret } = installationCredentialSchema.parse(
     await readPrivateJson(settings.credentialFile),
   );
@@ -111,12 +122,7 @@ export async function readRuntimeIdentity(
         AbortSignal.timeout(5000),
       ]),
       headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
-      body: JSON.stringify(
-        Object.assign(
-          { sessionCount: options.sessionCount ?? 0 },
-          ...handlers.map((handler) => handler.heartbeatBody?.() ?? {}),
-        ),
-      ),
+      body: JSON.stringify({ sessionCount: options.sessionCount ?? 0 }),
     },
   );
   if (!response.ok) {
@@ -124,7 +130,6 @@ export async function readRuntimeIdentity(
     throw Error('Runtime refused');
   }
   const { data } = identitySchema.parse(await response.json());
-  for (const handler of handlers) handler.verifyIdentity?.(data);
   if (data.installationId !== settings.installationId || Date.parse(data.expiresAt) <= Date.now())
     throw Error('Runtime identity mismatch');
   return data;
@@ -136,12 +141,10 @@ export class KingdomRuntimeConnection {
   private timer?: ReturnType<typeof setInterval>;
   private controller = new AbortController();
   private available = false;
-  private jobs?: RuntimeJobWorker;
   constructor(
     settings: KingdomRuntimeSettings,
     private sessionCount: () => number,
     private transport: typeof fetch = fetch,
-    private handlers: RuntimeJobRegistry = new RuntimeJobRegistry(),
   ) {
     this.settings = kingdomRuntimeSchema.parse(settings);
   }
@@ -160,7 +163,6 @@ export class KingdomRuntimeConnection {
       .then(
         () => {
           this.available = true;
-          void this.jobs?.check().catch(() => {});
         },
         () => {
           this.available = false;
@@ -173,7 +175,6 @@ export class KingdomRuntimeConnection {
     return this.pending;
   }
   async start(): Promise<void> {
-    this.jobs ??= new RuntimeJobWorker(this.settings, this.transport, this.handlers);
     if (!this.timer)
       this.timer = setInterval(() => {
         void this.check().catch(() => {});
@@ -184,14 +185,12 @@ export class KingdomRuntimeConnection {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.controller.abort();
-    this.jobs?.stop();
     this.available = false;
   }
   private async heartbeat(): Promise<void> {
     const identity = await readRuntimeIdentity(this.settings, {
       transport: this.transport,
       sessionCount: this.sessionCount(),
-      handlers: this.handlers,
       signal: this.controller.signal,
     });
     if (ownerKey(identity.owner) !== this.settings.owner) throw Error('Runtime owner changed');

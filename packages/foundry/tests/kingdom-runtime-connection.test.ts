@@ -22,8 +22,6 @@ test('two HTTP viewers bind separate Kingdom identities and deny use after revoc
     async fetch(request) {
       const identity = allowed.get(request.headers.get('authorization') ?? '');
       if (!identity) return new Response('denied', { status: 401 });
-      if (new URL(request.url).pathname === '/api/v1/access/pollRuntimeJob')
-        return Response.json({ data: null });
       bodies.push((await request.json()) as { sessionCount: number });
       return Response.json({
         data: {
