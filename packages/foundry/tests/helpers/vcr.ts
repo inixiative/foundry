@@ -16,7 +16,7 @@ export const FIXTURES_DIR = join(import.meta.dir, '../fixtures/vcr');
 /** What the live tier runs on. The observed Claude model is the alias's canonical name; a change is a finding. */
 export const LIVE = {
   claudeModel: 'haiku',
-  claudeObservedModel: 'claude-haiku-4-5-20251001',
+  claudeObservedModel: 'claude-haiku-5-5',
   codexModel: 'gpt-6-luna',
   kingdomUrl: process.env.FOUNDRY_VCR_KINGDOM_URL ?? 'http://127.0.0.1:8200',
 } as const;

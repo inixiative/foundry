@@ -26,7 +26,7 @@ const FALLBACK_PROVIDERS = [
       { id: 'fable', label: 'Fable 5.1', tier: 'powerful' },
       { id: 'opus', label: 'Opus 5', tier: 'powerful' },
       { id: 'sonnet', label: 'Sonnet 5', tier: 'standard' },
-      { id: 'haiku', label: 'Haiku 4.5', tier: 'fast' },
+      { id: 'haiku', label: 'Haiku 5.5', tier: 'fast' },
     ],
   },
   {
@@ -62,7 +62,7 @@ const FALLBACK_PROVIDERS = [
       { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', tier: 'powerful' },
       { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'powerful' },
       { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'standard' },
-      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', tier: 'fast' },
     ],
   },
   {

@@ -265,10 +265,10 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'haiku',
-        label: 'Haiku 4.5',
+        label: 'Haiku 5.5',
         tier: 'fast',
         costTier: 'low',
-        contextWindow: 200_000,
+        contextWindow: 1_000_000,
         runtimeKind: 'native-harness',
         nativeAlias: true,
         capabilities: FAST_REASONING,
@@ -320,6 +320,18 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: CLAUDE_REASONING,
       },
       {
+        id: 'claude-haiku-5-5',
+        label: 'Claude Haiku 5.5',
+        tier: 'fast',
+        costTier: 'low',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'api',
+        capabilities: FAST_REASONING,
+        reasoning: { ...CLAUDE_REASONING, efforts: ['low', 'medium', 'high'] },
+      },
+      // Previous generation, still served.
+      {
         id: 'claude-haiku-4-5',
         label: 'Claude Haiku 4.5',
         tier: 'fast',
@@ -330,7 +342,6 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: { ...CLAUDE_REASONING, efforts: ['low', 'medium', 'high'] },
         notes: 'Takes a thinking budget, not an effort ladder.',
       },
-      // Previous generation, still served.
       {
         id: 'claude-fable-5',
         label: 'Claude Fable 5',
