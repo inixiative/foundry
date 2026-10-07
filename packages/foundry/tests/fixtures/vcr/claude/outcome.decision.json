@@ -1,13 +1,13 @@
 {
-  "version": "2.1.292",
+  "version": "2.1.293",
   "status": 200,
   "body": {
-    "content": "```json\n{\"category\":\"feature\"}\n```",
+    "content": "{\"category\":\"feature\"}",
     "model": "haiku",
     "tokens": true,
     "native": {
       "outcome": "completed",
-      "observedModel": "claude-haiku-4-5-20251001",
+      "observedModel": "claude-haiku-5-5",
       "terminal": "result"
     },
     "call": {
@@ -20,7 +20,7 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-06T23:19:55.588Z",
+    "recordedAt": "2026-10-07T19:57:41.692Z",
     "agentSession": "0.3.1",
     "environment": "terminal"
   }
