@@ -7,10 +7,10 @@ import { allBindings } from './hotkeys.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import {
-  activeProjectId,
   commandPaletteOpen,
   executeAction,
   helpOpen,
+  scopeProjectId,
   showToast,
   toggleGraphPanel,
 } from './store.js';
@@ -40,13 +40,13 @@ const COMMANDS = [
     id: 'settings',
     label: 'Open settings',
     icon: '⚙',
-    action: () => navigate(settingsPath(activeProjectId.value)),
+    action: () => navigate(settingsPath(scopeProjectId())),
   },
   {
     id: 'analytics',
     label: 'Open analytics',
     icon: '$',
-    action: () => navigate(analyticsPath(activeProjectId.value)),
+    action: () => navigate(analyticsPath(scopeProjectId())),
   },
   { id: 'graph', label: 'Toggle graph view', icon: '◇', action: toggleGraphPanel },
 ];

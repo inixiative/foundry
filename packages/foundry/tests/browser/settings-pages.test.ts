@@ -59,7 +59,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     expect(new URL(page.url()).pathname).toBe('/settings/providers');
     await page.locator('.provider-account').first().waitFor();
 
-    await page.getByRole('tab', { name: 'Project' }).click();
+    await page.getByRole('link', { name: 'Project', exact: true }).click();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);
     await page.locator('.settings-breadcrumb', { hasText: 'Scratch' }).waitFor();
 

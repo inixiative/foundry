@@ -21,6 +21,13 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
   const archives = new Map<string, Revision[]>();
   const requests: string[] = [];
   let failing = false;
+  /** Libraries this Archive's paired Signet grants sessions.write on; connect refuses others. */
+  const libraries: { integrationId: string; resourceId: string; name: string }[] = [];
+  const destinations: { projectId: string; integrationId: string; resourceId: string }[] = [];
+  const sameRoute = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    a.projectId === b.projectId &&
+    a.integrationId === b.integrationId &&
+    a.resourceId === b.resourceId;
   const latest = (id: string) => archives.get(id)?.at(-1);
   const listing = (id: string, { revision, digest, snapshot }: Revision): ArchiveListing => {
     const { entries, ...meta } = snapshot;
@@ -125,6 +132,48 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
           },
         });
       }
+      if (action === 'destinations/list')
+        return json({
+          data: {
+            destinations: destinations
+              .filter((d) => body.projectId === undefined || d.projectId === body.projectId)
+              .map((d) => ({
+                configured: true,
+                kind: 'kingdom',
+                url: 'https://kingdom.example',
+                ...d,
+                delivered: 0,
+                pending: current(d.projectId).length,
+              })),
+          },
+        });
+      if (action === 'destinations/libraries')
+        return json({ data: { paired: libraries.length > 0, libraries } });
+      if (action === 'destinations/connect') {
+        if (
+          !libraries.some(
+            (l) => l.integrationId === body.integrationId && l.resourceId === body.resourceId,
+          )
+        )
+          return json(
+            { error: "This Archive's Signet does not grant sessions.write on that library" },
+            403,
+          );
+        const route = {
+          projectId: String(body.projectId),
+          integrationId: String(body.integrationId),
+          resourceId: String(body.resourceId),
+        };
+        if (!destinations.some((d) => sameRoute(d, route))) destinations.push(route);
+        return json({
+          data: { configured: true, kind: 'kingdom', url: 'https://kingdom.example', ...route },
+        });
+      }
+      if (action === 'destinations/remove') {
+        const index = destinations.findIndex((d) => sameRoute(d, body));
+        if (index >= 0) destinations.splice(index, 1);
+        return json({ data: { removed: index >= 0 } });
+      }
       return json({ error: 'Not found' }, 404);
     },
   });
@@ -137,6 +186,8 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
     client: () => new ArchiveClient({ url, token }),
     snapshots: (id: string) => (archives.get(id) ?? []).map((r) => r.snapshot),
     listings,
+    grantLibrary: (library: { integrationId: string; resourceId: string; name: string }) =>
+      libraries.push(library),
     /** Answers every authenticated request with a server error until set back. */
     fail(value: boolean) {
       failing = value;

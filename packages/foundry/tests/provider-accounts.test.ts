@@ -115,3 +115,41 @@ test('a missing CLI makes a login unready', () => {
   );
   expect(account).toMatchObject({ ready: false, issue: 'The claude CLI is not on PATH' });
 });
+
+test('a broken decision profile on the main runtime is never reported ready', () => {
+  const config = defaultConfig();
+  const worker = privateProfile();
+  const id = () => crypto.randomUUID();
+  config.nativeAuthentication = [
+    {
+      id: id(),
+      connectionId: id(),
+      runtime: 'claude',
+      mode: 'native-profile',
+      profileDirectory: worker,
+    },
+    {
+      id: id(),
+      connectionId: id(),
+      runtime: 'claude',
+      mode: 'native-profile',
+      profileDirectory: join(worker, '..', 'missing-decision-profile'),
+    },
+  ];
+  config.defaults = {
+    ...config.defaults,
+    provider: 'claude-code',
+    nativeAuthenticationId: config.nativeAuthentication[0]!.id,
+  };
+  config.subscriptionOnly = {
+    decisionSourceId: config.nativeAuthentication[1]!.id,
+    model: 'sonnet',
+  };
+  enable(config, 'claude-code');
+
+  const account = providerAccounts(config, { which: onPath }).find(
+    (a) => a.provider === 'claude-code',
+  );
+  expect(account?.ready).toBe(false);
+  expect(account?.issue).toBeTruthy();
+});

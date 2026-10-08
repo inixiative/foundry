@@ -1,7 +1,7 @@
 import type { ArchiveSnapshot } from '@inixiative/archive';
-import { type ArchiveClient, localArchive } from '@inixiative/archive/remote';
+import { type ArchiveClient, ArchiveRequestError, localArchive } from '@inixiative/archive/remote';
 import type { EventStream } from '@inixiative/foundry-core';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import { z } from 'zod';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { ArchiveCapture } from './capture';
@@ -43,6 +43,42 @@ export function registerArchiveRoutes(
         : [];
     return c.json({ archives, captureErrors: Object.fromEntries(capture.errors), status });
   });
+  // Where a project's sessions publish. Archive owns the routing; Foundry only reads and asks.
+  app.get('/api/archives/destinations', async (c) => {
+    const projectId = c.req.query('projectId');
+    const local = archive();
+    if (!local) return c.json({ error: 'No local Archive is set up' }, 503);
+    try {
+      const [{ destinations }, { paired, libraries }] = await Promise.all([
+        local.destinations(projectId ? { projectId } : {}),
+        local.libraries(),
+      ]);
+      return c.json({ destinations, paired, libraries });
+    } catch (error) {
+      return archiveFailure(c, error);
+    }
+  });
+  const kingdomRoute = z.strictObject({
+    projectId: z.string().min(1).max(256),
+    integrationId: z.uuid(),
+    resourceId: z.uuid(),
+  });
+  for (const action of ['connect', 'remove'] as const)
+    app.post(`/api/archives/destinations/${action}`, async (c) => {
+      const body = kingdomRoute.safeParse(await c.req.json().catch(() => null));
+      if (!body.success) return c.json({ error: 'Invalid destination' }, 400);
+      const local = archive();
+      if (!local) return c.json({ error: 'No local Archive is set up' }, 503);
+      try {
+        return c.json(
+          action === 'connect'
+            ? await local.connectDestination(body.data)
+            : await local.removeDestination(body.data),
+        );
+      } catch (error) {
+        return archiveFailure(c, error);
+      }
+    });
   app.get('/api/archives/:id', async (c) => {
     const found = await archive()
       ?.read(c.req.param('id'))
@@ -72,4 +108,11 @@ export function registerArchiveRoutes(
     return c.json({ queued: true });
   });
   return { capture };
+}
+
+/** Archive's refusals (e.g. a library the Signet does not grant) pass through; anything else is unavailability. */
+function archiveFailure(c: Context, error: unknown) {
+  if (error instanceof ArchiveRequestError && error.status >= 400 && error.status < 500)
+    return c.json({ error: error.message }, error.status as 400 | 403 | 404 | 409);
+  return c.json({ error: 'Archive unavailable' }, 502);
 }

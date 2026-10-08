@@ -434,7 +434,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const section = c.req.param('section');
     const body = await c.req.json<Record<string, unknown>>();
     await configStore.load();
-    if (!configStore.config.projects[id]) return c.json({ error: 'project not found' }, 404);
+    if (!Object.hasOwn(configStore.config.projects, id))
+      return c.json({ error: 'project not found' }, 404);
     if (
       section !== 'sources' &&
       section !== 'defaults' &&
@@ -462,7 +463,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     if (section !== 'sources' && section !== 'agents' && section !== 'layers')
       return c.json({ error: `unknown section: ${section}` }, 400);
     await configStore.load();
-    if (!configStore.config.projects[id]?.[section]?.[itemId])
+    const projects = configStore.config.projects;
+    const items = Object.hasOwn(projects, id) ? projects[id]?.[section] : undefined;
+    if (!items || !Object.hasOwn(items, itemId))
       return c.json({ error: `${section} item not found` }, 404);
     const next = await configStore.update((draft) => {
       const items = draft.projects[id]?.[section];

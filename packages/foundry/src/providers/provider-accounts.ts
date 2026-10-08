@@ -51,17 +51,21 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
           ...(decides ? (['decisions'] as const) : []),
         ];
         if (!apiTokens) {
-          const profile =
-            subscription?.worker.runtime === runtime
-              ? subscription.worker
-              : decides && subscription
-                ? subscription.decision
-                : defaultProfileSource(runtime);
-          const account = nativeAccount(provider.id, profile, which);
+          // The main thread and the decision roles can sit on different profiles of one runtime; check each in use.
+          const profiles = [
+            ...(subscription?.worker.runtime === runtime ? [subscription.worker] : []),
+            ...(decides && subscription && subscription.decision !== subscription.worker
+              ? [subscription.decision]
+              : []),
+          ];
+          const accounts = (profiles.length ? profiles : [defaultProfileSource(runtime)]).map(
+            (profile) => nativeAccount(provider.id, profile, which),
+          );
+          const account = accounts.find((a) => !a.ready) ?? accounts[0]!;
           const issue = account.issue ?? policyIssue;
           return {
             ...account,
-            ready: account.ready && !policyIssue,
+            ready: accounts.every((a) => a.ready) && !policyIssue,
             uses,
             ...(issue ? { issue } : {}),
           };

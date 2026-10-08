@@ -58,6 +58,13 @@ export const projectTags = signal([]); // string[]
 export const activeProjectId = signal(null); // selected project ID or null (global: unscoped threads)
 /** The workspace shows Forge Master, the internal thread about this Foundry, instead of a scope's threads. */
 export const forgeMasterOpen = signal(false);
+
+/** The project the operator is looking at: the page's on settings/analytics, else the workspace's (none for Global and Forge Master). */
+export function scopeProjectId() {
+  const { page, projectId } = route.value;
+  if (page !== 'workspace') return projectId;
+  return forgeMasterOpen.value ? null : activeProjectId.value;
+}
 export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
 export const compactPanel = signal('conversation');
@@ -1649,6 +1656,8 @@ export function init() {
     // Touch all signals to subscribe
     forgeMasterOpen.value;
     activeProjectId.value;
+    // Returning to the workspace writes its live state, not the hash it was left with.
+    route.value;
     activeThreadId.value;
     activePanel.value;
     projectSidebarOpen.value;
@@ -1662,8 +1671,9 @@ export function init() {
   window.addEventListener('storage', _adoptStored);
 
   // Handle back/forward navigation
+  // Pages leave the workspace's view state alone; returning to the workspace re-reads it.
   window.addEventListener('hashchange', () => {
-    restoreFromHash();
+    if (route.peek().page === 'workspace') restoreFromHash();
   });
 
   // A tab returning to the foreground may have missed owned events while

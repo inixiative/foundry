@@ -18,7 +18,6 @@ import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
-  activeProjectId,
   compactPanel,
   connected,
   currentTrace,
@@ -33,6 +32,7 @@ import {
   projectSidebarOpen,
   projects,
   resyncStreams,
+  scopeProjectId,
   selectedEvent,
   selectedSpanId,
   toast,
@@ -45,12 +45,9 @@ import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 // Header — slim: logo + connection status + hints
 // ---------------------------------------------------------------------------
 
-/** The scope the workspace is showing: a project, or Foundry itself (Global and Forge Master). */
-const workspaceProject = () => (forgeMasterOpen.value ? null : activeProjectId.value);
-
 function PageNav() {
-  const { page, projectId } = route.value;
-  const scope = page === 'workspace' ? workspaceProject() : projectId;
+  const { page } = route.value;
+  const scope = scopeProjectId();
   const scopeLabel = scope ? projects.value.find((p) => p.id === scope)?.label || scope : 'Foundry';
   const link = (href, label, current) =>
     html`<a href=${href} aria-current=${current ? 'page' : undefined} onClick=${onLink}>${label}</a>`;
@@ -72,7 +69,7 @@ function Header() {
       <span class="header-title">foundry</span>
       <${PageNav} />
       <div class="header-right">
-        <${GlossButton} projectId=${activeProjectId.value} />
+        ${route.value.page === 'workspace' ? html`<${GlossButton} projectId=${scopeProjectId()} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
@@ -256,9 +253,9 @@ function App() {
         resyncStreams();
       },
       openSettings: () =>
-        navigate(route.value.page === 'settings' ? '/' : settingsPath(workspaceProject())),
+        navigate(route.value.page === 'settings' ? '/' : settingsPath(scopeProjectId())),
       openAnalytics: () =>
-        navigate(route.value.page === 'analytics' ? '/' : analyticsPath(workspaceProject())),
+        navigate(route.value.page === 'analytics' ? '/' : analyticsPath(scopeProjectId())),
       toggleLayers: () => {},
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
@@ -290,6 +287,7 @@ function App() {
         ${page === 'settings' ? html`<${SettingsPage} />` : html`<${AnalyticsPage} />`}
         <${CommandPalette} />
         <${HelpOverlay} />
+        <${Wizard} />
         <${Toast} />
       </div>
     `;

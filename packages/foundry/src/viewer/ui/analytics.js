@@ -5,35 +5,31 @@
  * recent call log with per-span cost, and budget status.
  */
 
-import { html, signal, useEffect } from './lib.js';
+import { html, signal, useEffect, useState } from './lib.js';
 import { analyticsPath, navigate, route } from './route.js';
-import { projects, showToast } from './store.js';
+import { projects } from './store.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-const analyticsData = signal(null);
 const analyticsTab = signal('overview'); // overview | threads | calls | models
 
 // ---------------------------------------------------------------------------
 // Data fetching
 // ---------------------------------------------------------------------------
 
+/** One poll: the snapshot, or why there is none. A refusal (unknown project, analytics off) ends polling. */
 async function loadAnalytics(projectId) {
   try {
     const res = await fetch(
       projectId ? `/api/analytics?project=${encodeURIComponent(projectId)}` : '/api/analytics',
     );
-    if (route.value.projectId !== projectId) return;
-    if (!res.ok) {
-      analyticsData.value = null;
-      showToast(`Analytics unavailable: ${res.status}`, 'error');
-      return;
-    }
-    analyticsData.value = await res.json();
+    const body = await res.json();
+    if (res.ok) return { data: body };
+    return { error: body.error || `Analytics unavailable: ${res.status}`, final: res.status < 500 };
   } catch (err) {
-    showToast(`Analytics failed to load: ${err.message}`, 'error');
+    return { error: `Analytics failed to load: ${err.message}`, final: false };
   }
 }
 
@@ -362,15 +358,27 @@ function RecordedModels({ data }) {
 
 export function AnalyticsPage() {
   const { projectId } = route.value;
-  const data = analyticsData.value;
+  const [state, setState] = useState({});
+  const data = state.data ?? null;
   const tab = analyticsTab.value;
   const projectList = projects.value;
+  const known = !projectId || projectList.some((p) => p.id === projectId);
 
   useEffect(() => {
-    analyticsData.value = null;
-    loadAnalytics(projectId);
-    const interval = setInterval(() => loadAnalytics(projectId), 5000);
-    return () => clearInterval(interval);
+    let live = true;
+    let timer;
+    setState({});
+    const poll = async () => {
+      const next = await loadAnalytics(projectId);
+      if (!live) return;
+      setState(next);
+      if (!next.final) timer = setTimeout(poll, 5000);
+    };
+    poll();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [projectId]);
 
   const tabs = [
@@ -386,6 +394,7 @@ export function AnalyticsPage() {
         <select class="settings-input small analytics-scope" aria-label="Analytics scope" value=${projectId ?? ''}
           onChange=${(e) => navigate(analyticsPath(e.target.value || null))}>
           <option value="">Foundry · every call</option>
+          ${known ? null : html`<option value=${projectId}>${projectId} (not registered)</option>`}
           ${projectList.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
         </select>
         <div class="analytics-tabs">
@@ -404,6 +413,7 @@ export function AnalyticsPage() {
       </div>
 
       <div class="analytics-body">
+        ${state.error ? html`<p class="analytics-empty" role="alert">${state.error}</p>` : null}
         ${projectId ? html`<p class="analytics-availability">Calls recorded on this project's threads. Live session totals and the budget are on the Foundry view.</p>` : null}
         ${tab !== 'overview' && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
         ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}

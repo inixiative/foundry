@@ -14,7 +14,14 @@ import { FilePicker } from './file-picker.js';
 import { GlossSettings } from './gloss.js';
 import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useEffect, useState } from './lib.js';
-import { FOUNDRY_SETTINGS, navigate, PROJECT_SETTINGS, route, settingsPath } from './route.js';
+import {
+  FOUNDRY_SETTINGS,
+  navigate,
+  onLink,
+  PROJECT_SETTINGS,
+  route,
+  settingsPath,
+} from './route.js';
 import { SelfChatPane } from './self-chat.js';
 import { projects, showToast } from './store.js';
 
@@ -645,26 +652,26 @@ function ProjectOverrides({ project }) {
 
 function SettingsNav({ projectId, section, projectList }) {
   const sections = projectId ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
-  const go = (event, path) => {
-    event.preventDefault();
-    navigate(path);
-  };
+  const projectHref = settingsPath(projectId ?? projectList[0]?.id);
+  const known = !projectId || projectList.some((p) => p.id === projectId);
   return html`
     <nav class="settings-nav" aria-label="Settings">
-      <div class="settings-scope" role="tablist" aria-label="Settings scope">
-        <a role="tab" aria-selected=${!projectId} href=${settingsPath(null)}
-          class="settings-scope-tab ${projectId ? '' : 'active'}"
-          onClick=${(e) => go(e, settingsPath(null))}>Foundry</a>
-        <a role="tab" aria-selected=${!!projectId}
-          href=${settingsPath(projectId ?? projectList[0]?.id)}
-          class="settings-scope-tab ${projectId ? 'active' : ''} ${projectList.length ? '' : 'disabled'}"
-          onClick=${(e) => (projectList.length ? go(e, settingsPath(projectId ?? projectList[0].id)) : e.preventDefault())}>Project</a>
+      <div class="settings-scope" aria-label="Settings scope">
+        <a href=${settingsPath(null)} aria-current=${projectId ? undefined : 'page'}
+          class="settings-scope-tab ${projectId ? '' : 'active'}" onClick=${onLink}>Foundry</a>
+        ${
+          projectList.length
+            ? html`<a href=${projectHref} aria-current=${projectId ? 'page' : undefined}
+                class="settings-scope-tab ${projectId ? 'active' : ''}" onClick=${onLink}>Project</a>`
+            : html`<span class="settings-scope-tab disabled" title="Add a project first">Project</span>`
+        }
       </div>
       ${
         projectId
           ? html`<select class="settings-input small settings-project-select" aria-label="Project"
               value=${projectId}
               onChange=${(e) => navigate(settingsPath(e.target.value, section))}>
+              ${known ? null : html`<option value=${projectId}>${projectId} (not registered)</option>`}
               ${projectList.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
             </select>`
           : html`<p class="settings-scope-note">Everything this Foundry runs on, shared by every project.</p>`
@@ -673,8 +680,7 @@ function SettingsNav({ projectId, section, projectList }) {
         ${sections.map(
           ([id, label]) => html`<li key=${id}>
             <a href=${settingsPath(projectId, id)} aria-current=${section === id ? 'page' : undefined}
-              class="settings-section ${section === id ? 'active' : ''}"
-              onClick=${(e) => go(e, settingsPath(projectId, id))}>${label}</a>
+              class="settings-section ${section === id ? 'active' : ''}" onClick=${onLink}>${label}</a>
           </li>`,
         )}
       </ul>
@@ -764,7 +770,10 @@ export function SettingsPage() {
   if (!config)
     return html`<main class="settings-page"><div class="settings-empty">Loading settings…</div></main>`;
 
-  const project = projectId ? config.projects?.[projectId] : null;
+  const project =
+    projectId && Object.hasOwn(config.projects ?? {}, projectId)
+      ? config.projects[projectId]
+      : null;
   const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
     id,
     label: p.label || id,

@@ -27,7 +27,12 @@ export const PROJECT_SETTINGS = [
 
 /** { page: 'workspace' | 'settings' | 'analytics', projectId: string | null, section?: string } */
 export function parseRoute(pathname) {
-  const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  let parts;
+  try {
+    parts = pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return { page: 'workspace', projectId: null };
+  }
   const projectId = parts[0] === 'projects' && parts[1] ? parts[1] : null;
   const rest = projectId ? parts.slice(2) : parts;
   if (rest[0] === 'analytics') return { page: 'analytics', projectId };
@@ -64,7 +69,8 @@ let workspaceHash = route.value.page === 'workspace' ? location.hash : '';
 export function navigate(path) {
   if (route.value.page === 'workspace') workspaceHash = location.hash;
   const next = parseRoute(new URL(path, location.origin).pathname);
-  history.pushState(null, '', next.page === 'workspace' ? `/${workspaceHash}` : routePath(next));
+  const url = next.page === 'workspace' ? `/${workspaceHash}` : routePath(next);
+  if (url !== location.pathname + location.hash) history.pushState(null, '', url);
   route.value = next;
 }
 

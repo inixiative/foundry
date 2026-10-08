@@ -93,26 +93,29 @@ export function ProjectArchive({ projectId }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const query = `projectId=${encodeURIComponent(projectId)}`;
+  const get = async (path) => {
+    const response = await fetch(path);
+    const body = await response.json();
+    if (!response.ok) throw Error(body.error || 'Archive unavailable');
+    return body;
+  };
   const load = async () => {
-    try {
-      const [listed, routed] = await Promise.all(
-        [`/api/archives?${query}`, `/api/archives/destinations?${query}`].map(async (path) => {
-          const response = await fetch(path);
-          const body = await response.json();
-          if (!response.ok) throw Error(body.error || 'Archive unavailable');
-          return body;
-        }),
-      );
-      setArchives(listed.status.reachable ? listed.archives : null);
-      setRouting(routed);
-      setError(
-        listed.status.reachable
-          ? ''
-          : `The local Archive is not answering at ${listed.status.url}.`,
-      );
-    } catch (e) {
-      setError(e.message);
-    }
+    const [listed, routed] = await Promise.allSettled([
+      get(`/api/archives?${query}`),
+      get(`/api/archives/destinations?${query}`),
+    ]);
+    const reachable = listed.status === 'fulfilled' && listed.value.status.reachable;
+    setArchives(reachable ? listed.value.archives : null);
+    setRouting(routed.status === 'fulfilled' ? routed.value : null);
+    setError(
+      listed.status === 'rejected'
+        ? listed.reason.message
+        : !reachable
+          ? `The local Archive is not answering at ${listed.value.status.url}.`
+          : routed.status === 'rejected'
+            ? `Routing is unavailable: ${routed.reason.message}`
+            : '',
+    );
   };
   useEffect(() => {
     load();
@@ -137,6 +140,10 @@ export function ProjectArchive({ projectId }) {
     }
   };
   const destinations = routing?.destinations ?? [];
+  const libraryName = (d) =>
+    routing?.libraries.find(
+      (l) => l.integrationId === d.integrationId && l.resourceId === d.resourceId,
+    )?.name;
   const libraries = (routing?.libraries ?? []).filter(
     (l) =>
       !destinations.some(
@@ -149,14 +156,14 @@ export function ProjectArchive({ projectId }) {
     <p class="settings-desc">The local Archive keeps every session; it copies this project's sessions to these hosted Archives. With none, they stay on this machine.</p>
     ${
       !routing
-        ? html`<p>Checking routing…</p>`
+        ? html`<p>${error ? 'Routing is unavailable.' : 'Checking routing…'}</p>`
         : destinations.length
           ? html`<ul class="archive-destinations">${destinations.map(
               (d) => html`<li key=${`${d.kind}:${d.url}:${d.resourceId ?? ''}`}>
-                <span>${d.libraryName ?? d.url}</span>
+                <span>${libraryName(d) ?? d.url}</span>
                 <span class="settings-card-kind">${d.kind === 'kingdom' ? 'through Kingdom' : 'direct'}</span>
-                ${d.delivery ? html`<span class="settings-desc">${d.delivery.delivered} delivered · ${d.delivery.pending} pending${d.delivery.lastFailure ? ` · last failure: ${d.delivery.lastFailure.message}` : ''}</span>` : null}
-                ${d.kind === 'kingdom' ? html`<button class="action-btn subtle" disabled=${busy} onClick=${() => change('remove', { integrationId: d.integrationId, resourceId: d.resourceId })}>Stop publishing</button>` : null}
+                <span class="settings-desc">${d.delivered} delivered · ${d.pending} pending</span>
+                ${d.kind === 'kingdom' ? html`<button class="action-btn subtle" disabled=${busy} onClick=${() => change('remove', { integrationId: d.integrationId, resourceId: d.resourceId })}>Stop publishing</button>` : html`<span class="settings-desc">set with the archive CLI</span>`}
               </li>`,
             )}</ul>`
           : html`<p>Not published: sessions stay in the local Archive.</p>`

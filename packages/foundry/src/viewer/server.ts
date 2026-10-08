@@ -409,7 +409,15 @@ export function createViewer(config: ViewerConfig) {
     root: fileURLToPath(new URL('./', import.meta.url)),
     path: 'ui/index.html',
   });
-  for (const path of ['/', '/settings', '/settings/*', '/analytics', '/projects/:id/*'])
+  for (const path of [
+    '/',
+    '/settings',
+    '/settings/*',
+    '/analytics',
+    '/projects/:id/settings',
+    '/projects/:id/settings/*',
+    '/projects/:id/analytics',
+  ])
     app.get(path, appPage);
 
   // Data-stream socket. The connection is authorized at upgrade exactly like HTTP

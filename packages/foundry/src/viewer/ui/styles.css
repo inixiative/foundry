@@ -2825,8 +2825,10 @@ body {
   min-height: 0;
   flex: 1;
 }
-.settings-page:has(> .settings-chat.collapsed) {
-  grid-template-columns: 220px minmax(0, 1fr) 40px;
+@media (min-width: 1001px) {
+  .settings-page:has(> .settings-chat.collapsed) {
+    grid-template-columns: 220px minmax(0, 1fr) 40px;
+  }
 }
 
 .forge-master > .settings-chat {
