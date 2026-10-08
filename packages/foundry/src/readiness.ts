@@ -1,12 +1,13 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';
+import { readPrivateJson } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { MODEL_REGISTRY } from './models/registry';
 import { resolveDecisionModel } from './providers/decision-provider';
 import { accessCredentialSchema } from './providers/kingdom-access-client';
-import { installationCredentialSchema, readPrivateJson } from './providers/kingdom-credential-file';
+import { installationCredentialSchema } from './providers/kingdom-credential-file';
 import {
   KingdomRuntimeConnection,
   type KingdomRuntimeSettings,

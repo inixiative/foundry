@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { kingdomUrl, writePrivateJson } from '@inixiative/signet';
 import { z } from 'zod';
 import type { ConfigStore } from '../viewer/config';
-import { kingdomUrl, ownerKey } from './kingdom-client';
-import { writePrivateJson } from './kingdom-credential-file';
+import { ownerKey } from './kingdom-client';
 import {
   type KingdomRuntimeSettings,
   kingdomRuntimeId,

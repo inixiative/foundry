@@ -3,21 +3,17 @@ import { existsSync } from 'node:fs';
 import { mkdir, rmdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { kingdomUrl, readPrivateJson, writePrivateJson } from '@inixiative/signet';
 import { z } from 'zod';
 import {
   KingdomClient,
   type KingdomSelection,
   kingdomEnvelopeSchema,
   kingdomSelectionSchema,
-  kingdomUrl,
   ownerKey,
   ownerKeySchema,
 } from './kingdom-client';
-import {
-  installationCredentialSchema,
-  readPrivateJson,
-  writePrivateJson,
-} from './kingdom-credential-file';
+import { installationCredentialSchema } from './kingdom-credential-file';
 import { NativeAuthentication, type NativeAuthenticationLaunch } from './native-authentication';
 
 /** One runtime installation, keyed by the Kingdom owner it is enrolled under. */

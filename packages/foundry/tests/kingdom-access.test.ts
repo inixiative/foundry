@@ -60,17 +60,25 @@ async function fixture() {
             integrationId: wrongGrant ? crypto.randomUUID() : integrationId,
             name: 'Team integration',
             expiresAt: new Date(Date.now() + 60000).toISOString(),
+            provider: 'linear',
+            lifecycle: 'ongoing',
+            taskId: null,
+            currentRevision: 1,
             remainingRequests: 4,
             operations: [
               {
                 key: 'issues.read',
                 name: 'Read issue',
-                resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue' }],
+                resources: [
+                  { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId },
+                ],
               },
               {
                 key: 'issues.write',
                 name: 'Write issue',
-                resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue' }],
+                resources: [
+                  { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId },
+                ],
               },
             ],
           },

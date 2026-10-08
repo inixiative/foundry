@@ -1,7 +1,8 @@
 import { mkdir, rmdir } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { readPrivateJson, writePrivateJson } from '@inixiative/signet';
 import { KingdomClient } from './kingdom-client';
-import { readPrivateJson, runCredentialSchema, writePrivateJson } from './kingdom-credential-file';
+import { runCredentialSchema } from './kingdom-credential-file';
 
 export async function kingdomToken(path: string): Promise<string> {
   if (!isAbsolute(path)) throw Error('An absolute run credential path is required');

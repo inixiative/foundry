@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readPrivateJson } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import {
@@ -7,7 +8,6 @@ import {
   KingdomAccessHttpError,
   kingdomAccessSourceSchema,
 } from '../../providers/kingdom-access-client';
-import { readPrivateJson } from '../../providers/kingdom-credential-file';
 import { ConfigRevisionError, type ConfigStore, type FoundryConfig } from '../config';
 
 const revision = (config: FoundryConfig) =>

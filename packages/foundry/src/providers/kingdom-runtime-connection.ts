@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { kingdomUrl, readPrivateJson } from '@inixiative/signet';
 import { z } from 'zod';
-import { kingdomUrl, ownerKey, ownerKeySchema, ownerRefSchema } from './kingdom-client';
-import { installationCredentialSchema, readPrivateJson } from './kingdom-credential-file';
+import { ownerKey, ownerKeySchema, ownerRefSchema } from './kingdom-client';
+import { installationCredentialSchema } from './kingdom-credential-file';
 
 /** An installation credential before Kingdom has named its owner (pairing, manual enrollment). */
 export const kingdomInstallationSchema = z

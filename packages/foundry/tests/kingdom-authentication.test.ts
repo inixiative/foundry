@@ -2,9 +2,9 @@ import { afterEach, expect, test } from 'bun:test';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readPrivateJson } from '@inixiative/signet';
 import { KingdomAuthentication } from '../src/providers/kingdom-authentication';
 import { KingdomClient } from '../src/providers/kingdom-client';
-import { readPrivateJson } from '../src/providers/kingdom-credential-file';
 import { kingdomToken } from '../src/providers/kingdom-token-helper';
 
 const cleanups: (() => Promise<unknown>)[] = [];

@@ -1,9 +1,13 @@
 import { isAbsolute } from 'node:path';
+import {
+  kingdomUrl,
+  readPrivateJson,
+  SignetClient,
+  signetCredentialSchema,
+  signetDescriptionSchema,
+} from '@inixiative/signet';
 import { z } from 'zod';
-import { kingdomUrl } from './kingdom-client';
-import { readPrivateJson } from './kingdom-credential-file';
 import { accessSecretPattern } from './kingdom-secrets';
-import { SignetClient, signetCredentialSchema } from './signet-client';
 
 /** Access grants are independent of native inference installations and capacity. */
 export const kingdomAccessSourceSchema = z
@@ -32,29 +36,6 @@ export type KingdomAccessSource = z.infer<typeof kingdomAccessSourceSchema>;
 export const accessCredentialSchema = z
   .object({ secret: z.string().regex(accessSecretPattern) })
   .strict();
-const descriptionSchema = z.object({
-  signetId: z.string().uuid(),
-  integrationId: z.string().uuid(),
-  name: z.string(),
-  expiresAt: z.string().datetime().nullable(),
-  lifecycle: z.enum(['request', 'task', 'ongoing']).optional(),
-  taskId: z.string().uuid().nullable().optional(),
-  remainingRequests: z.number().int().nonnegative(),
-  operations: z.array(
-    z.object({
-      key: z.string(),
-      name: z.string(),
-      resources: z.array(
-        z.object({
-          id: z.string().uuid(),
-          name: z.string(),
-          kind: z.string(),
-          integrationId: z.string().uuid().optional(),
-        }),
-      ),
-    }),
-  ),
-});
 export const readOperationSchema = z
   .string()
   .max(80)
@@ -122,7 +103,7 @@ export class KingdomAccessClient {
       .data;
   }
   async describe() {
-    const description = descriptionSchema.parse(await this.post('describe', {}));
+    const description = signetDescriptionSchema.parse(await this.post('describe', {}));
     if (
       description.integrationId !== this.source.integrationId ||
       description.signetId !== this.source.signetId

@@ -1,3 +1,4 @@
+import { kingdomUrl } from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
 
@@ -50,21 +51,6 @@ export const kingdomEnvelopeSchema = z
   .strict();
 export type KingdomSelection = z.infer<typeof kingdomSelectionSchema>;
 export type KingdomRunEnvelope = z.infer<typeof kingdomEnvelopeSchema>;
-export const kingdomUrl = (value: string) => {
-  const url = new URL(value);
-  if (
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== '/' ||
-    (url.protocol !== 'https:' &&
-      !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
-  )
-    throw Error('Kingdom requires an HTTPS origin or loopback HTTP');
-  return url.origin;
-};
-
 export class KingdomClient {
   readonly origin: string;
   constructor(

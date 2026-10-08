@@ -145,12 +145,23 @@ test('explicit checks use only the saved origin and private token, expose metada
           integrationId: f.source.integrationId,
           name: 'Team issues',
           expiresAt: new Date(Date.now() + 60000).toISOString(),
+          provider: 'linear',
+          lifecycle: 'ongoing',
+          taskId: null,
+          currentRevision: 1,
           remainingRequests: 3,
           operations: [
             {
               key: 'issues.read',
               name: 'Read issue',
-              resources: [{ id: crypto.randomUUID(), name: 'Issue', kind: 'issue' }],
+              resources: [
+                {
+                  id: crypto.randomUUID(),
+                  name: 'Issue',
+                  kind: 'issue',
+                  integrationId: f.source.integrationId,
+                },
+              ],
             },
           ],
         },

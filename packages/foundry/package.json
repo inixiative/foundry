@@ -24,13 +24,14 @@
     "demo": "bun run src/demo.ts"
   },
   "dependencies": {
-    "@inixiative/archive": "^0.7.0",
     "@anthropic-ai/claude-code": "^2.1.92",
     "@bull-board/api": "^6.20.7",
     "@bull-board/hono": "^6.20.7",
     "@inixiative/agent-session": "^0.3.1",
+    "@inixiative/archive": "file:/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/c100a93c-aa39-490b-b4da-02e6c8c8108d/scratchpad/pkg/archive-1791417575.tgz",
     "@inixiative/foundry-core": "workspace:*",
     "@inixiative/gloss": "0.0.5",
+    "@inixiative/signet": "file:/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/c100a93c-aa39-490b-b4da-02e6c8c8108d/scratchpad/pkg/signet-1791417575.tgz",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.6.0",
     "bullmq": "^5.73.0",
@@ -46,7 +47,7 @@
     "pino": "^10.3.1",
     "playwright": "^1.63.0"
   },
-  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core — providers, session adapters, planner, viewer and jobs",
+  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core \u2014 providers, session adapters, planner, viewer and jobs",
   "license": "SEE LICENSE IN LICENSE",
   "files": [
     "src"

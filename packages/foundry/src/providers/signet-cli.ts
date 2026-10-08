@@ -1,24 +1,22 @@
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { z } from 'zod';
-import { ConfigStore } from '../viewer/config';
-import { kingdomUrl } from './kingdom-client';
-import {
-  installationCredentialSchema,
-  readPrivateJson,
-  writePrivateJson,
-} from './kingdom-credential-file';
-import { KingdomSelectionError, selectKingdomRuntime } from './kingdom-runtime-connection';
 import {
   deliveredSignetSchema,
   generateSignetKey,
+  kingdomUrl,
+  readPrivateJson,
   SignetClient,
   signetCredentialSchema,
   signetPost,
   signetProof,
   signetPublicKey,
-} from './signet-client';
+  writePrivateJson,
+} from '@inixiative/signet';
+import { z } from 'zod';
+import { ConfigStore } from '../viewer/config';
+import { installationCredentialSchema } from './kingdom-credential-file';
+import { KingdomSelectionError, selectKingdomRuntime } from './kingdom-runtime-connection';
 
 const pendingSchema = z.object({
   url: z.string().transform(kingdomUrl),

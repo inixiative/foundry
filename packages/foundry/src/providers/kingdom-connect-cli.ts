@@ -1,13 +1,10 @@
 import { lstat, mkdir, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { readPrivateJson, writePrivateJson } from '@inixiative/signet';
 import { ConfigStore } from '../viewer/config';
 import { ownerKey } from './kingdom-client';
-import {
-  installationCredentialSchema,
-  readPrivateJson,
-  writePrivateJson,
-} from './kingdom-credential-file';
+import { installationCredentialSchema } from './kingdom-credential-file';
 import { saveKingdomRuntime } from './kingdom-pairing';
 import {
   kingdomInstallationSchema,
