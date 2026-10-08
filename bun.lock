@@ -28,8 +28,8 @@
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
-        "@inixiative/agent-session": "^0.3.1",
-        "@inixiative/archive": "^0.9.0",
+        "@inixiative/agent-session": "^0.4.0",
+        "@inixiative/archive": "^0.10.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
         "@inixiative/signet": "^0.3.0",
@@ -95,9 +95,9 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.3.1", "", {}, "sha512-A6NL4ZJkB46YEEJxcXEwggxk8McO9T4QOS+YO7k57bkZRBfcREFW/sS2OJ1n65KQIZ8U3fbHgRmEMs73stUw1w=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.4.0", "", { "dependencies": { "@inixiative/json-rules": "^3.4.1" } }, "sha512-blmbMcYN90xMP45CuQpfDaLCSSstWJ3MPIIVE7AdNBofbnSGuUg30jCiYAb6pm11TpH/XlPPmiBBhuhR0jv3sg=="],
 
-    "@inixiative/archive": ["@inixiative/archive@0.9.0", "", { "dependencies": { "@inixiative/signet": "^0.2.1", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-Vt5xWKltJdBI0xcb5/YeK5PniB85xhcCcApMfrj0PvGuLyJz0dMCB10m7feWtt3YsRfovPgjIVi9Sz4GRxU4mg=="],
+    "@inixiative/archive": ["@inixiative/archive@0.10.0", "", { "dependencies": { "@inixiative/signet": "^0.3.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-6QbL7wKzqwNEDe9OGKTWbn/QKEF0zu365M+jFPYxJtnzuGks9Fe6riBAWaWt50BJo0QEQIzlO2E0XBHjhabPsQ=="],
 
     "@inixiative/config": ["@inixiative/config@0.5.59", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-c2jemr9rJ5IbZaU9Jn2fsg4slefB8gepiT0lc2WEf63wjNF8AN/hxO0ot+s3Xsgy3kbR/vnfVap1jl7o9gdX/w=="],
 
@@ -106,6 +106,8 @@
     "@inixiative/foundry-core": ["@inixiative/foundry-core@workspace:packages/core"],
 
     "@inixiative/gloss": ["@inixiative/gloss@0.0.5", "", { "peerDependencies": { "typescript": ">=6.0.0" }, "bin": { "gloss": "dist/cli.js" } }, "sha512-D8UuMnT9OCJpbXfgoDQ689TpaKIhste2K4M4wD1kpRHnhcMyAyuAyLjTeu87ODm13ke9EqeA/Axk+MK2Imt3jA=="],
+
+    "@inixiative/json-rules": ["@inixiative/json-rules@3.4.1", "", { "dependencies": { "dayjs": "^1.11.13", "fastest-levenshtein": "^1.0.16", "re2js": "^2.8.6" }, "peerDependencies": { "@prisma/client": ">=6.0.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@prisma/client", "typescript"] }, "sha512-bWYcNPaVI+tAN0lw/ClEcjMHc6ugbt6YshQbI8Iw5FclPwAzDG2MikTX1JLGOW/xiEK2TzXTyQErmj1iC3kCOg=="],
 
     "@inixiative/signet": ["@inixiative/signet@0.3.0", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-gekBCw769ztSlRfap9gXVMaxJ2pUkTqp3OsVMij9N3F+vvPRg56Wo1qWK8sn7iS24/vnLnPl5qDsI3Va6M/VgA=="],
 
@@ -195,6 +197,8 @@
 
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 
+    "dayjs": ["dayjs@1.11.23", "", {}, "sha512-QDTCU0M0MxR3hQfnlDJfwekQiaanm1ubOD231u73WBckQ/fsamwRLiE2GBz6D3a/xF1NgfiDLJjXBa1hYOYTtQ=="],
+
     "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" } }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
     "deepmerge-ts": ["deepmerge-ts@7.1.5", "", {}, "sha512-HOJkrhaYsweh+W+e74Yn7YStZOilkoPb6fycpwNLKzSPtruFs48nYis0zy5yJz1+ktUhHxoRDJ27RQAWLIJVJw=="],
@@ -248,6 +252,8 @@
     "fast-deep-equal": ["fast-deep-equal@3.1.3", "", {}, "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q=="],
 
     "fast-uri": ["fast-uri@3.1.8", "", {}, "sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg=="],
+
+    "fastest-levenshtein": ["fastest-levenshtein@1.0.16", "", {}, "sha512-eRnCtTTtGZFpQCwhJiUOuxPQWRXVKYDn0b2PeHfXL6/Zi53SLAzAHfVhVWK2AryC/WH05kGfxhFIPvTF0SXQzg=="],
 
     "finalhandler": ["finalhandler@2.1.1", "", { "dependencies": { "debug": "^4.4.0", "encodeurl": "^2.0.0", "escape-html": "^1.0.3", "on-finished": "^2.4.1", "parseurl": "^1.3.3", "statuses": "^2.0.1" } }, "sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA=="],
 
@@ -403,6 +409,8 @@
 
     "rc9": ["rc9@2.1.2", "", { "dependencies": { "defu": "^6.1.4", "destr": "^2.0.3" } }, "sha512-btXCnMmRIBINM2LDZoEmOogIZU7Qe7zn4BpomSKZ/ykbLObuBdvG+mFq11DL6fjH1DRwHhrlgtYWG96bJiC7Cg=="],
 
+    "re2js": ["re2js@2.8.6", "", {}, "sha512-xLgQil4kIUCrAzVk9fRSkxkFNwmygLFjVxXrLc65aE1F0+Zsb8rxumFBy4XKyvgMCTL6kilDq3EZ0piE2dP/Dg=="],
+
     "readdirp": ["readdirp@4.1.2", "", {}, "sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg=="],
 
     "real-require": ["real-require@0.2.0", "", {}, "sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg=="],
@@ -476,8 +484,6 @@
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
-
-    "@inixiative/archive/@inixiative/signet": ["@inixiative/signet@0.2.2", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-+cniGbaB4e0Adejxe/4CPojvciJ4B17SbvNBk2BV43B1SHmDQxmHjIQRGHR4qZqijdkU9zQfTV/lBA/z/EiVwQ=="],
 
     "body-parser/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 
