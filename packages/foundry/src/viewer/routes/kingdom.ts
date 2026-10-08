@@ -115,6 +115,10 @@ export function registerKingdomRoutes(
       onWaiting: (message) => {
         current.waiting = message;
       },
+      onPaired: () => {
+        current.review = undefined;
+        current.waiting = undefined;
+      },
     }).then(
       async ({ settings }) => {
         await connections.set(settings);

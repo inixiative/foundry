@@ -89,7 +89,12 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     expect(await f.tunnel()).toBe(200);
 
     const { integrationId, signetId } = kingdom.approve(owner);
-    const connected = await f.until((state) => state.status === 'connected');
+    const observed: KingdomState[] = [];
+    const connected = await f.until((state) => {
+      observed.push(state);
+      return state.status === 'connected';
+    });
+    expect(observed.filter((state) => state.status === 'connected' && state.pending)).toEqual([]);
     expect(connected.pending).toBeUndefined();
     expect(connected.integrations).toEqual([
       {
@@ -202,7 +207,11 @@ test('the viewer pairs a second Kingdom beside the first, keeps working while ei
     const pair = async (kingdom: MockKingdom) => {
       expect((await f.post('pair', { url: kingdom.url, name: 'Two Kingdoms' })).status).toBe(200);
       return f.until(
-        (state) => !state.pending && state.integrations.some((item) => item.url === kingdom.url),
+        (state) =>
+          !state.pending &&
+          state.integrations.some(
+            (item) => item.url === kingdom.url && item.status === 'connected',
+          ),
       );
     };
     await pair(a);
