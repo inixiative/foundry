@@ -119,12 +119,7 @@ Foundry has no runtime key. It pairs as a Kingdom **Installation** (its own DPoP
 - **Kingdom tests import Foundry source:** `apps/api/src/modules/access/tests/foundrySource.ts:6` resolves a sibling `../foundry` checkout. Kingdom PR #86 reports 2 failing tests because that sibling speaks an older contract. Kingdom should test against the published `@inixiative/foundry/runtime`, not a checkout.
 - **Duplicate Archive storage:** resolved in Kingdom `59ee9b8a`. Kingdom's archive tables are gone; Archive is an owner integration through `@inixiative/archive/remote`, and shares are Signets.
 - **Backwards-compat path:** `apps/api/src/modules/owner/schemas/ownerSchemas.ts` still accepts legacy `access` policy JSON ("Choose resource grants or legacy access").
-- **Process and lab files:**
-  - `docs/validation/*.json` (about 30 run logs)
-  - `docs/MACHINE-HANDOFF-2026-09-10.md`
-  - `docs/RAW_NOTES.md`
-  - `docs/ORACLE-EXECUTION-BRIDGE.md:3` ("executes the existing Lab cycle")
-  - `docs/WORKSPACE-INTEGRATION-2026-09-21.md` ("Foundry Lab")
+- **Process and lab files:** removed. The run logs, the machine handoff, the raw notes, the Oracle execution bridge and the workspace-integration note are all gone.
 - **Unclear owner:**
   - The inference gateway: `apps/api/src/modules/access/services/streamInference.ts:65` proxies API-key calls to Anthropic and OpenAI for run bindings. It overlaps agent-session's capacity routing, and its purpose under subscription-only execution needs a decision.
   - Tribe coupling: the `RuntimeTribeBinding` and `RuntimeTribeAction` models and `modules/owner/services/tribe/*` are bespoke models, not a catalog integration.
@@ -138,9 +133,7 @@ Foundry has no runtime key. It pairs as a Kingdom **Installation** (its own DPoP
   - `docs/BOUNDARY-BENCHMARK.md`
   - `docs/DISTILLATION.md:39-62`
   - Code in the same area: `mcp/fixture-bridge.ts` (`fixture_read/write/command`) and `providers/native-launch.ts:67-73` (`withIsolatedFixture`, used from `session-adapter.ts:520`). These look like eval-run infrastructure; confirm whether Oracle should own them.
-- **Lab and QA material** (the dead `oracle:profile` script, the top-level `fixtures/harness-qa/` handoff notes and the `../foundry-lab` reference were removed in the follow-up cleanup):
-  - `docs/validation/*.json`
-  - `scripts/native-worker/` (VM prototype)
+- **Lab and QA material:** removed. The dead `oracle:profile` script, the top-level `fixtures/harness-qa/` handoff notes and the `../foundry-lab` reference went in the follow-up cleanup; `docs/validation/*.json` and the `scripts/native-worker/` VM prototype went with this entry.
 - **Duplicates agent-session:**
   - `packages/foundry/src/providers/claude-code.ts:146,224` spawns `claude` directly.
   - `providers/codex-text-provider.ts:136` spawns `codex exec` directly.

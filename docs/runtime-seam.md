@@ -27,6 +27,8 @@ Depend on this entrypoint, never on `@inixiative/foundry/src/...`. Internals mov
 
 The entrypoint is still called `runtime`; that name predates Installations. Its exports use the Installation vocabulary.
 
+Renaming the path to `./installation` would read better and is deliberately not done: it is a published import path, and Oracle consumes `@inixiative/foundry/runtime`. Tidying the name here breaks a consumer in another repo, so the path is the stable part and the vocabulary inside it is not.
+
 ## Verifying it from outside
 
 A seam you only ever import from inside the repo is not a seam. [`scripts/runtime-package/`](../scripts/runtime-package/README.md) packs the package and imports it as an installed consumer would, which is the only way to catch an export that works in-repo and breaks once published.
