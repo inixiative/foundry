@@ -29,7 +29,7 @@
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
         "@inixiative/agent-session": "^0.4.0",
-        "@inixiative/archive": "^0.10.0",
+        "@inixiative/archive": "^0.11.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
         "@inixiative/signet": "^0.3.0",
@@ -97,7 +97,7 @@
 
     "@inixiative/agent-session": ["@inixiative/agent-session@0.4.0", "", { "dependencies": { "@inixiative/json-rules": "^3.4.1" } }, "sha512-blmbMcYN90xMP45CuQpfDaLCSSstWJ3MPIIVE7AdNBofbnSGuUg30jCiYAb6pm11TpH/XlPPmiBBhuhR0jv3sg=="],
 
-    "@inixiative/archive": ["@inixiative/archive@0.10.0", "", { "dependencies": { "@inixiative/signet": "^0.3.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-6QbL7wKzqwNEDe9OGKTWbn/QKEF0zu365M+jFPYxJtnzuGks9Fe6riBAWaWt50BJo0QEQIzlO2E0XBHjhabPsQ=="],
+    "@inixiative/archive": ["@inixiative/archive@0.11.0", "", { "dependencies": { "@inixiative/signet": "^0.3.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-WYeqsBuEDcA0ySnPK1NYu+KhVLECx9uJAnjhhyaI47T3qmBUZ4A0eIZ6gjpuy2EgY7VjOXzlbm08cTMPNOrMkA=="],
 
     "@inixiative/config": ["@inixiative/config@0.5.63", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-eFjFH6HentKQwyFKJW8WlRSPYf9M9ZErV8dRPo4E03Ud55xl+Us8Gpys3drdDooi+YrFM4orABOphe+dEteUkA=="],
 
