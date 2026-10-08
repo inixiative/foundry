@@ -12,3 +12,6 @@ dist
 .playwright-mcp/
 .idea/
 .test-*/
+
+# Worktree slots (per-machine)
+.worktrees/
