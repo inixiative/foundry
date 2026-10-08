@@ -1600,7 +1600,7 @@ function readHash() {
 
 function writeHash() {
   // Settings and analytics pages own their URL; the workspace's view state returns with it.
-  if (route.value.page !== 'workspace') return;
+  if (route.peek().page !== 'workspace') return;
   const params = new URLSearchParams();
   if (forgeMasterOpen.value) params.set('forge', '1');
   if (activeProjectId.value) params.set('project', activeProjectId.value);
@@ -1647,7 +1647,6 @@ export function init() {
   // Sync view state → URL hash on any change
   effect(() => {
     // Touch all signals to subscribe
-    route.value;
     forgeMasterOpen.value;
     activeProjectId.value;
     activeThreadId.value;

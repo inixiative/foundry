@@ -76,6 +76,14 @@ export function onLink(event) {
   navigate(event.currentTarget.getAttribute('href'));
 }
 
+// Hash-only changes (the workspace's own view state) also fire popstate; they leave the page as is.
 window.addEventListener('popstate', () => {
-  route.value = parseRoute(location.pathname);
+  const next = parseRoute(location.pathname);
+  const current = route.value;
+  if (
+    next.page !== current.page ||
+    next.projectId !== current.projectId ||
+    next.section !== current.section
+  )
+    route.value = next;
 });

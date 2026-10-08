@@ -78,6 +78,21 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.locator('.proj-item', { hasText: 'Global' }).click();
     expect(await page.locator('.forge-master').count()).toBe(0);
 
+    // No horizontal overflow on a narrow phone.
+    await page.setViewportSize({ width: 333, height: 800 });
+    for (const path of [
+      '/settings/providers',
+      `/projects/${project.id}/settings/archive`,
+      '/analytics',
+    ]) {
+      await page.goto(`${origin}${path}`);
+      await page.locator('.settings-page, .analytics-page').first().waitFor();
+      expect({
+        path,
+        overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1),
+      }).toEqual({ path, overflow: false });
+    }
+
     expect(errors).toEqual([]);
   } finally {
     expect(await releaseAll(cleanup)).toEqual([]);

@@ -5471,7 +5471,15 @@ a.thread-ref:hover {
     display: none;
   }
   .page-nav {
-    margin-left: 4px;
+    margin-left: 0;
+  }
+  .page-nav a {
+    padding: 3px 5px;
+  }
+  /* Icon only: the label is the button's title. */
+  .header .gloss-launch {
+    font-size: 0;
+    gap: 0;
   }
   /* Kingdom stays reachable from Settings. */
   .header-right > :nth-child(n + 2) {
