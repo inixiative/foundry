@@ -1,5 +1,9 @@
 {
   "extends": "@inixiative/config/tsconfig/base.json",
   "include": ["scripts", "fixtures"],
-  "exclude": ["fixtures/harness-qa/acceptance", "scripts/gloss-browser-qa.ts"]
+  "exclude": [
+    "fixtures/harness-qa/acceptance",
+    "scripts/gloss-browser-qa.ts",
+    "scripts/runtime-package"
+  ]
 }
