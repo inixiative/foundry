@@ -1,5 +1,5 @@
 {
-  "version": "2.1.293",
+  "version": "2.1.294",
   "status": 200,
   "body": {
     "turns": [
@@ -14,7 +14,7 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-07T19:57:59.163Z",
+    "recordedAt": "2026-10-08T06:09:42.284Z",
     "agentSession": "0.3.1",
     "environment": "terminal"
   }
