@@ -16,14 +16,14 @@
     },
     "packages/core": {
       "name": "@inixiative/foundry-core",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "uuidv7": "^1.0.2",
       },
     },
     "packages/foundry": {
       "name": "@inixiative/foundry",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
