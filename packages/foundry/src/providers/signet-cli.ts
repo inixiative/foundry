@@ -22,7 +22,6 @@ const pendingSchema = z.object({
   url: z.string().transform(kingdomUrl),
   requestId: z.string().uuid(),
   reviewCode: z.string(),
-  deviceCode: z.string(),
   expiresAt: z.string().datetime(),
   keyFile: z.string(),
   integrationId: z.string().uuid(),
@@ -178,7 +177,7 @@ try {
       await signetPost(
         pending.url,
         'collectSignet',
-        { deviceCode: pending.deviceCode },
+        { inquiryId: pending.requestId },
         { DPoP: await signetProof(pending.url, 'collectSignet', pending.keyFile) },
       ),
     );
