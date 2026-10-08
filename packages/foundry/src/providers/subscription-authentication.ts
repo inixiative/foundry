@@ -5,12 +5,18 @@ import {
   type NativeAuthenticationSource,
 } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
-import { type StatusProcess, subscriptionStatus } from './native-text-provider';
+import {
+  codexSubscriptionStatus,
+  type StatusProcess,
+  subscriptionStatus,
+} from './native-text-provider';
 
 // `claude auth status` reaches the network; under launchd it takes several seconds.
 const STATUS_DEADLINE_MS = 20_000;
 const STATUS_TTL_MS = 5 * 60_000;
 
+/** The main-thread worker on its subscription login: Claude Code holds its profile exclusively; Codex shares
+ * the login with Codex decisions on a Foundry-private CODEX_HOME, so the user's Codex config never applies. */
 export class SubscriptionAuthentication extends NativeAuthentication {
   private statusChild?: StatusProcess;
   private statusCheck?: Promise<void>;
@@ -22,16 +28,19 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     private statusSpawn?: (profile: string) => StatusProcess,
     private statusDeadlineMs = STATUS_DEADLINE_MS,
   ) {
-    super({ directory, sources: [workerSource], defaultSourceId: workerSource.id });
+    super({
+      directory,
+      sources: [workerSource],
+      defaultSourceId: workerSource.id,
+      ...(workerSource.runtime === 'codex' ? { shared: true, privateHome: true } : {}),
+    });
     this.workerSource = structuredClone(workerSource);
-    if (workerSource.runtime !== 'claude')
-      throw Error('Subscription worker requires a Claude native profile');
   }
   override async prepare(
     threadId: string,
     runtime: 'claude' | 'codex',
   ): Promise<NativeAuthenticationLaunch> {
-    if (runtime !== 'claude') throw Error('Subscription worker runtime mismatch');
+    if (runtime !== this.workerSource.runtime) throw Error('Subscription worker runtime mismatch');
     if (this.statusClosed)
       throw Error('Subscription status admission unavailable; no API fallback');
     if (Date.now() - this.statusVerifiedAt > STATUS_TTL_MS) {
@@ -45,6 +54,9 @@ export class SubscriptionAuthentication extends NativeAuthentication {
       }
     }
     const launch = await super.prepare(threadId, runtime);
+    // Codex launch overrides are already limited to sandbox, approval and effort by the native binding.
+    if (runtime === 'codex')
+      return { ...launch, launch: (argv, env) => launch.launch(argv, nativeTextEnvironment(env)) };
     return {
       ...launch,
       launch(argv, env) {
@@ -59,18 +71,20 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let exited = false;
+    const { runtime, profileDirectory } = this.workerSource;
     const child = this.statusSpawn
-      ? this.statusSpawn(this.workerSource.profileDirectory)
-      : Bun.spawn(['claude', 'auth', 'status', '--json'], {
-          env: withProfile(
-            nativeTextEnvironment(process.env),
-            'claude',
-            this.workerSource.profileDirectory,
-          ),
-          stdin: 'ignore',
-          stdout: 'pipe',
-          stderr: 'pipe',
-        });
+      ? this.statusSpawn(profileDirectory)
+      : Bun.spawn(
+          runtime === 'codex'
+            ? ['codex', 'login', 'status']
+            : ['claude', 'auth', 'status', '--json'],
+          {
+            env: withProfile(nativeTextEnvironment(process.env), runtime, profileDirectory),
+            stdin: 'ignore',
+            stdout: 'pipe',
+            stderr: 'pipe',
+          },
+        );
     this.statusChild = child;
     const exit = child.exited.then(
       () => {
@@ -80,7 +94,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     );
     try {
       const status = await Promise.race([
-        subscriptionStatus(child),
+        runtime === 'codex' ? codexSubscriptionStatus(child) : subscriptionStatus(child),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(Error('Subscription status deadline')),
@@ -88,7 +102,12 @@ export class SubscriptionAuthentication extends NativeAuthentication {
           );
         }),
       ]);
-      if (!status) throw Error('Authenticated Claude subscription required');
+      if (!status)
+        throw Error(
+          runtime === 'codex'
+            ? 'Codex ChatGPT login required'
+            : 'Authenticated Claude subscription required',
+        );
     } finally {
       clearTimeout(timer);
       if (!exited) {

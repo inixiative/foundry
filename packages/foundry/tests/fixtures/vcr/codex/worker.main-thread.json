@@ -1,0 +1,233 @@
+{
+  "version": "0.155.1",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "codex",
+      "app-server",
+      "--listen",
+      "stdio://"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{},\"clientInfo\":{\"name\":\"inixiative-bench\",\"version\":\"0.1.0\"}}}",
+      "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\"}",
+      "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"thread/start\",\"params\":{\"model\":\"gpt-6-luna\",\"cwd\":\"{{cwd}}\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"config\":{}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nRun the shell command `cat marker.txt` in the working directory and reply with exactly its output and nothing else.\"}]}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.155.1 (Mac OS 15.7.3; arm64) xterm-ghostty (inixiative-bench; 0.1.0)\",\"codexHome\":\"{{tmp}}/vcr-scenario-jJNfEa/d2f05fc9-3d8a-4274-b9a8-eb809b5c385a/codex-home-live\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1791461042701}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-6-luna\",\"reasoningEffort\":null,\"createdAt\":1791461044,\"updatedAt\":1791461044,\"recencyAt\":1791461044,\"status\":{\"type\":\"idle\"},\"path\":\"{{tmp}}/vcr-scenario-jJNfEa/d2f05fc9-3d8a-4274-b9a8-eb809b5c385a/codex-home-live/sessions/2026/10/08/rollout-2026-10-08T09-04-04-01a11b66-32bb-7650-b6e4-31dc9e784433.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.155.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":null,\"multiAgentMode\":\"explicitRequestOnly\"}}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-6-luna\",\"reasoningEffort\":null,\"createdAt\":1791461044,\"updatedAt\":1791461044,\"recencyAt\":1791461044,\"status\":{\"type\":\"idle\"},\"path\":\"{{tmp}}/vcr-scenario-jJNfEa/d2f05fc9-3d8a-4274-b9a8-eb809b5c385a/codex-home-live/sessions/2026/10/08/rollout-2026-10-08T09-04-04-01a11b66-32bb-7650-b6e4-31dc9e784433.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.155.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1791461044959}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1791461044959}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1791461044990}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turn\":{\"id\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1791461044,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1791461044990}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1791461046439}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a11b66-4428-7ed1-82c9-9fc673c4c011\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nRun the shell command `cat marker.txt` in the working directory and reply with exactly its output and nothing else.\",\"text_elements\":[]}]},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"startedAtMs\":1791461049384},\"emittedAtMs\":1791461049384}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a11b66-4428-7ed1-82c9-9fc673c4c011\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nRun the shell command `cat marker.txt` in the working directory and reply with exactly its output and nothing else.\",\"text_elements\":[]}]},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"completedAtMs\":1791461049384},\"emittedAtMs\":1791461049394}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"exec-55471814-364b-4f6c-adf0-72646e57425f\",\"pluginId\":null,\"scriptPath\":null,\"command\":\"/bin/zsh -lc 'cat marker.txt'\",\"cwd\":\"{{cwd}}\",\"processId\":\"65503\",\"source\":\"unifiedExecStartup\",\"status\":\"inProgress\",\"commandActions\":[{\"type\":\"read\",\"command\":\"cat marker.txt\",\"name\":\"marker.txt\",\"path\":\"{{cwd}}/marker.txt\"}],\"aggregatedOutput\":null,\"exitCode\":null,\"durationMs\":null},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"startedAtMs\":1791461051436},\"emittedAtMs\":1791461051441}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"exec-55471814-364b-4f6c-adf0-72646e57425f\",\"pluginId\":null,\"scriptPath\":null,\"command\":\"/bin/zsh -lc 'cat marker.txt'\",\"cwd\":\"{{cwd}}\",\"processId\":\"65503\",\"source\":\"unifiedExecStartup\",\"status\":\"completed\",\"commandActions\":[{\"type\":\"read\",\"command\":\"cat marker.txt\",\"name\":\"marker.txt\",\"path\":\"{{cwd}}/marker.txt\"}],\"aggregatedOutput\":\"foundry-tool-ok\\n\",\"exitCode\":0,\"durationMs\":0},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"completedAtMs\":1791461051436},\"emittedAtMs\":1791461051443}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"tokenUsage\":{\"total\":{\"totalTokens\":13837,\"inputTokens\":13802,\"cachedInputTokens\":11008,\"cacheWriteInputTokens\":0,\"outputTokens\":35,\"reasoningOutputTokens\":0},\"last\":{\"totalTokens\":13837,\"inputTokens\":13802,\"cachedInputTokens\":11008,\"cacheWriteInputTokens\":0,\"outputTokens\":35,\"reasoningOutputTokens\":0},\"modelContextWindow\":258400}},\"emittedAtMs\":1791461051457}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":1,\"windowDurationMins\":10080,\"resetsAt\":1791988974},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1791461051457}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"startedAtMs\":1791461052249},\"emittedAtMs\":1791461052249}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"delta\":\"found\"},\"emittedAtMs\":1791461052249}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"delta\":\"ry\"},\"emittedAtMs\":1791461052249}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"delta\":\"-tool\"},\"emittedAtMs\":1791461052249}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"delta\":\"-ok\"},\"emittedAtMs\":1791461052249}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"text\":\"foundry-tool-ok\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"completedAtMs\":1791461052249},\"emittedAtMs\":1791461052252}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"tokenUsage\":{\"total\":{\"totalTokens\":27710,\"inputTokens\":27667,\"cachedInputTokens\":22016,\"cacheWriteInputTokens\":0,\"outputTokens\":43,\"reasoningOutputTokens\":0},\"last\":{\"totalTokens\":13873,\"inputTokens\":13865,\"cachedInputTokens\":11008,\"cacheWriteInputTokens\":0,\"outputTokens\":8,\"reasoningOutputTokens\":0},\"modelContextWindow\":258400}},\"emittedAtMs\":1791461052352}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":1,\"windowDurationMins\":10080,\"resetsAt\":1791988974},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1791461052353}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1791461052357}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turn\":{\"id\":\"01a11b66-32e6-7000-a95c-2d810cc2b67e\",\"items\":[{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bc39648191969753285a0707b7\",\"text\":\"foundry-tool-ok\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1791461044,\"completedAt\":1791461052,\"durationMs\":7385}},\"emittedAtMs\":1791461052357}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"id\":4,\"result\":{\"turn\":{\"id\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1791461052368}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turn\":{\"id\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1791461052,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1791461052368}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a11b66-4fe3-7c83-86e7-b6864b6b97d5\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}]},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"startedAtMs\":1791461052387},\"emittedAtMs\":1791461052388}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a11b66-4fe3-7c83-86e7-b6864b6b97d5\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}]},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"completedAtMs\":1791461052387},\"emittedAtMs\":1791461052393}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"startedAtMs\":1791461053347},\"emittedAtMs\":1791461053347}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"delta\":\"accepted\"},\"emittedAtMs\":1791461053347}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"delta\":\"-private\"},\"emittedAtMs\":1791461053347}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"itemId\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"delta\":\"-answer\"},\"emittedAtMs\":1791461053347}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"completedAtMs\":1791461053425},\"emittedAtMs\":1791461053442}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turnId\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"tokenUsage\":{\"total\":{\"totalTokens\":41613,\"inputTokens\":41563,\"cachedInputTokens\":35072,\"cacheWriteInputTokens\":0,\"outputTokens\":50,\"reasoningOutputTokens\":0},\"last\":{\"totalTokens\":13903,\"inputTokens\":13896,\"cachedInputTokens\":13056,\"cacheWriteInputTokens\":0,\"outputTokens\":7,\"reasoningOutputTokens\":0},\"modelContextWindow\":258400}},\"emittedAtMs\":1791461053488}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":1,\"windowDurationMins\":10080,\"resetsAt\":1791988974},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1791461053488}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1791461053503}"
+      },
+      {
+        "after": 5,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a11b66-32bb-7650-b6e4-31dc9e784433\",\"turn\":{\"id\":\"01a11b66-4fc6-7a00-a8f7-e6b83d494773\",\"items\":[{\"type\":\"agentMessage\",\"id\":\"msg_0bedeefabfcc87c8016ac786bd5b7c8191a9e5191ff5f83dba\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1791461052,\"completedAt\":1791461053,\"durationMs\":1135}},\"emittedAtMs\":1791461053503}"
+      }
+    ],
+    "exit": {
+      "after": 6,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-08T12:04:13.595Z",
+    "agentSession": "0.3.1",
+    "environment": "terminal",
+    "durationMs": 11162,
+    "model": "gpt-6-luna"
+  }
+}

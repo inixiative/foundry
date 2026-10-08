@@ -73,7 +73,7 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 
 **Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
 
-Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) and every decision role runs GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`), with no API provider constructed and no paid fallback. API-key providers require `apiTokens: true`. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
+Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) or, with `defaults.provider: "codex"`, on the Codex login, and every decision role runs GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`), with no API provider constructed and no paid fallback. API-key providers require `apiTokens: true`. Main threads run on Anthropic, OpenAI, Google, Meta and xAI models only. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
 
 ## Design Principles
 

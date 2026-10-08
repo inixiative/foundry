@@ -42,9 +42,11 @@ import {
   ClaudeCodeProvider,
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
+  createRegisteredProvider,
   FileExternalSessionStore,
   GeminiProvider,
   OpenAIProvider,
+  providerApiKey,
   type SessionAdapter,
   SessionBackedProvider,
 } from './providers';
@@ -142,7 +144,7 @@ const subscription = resolveSubscriptionPolicy(config, { startup: true });
 if (subscription) {
   config = subscription.config;
   console.log(
-    `Subscription-only: worker claude-code (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
+    `Subscription-only: worker ${subscription.workerProvider} (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
   );
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
@@ -247,6 +249,22 @@ function createProvider(config: FoundryConfig): {
     );
   }
 
+  // Subscription workers launch with an allowlisted environment: no API keys or competing profiles.
+  const subscriptionSpawn = subscription
+    ? {
+        spawn: (
+          argv: string[],
+          options: { cwd: string; env: Record<string, string | undefined> },
+        ) =>
+          Bun.spawn(argv, {
+            ...options,
+            env: nativeTextEnvironment(options.env),
+            stdin: 'pipe',
+            stdout: 'pipe',
+            stderr: 'pipe',
+          }),
+      }
+    : {};
   switch (providerId) {
     case 'claude-code': {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
@@ -255,21 +273,7 @@ function createProvider(config: FoundryConfig): {
         authentication,
         defaults: {
           model: config.defaults.model,
-          ...(subscription
-            ? {
-                spawn: (
-                  argv: string[],
-                  options: { cwd: string; env: Record<string, string | undefined> },
-                ) =>
-                  Bun.spawn(argv, {
-                    ...options,
-                    env: nativeTextEnvironment(options.env),
-                    stdin: 'pipe',
-                    stdout: 'pipe',
-                    stderr: 'pipe',
-                  }),
-              }
-            : {}),
+          ...subscriptionSpawn,
         },
       });
       return {
@@ -285,10 +289,12 @@ function createProvider(config: FoundryConfig): {
       const sessionAdapter = new CodexSessionAdapter({
         store: sessionStore,
         authentication,
-        engine: config.defaults.codexEngine,
+        // Codex CLI 0.155 dropped `codex mcp-server`; the app-server is the native session protocol.
+        engine: config.defaults.codexEngine ?? 'app-server',
         defaults: {
           model: config.defaults.model,
           effort: config.defaults.codexEffort,
+          ...subscriptionSpawn,
         },
       });
       return {
@@ -339,9 +345,22 @@ function createProvider(config: FoundryConfig): {
         }),
       };
     }
-    default:
-      console.error(`Unknown provider: ${providerId}`);
-      process.exit(1);
+    default: {
+      // Meta, xAI and the other OpenAI-compatible hosts share one adapter, keyed by the registry.
+      const key = providerApiKey(providerId);
+      try {
+        return {
+          provider: createRegisteredProvider(providerId, {
+            apiKey: key,
+            baseUrl: config.providers[providerId]?.baseUrl,
+            defaultModel: config.defaults.model,
+          }),
+        };
+      } catch (error) {
+        console.error(`${(error as Error).message}. Add it to .env.local or environment.`);
+        process.exit(1);
+      }
+    }
   }
 }
 

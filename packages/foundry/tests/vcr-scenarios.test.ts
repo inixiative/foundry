@@ -38,6 +38,7 @@ import {
   LIVE,
   recordedAppServerTransport,
   recordedClaudeTransport,
+  recordedCodexStatus,
   sameAsLive,
   settleRecordings,
 } from './helpers/vcr';
@@ -455,6 +456,77 @@ test(
       terminal: 'turn/completed',
       observedModel: LIVE.codexModel,
       launches: 1,
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'codex main thread: the subscription worker drives a shell tool and keeps one session across two turns',
+  async () => {
+    const vcr = codexVcr();
+    const out = await scenario(vcr, 'main-thread', async () => {
+      const status = recordedCodexStatus(['chatgpt'], vcr);
+      vcr.queue('worker', 'main-thread');
+      const worker = new ProcessCassettes(vcr, 'worker', { model: LIVE.codexModel });
+      const directory = root(),
+        cwd = join(directory, 'project');
+      mkdirSync(cwd);
+      writeFileSync(join(cwd, 'marker.txt'), 'foundry-tool-ok\n');
+      const auth = new SubscriptionAuthentication(
+        directory,
+        source('codex', directory),
+        status.statusSpawn,
+      );
+      const adapter = new CodexSessionAdapter({
+        engine: 'app-server',
+        authentication: auth,
+        store: new InMemoryExternalSessionStore(),
+        defaults: { spawn: worker.spawn },
+      });
+      const provider = new SessionBackedProvider({
+        id: 'codex',
+        adapter,
+        defaultModel: LIVE.codexModel,
+        defaultCwd: cwd,
+      });
+      try {
+        const tool = await provider.complete(
+          [
+            {
+              role: 'user',
+              content:
+                'Run the shell command `cat marker.txt` in the working directory and reply with exactly its output and nothing else.',
+            },
+          ],
+          { threadId: 'main', cwd },
+        );
+        const second = await provider.complete(
+          [{ role: 'user', content: answerPrompt('second turn') }],
+          { threadId: 'main', cwd },
+        );
+        const home = worker.launches[0]?.env.CODEX_HOME;
+        return {
+          turns: [tool.content.trim(), second.content.trim()],
+          launches: worker.launches.length,
+          statusChecks: status.statusChecks,
+          privateHome: !!home && home.startsWith(directory),
+          paidKeys: Object.keys(worker.launches[0]?.env ?? {}).filter((key) => /API_KEY/.test(key)),
+          sameSession:
+            !!tool.native?.nativeSessionId &&
+            tool.native.nativeSessionId === second.native?.nativeSessionId,
+        };
+      } finally {
+        await adapter.releaseAll();
+      }
+    });
+    expect(out).toEqual({
+      turns: ['foundry-tool-ok', ANSWER],
+      launches: 1,
+      statusChecks: 1,
+      privateHome: true,
+      paidKeys: [],
+      sameSession: true,
     });
   },
   LIVE_TIMEOUT,

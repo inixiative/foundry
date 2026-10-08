@@ -43,11 +43,26 @@ async function saveSection(section, data) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    settingsConfig.value = await res.json();
+    const body = await res.json();
+    // A refused save names what is missing (for example, what a main thread on that provider needs).
+    if (!res.ok) return showToast(body?.error || 'Failed to save', 'error');
+    settingsConfig.value = body;
     showToast('Settings saved', 'ok');
   } catch {
     showToast('Failed to save', 'error');
   }
+}
+
+/** Registry view of each provider: whether it can run a main thread and what that needs. */
+const modelRegistry = signal(null);
+function loadModelRegistry() {
+  if (modelRegistry.value) return;
+  fetch('/api/models')
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body) => {
+      if (body) modelRegistry.value = body;
+    })
+    .catch(() => {});
 }
 
 async function saveProjectSection(projectId, section, data) {
@@ -303,10 +318,22 @@ function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
 // Defaults + Providers editors (unchanged shape, minor tidy)
 // ---------------------------------------------------------------------------
 
-function DefaultsEditor({ defaults, providers, onSave, onFocusChange }) {
+function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange }) {
   const [draft, setDraft] = useState({ ...defaults });
   const update = (k, v) => setDraft({ ...draft, [k]: v });
   const enabledProviders = Object.values(providers).filter((p) => p.enabled);
+  useEffect(loadModelRegistry, []);
+  const registry = modelRegistry.value?.providers;
+  const mainThread = (id) => registry?.find((p) => p.id === id)?.mainThread;
+  // Main threads run on Anthropic, OpenAI, Google, Meta and xAI models.
+  const executorProviders = registry
+    ? enabledProviders.filter((p) => mainThread(p.id) || p.id === draft.provider)
+    : enabledProviders;
+  const executorNeeds = registry
+    ? mainThread(draft.provider) === null
+      ? `${draft.provider} cannot run a main thread.`
+      : !apiTokens && mainThread(draft.provider)?.requirement
+    : null;
 
   return html`
     <div class="settings-card" onFocusin=${() => onFocusChange?.(null)}>
@@ -324,7 +351,7 @@ function DefaultsEditor({ defaults, providers, onSave, onFocusChange }) {
             value=${draft.provider}
             onChange=${(e) => update('provider', e.target.value)}
           >
-            ${enabledProviders.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
+            ${executorProviders.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
           </select>
         </div>
         <div class="settings-field">
@@ -342,6 +369,8 @@ function DefaultsEditor({ defaults, providers, onSave, onFocusChange }) {
           </select>
         </div>
       </div>
+
+      ${executorNeeds ? html`<p class="settings-desc main-thread-needs">${executorNeeds}</p>` : null}
 
       <div class="settings-section-label">Classifier / Router</div>
       <div class="settings-row">
@@ -700,6 +729,7 @@ export function Settings() {
       <${DefaultsEditor}
         defaults=${config.defaults}
         providers=${config.providers}
+        apiTokens=${config.apiTokens === true}
         onSave=${handleDefaultsSave}
         onFocusChange=${onFocusChange}
       />

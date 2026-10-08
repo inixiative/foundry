@@ -16,6 +16,9 @@ export function checkSetupNeeded(config) {
   }
 }
 
+/** Native harnesses that run a main thread on a subscription login (models/registry.ts SUBSCRIPTION_WORKERS). */
+const SUBSCRIPTION_WORKERS = ['claude-code', 'codex'];
+
 const FALLBACK_PROVIDERS = [
   {
     id: 'claude-code',
@@ -112,9 +115,10 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
         different agents can use different providers.
       </p>
       <p class="wizard-desc dim">
-        Foundry is subscription-only by default: the Claude Code worker and Codex
-        (GPT-6 Luna) decisions use your existing logins. Choosing a provider that
-        needs an API key opts this install in to API tokens.
+        Foundry is subscription-only by default: a Claude Code or Codex main thread
+        and Codex (GPT-6 Luna) decisions use your existing logins. A main thread on
+        an API-key provider (Gemini, Meta, xAI or the Anthropic/OpenAI APIs) opts
+        this install in to API tokens.
       </p>
 
       <div class="wizard-options">
@@ -149,7 +153,8 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
 }
 
 function DefaultProviderStep({ providers, enabled, selected, onSelect, onNext, onBack }) {
-  const enabledProviders = providers.filter((p) => enabled.includes(p.id));
+  // The default provider runs the main thread: Anthropic, OpenAI, Google, Meta or xAI.
+  const enabledProviders = providers.filter((p) => enabled.includes(p.id) && p.mainThread !== null);
 
   // Skip this step if only one provider enabled
   if (enabledProviders.length === 1 && !selected) {
@@ -172,7 +177,7 @@ function DefaultProviderStep({ providers, enabled, selected, onSelect, onNext, o
             onClick=${() => onSelect(p.id)}
           >
             <span class="wizard-option-label">${p.label}</span>
-            <span class="wizard-option-desc">${p.desc}</span>
+            <span class="wizard-option-desc">${p.mainThread?.requirement ? `${p.mainThread.requirement} (setup opts in to API tokens).` : p.desc}</span>
           </button>
         `,
         )}
@@ -424,7 +429,8 @@ export function Wizard() {
     // Subscription default: Codex Luna decisions beside a Claude Code worker.
     // Otherwise default the classifier to the fastest model on the same provider.
     if (!classifierProvider) {
-      const subscription = defaultProvider === 'claude-code' && enabledProviders.includes('codex');
+      const subscription =
+        SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('codex');
       const id = subscription ? 'codex' : defaultProvider;
       setClassifierProvider(id);
       const prov = providers.find((p) => p.id === id);
@@ -462,8 +468,9 @@ export function Wizard() {
         body: JSON.stringify(updatedProviders),
       });
 
-      // A Claude Code worker with native decisions stays subscription-only; any other choice opts in to API tokens.
-      const subscription = defaultProvider === 'claude-code' && classifierProvider === 'codex';
+      // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
+      const subscription =
+        SUBSCRIPTION_WORKERS.includes(defaultProvider) && classifierProvider === 'codex';
       await patchSettings('apiTokens', { enabled: !subscription });
 
       // Update defaults — executor model is the global default

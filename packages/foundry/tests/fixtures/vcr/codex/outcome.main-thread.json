@@ -1,0 +1,22 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "turns": [
+      "foundry-tool-ok",
+      "accepted-private-answer"
+    ],
+    "launches": 1,
+    "statusChecks": 1,
+    "privateHome": true,
+    "paidKeys": [],
+    "sameSession": true
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-08T12:04:13.595Z",
+    "agentSession": "0.3.1",
+    "environment": "terminal"
+  }
+}

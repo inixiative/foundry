@@ -253,15 +253,18 @@ test('readiness refuses wrong-runtime sources and missing or non-executable help
 
 test('keyless providers read as ready: a local Ollama has no credential to be missing', async () => {
   const config = defaultConfig();
-  // Subscription mode pins the worker to claude-code; a local API provider is the apiTokens path.
+  // A local API provider is the apiTokens path. Main threads run on the five labs, so Ollama decides.
   config.apiTokens = true;
   config.defaults = {
-    provider: 'ollama',
-    model: 'llama3.2:3b',
+    provider: 'meta',
+    model: 'muse-spark-1.3',
     classifierProvider: 'ollama',
     classifierModel: 'llama3.2:3b',
   };
-  const report = await inspectReadiness(config, { environment: {}, which: () => null });
+  const report = await inspectReadiness(config, {
+    environment: { MODEL_API_KEY: 'synthetic' },
+    which: () => null,
+  });
   expect(report.issues.some((item) => item.code === 'provider-credential-missing')).toBe(false);
   expect(report.issues.some((item) => item.code === 'native-cli-missing')).toBe(false);
   expect(report.issues.some((item) => item.severity === 'error')).toBe(false);

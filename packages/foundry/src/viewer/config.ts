@@ -15,6 +15,7 @@ import {
   type ModelCapability,
   type ProviderType,
   providerConfigsFromRegistry,
+  subscriptionWorker,
 } from '../models/registry';
 import type { ClaudeContextBudget } from '../providers/claude-context-budget';
 import { DECISION_MODEL } from '../providers/decision-provider';
@@ -36,6 +37,7 @@ import {
   type NativeAuthenticationSource,
 } from '../providers/native-authentication';
 import {
+  assertMainThreadLabs,
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,
   type SubscriptionSettings,
@@ -79,7 +81,7 @@ export interface FoundryConfig {
     model: string;
     nativeAuthenticationId?: string;
     kingdomOwnerKey?: string;
-    /** Explicit native selection; MCP stays default. Applies on construction only. */
+    /** Explicit native selection; app-server is the default (Codex CLI 0.155 has no `mcp-server`). Applies on construction only. */
     codexEngine?: 'mcp' | 'app-server';
     codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     /** Classifier/router provider. Defaults to same as executor if omitted. */
@@ -566,8 +568,8 @@ export function starterConfig(
   const config = defaultConfig();
   config.defaults.provider = providerId;
   config.defaults.model = model;
-  if (providerId !== 'claude-code') {
-    // Subscription mode runs the worker on Claude Code; any other worker is the API-token mode.
+  if (!subscriptionWorker(providerId)) {
+    // Subscription mode runs the worker on Claude Code or Codex; any other worker is the API-token mode.
     config.apiTokens = true;
     delete config.defaults.classifierProvider;
     delete config.defaults.classifierModel;
@@ -782,6 +784,7 @@ export function registerConfigValidator(validate: (config: FoundryConfig) => voi
 }
 
 export function validateConfig(config: FoundryConfig): void {
+  assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
   for (const validate of configValidators) validate(config);

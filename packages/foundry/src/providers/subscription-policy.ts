@@ -1,6 +1,13 @@
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import {
+  MODEL_REGISTRY,
+  mainThreadRequirement,
+  SUBSCRIPTION_WORKERS,
+  type SubscriptionWorker,
+  subscriptionWorker,
+} from '../models/registry';
 import type { AgentSettingsConfig, AgentSettingsOverride, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { DECISION_MODEL } from './decision-provider';
@@ -26,6 +33,39 @@ export const subscriptionSettingsSchema = z
   })
   .strict();
 export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
+/** Every registered main thread (the global default worker and each enabled executor, globally and in project
+ * overrides) runs on a main-thread lab. Whether it runs here is the mode's concern: `resolveSubscriptionPolicy`. */
+export function assertMainThreadLabs(config: FoundryConfig): void {
+  const providers = [config.defaults.provider];
+  const executors = (
+    agents: Record<string, Partial<AgentSettingsConfig>> | undefined,
+    fallback: string,
+    inherited?: Record<string, AgentSettingsConfig>,
+  ) => {
+    for (const [id, agent] of Object.entries(agents ?? {}))
+      if (
+        (agent.kind ?? inherited?.[id]?.kind) === 'executor' &&
+        (agent.enabled ?? inherited?.[id]?.enabled) !== false
+      )
+        providers.push(agent.provider ?? inherited?.[id]?.provider ?? fallback);
+  };
+  executors(config.agents, config.defaults.provider);
+  for (const project of Object.values(config.projects ?? {})) {
+    const fallback = project.defaults?.provider ?? config.defaults.provider;
+    providers.push(fallback);
+    executors(
+      project.agents as Record<string, Partial<AgentSettingsConfig>>,
+      fallback,
+      config.agents,
+    );
+  }
+  for (const provider of providers) {
+    // Unregistered ids are adapters supplied in code (tests, Oracle); only registered labs are classified.
+    const requirement = MODEL_REGISTRY[provider] && mainThreadRequirement(provider, true);
+    if (requirement) throw Error(requirement);
+  }
+}
+
 export interface SubscriptionPolicy {
   model: string;
   expectedObservedModel?: string;
@@ -58,6 +98,8 @@ export const SUBSCRIPTION_DEFAULTS = {
 
 export interface SubscriptionResolution {
   policy: SubscriptionPolicy;
+  /** The native harness running every main thread. */
+  workerProvider: SubscriptionWorker;
   worker: NativeProfileSource;
   decision: NativeProfileSource;
   /** Effective configuration: every enabled decision role runs on the subscription decision profile. */
@@ -68,8 +110,8 @@ export interface SubscriptionResolution {
 
 /**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
- * providers. Without it the Claude worker and the decision profile (Codex by default)
- * both use subscription logins, referenced in place, with no paid fallback.
+ * providers. Without it the worker (Claude Code or Codex) and the decision profile (Codex by
+ * default) both use subscription logins, referenced in place, with no paid fallback.
  *
  * `startup` also checks the default login locations and prepares the default receipt
  * directory; configuration saves validate structure and explicit profiles only.
@@ -95,6 +137,11 @@ export function resolveSubscriptionPolicy(
     throw Error(
       'Subscription-only startup requires fixed native profile selections, without gateway or per-thread overrides; set apiTokens: true for other sources',
     );
+  const workerProvider = config.defaults.provider;
+  const requirement = mainThreadRequirement(workerProvider, false);
+  if (requirement || !subscriptionWorker(workerProvider))
+    throw Error(`Subscription-only mode: ${requirement}`);
+  const workerRuntime = SUBSCRIPTION_WORKERS[workerProvider];
   const explicit = (id: string) => {
     const found = config.nativeAuthentication?.find((item) => item.id === id);
     if (!found || found.mode !== 'native-profile')
@@ -104,8 +151,9 @@ export function resolveSubscriptionPolicy(
   };
   const worker = config.defaults.nativeAuthenticationId
     ? explicit(config.defaults.nativeAuthenticationId)
-    : defaultProfileSource('claude');
-  if (worker.runtime !== 'claude') throw Error('The subscription worker runs on a Claude profile');
+    : defaultProfileSource(workerRuntime);
+  if (worker.runtime !== workerRuntime)
+    throw Error(`The ${workerProvider} subscription worker runs on a ${workerRuntime} profile`);
   const decision = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
     : defaultProfileSource('codex');
@@ -170,14 +218,21 @@ export function resolveSubscriptionPolicy(
       return path;
     }
   };
-  if (canonical(worker.profileDirectory) === canonical(decision.profileDirectory))
+  // A Claude worker holds its profile exclusively. A Codex worker shares its login with Codex
+  // decisions, each on its own private home linked to the one auth.json.
+  if (
+    worker.runtime === 'claude' &&
+    canonical(worker.profileDirectory) === canonical(decision.profileDirectory)
+  )
     throw Error('Subscription decisions require a separate private profile from the warm worker');
 
   const { config: effective, rerouted } = routeDecisions(config, policy.model);
   const check = (view: FoundryConfig) => {
-    if (view.defaults.provider !== 'claude-code')
+    if (view.defaults.provider !== workerProvider)
       throw Error(
-        `Subscription-only mode runs the worker on claude-code; set apiTokens: true to use ${view.defaults.provider}`,
+        `Subscription-only mode runs every main thread on the ${workerProvider} worker; ${
+          mainThreadRequirement(view.defaults.provider, false) ?? `set it as the global default`
+        }`,
       );
     if (
       view.defaults.model !== config.defaults.model ||
@@ -187,7 +242,7 @@ export function resolveSubscriptionPolicy(
       view.defaults.classifierModel !== policy.model
     )
       throw Error(
-        'Subscription-only defaults require the Claude worker and subscription decision model',
+        'Subscription-only defaults require the configured worker and subscription decision model',
       );
     model.parse(view.defaults.model);
     for (const agent of Object.values(view.agents)) {
@@ -195,7 +250,7 @@ export function resolveSubscriptionPolicy(
       const central = agent.kind === 'executor';
       if (
         (agent.provider ?? view.defaults.provider) !==
-          (central ? 'claude-code' : SUBSCRIPTION_DECISIONS) ||
+          (central ? workerProvider : SUBSCRIPTION_DECISIONS) ||
         (agent.model ?? (central ? view.defaults.model : undefined)) !==
           (central ? config.defaults.model : policy.model) ||
         (!central && agent.tools === true)
@@ -221,7 +276,7 @@ export function resolveSubscriptionPolicy(
   check(effective);
   for (const id of Object.keys(effective.projects))
     check(resolveProjectView(effective, id)!.config);
-  return structuredClone({ policy, worker, decision, config: effective, rerouted });
+  return structuredClone({ policy, workerProvider, worker, decision, config: effective, rerouted });
 }
 
 /** Decision roles (every enabled non-executor agent) run on the subscription decision profile.

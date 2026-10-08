@@ -14,7 +14,12 @@ import { existsSync, mkdirSync } from 'fs';
 import { basename } from 'path';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
-import { MODEL_REGISTRY } from './models/registry';
+import {
+  MODEL_REGISTRY,
+  mainThreadLab,
+  mainThreadRequirement,
+  subscriptionWorker,
+} from './models/registry';
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
 import { defaultInstallationName, defaultKingdomUrl, pairKingdom } from './providers/kingdom-cli';
 import { createTerminalPrompts } from './setup/prompts';
@@ -45,6 +50,8 @@ const PROVIDERS = Object.values(MODEL_REGISTRY).map((provider) => ({
 }));
 
 type ProviderId = (typeof PROVIDERS)[number]['id'];
+/** The providers a main thread can run on: Anthropic, OpenAI, Google, Meta and xAI. */
+const MAIN_THREAD_PROVIDERS = PROVIDERS.filter((provider) => mainThreadLab(provider.id));
 
 function detectKeys(): { id: ProviderId; key: string }[] {
   const found: { id: ProviderId; key: string }[] = [];
@@ -784,19 +791,24 @@ async function pickProvider(
   }
 
   // Subscription (Claude Code) is the default; a detected key is not an opt-in to API tokens.
-  const defaultIdx = PROVIDERS.findIndex((p) => p.id === (currentId ?? 'claude-code'));
+  const defaultIdx = MAIN_THREAD_PROVIDERS.findIndex((p) => p.id === (currentId ?? 'claude-code'));
 
   const providerIdx = await choose(
-    'Which LLM provider?',
-    PROVIDERS.map((p) => {
+    'Which provider runs the main thread?',
+    MAIN_THREAD_PROVIDERS.map((p) => {
       const found = detected.find((d) => d.id === p.id);
       return found ? `${p.label}  (key detected)` : p.label;
     }),
     defaultIdx >= 0 ? defaultIdx : 0,
   );
-  const provider = PROVIDERS[providerIdx];
+  const provider = MAIN_THREAD_PROVIDERS[providerIdx]!;
 
   let apiKey = '';
+  // An API worker opts this install in to API tokens; say what that main thread needs.
+  if (!subscriptionWorker(provider.id))
+    console.log(
+      `\n  ${mainThreadRequirement(provider.id, false)}.\n  Setup opts in to API tokens; decisions then need OPENAI_API_KEY.`,
+    );
   if (provider.envKey) {
     const existingKey = detected.find((d) => d.id === provider.id);
     if (existingKey) {
@@ -809,10 +821,10 @@ async function pickProvider(
     if (!apiKey) {
       console.log('  No key — add it to .env.local later.');
     }
-  } else if (provider.id === 'claude-code') {
-    console.log('\n  Subscription-only: Claude Code worker, Codex decisions (no API key needed).');
   } else {
-    console.log('\n  A non-Claude worker opts in to API tokens: decisions need OPENAI_API_KEY.');
+    console.log(
+      `\n  Subscription-only: ${provider.label} worker, Codex decisions (no API key needed).`,
+    );
   }
 
   const model = await ask('Default model', provider.defaultModel);
@@ -997,7 +1009,7 @@ async function configureDocsLayer(config: FoundryConfig) {
 // ---------------------------------------------------------------------------
 
 function buildStarterConfig(providerId: ProviderId | string, model: string): FoundryConfig {
-  // Claude Code is subscription-only with Codex decisions; any other worker opts in to API tokens.
+  // Claude Code and Codex are subscription-only with Codex decisions; any other worker opts in to API tokens.
   const config = starterConfig(providerId, model);
   const decision = config.apiTokens
     ? { provider: providerId, model }

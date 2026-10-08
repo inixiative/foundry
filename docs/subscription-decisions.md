@@ -2,7 +2,7 @@
 
 Foundry runs subscription-only by default. A fresh install, with no settings at all, runs the Claude Code worker and Foundry's decisions from the logins already on the machine:
 
-- **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset).
+- **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset). Set `defaults.provider` to `codex` (for example with `defaults.model: "gpt-6-astra"`) to run main threads on Codex instead, on the Codex CLI's ChatGPT login (`~/.codex`).
 - **Decisions:** GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`). Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review), configured experts and thread naming all use this decision profile.
 
 No API provider is constructed in this mode. There is no paid fallback, no automatic retry and no model substitution. API-key providers need an explicit opt-in.
@@ -12,8 +12,8 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | Key | Default | Meaning |
 |---|---|---|
 | `apiTokens` | absent (`false`) | `true` opts in to API-key providers (Anthropic, OpenAI, Gemini, gateways, Kingdom bindings) and the OpenAI/Luna API decision provider, which requires `OPENAI_API_KEY`. It cannot be combined with `subscriptionOnly`. |
-| `defaults.provider` | `claude-code` | The subscription worker must be `claude-code`. Any other worker requires `apiTokens: true`. |
-| `defaults.nativeAuthenticationId` | absent: `~/.claude` | Optional explicit Claude `native-profile` source for the worker. |
+| `defaults.provider` | `claude-code` | The main-thread worker. Without API tokens it is a subscription harness: `claude-code` or `codex`. |
+| `defaults.nativeAuthenticationId` | absent: `~/.claude` or `~/.codex` | Optional explicit `native-profile` source for the worker; its runtime matches the worker. |
 | `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `gpt-6-luna` | New configurations record the decision profile here. With a Codex decision profile, `classifierModel` selects its model. |
 | `subscriptionOnly.decisionSourceId` | absent: `~/.codex` | Optional explicit `native-profile` source for decisions: Codex, or a *separate* Claude profile. |
 | `subscriptionOnly.model` | `gpt-6-luna` for Codex | Decision model. Required for a Claude decision profile. |
@@ -41,9 +41,25 @@ Explicit profile sources are credential references in `nativeAuthentication`, ne
 
 An explicit profile directory must be an owned private (0700) directory with private files. The default login locations are referenced in place: they must be owned, real directories whose credential files (`auth.json`, `.credentials.json`) are private, but Foundry does not require or change their mode. Worker and decision profiles must resolve to different directories; a Claude worker with Codex decisions satisfies this. Profile directories, gateways, Kingdom bindings and per-thread authentication selections cannot be mixed into subscription mode.
 
+## Main threads
+
+Main threads (the default worker and every enabled executor) run on models from five labs: Anthropic, OpenAI, Google, Meta and xAI (`MAIN_THREAD_LABS` in the core model registry). Other labs, gateways and local hosts are refused as main threads in every mode. How each lab runs:
+
+| Lab | Subscription (default) | With `apiTokens: true` |
+|---|---|---|
+| Anthropic | `claude-code` on the Claude login | also `anthropic` (`ANTHROPIC_API_KEY`) |
+| OpenAI | `codex` on the Codex ChatGPT login | also `openai` (`OPENAI_API_KEY`) |
+| Google | no harness yet (agent-session's ACP transport for Gemini CLI is a stub) | `gemini` (`GEMINI_API_KEY`) |
+| Meta | no harness yet | `meta` (`MODEL_API_KEY`) |
+| xAI | no harness yet | `xai` (`XAI_API_KEY`) |
+
+A refused main thread names what it needs, in the settings API, the viewer's Defaults editor and setup.
+
+A Codex worker is checked with `codex login status` and must be a ChatGPT login; an API-key login is refused. It shares the Codex login with Codex decisions (both are shared holders, so they may use the same `~/.codex`) and runs on its own Foundry-private `CODEX_HOME` (`.foundry/runtime-profiles/<source id>/codex-home`, kept across restarts so sessions resume) that links the profile's `auth.json`. None of the user's Codex config, instructions or MCP servers apply to it, and it runs with Codex's own sandbox and approvals off, like the Claude worker's bypass mode.
+
 ## Existing settings
 
-Subscription mode runs every enabled non-executor agent on the decision profile. An agent saved with another provider or model (for example a classifier on `gemini` or a Librarian on `claude-code`) is routed to `subscription-decisions` at startup; the startup log lists each routed agent. The saved settings file is not rewritten. Settings that cannot be enforced are refused rather than routed: a non-Claude worker, an executor on another provider or model, decision agents with tools, thinking, cache or non-zero temperature overrides, and `learning.review` provider/model overrides.
+Subscription mode runs every enabled non-executor agent on the decision profile. An agent saved with another provider or model (for example a classifier on `gemini` or a Librarian on `claude-code`) is routed to `subscription-decisions` at startup; the startup log lists each routed agent. The saved settings file is not rewritten. Settings that cannot be enforced are refused rather than routed: a worker that is not a subscription harness, an executor on another provider or model, decision agents with tools, thinking, cache or non-zero temperature overrides, and `learning.review` provider/model overrides.
 
 ## Sharing the user's own logins
 

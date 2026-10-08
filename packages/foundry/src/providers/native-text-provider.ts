@@ -432,6 +432,20 @@ export function buildNativeTextProvider(
   };
 }
 
+/** `codex login status`: a ChatGPT (subscription) login, never an API key. It reports on stderr. */
+export async function codexSubscriptionStatus(proc: StatusProcess): Promise<boolean> {
+  try {
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return code === 0 && /^Logged in using ChatGPT$/m.test(`${stdout}\n${stderr}`);
+  } catch {
+    return false;
+  }
+}
+
 /** Supported read-only status command. Never persist raw output or account identity. */
 export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {
   try {

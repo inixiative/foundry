@@ -121,6 +121,39 @@ export function recordedClaudeTransport(names: Names, vcr = claudeVcr()) {
   };
 }
 
+/** `codex login status` reports the login method on stderr; keep only that line, withhold anything else. */
+export const codexLoginOnly = (frames: Frame[]): Frame[] => {
+  const line = frames
+    .map((frame) => frame.data.trim())
+    .find((data) => /^(Logged in using (ChatGPT|an API key)|Not logged in)$/.test(data));
+  return [
+    {
+      after: 0,
+      stream: 'stderr',
+      data: line ?? 'VCR: unrecognized login status withheld',
+    },
+  ];
+};
+
+/** The Codex worker's subscription gate: the real `codex login status` on the account's login. */
+export function recordedCodexStatus(names: string[], vcr = codexVcr()) {
+  queueAll(vcr, 'login-status', names);
+  const status = new ProcessCassettes(vcr, 'login-status', {
+    argv: ['codex', 'login', 'status'],
+    sanitize: codexLoginOnly,
+    recordOnce: true,
+    model: () => undefined,
+    env: () => nativeTextEnvironment(process.env),
+  });
+  return {
+    vcr,
+    get statusChecks() {
+      return status.launches.length;
+    },
+    statusSpawn: status.statusSpawn,
+  };
+}
+
 /** Primed Codex decisions: one warm `codex app-server` (JSON-RPC) serves every role's session. */
 export function recordedAppServerTransport(names: string[], vcr = codexVcr()) {
   queueAll(vcr, 'primed', names);

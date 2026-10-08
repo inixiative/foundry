@@ -23,6 +23,30 @@ export type ProviderType =
   | 'custom';
 export type RuntimeKind = 'api' | 'native-harness' | 'typed-decision';
 
+/** Who trains the models a provider serves. Gateways and local hosts serve many labs and carry none. */
+export type ModelLab =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'meta'
+  | 'xai'
+  | 'deepseek'
+  | 'moonshot'
+  | 'zhipu'
+  | 'alibaba'
+  | 'mistral'
+  | 'typesafe';
+
+/** Labs whose models may run a main thread (the Artificer), on whatever transport reaches them. */
+export const MAIN_THREAD_LABS = [
+  'anthropic',
+  'openai',
+  'google',
+  'meta',
+  'xai',
+] as const satisfies readonly ModelLab[];
+export type MainThreadLab = (typeof MAIN_THREAD_LABS)[number];
+
 /**
  * What a model is worth using for. Every model is a judgment client — that is
  * not a provider category, it is a tag every entry carries. The other tags name
@@ -175,6 +199,8 @@ const MUSE_REASONING: ModelReasoning = {
 export interface FoundryProviderInfo {
   id: string;
   type: ProviderType;
+  /** Absent for gateways and local hosts. */
+  lab?: ModelLab;
   label: string;
   description: string;
   envKey?: string;
@@ -222,6 +248,7 @@ const POWERFUL_REASONING = [...POWERFUL, 'reasoning'] as ModelCapability[];
 export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   'claude-code': {
     id: 'claude-code',
+    lab: 'anthropic',
     type: 'claude-code',
     label: 'Claude Code (CLI subscription)',
     description: "Native Claude Code harness using the user's authenticated subscription.",
@@ -278,6 +305,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   anthropic: {
     id: 'anthropic',
+    lab: 'anthropic',
     type: 'anthropic',
     label: 'Anthropic (API key)',
     description: 'Direct Anthropic API access without the Claude Code native harness.',
@@ -401,6 +429,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   codex: {
     id: 'codex',
+    lab: 'openai',
     type: 'codex',
     label: 'Codex CLI (OpenAI subscription)',
     description: "Native Codex harness using the user's authenticated OpenAI/Codex subscription.",
@@ -491,6 +520,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   openai: {
     id: 'openai',
+    lab: 'openai',
     type: 'openai',
     label: 'OpenAI',
     description: 'OpenAI API models for classification, routing, and execution.',
@@ -586,6 +616,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   gemini: {
     id: 'gemini',
+    lab: 'google',
     type: 'gemini',
     label: 'Google Gemini',
     description: 'Gemini API models for high-volume agent work.',
@@ -652,6 +683,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   meta: {
     id: 'meta',
+    lab: 'meta',
     type: 'openai-compatible',
     // Llama is not Meta's frontier line any more; Muse Spark replaced it in April 2026
     // and there is no "Llama 5". The open-weight Llama entries under openrouter,
@@ -732,6 +764,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   xai: {
     id: 'xai',
+    lab: 'xai',
     type: 'xai',
     label: 'xAI (Grok)',
     description:
@@ -814,6 +847,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   deepseek: {
     id: 'deepseek',
+    lab: 'deepseek',
     type: 'openai-compatible',
     label: 'DeepSeek',
     description:
@@ -850,6 +884,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   kimi: {
     id: 'kimi',
+    lab: 'moonshot',
     type: 'openai-compatible',
     label: 'Kimi (Moonshot AI)',
     description: 'Moonshot Kimi models. OpenAI-compatible; temperature range is 0-1, not 0-2.',
@@ -904,6 +939,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   glm: {
     id: 'glm',
+    lab: 'zhipu',
     type: 'openai-compatible',
     label: 'GLM (Z.ai / Zhipu)',
     description:
@@ -1041,6 +1077,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   qwen: {
     id: 'qwen',
+    lab: 'alibaba',
     type: 'openai-compatible',
     label: 'Qwen (Alibaba Model Studio)',
     // The legacy static domain still works; Alibaba now recommends the per-workspace
@@ -1450,6 +1487,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   mistral: {
     id: 'mistral',
+    lab: 'mistral',
     type: 'openai-compatible',
     label: 'Mistral AI',
     description:
@@ -1518,6 +1556,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
   typesafe: {
     id: 'typesafe',
+    lab: 'typesafe',
     type: 'typesafe',
     label: 'TypeSafe (Jev)',
     description:
@@ -1574,6 +1613,14 @@ export function providersWithCapability(capability: ModelCapability): FoundryPro
   return Object.values(MODEL_REGISTRY).filter((provider) =>
     provider.models.some((model) => model.capabilities.includes(capability)),
   );
+}
+
+/** The main-thread lab a provider serves, or undefined when it serves none (or many). */
+export function mainThreadLab(providerId: string): MainThreadLab | undefined {
+  const lab = MODEL_REGISTRY[providerId]?.lab;
+  return (MAIN_THREAD_LABS as readonly string[]).includes(lab ?? '')
+    ? (lab as MainThreadLab)
+    : undefined;
 }
 
 /** The part of a Foundry configuration `resolveDecisionModel` reads. */
