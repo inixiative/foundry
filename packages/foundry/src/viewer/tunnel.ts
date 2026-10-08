@@ -19,6 +19,7 @@
 
 import type { Subprocess } from 'bun';
 import type { Context, Next } from 'hono';
+import { HANDOFF_WINDOW_MS, handoffCookie, mintHandoffCode, redeemHandoffCode } from './handoff';
 import { privateTunnelToken } from './private-token';
 import {
   authenticatedRequest,
@@ -116,6 +117,32 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
     c.header('Cache-Control', 'no-store');
     if (!sameOrigin(c.req.raw, publicOrigin)) return c.json({ error: 'Origin not allowed' }, 403);
     if (path === '/api/health' && c.req.method === 'GET') return next();
+
+    // Kingdom sends someone here with a single-use code minted from this tunnel's
+    // token. Redeeming it sets the session cookie on Foundry's own origin, so the
+    // token never travels in a URL.
+    // Kingdom holds this tunnel's token as a Credential and asks here for a link to
+    // send someone through. Minting lives on this side so there is one implementation
+    // of the code, not one here and another in every caller.
+    if (path === '/api/handoff' && c.req.method === 'POST') {
+      if (!authenticatedRequest(c.req.raw, token, publicOrigin))
+        return c.json({ error: 'Unauthorized' }, 401);
+      if (!publicOrigin) return c.json({ error: 'Tunnel has no public URL yet' }, 409);
+      return c.json({
+        url: `${publicOrigin.replace(/\/$/, '')}/auth/handoff?code=${mintHandoffCode(token)}`,
+        expiresInMs: HANDOFF_WINDOW_MS,
+      });
+    }
+
+    if (path === '/auth/handoff' && c.req.method === 'GET') {
+      const code = url.searchParams.get('code') ?? '';
+      if (!redeemHandoffCode(code, token))
+        return c.html(loginPage('That link has expired or was already used.'), 401);
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/', 'Set-Cookie': handoffCookie(token) },
+      });
+    }
 
     // Serve login page (GET /auth)
     if (path === '/auth' && c.req.method === 'GET') {

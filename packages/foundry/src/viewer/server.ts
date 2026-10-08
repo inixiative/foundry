@@ -106,6 +106,26 @@ export function createViewer(config: ViewerConfig) {
     });
   }
 
+  // A paired Kingdom may embed this viewer; nothing else may. Browsers refuse the
+  // frame outright without this, and `frame-ancestors` is the only directive that
+  // X-Frame-Options cannot express for a list of origins.
+  const embedders = (config.kingdomRuntimes ?? [])
+    .map((runtime) => {
+      try {
+        return new URL(runtime.url).origin;
+      } catch {
+        return null;
+      }
+    })
+    .filter((origin): origin is string => !!origin);
+  app.use('*', async (c, next) => {
+    await next();
+    c.res.headers.set(
+      'Content-Security-Policy',
+      `frame-ancestors 'self'${embedders.length ? ` ${[...new Set(embedders)].join(' ')}` : ''}`,
+    );
+  });
+
   // Auth middleware — checks tunnelHolder dynamically so it works
   // even when tunnel is started/stopped at runtime
   app.use('*', async (c, next) => {
