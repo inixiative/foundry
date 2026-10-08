@@ -1,18 +1,18 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';
-import { readPrivateJson } from '@inixiative/signet';
+import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { MODEL_REGISTRY } from './models/registry';
 import { resolveDecisionModel } from './providers/decision-provider';
 import { accessCredentialSchema } from './providers/kingdom-access-client';
-import { installationCredentialSchema } from './providers/kingdom-credential-file';
 import {
-  KingdomRuntimeConnection,
-  type KingdomRuntimeSettings,
-  kingdomRuntimeId,
-} from './providers/kingdom-runtime-connection';
+  type KingdomIntegration,
+  kingdomInstallationPaths,
+  kingdomIntegrationId,
+  listedSignets,
+} from './providers/kingdom-installation-connection';
 import { assertProfile } from './providers/private-profile';
 import {
   resolveSubscriptionPolicy,
@@ -41,7 +41,8 @@ export interface ReadinessKingdom {
   id: string;
   url: string;
   owner: string;
-  installationId: string;
+  integrationId: string;
+  signetId: string;
   status: 'connected' | 'unavailable' | 'unverified';
 }
 export interface ReadinessArchive {
@@ -66,7 +67,9 @@ export async function inspectReadiness(
     which?: (binary: string) => string | null;
     /** Enables the local Archive check with this client (undefined: none is set up). */
     archive?: () => ArchiveClient | undefined;
-    /** Enables one Kingdom heartbeat and one local Archive request. */
+    /** Where the Kingdom Installation keys and Signets live (default `.foundry`). */
+    configDir?: string;
+    /** Enables one Signet listing per paired Kingdom and one local Archive request. */
     transport?: typeof fetch;
   } = {},
 ): Promise<ReadinessReport> {
@@ -290,14 +293,13 @@ export async function inspectReadiness(
   for (const source of config.kingdomInference ?? []) {
     if (!selectedOwners.has(source.id)) continue;
     try {
-      const value = await readPrivateJson(source.credentialFile);
-      installationCredentialSchema.parse(value);
+      signetCredentialSchema.parse(await readPrivateJson(source.credentialFile));
     } catch {
       issue(
         'error',
         source.id,
         'kingdom-credential-unavailable',
-        'The installation file must contain a runtime secret and be an owned private regular file. Re-enroll if necessary.',
+        "The credential file must hold this Foundry's Signet and be an owned private regular file. Pair again if necessary.",
       );
     }
     issue(
@@ -360,10 +362,16 @@ export async function inspectReadiness(
         'The configured gateway credential environment variable is absent.',
       );
   }
+  const configDir = options.configDir ?? '.foundry',
+    integrations = saved.kingdomIntegrations ?? [];
+  const listed = options.transport
+    ? await listedSignets(
+        configDir,
+        integrations.map((integration) => integration.url),
+      )
+    : undefined;
   kingdoms = await Promise.all(
-    (saved.kingdomRuntimes ?? []).map((runtime) =>
-      inspectKingdom(runtime, issue, options.transport),
-    ),
+    integrations.map((integration) => inspectKingdom(integration, configDir, issue, listed)),
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   return result();
@@ -377,43 +385,43 @@ type Issue = (
 ) => void;
 
 async function inspectKingdom(
-  runtime: KingdomRuntimeSettings,
+  integration: KingdomIntegration,
+  configDir: string,
   issue: Issue,
-  transport?: typeof fetch,
+  listed?: Map<string, Set<string> | null>,
 ): Promise<ReadinessKingdom> {
   const identity = {
-    id: kingdomRuntimeId(runtime),
-    url: runtime.url,
-    owner: runtime.owner,
-    installationId: runtime.installationId,
+    id: kingdomIntegrationId(integration),
+    url: integration.url,
+    owner: integration.owner,
+    integrationId: integration.integrationId,
+    signetId: integration.signetId,
   };
+  const pairAgain = `Pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`;
   try {
-    installationCredentialSchema.parse(await readPrivateJson(runtime.credentialFile));
+    const { directory } = kingdomInstallationPaths(configDir, integration.url);
+    signetCredentialSchema.parse(
+      await readPrivateJson(signetCredentialFile(directory, integration.signetId)),
+    );
   } catch {
     issue(
       'error',
       `kingdom:${identity.id}`,
       'kingdom-credential-unavailable',
-      `The runtime credential for ${runtime.url} must be an owned private file. Pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`,
+      `The Signet for ${integration.url} must be an owned private file. ${pairAgain}`,
     );
     return { ...identity, status: 'unavailable' };
   }
-  if (!transport) return { ...identity, status: 'unverified' };
-  const connection = new KingdomRuntimeConnection(runtime, () => 0, transport);
-  try {
-    await connection.check();
+  if (!listed) return { ...identity, status: 'unverified' };
+  if (listed.get(integration.url)?.has(integration.signetId))
     return { ...identity, status: 'connected' };
-  } catch {
-    issue(
-      'error',
-      `kingdom:${identity.id}`,
-      'kingdom-unavailable',
-      `${runtime.url} refused or could not be reached; its jobs wait until it returns. Check the runtime in that Kingdom's Foundry tab, or pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`,
-    );
-    return { ...identity, status: 'unavailable' };
-  } finally {
-    connection.stop();
-  }
+  issue(
+    'error',
+    `kingdom:${identity.id}`,
+    'kingdom-unavailable',
+    `${integration.url} refused, could not be reached, or no longer lists this Foundry's Signet. Check the Foundry integration in that Kingdom, or ${pairAgain.charAt(0).toLowerCase()}${pairAgain.slice(1)}`,
+  );
+  return { ...identity, status: 'unavailable' };
 }
 
 async function inspectArchive(

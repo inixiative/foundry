@@ -28,9 +28,9 @@ import {
   type KingdomInferenceSource,
 } from '../providers/kingdom-authentication';
 import {
-  type KingdomRuntimeSettings,
-  kingdomRuntimesSchema,
-} from '../providers/kingdom-runtime-connection';
+  type KingdomIntegration,
+  kingdomIntegrationsSchema,
+} from '../providers/kingdom-installation-connection';
 import {
   NativeAuthentication,
   type NativeAuthenticationSource,
@@ -116,8 +116,8 @@ export interface FoundryConfig {
 
   /** Tunnel configuration — expose the viewer over a public URL. */
   tunnel?: TunnelSettingsConfig;
-  /** Every paired Kingdom, once per Kingdom + owner; credentials stay in private files. */
-  kingdomRuntimes?: KingdomRuntimeSettings[];
+  /** Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files. */
+  kingdomIntegrations?: KingdomIntegration[];
 
   /** MCP server configuration — mid-session bridge for Claude Code. */
   mcp?: McpSettingsConfig;
@@ -783,11 +783,7 @@ export function registerConfigValidator(validate: (config: FoundryConfig) => voi
 
 export function validateConfig(config: FoundryConfig): void {
   resolveSubscriptionPolicy(config);
-  if ('kingdomRuntime' in config)
-    throw Error(
-      'kingdomRuntime is not a setting; remove it, then pair again with bun run kingdom pair',
-    );
-  if (config.kingdomRuntimes) kingdomRuntimesSchema.parse(config.kingdomRuntimes);
+  if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && 'password' in config.tunnel)
     throw Error(

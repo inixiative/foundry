@@ -1,8 +1,8 @@
 /** Credential references belong in configuration; secrets stay behind the resolver. */
-/** `kingdom-runtime` names the paired Kingdom by the destination's origin plus the owner it was paired as. */
+/** `kingdom-signet` names the Signet a paired Kingdom granted, by the destination's origin plus the owner it was paired as. */
 export type CredentialReference =
   | { type: 'managed'; id: string }
-  | { type: 'kingdom-runtime'; owner: string };
+  | { type: 'kingdom-signet'; owner: string };
 
 export interface CredentialScope {
   service: string;

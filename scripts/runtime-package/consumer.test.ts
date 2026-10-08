@@ -13,7 +13,12 @@ const runtime = await import('@inixiative/foundry/runtime');
 test('the seam exposes exactly its named exports', () => {
   // A new export here is a deliberate decision, not a side effect of moving a file.
   expect(Object.keys(runtime).sort()).toEqual(
-    ['KingdomRuntimeConnection', 'SignetClient', 'SignetHttpError', 'kingdomRuntimeSchema'].sort(),
+    [
+      'KingdomInstallationConnection',
+      'SignetClient',
+      'SignetHttpError',
+      'kingdomIntegrationSchema',
+    ].sort(),
   );
 });
 
@@ -25,21 +30,24 @@ test('importing it reaches no network and resolves to the installed package', as
 
 test('internals stay unreachable', async () => {
   await expect(
-    import('@inixiative/foundry/src/providers/kingdom-runtime-connection'),
+    import('@inixiative/foundry/src/providers/kingdom-installation-connection'),
   ).rejects.toThrow();
 });
 
 test('settings parse through the published schema, and a bad one is refused', () => {
   const settings = {
     url: 'https://kingdom.invalid',
-    installationId: crypto.randomUUID(),
-    credentialFile: '/tmp/installation.json',
+    integrationId: crypto.randomUUID(),
     owner: `User:${crypto.randomUUID()}::`,
+    signetId: crypto.randomUUID(),
   };
-  expect(() => runtime.kingdomRuntimeSchema.parse(settings)).not.toThrow();
-  // A relative credential path is rejected: the file is read by an absolute path or not at all.
+  expect(() => runtime.kingdomIntegrationSchema.parse(settings)).not.toThrow();
+  // The owner is Kingdom's owner key and the Signet a uuid; anything else is refused.
   expect(() =>
-    runtime.kingdomRuntimeSchema.parse({ ...settings, credentialFile: 'installation.json' }),
+    runtime.kingdomIntegrationSchema.parse({ ...settings, owner: { ownerModel: 'User' } }),
+  ).toThrow();
+  expect(() =>
+    runtime.kingdomIntegrationSchema.parse({ ...settings, signetId: 'signet.json' }),
   ).toThrow();
 });
 

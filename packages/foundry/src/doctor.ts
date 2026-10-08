@@ -12,7 +12,7 @@ async function main() {
     args = flags.filter((arg) => arg !== '--offline');
   if (args.includes('--help')) {
     console.log(
-      'Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Sends one Kingdom heartbeat and one request to the local Archive; --offline skips them.',
+      'Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Asks each paired Kingdom which Signets it lists and sends one request to the local Archive; --offline skips them.',
     );
     return;
   }
@@ -21,6 +21,7 @@ async function main() {
   if (!(await stat(resolve(directory, 'settings.json'))).isFile()) throw Error('Missing settings');
   const config = await new ConfigStore(directory).load();
   const report = await inspectReadiness(config, {
+    configDir: directory,
     archive: () => localArchive(),
     ...(offline ? {} : { transport: fetch }),
   });

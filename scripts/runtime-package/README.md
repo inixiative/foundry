@@ -18,7 +18,7 @@ It checks four things, each a failure that in-repo tests cannot see:
 - the seam exports exactly its named set, so a new export is a decision rather than a side effect of moving a file;
 - importing it reaches no network, and resolves inside `node_modules` rather than to repo source;
 - internals are not importable;
-- the published settings schema parses a real settings object and refuses a relative credential path.
+- the published settings schema parses a real `kingdomIntegrations` entry and refuses a malformed owner key or Signet id.
 
 `tsconfig.json` excludes this directory, because `@inixiative/foundry/runtime` deliberately does not resolve from inside the repo — that is the condition the test exists to check, and typechecking it here would only ever fail.
 

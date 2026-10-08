@@ -1,256 +1,41 @@
-import { mkdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import {
-  deliveredSignetSchema,
-  generateSignetKey,
-  kingdomUrl,
-  readPrivateJson,
-  SignetClient,
-  signetCredentialSchema,
-  signetPost,
-  signetProof,
-  signetPublicKey,
-  writePrivateJson,
-} from '@inixiative/signet';
+import { readPrivateJson, SignetClient, signetCredentialSchema } from '@inixiative/signet';
 import { z } from 'zod';
-import { ConfigStore } from '../viewer/config';
-import { installationCredentialSchema } from './kingdom-credential-file';
-import { KingdomSelectionError, selectKingdomRuntime } from './kingdom-runtime-connection';
 
-const pendingSchema = z.object({
-  url: z.string().transform(kingdomUrl),
-  requestId: z.string().uuid(),
-  reviewCode: z.string(),
-  expiresAt: z.string().datetime(),
-  keyFile: z.string(),
-  integrationId: z.string().uuid(),
-  name: z.string(),
-  projectId: z.string().min(1),
-  threadId: z.string().optional(),
-});
-const proposalSchema = z
-  .object({
-    name: z.string().min(1),
-    integrationId: z.string().uuid(),
-    resources: z
-      .array(
-        z
-          .object({
-            resourceId: z.string().uuid(),
-            operations: z.array(z.string()).min(1),
-            lens: z
-              .object({
-                documentIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).optional(),
-                fields: z.array(z.enum(['id', 'title', 'content', 'tags', 'createdAt'])).optional(),
-              })
-              .strict()
-              .default({}),
-          })
-          .strict(),
-      )
-      .min(1),
-    lifecycle: z.enum(['request', 'task', 'ongoing']),
-    taskId: z.string().uuid().optional(),
-    expiresAt: z.string().datetime().nullable(),
-    maxRequests: z.number().int().min(1),
-    maxConcurrent: z.number().int().min(1),
-  })
-  .strict();
+// Signets are requested and approved by a person in Kingdom; Kingdom grants them to this
+// Foundry's integration and the Installation connection enrolls them. This CLI only acts on one held.
 const { positionals, values } = parseArgs({
   args: process.argv.slice(2),
   allowPositionals: true,
   strict: true,
   options: {
-    'config-dir': { type: 'string', default: '.foundry' },
-    kingdom: { type: 'string' },
-    proposal: { type: 'string' },
-    project: { type: 'string' },
-    thread: { type: 'string' },
-    pending: { type: 'string' },
     credential: { type: 'string' },
-    revision: { type: 'string' },
     task: { type: 'string' },
     reason: { type: 'string', default: 'completed' },
   },
 });
-const directory = resolve(values['config-dir']!);
-const store = new ConfigStore(directory);
-const command = positionals[0];
-const connect = async (
-  pending: z.infer<typeof pendingSchema>,
-  delivered: z.infer<typeof deliveredSignetSchema>,
-) => {
-  const credentialFile = join(directory, `signet-${delivered.signetId}.json`);
-  await writePrivateJson(
-    credentialFile,
-    signetCredentialSchema.parse({ ...delivered, url: pending.url, keyFile: pending.keyFile }),
-  );
-  const config = await store.load();
-  const existing = config.kingdomAccess?.find(
-    (source) => source.signetId === delivered.signetId && source.url === pending.url,
-  );
-  const source = {
-    id: existing?.id ?? crypto.randomUUID(),
-    url: pending.url,
-    credentialFile,
-    signetId: delivered.signetId,
-    integrationId: pending.integrationId,
-    name: pending.name,
-    projectIds: [pending.projectId],
-    ...(pending.threadId ? { threadIds: [pending.threadId] } : {}),
-  };
-  await store.save({
-    ...config,
-    kingdomAccess: [
-      ...(config.kingdomAccess ?? []).filter((source) => source.id !== existing?.id),
-      source,
-    ],
-  });
-  console.log(
-    JSON.stringify({
-      connected: true,
-      signetId: delivered.signetId,
-      accessId: source.id,
-      projectId: pending.projectId,
-      expiresAt: delivered.expiresAt,
-      idleExpiresAt: delivered.idleExpiresAt,
-      renewalExpiresAt: delivered.renewalExpiresAt,
-      restartViewer: true,
-    }),
-  );
-};
 try {
-  if (command === 'request') {
-    if (!values.proposal || !values.project)
-      throw Error(
-        'Usage: signet request --proposal FILE --project ID [--thread ID] [--kingdom ID|URL] [--config-dir DIR]',
-      );
-    const proposal = proposalSchema.parse(await Bun.file(resolve(values.proposal)).json());
-    if (proposal.lifecycle === 'task' && !values.thread)
-      throw Error(
-        'Usage: task grants require --thread ID to bind the configured access to the requesting Foundry thread',
-      );
-    const kingdom = selectKingdomRuntime((await store.load()).kingdomRuntimes, values.kingdom);
-    const runtime = installationCredentialSchema.parse(
-      await readPrivateJson(kingdom.credentialFile),
-    );
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    const keyFile = join(directory, `signet-key-${crypto.randomUUID()}.json`);
-    const key = generateSignetKey();
-    await writePrivateJson(keyFile, key);
-    const result = await signetPost(
-      kingdom.url,
-      'requestSignet',
-      { ...proposal, publicKey: signetPublicKey(key) },
-      {
-        authorization: `Bearer ${runtime.secret}`,
-        DPoP: await signetProof(kingdom.url, 'requestSignet', keyFile),
-      },
-    );
-    const pending = pendingSchema.parse({
-      ...(typeof result === 'object' ? result : {}),
-      url: kingdom.url,
-      keyFile,
-      integrationId: proposal.integrationId,
-      name: proposal.name,
-      projectId: values.project,
-      threadId: values.thread,
-    });
-    const pendingFile = join(directory, `signet-request-${pending.requestId}.json`);
-    await writePrivateJson(pendingFile, pending);
-    console.log(
-      JSON.stringify({
-        requestId: pending.requestId,
-        reviewCode: pending.reviewCode,
-        expiresAt: pending.expiresAt,
-        pendingFile,
-        next: 'Approve this code in Kingdom, then run signet collect --pending FILE',
-      }),
-    );
-  } else if (command === 'collect') {
-    if (!values.pending) throw Error('Usage: signet collect --pending FILE [--config-dir DIR]');
-    const pending = pendingSchema.parse(await readPrivateJson(resolve(values.pending)));
-    if (Date.parse(pending.expiresAt) <= Date.now())
-      throw Error('Approval delivery window expired; request a new approval');
-    const response = deliveredSignetSchema.parse(
-      await signetPost(
-        pending.url,
-        'collectSignet',
-        { inquiryId: pending.requestId },
-        { DPoP: await signetProof(pending.url, 'collectSignet', pending.keyFile) },
-      ),
-    );
-    await connect(pending, response);
-  } else if (command === 'reenroll') {
-    if (!values.credential || !values.revision)
-      throw Error(
-        'Usage: signet reenroll --credential FILE --revision ACCEPTED_REVISION [--kingdom ID|URL] [--config-dir DIR]',
-      );
-    const path = resolve(values.credential),
-      credential = signetCredentialSchema.parse(await readPrivateJson(path));
-    const issuer = selectKingdomRuntime(
-      (await store.load()).kingdomRuntimes,
-      values.kingdom ?? credential.url,
-    );
-    if (kingdomUrl(issuer.url) !== credential.url)
-      throw Error('Foundry must be connected to the Signet issuer');
-    const runtime = installationCredentialSchema.parse(
-      await readPrivateJson(issuer.credentialFile),
-    );
-    const response = await signetPost(
-      credential.url,
-      'enrollSignet',
-      {
-        signetId: credential.signetId,
-        expectedRevision: z.coerce.number().int().min(1).parse(values.revision),
-        name: 'Foundry',
-        publicKey: signetPublicKey(await readPrivateJson(credential.keyFile)),
-      },
-      {
-        authorization: `Bearer ${runtime.secret}`,
-        DPoP: await signetProof(credential.url, 'enrollSignet', credential.keyFile),
-      },
-    );
-    const delivered = deliveredSignetSchema.parse({
-      ...(typeof response === 'object' ? response : {}),
+  if (positionals[0] !== 'close') throw Error('Usage: signet close');
+  if (!values.credential || !values.task)
+    throw Error('Usage: signet close --credential FILE --task UUID [--reason completed|cancelled]');
+  const path = resolve(values.credential),
+    credential = signetCredentialSchema.parse(await readPrivateJson(path));
+  const result = await new SignetClient(credential.url, path, credential.signetId).post(
+    'closeTask',
+    {
       signetId: credential.signetId,
-    });
-    await writePrivateJson(path, signetCredentialSchema.parse({ ...credential, ...delivered }));
-    console.log(
-      JSON.stringify({
-        connected: true,
-        signetId: credential.signetId,
-        enrollmentId: delivered.enrollmentId,
-        idleExpiresAt: delivered.idleExpiresAt,
-      }),
-    );
-  } else if (command === 'close') {
-    if (!values.credential || !values.task)
-      throw Error(
-        'Usage: signet close --credential FILE --task UUID [--reason completed|cancelled]',
-      );
-    const path = resolve(values.credential),
-      credential = signetCredentialSchema.parse(await readPrivateJson(path));
-    const result = await new SignetClient(credential.url, path, credential.signetId).post(
-      'closeTask',
-      {
-        signetId: credential.signetId,
-        taskId: z.string().uuid().parse(values.task),
-        reason: z.enum(['completed', 'cancelled']).parse(values.reason),
-      },
-    );
-    console.log(JSON.stringify(result));
-  } else throw Error('Usage: signet request|collect|reenroll|close');
+      taskId: z.string().uuid().parse(values.task),
+      reason: z.enum(['completed', 'cancelled']).parse(values.reason),
+    },
+  );
+  console.log(JSON.stringify(result));
 } catch (error) {
   console.error(
-    error instanceof KingdomSelectionError ||
-      (error instanceof Error &&
-        (error.message.startsWith('Usage:') ||
-          error.message.startsWith('Signet request refused') ||
-          error.message.startsWith('Approval delivery')))
+    error instanceof Error &&
+      (error.message.startsWith('Usage:') || error.message.startsWith('Signet request refused'))
       ? error.message
-      : 'Signet setup unavailable. Check Foundry identity, owner approval, private files and the selected context. No credentials were printed.',
+      : 'Signet unavailable. Check the credential file and the task. No credentials were printed.',
   );
   process.exitCode = 1;
 }

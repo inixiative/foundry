@@ -13,10 +13,9 @@ import {
   ownerKey,
   ownerKeySchema,
 } from './kingdom-client';
-import { installationCredentialSchema } from './kingdom-credential-file';
 import { NativeAuthentication, type NativeAuthenticationLaunch } from './native-authentication';
 
-/** One runtime installation, keyed by the Kingdom owner it is enrolled under. */
+/** A Signet this Foundry's integration holds, keyed by the Kingdom owner that granted it. */
 export const kingdomInferenceSourceSchema = z
   .object({
     id: ownerKeySchema,
@@ -153,10 +152,8 @@ export class KingdomAuthentication {
           throw Error('Persisted Kingdom selection changed; use a new thread');
         envelope = stored.envelope;
       } else {
-        const installed = installationCredentialSchema.parse(
-          await readPrivateJson(source.credentialFile),
-        );
-        const client = new KingdomClient(source.url, installed.secret);
+        const client = await KingdomClient.fromFile(source.credentialFile);
+        if (client.origin !== source.url) throw Error('Kingdom Signet belongs to another Kingdom');
         const intentFile = join(directory, 'intent.json');
         let runId: string;
         if (existsSync(intentFile)) {
@@ -172,7 +169,7 @@ export class KingdomAuthentication {
         }
         envelope = await client.resolve(runId, selection, spreadId);
         if (ownerKey(envelope.owner) !== source.id)
-          throw Error('Kingdom installation belongs to another owner');
+          throw Error('Kingdom Signet belongs to another owner');
         if (envelope.runtime !== runtime)
           throw Error('Kingdom selected a different native runtime');
         const delegated = await client.delegate(envelope.id);

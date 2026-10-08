@@ -240,7 +240,7 @@ test('private credentials, response bounds, redirect refusal and uncertain failu
     await chmod(f.source.credentialFile, 0o600);
     await writeFile(
       f.source.credentialFile,
-      JSON.stringify({ secret: `kingdom_runtime_${'x'.repeat(43)}` }),
+      JSON.stringify({ secret: `kingdom_refresh_${'x'.repeat(43)}` }),
     );
     expect((await f.read()).ok).toBe(false);
     expect(f.requests).toHaveLength(0);

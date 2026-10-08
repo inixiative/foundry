@@ -4,14 +4,12 @@
 
 ```ts
 import {
-  KingdomRuntimeConnection,
+  KingdomInstallationConnection,
   SignetClient,
   SignetHttpError,
-  kingdomRuntimeSchema,
-  type KingdomInstallation,
-  type KingdomRuntimeSettings,
-  type RuntimeIdentity,
-  type RuntimeOwner,
+  kingdomIntegrationSchema,
+  type KingdomInstallationOptions,
+  type KingdomIntegration,
 } from '@inixiative/foundry/runtime';
 ```
 
@@ -19,7 +17,7 @@ Construction does no network. An explicit `connection.start()` begins activity.
 
 ## What the seam is, and is not
 
-A Foundry registers with a Kingdom as an **Installation**, identified by its own key. The owner approves that registration through an Inquiry, and Kingdom mints the Integration and the Signet it holds. `KingdomRuntimeConnection` is that paired relationship; `SignetClient` presents the Signet, with its audience, expiry, DPoP and renewal checks intact.
+A Foundry registers with a Kingdom as an **Installation**, identified by its own key. The owner approves that registration through an Inquiry, and Kingdom mints the Integration and the Signet it holds. `KingdomInstallationConnection` is the Installation's live line to one Kingdom, holding the Signets of the integrations paired there; `SignetClient` presents the Signet, with its audience, expiry, DPoP and renewal checks intact.
 
 **Importing this does not grant authority.** A Signet names the resources, operations, lens and limits its holder may use; the export is a client, not a permission. Nothing here widens the Signet action set, and server-side authorization is still what decides.
 
@@ -27,7 +25,7 @@ Depend on this entrypoint, never on `@inixiative/foundry/src/...`. Internals mov
 
 ## Naming
 
-The entrypoint is still called `runtime` and its types still read `KingdomRuntime*`. That vocabulary predates Installations and goes when Kingdom's `RuntimeInstallation` is deleted. The seam itself is unaffected by the rename.
+The entrypoint is still called `runtime`; that name predates Installations. Its exports use the Installation vocabulary.
 
 ## Verifying it from outside
 

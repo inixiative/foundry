@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,76 +10,30 @@ import {
   InterventionLog,
   Thread,
 } from '@inixiative/foundry-core';
+import { signetCredentialFile } from '@inixiative/signet';
+import { kingdomInstallationPaths } from '../src/providers/kingdom-installation-connection';
+import { ConfigStore } from '../src/viewer/config';
 import { startViewer } from '../src/viewer/server';
-
-const organization = {
-  ownerModel: 'Organization',
-  organizationId: '11111111-1111-4111-8111-111111111111',
-};
-
-/** Kingdom's pairing + heartbeat surface; `approve` marks the latest pairing approved for an installation. */
-function mockKingdom(owner: Record<string, string> = organization) {
-  const requests: { deviceCode: string; hash: string; installationId?: string }[] = [];
-  const identities = new Map<string, string>();
-  const server = Bun.serve({
-    port: 0,
-    hostname: '127.0.0.1',
-    async fetch(request) {
-      const action = new URL(request.url).pathname.split('/').at(-1);
-      const body = (await request.json().catch(() => ({}))) as Record<string, string>;
-      if (action === 'pairRuntime') {
-        expect(body).not.toHaveProperty('secret');
-        const deviceCode = 'd'.repeat(42) + requests.length;
-        requests.push({ deviceCode, hash: body.keyHash });
-        return Response.json({
-          data: {
-            deviceCode,
-            userCode: 'ABCDEF012345',
-            expiresAt: new Date(Date.now() + 60000).toISOString(),
-            verificationUrl: `http://127.0.0.1:3000/dashboard?connectFoundry=ABCDEF012345`,
-          },
-        });
-      }
-      if (action === 'pollRuntime') {
-        const pairing = requests.find((item) => item.deviceCode === body.deviceCode);
-        return Response.json({
-          data: pairing?.installationId
-            ? { status: 'approved', installationId: pairing.installationId }
-            : { status: 'pending' },
-        });
-      }
-      const token = request.headers.get('authorization')?.replace('Bearer ', '') ?? '';
-      const id = identities.get(createHash('sha256').update(token).digest('hex'));
-      if (!id) return new Response('revoked', { status: 401 });
-      return Response.json({
-        data: {
-          installationId: id,
-          userId: null,
-          owner,
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-        },
-      });
-    },
-  });
-  return {
-    server,
-    url: `http://127.0.0.1:${server.port}`,
-    requests,
-    identities,
-    approve(trusted = true) {
-      const request = requests.at(-1)!,
-        id = crypto.randomUUID();
-      request.installationId = id;
-      if (trusted) identities.set(request.hash, id);
-      return { id, hash: request.hash };
-    },
-  };
-}
+import {
+  type MockKingdom,
+  mockKingdom,
+  organizationOwner,
+  userOwner,
+} from './helpers/kingdom-installation';
 
 type KingdomState = {
   status: string;
-  pending?: unknown;
-  runtimes: { id: string; url: string; installationId: string; status: string }[];
+  error?: string;
+  pending?: { url: string; reviewCode: string; review: string; replace?: string };
+  integrations: {
+    id: string;
+    url: string;
+    owner: string;
+    integrationId: string;
+    signetId: string;
+    status: string;
+  }[];
+  installations: { url: string; connected: boolean; revoked: boolean }[];
 };
 const kingdomState = async (response: Response) => (await response.json()) as KingdomState;
 
@@ -102,163 +56,191 @@ async function viewerFixture() {
       body: JSON.stringify(body),
     });
   const status = async () => kingdomState(await fetch(`${base}/api/kingdom/status`));
+  /** Polls status, as the settings page does, until `done` holds. */
+  const until = async (done: (state: KingdomState) => boolean) => {
+    for (let tries = 0; tries < 300; tries++) {
+      const state = await status();
+      if (done(state)) return state;
+      await Bun.sleep(10);
+    }
+    throw Error('Kingdom status never settled');
+  };
   const settings = async () => JSON.parse(await readFile(join(root, 'settings.json'), 'utf8'));
-  return { root, viewer, base, post, status, settings };
+  const tunnel = async () => (await fetch(`${base}/api/tunnel`)).status;
+  const signetFile = (kingdom: MockKingdom, signetId: string) =>
+    signetCredentialFile(kingdomInstallationPaths(root, kingdom.url).directory, signetId);
+  return { root, viewer, base, post, status, until, settings, tunnel, signetFile };
 }
 
-test('Foundry pairs without exposing secrets, activates immediately, re-pairs revoked enrollment without unlocking work, and disconnects locally', async () => {
+test('the viewer pairs as an Installation, shows the review code, connects on approval and follows revocation', async () => {
   const kingdom = mockKingdom(),
-    f = await viewerFixture();
-  const { root, viewer, base, post } = f;
-  let credentialPath = '',
-    runtimeId = '';
+    f = await viewerFixture(),
+    owner = organizationOwner();
   try {
-    for (let index = 0; index < 2; index++) {
-      const staleSettings = await (await fetch(`${base}/api/settings`)).json();
-      const start = await post('pair', {
+    const staleSettings = await (await fetch(`${f.base}/api/settings`)).json();
+    const start = await f.post('pair', { url: kingdom.url, name: 'Test Foundry' });
+    expect(start.status).toBe(200);
+    const pairing = await kingdomState(start);
+    expect(pairing.pending).toMatchObject({ url: kingdom.url });
+    expect(pairing.pending!.review).toBe(
+      `${kingdom.url}/dashboard?reviewSignet=${pairing.pending!.reviewCode}`,
+    );
+    expect((await f.post('pair', { url: kingdom.url, name: 'Duplicate' })).status).toBe(409);
+    expect(await f.tunnel()).toBe(200);
+
+    const { integrationId, signetId } = kingdom.approve(owner);
+    const connected = await f.until((state) => state.status === 'connected');
+    expect(connected.pending).toBeUndefined();
+    expect(connected.integrations).toEqual([
+      {
+        id: expect.any(String),
         url: kingdom.url,
-        name: 'Test Foundry',
-        ...(runtimeId ? { replace: runtimeId } : {}),
-      });
-      expect(start.status).toBe(200);
-      const pairing = await kingdomState(start);
-      expect(pairing.pending).toMatchObject({ url: kingdom.url, userCode: 'ABCDEF012345' });
-      expect(JSON.stringify(pairing)).not.toContain('secret');
-      expect(JSON.stringify(pairing)).not.toContain('deviceCode');
-      expect((await post('pair', { url: kingdom.url, name: 'Duplicate' })).status).toBe(409);
-      const { id, hash } = kingdom.approve();
-      const done = await post('poll');
-      expect(done.status).toBe(200);
-      const connected = await kingdomState(done);
-      expect(connected.status).toBe('connected');
-      expect(connected.runtimes).toHaveLength(1);
-      expect(connected.runtimes[0]).toMatchObject({
-        url: kingdom.url,
-        owner: 'Organization::11111111-1111-4111-8111-111111111111:',
-        installationId: id,
+        owner,
+        integrationId,
+        signetId,
         status: 'connected',
-      });
-      if (runtimeId) expect(connected.runtimes[0].id).toBe(runtimeId);
-      runtimeId = connected.runtimes[0].id;
-      expect(viewer.kingdomRuntimes.get(runtimeId)?.connected).toBe(true);
-      expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-      const path = join(root, `kingdom-runtime-${id}.json`);
-      if (credentialPath) await expect(lstat(credentialPath)).rejects.toThrow();
-      credentialPath = path;
-      expect((await lstat(path)).mode & 0o777).toBe(0o600);
-      expect((await lstat(root)).mode & 0o777).toBe(0o700);
-      const { secret } = JSON.parse(await readFile(path, 'utf8'));
-      expect(createHash('sha256').update(secret).digest('hex')).toBe(hash);
-      expect(await readFile(join(root, 'settings.json'), 'utf8')).not.toContain(secret);
-      if (index === 0) {
-        const saved = await fetch(`${base}/api/settings`, {
+      },
+    ]);
+    expect(connected.installations).toEqual([
+      { url: kingdom.url, connected: true, revoked: false },
+    ]);
+    const { id } = connected.integrations[0]!;
+    expect(f.viewer.kingdom.connected(id)).toBe(true);
+    expect(await f.tunnel()).toBe(200);
+
+    const file = f.signetFile(kingdom, signetId);
+    expect((await lstat(file)).mode & 0o777).toBe(0o600);
+    expect((await lstat(f.root)).mode & 0o777).toBe(0o700);
+    const { accessToken } = JSON.parse(await readFile(file, 'utf8'));
+    expect(await readFile(join(f.root, 'settings.json'), 'utf8')).not.toContain(accessToken);
+    expect(JSON.stringify(connected)).not.toContain(accessToken);
+    expect(kingdom.credentials.map((item) => item.integrationId)).toEqual([integrationId]);
+
+    // A settings save from a page loaded before pairing keeps the pairing.
+    expect(
+      (
+        await fetch(`${f.base}/api/settings`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(staleSettings),
-        });
-        expect(saved.status).toBe(200);
-        expect(
-          (await f.settings()).kingdomRuntimes.map(
-            (runtime: { installationId: string }) => runtime.installationId,
-          ),
-        ).toEqual([id]);
-        const oldCredential = await readFile(path, 'utf8');
-        expect(
-          (await post('pair', { url: kingdom.url, name: 'Failed replacement', replace: runtimeId }))
-            .status,
-        ).toBe(200);
-        kingdom.approve(false);
-        expect((await post('poll')).status).toBe(503);
-        expect(await readFile(path, 'utf8')).toBe(oldCredential);
-        expect(
-          (await f.settings()).kingdomRuntimes.map(
-            (runtime: { installationId: string }) => runtime.installationId,
-          ),
-        ).toEqual([id]);
-        expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-        expect((await kingdomState(await post('cancel'))).status).toBe('connected');
-      }
-      kingdom.identities.delete(hash);
-      expect((await fetch(`${base}/api/tunnel`)).status).toBe(503);
-      expect((await fetch(`${base}/kingdom`)).status).toBe(200);
-      expect((await f.status()).status).toBe('unavailable');
-      expect(
-        (await fetch(`${base}/api/kingdom/status`, { headers: { origin: 'https://evil.test' } }))
-          .status,
-      ).toBe(403);
-    }
-    expect((await post('disconnect')).status).toBe(400);
-    expect((await post('disconnect', { id: '000000000000' })).status).toBe(404);
-    expect((await kingdomState(await post('disconnect', { id: runtimeId }))).status).toBe(
-      'disconnected',
-    );
-    expect(viewer.kingdomRuntimes.size).toBe(0);
-    expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-    expect(await f.settings()).not.toHaveProperty('kingdomRuntimes');
-    await expect(lstat(credentialPath)).rejects.toThrow();
+        })
+      ).status,
+    ).toBe(200);
+    expect((await f.settings()).kingdomIntegrations).toEqual([
+      { url: kingdom.url, integrationId, owner, signetId },
+    ]);
+
+    // Pairing again approved by another owner replaces nothing.
+    expect(
+      (await f.post('pair', { url: kingdom.url, name: 'Replacement', replace: id })).status,
+    ).toBe(200);
+    kingdom.approve(userOwner());
+    const refused = await f.until((state) => !state.pending);
+    expect(refused.error).toContain('nothing was replaced');
+    expect((await f.settings()).kingdomIntegrations).toEqual([
+      { url: kingdom.url, integrationId, owner, signetId },
+    ]);
+    expect(existsSync(file)).toBe(true);
+    expect(await f.tunnel()).toBe(200);
+
+    // A pairing can be canceled while it waits.
+    expect((await f.post('pair', { url: kingdom.url, name: 'Canceled' })).status).toBe(200);
+    const canceled = await kingdomState(await f.post('cancel'));
+    expect(canceled.pending).toBeUndefined();
+    expect(canceled.status).toBe('connected');
+
+    // Kingdom revoking the Signet locks the viewer at once; the pairing page stays reachable.
+    kingdom.list(signetId, false);
+    await f.until((state) => state.status === 'unavailable');
+    expect(await f.tunnel()).toBe(503);
+    expect((await fetch(`${f.base}/kingdom`)).status).toBe(200);
+    expect(
+      (await fetch(`${f.base}/api/kingdom/status`, { headers: { origin: 'https://evil.test' } }))
+        .status,
+    ).toBe(403);
+    kingdom.list(signetId, true);
+    await f.until((state) => state.status === 'connected');
+    expect(await f.tunnel()).toBe(200);
+
+    expect((await f.post('disconnect')).status).toBe(400);
+    expect((await f.post('disconnect', { id: '000000000000' })).status).toBe(404);
+    expect((await kingdomState(await f.post('disconnect', { id }))).status).toBe('disconnected');
+    expect(f.viewer.kingdom.size).toBe(0);
+    expect(await f.tunnel()).toBe(200);
+    expect(await f.settings()).not.toHaveProperty('kingdomIntegrations');
+    expect(existsSync(file)).toBe(false);
   } finally {
-    viewer.server.stop(true);
-    kingdom.server.stop(true);
-    await rm(root, { recursive: true, force: true });
+    f.viewer.server.stop(true);
+    kingdom.stop();
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('a declined registration leaves nothing paired and says so', async () => {
+  const kingdom = mockKingdom(),
+    f = await viewerFixture();
+  try {
+    expect((await f.post('pair', { url: kingdom.url, name: 'Declined' })).status).toBe(200);
+    kingdom.decline();
+    const declined = await f.until((state) => !state.pending);
+    expect(declined.error).toContain('declined');
+    expect(declined.status).toBe('disconnected');
+    expect((await new ConfigStore(f.root).load()).kingdomIntegrations).toBeUndefined();
+    expect((await f.post('pair', { url: 'http://remote.example', name: 'x' })).status).toBe(400);
+  } finally {
+    f.viewer.server.stop(true);
+    kingdom.stop();
+    await rm(f.root, { recursive: true, force: true });
   }
 });
 
 test('the viewer pairs a second Kingdom beside the first, keeps working while either authorizes, and disconnects one without touching the other', async () => {
-  const a = mockKingdom(),
-    b = mockKingdom({ ownerModel: 'User', userId: '22222222-2222-4222-8222-222222222222' }),
+  const a = mockKingdom({ autoApprove: organizationOwner() }),
+    b = mockKingdom({ autoApprove: userOwner() }),
     f = await viewerFixture();
-  const { viewer, base, post } = f;
   try {
-    const pair = async (kingdom: ReturnType<typeof mockKingdom>) => {
-      expect((await post('pair', { url: kingdom.url, name: 'Two Kingdoms' })).status).toBe(200);
-      const approved = kingdom.approve();
-      expect((await post('poll')).status).toBe(200);
-      return approved;
+    const pair = async (kingdom: MockKingdom) => {
+      expect((await f.post('pair', { url: kingdom.url, name: 'Two Kingdoms' })).status).toBe(200);
+      return f.until(
+        (state) => !state.pending && state.integrations.some((item) => item.url === kingdom.url),
+      );
     };
-    const first = await pair(a);
-    const second = await pair(b);
-    const state = await f.status();
+    await pair(a);
+    const state = await pair(b);
     expect(state.status).toBe('connected');
-    expect(
-      state.runtimes.map((runtime: { url: string; installationId: string }) => [
-        runtime.url,
-        runtime.installationId,
-      ]),
-    ).toEqual([
-      [a.url, first.id],
-      [b.url, second.id],
-    ]);
-    const [idA, idB] = state.runtimes.map((runtime: { id: string }) => runtime.id);
-    expect(viewer.kingdomRuntimes.size).toBe(2);
+    expect(state.integrations.map((integration) => integration.url)).toEqual([a.url, b.url]);
+    const [first, second] = state.integrations;
+    expect(f.viewer.kingdom.size).toBe(2);
 
-    // A revoked Kingdom leaves the other one authorizing this Foundry.
-    a.identities.delete(first.hash);
-    expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
-    const degraded = await f.status();
-    expect(degraded.status).toBe('unavailable');
-    expect(degraded.runtimes.map((runtime: { status: string }) => runtime.status)).toEqual([
+    a.list(first!.signetId, false);
+    const degraded = await f.until((current) => current.status === 'unavailable');
+    expect(degraded.integrations.map((integration) => integration.status)).toEqual([
       'unavailable',
       'connected',
     ]);
-    b.identities.delete(second.hash);
-    expect((await fetch(`${base}/api/tunnel`)).status).toBe(503);
-    b.identities.set(second.hash, second.id);
-    expect((await fetch(`${base}/api/tunnel`)).status).toBe(200);
+    expect(await f.tunnel()).toBe(200);
+    b.list(second!.signetId, false);
+    await f.until((current) => current.integrations.every((item) => item.status !== 'connected'));
+    expect(await f.tunnel()).toBe(503);
+    b.list(second!.signetId, true);
+    await f.until((current) => current.integrations[1]?.status === 'connected');
+    expect(await f.tunnel()).toBe(200);
 
-    expect((await post('disconnect', { id: idA })).status).toBe(200);
+    expect((await f.post('disconnect', { id: first!.id })).status).toBe(200);
     const remaining = await f.status();
-    expect(remaining.runtimes.map((runtime: { id: string }) => runtime.id)).toEqual([idB]);
-    expect(viewer.kingdomRuntimes.get(idA)).toBeUndefined();
-    expect(viewer.kingdomRuntimes.get(idB)?.connected).toBe(true);
+    expect(remaining.integrations.map((integration) => integration.id)).toEqual([second!.id]);
+    expect(f.viewer.kingdom.get(first!.id)).toBeUndefined();
+    expect(f.viewer.kingdom.connected(second!.id)).toBe(true);
     expect(
-      (await f.settings()).kingdomRuntimes.map((runtime: { url: string }) => runtime.url),
+      (await f.settings()).kingdomIntegrations.map(
+        (integration: { url: string }) => integration.url,
+      ),
     ).toEqual([b.url]);
-    await expect(lstat(join(f.root, `kingdom-runtime-${first.id}.json`))).rejects.toThrow();
-    expect((await lstat(join(f.root, `kingdom-runtime-${second.id}.json`))).isFile()).toBe(true);
+    expect(existsSync(f.signetFile(b, second!.signetId))).toBe(true);
   } finally {
-    viewer.server.stop(true);
-    a.server.stop(true);
-    b.server.stop(true);
+    f.viewer.server.stop(true);
+    a.stop();
+    b.stop();
     await rm(f.root, { recursive: true, force: true });
   }
 });

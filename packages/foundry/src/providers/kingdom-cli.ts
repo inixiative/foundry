@@ -3,22 +3,20 @@ import { parseArgs } from 'node:util';
 import { createTerminalPrompts } from '../setup/prompts';
 import { ConfigStore } from '../viewer/config';
 import {
-  beginKingdomPairing,
-  completeKingdomPairing,
+  kingdomIntegrationId,
+  listedSignets,
+  overallStatus,
+  selectKingdomIntegration,
+} from './kingdom-installation-connection';
+import {
   disconnectKingdom,
   HOSTED_KINGDOM_URL,
   kingdomPairInputSchema,
-  pollKingdomPairing,
+  pairKingdomIntegration,
   viewerRunning,
 } from './kingdom-pairing';
-import {
-  KingdomRuntimeConnection,
-  kingdomRuntimeId,
-  selectKingdomRuntime,
-} from './kingdom-runtime-connection';
-import { overallStatus } from './kingdom-runtime-connections';
 
-export const defaultRuntimeName = () => `Foundry on ${hostname()}`.slice(0, 120);
+export const defaultInstallationName = () => `Foundry on ${hostname()}`.slice(0, 120);
 const restartHint =
   'A Foundry viewer is running; restart it (bun run daemon:start restarts the daemon) so it loads the changed Kingdom pairing.';
 
@@ -27,116 +25,103 @@ export interface PairKingdomOptions {
   /** Required unless `replace` selects the paired Kingdom. */
   url?: string;
   name?: string;
-  /** Open the verification page (macOS `open`). */
+  /** Open the review page (macOS `open`). */
   open?: boolean;
   /** Re-pair an already paired Kingdom (selected by `kingdom`, else by `url`) instead of adding one. */
   replace?: boolean;
   /** Paired Kingdom id or API origin that `replace` targets. */
   kingdom?: string;
-  transport?: typeof fetch;
   log?: (line: string) => void;
-  sleep?: (ms: number) => Promise<void>;
   launch?: (url: string) => void;
+  socketOptions?: { pollMs?: number; retryBaseMs?: number; authTimeoutMs?: number };
 }
 
-/** Device-code pairing for terminals: same persistence as Settings → Kingdom, validated with one heartbeat. */
+/** Installation pairing for terminals: same flow and persistence as Settings → Kingdom. */
 export async function pairKingdom(options: PairKingdomOptions) {
-  const { configDir, transport = fetch, log = console.error, sleep = Bun.sleep } = options;
+  const { configDir, log = console.error } = options;
   const store = new ConfigStore(configDir);
-  const runtimes = (await store.load()).kingdomRuntimes ?? [];
+  const integrations = (await store.load()).kingdomIntegrations ?? [];
   const replaced = options.replace
-    ? selectKingdomRuntime(runtimes, options.kingdom ?? options.url)
+    ? selectKingdomIntegration(integrations, options.kingdom ?? options.url)
     : undefined;
   const input = (() => {
     try {
       return kingdomPairInputSchema.parse({
         url: replaced?.url ?? options.url,
-        name: options.name ?? defaultRuntimeName(),
+        name: options.name ?? defaultInstallationName(),
       });
     } catch {
       throw Error(
-        'Enter a Kingdom API origin (HTTPS; HTTP only on localhost) and a runtime name of at most 120 characters.',
+        'Enter a Kingdom API origin (HTTPS; HTTP only on localhost) and a Foundry name of at most 120 characters.',
       );
     }
   })();
-  const paired = runtimes.filter((runtime) => runtime.url === input.url);
+  const paired = integrations.filter((integration) => integration.url === input.url);
   if (!replaced && paired.length)
     log(
-      `Already paired with ${input.url} as ${paired.map((runtime) => runtime.owner).join(', ')}. Approve as a different owner to add it, or pass --replace to pair that one again.`,
+      `Already paired with ${input.url} as ${paired.map((integration) => integration.owner).join(', ')}. Approve as a different owner to add it, or pass --replace to pair that one again.`,
     );
-  const pairing = await beginKingdomPairing(input, configDir, transport);
-  log(`Approve this Foundry in Kingdom: ${pairing.verificationUrl}`);
-  log(
-    `Confirm the pairing code matches: ${pairing.userCode} (expires ${new Date(pairing.expiresAt).toLocaleTimeString()})`,
-  );
-  if (options.open !== false && (options.launch || process.platform === 'darwin')) {
-    try {
-      (
-        options.launch ??
-        ((url) => {
-          Bun.spawn(['open', url], { stdout: 'ignore', stderr: 'ignore' });
-        })
-      )(pairing.verificationUrl);
-    } catch {}
-  }
-  log('Waiting for approval…');
-  for (;;) {
-    await sleep((pairing.interval ?? 5) * 1000);
-    if (Date.parse(pairing.expiresAt) <= Date.now())
-      throw Error('Pairing expired before approval. Run the command again.');
-    const result = await pollKingdomPairing(pairing, transport);
-    if (result.status === 'pending') continue;
-    const { id, settings } = await completeKingdomPairing(
-      store,
-      configDir,
-      pairing,
-      result.installationId,
-      { transport, ...(replaced ? { replace: kingdomRuntimeId(replaced) } : {}) },
-    );
-    const restartViewer = await viewerRunning(undefined, transport);
-    if (restartViewer) log(restartHint);
-    return {
-      status: 'connected' as const,
-      id,
-      url: settings.url,
-      owner: settings.owner,
-      installationId: settings.installationId,
-      restartViewer,
-    };
-  }
+  const { id, settings } = await pairKingdomIntegration(store, configDir, {
+    ...input,
+    ...(replaced ? { replace: kingdomIntegrationId(replaced) } : {}),
+    ...(options.socketOptions ? { socketOptions: options.socketOptions } : {}),
+    onReview: (review) => {
+      log(`Approve this Foundry in Kingdom: ${review.review}`);
+      log(
+        `Confirm the review code matches: ${review.reviewCode} (expires ${new Date(review.expiresAt).toLocaleTimeString()})`,
+      );
+      if (options.open !== false && (options.launch || process.platform === 'darwin')) {
+        try {
+          (
+            options.launch ??
+            ((url) => {
+              Bun.spawn(['open', url], { stdout: 'ignore', stderr: 'ignore' });
+            })
+          )(review.review);
+        } catch {}
+      }
+      log('Waiting for approval…');
+    },
+    onWaiting: (message) => log(`Still waiting: ${message}`),
+  });
+  const restartViewer = await viewerRunning();
+  if (restartViewer) log(restartHint);
+  return {
+    status: 'connected' as const,
+    id,
+    url: settings.url,
+    owner: settings.owner,
+    integrationId: settings.integrationId,
+    signetId: settings.signetId,
+    restartViewer,
+  };
 }
 
-export type KingdomRuntimeStatus = {
+export type KingdomIntegrationStatus = {
   id: string;
   url: string;
   owner: string;
-  installationId: string;
+  integrationId: string;
+  signetId: string;
   status: 'connected' | 'unavailable';
 };
 
-/** Heartbeat-checked state of every paired Kingdom, checked concurrently, in the viewer's vocabulary. */
-export async function kingdomStatus(configDir: string, transport: typeof fetch = fetch) {
-  const runtimes = (await new ConfigStore(configDir).load()).kingdomRuntimes ?? [];
-  const listed: KingdomRuntimeStatus[] = await Promise.all(
-    runtimes.map(async (runtime) => {
-      const identity = {
-        id: kingdomRuntimeId(runtime),
-        url: runtime.url,
-        owner: runtime.owner,
-        installationId: runtime.installationId,
-      };
-      const connection = new KingdomRuntimeConnection(runtime, () => 0, transport);
-      try {
-        await connection.check();
-        return { ...identity, status: 'connected' as const };
-      } catch {
-        return { ...identity, status: 'unavailable' as const };
-      } finally {
-        connection.stop();
-      }
-    }),
+/** Every paired Kingdom, connected while it still lists the Signet this Foundry was paired with. */
+export async function kingdomStatus(configDir: string) {
+  const integrations = (await new ConfigStore(configDir).load()).kingdomIntegrations ?? [];
+  const listed = await listedSignets(
+    configDir,
+    integrations.map((integration) => integration.url),
   );
-  return { status: overallStatus(listed), runtimes: listed };
+  const statuses: KingdomIntegrationStatus[] = integrations.map((integration) => ({
+    id: kingdomIntegrationId(integration),
+    url: integration.url,
+    owner: integration.owner,
+    integrationId: integration.integrationId,
+    signetId: integration.signetId,
+    status: listed.get(integration.url)?.has(integration.signetId) ? 'connected' : 'unavailable',
+  }));
+  return { status: overallStatus(statuses), integrations: statuses };
 }
 
 /** KINGDOM_URL, then hosted production. */
@@ -175,21 +160,25 @@ async function main() {
     return;
   }
   if (command === 'disconnect') {
-    const removed = await disconnectKingdom(new ConfigStore(configDir), v.kingdom);
+    const removed = await disconnectKingdom(new ConfigStore(configDir), configDir, v.kingdom);
     const restartViewer = !!removed && (await viewerRunning());
     if (removed)
       console.error(
-        `Removed this machine's credential for ${removed.url} (${removed.owner}). Revoke the runtime in Kingdom's Foundry tab too.`,
+        `Removed this machine's Signet for ${removed.url} (${removed.owner}). Revoke the Foundry integration in Kingdom too.`,
       );
     if (restartViewer) console.error(restartHint);
-    const remaining = ((await new ConfigStore(configDir).load()).kingdomRuntimes ?? []).map(
-      (runtime) => ({ id: kingdomRuntimeId(runtime), url: runtime.url, owner: runtime.owner }),
+    const remaining = ((await new ConfigStore(configDir).load()).kingdomIntegrations ?? []).map(
+      (integration) => ({
+        id: kingdomIntegrationId(integration),
+        url: integration.url,
+        owner: integration.owner,
+      }),
     );
     output({
       status: 'disconnected',
       ...(removed
         ? {
-            removed: { id: removed.id, url: removed.url, installationId: removed.installationId },
+            removed: { id: removed.id, url: removed.url, integrationId: removed.integrationId },
             restartViewer,
           }
         : {}),

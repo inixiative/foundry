@@ -25,7 +25,7 @@ import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
 import { SESSION_COOKIE, sessionValue } from '../request-auth';
-import { FoundryTunnel, type TunnelInfo } from '../tunnel';
+import { FoundryTunnel, type TunnelHolder, type TunnelInfo } from '../tunnel';
 import { registerAccessRoutes } from './access';
 
 /** Optional optimistic-concurrency token for settings writes; GET and writes echo the committed revision. */
@@ -80,7 +80,7 @@ export interface ControlRoutesDeps {
   projectRegistry?: ProjectRegistry;
   actionQueue: ActionQueue | null;
   /** Mutable tunnel holder — routes can start/stop the tunnel at runtime. */
-  tunnelHolder: { tunnel: FoundryTunnel | null };
+  tunnelHolder: TunnelHolder;
   /** Port the server is listening on (needed to start tunnel). */
   port: number;
   /** Directory for persistent foundry-self chat log. */
@@ -186,7 +186,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       configStore,
       (expected) =>
         configStore.update(
-          (current) => ({ ...body, kingdomRuntimes: current.kingdomRuntimes }),
+          (current) => ({ ...body, kingdomIntegrations: current.kingdomIntegrations }),
           expected,
         ),
       () => ({ ok: true }),
@@ -751,6 +751,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       );
       try {
         await tunnel.start();
+        tunnelHolder.changed?.();
         await configStore.update((draft) => {
           draft.tunnel = { ...(draft.tunnel ?? tunnelCfg), enabled: true };
         });
@@ -771,6 +772,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       const tunnel = tunnelHolder.tunnel;
       if (!tunnel) return c.json({ error: 'No tunnel running' }, 400);
       await tunnel.stop();
+      tunnelHolder.changed?.();
       const cfg = await configStore.load();
       if (cfg.tunnel)
         await configStore.update((draft) => {

@@ -50,6 +50,12 @@ export interface TunnelConfig {
   cloudflaredBin?: string;
 }
 
+/** The viewer's tunnel, started and stopped at runtime; `changed`, when set, runs after each start or stop. */
+export interface TunnelHolder {
+  tunnel: FoundryTunnel | null;
+  changed?: () => void;
+}
+
 export interface TunnelInfo {
   /** Public URL. */
   url: string;

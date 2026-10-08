@@ -52,7 +52,7 @@ export class ViewerFileAccess {
               'auth.json',
               '.credentials.json',
               'tunnel-token',
-              'kingdom-runtime.json',
+              'installation-key.json',
             ].includes(part) ||
             (part.startsWith('.env') && !part.endsWith('.example')),
         );

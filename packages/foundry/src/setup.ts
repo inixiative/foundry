@@ -16,7 +16,7 @@ import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import { MODEL_REGISTRY } from './models/registry';
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
-import { defaultKingdomUrl, defaultRuntimeName, pairKingdom } from './providers/kingdom-cli';
+import { defaultInstallationName, defaultKingdomUrl, pairKingdom } from './providers/kingdom-cli';
 import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
@@ -189,7 +189,7 @@ async function configureLoop(config: FoundryConfig) {
     const c = counts();
     const hasPrompts = Object.values(config.projects).some((p) => p.prompts);
     const docsStatus = config.sources['docs-src'] ? 'configured' : 'not scanned';
-    const paired = config.kingdomRuntimes?.length ?? 0;
+    const paired = config.kingdomIntegrations?.length ?? 0;
     const archive = await archiveStatus(localArchive());
     const archiveSummary = `${archive.reachable ? 'Archive running' : archive.configured ? 'Archive not answering' : 'no Archive'}, ${paired ? `${paired} Kingdom${paired === 1 ? '' : 's'} paired` : 'Kingdom not paired'}`;
     const idx = await choose('What would you like to configure?', [
@@ -260,14 +260,14 @@ async function configureArchives(config: FoundryConfig, confirmStart = true) {
   const log = (line: string) => console.log(`  ${line}`);
   const archive = await runArchiveSetup({ ...(confirmStart ? { prompts } : {}), log });
   if (!archive.reachable) log('Set it up later with: bun run archive setup');
-  if (config.kingdomRuntimes?.length) return;
+  if (config.kingdomIntegrations?.length) return;
   if (!(await confirm('Pair with Kingdom now? Hosted Archives connect through it.', true))) return;
   await saveConfig(config);
   try {
     await pairKingdom({
       configDir: FOUNDRY_DIR,
       url: await ask('Kingdom API address', defaultKingdomUrl()),
-      name: await ask('Foundry name', defaultRuntimeName()),
+      name: await ask('Foundry name', defaultInstallationName()),
       log,
     });
   } catch (error) {
@@ -278,7 +278,7 @@ async function configureArchives(config: FoundryConfig, confirmStart = true) {
   } finally {
     // Pairing writes settings.json directly; keep this session's copy from overwriting it.
     const saved = await new ConfigStore(FOUNDRY_DIR).load().catch(() => undefined);
-    if (saved?.kingdomRuntimes) config.kingdomRuntimes = saved.kingdomRuntimes;
+    if (saved?.kingdomIntegrations) config.kingdomIntegrations = saved.kingdomIntegrations;
   }
 }
 

@@ -50,7 +50,7 @@ function Header() {
       <span class="header-title">foundry</span>
       <div class="header-right">
         <${GlossButton} projectId=${activeProjectId.value} />
-        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomRuntimes?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
+        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
         <span class="status-sep">|</span>

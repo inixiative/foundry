@@ -490,14 +490,14 @@ describe('http and websocket cassettes', () => {
         {
           method: 'POST',
           headers: {
-            authorization: 'Bearer kingdom_runtime_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
+            authorization: 'Bearer kingdom_refresh_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
           },
           body: JSON.stringify({ n: 1 }),
         },
       );
       expect(live.status).toBe(401);
       const text = readFileSync(join(dir, 'post.refused.json'), 'utf8');
-      expect(text).not.toContain('kingdom_runtime_abc');
+      expect(text).not.toContain('kingdom_refresh_abc');
       expect(JSON.parse(text).request).toMatchObject({
         method: 'POST',
         path: '/api/v1/access/x',

@@ -13,12 +13,15 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../src/agents/project';
+import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
+import { ConfigStore } from '../src/viewer/config';
 import { createViewer, startViewer } from '../src/viewer/server';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
 import { applyTurnFrame } from '../src/viewer/ui/live-state.js';
 import { createWebSocketServer } from '../src/ws/handler';
 import { getConnectionStats } from '../src/ws/lifecycle';
 import { connectStreams } from './helpers/data-stream';
+import { mockKingdom, organizationOwner } from './helpers/kingdom-installation';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -492,29 +495,12 @@ test('the upgrade is authorized like HTTP: loopback, or the tunnel credential, a
 
 test('losing Kingdom authorization closes sockets on the next append or open and refuses upgrades', async () => {
   const root = await mkdtemp(join(tmpdir(), 'kingdom-streams-'));
-  let allowed = true;
-  const kingdom = Bun.serve({
-    port: 0,
-    hostname: '127.0.0.1',
-    async fetch(request) {
-      if (!allowed) return new Response('denied', { status: 401 });
-      return Response.json({
-        data: {
-          installationId: id,
-          userId: null,
-          owner: {
-            ownerModel: 'Organization',
-            organizationId: '11111111-1111-4111-8111-111111111111',
-          },
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-        },
-      });
-    },
-  });
-  const id = crypto.randomUUID(),
-    credentialFile = join(root, 'runtime.json');
-  await writeFile(credentialFile, JSON.stringify({ secret: `kingdom_runtime_${'0'.repeat(43)}` }), {
-    mode: 0o600,
+  const kingdom = mockKingdom({ autoApprove: organizationOwner() });
+  const { settings } = await pairKingdomIntegration(new ConfigStore(root), root, {
+    url: kingdom.url,
+    name: 'Streams',
+    viewerToken: 't'.repeat(48),
+    onReview: () => {},
   });
   const thread = new Thread('kingdom-main', new ContextStack()),
     events = new EventStream();
@@ -526,20 +512,19 @@ test('losing Kingdom authorization closes sockets on the next append or open and
     harness: new Harness(thread),
     eventStream: events,
     interventions: new InterventionLog(),
-    kingdomRuntimes: [
-      {
-        url: `http://127.0.0.1:${kingdom.port}`,
-        owner: 'Organization::11111111-1111-4111-8111-111111111111:',
-        installationId: id,
-        credentialFile,
-      },
-    ],
   });
   cleanup.push(async () => {
     viewer.server.stop(true);
-    kingdom.stop(true);
+    kingdom.stop();
     await rm(root, { recursive: true, force: true });
   });
+  /** Kingdom lists (or stops listing) this Foundry's Signet; wait until the viewer has heard. */
+  const authorize = async (allowed: boolean) => {
+    kingdom.list(settings.signetId, allowed);
+    const end = performance.now() + 4000;
+    while (viewer.kingdom.authorized !== allowed && performance.now() < end) await Bun.sleep(5);
+    expect(viewer.kingdom.authorized).toBe(allowed);
+  };
   const url = `ws://127.0.0.1:${viewer.server.port}/ws`;
   const until = async (check: () => boolean) => {
     const end = performance.now() + 4000;
@@ -564,22 +549,22 @@ test('losing Kingdom authorization closes sockets on the next append or open and
   const watcher = await connect();
   watcher.ws.send(JSON.stringify({ action: 'open', stream: 'events' }));
   await until(() => watcher.frames.some((frame) => frame.type === 'opened'));
-  allowed = false;
+  await authorize(false);
   expect((await fetch(`http://127.0.0.1:${viewer.server.port}/api/threads`)).status).toBe(503);
   events.pushError('harness', 'after revocation');
   await until(() => watcher.closed !== null);
-  expect(watcher.closed).toEqual({ code: 1008, reason: 'Kingdom runtime unavailable' });
+  expect(watcher.closed).toEqual({ code: 1008, reason: 'Kingdom authorization unavailable' });
   expect(watcher.frames.some((frame) => frame.payload?.event?.message === 'after revocation')).toBe(
     false,
   );
 
   // Open path: an open that fails the Kingdom check closes the socket rather than rejecting one stream.
-  allowed = true;
+  await authorize(true);
   const opener = await connect();
-  allowed = false;
+  await authorize(false);
   opener.ws.send(JSON.stringify({ action: 'open', stream: 'prompts' }));
   await until(() => opener.closed !== null);
-  expect(opener.closed).toEqual({ code: 1008, reason: 'Kingdom runtime unavailable' });
+  expect(opener.closed).toEqual({ code: 1008, reason: 'Kingdom authorization unavailable' });
   expect(
     opener.frames.some((frame) => frame.type === 'openRejected' || frame.type === 'opened'),
   ).toBe(false);

@@ -157,8 +157,22 @@ test('readiness distinguishes missing native binaries and API credentials', asyn
 test('Kingdom inspection enforces the same private-file schema as launch and never claims live access', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-readiness-'));
   try {
-    const file = join(directory, 'installation.json'),
-      secret = `kingdom_runtime_${'a'.repeat(43)}`;
+    const file = join(directory, 'signet.json'),
+      secret = `kingdom_${'a'.repeat(43)}`;
+    const signet = {
+      url: 'http://127.0.0.1:1',
+      signetId: crypto.randomUUID(),
+      enrollmentId: crypto.randomUUID(),
+      lifecycle: 'ongoing',
+      taskId: null,
+      keyFile: join(directory, 'installation-key.json'),
+      renewalCredential: `signet_renew_${'r'.repeat(43)}`,
+      accessToken: secret,
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      renewalExpiresAt: new Date(Date.now() + 60000).toISOString(),
+      idleExpiresAt: new Date(Date.now() + 60000).toISOString(),
+      tokenType: 'DPoP',
+    };
     const config = team(),
       id = `User:${crypto.randomUUID()}::`;
     config.kingdomInference = [
@@ -171,7 +185,7 @@ test('Kingdom inspection enforces the same private-file schema as launch and nev
     ];
     config.defaults.kingdomOwnerKey = id;
     config.apiTokens = true;
-    await writeFile(file, JSON.stringify({ secret }), { mode: 0o600 });
+    await writeFile(file, JSON.stringify(signet), { mode: 0o600 });
     const before = await readFile(file, 'utf8'),
       inventory = await readdir(directory);
     const report = await inspectReadiness(config, local);
@@ -180,7 +194,7 @@ test('Kingdom inspection enforces the same private-file schema as launch and nev
     expect(JSON.stringify(report)).not.toContain(secret);
     expect(await readFile(file, 'utf8')).toBe(before);
     expect(await readdir(directory)).toEqual(inventory);
-    await writeFile(file, JSON.stringify({ secret, unexpected: true }));
+    await writeFile(file, JSON.stringify({ ...signet, unexpected: true }));
     expect((await inspectReadiness(config, local)).configurationReady).toBe(false);
     config.projects.P!.defaults = { kingdomOwnerKey: `Organization::${crypto.randomUUID()}:` };
     expect(

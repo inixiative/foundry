@@ -1,7 +1,7 @@
 import { mkdir, rmdir } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { readPrivateJson, writePrivateJson } from '@inixiative/signet';
-import { KingdomClient } from './kingdom-client';
+import { refreshKingdomRun } from './kingdom-client';
 import { runCredentialSchema } from './kingdom-credential-file';
 
 export async function kingdomToken(path: string): Promise<string> {
@@ -26,7 +26,9 @@ export async function kingdomToken(path: string): Promise<string> {
       throw Error('Run authorization expired; reconnect through Foundry');
     if (credential.cachedToken && Date.parse(credential.cachedToken.expiresAt) > Date.now() + 60000)
       return credential.cachedToken.secret;
-    const renewed = await new KingdomClient(credential.url, credential.refreshCredential).refresh(
+    const renewed = await refreshKingdomRun(
+      credential.url,
+      credential.refreshCredential,
       credential.bindingId,
     );
     await writePrivateJson(path, {

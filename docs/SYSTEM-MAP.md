@@ -23,9 +23,8 @@ flowchart LR
   AS -- "spawn + stdio / JSON-RPC" --> CLI
   CLI -- "MCP (foundry_* tools)" --> F
   F -- "HTTP /api/v1/archive/* (@inixiative/archive/remote)" --> LA
-  F -- "HTTP /api/v1/access/* (runtime bearer, to be cut)<br/>pair, heartbeat, jobs, runs" --> K
-  F -- "HTTP + DPoP: Signet request / execute" --> K
-  F -. "WebSocket liveness (draft #42)" .-> K
+  F -- "HTTP + DPoP /api/v1/access/*<br/>Installation pairing; Signet runs / execute" --> K
+  F -. "Installation socket (snapshots, presence)" .-> K
   LA -- "serve --sync" --> HA
   K -- "HTTP forward /api/v1/archive/*" --> HA
   O -- "npm import (foundry-core)" --> F
@@ -46,7 +45,7 @@ Each of these three does one job, and none stands in for another.
 
 **Anything that uses an integration goes through a Signet.** Foundry is an integration plus a Signet, and so is Oracle. Archive reads and writes are Signet operations on the Archive integration's `archiveLibrary`.
 
-Today's main still has a second grant path, the Foundry runtime key (`kingdom_runtime_`, `RuntimeInstallation`). It gives whole-owner authority on `access/*` and on `archive/ingest`. It is to be cut. Pairing a Foundry becomes a Signet enrollment on its `foundry` Integration.
+Foundry has no runtime key. It pairs as a Kingdom **Installation** (its own DPoP key): an owner approves the registration, Kingdom creates that owner's `foundry` Integration and the Signet it holds, and Foundry acts only by presenting that Signet and any later grants to the integration.
 
 ## 2. The apps
 
@@ -100,7 +99,7 @@ Today's main still has a second grant path, the Foundry runtime key (`kingdom_ru
   - HTTP `POST /api/v1/<module>/<action>` (`apps/api/src/lib/routeTemplates/action.ts:37-44`). This includes `access/*` (runtime, Signets, runs, Oracle cycles), `archive/*` (`ingest`, `list`, `read`, `search`, forwarded to the owner's Archive integration), `owner/*` (owner dashboard) and `integration/*`.
   - A generic WebSocket pub/sub (`apps/api/src/index.ts:37`).
   - No MCP.
-- **Release:** a deployed app, a consumer of both lanes (`config/versions.json:37-42`). Foundry's hosted default API is `https://kingdom-prod-api-prod.up.railway.app` (`packages/foundry/src/providers/kingdom-pairing.ts:12`). The prod schema is applied with `db push`.
+- **Release:** a deployed app, a consumer of both lanes (`config/versions.json:37-42`). Foundry's hosted default API is `https://api.kingdom.inixiative.com` (`HOSTED_KINGDOM_URL`, `packages/foundry/src/providers/kingdom-pairing.ts`). The prod schema is applied with `db push`.
 
 ## 3. Boundaries violated today
 
@@ -119,7 +118,6 @@ Today's main still has a second grant path, the Foundry runtime key (`kingdom_ru
   - the `connectionCheck` job kind (`runtimeJobs.ts:13`)
 - **Kingdom tests import Foundry source:** `apps/api/src/modules/access/tests/foundrySource.ts:6` resolves a sibling `../foundry` checkout. Kingdom PR #86 reports 2 failing tests because that sibling speaks an older contract. Kingdom should test against the published `@inixiative/foundry/runtime`, not a checkout.
 - **Duplicate Archive storage:** resolved in Kingdom `59ee9b8a`. Kingdom's archive tables are gone; Archive is an owner integration through `@inixiative/archive/remote`, and shares are Signets.
-- **Two grant systems:** the runtime key (`RuntimeInstallation`, `kingdom_runtime_`) authorizes Foundry with whole-owner authority, next to Signets. Under the access model (section 1), Foundry and Oracle reach integrations only through Signets, and the runtime key goes.
 - **Backwards-compat path:** `apps/api/src/modules/owner/schemas/ownerSchemas.ts` still accepts legacy `access` policy JSON ("Choose resource grants or legacy access").
 - **Process and lab files:**
   - `docs/validation/*.json` (about 30 run logs)
@@ -200,19 +198,11 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 **3. Sign in to Kingdom with owners: works.**
 - The five-way owner landed in Kingdom #80.
 
-**4. Pair Foundry with Kingdom: partial.**
-- **What exists:** a device-code flow on both sides.
-  - Foundry: `providers/kingdom-pairing.ts:28-61`, `bun run kingdom pair`.
-  - Kingdom: `access/pairRuntime`, `pollRuntime`, `owner/approveRuntime`.
-- `bun run kingdom status --config-dir <empty>` returns `{"status":"disconnected"}`.
-- Kingdom authenticates the `kingdom_runtime_…` secrets Foundry mints (Kingdom `bb4fc101`).
-- **Also missing:**
-  - Only one binding: `kingdomRuntime` is a single object (`viewer/config.ts:89`), and a second pair is refused (`kingdom-cli.ts:30-31`). Multi-Kingdom work is on `feat/multi-kingdom`, not on main.
-  - Liveness is HTTP heartbeat polling with a 45 s TTL (Kingdom `accessRuntimeHeartbeat.ts:18-22`). The socket is draft #42.
-- **Gap:**
-  - Kingdom accepts `kingdom_runtime_`. This is a hard cut, no dual-accept.
-  - Foundry lands many-to-many bindings.
-  - Kingdom lands the liveness socket.
+**4. Pair Foundry with Kingdom: works (Installation pairing).**
+- Foundry pairs as an Installation through `@inixiative/signet` `pairInstallation`: `providers/kingdom-pairing.ts`, `bun run kingdom pair`, Settings → Kingdom. A person approves the review code in Kingdom; Foundry collects the Signet of the owner's new `foundry` Integration.
+- Many-to-many: `kingdomIntegrations` holds one entry per Kingdom + owner.
+- Liveness and grants ride the Installation socket (`providers/kingdom-installation-connection.ts`): snapshots enroll later grants and drop revoked Signets; the viewer locks when no paired Kingdom lists this Foundry's Signet.
+- `bun run kingdom status --config-dir <empty>` returns `{"status":"disconnected","integrations":[]}`.
 
 **5. Prompted hosted-Archive setup once hosting is connected: partial.**
 - **What exists:**
@@ -275,7 +265,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 ## 5. Goals per app
 
 **Kingdom**
-1. Done: `kingdom_runtime_` credentials (`bb4fc101`) and the owner rename (`modules/owner`, `/v1/owner`, `components/owner`).
+1. Done: the owner rename (`modules/owner`, `/v1/owner`, `components/owner`). The runtime key is gone; Foundry pairs as an Installation.
 2. Support one Foundry across many Kingdoms and many Foundries per owner, with liveness over the socket (goal 4).
 3. Merge #86. Add a hosting integration and the "set up hosted Archive" prompt and provisioning. Pick one hosted Archive path (stored or forwarded) (goal 5).
 4. Add per-owner AI provider integrations (Claude, OpenAI/Codex, Grok, Gemini, Meta Muse) that feed subscription pools. Decide what the API-key inference gateway is for (goal 6).

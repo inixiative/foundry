@@ -1,10 +1,6 @@
 import { kingdomUrl } from '@inixiative/signet';
 import { z } from 'zod';
-import { refreshSecretPattern, runSecretPattern, runtimeSecretPattern } from './kingdom-secrets';
-
-export const installationCredentialSchema = z
-  .object({ secret: z.string().regex(runtimeSecretPattern) })
-  .strict();
+import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
 
 export const runCredentialSchema = z
   .object({

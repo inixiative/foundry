@@ -2,10 +2,10 @@ import { afterEach, expect, test } from 'bun:test';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readPrivateJson } from '@inixiative/signet';
+import { readPrivateJson, SignetClient } from '@inixiative/signet';
 import { KingdomAuthentication } from '../src/providers/kingdom-authentication';
-import { KingdomClient } from '../src/providers/kingdom-client';
 import { kingdomToken } from '../src/providers/kingdom-token-helper';
+import { heldSignet, mockKingdom, ownerOf } from './helpers/kingdom-installation';
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -13,64 +13,46 @@ afterEach(async () => {
 });
 const secret = (prefix: string) => `${prefix}${'x'.repeat(43)}`;
 
-test('Kingdom resolves once, persists source identity, and delegates only one-run renewal authority', async () => {
+test('Kingdom resolves once through the Signet, persists source identity, and delegates only one-run renewal authority', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const owner = {
-      ownerModel: 'Organization',
-      userId: null,
-      organizationId: crypto.randomUUID(),
-      spaceId: null,
-    },
-    ownerKey = `Organization::${owner.organizationId}:`,
+  const ownerKey = `Organization::${crypto.randomUUID()}:`,
     bindingId = crypto.randomUUID(),
     integrationId = crypto.randomUUID();
   const calls: string[] = [];
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
-      const action = new URL(request.url).pathname.split('/').pop()!;
+  const kingdom = mockKingdom({
+    onSignet: (action, body, presented) => {
       calls.push(action);
-      expect(request.headers.get('authorization')).toBe(`Bearer ${secret('kingdom_runtime_')}`);
-      if (action === 'resolveRun') {
-        const body = (await request.json()) as { runId: string };
-        return Response.json({
-          data: {
-            id: bindingId,
-            owner,
-            installationId: crypto.randomUUID(),
-            runId: body.runId,
-            capacityId: crypto.randomUUID(),
-            integrationId,
-            model: 'bound-model',
-            effort: 'low',
-            runtime: 'claude',
-            expiresAt: new Date(Date.now() + 3600000).toISOString(),
-            gatewayPath: `/api/v1/access/gateway/${bindingId}`,
-          },
-        });
-      }
-      return Response.json({
-        data: {
-          secret: secret('kingdom_refresh_'),
+      if (action === 'resolveRun')
+        return {
+          id: bindingId,
+          owner: presented.owner,
+          signetEnrollmentId: presented.enrollmentId,
+          runId: body.runId,
+          capacityId: crypto.randomUUID(),
+          integrationId,
+          model: 'bound-model',
+          effort: 'low',
+          runtime: 'claude',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        },
-      });
+          gatewayPath: `/api/v1/access/gateway/${bindingId}`,
+        };
+      return {
+        secret: secret('kingdom_refresh_'),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      };
     },
   });
-  cleanups.push(async () => server.stop(true));
-  const credentialFile = join(directory, 'installation.json');
-  await writeFile(credentialFile, JSON.stringify({ secret: secret('kingdom_runtime_') }), {
-    mode: 0o600,
-  });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile } = await heldSignet(kingdom, directory, ownerKey);
+  const { accessToken } = (await readPrivateJson(credentialFile)) as { accessToken: string };
   const options = {
     directory: join(directory, 'runs'),
     defaultOwnerKey: ownerKey,
     sources: [
       {
         id: ownerKey,
-        url: server.url.origin,
+        url: kingdom.url,
         credentialFile,
         selection: { model: 'bound-model', effort: 'low' },
       },
@@ -90,7 +72,7 @@ test('Kingdom resolves once, persists source identity, and delegates only one-ru
   expect(() => b.launch(['claude'], {})).toThrow('in use');
   const settings = await readFile(join(child.env.CLAUDE_CONFIG_DIR!, 'settings.json'), 'utf8');
   expect(settings).not.toContain(credentialFile);
-  expect(settings).not.toContain(secret('kingdom_runtime_'));
+  expect(settings).not.toContain(accessToken);
   a.release();
   b.release();
   const restored = await new KingdomAuthentication(options).prepare('thread', 'claude');
@@ -151,12 +133,20 @@ test('concurrent helper invocations renew once and cache only the scoped access 
     secret('kingdom_run_'),
   ]);
   expect(calls).toBe(1);
-  expect(await readFile(file, 'utf8')).not.toContain('kingdom_runtime_');
 });
 
 test('Kingdom clients reject credential URLs, remote HTTP and public credential files', async () => {
-  expect(() => new KingdomClient('https://user:secret@example.com', 'secret')).toThrow();
-  expect(() => new KingdomClient('http://example.com', 'secret')).toThrow();
+  expect(
+    () =>
+      new SignetClient(
+        'https://user:secret@example.com',
+        '/private/signet.json',
+        crypto.randomUUID(),
+      ),
+  ).toThrow();
+  expect(
+    () => new SignetClient('http://example.com', '/private/signet.json', crypto.randomUUID()),
+  ).toThrow();
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-mode-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const file = join(directory, 'public.json');
@@ -168,58 +158,44 @@ test('Kingdom clients reject credential URLs, remote HTTP and public credential 
 test('a transient resolution failure can retry the same durable run intent', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-retry-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const owner = {
-      ownerModel: 'Organization',
-      userId: null,
-      organizationId: crypto.randomUUID(),
-      spaceId: null,
-    },
-    ownerKey = `Organization::${owner.organizationId}:`,
+  const ownerKey = `Organization::${crypto.randomUUID()}:`,
     bindingId = crypto.randomUUID(),
     runIds: string[] = [];
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
-      if (new URL(request.url).pathname.endsWith('resolveRun')) {
-        const body = (await request.json()) as { runId: string };
+  const kingdom = mockKingdom({
+    onSignet: (action, body, presented) => {
+      if (action === 'resolveRun') {
         runIds.push(body.runId);
         if (runIds.length === 1) return new Response('temporary failure', { status: 503 });
-        return Response.json({
-          data: {
-            id: bindingId,
-            owner,
-            installationId: crypto.randomUUID(),
-            runId: body.runId,
-            capacityId: crypto.randomUUID(),
-            integrationId: crypto.randomUUID(),
-            model: 'model',
-            effort: 'low',
-            runtime: 'claude',
-            expiresAt: new Date(Date.now() + 3600000).toISOString(),
-            gatewayPath: `/api/v1/access/gateway/${bindingId}`,
-          },
-        });
-      }
-      return Response.json({
-        data: {
-          secret: secret('kingdom_refresh_'),
+        return {
+          id: bindingId,
+          owner: ownerOf(ownerKey),
+          signetEnrollmentId: presented.enrollmentId,
+          runId: body.runId,
+          capacityId: crypto.randomUUID(),
+          integrationId: crypto.randomUUID(),
+          model: 'model',
+          effort: 'low',
+          runtime: 'claude',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        },
-      });
+          gatewayPath: `/api/v1/access/gateway/${bindingId}`,
+        };
+      }
+      return {
+        secret: secret('kingdom_refresh_'),
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      };
     },
   });
-  cleanups.push(async () => server.stop(true));
-  const file = join(directory, 'installation.json');
-  await writeFile(file, JSON.stringify({ secret: secret('kingdom_runtime_') }), { mode: 0o600 });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile } = await heldSignet(kingdom, directory, ownerKey);
   const auth = new KingdomAuthentication({
     directory: join(directory, 'runs'),
     defaultOwnerKey: ownerKey,
     sources: [
       {
         id: ownerKey,
-        url: server.url.origin,
-        credentialFile: file,
+        url: kingdom.url,
+        credentialFile,
         selection: { model: 'model', effort: 'low' },
       },
     ],

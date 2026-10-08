@@ -19,8 +19,11 @@ import { ThreadContextTracker } from '../archives/thread-context';
 import { log } from '../logger';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
-import type { KingdomRuntimeSettings } from '../providers/kingdom-runtime-connection';
-import { KingdomRuntimeConnections } from '../providers/kingdom-runtime-connections';
+import {
+  KingdomInstallationConnections,
+  type KingdomIntegration,
+  shareViewerCredential,
+} from '../providers/kingdom-installation-connection';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -37,7 +40,13 @@ import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
-import { FoundryTunnel, type TunnelConfig, type TunnelInfo, tunnelAuth } from './tunnel';
+import {
+  FoundryTunnel,
+  type TunnelConfig,
+  type TunnelHolder,
+  type TunnelInfo,
+  tunnelAuth,
+} from './tunnel';
 
 export interface ViewerConfig {
   harness: Harness;
@@ -70,7 +79,8 @@ export interface ViewerConfig {
   actionQueue?: ActionQueue;
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
-  kingdomRuntimes?: KingdomRuntimeSettings[];
+  /** Every paired Kingdom integration; defaults to the saved `kingdomIntegrations`. */
+  kingdomIntegrations?: KingdomIntegration[];
   /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
   assistTools?: ToolRegistry;
   /** Durable local journal; null opts out for an explicitly transient viewer. */
@@ -90,14 +100,39 @@ export interface ViewerConfig {
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4500 } = config;
   const app = new Hono();
-  const kingdomRuntimes = new KingdomRuntimeConnections(
-    config.kingdomRuntimes ?? [],
-    () => directory.all().length,
-    fetch,
-  );
+  const configDir = config.configDir ?? '.foundry';
+  const kingdom = new KingdomInstallationConnections(config.kingdomIntegrations ?? [], {
+    configDir,
+    sessionCount: () => directory.all().length,
+    // Kingdom pushes revocations; losing authorization closes every socket at once.
+    onChange: () => {
+      if (kingdomLost()) revoke();
+    },
+    warn: (message) => log.warn(message),
+  });
 
-  // Mutable tunnel holder — routes can start/stop at runtime
-  const tunnelHolder: { tunnel: FoundryTunnel | null } = { tunnel: null };
+  // Mutable tunnel holder — routes can start/stop at runtime. `changed` runs after every start or stop.
+  let sharedToken: string | undefined;
+  const tunnelHolder: TunnelHolder = {
+    tunnel: null,
+    changed: () => {
+      const tunnel = tunnelHolder.tunnel;
+      kingdom.advertise(tunnel?.url ?? null);
+      if (!tunnel?.url || tunnel.token === sharedToken) return;
+      sharedToken = tunnel.token;
+      void configStore
+        .load()
+        .then((saved) =>
+          shareViewerCredential(
+            configDir,
+            saved.kingdomIntegrations ?? [],
+            tunnel.token,
+            (message) => log.warn(message),
+          ),
+        )
+        .catch(() => {});
+    },
+  };
   if (config.tunnel) {
     tunnelHolder.tunnel = new FoundryTunnel({
       configDir: config.configDir,
@@ -109,10 +144,10 @@ export function createViewer(config: ViewerConfig) {
   // A paired Kingdom may embed this viewer; nothing else may. Browsers refuse the
   // frame outright without this, and `frame-ancestors` is the only directive that
   // X-Frame-Options cannot express for a list of origins.
-  const embedders = (config.kingdomRuntimes ?? [])
-    .map((runtime) => {
+  const embedders = (config.kingdomIntegrations ?? [])
+    .map((integration) => {
       try {
-        return new URL(runtime.url).origin;
+        return new URL(integration.url).origin;
       } catch {
         return null;
       }
@@ -142,21 +177,18 @@ export function createViewer(config: ViewerConfig) {
 
   app.use('*', async (c, next) => {
     if (
-      kingdomRuntimes.size &&
+      kingdom.size &&
       c.req.path !== '/api/health' &&
       c.req.path !== '/kingdom' &&
       !c.req.path.startsWith('/api/kingdom/') &&
       !c.req.path.startsWith('/ui/')
     ) {
       try {
-        await kingdomRuntimes.check();
+        await kingdom.check();
       } catch {
         return c.req.path === '/'
           ? c.redirect('/kingdom')
-          : c.json(
-              { error: 'Kingdom runtime authorization unavailable', recoveryUrl: '/kingdom' },
-              503,
-            );
+          : c.json({ error: 'Kingdom authorization unavailable', recoveryUrl: '/kingdom' }, 503);
       }
     }
     return next();
@@ -171,8 +203,9 @@ export function createViewer(config: ViewerConfig) {
     config.projectRegistry,
     config.threadFactory,
   );
-  const kingdomLost = () => !kingdomRuntimes.authorized;
-  const revoke = () => closeAllConnections(socket.registry, 1008, 'Kingdom runtime unavailable');
+  const kingdomLost = () => !kingdom.authorized;
+  const revoke = () =>
+    closeAllConnections(socket.registry, 1008, 'Kingdom authorization unavailable');
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({
     directory,
@@ -255,13 +288,7 @@ export function createViewer(config: ViewerConfig) {
     },
   });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
-  registerKingdomRoutes(
-    app,
-    configStore,
-    config.configDir ?? '.foundry',
-    () => directory.all().length,
-    kingdomRuntimes,
-  );
+  registerKingdomRoutes(app, configStore, configDir, kingdom, () => tunnelHolder.tunnel?.token);
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
@@ -383,7 +410,7 @@ export function createViewer(config: ViewerConfig) {
   );
 
   // Data-stream socket. The connection is authorized at upgrade exactly like HTTP
-  // (loopback, or tunnel bearer/cookie); each open re-checks the Kingdom runtime,
+  // (loopback, or tunnel bearer/cookie); each open re-checks Kingdom authorization,
   // and losing Kingdom authorization closes every socket.
   const socket = createWebSocketServer({
     families: streams.families.map((family) => ({
@@ -400,7 +427,7 @@ export function createViewer(config: ViewerConfig) {
     // Losing Kingdom authorization closes the socket; the client reconnects (and is refused at upgrade until it returns).
     admit: async () => {
       try {
-        await kingdomRuntimes.check();
+        await kingdom.check();
         return true;
       } catch {
         revoke();
@@ -411,8 +438,7 @@ export function createViewer(config: ViewerConfig) {
   const kingdomWatch = makeUnrefInterval({
     intervalMs: 15_000,
     tick: () => {
-      if (kingdomRuntimes.size && socket.registry.byId.size)
-        void kingdomRuntimes.check().catch(revoke);
+      if (kingdom.size && socket.registry.byId.size) void kingdom.check().catch(revoke);
     },
   });
 
@@ -433,9 +459,9 @@ export function createViewer(config: ViewerConfig) {
     )
       return new Response('Unauthorized', { status: 401 });
     try {
-      await kingdomRuntimes.check();
+      await kingdom.check();
     } catch {
-      return new Response('Kingdom runtime unavailable', { status: 503 });
+      return new Response('Kingdom authorization unavailable', { status: 503 });
     }
     return socket.accept(req, server);
   };
@@ -462,7 +488,7 @@ export function createViewer(config: ViewerConfig) {
       kingdomWatch.stop();
       socket.shutdown();
     },
-    kingdomRuntimes,
+    kingdom,
   };
 }
 
@@ -470,7 +496,10 @@ export function createViewer(config: ViewerConfig) {
 export async function startViewer(config: ViewerConfig) {
   const initialStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
   const saved = await initialStore.load();
-  config = { ...config, kingdomRuntimes: config.kingdomRuntimes ?? saved.kingdomRuntimes };
+  config = {
+    ...config,
+    kingdomIntegrations: config.kingdomIntegrations ?? saved.kingdomIntegrations,
+  };
   if (!config.tunnel && saved.tunnel?.enabled)
     config = {
       ...config,
@@ -496,7 +525,7 @@ export async function startViewer(config: ViewerConfig) {
 
   let server: ReturnType<typeof Bun.serve<WSData>>;
   try {
-    for (const id of await viewer.kingdomRuntimes.start())
+    for (const id of await viewer.kingdom.start())
       log.warn(`[Kingdom] Paired Kingdom ${id} unavailable; reconnect at /kingdom`);
     server = Bun.serve<WSData>({
       port,
@@ -506,14 +535,14 @@ export async function startViewer(config: ViewerConfig) {
       websocket: viewer.websocket,
     });
   } catch (error) {
-    viewer.kingdomRuntimes.stop();
+    viewer.kingdom.stop();
     localStore?.close();
     throw error;
   }
   viewer.startSocket();
   const stopServer = server.stop.bind(server);
   server.stop = (closeActiveConnections?: boolean) => {
-    viewer.kingdomRuntimes.stop();
+    viewer.kingdom.stop();
     void tunnelHolder.tunnel?.stop();
     viewer.stopSocket();
     return stopServer(closeActiveConnections);
@@ -526,6 +555,7 @@ export async function startViewer(config: ViewerConfig) {
       await tunnelHolder.tunnel.start();
       const info = tunnelHolder.tunnel.info;
       if (info) log.info(`[Tunnel] ${info.provider} active: ${info.url}`);
+      tunnelHolder.changed?.();
     } catch (err) {
       log.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
     }
@@ -537,6 +567,6 @@ export async function startViewer(config: ViewerConfig) {
     analyticsStore,
     tunnelHolder,
     localStore,
-    kingdomRuntimes: viewer.kingdomRuntimes,
+    kingdom: viewer.kingdom,
   };
 }

@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
-import { KingdomRuntimeConnection } from '../src/providers/kingdom-runtime-connection';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
 import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
 import {
@@ -471,44 +470,6 @@ if (!kingdomUp)
   console.warn(
     `VCR: Kingdom is not reachable at ${LIVE.kingdomUrl}; its cassettes were not refreshed`,
   );
-
-test.skipIf(!kingdomUp)(
-  'kingdom runtime heartbeat: an unenrolled installation credential is refused and the connection reports unavailable',
-  async () => {
-    const vcr = kingdomVcr();
-    expect(
-      await scenario(vcr, 'heartbeat', async () => {
-        const directory = root(),
-          credentialFile = join(directory, 'runtime.json');
-        writeFileSync(
-          credentialFile,
-          JSON.stringify({ secret: `kingdom_runtime_${'x'.repeat(43)}` }),
-          { mode: 0o600 },
-        );
-        const connection = new KingdomRuntimeConnection(
-          {
-            url: LIVE.kingdomUrl,
-            owner: `User:${crypto.randomUUID()}::`,
-            installationId: crypto.randomUUID(),
-            credentialFile,
-          },
-          () => 0,
-          httpCassettes(vcr.queue('runtime-heartbeat', 'unenrolled'), 'runtime-heartbeat'),
-        );
-        const error = await connection.check().then(
-          () => undefined,
-          (e: Error) => e.message,
-        );
-        connection.stop();
-        return { connected: connection.connected, error };
-      }),
-    ).toEqual({
-      connected: false,
-      error: 'Kingdom runtime unavailable; check enrollment, expiry and connection',
-    });
-  },
-  LIVE_TIMEOUT,
-);
 
 test.skipIf(!kingdomUp)(
   'kingdom websocket: connect, ping and an anonymous authenticate',

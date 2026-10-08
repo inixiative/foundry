@@ -1,72 +1,65 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { kingdomUrl, writePrivateJson } from '@inixiative/signet';
+import { resolve } from 'node:path';
+import { kingdomUrl, pairInstallation, signetCredentialFile } from '@inixiative/signet';
 import { z } from 'zod';
+import { log } from '../logger';
 import type { ConfigStore } from '../viewer/config';
+import { privateTunnelToken } from '../viewer/private-token';
 import { ownerKey } from './kingdom-client';
 import {
-  type KingdomRuntimeSettings,
-  kingdomRuntimeId,
-  readRuntimeIdentity,
-  selectKingdomRuntime,
-} from './kingdom-runtime-connection';
-import { RUNTIME_SECRET_PREFIX } from './kingdom-secrets';
+  type KingdomIntegration,
+  kingdomInstallationPaths,
+  kingdomInstallationRoot,
+  kingdomIntegrationId,
+  selectKingdomIntegration,
+  shareViewerCredential,
+} from './kingdom-installation-connection';
 
 /** Hosted production Kingdom API origin; the default offered by guided setup. */
-export const HOSTED_KINGDOM_URL = 'https://kingdom-prod-api-prod.up.railway.app';
+export const HOSTED_KINGDOM_URL = 'https://api.kingdom.inixiative.com';
 
 export const kingdomPairInputSchema = z
-  .object({ url: z.string().transform(kingdomUrl), name: z.string().trim().min(1).max(120) })
+  .object({
+    url: z.string().transform((value, context) => {
+      try {
+        return kingdomUrl(value);
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          message: 'Use an HTTPS origin or loopback HTTP origin.',
+        });
+        return z.NEVER;
+      }
+    }),
+    name: z.string().trim().min(1).max(120),
+  })
   .strict();
-const pairSchema = z.object({
-  data: z.object({
-    deviceCode: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-    userCode: z.string().regex(/^[A-F0-9]{12}$/),
-    verificationUrl: z.string().url(),
-    expiresAt: z.string().datetime(),
-    interval: z.number().int().min(1).max(60).optional(),
-  }),
-});
-const pollSchema = z.object({
-  data: z.discriminatedUnion('status', [
-    z.object({ status: z.literal('pending') }),
-    z.object({ status: z.literal('approved'), installationId: z.string().uuid() }),
-  ]),
-});
 
-export interface KingdomPairing {
+/** What a person needs to approve the pairing in Kingdom. */
+export type KingdomReview = { url: string; reviewCode: string; review: string; expiresAt: string };
+
+export interface PairKingdomIntegration {
   url: string;
-  secret: string;
-  deviceCode: string;
-  userCode: string;
-  verificationUrl: string;
-  expiresAt: string;
-  interval?: number;
-}
-export type KingdomPollResult = z.output<typeof pollSchema>['data'];
-
-async function request(url: string, action: string, body: unknown, transport: typeof fetch) {
-  const response = await transport(`${url}/api/v1/access/${action}`, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(10000),
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw Error('Kingdom refused the request. Check the address or start pairing again.');
-  }
-  return response.json();
+  name: string;
+  /** Id of the paired Kingdom being paired again; approval must come from its owner. */
+  replace?: string;
+  onReview: (review: KingdomReview) => void;
+  /** Kingdom refused a poll or dropped the socket while waiting; waiting continues. */
+  onWaiting?: (message: string) => void;
+  signal?: AbortSignal;
+  /** The token Kingdom uses to reach the viewer; defaults to the private tunnel-token file. */
+  viewerToken?: string;
+  /** Runs the pairing; the viewer passes one that keeps its live connection from dropping the new Signet. */
+  around?: <T>(url: string, pair: () => Promise<T>) => Promise<T>;
+  socketOptions?: { pollMs?: number; retryBaseMs?: number; authTimeoutMs?: number };
 }
 
-/** Creates the runtime secret locally and sends Kingdom only its hash. */
-export async function beginKingdomPairing(
-  input: z.output<typeof kingdomPairInputSchema>,
-  configDir: string,
-  transport: typeof fetch = fetch,
-): Promise<KingdomPairing> {
+const alreadyPaired = (url: string, owner: string, id: string) =>
+  Error(
+    `Already paired with ${url} as ${owner} (id ${id}). Pass --replace to pair it again, or run bun run kingdom disconnect --kingdom ${id}.`,
+  );
+
+async function privateDirectory(configDir: string) {
   const directory = resolve(configDir);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const stat = await lstat(directory);
@@ -77,112 +70,134 @@ export async function beginKingdomPairing(
   )
     throw Error('Configuration directory must be owned by this user.');
   await chmod(directory, 0o700);
-  const secret = `${RUNTIME_SECRET_PREFIX}${randomBytes(32).toString('base64url')}`;
-  const { data } = pairSchema.parse(
-    await request(
-      input.url,
-      'pairRuntime',
-      { name: input.name, keyHash: createHash('sha256').update(secret).digest('hex') },
-      transport,
-    ),
-  );
-  const verification = new URL(data.verificationUrl);
-  kingdomUrl(verification.origin);
-  if (
-    verification.username ||
-    verification.password ||
-    (new URL(input.url).protocol === 'https:' && verification.protocol !== 'https:')
-  )
-    throw Error('Kingdom returned an unsafe login address.');
-  return { ...data, url: input.url, secret };
-}
-
-export async function pollKingdomPairing(
-  pairing: KingdomPairing,
-  transport: typeof fetch = fetch,
-): Promise<KingdomPollResult> {
-  return pollSchema.parse(
-    await request(pairing.url, 'pollRuntime', { deviceCode: pairing.deviceCode }, transport),
-  ).data;
-}
-
-/** Adds a paired Kingdom; `replace` swaps the one with the same Kingdom + owner. Deletes a replaced credential. */
-export async function saveKingdomRuntime(
-  store: ConfigStore,
-  runtime: KingdomRuntimeSettings,
-  replace = false,
-) {
-  const id = kingdomRuntimeId(runtime);
-  let replaced: KingdomRuntimeSettings | undefined;
-  await store.load();
-  await store.update((draft) => {
-    const runtimes = draft.kingdomRuntimes ?? [];
-    replaced = runtimes.find((item) => kingdomRuntimeId(item) === id);
-    if (replaced && !replace)
-      throw Error(
-        `Already paired with ${runtime.url} as ${runtime.owner} (id ${id}). Pass --replace to pair it again, or run bun run kingdom disconnect --kingdom ${id}.`,
-      );
-    draft.kingdomRuntimes = [...runtimes.filter((item) => item !== replaced), runtime];
-  });
-  if (replaced && replaced.credentialFile !== runtime.credentialFile)
-    await unlink(replaced.credentialFile).catch(() => {});
-  return { id, replaced };
 }
 
 /**
- * Persists the approved credential, reads the owner Kingdom approved it for, then records the paired Kingdom.
- * `replace` names the paired Kingdom being re-paired; approval must come from the same owner. Nothing is kept on failure.
+ * Pairs this Foundry with a Kingdom as an Installation: Kingdom shows a review code, a person approves
+ * it as an owner, and this Foundry collects the Signet that owner's new Foundry integration holds.
+ * The owner is confirmed before anything is collected, so a refused pairing keeps nothing.
  */
-export async function completeKingdomPairing(
+export async function pairKingdomIntegration(
   store: ConfigStore,
   configDir: string,
-  pairing: KingdomPairing,
-  installationId: string,
-  options: {
-    replace?: string;
-    transport?: typeof fetch;
-    sessionCount?: number;
-  } = {},
+  input: PairKingdomIntegration,
 ) {
-  const credentialFile = join(resolve(configDir), `kingdom-runtime-${installationId}.json`);
-  await writePrivateJson(credentialFile, { secret: pairing.secret });
+  const { url, name } = kingdomPairInputSchema.parse({ url: input.url, name: input.name });
+  const integrations = (await store.load()).kingdomIntegrations ?? [];
+  const replaced = input.replace
+    ? integrations.find((integration) => kingdomIntegrationId(integration) === input.replace)
+    : undefined;
+  if (input.replace && (!replaced || kingdomUrl(replaced.url) !== url))
+    throw Error('The Kingdom to pair again is not paired at that address.');
+  await privateDirectory(configDir);
+  const pair = () =>
+    pairInstallation({
+      url,
+      root: kingdomInstallationRoot(configDir),
+      kind: 'foundry',
+      name,
+      terms: {
+        name,
+        lifecycle: 'ongoing',
+        resources: [],
+        expiresAt: null,
+        maxRequests: null,
+        maxConcurrent: 2,
+      },
+      onReview: (review) => input.onReview({ url, ...review }),
+      onError: (error) =>
+        input.onWaiting?.(error instanceof Error ? error.message : 'Kingdom did not answer'),
+      confirmOwner: async ({ owner, ownerName }) => {
+        if (!owner) return false;
+        const key = ownerKey(owner);
+        if (replaced && key !== replaced.owner)
+          throw Error(
+            `Kingdom approved this Foundry for ${ownerName ?? key}, not the paired owner ${replaced.owner}; nothing was replaced. Revoke the new Foundry integration in Kingdom.`,
+          );
+        const id = kingdomIntegrationId({ url, owner: key });
+        if (
+          !replaced &&
+          integrations.some((integration) => kingdomIntegrationId(integration) === id)
+        )
+          throw alreadyPaired(url, key, id);
+        return true;
+      },
+      ...(input.signal ? { signal: input.signal } : {}),
+      ...(input.socketOptions ? { socketOptions: input.socketOptions } : {}),
+    });
+  const paired = await (input.around ? input.around(url, pair) : pair());
+  const settings: KingdomIntegration = {
+    url,
+    integrationId: paired.integrationId,
+    owner: ownerKey(paired.owner),
+    signetId: paired.signetId,
+  };
+  let id: string;
   try {
-    const identity = await readRuntimeIdentity(
-      { url: pairing.url, installationId, credentialFile },
-      options,
-    );
-    const settings: KingdomRuntimeSettings = {
-      url: pairing.url,
-      owner: ownerKey(identity.owner),
-      installationId,
-      credentialFile,
-    };
-    if (options.replace && kingdomRuntimeId(settings) !== options.replace)
-      throw Error(
-        `Kingdom approved this runtime for ${settings.owner}, not the paired Kingdom ${options.replace}; nothing was replaced. Revoke the new runtime in Kingdom's Foundry tab.`,
-      );
-    const { id } = await saveKingdomRuntime(store, settings, !!options.replace);
-    return { id, settings };
+    ({ id } = await saveKingdomIntegration(store, configDir, settings, !!replaced));
   } catch (error) {
-    await unlink(credentialFile).catch(() => {});
+    await unlink(paired.credentialFile).catch(() => {});
     throw error;
   }
+  try {
+    await shareViewerCredential(
+      configDir,
+      (await store.load()).kingdomIntegrations ?? [],
+      input.viewerToken ?? privateTunnelToken(configDir),
+      (message) => log.warn(message),
+    );
+  } catch (error) {
+    log.warn(`[Kingdom] viewer credential not shared: ${(error as Error).message}`);
+  }
+  return { id, settings, ownerName: paired.ownerName };
 }
 
-/** Removes one paired Kingdom's local binding and credential. Kingdom-side revocation stays with Kingdom. */
-export async function disconnectKingdom(store: ConfigStore, selector?: string) {
-  const { kingdomRuntimes } = await store.load();
-  if (!kingdomRuntimes?.length) return undefined;
-  const runtime = selectKingdomRuntime(kingdomRuntimes, selector);
+/** Adds a paired Kingdom; `replace` swaps the one with the same Kingdom + owner and deletes its Signet file. */
+export async function saveKingdomIntegration(
+  store: ConfigStore,
+  configDir: string,
+  integration: KingdomIntegration,
+  replace = false,
+) {
+  const id = kingdomIntegrationId(integration);
+  let replaced: KingdomIntegration | undefined;
+  await store.load();
   await store.update((draft) => {
-    const kept = (draft.kingdomRuntimes ?? []).filter(
-      (item) => kingdomRuntimeId(item) !== kingdomRuntimeId(runtime),
-    );
-    if (kept.length) draft.kingdomRuntimes = kept;
-    else delete draft.kingdomRuntimes;
+    const integrations = draft.kingdomIntegrations ?? [];
+    replaced = integrations.find((item) => kingdomIntegrationId(item) === id);
+    if (replaced && !replace) throw alreadyPaired(integration.url, integration.owner, id);
+    draft.kingdomIntegrations = [...integrations.filter((item) => item !== replaced), integration];
   });
-  await unlink(runtime.credentialFile).catch(() => {});
-  return { id: kingdomRuntimeId(runtime), ...runtime };
+  if (replaced && replaced.signetId !== integration.signetId)
+    await unlink(
+      signetCredentialFile(
+        kingdomInstallationPaths(configDir, replaced.url).directory,
+        replaced.signetId,
+      ),
+    ).catch(() => {});
+  return { id, replaced };
+}
+
+/** Removes one paired Kingdom's local entry and its Signet file. Revoking the integration stays with Kingdom. */
+export async function disconnectKingdom(store: ConfigStore, configDir: string, selector?: string) {
+  const { kingdomIntegrations } = await store.load();
+  if (!kingdomIntegrations?.length) return undefined;
+  const integration = selectKingdomIntegration(kingdomIntegrations, selector);
+  const id = kingdomIntegrationId(integration);
+  await store.update((draft) => {
+    const kept = (draft.kingdomIntegrations ?? []).filter(
+      (item) => kingdomIntegrationId(item) !== id,
+    );
+    if (kept.length) draft.kingdomIntegrations = kept;
+    else delete draft.kingdomIntegrations;
+  });
+  await unlink(
+    signetCredentialFile(
+      kingdomInstallationPaths(configDir, integration.url).directory,
+      integration.signetId,
+    ),
+  ).catch(() => {});
+  return { id, ...integration };
 }
 
 /** A local viewer answering on its port holds settings in memory until restarted. */

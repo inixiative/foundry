@@ -55,7 +55,7 @@ export const createWebSocketServer = ({
   admit,
 }: {
   families: StreamFamily[];
-  /** Per-open authorization beyond the upgrade (e.g. Kingdom runtime check). False closes nothing by
+  /** Per-open authorization beyond the upgrade (e.g. Kingdom authorization). False closes nothing by
    *  itself: an admit that means "this connection lost authorization" closes the socket before returning. */
   admit?: () => Promise<boolean>;
 }): WebSocketServer => {

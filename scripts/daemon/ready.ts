@@ -32,7 +32,7 @@ export const checkReadiness = async (configDirectory: string): Promise<Readiness
     return { ready: false, errors: ['Foundry configuration could not be read.'], warnings: [] };
   }
 
-  const report = await inspectReadiness(config);
+  const report = await inspectReadiness(config, { configDir: configDirectory });
   const describe = (issue: { scope: string; message: string }) =>
     issue.scope === 'global' ? issue.message : `${issue.scope}: ${issue.message}`;
 

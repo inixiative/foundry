@@ -1,4 +1,9 @@
-import { kingdomUrl } from '@inixiative/signet';
+import {
+  kingdomUrl,
+  readPrivateJson,
+  SignetClient,
+  signetCredentialSchema,
+} from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
 
@@ -38,7 +43,7 @@ export const kingdomEnvelopeSchema = z
   .object({
     id: z.string().uuid(),
     owner: ownerRefSchema,
-    installationId: z.string().uuid(),
+    signetEnrollmentId: z.string().uuid(),
     runId: z.string().uuid(),
     integrationId: z.string().uuid(),
     capacityId: z.string().uuid(),
@@ -51,28 +56,19 @@ export const kingdomEnvelopeSchema = z
   .strict();
 export type KingdomSelection = z.infer<typeof kingdomSelectionSchema>;
 export type KingdomRunEnvelope = z.infer<typeof kingdomEnvelopeSchema>;
+/** Resolves, delegates and revokes native runs by presenting the Signet this Foundry's integration holds. */
 export class KingdomClient {
-  readonly origin: string;
-  constructor(
-    origin: string,
-    private credential: string,
-  ) {
-    this.origin = kingdomUrl(origin);
+  private constructor(
+    private signet: SignetClient,
+    private enrollmentId: string,
+  ) {}
+  /** A client for the Signet a credential file holds. */
+  static async fromFile(credentialFile: string) {
+    const { enrollmentId } = signetCredentialSchema.parse(await readPrivateJson(credentialFile));
+    return new KingdomClient(await SignetClient.fromFile(credentialFile), enrollmentId);
   }
-  private async post(action: string, body: unknown): Promise<unknown> {
-    const response = await fetch(`${this.origin}/api/v1/access/${action}`, {
-      method: 'POST',
-      redirect: 'error',
-      signal: AbortSignal.timeout(15000),
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.credential}` },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw Error(`Kingdom ${action} failed (${response.status})`);
-    }
-    const result = z.object({ data: z.unknown() }).parse(await response.json());
-    return result.data;
+  get origin() {
+    return this.signet.url;
   }
   async resolve(
     runId: string,
@@ -80,32 +76,49 @@ export class KingdomClient {
     spreadId?: string,
   ): Promise<KingdomRunEnvelope> {
     const run = kingdomEnvelopeSchema.parse(
-      await this.post('resolveRun', {
+      await this.signet.post('resolveRun', {
         runId,
         selection: kingdomSelectionSchema.parse(selection),
         ...(spreadId ? { spreadId } : {}),
       }),
     );
     const expected = `/api/v1/access/gateway/${run.id}${run.runtime === 'codex' ? '/v1' : ''}`;
-    if (run.gatewayPath !== expected || run.runId !== runId)
+    if (
+      run.gatewayPath !== expected ||
+      run.runId !== runId ||
+      run.signetEnrollmentId !== this.enrollmentId
+    )
       throw Error('Kingdom returned a mismatched run binding');
     return run;
   }
   async delegate(bindingId: string) {
     return z
       .object({ secret: z.string().regex(refreshSecretPattern), expiresAt: z.string().datetime() })
-      .parse(await this.post('delegateRun', { bindingId }));
-  }
-  async refresh(bindingId: string) {
-    return z
-      .object({
-        id: z.string().uuid(),
-        secret: z.string().regex(runSecretPattern),
-        expiresAt: z.string().datetime(),
-      })
-      .parse(await this.post('refreshRun', { bindingId }));
+      .parse(await this.signet.post('delegateRun', { bindingId }));
   }
   async revoke(bindingId: string) {
-    await this.post('revokeRun', { bindingId });
+    await this.signet.post('revokeRun', { bindingId });
   }
+}
+
+/** Exchanges a run's delegated refresh credential for a short-lived run token; no Signet involved. */
+export async function refreshKingdomRun(url: string, refreshCredential: string, bindingId: string) {
+  const response = await fetch(`${kingdomUrl(url)}/api/v1/access/refreshRun`, {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(15000),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${refreshCredential}` },
+    body: JSON.stringify({ bindingId }),
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw Error(`Kingdom refreshRun failed (${response.status})`);
+  }
+  return z
+    .object({
+      id: z.string().uuid(),
+      secret: z.string().regex(runSecretPattern),
+      expiresAt: z.string().datetime(),
+    })
+    .parse(z.object({ data: z.unknown() }).parse(await response.json()).data);
 }

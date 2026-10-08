@@ -11,15 +11,17 @@ import {
   kingdomEnvelopeSchema,
   kingdomSelectionSchema,
 } from '../src/providers/kingdom-client';
+import { heldSignet, mockKingdom } from './helpers/kingdom-installation';
 
 test('Kingdom Integration selection/envelope use canonical wire fields and reject old or ambiguous names', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'integration-envelope-'));
   const integrationId = crypto.randomUUID(),
     runId = crypto.randomUUID(),
     bindingId = crypto.randomUUID();
-  const envelope = {
+  const envelope = (enrollmentId: string) => ({
     id: bindingId,
     owner: { ownerModel: 'User', userId: crypto.randomUUID(), organizationId: null, spaceId: null },
-    installationId: crypto.randomUUID(),
+    signetEnrollmentId: enrollmentId,
     runId,
     integrationId,
     capacityId: crypto.randomUUID(),
@@ -28,24 +30,31 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
     runtime: 'claude',
     expiresAt: new Date(Date.now() + 60000).toISOString(),
     gatewayPath: `/api/v1/access/gateway/${bindingId}`,
-  };
-  let calls = 0;
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
+  });
+  let calls = 0,
+    presentedBy = '';
+  const kingdom = mockKingdom({
+    onSignet: (_action, body, presented) => {
       calls++;
-      expect(await request.json()).toEqual({
-        runId,
-        selection: { integrationIds: [integrationId] },
-      });
-      return Response.json({ data: envelope });
+      expect(body).toEqual({ runId, selection: { integrationIds: [integrationId] } });
+      return envelope(presentedBy || presented.enrollmentId);
     },
   });
   try {
-    const client = new KingdomClient(server.url.origin, 'synthetic');
+    const { credentialFile } = await heldSignet(
+      kingdom,
+      directory,
+      `User:${crypto.randomUUID()}::`,
+    );
+    const client = await KingdomClient.fromFile(credentialFile);
+    expect(client.origin).toBe(kingdom.url);
     expect((await client.resolve(runId, { integrationIds: [integrationId] })).integrationId).toBe(
       integrationId,
+    );
+    // A binding for another enrollment of the Signet is not this Foundry's.
+    presentedBy = crypto.randomUUID();
+    await expect(client.resolve(runId, { integrationIds: [integrationId] })).rejects.toThrow(
+      'mismatched run binding',
     );
     expect(kingdomSelectionSchema.safeParse({ connectionIds: [integrationId] }).success).toBe(
       false,
@@ -56,17 +65,23 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
         connectionIds: [integrationId],
       }).success,
     ).toBe(false);
-    const { integrationId: _, ...withoutIntegration } = envelope;
+    const valid = envelope(crypto.randomUUID());
+    expect(kingdomEnvelopeSchema.safeParse(valid).success).toBe(true);
+    const { integrationId: _, ...withoutIntegration } = valid;
     expect(
       kingdomEnvelopeSchema.safeParse({ ...withoutIntegration, connectionId: integrationId })
         .success,
     ).toBe(false);
+    expect(kingdomEnvelopeSchema.safeParse({ ...valid, connectionId: integrationId }).success).toBe(
+      false,
+    );
     expect(
-      kingdomEnvelopeSchema.safeParse({ ...envelope, connectionId: integrationId }).success,
+      kingdomEnvelopeSchema.safeParse({ ...valid, installationId: crypto.randomUUID() }).success,
     ).toBe(false);
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
   } finally {
-    server.stop(true);
+    kingdom.stop();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

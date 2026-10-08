@@ -24,7 +24,7 @@ test('file editor allows project documents and denies credential reads, writes a
     normal = join(project, 'README.md');
   await writeFile(secretPath, 'synthetic secret', { mode: 0o600 });
   await writeFile(normal, 'hello');
-  await writeFile(join(configDir, 'kingdom-runtime.json'), 'synthetic secret');
+  await writeFile(join(project, 'installation-key.json'), 'synthetic secret');
   await symlink(outside, join(project, 'escape'));
   await symlink(secretPath, join(project, 'alias.json'));
   const store = new ConfigStore(configDir),
@@ -52,7 +52,7 @@ test('file editor allows project documents and denies credential reads, writes a
     expect((await get(normal)).status).toBe(200);
     expect((await put(normal)).status).toBe(200);
     for (const path of [
-      join(configDir, 'kingdom-runtime.json'),
+      join(project, 'installation-key.json'),
       join(project, 'alias.json'),
       join(project, 'escape', 'new.txt'),
       join(project, '.env.local'),
