@@ -52,7 +52,7 @@
     "prisma": "6",
     "typescript": "6.0.3",
     "@biomejs/biome": "2.5.2",
-    "@inixiative/config": "^0.5.54",
+    "@inixiative/config": "^0.5.55",
     "lefthook": "2.1.9"
   },
   "packageManager": "bun@1.4.2",

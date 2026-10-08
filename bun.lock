@@ -6,7 +6,7 @@
       "name": "@inixiative/foundry-monorepo",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
-        "@inixiative/config": "^0.5.54",
+        "@inixiative/config": "^0.5.55",
         "@prisma/client": "6",
         "@types/bun": "1.4.2",
         "lefthook": "2.1.9",
@@ -29,10 +29,10 @@
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
         "@inixiative/agent-session": "^0.3.1",
-        "@inixiative/archive": "^0.8.0",
+        "@inixiative/archive": "^0.9.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
-        "@inixiative/signet": "file:/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/c100a93c-aa39-490b-b4da-02e6c8c8108d/scratchpad/pkg/signet-1791426874.tgz",
+        "@inixiative/signet": "^0.2.1",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@prisma/client": "^6.6.0",
         "bullmq": "^5.73.0",
@@ -97,9 +97,9 @@
 
     "@inixiative/agent-session": ["@inixiative/agent-session@0.3.1", "", {}, "sha512-A6NL4ZJkB46YEEJxcXEwggxk8McO9T4QOS+YO7k57bkZRBfcREFW/sS2OJ1n65KQIZ8U3fbHgRmEMs73stUw1w=="],
 
-    "@inixiative/archive": ["@inixiative/archive@0.8.0", "", { "dependencies": { "@inixiative/signet": "^0.1.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-W0RyiEp+/5BeblLanpeVyynZX6eiK6OqiC1rpph/kjyCIeBiz01ntWj0rowdiWAWtrza0t1MsK8mG6WtH3BYPg=="],
+    "@inixiative/archive": ["@inixiative/archive@0.9.0", "", { "dependencies": { "@inixiative/signet": "^0.2.1", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-Vt5xWKltJdBI0xcb5/YeK5PniB85xhcCcApMfrj0PvGuLyJz0dMCB10m7feWtt3YsRfovPgjIVi9Sz4GRxU4mg=="],
 
-    "@inixiative/config": ["@inixiative/config@0.5.54", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-6Q+Ict5zxjDaEYqDIDQU5S+LAmcQf8cFluvLzQdSIm77CfEKLbZPvL9ngiSSdKvZNJXRX6ZVnaVJ3X2CWTnqnQ=="],
+    "@inixiative/config": ["@inixiative/config@0.5.55", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-gbc4BskMydzPkWtJu9Pmo1YCWPi0kNmiLf5p/KIGfyWUT4RhcTjWL1zQqFnBDndwUjyDIO6h2QZtN88fpfv1uw=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
 
@@ -107,7 +107,7 @@
 
     "@inixiative/gloss": ["@inixiative/gloss@0.0.5", "", { "peerDependencies": { "typescript": ">=6.0.0" }, "bin": { "gloss": "dist/cli.js" } }, "sha512-D8UuMnT9OCJpbXfgoDQ689TpaKIhste2K4M4wD1kpRHnhcMyAyuAyLjTeu87ODm13ke9EqeA/Axk+MK2Imt3jA=="],
 
-    "@inixiative/signet": ["@inixiative/signet@/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/c100a93c-aa39-490b-b4da-02e6c8c8108d/scratchpad/pkg/signet-1791426874.tgz", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-tBkcVu6bUs3zbYi70FfBoZhzkqVrJBIt8wvd9Eq5VWHDz4K/Rx+nK6QeKNO4rdzD/kfZOT3V1C/NFbjvbf4Quw=="],
+    "@inixiative/signet": ["@inixiative/signet@0.2.1", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-NN9MuZ9F1GdgQhDWzXhvKC/4MlrfmODzJmwixHPe0rVfMmArfFew9VmrKhiAFtBd3IqMOVYVNgz/8pfWmoUkmw=="],
 
     "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
 
@@ -476,8 +476,6 @@
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
-
-    "@inixiative/archive/@inixiative/signet": ["@inixiative/signet@0.1.0", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-eRZFlRfuTq3ggTbJz9Aw7GpxAf4tg5GqYuVSuixMEiY+QRZjbKz3hz2Mqb9cYXuDO5pJndtH+4aNlaElg/cNwQ=="],
 
     "body-parser/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 
