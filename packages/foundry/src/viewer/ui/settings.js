@@ -1,26 +1,24 @@
 /**
- * Settings — fullscreen configuration panel.
+ * Settings pages — Foundry-wide at /settings/:section, per project at
+ * /projects/:id/settings/:section (ui/route.js).
  *
- * Layout: left nav rail | main editor | right AI chat pane.
- * Nav rail groups: Global (defaults / providers / tunnel) + Project (sources / overrides).
- * Current focus (scope/tab/selected item) is relayed to the chat so it knows
- * what the operator is looking at.
+ * Layout: scope + section nav | editor | Forge Master pane. The page's
+ * scope/section/selected item is relayed to Forge Master so it knows what
+ * the operator is looking at.
  */
 
 import { AccessSettings } from './access-settings.js';
-import { ArchiveSettings } from './archive-settings.js';
+import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
+import { LocalDevicePanel } from './devices.js';
 import { FilePicker } from './file-picker.js';
 import { GlossSettings } from './gloss.js';
 import { KingdomSettings } from './kingdom-settings.js';
-import { html, signal, useEffect, useRef, useState } from './lib.js';
+import { html, signal, useEffect, useState } from './lib.js';
+import { FOUNDRY_SETTINGS, navigate, PROJECT_SETTINGS, route, settingsPath } from './route.js';
 import { SelfChatPane } from './self-chat.js';
-import { activeProjectId, showToast } from './store.js';
+import { projects, showToast } from './store.js';
 
-// Settings state
-export const settingsOpen = signal(false);
 export const settingsConfig = signal(null);
-const settingsScope = signal('global');
-const activeTab = signal('defaults');
 const selectedFocus = signal(null); // { kind: "source"|"agent"|"layer"|"provider", id }
 
 // ---------------------------------------------------------------------------
@@ -83,10 +81,14 @@ async function saveProjectSection(projectId, section, data) {
   }
 }
 
-async function deleteItem(section, id) {
+async function deleteProjectItem(projectId, section, id) {
   try {
-    const res = await fetch(`/api/settings/${section}/${id}`, { method: 'DELETE' });
-    settingsConfig.value = await res.json();
+    const res = await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/settings/${section}/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
+    if (!res.ok) return showToast((await res.json())?.error || 'Failed to delete', 'error');
+    await loadSettings();
     showToast(`Removed ${id}`, 'ok');
   } catch {
     showToast('Failed to delete', 'error');
@@ -339,7 +341,6 @@ function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange 
     <div class="settings-card" onFocusin=${() => onFocusChange?.(null)}>
       <div class="settings-card-header">
         <span class="settings-card-title">Default Models</span>
-        <span class="scope-label scope-global">GLOBAL</span>
       </div>
 
       <div class="settings-section-label">Executor (tool use, code gen)</div>
@@ -373,7 +374,9 @@ function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange 
       ${executorNeeds ? html`<p class="settings-desc main-thread-needs">${executorNeeds}</p>` : null}
 
       <div class="settings-section-label">Classifier / Router</div>
-      <div class="settings-row">
+      ${
+        apiTokens
+          ? html`      <div class="settings-row">
         <div class="settings-field">
           <label class="settings-label">Provider</label>
           <select
@@ -398,7 +401,9 @@ function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange 
             )}
           </select>
         </div>
-      </div>
+      </div>`
+          : html`<p class="settings-desc">Subscription-only: decision roles run on the subscription decision profile (the Codex login with GPT-6 Luna unless <code>subscriptionOnly</code> names another). Set <code>apiTokens: true</code> to choose an API provider here.</p>`
+      }
 
       <div class="settings-card-actions">
         <button class="action-btn" onClick=${() => onSave(draft)}>Save Defaults</button>
@@ -407,7 +412,40 @@ function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange 
   `;
 }
 
-function ProviderEditor({ provider, onSave, onFocusChange }) {
+const ACCOUNT_SOURCES = {
+  login: 'Local login',
+  profile: 'Private profile',
+  gateway: 'Gateway',
+  kingdom: 'Kingdom',
+  'api-key': 'API key',
+  local: 'Local server',
+  none: 'No account',
+};
+
+/** Where each enabled provider's account comes from (server-side: profiles, PATH, env presence). */
+const providerAccounts = signal(null);
+function loadProviderAccounts() {
+  fetch('/api/providers/accounts')
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body) => {
+      if (body) providerAccounts.value = body;
+    })
+    .catch(() => {});
+}
+
+function ProviderAccount({ account }) {
+  if (!account) return null;
+  return html`
+    <div class="provider-account ${account.ready ? 'ready' : 'needs-attention'}">
+      <span class="provider-account-source">${ACCOUNT_SOURCES[account.source]}</span>
+      ${account.detail ? html`<code class="provider-account-detail">${account.detail}</code>` : null}
+      ${account.uses.length ? html`<span class="provider-account-uses">${account.uses.join(' · ')}</span>` : null}
+      ${account.issue ? html`<p class="settings-desc">${account.issue}</p>` : null}
+    </div>
+  `;
+}
+
+function ProviderEditor({ provider, account, onSave, onFocusChange }) {
   const [draft, setDraft] = useState({ ...provider });
   const update = (k, v) => setDraft({ ...draft, [k]: v });
 
@@ -421,6 +459,8 @@ function ProviderEditor({ provider, onSave, onFocusChange }) {
           ${draft.enabled ? 'enabled' : 'disabled'}
         </label>
       </div>
+
+      <${ProviderAccount} account=${account} />
 
       ${
         draft.baseUrl !== undefined
@@ -510,7 +550,6 @@ function TunnelEditor() {
     <div class="settings-card">
       <div class="settings-card-header">
         <span class="settings-card-title">Tunnel</span>
-        <span class="scope-label scope-global">GLOBAL</span>
       </div>
       <p class="settings-desc">Expose the viewer over a public URL. All tunneled access requires authentication. Stopping a tunnel keeps the viewer locked.</p>
       <div class="tunnel-status">
@@ -571,7 +610,6 @@ function ProjectOverrides({ project }) {
     <div class="settings-card">
       <div class="settings-card-header">
         <span class="settings-card-title">Project Overrides</span>
-        <span class="scope-label scope-project">PROJECT</span>
       </div>
       ${
         hasDefaults
@@ -602,219 +640,166 @@ function ProjectOverrides({ project }) {
 }
 
 // ---------------------------------------------------------------------------
-// Navigation rail — groups global + project tabs
+// Scope + section navigation
 // ---------------------------------------------------------------------------
 
-function NavRail({ scope, tab, projectName, onScopeChange, onTabChange }) {
-  const globalTabs = [
-    { id: 'defaults', label: 'Defaults' },
-    { id: 'providers', label: 'Providers' },
-    { id: 'integrations', label: 'Integrations' },
-    { id: 'kingdom', label: 'Kingdom' },
-    { id: 'tunnel', label: 'Tunnel' },
-    { id: 'archives', label: 'Archives' },
-  ];
-  const projectTabs = [
-    { id: 'gloss', label: 'Gloss' },
-    { id: 'sources', label: 'Sources' },
-    { id: 'integrations', label: 'Integrations' },
-    { id: 'overrides', label: 'Overrides' },
-  ];
-
-  const selectTab = (newScope, newTab) => {
-    onScopeChange(newScope);
-    onTabChange(newTab);
+function SettingsNav({ projectId, section, projectList }) {
+  const sections = projectId ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
+  const go = (event, path) => {
+    event.preventDefault();
+    navigate(path);
   };
-
   return html`
-    <nav class="settings-nav">
-      <div class="settings-nav-section">Global</div>
-      ${globalTabs.map(
-        (t) => html`
-        <button
-          key=${t.id}
-          class="settings-nav-item ${scope === 'global' && tab === t.id ? 'active scope-global' : ''}"
-          onClick=${() => selectTab('global', t.id)}
-        >${t.label}</button>
-      `,
-      )}
-      <div class="settings-nav-section">
-        ${projectName ? `Project: ${projectName}` : 'Project'}
+    <nav class="settings-nav" aria-label="Settings">
+      <div class="settings-scope" role="tablist" aria-label="Settings scope">
+        <a role="tab" aria-selected=${!projectId} href=${settingsPath(null)}
+          class="settings-scope-tab ${projectId ? '' : 'active'}"
+          onClick=${(e) => go(e, settingsPath(null))}>Foundry</a>
+        <a role="tab" aria-selected=${!!projectId}
+          href=${settingsPath(projectId ?? projectList[0]?.id)}
+          class="settings-scope-tab ${projectId ? 'active' : ''} ${projectList.length ? '' : 'disabled'}"
+          onClick=${(e) => (projectList.length ? go(e, settingsPath(projectId ?? projectList[0].id)) : e.preventDefault())}>Project</a>
       </div>
-      ${projectTabs.map(
-        (t) => html`
-        <button
-          key=${t.id}
-          class="settings-nav-item ${scope === 'project' && tab === t.id ? 'active scope-project' : ''}"
-          disabled=${!projectName}
-          onClick=${() => selectTab('project', t.id)}
-        >${t.label}</button>
-      `,
-      )}
+      ${
+        projectId
+          ? html`<select class="settings-input small settings-project-select" aria-label="Project"
+              value=${projectId}
+              onChange=${(e) => navigate(settingsPath(e.target.value, section))}>
+              ${projectList.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
+            </select>`
+          : html`<p class="settings-scope-note">Everything this Foundry runs on, shared by every project.</p>`
+      }
+      <ul class="settings-sections">
+        ${sections.map(
+          ([id, label]) => html`<li key=${id}>
+            <a href=${settingsPath(projectId, id)} aria-current=${section === id ? 'page' : undefined}
+              class="settings-section ${section === id ? 'active' : ''}"
+              onClick=${(e) => go(e, settingsPath(projectId, id))}>${label}</a>
+          </li>`,
+        )}
+      </ul>
     </nav>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// Main Settings — fullscreen layout with chat pane
+// Settings page
 // ---------------------------------------------------------------------------
 
-export function Settings() {
+function FoundrySection({ section, config, onFocusChange }) {
+  if (section === 'models')
+    return html`<${DefaultsEditor}
+      defaults=${config.defaults}
+      providers=${config.providers}
+      apiTokens=${config.apiTokens === true}
+      onSave=${(defaults) => saveSection('defaults', defaults)}
+      onFocusChange=${onFocusChange}
+    />`;
+  if (section === 'providers') {
+    const accounts = providerAccounts.value ?? [];
+    const editor = (p) =>
+      html`<${ProviderEditor} key=${p.id} provider=${p}
+        account=${accounts.find((a) => a.provider === p.id)}
+        onSave=${(provider) => saveSection('providers', { [provider.id]: provider }).then(loadProviderAccounts)}
+        onFocusChange=${onFocusChange} />`;
+    const all = Object.values(config.providers);
+    const off = all.filter((p) => !p.enabled);
+    return html`
+      <p class="settings-desc">The providers this Foundry has turned on, and where each one's account comes from: a local login, a private profile, Kingdom, or an API key.</p>
+      ${all.filter((p) => p.enabled).map(editor)}
+      ${off.length ? html`<details class="settings-off"><summary>${off.length} providers off</summary>${off.map(editor)}</details>` : null}
+    `;
+  }
+  if (section === 'kingdom') return html`<${KingdomSettings} />`;
+  if (section === 'integrations') return html`<${AccessSettings} onSaved=${loadSettings} />`;
+  if (section === 'archive') return html`<${ArchiveSettings} />`;
+  if (section === 'tunnel') return html`<${TunnelEditor} />`;
+  if (section === 'devices')
+    return html`<section class="settings-card"><${LocalDevicePanel} projectIds=${JSON.stringify(projects.value.map((p) => p.id))} /></section>`;
+  return null;
+}
+
+function ProjectSection({ section, projectId, project, onFocusChange }) {
+  if (!project)
+    return html`<div class="settings-empty">This project is not registered with Foundry.</div>`;
+  if (section === 'integrations')
+    return html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+  if (section === 'archive')
+    return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
+  if (section === 'gloss')
+    return html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+  if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
+  if (section === 'sources') {
+    const sources = Object.values(project.sources || {});
+    return html`
+      ${sources.map(
+        (s) => html`<${SourceEditor}
+          key=${s.id}
+          source=${s}
+          onSave=${(source) => saveProjectSection(projectId, 'sources', { [source.id]: source })}
+          onDelete=${(id) => deleteProjectItem(projectId, 'sources', id)}
+          onFocusChange=${onFocusChange}
+        />`,
+      )}
+      ${sources.length ? null : html`<div class="settings-empty">No sources configured for this project.</div>`}
+    `;
+  }
+  return null;
+}
+
+export function SettingsPage() {
   const [showChat, setShowChat] = useState(false);
-  const isOpen = settingsOpen.value;
   const config = settingsConfig.value;
-  const scope = settingsScope.value;
-  const tab = activeTab.value;
+  const { projectId, section } = route.value;
   const focus = selectedFocus.value;
 
   useEffect(() => {
-    if (isOpen && !config) loadSettings();
-  }, [isOpen]);
-
+    if (!config) loadSettings();
+  }, []);
   useEffect(() => {
-    if (activeProjectId.value && scope === 'global' && tab === 'defaults') {
-      settingsScope.value = 'project';
-      activeTab.value = 'sources';
-    }
-  }, [activeProjectId.value]);
-
-  if (!isOpen) return null;
-  if (!config)
-    return html`
-    <div class="fullscreen-backdrop">
-      <div class="fullscreen-modal settings-panel"><div style="padding: 20px">Loading...</div></div>
-    </div>
-  `;
-
-  const projectId = activeProjectId.value;
-  const project = projectId ? config.projects?.[projectId] : null;
-  const projectName = project?.label || projectId;
-
-  const close = () => {
-    settingsOpen.value = false;
-  };
-
-  const onScopeChange = (newScope) => {
-    settingsScope.value = newScope;
-  };
-  const onTabChange = (newTab) => {
-    activeTab.value = newTab;
     selectedFocus.value = null;
-  };
+    if (section === 'providers') loadProviderAccounts();
+  }, [projectId, section]);
+
+  if (!config)
+    return html`<main class="settings-page"><div class="settings-empty">Loading settings…</div></main>`;
+
+  const project = projectId ? config.projects?.[projectId] : null;
+  const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
+    id,
+    label: p.label || id,
+  }));
+  const label = [...FOUNDRY_SETTINGS, ...PROJECT_SETTINGS].find(([id]) => id === section)?.[1];
   const onFocusChange = (next) => {
     selectedFocus.value = next;
   };
-
-  const handleProviderSave = (provider) => saveSection('providers', { [provider.id]: provider });
-  const handleDefaultsSave = (defaults) => saveSection('defaults', defaults);
-  const handleSourceSave = (source) => {
-    if (projectId) saveProjectSection(projectId, 'sources', { [source.id]: source });
-    else saveSection('sources', { [source.id]: source });
-  };
-
-  // Build focus packet for chat
   const chatFocus = {
-    scope,
+    scope: projectId ? 'project' : 'global',
     projectId: projectId ?? undefined,
-    tab,
+    tab: section,
     focusKind: focus?.kind ?? null,
     focusId: focus?.id ?? null,
   };
 
-  // Settings main body content
-  const body =
-    scope === 'global'
-      ? tab === 'defaults'
-        ? html`
-      <${DefaultsEditor}
-        defaults=${config.defaults}
-        providers=${config.providers}
-        apiTokens=${config.apiTokens === true}
-        onSave=${handleDefaultsSave}
-        onFocusChange=${onFocusChange}
-      />
-    `
-        : tab === 'providers'
-          ? html`
-      ${Object.values(config.providers).map(
-        (p) => html`
-        <${ProviderEditor} key=${p.id} provider=${p} onSave=${handleProviderSave} onFocusChange=${onFocusChange} />
-      `,
-      )}
-    `
-          : tab === 'integrations'
-            ? html`<${AccessSettings} onSaved=${loadSettings} />`
-            : tab === 'archives'
-              ? html`<${ArchiveSettings} />`
-              : tab === 'kingdom'
-                ? html`<${KingdomSettings} />`
-                : tab === 'tunnel'
-                  ? html`<${TunnelEditor} />`
-                  : null
-      : !project
-        ? html`
-      <div class="settings-empty">Select a project from the sidebar to configure its settings.</div>
-    `
-        : tab === 'gloss'
-          ? html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
-          : tab === 'integrations'
-            ? html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`
-            : tab === 'sources'
-              ? html`
-      ${Object.values(project.sources || {}).map(
-        (s) => html`
-        <${SourceEditor}
-          key=${s.id}
-          source=${s}
-          onSave=${handleSourceSave}
-          onDelete=${(id) => deleteItem('sources', id)}
-          onFocusChange=${onFocusChange}
-        />
-      `,
-      )}
-      ${
-        !project.sources || Object.keys(project.sources).length === 0
-          ? html`
-        <div class="settings-empty">
-          No sources configured for this project.
-        </div>
-      `
-          : null
-      }
-    `
-              : tab === 'overrides'
-                ? html`
-      <${ProjectOverrides} project=${project} />
-    `
-                : null;
-
   return html`
-    <div class="fullscreen-backdrop" onClick=${(e) => {
-      if (e.target.classList.contains('fullscreen-backdrop')) close();
-    }}>
-      <div class="fullscreen-modal settings-panel">
-        <div class="settings-header">
-          <span class="settings-title">
-            Settings
-            ${focus ? html`<span class="settings-title-focus">\u00B7 ${focus.kind}:${focus.id}</span>` : null}
-          </span>
-          <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Show assistant'}</button>
-          <button class="fullscreen-close" onClick=${close} aria-label="Close">\u00d7</button>
-        </div>
-        <div class=${`settings-layout ${showChat ? 'settings-show-chat' : ''}`}>
-          <${NavRail}
-            scope=${scope}
-            tab=${tab}
-            projectName=${projectName}
-            onScopeChange=${onScopeChange}
-            onTabChange=${onTabChange}
-          />
-          <div class="settings-main">
-            <div class="settings-body">${body}</div>
-          </div>
-          <${SelfChatPane} focus=${chatFocus} />
+    <main class=${`settings-page ${showChat ? 'settings-show-chat' : ''}`}>
+      <${SettingsNav} projectId=${projectId} section=${section} projectList=${projectList} />
+      <div class="settings-main">
+        <header class="settings-page-header">
+          <span class="settings-breadcrumb">${project ? project.label || projectId : 'Foundry'}</span>
+          <h1 class="settings-title">${label}</h1>
+          ${focus ? html`<span class="settings-title-focus">${focus.kind}:${focus.id}</span>` : null}
+          <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master'}</button>
+        </header>
+        <div class="settings-body">
+          ${
+            projectId
+              ? html`<${ProjectSection} section=${section} projectId=${projectId} project=${project} onFocusChange=${onFocusChange} />`
+              : html`<${FoundrySection} section=${section} config=${config} onFocusChange=${onFocusChange} />`
+          }
         </div>
       </div>
-    </div>
+      <${SelfChatPane} focus=${chatFocus} />
+    </main>
   `;
 }

@@ -15,6 +15,7 @@ export {
   AnalyticsStore,
   type CallRecord,
   type RankedItem,
+  type RecordedAnalytics,
   type RollupPeriod,
   type RollupSet,
   type ThreadCostSummary,

@@ -1,5 +1,5 @@
 import { html, useEffect, useState } from './lib.js';
-import { activeProjectId, authFetch } from './store.js';
+import { authFetch } from './store.js';
 
 export function LocalDevicePanel({ projectIds }) {
   const [inventory, setInventory] = useState(null);
@@ -32,23 +32,17 @@ export function LocalDevicePanel({ projectIds }) {
       setBusy(false);
     }
   };
-  return html`<div class="proj-add-form">
-    <strong>DEVICES</strong>
+  return html`<div class="device-inventory">
     ${error ? html`<div role="alert">${error}</div>` : null}
     ${
       inventory?.device
         ? html`
-      <div>${inventory.device.name} · this machine</div>
-      <div>${inventory.checkouts.length} registered projects</div>
-      ${inventory.checkouts.map(
-        (checkout) => html`<button key=${checkout.id} class="proj-btn"
-        title=${checkout.path} onClick=${() => {
-          activeProjectId.value = checkout.projectId;
-        }}>
-        ${checkout.label}
-      </button>`,
-      )}
-      <div class="proj-empty">Local inventory. Other devices are not connected yet.</div>
+      <h3>${inventory.device.name} · this machine</h3>
+      <p class="settings-desc">Where each project is checked out here. Other devices are not connected yet.</p>
+      <dl class="access-details">${inventory.checkouts.map(
+        (checkout) =>
+          html`<dt key=${`${checkout.id}-label`}>${checkout.label}</dt><dd key=${checkout.id}><code>${checkout.path}</code></dd>`,
+      )}</dl>
     `
         : inventory
           ? html`<form onSubmit=${enroll}>

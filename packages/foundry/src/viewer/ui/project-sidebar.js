@@ -1,17 +1,18 @@
 /**
  * Project Sidebar — collapsible left-most panel for project management.
  *
- * Shows registered projects grouped by tags, with selection state.
- * Collapsed: thin strip with project icons. Expanded: full list.
+ * Two defaults sit above the projects: Global (threads no project owns) and
+ * Forge Master (the internal thread about this Foundry). Collapsed: thin
+ * strip with project dots. Expanded: full list.
  */
 
-import { LocalDevicePanel } from './devices.js';
-import { html, useEffect, useState } from './lib.js';
+import { html, useState } from './lib.js';
 import {
   activeProjectId,
   authFetch,
+  compactPanel,
   createProject,
-  deleteProject,
+  forgeMasterOpen,
   projectSidebarOpen,
   projects,
   projectTags,
@@ -209,13 +210,14 @@ export function ProjectSidebar() {
 
   const filtered = filterTag ? items.filter((p) => (p.tags || []).includes(filterTag)) : items;
 
+  const forge = forgeMasterOpen.value;
   const handleSelect = (id) => {
-    activeProjectId.value = active === id ? null : id;
+    forgeMasterOpen.value = false;
+    activeProjectId.value = id;
   };
 
   return html`
     <div class="proj-sidebar">
-      <${LocalDevicePanel} projectIds=${JSON.stringify(items.map((project) => project.id))} />
       <div class="proj-sidebar-header">
         <span class="proj-sidebar-title">PROJECTS</span>
         <span class="proj-sidebar-count">${items.length}</span>
@@ -249,18 +251,32 @@ export function ProjectSidebar() {
           : null
       }
 
-      <!-- Global scope item -->
-      <div
-        class="proj-item proj-global ${!active ? 'proj-active' : ''}"
-        onClick=${() => {
-          activeProjectId.value = null;
-        }}
-      >
-        <span class="proj-runtime-icon">*</span>
-        <div class="proj-item-body">
-          <div class="proj-item-label">Global</div>
-          <div class="proj-item-meta">
-            <span>all projects</span>
+      <!-- Defaults: unscoped threads, and Forge Master -->
+      <div class="proj-defaults">
+        <div
+          class="proj-item proj-global ${!active && !forge ? 'proj-active' : ''}"
+          onClick=${() => {
+            forgeMasterOpen.value = false;
+            activeProjectId.value = null;
+          }}
+        >
+          <span class="proj-runtime-icon">*</span>
+          <div class="proj-item-body">
+            <div class="proj-item-label">Global</div>
+            <div class="proj-item-meta"><span>threads outside any project</span></div>
+          </div>
+        </div>
+        <div
+          class="proj-item proj-global ${forge ? 'proj-active' : ''}"
+          onClick=${() => {
+            forgeMasterOpen.value = true;
+            compactPanel.value = 'conversation';
+          }}
+        >
+          <span class="proj-runtime-icon">\u2692</span>
+          <div class="proj-item-body">
+            <div class="proj-item-label">Forge Master</div>
+            <div class="proj-item-meta"><span>this Foundry and its settings</span></div>
           </div>
         </div>
       </div>
@@ -272,7 +288,7 @@ export function ProjectSidebar() {
           <${ProjectItem}
             key=${p.id}
             project=${p}
-            isActive=${active === p.id}
+            isActive=${!forge && active === p.id}
             onSelect=${handleSelect}
           />
         `,

@@ -5,8 +5,9 @@
 
 import { allBindings } from './hotkeys.js';
 import { html, useEffect, useRef, useState } from './lib.js';
-import { settingsOpen } from './settings.js';
+import { analyticsPath, navigate, settingsPath } from './route.js';
 import {
+  activeProjectId,
   commandPaletteOpen,
   executeAction,
   helpOpen,
@@ -39,9 +40,13 @@ const COMMANDS = [
     id: 'settings',
     label: 'Open settings',
     icon: '⚙',
-    action: () => {
-      settingsOpen.value = true;
-    },
+    action: () => navigate(settingsPath(activeProjectId.value)),
+  },
+  {
+    id: 'analytics',
+    label: 'Open analytics',
+    icon: '$',
+    action: () => navigate(analyticsPath(activeProjectId.value)),
   },
   { id: 'graph', label: 'Toggle graph view', icon: '◇', action: toggleGraphPanel },
 ];

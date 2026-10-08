@@ -5,14 +5,14 @@
  * recent call log with per-span cost, and budget status.
  */
 
-import { html, signal, useCallback, useEffect, useState } from './lib.js';
-import { showToast } from './store.js';
+import { html, signal, useEffect } from './lib.js';
+import { analyticsPath, navigate, route } from './route.js';
+import { projects, showToast } from './store.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-export const analyticsOpen = signal(false);
 const analyticsData = signal(null);
 const analyticsTab = signal('overview'); // overview | threads | calls | models
 
@@ -20,9 +20,12 @@ const analyticsTab = signal('overview'); // overview | threads | calls | models
 // Data fetching
 // ---------------------------------------------------------------------------
 
-async function loadAnalytics() {
+async function loadAnalytics(projectId) {
   try {
-    const res = await fetch('/api/analytics');
+    const res = await fetch(
+      projectId ? `/api/analytics?project=${encodeURIComponent(projectId)}` : '/api/analytics',
+    );
+    if (route.value.projectId !== projectId) return;
     if (!res.ok) {
       analyticsData.value = null;
       showToast(`Analytics unavailable: ${res.status}`, 'error');
@@ -66,11 +69,12 @@ function fmtTime(ts) {
 // ---------------------------------------------------------------------------
 
 function Overview({ data }) {
-  if (!data?.session)
+  if (!data?.session && !data?.observations?.calls)
     return html`<div class="analytics-empty">No analytics data yet. Make some LLM calls to see costs.</div>`;
 
-  const s = data.session;
-  const b = s.budget;
+  // A project's view has no live session totals; it reads recorded history only.
+  const s = data.session ?? {};
+  const b = s.budget ?? {};
   const o = data.observations;
   const cacheRead = o ? o.knownCacheRead : s.tokens?.cacheRead;
   const cacheWrite = o ? o.knownCacheWrite : s.tokens?.cacheWrite;
@@ -280,8 +284,9 @@ function Calls({ data }) {
 // ---------------------------------------------------------------------------
 
 function Models({ data }) {
-  const byProvider = data?.session?.byProvider ?? [];
-  const byModel = data?.session?.byModel ?? [];
+  if (!data?.session) return html`<${RecordedModels} data=${data} />`;
+  const byProvider = data.session.byProvider ?? [];
+  const byModel = data.session.byModel ?? [];
 
   if (byProvider.length === 0 && byModel.length === 0) {
     return html`<div class="analytics-empty">No model usage data yet.</div>`;
@@ -333,24 +338,40 @@ function Models({ data }) {
   `;
 }
 
+function RecordedModels({ data }) {
+  const unpriced = !!data?.observations?.unavailableCostCalls;
+  const sections = [
+    ['BY PROVIDER', data?.topProviders ?? []],
+    ['BY MODEL', data?.topModels ?? []],
+  ];
+  if (!sections.some(([, items]) => items.length))
+    return html`<div class="analytics-empty">No model usage data yet.</div>`;
+  return html`<div class="analytics-models">
+    ${sections.map(
+      ([label, items]) => html`<div key=${label} class="ranked-section">
+        <div class="section-label">${label}</div>
+        ${items.map((item) => html`<${RankedRow} key=${item.key} item=${item} unpriced=${unpriced} />`)}
+      </div>`,
+    )}
+  </div>`;
+}
+
 // ---------------------------------------------------------------------------
 // Main Analytics Panel
 // ---------------------------------------------------------------------------
 
-export function Analytics() {
-  const open = analyticsOpen.value;
+export function AnalyticsPage() {
+  const { projectId } = route.value;
   const data = analyticsData.value;
   const tab = analyticsTab.value;
+  const projectList = projects.value;
 
   useEffect(() => {
-    if (open) {
-      loadAnalytics();
-      const interval = setInterval(loadAnalytics, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [open]);
-
-  if (!open) return null;
+    analyticsData.value = null;
+    loadAnalytics(projectId);
+    const interval = setInterval(() => loadAnalytics(projectId), 5000);
+    return () => clearInterval(interval);
+  }, [projectId]);
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -360,42 +381,36 @@ export function Analytics() {
   ];
 
   return html`
-    <div class="analytics-overlay fullscreen" onClick=${(e) => {
-      if (e.target.classList.contains('analytics-overlay')) analyticsOpen.value = false;
-    }}>
-      <div class="analytics-panel">
-        <div class="analytics-header">
-          <span class="analytics-title">Analytics</span>
-          <div class="analytics-tabs">
-            ${tabs.map(
-              (t) => html`
-              <button
-                key=${t.id}
-                class="analytics-tab ${tab === t.id ? 'active' : ''}"
-                onClick=${() => {
-                  analyticsTab.value = t.id;
-                }}
-              >${t.label}</button>
-            `,
-            )}
-          </div>
-          <button
-            class="fullscreen-close"
-            onClick=${() => {
-              analyticsOpen.value = false;
-            }}
-            aria-label="Close analytics"
-          >\u00d7</button>
-        </div>
-
-        <div class="analytics-body">
-          ${tab !== 'overview' && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
-          ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}
-          ${tab === 'threads' ? html`<${Threads} data=${data} />` : null}
-          ${tab === 'calls' ? html`<${Calls} data=${data} />` : null}
-          ${tab === 'models' ? html`<${Models} data=${data} />` : null}
+    <main class="analytics-page">
+      <div class="analytics-header">
+        <select class="settings-input small analytics-scope" aria-label="Analytics scope" value=${projectId ?? ''}
+          onChange=${(e) => navigate(analyticsPath(e.target.value || null))}>
+          <option value="">Foundry · every call</option>
+          ${projectList.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
+        </select>
+        <div class="analytics-tabs">
+          ${tabs.map(
+            (t) => html`
+            <button
+              key=${t.id}
+              class="analytics-tab ${tab === t.id ? 'active' : ''}"
+              onClick=${() => {
+                analyticsTab.value = t.id;
+              }}
+            >${t.label}</button>
+          `,
+          )}
         </div>
       </div>
-    </div>
+
+      <div class="analytics-body">
+        ${projectId ? html`<p class="analytics-availability">Calls recorded on this project's threads. Live session totals and the budget are on the Foundry view.</p>` : null}
+        ${tab !== 'overview' && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
+        ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}
+        ${tab === 'threads' ? html`<${Threads} data=${data} />` : null}
+        ${tab === 'calls' ? html`<${Calls} data=${data} />` : null}
+        ${tab === 'models' ? html`<${Models} data=${data} />` : null}
+      </div>
+    </main>
   `;
 }

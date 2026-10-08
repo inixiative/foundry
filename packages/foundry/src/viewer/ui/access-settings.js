@@ -145,7 +145,7 @@ export function AccessSettings({ projectId, onSaved }) {
     ${error && html`<p class="access-error" role="alert">${error}</p>`}
     ${notice && html`<p class="access-notice" role="status">${notice}</p>`}
     ${!data && !error && html`<p role="status">Loading integration settings…</p>`}
-    ${data && !sources.length && !draft && html`<div class="settings-empty">No integration grants ${projectId ? 'for this project' : 'configured'}. Add a grant using a connection and Signet from Kingdom.</div>`}
+    ${data && !sources.length && !draft && html`<div class="settings-empty">No integration grants ${projectId ? 'for this project' : 'configured'}. Add a grant using an integration and Signet from Kingdom.</div>`}
     ${
       draft &&
       html`<form class="settings-card access-editor" onSubmit=${save}>

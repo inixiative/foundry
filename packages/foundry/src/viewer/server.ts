@@ -186,7 +186,7 @@ export function createViewer(config: ViewerConfig) {
       try {
         await kingdom.check();
       } catch {
-        return c.req.path === '/'
+        return isPage(c.req.path)
           ? c.redirect('/kingdom')
           : c.json({ error: 'Kingdom authorization unavailable', recoveryUrl: '/kingdom' }, 503);
       }
@@ -404,10 +404,13 @@ export function createViewer(config: ViewerConfig) {
     '/kingdom',
     serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/kingdom.html' }),
   );
-  app.get(
-    '/',
-    serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/index.html' }),
-  );
+  // The workspace and its settings/analytics pages are one client-routed app (ui/route.js).
+  const appPage = serveStatic({
+    root: fileURLToPath(new URL('./', import.meta.url)),
+    path: 'ui/index.html',
+  });
+  for (const path of ['/', '/settings', '/settings/*', '/analytics', '/projects/:id/*'])
+    app.get(path, appPage);
 
   // Data-stream socket. The connection is authorized at upgrade exactly like HTTP
   // (loopback, or tunnel bearer/cookie); each open re-checks Kingdom authorization,
@@ -569,4 +572,13 @@ export async function startViewer(config: ViewerConfig) {
     localStore,
     kingdom: viewer.kingdom,
   };
+}
+
+/** Paths served by the client-routed app; ui/route.js parses the same shapes. */
+function isPage(path: string): boolean {
+  return (
+    path === '/' ||
+    /^\/(settings|analytics)(\/|$)/.test(path) ||
+    /^\/projects\/[^/]+\/(settings|analytics)(\/|$)/.test(path)
+  );
 }

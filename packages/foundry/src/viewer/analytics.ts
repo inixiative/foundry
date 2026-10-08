@@ -30,15 +30,22 @@ import { existsSync, mkdirSync } from 'fs';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AnalyticsSnapshot {
+/** Live tracker totals plus recorded history. */
+export interface AnalyticsSnapshot extends RecordedAnalytics {
   /** Current session totals */
   readonly session: UsageSummary;
+}
+
+/** Aggregates over recorded calls only; a project's view has no live tracker totals. */
+export interface RecordedAnalytics {
   /** Time-series data for charts */
   readonly timeSeries: TimeSeriesPoint[];
   /** Per-thread cost breakdown */
   readonly threads: ThreadCostSummary[];
   /** Per-span call log (most recent) */
   readonly recentCalls: CallRecord[];
+  /** Top providers by spend */
+  readonly topProviders: RankedItem[];
   /** Top models by spend */
   readonly topModels: RankedItem[];
   /** Top agents by spend */
@@ -235,12 +242,20 @@ export class AnalyticsStore {
 
   /** Full analytics snapshot for the UI. */
   snapshot(tracker: TokenTracker): AnalyticsSnapshot {
-    const session = tracker.summary();
-    const calls = this._calls;
+    return { session: tracker.summary(), ...this._recorded(this._calls) };
+  }
+
+  /** Recorded history for the given threads (a project's view). */
+  threadsSnapshot(threadIds: ReadonlySet<string>): RecordedAnalytics {
+    return this._recorded(
+      this._calls.filter((c) => c.threadId !== undefined && threadIds.has(c.threadId)),
+    );
+  }
+
+  private _recorded(calls: PersistedCall[]): RecordedAnalytics {
     const known = sumTokenCounts(calls.map(knownCounts));
 
     return {
-      session,
       observations: {
         calls: calls.length,
         knownInput: calls.reduce((n, c) => n + (c.input ?? 0), 0),
@@ -256,6 +271,7 @@ export class AnalyticsStore {
       timeSeries: this._buildTimeSeries(calls, 'hourly'),
       threads: this._buildThreadSummaries(calls),
       recentCalls: calls.slice(-100).reverse(),
+      topProviders: this._buildRanked(calls, 'provider'),
       topModels: this._buildRanked(calls, 'model'),
       topAgents: this._buildRanked(calls, 'agentId'),
       rollups: {
@@ -408,7 +424,7 @@ export class AnalyticsStore {
       .sort((a, b) => b.cost - a.cost);
   }
 
-  private _buildRanked(calls: CallRecord[], field: 'model' | 'agentId'): RankedItem[] {
+  private _buildRanked(calls: CallRecord[], field: 'provider' | 'model' | 'agentId'): RankedItem[] {
     const map = new Map<string, { cost: number; tokens: number; calls: number }>();
     let totalCost = 0;
 

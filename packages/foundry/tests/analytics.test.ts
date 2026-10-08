@@ -354,6 +354,20 @@ describe('AnalyticsStore', () => {
       expect(snap.rollups.monthly).toBeDefined();
     });
 
+    test("a project's snapshot counts only its threads' calls and carries no live totals", () => {
+      store.recordCall(makeUsageEntry({ threadId: 't1', provider: 'codex', cost: 0.5 }));
+      store.recordCall(makeUsageEntry({ threadId: 't2', provider: 'claude-code', cost: 2 }));
+      store.recordCall(makeUsageEntry({ threadId: undefined, cost: 4 }));
+
+      const snap = store.threadsSnapshot(new Set(['t1']));
+
+      expect('session' in snap).toBe(false);
+      expect(snap.observations.calls).toBe(1);
+      expect(snap.observations.knownCost).toBe(0.5);
+      expect(snap.threads.map((t) => t.threadId)).toEqual(['t1']);
+      expect(snap.topProviders.map((p) => p.key)).toEqual(['codex']);
+    });
+
     test('recentCalls are in reverse chronological order and capped at 100', () => {
       // Record 5 calls with increasing timestamps
       for (let i = 0; i < 5; i++) {

@@ -1,9 +1,10 @@
 /**
  * Foundry Viewer — main app shell.
- * Three-panel layout: sidebar | conversation | detail drawer.
+ * Workspace: projects | threads | conversation | detail drawer.
+ * Settings and analytics are pages beside it (ui/route.js).
  */
 
-import { Analytics, analyticsOpen } from './analytics.js';
+import { AnalyticsPage } from './analytics.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { DetailDrawer } from './detail-drawer.js';
@@ -12,7 +13,9 @@ import { GraphPanel } from './graph-view.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { html, render, useEffect, useState } from './lib.js';
 import { ProjectSidebar } from './project-sidebar.js';
-import { loadSettings, Settings, settingsConfig, settingsOpen } from './settings.js';
+import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
+import { SelfChatPane } from './self-chat.js';
+import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
   activeProjectId,
@@ -24,9 +27,11 @@ import {
   dismissTraceSelection,
   eventCount,
   executeAction,
+  forgeMasterOpen,
   init,
   loadTraces,
   projectSidebarOpen,
+  projects,
   resyncStreams,
   selectedEvent,
   selectedSpanId,
@@ -40,6 +45,23 @@ import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 // Header — slim: logo + connection status + hints
 // ---------------------------------------------------------------------------
 
+/** The scope the workspace is showing: a project, or Foundry itself (Global and Forge Master). */
+const workspaceProject = () => (forgeMasterOpen.value ? null : activeProjectId.value);
+
+function PageNav() {
+  const { page, projectId } = route.value;
+  const scope = page === 'workspace' ? workspaceProject() : projectId;
+  const scopeLabel = scope ? projects.value.find((p) => p.id === scope)?.label || scope : 'Foundry';
+  const link = (href, label, current) =>
+    html`<a href=${href} aria-current=${current ? 'page' : undefined} onClick=${onLink}>${label}</a>`;
+  return html`<nav class="page-nav" aria-label="Pages">
+    ${link('/', 'Workspace', page === 'workspace')}
+    ${link(settingsPath(scope), 'Settings', page === 'settings')}
+    ${link(analyticsPath(scope), 'Analytics', page === 'analytics')}
+    ${page === 'workspace' ? html`<span class="page-nav-scope">${scopeLabel}</span>` : null}
+  </nav>`;
+}
+
 function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
@@ -48,9 +70,10 @@ function Header() {
     <div class="header">
       <span class="header-logo"><span class="logo-bracket">${'<'}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${'>'}</span></span>
       <span class="header-title">foundry</span>
+      <${PageNav} />
       <div class="header-right">
         <${GlossButton} projectId=${activeProjectId.value} />
-        <a class="action-btn" href="/kingdom">${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
+        <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
         <span class="status-sep">|</span>
@@ -73,6 +96,10 @@ const panelViews = [
 ];
 
 function PanelNavigation() {
+  // Forge Master has no thread list or thread detail.
+  const views = forgeMasterOpen.value
+    ? panelViews.filter(([id]) => id === 'projects' || id === 'conversation')
+    : panelViews;
   const select = (id) => {
     if (id === 'projects') projectSidebarOpen.value = true;
     if (id === 'detail') detailDrawerOpen.value = true;
@@ -80,17 +107,17 @@ function PanelNavigation() {
   };
   const onKeyDown = (event, index) => {
     let next;
-    if (event.key === 'ArrowRight') next = (index + 1) % panelViews.length;
-    if (event.key === 'ArrowLeft') next = (index + panelViews.length - 1) % panelViews.length;
+    if (event.key === 'ArrowRight') next = (index + 1) % views.length;
+    if (event.key === 'ArrowLeft') next = (index + views.length - 1) % views.length;
     if (event.key === 'Home') next = 0;
-    if (event.key === 'End') next = panelViews.length - 1;
+    if (event.key === 'End') next = views.length - 1;
     if (next === undefined) return;
     event.preventDefault();
-    select(panelViews[next][0]);
+    select(views[next][0]);
     event.currentTarget.parentElement.children[next].focus();
   };
   return html`<nav class="panel-navigation" role="tablist" aria-label="Workspace views">
-    ${panelViews.map(
+    ${views.map(
       ([id, label], index) => html`<button key=${id} role="tab"
       aria-selected=${compactPanel.value === id} aria-controls=${`workspace-${id}`}
       tabIndex=${compactPanel.value === id ? 0 : -1}
@@ -228,12 +255,10 @@ function App() {
         loadTraces();
         resyncStreams();
       },
-      openSettings: () => {
-        settingsOpen.value = !settingsOpen.value;
-      },
-      openAnalytics: () => {
-        analyticsOpen.value = !analyticsOpen.value;
-      },
+      openSettings: () =>
+        navigate(route.value.page === 'settings' ? '/' : settingsPath(workspaceProject())),
+      openAnalytics: () =>
+        navigate(route.value.page === 'analytics' ? '/' : analyticsPath(workspaceProject())),
       toggleLayers: () => {},
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
@@ -253,8 +278,21 @@ function App() {
 
   const projOpen = projectSidebarOpen.value;
   const detailOpen = detailDrawerOpen.value;
+  const forge = forgeMasterOpen.value;
+  const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge ? ' panels--forge' : ''}`;
+
+  if (page !== 'workspace')
+    return html`
+      <div class="app">
+        <${Header} />
+        ${page === 'settings' ? html`<${SettingsPage} />` : html`<${AnalyticsPage} />`}
+        <${CommandPalette} />
+        <${HelpOverlay} />
+        <${Toast} />
+      </div>
+    `;
 
   return html`
     <div class="app">
@@ -279,17 +317,16 @@ function App() {
 
         <!-- Center: Conversation / trace timeline, or the graph panel -->
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
-          <${CenterViews} />
           ${
-            activePanel.value === 'graph'
-              ? html`
-            <${GraphPanel} onLayerClick=${handleLayerClick} />
-          `
+            forge
+              ? html`<div class="forge-master"><${SelfChatPane} docked=${false} /></div>`
               : html`
-            <${Conversation}
-              onSpanSelect=${handleSpanSelect}
-              onLayerClick=${handleLayerClick}
-            />
+            <${CenterViews} />
+            ${
+              activePanel.value === 'graph'
+                ? html`<${GraphPanel} onLayerClick=${handleLayerClick} />`
+                : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${handleLayerClick} />`
+            }
           `
           }
         </div>
@@ -309,8 +346,6 @@ function App() {
       <!-- Overlays -->
       <${CommandPalette} />
       <${HelpOverlay} />
-      <${Settings} />
-      <${Analytics} />
       <${Wizard} />
       <${Toast} />
       <${GlossReview} />

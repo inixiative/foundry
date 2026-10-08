@@ -19,6 +19,7 @@ import {
 import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
+import { route } from './route.js';
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -54,7 +55,9 @@ export const toast = signal(null); // { message, type: "ok"|"error"|"warn", pers
 // Projects
 export const projects = signal([]); // ProjectSummary[]
 export const projectTags = signal([]); // string[]
-export const activeProjectId = signal(null); // selected project ID or null (global)
+export const activeProjectId = signal(null); // selected project ID or null (global: unscoped threads)
+/** The workspace shows Forge Master, the internal thread about this Foundry, instead of a scope's threads. */
+export const forgeMasterOpen = signal(false);
 export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
 export const compactPanel = signal('conversation');
@@ -1588,7 +1591,7 @@ export function dismissToast() {
 // View state — persist to URL hash so refresh restores position
 // ---------------------------------------------------------------------------
 
-const VIEW_KEYS = ['project', 'thread', 'panel', 'sidebar', 'detail'];
+const VIEW_KEYS = ['project', 'thread', 'panel', 'sidebar', 'detail', 'forge'];
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -1596,7 +1599,10 @@ function readHash() {
 }
 
 function writeHash() {
+  // Settings and analytics pages own their URL; the workspace's view state returns with it.
+  if (route.value.page !== 'workspace') return;
   const params = new URLSearchParams();
+  if (forgeMasterOpen.value) params.set('forge', '1');
   if (activeProjectId.value) params.set('project', activeProjectId.value);
   if (activeThreadId.value) params.set('thread', activeThreadId.value);
   if (activePanel.value !== 'conversation') params.set('panel', activePanel.value);
@@ -1609,6 +1615,7 @@ function writeHash() {
 
 function restoreFromHash() {
   const h = readHash();
+  forgeMasterOpen.value = h.forge === '1';
   if (h.project) activeProjectId.value = h.project;
   if (h.thread) selectThread(h.thread);
   if (h.panel) activePanel.value = h.panel;
@@ -1640,6 +1647,8 @@ export function init() {
   // Sync view state → URL hash on any change
   effect(() => {
     // Touch all signals to subscribe
+    route.value;
+    forgeMasterOpen.value;
     activeProjectId.value;
     activeThreadId.value;
     activePanel.value;

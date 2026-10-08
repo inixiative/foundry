@@ -11,7 +11,7 @@ export function KingdomSettings() {
   const refresh = () =>
     fetch('/api/kingdom/status')
       .then((r) => {
-        if (!r.ok) throw Error('Unable to read Kingdom connections');
+        if (!r.ok) throw Error('Unable to read paired Kingdoms');
         return r.json();
       })
       .then(setState);
@@ -22,7 +22,7 @@ export function KingdomSettings() {
       body: JSON.stringify(body ?? {}),
     });
     const value = await response.json();
-    if (!response.ok) throw Error(value.error || 'Connection failed');
+    if (!response.ok) throw Error(value.error || 'Pairing failed');
     setState(value);
     return value;
   };
@@ -55,12 +55,12 @@ export function KingdomSettings() {
   const integrations = state?.integrations ?? [];
   const shown = error || state?.error;
   return html`<section class="settings-card kingdom-connection">
-    <h2 class="settings-card-title">Kingdom connections</h2>
+    <h2 class="settings-card-title">Paired Kingdoms</h2>
     <p class="settings-desc">Connect this Foundry to one or more Kingdoms. Approve it there and it becomes that owner's Foundry integration; it acts only through the Signets Kingdom grants it. Its key and Signets stay on this machine.</p>
     ${shown && html`<p role="alert">${shown}</p>`}
     ${
       !state
-        ? html`<p>Loading connections…</p>`
+        ? html`<p>Loading paired Kingdoms…</p>`
         : html`
       ${integrations.map(
         (integration) => html`<div class="kingdom-integration" key=${integration.id}>

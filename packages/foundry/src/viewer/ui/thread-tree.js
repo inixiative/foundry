@@ -6,10 +6,8 @@
  * [+] buttons on layers/agents open creation forms in the detail drawer.
  */
 
-import { analyticsOpen } from './analytics.js';
 import { eventsForThread } from './inspector-data.js';
 import { html, useState } from './lib.js';
-import { settingsOpen } from './settings.js';
 import {
   activeProjectId,
   activeThreadId,
@@ -548,19 +546,6 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
             ${events.length === 0 ? html`<div class="sidebar-empty-sm">No events yet</div>` : null}
           </div>
         </${SidebarSection}>
-
-        <div class="sidebar-footer">
-          <button class="sidebar-footer-btn"
-            onClick=${() => {
-              settingsOpen.value = true;
-            }}
-            title="Settings (s)">settings</button>
-          <button class="sidebar-footer-btn"
-            onClick=${() => {
-              analyticsOpen.value = true;
-            }}
-            title="Analytics (a)">analytics</button>
-        </div>
       </div>
     </div>
   `;

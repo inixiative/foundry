@@ -10,6 +10,7 @@ import {
   writeComposed,
   writeFileRef,
 } from '../../prompts/composer';
+import { providerAccounts } from '../../providers/provider-accounts';
 import type { ActionHandler, OperatorAction } from '../actions';
 import type { AIAssist, AssistRequest } from '../ai-assist';
 import type { AnalyticsStore, RollupPeriod } from '../analytics';
@@ -178,6 +179,11 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     return c.json(configStore.config);
   });
 
+  app.get('/api/providers/accounts', async (c) => {
+    await configStore.load();
+    return c.json(providerAccounts(configStore.config));
+  });
+
   app.put('/api/settings', async (c) => {
     const body = await c.req.json<FoundryConfig>();
     await configStore.load();
@@ -298,20 +304,13 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       return c.json({ error: 'Analytics not configured. Pass tokenTracker to ViewerConfig.' }, 400);
     }
     const projectId = c.req.query('project');
-    const snapshot = analyticsStore.snapshot(tokenTracker);
-
-    if (projectId && projectRegistry) {
-      const project = projectRegistry.get(projectId);
-      if (project) {
-        return c.json({
-          ...snapshot,
-          projectId,
-          projectThreadCount: project.threads.size,
-        });
-      }
-    }
-
-    return c.json(snapshot);
+    if (!projectId) return c.json(analyticsStore.snapshot(tokenTracker));
+    const project = projectRegistry?.get(projectId);
+    if (!project) return c.json({ error: `Unknown project: ${projectId}` }, 404);
+    return c.json({
+      ...analyticsStore.threadsSnapshot(new Set(project.threads.keys())),
+      projectId,
+    });
   });
 
   app.get('/api/analytics/timeseries', (c) => {
@@ -454,6 +453,22 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
+  });
+
+  app.delete('/api/projects/:id/settings/:section/:itemId', async (c) => {
+    const id = c.req.param('id');
+    const section = c.req.param('section');
+    const itemId = c.req.param('itemId');
+    if (section !== 'sources' && section !== 'agents' && section !== 'layers')
+      return c.json({ error: `unknown section: ${section}` }, 400);
+    await configStore.load();
+    if (!configStore.config.projects[id]?.[section]?.[itemId])
+      return c.json({ error: `${section} item not found` }, 404);
+    const next = await configStore.update((draft) => {
+      const items = draft.projects[id]?.[section];
+      if (items) delete items[itemId];
+    });
+    return c.json({ ok: true, project: next.projects[id] });
   });
 
   app.get('/api/projects/:id/resolved/layers', async (c) => {

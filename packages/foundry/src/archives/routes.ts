@@ -36,7 +36,11 @@ export function registerArchiveRoutes(
   app.get('/api/archives', async (c) => {
     const local = archive();
     const status = await archiveStatus(local);
-    const archives = local && status.reachable ? await local.list().catch(() => []) : [];
+    const projectId = c.req.query('projectId');
+    const archives =
+      local && status.reachable
+        ? await local.list(projectId ? { projectId } : {}).catch(() => [])
+        : [];
     return c.json({ archives, captureErrors: Object.fromEntries(capture.errors), status });
   });
   app.get('/api/archives/:id', async (c) => {

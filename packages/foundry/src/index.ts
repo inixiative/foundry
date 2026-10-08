@@ -284,6 +284,7 @@ export {
 export {
   type AnalyticsSnapshot,
   AnalyticsStore,
+  type RecordedAnalytics,
   type RollupPeriod,
   type TimeSeriesPoint,
 } from './viewer/analytics';

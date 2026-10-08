@@ -1,7 +1,8 @@
 /**
- * Foundry-self chat pane — a persistent, single-thread helper embedded
- * in the settings modal. Knows what the operator is currently viewing
- * (scope/tab/focus) and uses the default executor model.
+ * Forge Master — the persistent thread for talking to this Foundry about
+ * itself. It opens from the workspace sidebar and sits beside every settings
+ * page, where it knows what the operator is viewing (scope/section/focus).
+ * Uses the default executor model.
  */
 
 import { html, signal, useEffect, useRef, useState } from './lib.js';
@@ -66,7 +67,7 @@ function describeFocus(focus) {
   return joined;
 }
 
-export function SelfChatPane({ focus }) {
+export function SelfChatPane({ focus, docked = true }) {
   const collapsed = selfChatCollapsed.value;
   const messages = selfChatMessages.value;
   const sending = selfChatSending.value;
@@ -97,7 +98,7 @@ export function SelfChatPane({ focus }) {
     }
   };
 
-  if (collapsed) {
+  if (docked && collapsed) {
     return html`
       <div class="settings-chat collapsed">
         <button
@@ -105,8 +106,8 @@ export function SelfChatPane({ focus }) {
           onClick=${() => {
             selfChatCollapsed.value = false;
           }}
-          title="Expand AI helper"
-        >AI helper</button>
+          title="Expand Forge Master"
+        >Forge Master</button>
       </div>
     `;
   }
@@ -116,16 +117,20 @@ export function SelfChatPane({ focus }) {
   return html`
     <div class="settings-chat">
       <div class="settings-chat-header">
-        <span class="settings-chat-title">foundry-self</span>
+        <span class="settings-chat-title">Forge Master</span>
         <span class="settings-chat-meta">${messages.length} msgs</span>
-        <button
+        ${
+          docked
+            ? html`<button
           class="settings-chat-toggle"
           style="writing-mode: horizontal-tb; transform: none; padding: 2px 6px;"
           onClick=${() => {
             selfChatCollapsed.value = true;
           }}
           title="Collapse"
-        >\u203A</button>
+        >\u203A</button>`
+            : null
+        }
       </div>
       <div class="settings-chat-actions">
         <button class="settings-chat-action" onClick=${() => loadSelfChat()}>reload</button>
@@ -143,8 +148,7 @@ export function SelfChatPane({ focus }) {
           messages.length === 0
             ? html`
           <div class="settings-chat-msg system">
-            Ask about customizing Foundry — agents, layers, providers, sources, or how anything works.
-            I can see the full Foundry repo and the object you're currently looking at.
+            Ask about customizing Foundry — agents, layers, providers, sources, or how anything works. I can see the full Foundry repo${focus ? " and the settings you're looking at" : ''}.
           </div>
         `
             : messages.map(
@@ -153,7 +157,7 @@ export function SelfChatPane({ focus }) {
             ${
               m.role === 'assistant'
                 ? html`
-              <div class="settings-chat-msg-kind">foundry-self</div>
+              <div class="settings-chat-msg-kind">Forge Master</div>
             `
                 : null
             }
@@ -166,7 +170,7 @@ export function SelfChatPane({ focus }) {
           sending
             ? html`
           <div class="settings-chat-msg assistant">
-            <div class="settings-chat-msg-kind">foundry-self</div>
+            <div class="settings-chat-msg-kind">Forge Master</div>
             thinking\u2026
           </div>
         `
@@ -176,7 +180,7 @@ export function SelfChatPane({ focus }) {
       <form class="settings-chat-form" onSubmit=${onSubmit}>
         <textarea
           class="settings-chat-input"
-          placeholder="Ask about this setting\u2026 (\u2318\u21B5 to send)"
+          placeholder=${focus ? 'Ask about this setting\u2026 (\u2318\u21B5 to send)' : 'Ask Forge Master\u2026 (\u2318\u21B5 to send)'}
           value=${draft}
           onInput=${(e) => setDraft(e.target.value)}
           onKeyDown=${onKeyDown}
