@@ -199,6 +199,19 @@ export class NativeAuthentication {
     const source = this.source(threadId, runtime);
     return `${threadId}:auth:${source.id}:${hash(JSON.stringify(source))}`;
   }
+  private privateHomePath(sourceId: string): string {
+    return join(this.options.directory, sourceId, 'codex-home');
+  }
+  /** The CODEX_HOME a Codex native profile launches on: the private home when configured, prepared as launch prepares it. */
+  protected async codexHome(
+    source: Extract<NativeAuthenticationSource, { mode: 'native-profile' }>,
+  ): Promise<string> {
+    if (!this.options.privateHome) return source.profileDirectory;
+    assertProfile(source.profileDirectory, 'codex');
+    const home = this.privateHomePath(source.id);
+    writeCredentialHome(home, await realpath(source.profileDirectory), PRIVATE_HOME_CONFIG);
+    return home;
+  }
   async prepare(
     threadId: string,
     runtime: 'claude' | 'codex',
@@ -217,9 +230,7 @@ export class NativeAuthentication {
     const ownerId = crypto.randomUUID();
     const shared = source.mode === 'native-profile' && this.options.shared === true;
     const sharedLocks = join(directory, '.foundry-auth-shared');
-    const home = this.options.privateHome
-      ? join(this.options.directory, source.id, 'codex-home')
-      : undefined;
+    const home = this.options.privateHome ? this.privateHomePath(source.id) : undefined;
     let active = false;
     let released = false;
     const check = () => {

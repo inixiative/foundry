@@ -46,7 +46,7 @@ export type Launch = {
 };
 
 type Options = {
-  /** Status probes that Foundry spawns without argv (`statusSpawn(profile)`) name the command here. */
+  /** Status probes that Foundry spawns without argv (`statusSpawn(selection)`) name the command here. */
   argv?: string[];
   /** Reduces raw output to what Foundry reads (auth status prints the account); generic scrubbing follows. */
   sanitize?: (frames: Frame[]) => Frame[];
@@ -127,8 +127,8 @@ export class ProcessCassettes {
       : record(this.vcr, path, this.options.argv ?? argv, options, this.options, onWrite, onExit);
   };
 
-  /** `statusSpawn(profileDirectory)`: the command is fixed by the provider, so it comes from options. */
-  statusSpawn = (_profileDirectory?: string): RecordedProcess => {
+  /** `statusSpawn(selection)`: the command and environment are fixed by the cassette, so they come from options. */
+  statusSpawn = (_selection?: unknown): RecordedProcess => {
     if (!this.options.argv) throw Error('VCR: statusSpawn needs the probe argv');
     return this.spawn(this.options.argv, {
       cwd: tmpdir(),

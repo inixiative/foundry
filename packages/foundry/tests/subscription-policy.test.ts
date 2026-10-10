@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
@@ -544,6 +545,55 @@ test('the Codex worker requires a ChatGPT login and runs on a private home shari
     decision.release();
   }
 }, 30_000);
+
+test("the Codex login status runs on the worker's private CODEX_HOME, not the user's Codex config", async () => {
+  const f = codexMain();
+  writeFileSync(join(f.worker.profileDirectory, 'auth.json'), '{}', { mode: 0o600 });
+  const statusEnvironments: Array<Record<string, string | undefined>> = [];
+  const auth = new SubscriptionAuthentication(f.root, f.worker, (environment) => {
+    statusEnvironments.push(environment);
+    return {
+      stdout: new ReadableStream({ start: (c) => c.close() }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('Logged in using ChatGPT\n'));
+          c.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill() {},
+    };
+  });
+  const launch = await auth.prepare('main', 'codex');
+  try {
+    const worker = launch.launch(['codex', 'app-server'], { PATH: process.env.PATH });
+    const home = join(f.root, f.worker.id, 'codex-home');
+    expect(statusEnvironments).toHaveLength(1);
+    expect(statusEnvironments[0]!.CODEX_HOME).toBe(home);
+    expect(statusEnvironments[0]!.CODEX_HOME).toBe(worker.env.CODEX_HOME);
+    expect(readlinkSync(join(home, 'auth.json'))).toBe(
+      join(realpathSync(f.worker.profileDirectory), 'auth.json'),
+    );
+    expect(readFileSync(join(home, 'config.toml'), 'utf8')).toBe(
+      'cli_auth_credentials_store = "file"\n',
+    );
+  } finally {
+    launch.release();
+  }
+});
+
+test('the Claude auth status runs on the worker profile', async () => {
+  const f = fixture();
+  const statusEnvironments: Array<Record<string, string | undefined>> = [];
+  const auth = new SubscriptionAuthentication(f.root, f.worker, (environment) => {
+    statusEnvironments.push(environment);
+    return subscriptionStatusProcess();
+  });
+  const launch = await auth.prepare('main', 'claude');
+  launch.release();
+  expect(statusEnvironments[0]!.CLAUDE_CONFIG_DIR).toBe(f.worker.profileDirectory);
+  expect(statusEnvironments[0]!.CODEX_HOME).toBeUndefined();
+});
 
 test('a Codex starter stays subscription-only and the viewer says what each main thread needs', () => {
   const codex = starterConfig('codex', 'gpt-6-astra');

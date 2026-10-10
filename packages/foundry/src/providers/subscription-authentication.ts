@@ -25,7 +25,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
   constructor(
     directory: string,
     private workerSource: Extract<NativeAuthenticationSource, { mode: 'native-profile' }>,
-    private statusSpawn?: (profile: string) => StatusProcess,
+    private statusSpawn?: (environment: Record<string, string | undefined>) => StatusProcess,
     private statusDeadlineMs = STATUS_DEADLINE_MS,
   ) {
     super({
@@ -72,14 +72,19 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let exited = false;
     const { runtime, profileDirectory } = this.workerSource;
+    const environment = withProfile(
+      nativeTextEnvironment(process.env),
+      runtime,
+      runtime === 'codex' ? await this.codexHome(this.workerSource) : profileDirectory,
+    );
     const child = this.statusSpawn
-      ? this.statusSpawn(profileDirectory)
+      ? this.statusSpawn(environment)
       : Bun.spawn(
           runtime === 'codex'
             ? ['codex', 'login', 'status']
             : ['claude', 'auth', 'status', '--json'],
           {
-            env: withProfile(nativeTextEnvironment(process.env), runtime, profileDirectory),
+            env: environment,
             stdin: 'ignore',
             stdout: 'pipe',
             stderr: 'pipe',
