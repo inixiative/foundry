@@ -46,8 +46,6 @@ export interface PairKingdomIntegration {
   onReview: (review: KingdomReview) => void;
   /** Kingdom refused a poll or dropped the socket while waiting; waiting continues. */
   onWaiting?: (message: string) => void;
-  /** The Signet is collected and the review code spent; runs before the integration is saved. */
-  onPaired?: () => void;
   signal?: AbortSignal;
   /** The token Kingdom uses to reach the viewer; defaults to the private tunnel-token file. */
   viewerToken?: string;
@@ -128,7 +126,6 @@ export async function pairKingdomIntegration(
       ...(input.socketOptions ? { socketOptions: input.socketOptions } : {}),
     });
   const paired = await (input.around ? input.around(url, pair) : pair());
-  input.onPaired?.();
   const settings: KingdomIntegration = {
     url,
     integrationId: paired.integrationId,

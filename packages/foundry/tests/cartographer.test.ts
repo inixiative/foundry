@@ -232,6 +232,7 @@ describe('Cartographer', () => {
     });
   });
 
+  // loadAtlas spawns `bunx atlas`, which can take seconds under full-suite load.
   describe('atlas awareness', () => {
     const ATLAS_DIR = '.test-atlas-root';
 
@@ -283,7 +284,7 @@ describe('Cartographer', () => {
       } finally {
         await cleanup();
       }
-    });
+    }, 15_000);
 
     it('routes with concepts from the LLM response', async () => {
       await writeMapMd();
@@ -304,7 +305,7 @@ describe('Cartographer', () => {
       } finally {
         await cleanup();
       }
-    });
+    }, 15_000);
 
     it('keyword fallback matches concept names', async () => {
       await writeMapMd();
@@ -323,7 +324,7 @@ describe('Cartographer', () => {
       } finally {
         await cleanup();
       }
-    });
+    }, 15_000);
 
     it('loadAtlas survives a root with no atlas artifacts', async () => {
       const carto = new Cartographer({
@@ -333,7 +334,7 @@ describe('Cartographer', () => {
         atlasRoot: '/tmp/definitely-not-an-atlas-root',
       });
       expect(await carto.loadAtlas()).toBeNull();
-    });
+    }, 15_000);
   });
 
   describe('lifecycle', () => {
