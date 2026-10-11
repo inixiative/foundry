@@ -11,7 +11,6 @@
 // loaded, no redirect is followed, and no native ID is invented.
 // ---------------------------------------------------------------------------
 
-import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import type { Readable, Writable } from 'node:stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -23,9 +22,9 @@ import {
   ListToolsRequestSchema,
   type ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
+import { readPrivateJson } from '../client/private-file';
 import type { LaunchFile } from './transport';
 
-const MAX_LAUNCH_BYTES = 65_536;
 const CAPABILITY = /^[A-Za-z0-9_-]{32,256}$/;
 
 /**
@@ -34,36 +33,7 @@ const CAPABILITY = /^[A-Za-z0-9_-]{32,256}$/;
  * message that never includes file contents.
  */
 export function readLaunchFile(path: string): LaunchFile {
-  let fd: number;
-  try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === 'ELOOP') throw new Error('launch file is a symlink; refusing to follow it');
-    throw new Error(`launch file cannot be opened (${code ?? 'unknown error'})`);
-  }
-  let text: string;
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) throw new Error('launch file is not a regular file');
-    if ((stat.mode & 0o077) !== 0)
-      throw new Error('launch file mode must be 0600; group/other bits are set');
-    if (stat.size > MAX_LAUNCH_BYTES) throw new Error('launch file is too large');
-    const buffer = Buffer.alloc(stat.size);
-    readSync(fd, buffer, 0, stat.size, 0);
-    text = buffer.toString('utf8');
-  } finally {
-    closeSync(fd);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('launch file is not valid JSON');
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-    throw new Error('launch file must be a JSON object');
-  const record = parsed as Record<string, unknown>;
+  const record = readPrivateJson(path, 'launch file');
   if (record.version !== 1) throw new Error('unsupported launch file version');
   if (typeof record.endpoint !== 'string') throw new Error('launch file endpoint missing');
   let url: URL;

@@ -194,7 +194,12 @@ export interface NativeObservation {
   register(evidence: NativeEvidence): void | Promise<void>;
   /** Fallible observer; never vetoes executor completion. */
   observe(evidence: NativeEvidence): void | Promise<void>;
+  /** Receives the stop for this owner's registered admission, where the runtime acknowledges stops. */
+  interruptible?(interrupt: NativeInterrupt): void;
 }
+/** `acknowledged`: the runtime confirmed the stop and the turn reached its native terminal. */
+export type NativeInterruptOutcome = 'acknowledged' | 'no-turn' | 'unacknowledged';
+export type NativeInterrupt = (opts?: { timeoutMs?: number }) => Promise<NativeInterruptOutcome>;
 export function freezeEvidence<T>(value: T): T {
   const copy = structuredClone(value);
   const freeze = (v: unknown) => {

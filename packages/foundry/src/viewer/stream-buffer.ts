@@ -10,7 +10,14 @@ export interface LiveActivity {
   admissionId: string;
   itemId?: string;
   callId?: string;
+  /** Tool rows: the public tool input when it serializes within TOOL_DETAIL_LIMIT, else omitted. */
+  input?: Readonly<Record<string, unknown>>;
+  /** Tool rows: the tail of the public tool output, bounded to TOOL_DETAIL_LIMIT. */
+  output?: string;
 }
+const TOOL_DETAIL_LIMIT = 4096;
+const boundedInput = (input: Readonly<Record<string, unknown>> | undefined) =>
+  input && JSON.stringify(input).length <= TOOL_DETAIL_LIMIT ? structuredClone(input) : undefined;
 export interface StreamBufferSnapshot {
   readonly messageId: string;
   readonly threadId: string;
@@ -30,16 +37,17 @@ export interface StreamBufferSnapshot {
   };
   readonly notificationFailed?: boolean;
 }
-/** What changed in one turn: text appended to its content, one activity row, or anything else (send the whole turn). */
+/** What changed in one turn: text appended to its content, one activity row, or anything else (send the whole turn).
+ * A text row's `appended` is exactly the text this change added, before the row's bounded tail drops any. */
 export type TurnChange =
   | { kind: 'delta'; text: string }
-  | { kind: 'activity'; row: LiveActivity }
+  | { kind: 'activity'; row: LiveActivity; appended?: string }
   | { kind: 'turn' };
 /** Thread data-stream appends produced by live turns. */
 export type TurnAppend =
   | { kind: 'turn'; turn: StreamBufferSnapshot }
   | { kind: 'delta'; turnId: string; text: string }
-  | { kind: 'activity'; turnId: string; row: LiveActivity };
+  | { kind: 'activity'; turnId: string; row: LiveActivity; appended?: string };
 export interface TurnSink {
   active(threadId: string): boolean;
   publish(threadId: string, payload: TurnAppend): void;
@@ -164,6 +172,12 @@ export class StreamBuffer {
     if (tool && !identity) return; // No inferred tool join.
     const key = `${e.admissionId}:${tool ? 'tool' : 'text'}:${identity ?? 'public'}`;
     const old = this._activity.find((a) => a.id === key);
+    const delta = !tool && (e.textKind === 'delta' || e.kind === 'text_delta');
+    const input = tool ? (boundedInput(e.toolInput) ?? old?.input) : undefined;
+    const output =
+      tool && typeof e.toolOutput === 'string'
+        ? e.toolOutput.slice(-TOOL_DETAIL_LIMIT)
+        : old?.output;
     const row: LiveActivity = tool
       ? {
           id: key,
@@ -178,6 +192,8 @@ export class StreamBuffer {
                 ? 'failed'
                 : 'completed'
               : 'running',
+          ...(input ? { input } : {}),
+          ...(output !== undefined ? { output } : {}),
         }
       : {
           id: key,
@@ -202,7 +218,12 @@ export class StreamBuffer {
       this.touch();
       return;
     }
-    this.changed({ kind: 'activity', row });
+    const appended = delta
+      ? (e.text ?? '')
+      : !tool && (e.text ?? '').startsWith(old?.text ?? '')
+        ? (e.text ?? '').slice((old?.text ?? '').length)
+        : undefined;
+    this.changed({ kind: 'activity', row, ...(appended !== undefined ? { appended } : {}) });
   }
   complete(terminal?: Record<string, unknown>) {
     if (this.done) return;
@@ -286,7 +307,12 @@ export class StreamBufferRegistry {
         ? { kind: 'turn', turn: b.snapshot() }
         : change.kind === 'delta'
           ? { kind: 'delta', turnId: b.messageId, text: change.text }
-          : { kind: 'activity', turnId: b.messageId, row: structuredClone(change.row) };
+          : {
+              kind: 'activity',
+              turnId: b.messageId,
+              row: structuredClone(change.row),
+              ...(change.appended !== undefined ? { appended: change.appended } : {}),
+            };
     try {
       this.sink.publish(b.threadId, payload);
     } catch {

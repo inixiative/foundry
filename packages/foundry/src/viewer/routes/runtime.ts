@@ -1,12 +1,6 @@
-import type {
-  EventStream,
-  HarnessResult,
-  InjectionArtifact,
-  InterventionLog,
-  StreamEvent,
-  Trace,
-} from '@inixiative/foundry-core';
-import { Harness, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
+import { isAbsolute } from 'node:path';
+import type { EventStream, Harness, InterventionLog, StreamEvent } from '@inixiative/foundry-core';
+import { newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { PostgresMemory } from '../../adapters/postgres-memory';
 import type { ProjectRegistry } from '../../agents/project';
@@ -14,14 +8,12 @@ import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { listWorktrees } from '../../git';
-import { enqueueJob } from '../../jobs/enqueue';
 import { registryForViewer } from '../../models/registry';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
-import { serializeTrace } from '../../persistence/trace-record';
+import { TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
-import type { StreamBuffer } from '../stream-buffer';
 import { ViewerThreadDirectory } from '../thread-directory';
 
 export interface RuntimeRoutesDeps {
@@ -68,42 +60,7 @@ function decodeHistoryCursor(cursor: string): { t: string; s: number } | null {
   }
 }
 
-function configureHarness(harness: Harness, configStore: ConfigStore): void {
-  const config = configStore.config;
-  for (const [id, agentCfg] of Object.entries(config.agents)) {
-    if (!agentCfg.enabled || !harness.thread.agents.has(id)) continue;
-    if (agentCfg.kind === 'classifier') harness.setClassifier(id);
-    else if (agentCfg.kind === 'router') harness.setRouter(id);
-  }
-
-  const executorId = Object.entries(config.agents).find(
-    ([id, agent]) => agent.kind === 'executor' && agent.enabled && harness.thread.agents.has(id),
-  )?.[0];
-  harness.setDefaultExecutor(
-    executorId ?? (harness.thread.agents.has('artificer') ? 'artificer' : ''),
-  );
-  harness.loadModes(config.agents, config.layers);
-}
-
-/**
- * Build layer-injection provenance for a turn.
- *
- * Read the dispatch snapshot, never the live stack after executor writeback.
- */
-function buildInjectionProvenance(
-  artifact: InjectionArtifact | undefined,
-): Array<{ id: string; hash: string; tokens: number }> | undefined {
-  const records = (artifact?.layers ?? [])
-    .filter((layer) => layer.included)
-    .map((layer) => ({
-      id: layer.id,
-      hash: layer.hash,
-      tokens: Math.ceil(layer.content.length / 4),
-    }));
-  return records.length > 0 ? records : undefined;
-}
-
-export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void {
+export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { turns: TurnService } {
   const {
     harness,
     eventStream,
@@ -119,259 +76,18 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
   const directory =
     deps.directory ?? new ViewerThreadDirectory(harness.thread, projectRegistry, threadFactory);
   const streams = deps.streams;
-  const streamBuffers = streams.turns;
-  const generation = newId('native-runtime');
-  const journalChanged = (thread: Thread, turnId: string) => {
-    try {
-      eventStream.push({
-        kind: 'journal',
-        threadId: thread.id,
-        projectId: thread.meta.projectId,
-        turnId,
-        timestamp: Date.now(),
-      });
-      return true;
-    } catch {
-      return false;
-    } // observer failure cannot replace executor/commit evidence
-  };
-  const nativeBridges = new WeakMap<
-    Thread,
-    import('@inixiative/foundry-core').NativeBridgeSource
-  >();
-  const nativeBridge = (thread: Thread) => {
-    let source = nativeBridges.get(thread);
-    if (!source) {
-      source = threadFactory?.nativeBridge(
-        thread,
-        (record) => {
-          if (!localStore) throw Error('Native tools require an owned journal');
-          return localStore.persistNativeTool(thread, record, () => {
-            try {
-              eventStream.push({
-                kind: 'journal',
-                threadId: record.owner.threadId,
-                projectId: record.owner.projectId,
-                turnId: record.association.owner?.messageId ?? '',
-                timestamp: Date.now(),
-              });
-              return true;
-            } catch {
-              return false;
-            }
-          });
-        },
-        deps.deviceIdentityPath,
-      );
-      if (source) nativeBridges.set(thread, source);
-    }
-    return source;
-  };
-  const nativeObservation = (thread: Thread) => ({
-    generation: threadFactory?.runtime?.get(thread.id)?.generation ?? generation,
-    bridge: nativeBridge(thread),
-    preflight: (owner: import('@inixiative/foundry-core').NativeOwner) => {
-      if (!localStore) throw Error('Native admission requires an available ownership journal');
-      localStore.assertNativeCapacity(thread, owner);
-    },
-    register: (evidence: import('@inixiative/foundry-core').NativeEvidence) => {
-      if (!localStore) throw Error('Native admission requires an available ownership journal');
-      localStore.registerNative(thread, evidence);
-      if (evidence.owner?.messageId)
-        streamBuffers.get(evidence.owner.messageId)?.register(evidence);
-    },
-    observe: (evidence: import('@inixiative/foundry-core').NativeEvidence) => {
-      if (evidence.owner?.messageId) streamBuffers.get(evidence.owner.messageId)?.observe(evidence);
-      localStore?.appendNative(thread, evidence);
-      if (evidence.owner?.messageId) journalChanged(thread, evidence.owner.messageId);
-    },
+  const turns = new TurnService({
+    harness,
+    eventStream,
+    db,
+    threadFactory,
+    configStore: deps.configStore,
+    deviceIdentityPath: deps.deviceIdentityPath,
+    namer,
+    localStore,
+    directory,
+    streams,
   });
-  const completeResult = (
-    thread: Thread,
-    turnId: string,
-    result: Pick<HarnessResult, 'result' | 'trace' | 'classification' | 'route' | 'timestamp'>,
-    postExecutionError?: string,
-  ) => {
-    const output = result.result.output ?? null;
-    const content = typeof output === 'string' ? output : JSON.stringify(output ?? null);
-    const injection = result.result.meta?.injection as InjectionArtifact | undefined;
-    const injectedLayers = buildInjectionProvenance(injection);
-    const meta: Record<string, unknown> = {
-      ...(result.result.meta ?? {}),
-      ...(injectedLayers ? { injectedLayers } : {}),
-      attemptOutcome: 'completed',
-      executionOutcome: 'completed',
-      ...(postExecutionError ? { attemptOutcome: 'failed', postExecutionError } : {}),
-      // A successful Harness result does not establish provider/native protocol facts.
-      providerOutcome: 'unknown',
-      nativeOutcome:
-        (result.result.meta?.native as { nativeOutcome?: string } | undefined)?.nativeOutcome ??
-        'unknown',
-      deliveryAcknowledgment: 'unavailable',
-      inputEvidence: injection?.providerMessages
-        ? 'provider-boundary-recorded'
-        : injection
-          ? 'prepared-only'
-          : 'unavailable',
-      turnStatus: localStore ? 'completed' : 'completed-unsaved',
-      persistence: localStore ? 'committed' : 'unavailable',
-    };
-    // This catch belongs only to persistence. Never repair it by failing/replaying
-    // an execution that already returned a completed result.
-    try {
-      localStore?.completeTurn(thread, turnId, content, meta, serializeTrace(result.trace));
-    } catch (error) {
-      meta.turnStatus = 'completed-unsaved';
-      meta.persistence = 'failed';
-      meta.persistenceError = error instanceof Error ? error.message : String(error);
-      meta.retryable = false;
-    }
-    const unsaved = meta.persistence !== 'committed';
-    if (!journalChanged(thread, turnId)) meta.notification = 'failed';
-    if (unsaved) result.trace.root.annotations.completion = meta;
-    return {
-      id: turnId,
-      output,
-      content,
-      meta,
-      traceId: result.trace.id,
-      trace: result.trace.summary(),
-      // Preserve the full volatile trace for browser evidence before memory is lost.
-      ...(unsaved ? { traceSnapshot: serializeTrace(result.trace) } : {}),
-      classification: result.classification?.value ?? null,
-      route: result.route?.value ?? null,
-      timestamp: result.timestamp,
-    };
-  };
-  const recordFailure = (
-    activeHarness: Harness,
-    turnId: string,
-    error: string,
-    trace?: Trace,
-    partialOutput?: string,
-  ) => {
-    const thread = activeHarness.thread;
-    const executeSpan = trace && [...trace.spans].reverse().find((span) => span.kind === 'execute');
-    const injection = executeSpan?.annotations.injection as InjectionArtifact | undefined;
-    const native = executeSpan?.annotations.native as
-      | import('@inixiative/foundry-core').NativeEvidence
-      | undefined;
-    const injectedLayers = buildInjectionProvenance(injection);
-    const meta: Record<string, unknown> = {
-      error,
-      turnStatus: 'failed',
-      persistence: localStore ? 'committed' : 'unavailable',
-      inputEvidence: injection?.providerMessages
-        ? 'provider-boundary-recorded'
-        : injection
-          ? 'prepared-only'
-          : 'unavailable',
-      // The local executor boundary does not acknowledge native delivery,
-      // termination or cancellation. Preserve that uncertainty explicitly.
-      deliveryAcknowledgment: 'unavailable',
-      nativeOutcome: native?.nativeOutcome ?? 'unknown',
-      ...(native ? { native, ...(native.content ? { partialOutput: native.content } : {}) } : {}),
-      ...(injection ? { injection } : {}),
-      ...(injectedLayers ? { injectedLayers } : {}),
-      ...(partialOutput ? { partialOutput } : {}),
-    };
-    // Failure details travel with historical traces as well as message rows.
-    // Keep the live annotation linked so a rejected transaction reads unsaved.
-    if (trace) trace.root.annotations.failure = meta;
-    try {
-      if (localStore) {
-        if (localStore.turn(turnId)?.status === 'active') {
-          localStore.failTurn(thread, turnId, error, {
-            meta,
-            trace: trace ? serializeTrace(trace) : undefined,
-          });
-        } else meta.persistence = 'not-recorded';
-      }
-    } catch (err) {
-      meta.persistence = 'failed';
-      meta.persistenceError = err instanceof Error ? err.message : String(err);
-      console.error('[Viewer] could not persist failed turn', err);
-    }
-    if (!journalChanged(thread, turnId)) meta.notification = 'failed';
-    return { traceId: trace?.id, trace: trace?.summary(), meta };
-  };
-  const completedAfterFailure = (
-    activeHarness: Harness,
-    turnId: string,
-    error: string,
-    trace?: Trace,
-  ) => {
-    const span = trace && [...trace.spans].reverse().find((span) => span.kind === 'execute');
-    const completed = span?.annotations.executorCompletion as { output: unknown } | undefined;
-    const native = span?.annotations.native as
-      | import('@inixiative/foundry-core').NativeEvidence
-      | undefined;
-    if (!trace || (!completed && native?.nativeOutcome !== 'completed')) return undefined;
-    return completeResult(
-      activeHarness.thread,
-      turnId,
-      {
-        trace,
-        timestamp: Date.now(),
-        result: {
-          output: completed ? completed.output : (native!.content ?? ''),
-          contextHash: '',
-          meta: { injection: span?.annotations.injection, ...(native ? { native } : {}) },
-        },
-      },
-      error,
-    );
-  };
-  const observeFailure = (message: string) => {
-    try {
-      eventStream.pushError('harness', `Execution failed: ${message}`);
-    } catch (error) {
-      console.warn('[Viewer] error observer failed:', error);
-    }
-  };
-  // A streamed send's full result goes to the requesting connection on its thread stream, ahead of the
-  // bounded live turn's own terminal, so that viewer holds the full result first. Other viewers see
-  // only the bounded turn. An observer failure cannot replace executor/commit evidence.
-  const publishTerminal = (
-    threadId: string,
-    clientId: string | undefined,
-    turnId: string,
-    kind: 'done' | 'error',
-    result: Record<string, unknown>,
-  ) => {
-    try {
-      streams.publishTerminal(threadId, clientId, { kind, turnId, result });
-    } catch (error) {
-      console.warn('[Viewer] thread stream publish failed:', error);
-    }
-  };
-  const threadHarnesses = new Map<string, Harness>([[harness.thread.id, harness]]);
-
-  const harnessForThread = (threadId: string): Harness | null => {
-    if (threadId === harness.thread.id) return harness;
-
-    const existing = threadHarnesses.get(threadId);
-    if (existing) return existing;
-
-    const thread = directory.get(threadId);
-    if (!thread) return null;
-
-    const scopedHarness = new Harness(thread);
-    configureHarness(scopedHarness, deps.configStore);
-    threadHarnesses.set(threadId, scopedHarness);
-    return scopedHarness;
-  };
-
-  const allHarnesses = (): Harness[] => {
-    const seen = new Set<string>();
-    const list: Harness[] = [];
-    for (const scopedHarness of threadHarnesses.values()) {
-      if (seen.has(scopedHarness.thread.id)) continue;
-      seen.add(scopedHarness.thread.id);
-      list.push(scopedHarness);
-    }
-    return list;
-  };
 
   app.get('/api/health', async (c) => {
     const checks: Record<string, { ok: boolean; detail?: string }> = {};
@@ -402,93 +118,42 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     return c.json(registryForViewer());
   });
 
+  const messagePayload = (body: Record<string, unknown>) =>
+    typeof body.message === 'string'
+      ? body.message
+      : typeof body.payload === 'string'
+        ? body.payload
+        : typeof body.content === 'string'
+          ? body.content
+          : null;
+
+  // Runs a turn and answers with its full result once it settles.
   app.post('/api/messages', async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const payload =
-      typeof body.message === 'string'
-        ? body.message
-        : typeof body.payload === 'string'
-          ? body.payload
-          : typeof body.content === 'string'
-            ? body.content
-            : null;
+    const payload = messagePayload(body);
+    if (!payload) return c.json({ error: 'message is required (string)' }, 400);
 
-    if (!payload) {
-      return c.json({ error: 'message is required (string)' }, 400);
-    }
-
-    const turnId = typeof body.id === 'string' ? body.id : newId('turn');
-    const userMsgId = newId('msg');
-    const threadId = typeof body.threadId === 'string' ? body.threadId : harness.thread.id;
-    const activeHarness = harnessForThread(threadId);
-    if (!activeHarness) {
-      return c.json({ error: 'thread not found' }, 404);
-    }
-
-    if (activeHarness.thread.disposed)
-      return c.json({ error: 'thread is archived or disposed' }, 409);
-    if (localStore?.turn(turnId) || !streamBuffers.canOpen(turnId))
-      return c.json(
-        { error: 'turn already accepted or live capacity unavailable', id: turnId },
-        409,
-      );
-    try {
-      localStore?.beginTurn(activeHarness.thread, turnId, payload);
-    } catch (err) {
-      return c.json({ error: `Could not durably accept turn: ${(err as Error).message}` }, 503);
-    }
-
-    enqueueJob('persistMessage', {
-      id: userMsgId,
-      threadId,
-      turnId,
-      actor: 'user',
-      kind: 'text',
-      content: payload,
-    }).catch(() => {
-      db?.writeMessage({
-        id: userMsgId,
-        threadId,
-        turnId,
-        actor: 'user',
-        kind: 'text',
-        content: payload,
-      }).catch((err) => console.warn('[Viewer] background op failed:', err.message ?? err));
+    const accepted = turns.accept({
+      threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
+      turnId: typeof body.id === 'string' ? body.id : undefined,
+      payload,
     });
-
-    const buffer = streamBuffers.open(turnId, threadId, activeHarness.thread.meta.projectId);
-    streams.threadsChanged(threadId);
-    let attemptTrace: Trace | undefined;
-    let result: HarnessResult;
-    try {
-      result = await activeHarness.send(
-        { id: turnId, payload },
+    if (!accepted.ok) return c.json(accepted.body, accepted.status);
+    const outcome = await accepted.settled;
+    if (outcome.kind === 'failed')
+      return c.json(
         {
-          nativeObservation: nativeObservation(activeHarness.thread),
-          onDelta: (text) => buffer.append(text),
-          onTrace: (trace) => {
-            attemptTrace = trace;
-          },
+          error: `Execution failed: ${outcome.error}`,
+          id: accepted.turnId,
+          payload,
+          ...outcome.evidence,
         },
+        500,
       );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const completed = completedAfterFailure(activeHarness, turnId, msg, attemptTrace);
-      if (completed) {
-        buffer.complete(completed);
-        streams.threadsChanged(threadId);
-        return c.json({ ...completed, payload, error: msg }, 500);
-      }
-      const evidence = recordFailure(activeHarness, turnId, msg, attemptTrace);
-      buffer.fail(msg, { id: turnId, error: msg, ...evidence });
-      observeFailure(msg);
-      streams.threadsChanged(threadId);
-      return c.json({ error: `Execution failed: ${msg}`, id: turnId, payload, ...evidence }, 500);
-    }
-    const completed = completeResult(activeHarness.thread, turnId, result);
-    buffer.complete(completed);
-    streams.threadsChanged(threadId);
-    if (completed.meta.persistence === 'failed') {
+    if (outcome.kind === 'completed-after-failure')
+      return c.json({ ...outcome.completed, payload, error: outcome.error }, 500);
+    const { completed, result } = outcome;
+    if (completed.meta.persistence === 'failed')
       return c.json(
         {
           ...completed,
@@ -497,45 +162,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
         },
         500,
       );
-    }
-    const agentContent = completed.content;
-    const agentMsgId = newId('msg');
-    const agentMeta = completed.meta;
-
-    enqueueJob('persistMessage', {
-      id: agentMsgId,
-      threadId,
-      turnId,
-      actor: 'agent',
-      kind: 'text',
-      content: agentContent,
-      traceId: result.trace.id,
-      meta: agentMeta,
-    }).catch(() => {
-      db?.writeMessage({
-        id: agentMsgId,
-        threadId,
-        turnId,
-        actor: 'agent',
-        kind: 'text',
-        content: agentContent,
-        traceId: result.trace.id,
-        meta: agentMeta,
-      }).catch((err) => console.warn('[Viewer] background op failed:', err.message ?? err));
-    });
-
-    enqueueJob('persistTrace', {
-      traceId: result.trace.id,
-      messageId: turnId,
-      trace: serializeTrace(result.trace),
-    }).catch(() => {
-      db?.writeTrace(result.trace).catch((err) =>
-        console.warn('[Viewer] background op failed:', err.message ?? err),
-      );
-    });
-
-    namer?.turnCompleted(activeHarness.thread, { user: payload, agent: agentContent });
-
     return c.json({
       ...completed,
       payload,
@@ -546,164 +172,40 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
 
   // -- Send endpoint --
   //
-  // Accepts a turn once it is durably begun and answers 202. Its output (deltas,
-  // live activity and the bounded turn terminal) is delivered on the
-  // `thread:<threadId>` data stream; the full terminal `{ kind: "done" | "error",
-  // result }` with explicit persistence status goes to the `clientId` named in
-  // the request. "done" means execution returned, not necessarily that its journal
-  // commit succeeded. The turn is independent of any connection: with nobody
-  // watching it still runs and attempts to persist its outcome.
-  const runStreamedTurn = async (
-    activeHarness: Harness,
-    threadId: string,
-    turnId: string,
-    payload: string,
-    buffer: StreamBuffer,
-    clientId?: string,
-  ) => {
-    let attemptTrace: Trace | undefined;
-    try {
-      for await (const ev of activeHarness.sendStream(
-        { id: turnId, payload },
-        {
-          nativeObservation: nativeObservation(activeHarness.thread),
-          onTrace: (trace) => {
-            attemptTrace = trace;
-          },
-        },
-      )) {
-        if (ev.kind === 'delta') {
-          buffer.append(ev.text);
-          continue;
-        }
-        const result = ev.result;
-        const completed = completeResult(activeHarness.thread, turnId, result);
-        publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });
-        buffer.complete(completed);
-        if (completed.meta.persistence === 'failed') return;
-        const agentContent = completed.content;
-        const agentMsgId = newId('msg');
-        const agentMeta = completed.meta;
-
-        // Optional remote mirror follows the local response/artifact transaction.
-        enqueueJob('persistMessage', {
-          id: agentMsgId,
-          threadId,
-          turnId,
-          actor: 'agent',
-          kind: 'text',
-          content: agentContent,
-          traceId: result.trace.id,
-          meta: agentMeta,
-        }).catch(() => {
-          db?.writeMessage({
-            id: agentMsgId,
-            threadId,
-            turnId,
-            actor: 'agent',
-            kind: 'text',
-            content: agentContent,
-            traceId: result.trace.id,
-            meta: agentMeta,
-          }).catch((err) => console.warn('[Viewer] background op failed:', err.message ?? err));
-        });
-
-        enqueueJob('persistTrace', {
-          traceId: result.trace.id,
-          messageId: turnId,
-          trace: serializeTrace(result.trace),
-        }).catch(() => {
-          db?.writeTrace(result.trace).catch((err) =>
-            console.warn('[Viewer] background op failed:', err.message ?? err),
-          );
-        });
-
-        namer?.turnCompleted(activeHarness.thread, { user: payload, agent: agentContent });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const completed = completedAfterFailure(activeHarness, turnId, msg, attemptTrace);
-      if (completed) {
-        publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });
-        buffer.complete(completed);
-        return;
-      }
-      const evidence = recordFailure(activeHarness, turnId, msg, attemptTrace, buffer.content);
-      publishTerminal(threadId, clientId, turnId, 'error', {
-        id: turnId,
-        threadId,
-        error: msg,
-        ...evidence,
-      });
-      buffer.fail(msg, { id: turnId, error: msg, ...evidence });
-      observeFailure(msg);
-    } finally {
-      streamBuffers.drop(turnId);
-      streams.threadsChanged(threadId);
-    }
-  };
-
+  // Accepts a turn once it is durably begun and answers 202; a busy thread runs it after the
+  // turns ahead of it. Its output (deltas, live activity and the bounded turn terminal) is
+  // delivered on the `thread:<threadId>` data stream; the full terminal `{ kind: "done" | "error",
+  // result }` with explicit persistence status goes to the `clientId` named in the request.
   app.post('/api/messages/send', async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const payload =
-      typeof body.message === 'string'
-        ? body.message
-        : typeof body.payload === 'string'
-          ? body.payload
-          : typeof body.content === 'string'
-            ? body.content
-            : null;
+    const payload = messagePayload(body);
+    if (!payload) return c.json({ error: 'message is required (string)' }, 400);
 
-    if (!payload) {
-      return c.json({ error: 'message is required (string)' }, 400);
-    }
-
-    const turnId = typeof body.id === 'string' ? body.id : newId('turn');
-    const userMsgId = newId('msg');
-    const threadId = typeof body.threadId === 'string' ? body.threadId : harness.thread.id;
-    const activeHarness = harnessForThread(threadId);
-    if (!activeHarness) {
-      return c.json({ error: 'thread not found' }, 404);
-    }
-
-    if (activeHarness.thread.disposed)
-      return c.json({ error: 'thread is archived or disposed' }, 409);
-    if (localStore?.turn(turnId) || !streamBuffers.canOpen(turnId))
-      return c.json(
-        { error: 'turn already accepted or live capacity unavailable', id: turnId },
-        409,
-      );
-    try {
-      localStore?.beginTurn(activeHarness.thread, turnId, payload);
-    } catch (err) {
-      return c.json({ error: `Could not durably accept turn: ${(err as Error).message}` }, 503);
-    }
-
-    // Optional remote mirror; the local acceptance is already committed.
-    enqueueJob('persistMessage', {
-      id: userMsgId,
-      threadId,
-      turnId,
-      actor: 'user',
-      kind: 'text',
-      content: payload,
-    }).catch(() => {
-      db?.writeMessage({
-        id: userMsgId,
-        threadId,
-        turnId,
-        actor: 'user',
-        kind: 'text',
-        content: payload,
-      }).catch((err) => console.warn('[Viewer] background op failed:', err.message ?? err));
+    const accepted = turns.accept({
+      threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
+      turnId: typeof body.id === 'string' ? body.id : undefined,
+      payload,
+      // The requesting client (a tab's socket id, optional) receives the full result on its `thread:<threadId>` stream.
+      clientId: typeof body.clientId === 'string' ? body.clientId : undefined,
     });
+    if (!accepted.ok) return c.json(accepted.body, accepted.status);
+    return c.json(
+      {
+        id: accepted.turnId,
+        threadId: accepted.threadId,
+        status: 'accepted',
+        queued: accepted.queued,
+      },
+      202,
+    );
+  });
 
-    const buffer = streamBuffers.open(turnId, threadId, activeHarness.thread.meta.projectId);
-    streams.threadsChanged(threadId);
-    // The requesting client (a tab's socket id, optional) receives the full result on its `thread:<threadId>` stream.
-    const clientId = typeof body.clientId === 'string' ? body.clientId : undefined;
-    void runStreamedTurn(activeHarness, threadId, turnId, payload, buffer, clientId);
-    return c.json({ id: turnId, threadId, status: 'accepted' }, 202);
+  // Stop a turn: a queued turn or one not yet natively dispatched is cancelled; a dispatched one is
+  // stopped by its runtime. The turn's terminal still arrives on its thread stream.
+  app.post('/api/threads/:threadId/turns/:turnId/interrupt', async (c) => {
+    const result = await turns.interrupt(c.req.param('threadId'), c.req.param('turnId'));
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    return c.json({ outcome: result.outcome });
   });
 
   app.get('/api/traces', async (c) => {
@@ -722,7 +224,8 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
       }
     }
 
-    const summaries = allHarnesses()
+    const summaries = turns
+      .all()
       .flatMap((scopedHarness) => scopedHarness.traces)
       .slice(-limit)
       .map((trace) => trace.summary());
@@ -733,7 +236,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     const id = c.req.param('id');
     const stored = localStore?.trace(id);
     if (stored) return c.json(stored);
-    for (const scopedHarness of allHarnesses()) {
+    for (const scopedHarness of turns.all()) {
       const trace = scopedHarness.getTrace(id);
       if (trace) return c.json(traceToJSON(trace));
     }
@@ -750,7 +253,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     const messageId = c.req.param('id');
     const stored = localStore?.traceForTurn(messageId);
     if (stored) return c.json(stored);
-    for (const scopedHarness of allHarnesses()) {
+    for (const scopedHarness of turns.all()) {
       const trace = scopedHarness.getTraceForMessage(messageId);
       if (trace) return c.json(traceToJSON(trace));
     }
@@ -883,6 +386,11 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     return c.json({ threads: directory.scope()!.map(threadToJSON) });
   });
 
+  app.get('/api/threads/:id', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    return thread ? c.json(threadToJSON(thread)) : c.json({ error: 'thread not found' }, 404);
+  });
+
   // -- Worktrees (read-only detection of existing git worktrees) --
 
   app.get('/api/worktrees', async (c) => {
@@ -909,8 +417,19 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     const tags = Array.isArray(body.tags)
       ? body.tags.filter((tag): tag is string => typeof tag === 'string').slice(0, 20)
       : [];
-    const projectId = typeof body.projectId === 'string' ? body.projectId : undefined;
-    const worktreePath = typeof body.worktreePath === 'string' ? body.worktreePath : undefined;
+    // A working directory names where the work is; its project (if any) is resolved from it. A
+    // directory outside every registered project is a global-scope thread working there.
+    const workingDirectory = typeof body.cwd === 'string' ? body.cwd : undefined;
+    if (workingDirectory !== undefined && !isAbsolute(workingDirectory))
+      return c.json({ error: 'cwd must be an absolute path' }, 400);
+    const projectId =
+      typeof body.projectId === 'string'
+        ? body.projectId
+        : workingDirectory
+          ? (await projectRegistry?.forDirectory(workingDirectory))?.id
+          : undefined;
+    const worktreePath =
+      typeof body.worktreePath === 'string' ? body.worktreePath : workingDirectory;
     const branch = typeof body.branch === 'string' ? body.branch : undefined;
     const parentThreadId =
       typeof body.parentThreadId === 'string' ? body.parentThreadId : undefined;
@@ -1193,4 +712,5 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): void 
     const limit = Number(c.req.query('limit') ?? 100);
     return c.json(eventStream.recent({ kind, limit }));
   });
+  return { turns };
 }

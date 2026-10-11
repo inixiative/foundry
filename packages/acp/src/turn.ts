@@ -1,0 +1,232 @@
+import type { SessionUpdate, StopReason, ToolCallStatus } from '@agentclientprotocol/sdk';
+import type { LiveActivity, StreamBufferSnapshot } from '@inixiative/foundry/client';
+import { type ContextSummary, contextSummary } from './context';
+import { toolKind, toolLocations, toolTitle } from './tools';
+
+/** How long a finished turn seen only in a snapshot waits for its own terminal before settling from the snapshot. */
+const TERMINAL_GRACE_MS = 1_000;
+const JOURNAL_WAIT_MS = 2_000;
+
+export class TurnFailedError extends Error {
+  constructor(
+    message: string,
+    readonly turnId: string,
+  ) {
+    super(message);
+    this.name = 'TurnFailedError';
+  }
+}
+
+const status = (state: LiveActivity['state']): ToolCallStatus =>
+  state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : 'in_progress';
+
+/**
+ * One prompt's projection from the daemon's `thread:<id>` and `flow:<id>` streams onto ACP
+ * `session/update`s, ending in its stop reason. Each text row's appended text is sent once; each
+ * tool row becomes a `tool_call`, then `tool_call_update`s as its state changes.
+ */
+export class TurnProjection {
+  readonly done: Promise<StopReason>;
+  cancelRequested = false;
+  /** The daemon accepted the turn; from here a snapshot without it means it was lost. */
+  accepted = false;
+  private settled = false;
+  private streamed = false;
+  private contextClosed = false;
+  private summary: ContextSummary | null = null;
+  private readonly text = new Map<string, string>();
+  private readonly tools = new Map<string, LiveActivity['state']>();
+  private fallback: ReturnType<typeof setTimeout> | null = null;
+  private resolve!: (reason: StopReason) => void;
+  private reject!: (error: Error) => void;
+
+  constructor(
+    readonly turnId: string,
+    readonly threadId: string,
+    private readonly emit: (update: SessionUpdate) => void,
+    private readonly cwd?: string,
+    /** The turn's journalled phase rows, for a turn that settles before its flow append arrives. */
+    private readonly journal?: () => Promise<unknown>,
+  ) {
+    this.done = new Promise<StopReason>((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+  }
+
+  private get contextId() {
+    return `foundry-context:${this.turnId}`;
+  }
+
+  /** The visible middleware item opens as soon as the turn is sent. */
+  open(): void {
+    this.emit({
+      sessionUpdate: 'tool_call',
+      toolCallId: this.contextId,
+      title: 'Foundry: context',
+      kind: 'think',
+      status: 'in_progress',
+    });
+  }
+
+  private closeContext(): void {
+    if (this.contextClosed) return;
+    this.contextClosed = true;
+    const summary = this.summary;
+    this.emit({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: this.contextId,
+      status: 'completed',
+      content: [
+        {
+          type: 'content',
+          content: {
+            type: 'text',
+            text: summary?.text ?? 'No routing or advice was recorded for this turn.',
+          },
+        },
+      ],
+      _meta: {
+        foundry: {
+          threadId: this.threadId,
+          turnId: this.turnId,
+          routing: summary?.routing ?? null,
+          participants: summary?.participants ?? [],
+        },
+      },
+    });
+  }
+
+  private chunk(text: string): void {
+    if (!text) return;
+    this.streamed = true;
+    this.emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+  }
+
+  /** A `flow:<threadId>` turn: its sealed route/advice rows complete the context item. */
+  flowTurn(turn: unknown): void {
+    if (this.settled || this.contextClosed) return;
+    if ((turn as { turnId?: unknown } | null)?.turnId !== this.turnId) return;
+    const summary = contextSummary(turn);
+    if (!summary) return;
+    this.summary = summary;
+    this.closeContext();
+  }
+
+  delta(text: string): void {
+    if (!this.settled) this.chunk(text);
+  }
+
+  activity(row: LiveActivity, appended?: string): void {
+    if (this.settled) return;
+    if (row.kind === 'text') {
+      const prior = this.text.get(row.id) ?? '';
+      const next = row.text ?? '';
+      this.text.set(row.id, next);
+      this.chunk(appended ?? (next.startsWith(prior) ? next.slice(prior.length) : ''));
+      return;
+    }
+    const known = this.tools.get(row.id);
+    if (known === undefined) {
+      this.tools.set(row.id, row.state);
+      this.emit({
+        sessionUpdate: 'tool_call',
+        toolCallId: row.id,
+        title: toolTitle(row.toolName ?? 'Tool', row.input),
+        kind: toolKind(row.toolName ?? ''),
+        status: status(row.state),
+        ...(row.input ? { rawInput: row.input } : {}),
+        locations: toolLocations(row.input, this.cwd),
+      });
+      if (row.state === 'running') return;
+    } else if (known === row.state) return;
+    this.tools.set(row.id, row.state);
+    if (row.state === 'running') return;
+    this.emit({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: row.id,
+      status: status(row.state),
+      ...(row.output !== undefined
+        ? {
+            rawOutput: { output: row.output },
+            content: [{ type: 'content', content: { type: 'text', text: row.output } }],
+          }
+        : {}),
+    });
+  }
+
+  /** A full live turn from a snapshot or a `turn` append: catch up rows, and settle a finished turn whose terminal never came. */
+  snapshot(turn: StreamBufferSnapshot | undefined): void {
+    if (this.settled) return;
+    if (!turn) {
+      if (this.accepted)
+        this.fail(
+          'Foundry no longer holds this turn (the daemon restarted); see its journal for the outcome.',
+        );
+      return;
+    }
+    for (const row of turn.activity) this.activity(row);
+    if (turn.status !== 'completed' && turn.status !== 'failed') return;
+    this.fallback ??= setTimeout(() => {
+      if (this.settled) return;
+      if (turn.status === 'completed') this.finish(turn.content);
+      else this.fail(turn.error ?? 'Turn failed');
+    }, TERMINAL_GRACE_MS);
+  }
+
+  /** The sender-only terminal: the full result of this turn. */
+  terminal(kind: 'done' | 'error', result: Record<string, unknown>): void {
+    if (this.settled) return;
+    if (kind === 'done') this.finish(typeof result.content === 'string' ? result.content : '');
+    else if (result.cancelled === true) this.finish('', 'cancelled');
+    else this.fail(typeof result.error === 'string' ? result.error : 'Turn failed');
+  }
+
+  private finish(content: string, reason?: StopReason): void {
+    if (!this.settle()) return;
+    if (!this.streamed) this.chunk(content);
+    void this.closeFromJournal().then(() =>
+      this.resolve(reason ?? (this.cancelRequested ? 'cancelled' : 'end_turn')),
+    );
+  }
+
+  private fail(message: string): void {
+    if (!this.settle()) return;
+    void this.closeFromJournal().then(() => {
+      if (this.cancelRequested) this.resolve('cancelled');
+      else this.reject(new TurnFailedError(message, this.turnId));
+    });
+  }
+
+  /** The route and advice rows are durable before the executor runs; a fast turn reads them here. */
+  private async closeFromJournal(): Promise<void> {
+    if (!this.contextClosed && !this.summary && this.journal) {
+      const detail = await Promise.race([
+        this.journal().catch(() => null),
+        Bun.sleep(JOURNAL_WAIT_MS).then(() => null),
+      ]);
+      this.summary = contextSummary(detail);
+    }
+    this.closeContext();
+  }
+
+  /** The send itself failed; nothing was accepted. */
+  abort(error: Error): void {
+    if (this.settled) return;
+    this.settled = true;
+    if (this.fallback) clearTimeout(this.fallback);
+    this.reject(error);
+  }
+
+  /** Mark settled once; false when it already was. */
+  private settle(): boolean {
+    if (this.settled) return false;
+    this.settled = true;
+    if (this.fallback) clearTimeout(this.fallback);
+    return true;
+  }
+
+  get isSettled(): boolean {
+    return this.settled;
+  }
+}

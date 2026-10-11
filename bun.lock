@@ -14,6 +14,21 @@
         "typescript": "6.0.3",
       },
     },
+    "packages/acp": {
+      "name": "@inixiative/foundry-acp",
+      "version": "0.1.0",
+      "bin": {
+        "foundry-acp": "src/cli.ts",
+      },
+      "dependencies": {
+        "@agentclientprotocol/sdk": "^1.8.0",
+        "@inixiative/foundry": "workspace:*",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@inixiative/foundry-core": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@inixiative/foundry-core",
       "version": "0.4.0",
@@ -51,6 +66,8 @@
     },
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.8.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg=="],
+
     "@anthropic-ai/claude-code": ["@anthropic-ai/claude-code@2.1.281", "", { "optionalDependencies": { "@anthropic-ai/claude-code-darwin-arm64": "2.1.281", "@anthropic-ai/claude-code-darwin-x64": "2.1.281", "@anthropic-ai/claude-code-linux-arm64": "2.1.281", "@anthropic-ai/claude-code-linux-arm64-musl": "2.1.281", "@anthropic-ai/claude-code-linux-x64": "2.1.281", "@anthropic-ai/claude-code-linux-x64-musl": "2.1.281", "@anthropic-ai/claude-code-win32-arm64": "2.1.281", "@anthropic-ai/claude-code-win32-x64": "2.1.281" }, "bin": { "claude": "bin/claude.exe" } }, "sha512-sldhFsGqOnGA8pfOMLjyc+Sc331VkZ1TsP1sdpvMeVFYBikC5x53miTCsnTiE6Bio74IYPn7BIzTNbHcRp5fXQ=="],
 
     "@anthropic-ai/claude-code-darwin-arm64": ["@anthropic-ai/claude-code-darwin-arm64@2.1.281", "", { "os": "darwin", "cpu": "arm64" }, "sha512-rEI/YGBDX4YTfdq5w1B86NicoLgpFHGp4IrKM6sDrmUemruePSXF7ybICthHClIsRY8a/Kp7PQ6UJah1VWTbSA=="],
@@ -102,6 +119,8 @@
     "@inixiative/config": ["@inixiative/config@0.5.67", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-k86Zs2Y0T/pg0U4FgGYRawa2uW9JU3xciIRNB6InSGMIAobyEvbX88OMJBBPqT6ojWee67s9OXJ94nH1JC+/GQ=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
+
+    "@inixiative/foundry-acp": ["@inixiative/foundry-acp@workspace:packages/acp"],
 
     "@inixiative/foundry-core": ["@inixiative/foundry-core@workspace:packages/core"],
 

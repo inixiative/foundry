@@ -398,6 +398,7 @@ export class Thread {
             bridge: opts.nativeObservation.bridge,
             register: opts.nativeObservation.register,
             observe: opts.nativeObservation.observe,
+            interruptible: opts.nativeObservation.interruptible,
             owner: Object.freeze({
               threadId: this.id,
               projectId: this.meta.projectId,

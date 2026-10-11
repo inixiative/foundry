@@ -2,7 +2,9 @@
  * LaunchAgent plist generation — pure, so it can be tested without touching disk.
  */
 
-export const DAEMON_LABEL = 'com.inixiative.foundry';
+import { DAEMON_LABEL } from '../../packages/foundry/src/client/daemon';
+
+export { DAEMON_LABEL };
 
 export interface PlistOptions {
   repoRoot: string;

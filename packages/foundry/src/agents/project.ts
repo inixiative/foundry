@@ -1,4 +1,5 @@
 import { type ContextStack, Thread, type ThreadConfig } from '@inixiative/foundry-core';
+import { containingPath, listWorktrees } from '../git/worktree';
 import type { RuntimeAdapter } from '../providers/runtime';
 import type { ProjectSettingsConfig } from '../viewer/config';
 
@@ -243,6 +244,18 @@ export class ProjectRegistry {
   /** Find project by directory path. */
   getByPath(path: string): Project | undefined {
     return [...this._projects.values()].find((p) => p.path === path);
+  }
+
+  /**
+   * The project a working directory belongs to: the registered project path that most closely
+   * contains it, else the project registered at its main git worktree (a linked worktree of a
+   * registered checkout). Undefined means the directory is outside every project.
+   */
+  async forDirectory(cwd: string): Promise<Project | undefined> {
+    const direct = containingPath(this._projects.values(), cwd);
+    if (direct) return direct;
+    const main = (await listWorktrees(cwd)).find((worktree) => worktree.isMain);
+    return main ? containingPath(this._projects.values(), main.path) : undefined;
   }
 
   remove(id: string): boolean {

@@ -104,16 +104,24 @@ export function findByBranch(worktrees: GitWorktree[], branch: string): GitWorkt
   return worktrees.find((w) => w.branch === branch);
 }
 
-/** Find the worktree whose path contains the given directory. */
-export function findByPath(worktrees: GitWorktree[], cwd: string): GitWorktree | undefined {
+/** The entry whose path is, or most closely contains, the given directory. */
+export function containingPath<T extends { path: string }>(
+  entries: Iterable<T>,
+  cwd: string,
+): T | undefined {
   const target = normalizePath(cwd);
 
-  return [...worktrees]
+  return [...entries]
     .sort((a, b) => b.path.length - a.path.length)
-    .find((w) => {
-      const root = normalizePath(w.path);
+    .find((entry) => {
+      const root = normalizePath(entry.path);
       return target === root || target.startsWith(`${root}${sep}`);
     });
+}
+
+/** Find the worktree whose path contains the given directory. */
+export function findByPath(worktrees: GitWorktree[], cwd: string): GitWorktree | undefined {
+  return containingPath(worktrees, cwd);
 }
 
 // ---------------------------------------------------------------------------

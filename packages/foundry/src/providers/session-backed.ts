@@ -481,6 +481,8 @@ export class SessionBackedProvider implements LLMProvider {
                   observer: observation,
                   cwd,
                 });
+                if (session.interruptNative)
+                  observation.interruptible?.((options) => session.interruptNative!(options));
               },
             }
           : {}),

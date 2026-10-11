@@ -35,6 +35,7 @@ import {
   TokenTracker,
 } from './agents';
 import { resolveLearningSettings } from './agents/learning-config';
+import { acpLaunchPath, newAcpCapability, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import type { LLMProvider } from './providers';
 import {
@@ -728,6 +729,12 @@ if (config.projects) {
 
 const port = parseInt(process.env.VIEWER_PORT || '4500');
 
+// The daemon (or an explicitly named launch path) publishes where local ACP proxies find it.
+const acpLaunch =
+  process.env.FOUNDRY_DAEMON === '1' || process.env.FOUNDRY_ACP_LAUNCH
+    ? { path: acpLaunchPath(), capability: newAcpCapability() }
+    : undefined;
+
 const viewer = await startViewer({
   harness,
   eventStream,
@@ -745,9 +752,21 @@ const viewer = await startViewer({
   configStore,
   actionQueue,
   assistTools: tools,
+  acpCapability: acpLaunch?.capability,
 });
 
 console.log(`Viewer: http://localhost:${port}`);
+if (acpLaunch) {
+  try {
+    writeAcpLaunch(acpLaunch.path, {
+      port: viewer.server.port ?? port,
+      capability: acpLaunch.capability,
+    });
+    console.log(`ACP: launch file ${acpLaunch.path}`);
+  } catch (error) {
+    console.warn(`ACP: launch file not written: ${(error as Error).message}`);
+  }
+}
 console.log(`Provider: ${provider.id} (${config.defaults.model})`);
 console.log(`Agents: ${[...thread.agents.keys()].join(', ')}`);
 console.log(`Layers: ${stack.layers.map((l) => l.id).join(', ')}`);

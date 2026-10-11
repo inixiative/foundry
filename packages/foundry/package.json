@@ -12,7 +12,8 @@
     "./jobs": "./src/jobs/index.ts",
     "./tools": "./src/tools/index.ts",
     "./runtime": "./src/runtime/index.ts",
-    "./kingdom": "./src/kingdom/index.ts"
+    "./kingdom": "./src/kingdom/index.ts",
+    "./client": "./src/client/index.ts"
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
@@ -20,8 +21,7 @@
     "test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5932/foundry_test bun test tests/db/ --max-concurrency=1",
     "test:all": "bun run test && bun run test:db",
     "typecheck": "bun run --bun tsc --noEmit",
-    "start": "bun run src/start.ts",
-    "demo": "bun run src/demo.ts"
+    "start": "bun run src/start.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.92",
@@ -47,7 +47,7 @@
     "pino": "^10.3.1",
     "playwright": "^1.63.0"
   },
-  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core — providers, session adapters, planner, viewer and jobs",
+  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core \u2014 providers, session adapters, planner, viewer and jobs",
   "license": "SEE LICENSE IN LICENSE",
   "files": [
     "src"

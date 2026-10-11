@@ -10,6 +10,15 @@ License. See [LICENSE-MIT](./LICENSE-MIT) for the full text.
 
 **Scope:** `packages/core/`
 
+## @inixiative/foundry-acp — MIT License
+
+The ACP agent surface (`foundry-acp`: the stdio Agent Client Protocol adapter
+that drives the local Foundry daemon) is licensed under the MIT License. See
+[LICENSE-MIT](./LICENSE-MIT). It depends on `@agentclientprotocol/sdk`
+(Apache-2.0).
+
+**Scope:** `packages/acp/`
+
 ## @inixiative/foundry — Business Source License 1.1
 
 The opinionated framework (compaction strategies, built-in hooks, session

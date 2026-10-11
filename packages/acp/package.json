@@ -1,0 +1,41 @@
+{
+  "name": "@inixiative/foundry-acp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "bin": {
+    "foundry-acp": "src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test tests/",
+    "typecheck": "bun run --bun tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0",
+    "@inixiative/foundry": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@inixiative/foundry-core": "workspace:*"
+  },
+  "description": "Foundry over the Agent Client Protocol: a stdio ACP agent that runs every turn through the local Foundry daemon",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inixiative/foundry.git",
+    "directory": "packages/acp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  }
+}

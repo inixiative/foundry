@@ -1,4 +1,5 @@
 export {
+  containingPath,
   diffStat,
   findByBranch,
   findByPath,

@@ -30,6 +30,7 @@ export async function liveWatchFixture(dir: string) {
   await mkdir(join(dir, 'P'));
   const attempts: any[] = [],
     sessions: any[] = [],
+    interrupts: string[] = [],
     exits: string[] = [],
     requests: Promise<unknown>[] = [];
   let startHold = Promise.resolve(),
@@ -72,6 +73,16 @@ export async function liveWatchFixture(dir: string) {
         },
         detach() {
           listeners.clear();
+        },
+        // Claude's control-protocol stop: acknowledged once the dispatched turn reaches its own (failed) terminal.
+        async interruptNative() {
+          const a = attempts.find(
+            (a) => a.session === s && !a.done && a.native.dispatch === 'attempted',
+          );
+          if (!a) return 'no-turn';
+          interrupts.push(a.native.admissionId);
+          a.finish(true);
+          return 'acknowledged';
         },
         async send(_prompt: string, opts: any) {
           let finish!: () => void, reject!: (error: Error) => void;
@@ -237,6 +248,7 @@ export async function liveWatchFixture(dir: string) {
     provider,
     attempts,
     sessions,
+    interrupts,
     exits,
     send,
     holdConstruction() {
@@ -262,8 +274,14 @@ export async function liveWatchFixture(dir: string) {
         () => attempts.every((a) => a.done) && thread.activeDispatches === 0,
         'original controlled settlement',
       );
-      const turns = new Set(viewer.localStore!.messages(thread.id).map((m) => m.turnId));
-      const history = [...turns].flatMap((id) => viewer.localStore!.nativeHistory(thread.id, id));
+      // Every journalled thread: ACP and other clients create threads of their own beside the fixture's.
+      const history = viewer.directory
+        .all()
+        .flatMap((t) =>
+          [...new Set(viewer.localStore!.messages(t.id).map((m) => m.turnId))].flatMap((id) =>
+            viewer.localStore!.nativeHistory(t.id, id),
+          ),
+        );
       for (const a of attempts) {
         const e = history.find((e) => e.admissionId === a.native.admissionId && e.owner);
         if (!e?.owner) throw Error('Missing original cleanup owner');

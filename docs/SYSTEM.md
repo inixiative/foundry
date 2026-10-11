@@ -565,10 +565,6 @@ bun install
 bun test tests/*.test.ts          # Unit tests (472+ tests)
 bun test tests/db/                 # Database integration tests
 
-# Demo
-bun run src/demo.ts                # Run the agent demo
-bun run src/eval-demo.ts           # Run the eval demo
-
 # Viewer
 bun run src/viewer/server.ts       # Open http://localhost:4500
 
