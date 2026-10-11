@@ -503,6 +503,12 @@ const factory = new ThreadFactory({
   },
 });
 
+// Settings edits reach live threads on their next turn; decision providers stay as started.
+configStore.onChange(async (next) => {
+  const effective = (subscription ? resolveSubscriptionPolicy(next)?.config : undefined) ?? next;
+  for (const change of await factory.reconfigure(effective)) console.log(`[settings] ${change}`);
+});
+
 // ---------------------------------------------------------------------------
 // Create main thread (lightweight handle over shared project state)
 // ---------------------------------------------------------------------------

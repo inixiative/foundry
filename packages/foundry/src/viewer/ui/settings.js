@@ -599,6 +599,39 @@ function TunnelEditor() {
 // Project overrides preview
 // ---------------------------------------------------------------------------
 
+/** Where each chunk of a project Warden's instructions and domain knowledge came from. */
+function ComposedAgents({ projectId }) {
+  const [agents, setAgents] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/resolved/agents`)
+      .then((r) => (r.ok ? r.json() : { agents: [] }))
+      .then((body) => live && setAgents(body.agents.filter((a) => a.scope !== 'global')))
+      .catch(() => live && setAgents([]));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+  if (!agents?.length) return null;
+  const chunks = (field) =>
+    (field?.chunks ?? []).map(
+      (chunk) =>
+        html`<li>${chunk.origin === 'global' ? 'Global' : 'Project'} · ${chunk.heading}</li>`,
+    );
+  return html`
+    <div class="settings-section-label">Composition</div>
+    ${agents.map(
+      (agent) => html`
+        <div class="settings-override-preview">
+          <strong>${agent.id}</strong>
+          ${agent.extends ? ` extends ${agent.extends}` : ' (standalone)'}
+          <ul>${chunks(agent.fields.prompt)}${chunks(agent.fields.domainKnowledge)}</ul>
+        </div>
+      `,
+    )}
+  `;
+}
+
 function ProjectOverrides({ project }) {
   if (!project) return null;
   const hasDefaults = project.defaults && Object.keys(project.defaults).length > 0;
@@ -629,8 +662,9 @@ function ProjectOverrides({ project }) {
       ${
         hasAgents
           ? html`
-        <div class="settings-section-label">Agent overrides (${Object.keys(project.agents).length})</div>
+        <div class="settings-section-label">Project agents (${Object.keys(project.agents).length})</div>
         <pre class="settings-override-preview">${JSON.stringify(project.agents, null, 2)}</pre>
+        <${ComposedAgents} projectId=${project.id} />
       `
           : null
       }

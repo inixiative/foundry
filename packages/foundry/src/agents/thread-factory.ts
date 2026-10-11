@@ -9,6 +9,7 @@ import {
   ContextLayer,
   type ContextSource,
   ContextStack,
+  claudemdSource,
   type Decision,
   type ExecuteMeta,
   Executor,
@@ -20,6 +21,7 @@ import {
   type OwnershipScope,
   type Route,
   Router,
+  type SourceSelectionReport,
   Thread,
   type ThreadConfig,
   type TokenTracker,
@@ -81,6 +83,12 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
           selection: srcCfg.selection === false ? false : { ...(srcCfg.selection ?? {}) },
         });
       case 'markdown':
+        // A single markdown file (CLAUDE.md, a convention doc) is loaded whole.
+        if (srcCfg.uri.endsWith('.md'))
+          return claudemdSource(
+            srcCfg.id,
+            srcCfg.uri.startsWith('file:') ? fileURLToPath(srcCfg.uri) : srcCfg.uri,
+          );
         // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
         // the full content blows the layer budget. topologySource() produces a
         // compact H1+H2 index (~44 tokens/file) that the domain warden can
@@ -113,9 +121,13 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
   for (const [id, layerCfg] of Object.entries(config.layers)) {
     if (!layerCfg.enabled) continue;
 
-    const sources = (layerCfg.sourceIds ?? [])
-      .map((srcId) => deps.sourceResolver(srcId, config))
-      .filter(Boolean) as ContextSource[];
+    const resolve = (ids: string[]) =>
+      ids.map((srcId) => deps.sourceResolver(srcId, config)).filter(Boolean) as ContextSource[];
+    const sources = layerCfg.chunks
+      ? layerCfg.chunks.map((chunk, i) =>
+          chunkSource(`${id}#${i}`, chunk.heading, resolve(chunk.sourceIds)),
+        )
+      : resolve(layerCfg.sourceIds ?? []);
 
     layers.push(
       new ContextLayer({
@@ -158,6 +170,48 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
   return layers;
 }
 
+/** One heading-labelled group of a composed layer's sources. An empty group contributes nothing. */
+function chunkSource(id: string, heading: string, sources: ContextSource[]): ContextSource {
+  return {
+    id,
+    focusable: sources.some((source) => source.focusable),
+    bind: (scope) =>
+      chunkSource(
+        id,
+        heading,
+        sources.map((source) => (source.bind ? source.bind(scope) : source)),
+      ),
+    async load(hint) {
+      const parts: string[] = [];
+      for (const source of sources) parts.push(await source.load(hint));
+      const text = parts.filter((part) => part.trim()).join('\n\n');
+      return text ? `## ${heading}\n\n${text}` : '';
+    },
+    report() {
+      const reports = sources
+        .map((source) => source.report?.())
+        .filter((report): report is SourceSelectionReport => !!report);
+      if (reports.length < 2) return reports[0];
+      // Ranges index each source's own text, so a merged report carries none.
+      return {
+        selected: reports.flatMap((r) => r.selected.map(({ ranges: _ranges, ...rest }) => rest)),
+        omitted: reports.flatMap((r) => r.omitted),
+        considered: reports.reduce((sum, r) => sum + r.considered, 0),
+        retained: {
+          count: reports.reduce((sum, r) => sum + r.retained.count, 0),
+          chars: reports.reduce((sum, r) => sum + r.retained.chars, 0),
+        },
+        budget: {
+          chars: reports.reduce((sum, r) => sum + r.budget.chars, 0),
+          used: reports.reduce((sum, r) => sum + r.budget.used, 0),
+          exceeded: reports.some((r) => r.budget.exceeded),
+        },
+        conflicts: reports.flatMap((r) => r.conflicts),
+      };
+    },
+  };
+}
+
 export interface BuildAgentsDeps {
   provider: LLMProvider;
   /** When supplied, every enabled agent must resolve its configured provider. */
@@ -179,8 +233,8 @@ export function buildAgents(
 
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
-    // The runtime owns these pre/post actors; do not build a second executor.
-    if (agentCfg.flowRole === 'domain-advising') continue;
+    // The runtime owns the Cartographer and the Wardens; they are never thread agents.
+    if (agentCfg.flowRole === 'domain-advising' || agentCfg.kind === 'cartographer') continue;
     const providerId = agentCfg.provider || config.defaults.provider;
     const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
     if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);
@@ -197,7 +251,7 @@ export function buildAgents(
 
 export interface ThreadFactoryDeps {
   /** Saved snapshot for project-specific construction through the same builders.
-   * Hot edits require an explicit new factory; existing threads are untouched. */
+   * Settings edits arrive through `reconfigure`. */
   configuration?: { config: FoundryConfig; layers: BuildLayersDeps; agents: BuildAgentsDeps };
   /** Actual scoped registry used by the owned runtime's native read-only bridge. */
   nativeTools?: ToolRegistry;
@@ -287,6 +341,75 @@ export class ThreadFactory {
    */
   attachSessionAdapter(adapter: SessionAdapter): void {
     this._sessionAdapter = adapter;
+  }
+
+  /**
+   * Settings changed. New threads build from `config`. Live threads swap edited layer sources and
+   * thread agents now, and take Cartographer and Warden instructions on their next turn. Returns
+   * what only a new thread picks up.
+   */
+  async reconfigure(config: FoundryConfig): Promise<string[]> {
+    const base = this._configuration;
+    if (!base) throw Error('Live settings need a factory built from configuration');
+    const previous = base.config;
+    this._configuration = { ...base, config: structuredClone(config) };
+    const deferred: string[] = [];
+    for (const runtime of this._runtime?.runtimes.values() ?? []) {
+      const thread = runtime.thread;
+      const view = (c: FoundryConfig) =>
+        (thread.meta.projectId
+          ? resolveProjectView(c, thread.meta.projectId)?.config
+          : undefined) ?? c;
+      const before = view(previous),
+        after = view(config);
+      const changed = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
+      const scope: OwnershipScope = {
+        threadId: thread.id,
+        get projectId() {
+          return thread.meta.projectId;
+        },
+      };
+      const built = new Map(buildLayers(after, base.layers).map((layer) => [layer.id, layer]));
+      for (const id of new Set([...Object.keys(before.layers), ...Object.keys(after.layers)])) {
+        const sourceIds = new Set([
+          ...(before.layers[id]?.sourceIds ?? []),
+          ...(after.layers[id]?.sourceIds ?? []),
+        ]);
+        if (
+          !changed(before.layers[id], after.layers[id]) &&
+          ![...sourceIds].some((sourceId) =>
+            changed(before.sources[sourceId], after.sources[sourceId]),
+          )
+        )
+          continue;
+        const layer = thread.stack.getLayer(id),
+          fresh = built.get(id);
+        if (!layer || !fresh) {
+          deferred.push(
+            `${thread.id}: layer ${id} ${fresh ? 'is added' : 'is removed'} for new threads`,
+          );
+          continue;
+        }
+        for (const source of [...layer.sources]) layer.removeSource(source.id);
+        for (const source of fresh.sources)
+          layer.addSource(source.bind ? source.bind(scope) : source);
+        layer.prompt = fresh.prompt;
+        layer.staleness = fresh.staleness;
+        layer.invalidate();
+        try {
+          await layer.warm();
+        } catch (error) {
+          deferred.push(`${thread.id}: layer ${id} did not warm: ${(error as Error).message}`);
+        }
+      }
+      const agents = buildAgents(after, thread.stack, base.agents);
+      for (const id of Object.keys(before.agents))
+        if (!agents.has(id) && thread.getAgent(id)) thread.unregister(id);
+      for (const [id, agent] of agents)
+        if (changed(before.agents[id], after.agents[id]) || !thread.getAgent(id))
+          thread.register(agent);
+    }
+    return [...deferred, ...(this._runtime?.reconfigure(config) ?? [])];
   }
 
   /**
@@ -481,8 +604,7 @@ function buildAgent(
         },
       });
 
-    case 'executor':
-    default: {
+    case 'executor': {
       if (!agentCfg.prompt) {
         console.warn(`[buildAgent] Agent "${id}" has no prompt configured — skipping.`);
         return null;
@@ -619,6 +741,8 @@ function buildAgent(
         },
       });
     }
+    default:
+      throw Error(`Agent ${id}: kind ${agentCfg.kind} is not a thread agent`);
   }
 }
 

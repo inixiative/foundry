@@ -58,7 +58,6 @@ export const DEFAULT_MEMORY_SELECTION: MemorySelectionPolicy = Object.freeze({
     'pin',
     'pinned',
     'convention',
-    'correction',
     'decision',
     'requirement',
   ]),
@@ -72,6 +71,8 @@ export const DEFAULT_MEMORY_SELECTION: MemorySelectionPolicy = Object.freeze({
     'domain_learning',
     'tool_observation',
     'guard_finding',
+    // Captured feedback; acting on it is an explicit resolution (docs/FEEDBACK-LOOP.md).
+    'correction',
   ]),
   recentLimit: 8,
   maxEntryChars: 1200,
@@ -305,7 +306,7 @@ export function selectMemory(
   };
   const withExcerpt = (x: Excerpt) => (x.truncated ? { truncated: true, ranges: x.ranges } : {});
 
-  // 1. Pinned: explicit instructions, conventions, corrections, decisions. Injected in full, never
+  // 1. Pinned: explicit instructions, conventions, decisions. Injected in full, never
   //    excerpted. A record beyond the hard cap is named, not paraphrased, so the model knows a rule
   //    exists that it must read before acting instead of receiving its introduction as the rule.
   const pinnedLines: string[] = [];

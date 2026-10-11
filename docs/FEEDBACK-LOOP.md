@@ -115,7 +115,7 @@ flowchart LR
 
 - Foundry memory already stores scoped records (`thread | project | global`, `packages/core/src/tools.ts:303-324`).
 - Memory also separates **pinned** kinds, which are injected every turn, from **audit-only** kinds, which are retained but never injected (`packages/core/src/adapters/file-memory.ts:46-56`).
-- `correction` is a pinned kind. So today every correction signal is already injected into its thread every turn (`start.ts:390`). **That is an automatic resolution, and it should go.** Advisory guard findings are already separate: they are `guard_finding`, an audit-only kind (#53).
+- ~~`correction` is a pinned kind, so every correction is injected into its thread every turn.~~ Fixed 2026-10-11: `correction` is audit-only, like the advisory `guard_finding` (#53). Applying a correction is an explicit resolution.
 
 **Smallest change:**
 
@@ -282,7 +282,7 @@ Each answer below is the leaning to test, not a decision.
   - edit, merge and dismiss actions
 - Fixes:
   - InterventionLog uses the right thread's bus.
-  - Corrections and guard findings stop being pinned.
+  - ~~Corrections and guard findings stop being pinned.~~ Done.
 - `foundry feedback import` seeds the FEEDBACK-LOG rows.
 - Any resolution is done by hand (a pinned record, or a PR) and recorded as a `resolution`, so the before/after counts start accumulating.
 
@@ -310,6 +310,7 @@ Every resolution is still explicit.
 ## Findings to fix regardless
 
 - ~~**Guard findings are pinned.**~~ Fixed in #53: advisory findings are `guard_finding`, an audit-only kind.
+- ~~**Corrections are pinned.**~~ Fixed 2026-10-11: `correction` is audit-only.
 - ~~**Viewer corrections go to the wrong thread.**~~ Fixed in #53: corrections post to `/api/threads/:threadId/interventions` and land on that thread's bus.
 - **`oracle mine` writes duplicates nobody reads.** It appends the same corrections on every run, and nothing reads `corrections.jsonl` (`oracle:src/cli.ts:218-225`).
 - **Session-mined fixtures overwrite each other.** Fixtures from different sessions get the same name, `session__<repo>__<n>.json` (`oracle:src/session-miner.ts:351-358`, `oracle:src/fixture-store.ts:97-100`).

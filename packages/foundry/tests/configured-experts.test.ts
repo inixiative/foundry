@@ -24,7 +24,6 @@ import { SessionBackedProvider } from '../src/providers/session-backed';
 import { DOCS_ADVISE_PROMPT } from '../src/setup/scan-docs';
 import {
   type AgentSettingsConfig,
-  type AgentSettingsOverride,
   ConfigStore,
   type FoundryConfig,
   starterConfig,
@@ -50,16 +49,6 @@ const expert = (
   maxDepth: 1,
   enabled: true,
 });
-/** An agent's scalar settings, as a project override carries them; list fields become patches. */
-const scalarFields = ({
-  visibleLayers,
-  ownedLayers,
-  guardTriggers,
-  peers,
-  browser,
-  condition,
-  ...scalars
-}: AgentSettingsConfig): AgentSettingsOverride => scalars;
 function config() {
   const c = starterConfig('central', 'central-model');
   c.agents = {
@@ -310,7 +299,13 @@ test('project-only/override/disabled definitions use resolved sources and profil
   c.projects.P = {
     id: 'P',
     path: '/controlled/P',
-    agents: { 'compatibility-expert': { model: 'project-fable', prompt: 'PROJECT_INSTRUCTIONS' } },
+    agents: {
+      'compatibility-expert': {
+        extends: 'compatibility-expert',
+        model: 'project-fable',
+        prompt: 'PROJECT_INSTRUCTIONS',
+      },
+    },
     sources: {
       'compatibility-source': {
         ...c.sources['compatibility-source'],
@@ -322,15 +317,8 @@ test('project-only/override/disabled definitions use resolved sources and profil
     id: 'Q',
     path: '/controlled/Q',
     agents: {
-      'compatibility-expert': { enabled: false },
-      'testing-expert': {
-        ...scalarFields(expert('testing')),
-        browser: undefined,
-        condition: undefined,
-        visibleLayers: { replace: ['testing-reference'] },
-        ownedLayers: { replace: ['testing-reference'] },
-        peers: { replace: [] },
-      },
+      'compatibility-expert': { extends: 'compatibility-expert', enabled: false },
+      'testing-expert': expert('testing'),
     },
     layers: {
       'compatibility-reference': { enabled: false },

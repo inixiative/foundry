@@ -91,6 +91,7 @@ function buildConfig(): FoundryConfig {
       label: 'Project',
       agents: {
         executor: {
+          extends: 'executor',
           visibleLayers: { append: ['project-layer'] },
           peers: { replace: ['answerer'] },
           browser: {
@@ -176,9 +177,8 @@ describe('ConfigStore project resolution', () => {
   test('resolveProject rejects legacy plain-array list overrides', async () => {
     const config = buildConfig();
     (config.projects.proj.layers!.docs as { sourceIds: unknown }).sourceIds = ['project-docs'];
-    await store.save(config);
 
-    expect(() => store.resolveProject('proj')).toThrow(
+    await expect(store.save(config)).rejects.toThrow(
       '[config] project.layers.docs.sourceIds must use explicit list patch syntax: { replace: [...] } or { append/remove: [...] }',
     );
   });
@@ -267,6 +267,7 @@ describe('ConfigStore persistence', () => {
   test('a failed write leaves live and persisted config unchanged', async () => {
     const live = store.config,
       disk = readFileSync(join(dir, 'settings.json'), 'utf8'),
+      history = readFileSync(join(dir, 'settings-history.jsonl'), 'utf8'),
       revision = store.revision;
     chmodSync(dir, 0o500);
     await expect(store.patch('defaults', { model: 'unwritten' })).rejects.toThrow();
@@ -281,7 +282,8 @@ describe('ConfigStore persistence', () => {
     expect(store.config.layers.system.prompt).toBe('System layer');
     expect(store.revision).toBe(revision);
     expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe(disk);
-    expect(readdirSync(dir)).toEqual(['settings.json']);
+    expect(readdirSync(dir).sort()).toEqual(['settings-history.jsonl', 'settings.json']);
+    expect(readFileSync(join(dir, 'settings-history.jsonl'), 'utf8')).toBe(history);
   });
 
   test('concurrent mutations apply in order against the latest committed config', async () => {

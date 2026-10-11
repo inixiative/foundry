@@ -233,7 +233,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
   - Move decisions onto agent-session primed sessions (#41).
 
 **8. Process feedback captured into a middleware layer: missing.** Design proposal: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md).
-- **What exists:** `POST /api/threads/:threadId/interventions` (`viewer/routes/runtime.ts`) emits a `correction` signal on that thread's bus (`packages/core/src/intervention.ts`). That signal becomes a pinned memory record owned by the thread (`packages/core/src/adapters/file-memory.ts:48`), tied to one trace span.
+- **What exists:** `POST /api/threads/:threadId/interventions` (`viewer/routes/runtime.ts`) emits a `correction` signal on that thread's bus (`packages/core/src/intervention.ts`). That signal becomes an audit-only memory record owned by the thread (`packages/core/src/adapters/file-memory.ts`), tied to one trace span: captured, never injected.
 - **What is not wired:**
   - `RuleCompiler.recompileOn` is declared but never used (`agents/domain-librarian.ts:478`).
   - `CorpusCompiler.ingestFromSignalBus` is never called.

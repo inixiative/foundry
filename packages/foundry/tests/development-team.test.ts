@@ -51,7 +51,9 @@ test('development team resolves ordinary UUID-owned experts and warms attributed
   );
   const tester = Object.values(config.agents).find((a) => a.domain === 'testing')!;
   expect(tester.guardTriggers).toContain('Bash');
-  config.projects[id]!.agents = { [tester.id]: { guardTriggers: { replace: [] } } };
+  config.projects[id]!.agents = {
+    [tester.id]: { extends: tester.id, guardTriggers: { replace: [] } },
+  };
   expect(resolveProjectView(config, id)!.config.agents[tester.id]!.guardTriggers).toEqual([]);
   tester.guardTriggers = ['Bash', 'Bash'];
   expect(() => configuredExperts(config)).toThrow('guard triggers');

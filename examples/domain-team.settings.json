@@ -198,15 +198,9 @@
           "model": "claude-haiku-5-5",
           "temperature": 0,
           "tools": false,
-          "visibleLayers": {
-            "replace": ["system"]
-          },
-          "ownedLayers": {
-            "replace": []
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["system"],
+          "ownedLayers": [],
+          "peers": [],
           "maxDepth": 1,
           "invocation": "always",
           "enabled": true
@@ -220,15 +214,9 @@
           "model": "claude-haiku-5-5",
           "temperature": 0,
           "tools": false,
-          "visibleLayers": {
-            "replace": ["system"]
-          },
-          "ownedLayers": {
-            "replace": []
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["system"],
+          "ownedLayers": [],
+          "peers": [],
           "maxDepth": 1,
           "invocation": "always",
           "enabled": true
@@ -243,15 +231,9 @@
           "temperature": 0,
           "tools": true,
           "permissions": "bypass",
-          "visibleLayers": {
-            "replace": []
-          },
-          "ownedLayers": {
-            "replace": []
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": [],
+          "ownedLayers": [],
+          "peers": [],
           "maxDepth": 5,
           "invocation": "on-demand",
           "enabled": true
@@ -265,15 +247,9 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": {
-            "replace": ["domain-docs"]
-          },
-          "ownedLayers": {
-            "replace": ["domain-docs"]
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["domain-docs"],
+          "ownedLayers": ["domain-docs"],
+          "peers": [],
           "maxDepth": 1,
           "enabled": true
         },
@@ -286,15 +262,9 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": {
-            "replace": ["domain-architecture"]
-          },
-          "ownedLayers": {
-            "replace": ["domain-architecture"]
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["domain-architecture"],
+          "ownedLayers": ["domain-architecture"],
+          "peers": [],
           "maxDepth": 1,
           "enabled": true
         },
@@ -307,15 +277,9 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": {
-            "replace": ["domain-security"]
-          },
-          "ownedLayers": {
-            "replace": ["domain-security"]
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["domain-security"],
+          "ownedLayers": ["domain-security"],
+          "peers": [],
           "maxDepth": 1,
           "enabled": true
         },
@@ -328,15 +292,9 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": {
-            "replace": ["domain-testing"]
-          },
-          "ownedLayers": {
-            "replace": ["domain-testing"]
-          },
-          "peers": {
-            "replace": []
-          },
+          "visibleLayers": ["domain-testing"],
+          "ownedLayers": ["domain-testing"],
+          "peers": [],
           "maxDepth": 1,
           "enabled": true
         }

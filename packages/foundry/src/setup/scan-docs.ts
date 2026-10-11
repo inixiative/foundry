@@ -123,8 +123,7 @@ export const DOCS_ADVISE_PROMPT = [
   'Rules:',
   '- Return ONLY file paths that appear EXACTLY in the topology below.',
   '- Distinguish near-duplicate filenames by reading their H1 title AND H2 headings (e.g. a backend AUTH.md vs a frontend AUTHENTICATION.md). A doc from the wrong side of the stack is worse than a missing doc.',
-  '- Respond with JSON only, no prose, no code fences:',
-  '  {"layers": ["docs"], "snippets": ["path1", "path2"], "confidence": 0.0-1.0}',
+  '- Put the chosen file paths in "snippets" and this layer ("docs") in "layers".',
 ].join('\n');
 
 // ---------------------------------------------------------------------------

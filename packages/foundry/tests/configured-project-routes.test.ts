@@ -66,7 +66,7 @@ for (const operation of ['create', 'fork'] as const) {
       config.projects.P = {
         id: 'P',
         path: dir,
-        agents: { expert: { enabled: false } },
+        agents: { expert: { extends: 'expert', enabled: false } },
         layers: { reference: { enabled: false } },
       };
       const store = new ConfigStore(dir);

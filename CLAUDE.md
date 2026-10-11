@@ -105,6 +105,12 @@ Runtime config lives in `.foundry/settings.json`. It defines:
 
 The viewer dashboard reads and writes this config. `ConfigStore` handles persistence with JSON patch semantics.
 
+A Warden is three parts: **instructions** (the agent's `prompt`), **domain knowledge** (the content of the one layer it owns) and **thread knowledge** (generated per thread by its post-work review). Each phase (advise, guard, review) appends its own response protocol, so a Warden prompt never states a JSON shape.
+
+A project agent (`projects[id].agents`) is **standalone** (a full definition) or **`extends: <global agent id>`**. An extension appends its `prompt` and its `domainKnowledge` (source ids for the parent's layer) to the parent's, global first, under a heading per chunk; `override: ["instructions" | "domainKnowledge"]` replaces that chunk instead. No entry means the global agent applies unchanged. `GET /api/projects/:id/resolved/agents` shows where each chunk came from.
+
+Settings edits apply live: every committed change is appended to `.foundry/settings-history.jsonl` (before/after per definition, `GET /api/settings/history`), and running threads take edited layers, agents and Cartographer/Warden instructions on their next turn. Adding or removing a Warden, and provider changes, apply to new threads.
+
 ## Tech Stack
 
 - **Runtime**: Bun

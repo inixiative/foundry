@@ -144,6 +144,14 @@ export interface CartographerConfig {
   atlasRoot?: string;
 }
 
+export const DEFAULT_ROUTE_INSTRUCTIONS = `You are a context router. Given a message, a topology map of available context, and (when present) the codebase concept map, decide which layers the message needs. Concepts (e.g. "feature:auth") tell you which part of the codebase a message touches — use them to pick the matching domains and layers. Route precisely — load what's needed, skip what isn't.`;
+
+/** The routing phase's response contract, independent of the configured instructions. */
+export const ROUTE_RESPONSE_PROTOCOL = [
+  '## Response protocol (routing)',
+  'Respond with JSON only, exactly this shape: { "layers": string[], "domains": string[], "concepts": string[], "confidence": number }.',
+].join('\n');
+
 // ---------------------------------------------------------------------------
 // Cartographer
 // ---------------------------------------------------------------------------
@@ -170,9 +178,7 @@ export class Cartographer {
     this._atlasRoot = config.atlasRoot;
     this._map = { entries: [], lastBuilt: 0, mapTokens: 0 };
 
-    this._routePrompt =
-      config.routePrompt ??
-      `You are a context router. Given a message, a topology map of available context, and (when present) the codebase concept map, decide which layers the message needs. Concepts (e.g. "feature:auth") tell you which part of the codebase a message touches — use them to pick the matching domains and layers. Route precisely — load what's needed, skip what isn't. Respond with JSON: { "layers": string[], "domains": string[], "concepts": string[], "confidence": number }`;
+    this._routePrompt = config.routePrompt ?? DEFAULT_ROUTE_INSTRUCTIONS;
 
     // Create the map layer — always warm, holds the serialized topology map
     this._mapLayer = new ContextLayer({
@@ -187,6 +193,16 @@ export class Cartographer {
         this.buildMap();
       }
     });
+  }
+
+  /** The routing instructions (configured or default); the response protocol is supplied per call. */
+  get routePrompt(): string {
+    return this._routePrompt;
+  }
+
+  /** Settings edits apply on the next route. */
+  setRoutePrompt(prompt: string | undefined): void {
+    this._routePrompt = prompt ?? DEFAULT_ROUTE_INSTRUCTIONS;
   }
 
   /** The current topology map. */
@@ -390,7 +406,7 @@ export class Cartographer {
           atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}` : '',
           threadState ? `\n## Current thread state\n${threadState}` : '',
           `\n## Message to route\n${message}`,
-          `\nWhich layers does this message need? Respond with JSON only.`,
+          `\n${ROUTE_RESPONSE_PROTOCOL}`,
         ].join('\n'),
       },
     ];

@@ -139,7 +139,7 @@ async function setup(opts?: {
 
 const signal = (id: string, content: string): Signal => ({
   id,
-  kind: 'correction',
+  kind: 'decision',
   source: 'user',
   content,
   timestamp: Date.now(),
@@ -464,8 +464,10 @@ test("a viewer correction lands on the bus of the thread it was made in, not mai
     expect(written).toHaveLength(1);
     expect(written[0]!.owner).toMatchObject({ threadId: 'other', projectId: 'P' });
     expect(memory.view({ threadId: 'main', projectId: 'P' }).all('correction')).toHaveLength(0);
+    // Captured on its own thread, but not injected: acting on a correction is an explicit resolution.
     await other.stack.getLayer('memory')!.warm();
-    expect(other.stack.getLayer('memory')!.content).toContain('OTHER-THREAD-CORRECTION');
+    expect(other.stack.getLayer('memory')!.content).not.toContain('OTHER-THREAD-CORRECTION');
+    expect(other.stack.getLayer('memory')!.content).toContain('correction 1');
 
     other.dispose();
     expect((await post('other')).status).toBe(409);

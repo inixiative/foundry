@@ -198,7 +198,7 @@ test('saved decision roles run on subscription decisions without rewriting the s
   };
   config.agents.librarian = {
     id: 'librarian',
-    kind: 'librarian',
+    kind: 'classifier',
     prompt: 'Reconcile',
     provider: 'claude-code',
     model: 'opus',
@@ -233,9 +233,9 @@ test('saved decision roles run on subscription decisions without rewriting the s
           provider: 'openai',
           model: 'gpt-5.6-luna',
           tools: false,
-          visibleLayers: { replace: [] },
-          ownedLayers: { replace: [] },
-          peers: { replace: [] },
+          visibleLayers: [],
+          ownedLayers: [],
+          peers: [],
           maxDepth: 1,
           enabled: true,
         },

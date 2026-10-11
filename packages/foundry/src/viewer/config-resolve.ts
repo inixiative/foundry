@@ -1,18 +1,37 @@
-import type {
-  AgentSettingsConfig,
-  AgentSettingsOverride,
-  BrowserConfig,
-  BrowserConfigOverride,
-  FoundryConfig,
-  InvocationCondition,
-  InvocationConditionOverride,
-  LayerSettingsConfig,
-  LayerSettingsOverride,
-  ListPatch,
+import {
+  type AgentExtension,
+  type AgentSettingsConfig,
+  type BrowserConfig,
+  type BrowserConfigOverride,
+  type FoundryConfig,
+  type InvocationCondition,
+  type InvocationConditionOverride,
+  isAgentExtension,
+  type LayerChunk,
+  type LayerSettingsConfig,
+  type LayerSettingsOverride,
+  type ListPatch,
+  type ProjectSettingsConfig,
 } from './config';
 
 export type MergeOrigin = 'global' | 'project' | 'merged';
-export type MergeStrategy = 'inherit' | 'override' | 'replace' | 'merge' | 'clear' | 'project-only';
+export type MergeStrategy =
+  | 'inherit'
+  | 'override'
+  | 'replace'
+  | 'merge'
+  | 'extend'
+  | 'clear'
+  | 'project-only';
+
+/** Where one composed chunk of a resolved value came from. */
+export interface ChunkProvenance {
+  origin: 'global' | 'project';
+  /** Global agent or layer id, or project id. */
+  from: string;
+  heading: string;
+  value: unknown;
+}
 
 export interface FieldProvenance {
   origin: MergeOrigin;
@@ -20,6 +39,17 @@ export interface FieldProvenance {
   globalValue?: unknown;
   projectValue?: unknown;
   resolvedValue: unknown;
+  /** Composed values only: each chunk, in order. */
+  chunks?: ChunkProvenance[];
+}
+
+export interface ResolvedAgentDefinition {
+  id: string;
+  scope: 'global' | 'project-extension' | 'project-standalone';
+  /** The global agent a project extension composes with. */
+  extends?: string;
+  config: AgentSettingsConfig;
+  fields: Record<string, FieldProvenance>;
 }
 
 export interface ResolvedLayerDefinition {
@@ -32,6 +62,7 @@ export interface ResolvedLayerDefinition {
 export interface ResolvedProjectView {
   config: FoundryConfig;
   layers: ResolvedLayerDefinition[];
+  agents: ResolvedAgentDefinition[];
 }
 
 function dedupe<T>(items: readonly T[]): T[] {
@@ -331,65 +362,223 @@ function browserField(
   };
 }
 
-function resolveAgentDefinition(
+const projectName = (projectId: string, project: ProjectSettingsConfig) =>
+  project.label || projectId;
+
+/** Concatenates chunks under a heading each; a single chunk stands alone. */
+export function composeChunks(chunks: ReadonlyArray<{ heading: string; text: string }>): string {
+  const present = chunks.filter((chunk) => chunk.text.trim());
+  if (present.length < 2) return present[0]?.text ?? '';
+  return present.map((chunk) => `## ${chunk.heading}\n\n${chunk.text.trim()}`).join('\n\n');
+}
+
+function globalAgent(id: string, agent: AgentSettingsConfig): ResolvedAgentDefinition {
+  const fields: Record<string, FieldProvenance> = {};
+  for (const [key, value] of Object.entries(agent))
+    if (key !== 'id')
+      fields[key] = {
+        origin: 'global',
+        strategy: 'inherit',
+        globalValue: value,
+        resolvedValue: value,
+      };
+  return { id, scope: 'global', config: agent, fields };
+}
+
+function standaloneAgent(
   id: string,
+  agent: AgentSettingsConfig,
   base: AgentSettingsConfig | undefined,
-  override: AgentSettingsOverride,
-): AgentSettingsConfig {
-  const scope = base ? 'agent-override' : 'agent-only';
-  const resolved: Partial<AgentSettingsConfig> = { id };
+): ResolvedAgentDefinition {
+  if (
+    typeof agent.kind !== 'string' ||
+    typeof agent.prompt !== 'string' ||
+    !Array.isArray(agent.visibleLayers) ||
+    !Array.isArray(agent.peers) ||
+    typeof agent.maxDepth !== 'number' ||
+    typeof agent.enabled !== 'boolean'
+  )
+    throw new Error(
+      `[config] project agent ${JSON.stringify(id)} is standalone and needs a full definition (kind, prompt, visibleLayers, peers, maxDepth, enabled), or "extends" a global agent`,
+    );
+  const config = { ...agent, id };
+  const fields: Record<string, FieldProvenance> = {};
+  for (const [key, value] of Object.entries(config))
+    if (key !== 'id')
+      fields[key] = {
+        origin: 'project',
+        strategy: base ? 'replace' : 'project-only',
+        ...(base ? { globalValue: (base as unknown as Record<string, unknown>)[key] } : {}),
+        projectValue: value,
+        resolvedValue: value,
+      };
+  return { id, scope: 'project-standalone', config, fields };
+}
 
-  resolved.kind = scalarField(base?.kind, override.kind, scope).value;
-  resolved.flowRole = scalarField(base?.flowRole, override.flowRole, scope).value;
-  resolved.domain = scalarField(base?.domain, override.domain, scope).value;
-  resolved.prompt = scalarField(base?.prompt, override.prompt, scope).value;
-  resolved.provider = scalarField(base?.provider, override.provider, scope).value;
-  resolved.model = scalarField(base?.model, override.model, scope).value;
-  resolved.temperature = scalarField(base?.temperature, override.temperature, scope).value;
-  resolved.visibleLayers =
-    listField(
-      base?.visibleLayers,
-      override.visibleLayers,
-      scope,
-      `project.agents.${id}.visibleLayers`,
-    ).value ?? [];
-  resolved.ownedLayers = listField(
-    base?.ownedLayers,
-    override.ownedLayers,
-    scope,
-    `project.agents.${id}.ownedLayers`,
-  ).value;
-  resolved.guardTriggers = listField(
-    base?.guardTriggers,
-    override.guardTriggers,
-    scope,
-    `project.agents.${id}.guardTriggers`,
-  ).value;
-  resolved.peers =
-    listField(base?.peers, override.peers, scope, `project.agents.${id}.peers`).value ?? [];
-  resolved.maxDepth = scalarField(base?.maxDepth, override.maxDepth, scope).value;
-  resolved.tools = scalarField(base?.tools, override.tools, scope).value;
-  resolved.thinking = scalarField(base?.thinking, override.thinking, scope).value;
-  resolved.permissions = scalarField(base?.permissions, override.permissions, scope).value;
-  resolved.executionEnv = scalarField(base?.executionEnv, override.executionEnv, scope).value;
-  resolved.browser = browserField(
-    base?.browser,
-    override.browser,
-    scope,
-    `project.agents.${id}.browser`,
-  ).value;
-  resolved.timeout = scalarField(base?.timeout, override.timeout, scope).value;
-  resolved.cacheControl = scalarField(base?.cacheControl, override.cacheControl, scope).value;
-  resolved.enabled = scalarField(base?.enabled, override.enabled, scope).value;
-  resolved.invocation = scalarField(base?.invocation, override.invocation, scope).value;
-  resolved.condition = conditionField(
-    base?.condition,
-    override.condition,
-    scope,
-    `project.agents.${id}.condition`,
-  ).value;
+/** A project agent extending a global one. Instructions compose here; domain knowledge on its layer. */
+function extendAgent(
+  id: string,
+  base: AgentSettingsConfig,
+  extension: AgentExtension,
+  projectId: string,
+  project: ProjectSettingsConfig,
+): ResolvedAgentDefinition {
+  const scope = 'agent-override';
+  const fields: Record<string, FieldProvenance> = {};
+  const resolved: AgentSettingsConfig = { ...base, id };
+  const label = `project.agents.${id}`;
+  const overrides = new Set(extension.override ?? []);
+  for (const chunk of overrides)
+    if (chunk !== 'instructions' && chunk !== 'domainKnowledge')
+      throw new Error(`[config] ${label}.override names unknown chunk ${JSON.stringify(chunk)}`);
+  if (overrides.has('instructions') && typeof extension.prompt !== 'string')
+    throw new Error(`[config] ${label} overrides instructions without a prompt`);
 
-  return resolved as AgentSettingsConfig;
+  const chunks: ChunkProvenance[] = [
+    ...(overrides.has('instructions')
+      ? []
+      : [
+          {
+            origin: 'global' as const,
+            from: extension.extends,
+            heading: `Global instructions (${extension.extends})`,
+            value: base.prompt,
+          },
+        ]),
+    ...(extension.prompt !== undefined
+      ? [
+          {
+            origin: 'project' as const,
+            from: projectId,
+            heading: `Project instructions (${projectName(projectId, project)})`,
+            value: extension.prompt,
+          },
+        ]
+      : []),
+  ];
+  resolved.prompt = composeChunks(
+    chunks.map((chunk) => ({ heading: chunk.heading, text: String(chunk.value) })),
+  );
+  fields.prompt = {
+    origin: chunks.every((chunk) => chunk.origin === 'global')
+      ? 'global'
+      : chunks.every((chunk) => chunk.origin === 'project')
+        ? 'project'
+        : 'merged',
+    strategy: overrides.has('instructions')
+      ? 'override'
+      : extension.prompt !== undefined
+        ? 'extend'
+        : 'inherit',
+    globalValue: base.prompt,
+    ...(extension.prompt !== undefined ? { projectValue: extension.prompt } : {}),
+    resolvedValue: resolved.prompt,
+    chunks,
+  };
+
+  const scalars = [
+    'provider',
+    'model',
+    'temperature',
+    'maxDepth',
+    'tools',
+    'thinking',
+    'permissions',
+    'executionEnv',
+    'timeout',
+    'cacheControl',
+    'enabled',
+    'invocation',
+    'description',
+  ] as const;
+  const target = resolved as unknown as Record<string, unknown>;
+  for (const key of scalars) {
+    const field = scalarField<unknown>(base[key], extension[key], scope);
+    if (field.value === undefined) delete target[key];
+    else target[key] = field.value;
+    fields[key] = field.provenance;
+  }
+  const visibleLayers = listField(
+    base.visibleLayers,
+    extension.visibleLayers,
+    scope,
+    `${label}.visibleLayers`,
+  );
+  resolved.visibleLayers = visibleLayers.value ?? [];
+  fields.visibleLayers = visibleLayers.provenance;
+  const guardTriggers = listField(
+    base.guardTriggers,
+    extension.guardTriggers,
+    scope,
+    `${label}.guardTriggers`,
+  );
+  if (guardTriggers.value === undefined) delete resolved.guardTriggers;
+  else resolved.guardTriggers = guardTriggers.value;
+  fields.guardTriggers = guardTriggers.provenance;
+  const peers = listField(base.peers, extension.peers, scope, `${label}.peers`);
+  resolved.peers = peers.value ?? [];
+  fields.peers = peers.provenance;
+  const browser = browserField(base.browser, extension.browser, scope, `${label}.browser`);
+  if (browser.value === undefined) delete resolved.browser;
+  else resolved.browser = browser.value;
+  fields.browser = browser.provenance;
+  const condition = conditionField(
+    base.condition,
+    extension.condition,
+    scope,
+    `${label}.condition`,
+  );
+  if (condition.value === undefined) delete resolved.condition;
+  else resolved.condition = condition.value;
+  fields.condition = condition.provenance;
+  return { id, scope: 'project-extension', extends: extension.extends, config: resolved, fields };
+}
+
+/** The extension's domain-knowledge chunks for the parent's owned layer, or undefined when it adds none. */
+function domainKnowledgeChunks(
+  extension: AgentExtension,
+  base: AgentSettingsConfig,
+  layer: LayerSettingsConfig | undefined,
+  projectId: string,
+  project: ProjectSettingsConfig,
+  label: string,
+): { layerId: string; chunks: LayerChunk[] } | undefined {
+  const override = extension.override?.includes('domainKnowledge') ?? false;
+  if (extension.domainKnowledge === undefined) {
+    if (override) throw new Error(`[config] ${label} overrides domainKnowledge without sources`);
+    return undefined;
+  }
+  if (
+    !Array.isArray(extension.domainKnowledge) ||
+    extension.domainKnowledge.some((id) => typeof id !== 'string' || !id)
+  )
+    throw new Error(`[config] ${label}.domainKnowledge must be source ids`);
+  const layerId = base.ownedLayers?.length === 1 ? base.ownedLayers[0] : undefined;
+  if (!layerId || !layer)
+    throw new Error(`[config] ${label} adds domain knowledge, but its parent owns no single layer`);
+  if (project.layers?.[layerId]?.sourceIds !== undefined)
+    throw new Error(
+      `[config] ${label} composes layer ${JSON.stringify(layerId)}; remove project.layers.${layerId}.sourceIds`,
+    );
+  return {
+    layerId,
+    chunks: [
+      ...(override
+        ? []
+        : [
+            {
+              origin: 'global' as const,
+              heading: `Global domain knowledge (${layerId})`,
+              sourceIds: [...layer.sourceIds],
+            },
+          ]),
+      {
+        origin: 'project' as const,
+        heading: `Project domain knowledge (${projectName(projectId, project)})`,
+        sourceIds: [...new Set(extension.domainKnowledge)],
+      },
+    ],
+  };
 }
 
 function resolveLayerDefinition(
@@ -481,17 +670,70 @@ export function resolveProjectView(
     projects: config.projects,
   };
 
-  if (project.agents) {
-    for (const [id, override] of Object.entries(project.agents)) {
-      resolved.agents[id] = resolveAgentDefinition(id, resolved.agents[id], override);
+  const agents = new Map<string, ResolvedAgentDefinition>(
+    Object.entries(config.agents).map(([id, agent]) => [id, globalAgent(id, agent)]),
+  );
+  const composed = new Map<string, { chunks: LayerChunk[]; agentId: string }>();
+  const extended = new Set<string>();
+  for (const [id, entry] of Object.entries(project.agents ?? {})) {
+    if (!isAgentExtension(entry)) {
+      agents.set(id, standaloneAgent(id, entry, config.agents[id]));
+      continue;
     }
+    const base = config.agents[entry.extends];
+    if (!base)
+      throw new Error(
+        `[config] project.agents.${id} extends ${JSON.stringify(entry.extends)}, which is not a global agent`,
+      );
+    if (extended.has(entry.extends))
+      throw new Error(`[config] two project agents extend ${JSON.stringify(entry.extends)}`);
+    extended.add(entry.extends);
+    // The extension is this project's version of its parent.
+    if (id !== entry.extends) agents.delete(entry.extends);
+    agents.set(id, extendAgent(id, base, entry, projectId, project));
+    const label = `project.agents.${id}`;
+    const knowledge = domainKnowledgeChunks(
+      entry,
+      base,
+      config.layers[base.ownedLayers?.[0] ?? ''],
+      projectId,
+      project,
+      label,
+    );
+    if (knowledge) composed.set(knowledge.layerId, { chunks: knowledge.chunks, agentId: id });
   }
+  resolved.agents = Object.fromEntries([...agents].map(([id, agent]) => [id, agent.config]));
 
   const layerIds = dedupe([...Object.keys(config.layers), ...Object.keys(project.layers ?? {})]);
-  const layers = layerIds.map((id) =>
-    resolveLayerDefinition(id, config.layers[id], project.layers?.[id]),
-  );
+  const layers = layerIds.map((id) => {
+    const layer = resolveLayerDefinition(id, config.layers[id], project.layers?.[id]);
+    const knowledge = composed.get(id);
+    if (!knowledge) return layer;
+    const sourceIds = dedupe(knowledge.chunks.flatMap((chunk) => chunk.sourceIds));
+    const composedLayer = { ...layer.config, sourceIds, chunks: knowledge.chunks };
+    const field: FieldProvenance = {
+      origin: knowledge.chunks.length > 1 ? 'merged' : 'project',
+      strategy: knowledge.chunks.length > 1 ? 'extend' : 'override',
+      globalValue: layer.config.sourceIds,
+      projectValue: knowledge.chunks.at(-1)!.sourceIds,
+      resolvedValue: sourceIds,
+      chunks: knowledge.chunks.map((chunk) => ({
+        origin: chunk.origin,
+        from: chunk.origin === 'global' ? id : projectId,
+        heading: chunk.heading,
+        value: chunk.sourceIds,
+      })),
+    };
+    const agent = agents.get(knowledge.agentId)!;
+    agent.fields.domainKnowledge = field;
+    return {
+      ...layer,
+      scope: 'project-override' as const,
+      config: composedLayer,
+      fields: { ...layer.fields, sourceIds: field },
+    };
+  });
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
-  return { config: resolved, layers };
+  return { config: resolved, layers, agents: [...agents.values()] };
 }

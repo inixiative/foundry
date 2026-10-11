@@ -20,7 +20,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-test('advisory guard findings are retained as audit-only memory; an operator correction stays pinned', async () => {
+test('advisory guard findings and operator corrections are retained as audit-only memory, never pinned', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-guard-finding-'));
   dirs.push(dir);
   const memory = new FileMemory(dir);
@@ -78,9 +78,13 @@ test('advisory guard findings are retained as audit-only memory; an operator cor
     DEFAULT_MEMORY_SELECTION,
     'Rename the onboarding banner copy',
   );
-  expect(text).toContain('OPERATOR-SENTINEL');
+  // A correction is captured, not applied: resolving it is an explicit step (docs/FEEDBACK-LOOP.md).
+  const correction = entries.find((e) => e.content.includes('OPERATOR-SENTINEL'));
+  expect(correction?.kind).toBe('correction');
+  expect(text).not.toContain('OPERATOR-SENTINEL');
   expect(text).not.toContain('ADVISORY-SENTINEL');
+  expect(report.selected.find((s) => s.kind === 'correction')).toBeUndefined();
+  expect(report.omitted.find((o) => o.id === correction!.id)?.reason).toBe('audit-only');
   expect(report.selected.find((s) => s.id === advisory!.id)).toBeUndefined();
   expect(report.omitted.find((o) => o.id === advisory!.id)?.reason).toBe('audit-only');
-  expect(report.selected.find((s) => s.kind === 'correction')?.reason).toBe('pinned');
 });

@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
-import { rename, rm, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import {
+  computeHash,
   type Harness,
   type LLMProvider,
   type MemorySelectionPolicy,
   newId,
+  type VersionEntry,
+  type VersionLog,
   validateMemorySelection,
 } from '@inixiative/foundry-core';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
@@ -172,11 +175,10 @@ export interface ProjectSettingsConfig {
    */
   prompts?: ProjectPrompts;
   /**
-   * Project-specific agent overrides (merged over global agents).
-   * Scalar fields override directly.
-   * List fields use explicit patch objects: { replace } or { append/remove }.
+   * Project agents. Each is standalone (a full definition, replacing any global agent of the same id)
+   * or `extends` a global agent. No entry: the global agent applies unchanged.
    */
-  agents?: Record<string, AgentSettingsOverride>;
+  agents?: Record<string, ProjectAgentSettings>;
   /**
    * Project-specific layer overrides (merged over global layers).
    * Scalar fields override directly.
@@ -269,10 +271,24 @@ export interface BrowserConfigOverride
   blockedUrls?: ListPatch<string>;
 }
 
+/**
+ * Kinds settings may declare. Classifiers, routers and executors are thread agents; the Cartographer
+ * and domain-advising Wardens (decider, domain-librarian) are runtime roles configured here. The
+ * Librarian is programmatic and the Herald is not wired, so neither takes settings.
+ */
+export const AGENT_KINDS = [
+  'executor',
+  'classifier',
+  'router',
+  'cartographer',
+  'decider',
+  'domain-librarian',
+] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
+
 export interface AgentSettingsConfig {
   id: string;
-  /** What kind of agent: executor, classifier, router, decider. */
-  kind: string;
+  kind: AgentKind;
   /** FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation. */
   flowRole?: string;
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
@@ -337,26 +353,44 @@ export interface AgentSettingsConfig {
   condition?: InvocationCondition;
 }
 
-export interface AgentSettingsOverride
+/** Instructions and domain knowledge are the two composable chunks of a project Warden. */
+export type AgentChunk = 'instructions' | 'domainKnowledge';
+
+/**
+ * A project agent composed with a global one. Instructions (`prompt`) and domain knowledge
+ * (`domainKnowledge`, sources for the parent's owned layer) are appended to the parent's under
+ * a heading per chunk; a chunk named in `override` replaces the parent's instead. Identity
+ * (kind, role, domain, owned layer) is the parent's; other fields override, lists patch.
+ */
+export interface AgentExtension
   extends Omit<
     Partial<AgentSettingsConfig>,
-    | 'visibleLayers'
+    | 'id'
+    | 'kind'
+    | 'flowRole'
+    | 'domain'
     | 'ownedLayers'
+    | 'visibleLayers'
     | 'guardTriggers'
     | 'peers'
     | 'browser'
     | 'condition'
-    | 'description'
   > {
-  /** Override description file path for this project. */
-  description?: string;
+  /** Global agent id. */
+  extends: string;
+  domainKnowledge?: string[];
+  override?: AgentChunk[];
   visibleLayers?: ListPatch<string>;
-  ownedLayers?: ListPatch<string>;
   guardTriggers?: ListPatch<string>;
   peers?: ListPatch<string>;
   browser?: BrowserConfigOverride | null;
   condition?: InvocationConditionOverride | null;
 }
+
+export type ProjectAgentSettings = AgentSettingsConfig | AgentExtension;
+
+export const isAgentExtension = (agent: ProjectAgentSettings): agent is AgentExtension =>
+  'extends' in agent;
 
 /**
  * Layer definition in settings — the blueprint for a domain's context layer.
@@ -395,6 +429,11 @@ export interface LayerSettingsConfig {
   /** Instruction prompt for this layer. */
   prompt: string;
   /**
+   * Set by project resolution, never saved: the layer's sources grouped under headings, when a
+   * project Warden composes its domain knowledge with its parent's.
+   */
+  chunks?: LayerChunk[];
+  /**
    * Semantic segment of the layer's CONTENT in the reading view. Optional: a
    * configured layer without it keeps the legacy id-based classification. Only
    * "domain-knowledge" (configured/published cache) or "thread-knowledge"
@@ -420,8 +459,15 @@ export interface LayerSettingsConfig {
   condition?: InvocationCondition;
 }
 
+/** One heading-labelled group of a composed layer's sources. */
+export interface LayerChunk {
+  readonly origin: 'global' | 'project';
+  readonly heading: string;
+  readonly sourceIds: string[];
+}
+
 export interface LayerSettingsOverride
-  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
+  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition' | 'chunks'> {
   sourceIds?: ListPatch<string>;
   writers?: ListPatch<string>;
   condition?: InvocationConditionOverride | null;
@@ -767,6 +813,10 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
     throw new Error(
       `invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`,
     );
+  if ((layer as { chunks?: unknown } | null | undefined)?.chunks !== undefined)
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: chunks come from project resolution, never settings`,
+    );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')
     throw new Error(
@@ -783,7 +833,28 @@ export function registerConfigValidator(validate: (config: FoundryConfig) => voi
   configValidators.push(validate);
 }
 
+/** Every declared agent has a kind something runs; Wardens are domain-advising. */
+function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentSettingsConfig>>) {
+  const cartographers = Object.values(agents).filter(
+    (agent) => agent.kind === 'cartographer' && agent.enabled !== false,
+  );
+  if (cartographers.length > 1) throw Error(`${owner}: at most one enabled cartographer`);
+  for (const [id, agent] of Object.entries(agents)) {
+    if (agent.kind === undefined) continue;
+    if (!(AGENT_KINDS as readonly string[]).includes(agent.kind))
+      throw Error(
+        `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${AGENT_KINDS.join(', ')})`,
+      );
+    if (
+      (agent.kind === 'decider' || agent.kind === 'domain-librarian') &&
+      agent.flowRole !== 'domain-advising'
+    )
+      throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
+  }
+}
+
 export function validateConfig(config: FoundryConfig): void {
+  validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
@@ -843,6 +914,11 @@ export function validateConfig(config: FoundryConfig): void {
       (project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {},
     ))
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
+  for (const projectId of Object.keys(config.projects ?? {}))
+    validateAgentKinds(
+      `project ${JSON.stringify(projectId)}`,
+      resolveProjectView(config, projectId)!.config.agents,
+    );
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
       if (!src || src.selection === undefined || src.selection === false) continue;
@@ -872,12 +948,64 @@ export class ConfigRevisionError extends Error {
 
 type ConfigDraft = (draft: FoundryConfig) => FoundryConfig | void;
 
+/** One settings definition before and after an edit. */
+export interface SettingsChange {
+  before: unknown;
+  after: unknown;
+}
+
+/** One line of the settings history: a versioned edit to one definition. */
+export interface SettingsEdit {
+  /** `agent:<id>`, `layer:<id>`, `source:<id>`, `provider:<id>`, `project:<id>` or `settings:<key>`. */
+  subject: string;
+  /** The store revision the edit produced. */
+  revision: number;
+  entry: VersionEntry<SettingsChange>;
+}
+
+export type SettingsListener = (config: FoundryConfig, edits: SettingsEdit[]) => unknown;
+
+const KEYED_SECTIONS: Record<string, string> = {
+  agents: 'agent',
+  layers: 'layer',
+  sources: 'source',
+  providers: 'provider',
+  projects: 'project',
+};
+
+/** Per-definition differences between two configurations. */
+export function settingsChanges(
+  before: FoundryConfig,
+  after: FoundryConfig,
+): Array<{ subject: string } & SettingsChange> {
+  const changes: Array<{ subject: string } & SettingsChange> = [];
+  const differ = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
+  const prior = before as unknown as Record<string, unknown>,
+    next = after as unknown as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(prior), ...Object.keys(next)])) {
+    const kind = KEYED_SECTIONS[key];
+    if (!kind) {
+      if (differ(prior[key], next[key]))
+        changes.push({ subject: `settings:${key}`, before: prior[key], after: next[key] });
+      continue;
+    }
+    const a = (prior[key] ?? {}) as Record<string, unknown>,
+      b = (next[key] ?? {}) as Record<string, unknown>;
+    for (const id of new Set([...Object.keys(a), ...Object.keys(b)]))
+      if (differ(a[id], b[id]))
+        changes.push({ subject: `${kind}:${id}`, before: a[id], after: b[id] });
+  }
+  return changes;
+}
+
 export class ConfigStore {
   private _dir: string;
   private _config: FoundryConfig;
   private _loaded = false;
   private _revision = 0;
   private _queue: Promise<unknown> = Promise.resolve();
+  private _listeners = new Set<SettingsListener>();
+  private _notified: Promise<void> = Promise.resolve();
 
   constructor(dir: string) {
     this._dir = resolve(dir);
@@ -918,12 +1046,52 @@ export class ConfigStore {
         } catch (err) {
           throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`);
         }
-        if (JSON.stringify(candidate) !== JSON.stringify(this._config)) this._revision++;
-        this._config = candidate;
+        if (JSON.stringify(candidate) !== JSON.stringify(this._config)) {
+          const previous = this._config;
+          this._revision++;
+          this._config = candidate;
+          // The first load reads the settings; a later one picks up an edit made to the file.
+          if (this._loaded) await this._record(previous, candidate, 'file');
+        }
       }
       this._loaded = true;
       return this._config;
     });
+  }
+
+  /** Called, in commit order, after each committed change. Returns an unsubscribe. */
+  onChange(listener: SettingsListener): () => void {
+    this._listeners.add(listener);
+    return () => this._listeners.delete(listener);
+  }
+
+  /** Resolves once every change listener has handled the changes committed so far. */
+  settled(): Promise<void> {
+    return this._notified;
+  }
+
+  /** Versioned edits, oldest first, grouped by subject; one subject when given. */
+  async history(subject?: string): Promise<VersionLog<SettingsChange>[]> {
+    let text = '';
+    try {
+      text = await readFile(join(this._dir, 'settings-history.jsonl'), 'utf8');
+    } catch {
+      return [];
+    }
+    const logs = new Map<string, VersionLog<SettingsChange>>();
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      const edit = JSON.parse(line) as SettingsEdit;
+      if (subject !== undefined && edit.subject !== subject) continue;
+      const log = logs.get(edit.subject) ?? {
+        subject: edit.subject,
+        scope: 'definition',
+        entries: [],
+      };
+      log.entries.push(edit.entry);
+      logs.set(edit.subject, log);
+    }
+    return [...logs.values()];
   }
 
   /** Current committed config. Read-only: change it through update/save/patch/deleteItem. */
@@ -1007,7 +1175,7 @@ export class ConfigStore {
       if (!agents[id]) {
         agents[id] = {
           id,
-          kind: agent.constructor.name.toLowerCase().replace('agent', ''),
+          kind: agent.constructor.name.toLowerCase().replace('agent', '') as AgentKind,
           prompt: agent.prompt ?? '',
           provider: agent.llm?.provider ?? this._config.defaults.provider,
           model: agent.llm?.model ?? this._config.defaults.model,
@@ -1076,9 +1244,47 @@ export class ConfigStore {
     } finally {
       await rm(temporary, { force: true });
     }
+    const previous = this._config;
     this._config = candidate;
     this._revision++;
+    await this._record(previous, candidate, 'user');
     return candidate;
+  }
+
+  /** Append the edits to the history, then notify listeners in order. */
+  private async _record(previous: FoundryConfig, next: FoundryConfig, author: string) {
+    const timestamp = new Date().toISOString();
+    const edits: SettingsEdit[] = settingsChanges(previous, next).map(
+      ({ subject, before, after }) => ({
+        subject,
+        revision: this._revision,
+        entry: {
+          hash: computeHash(JSON.stringify(after ?? null)),
+          timestamp,
+          trigger: 'settings',
+          author,
+          snapshot: { before, after },
+        },
+      }),
+    );
+    if (!edits.length) return;
+    try {
+      await appendFile(
+        join(this._dir, 'settings-history.jsonl'),
+        edits.map((edit) => JSON.stringify(edit)).join('\n') + '\n',
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      console.warn(`[settings] history not written: ${(error as Error).message}`);
+    }
+    const config = structuredClone(next);
+    for (const listener of this._listeners)
+      this._notified = this._notified
+        .then(() => listener(config, edits))
+        .then(
+          () => undefined,
+          (error) => console.warn(`[settings] change not applied: ${(error as Error).message}`),
+        );
   }
 }
 

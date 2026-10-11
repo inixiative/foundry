@@ -149,7 +149,7 @@ for (const change of ['classifier-api', 'project-api', 'agent-model', 'project-m
         f.c.agents.classifier.provider = 'openai';
         break;
       case 'project-api':
-        f.c.projects.project.agents = { router: { provider: 'openai' } };
+        f.c.projects.project.agents = { router: { extends: 'router', provider: 'openai' } };
         break;
       case 'agent-model':
         f.c.agents.router.model = 'gpt-5.6-luna';

@@ -482,6 +482,20 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     return c.json({ projectId: id, layers });
   });
 
+  // Each agent's resolved definition, with where every composed chunk came from.
+  app.get('/api/projects/:id/resolved/agents', async (c) => {
+    const id = c.req.param('id');
+    await configStore.load();
+    const view = configStore.resolveProjectView(id);
+    if (!view) return c.json({ error: 'project not found' }, 404);
+    return c.json({ projectId: id, agents: view.agents });
+  });
+
+  app.get('/api/settings/history', async (c) => {
+    await configStore.load();
+    return c.json({ history: await configStore.history(c.req.query('subject') || undefined) });
+  });
+
   // -- Browse filesystem (for project folder + file picker) --
 
   app.get('/api/browse', async (c) => {

@@ -10,7 +10,12 @@ import {
   type SubscriptionWorker,
   subscriptionWorker,
 } from '../models/registry';
-import type { AgentSettingsConfig, AgentSettingsOverride, FoundryConfig } from '../viewer/config';
+import {
+  type AgentSettingsConfig,
+  type FoundryConfig,
+  isAgentExtension,
+  type ProjectAgentSettings,
+} from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
 import { assertPrivateProfile, assertProfile } from './private-profile';
@@ -40,27 +45,20 @@ export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
  * overrides) runs on a main-thread lab. Whether it runs here is the mode's concern: `resolveSubscriptionPolicy`. */
 export function assertMainThreadLabs(config: FoundryConfig): void {
   const providers = [config.defaults.provider];
-  const executors = (
-    agents: Record<string, Partial<AgentSettingsConfig>> | undefined,
-    fallback: string,
-    inherited?: Record<string, AgentSettingsConfig>,
-  ) => {
-    for (const [id, agent] of Object.entries(agents ?? {}))
-      if (
-        (agent.kind ?? inherited?.[id]?.kind) === 'executor' &&
-        (agent.enabled ?? inherited?.[id]?.enabled) !== false
-      )
-        providers.push(agent.provider ?? inherited?.[id]?.provider ?? fallback);
-  };
-  executors(config.agents, config.defaults.provider);
+  for (const agent of Object.values(config.agents))
+    if (agent.kind === 'executor' && agent.enabled !== false)
+      providers.push(agent.provider ?? config.defaults.provider);
   for (const project of Object.values(config.projects ?? {})) {
     const fallback = project.defaults?.provider ?? config.defaults.provider;
     providers.push(fallback);
-    executors(
-      project.agents as Record<string, Partial<AgentSettingsConfig>>,
-      fallback,
-      config.agents,
-    );
+    for (const agent of Object.values(project.agents ?? {})) {
+      const inherited = isAgentExtension(agent) ? config.agents[agent.extends] : undefined;
+      if (
+        (inherited?.kind ?? (agent as AgentSettingsConfig).kind) === 'executor' &&
+        (agent.enabled ?? inherited?.enabled) !== false
+      )
+        providers.push(agent.provider ?? inherited?.provider ?? fallback);
+    }
   }
   for (const provider of providers) {
     // Unregistered ids are adapters supplied in code (tests, Oracle); only registered labs are classified.
@@ -284,11 +282,11 @@ function routeDecisions(
   const route = (
     scope: string,
     id: string,
-    agent: Pick<AgentSettingsOverride, 'kind' | 'enabled' | 'provider' | 'model'>,
+    agent: ProjectAgentSettings,
     inherited?: AgentSettingsConfig,
   ) => {
     if (
-      (agent.kind ?? inherited?.kind) === 'executor' ||
+      (inherited?.kind ?? (agent as AgentSettingsConfig).kind) === 'executor' ||
       (agent.enabled ?? inherited?.enabled) === false
     )
       return;
@@ -317,7 +315,12 @@ function routeDecisions(
         classifierModel: decisionModel,
       };
     for (const [id, agent] of Object.entries(project.agents ?? {}))
-      route(`${projectId}/`, id, agent, config.agents[id]);
+      route(
+        `${projectId}/`,
+        id,
+        agent,
+        isAgentExtension(agent) ? config.agents[agent.extends] : undefined,
+      );
   }
   return { config: effective, rerouted };
 }

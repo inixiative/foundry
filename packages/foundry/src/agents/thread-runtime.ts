@@ -23,9 +23,10 @@ import type { SessionAdapter } from '../providers/session-adapter';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { Cartographer } from './cartographer';
-import { resolveThreadDomains } from './configured-experts';
+import { cartographerInstructions, resolveThreadDomains } from './configured-experts';
 import {
   DomainLibrarian,
+  isThreadKnowledgeLayerId,
   type KnowledgeEvidence,
   type LearningRecord,
   type PhaseRequestEvidence,
@@ -273,6 +274,11 @@ export interface ThreadRuntime {
   reconcileReviewCapacity(domain: string): boolean;
   /** Exact retained job inspection only. Never admits queued/replacement work. */
   reconcileNativeReview(domain: string, jobId: string): Promise<boolean>;
+  /**
+   * Apply edited settings from the next turn: Cartographer and Warden instructions and Warden guard
+   * triggers. Returns what only a new thread picks up (added, removed or remapped Wardens).
+   */
+  reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[];
   dispose(): void;
 }
 
@@ -582,6 +588,42 @@ export class ThreadRuntimeManager {
     };
   }
 
+  /**
+   * Settings changed: future threads attach with `config`; live threads take the new instructions on
+   * their next turn. Returns per-thread changes that need a new thread.
+   */
+  reconfigure(config: FoundryConfig): string[] {
+    this._deps = { ...this._deps, config };
+    const deferred: string[] = [];
+    for (const runtime of this._runtimes.values()) {
+      const projectId = runtime.thread.meta.projectId;
+      const view = structuredClone(
+        (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config,
+      );
+      try {
+        const domains = resolveThreadDomains(
+          view,
+          new Map(
+            runtime.thread.stack.layers
+              .filter((l) => !isThreadKnowledgeLayerId(l.id))
+              .map((l) => [l.id, l]),
+          ),
+          {
+            legacy: this._deps.domains ?? this._deps.legacyDomains ?? DEFAULT_THREAD_DOMAINS,
+            llm: this._deps.llm,
+            providers: this._deps.providers,
+            learning: this._deps.learning,
+          },
+        );
+        for (const change of runtime.reconfigure(view, domains))
+          deferred.push(`${runtime.thread.id}: ${change}`);
+      } catch (error) {
+        deferred.push(`${runtime.thread.id}: ${(error as Error).message}`);
+      }
+    }
+    return deferred;
+  }
+
   dispose(threadId: string): boolean {
     const runtime = this._runtimes.get(threadId);
     if (!runtime) return false;
@@ -713,6 +755,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       signals,
       llm: scopedProvider(deps.llm, { threadId: cartographerId, cwd }),
       llmOpts: { maxTokens: 256, temperature: 0 },
+      routePrompt: cartographerInstructions(deps.config),
       atlasRoot: deps.atlasRoot,
     });
     this.cartographer.buildMap();
@@ -2507,6 +2550,24 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     };
   }
 
+  reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[] {
+    if (this._disposed) return [];
+    this.cartographer.setRoutePrompt(cartographerInstructions(config));
+    const deferred: string[] = [];
+    const next = new Set<string>();
+    for (const dc of domains) {
+      next.add(dc.domain);
+      const lib = this.domainLibrarians.get(dc.domain);
+      if (!lib || lib.cache !== this.thread.stack.getLayer(dc.layerId)) {
+        deferred.push(`Warden ${dc.domain} applies to new threads`);
+        continue;
+      }
+      lib.reconfigure(dc);
+    }
+    for (const domain of this.domainLibrarians.keys())
+      if (!next.has(domain)) deferred.push(`Warden ${domain} stays until the thread is replaced`);
+    return deferred;
+  }
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
