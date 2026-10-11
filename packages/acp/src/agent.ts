@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import {
   type AgentContext,
   agent,
@@ -30,6 +31,8 @@ export interface FoundryAgentOptions {
   startDaemon?: () => Promise<unknown>;
   /** How long to wait for a started daemon to answer. */
   daemonWaitMs?: number;
+  /** How long in-flight turns wait for an unreachable daemon before they fail. */
+  daemonLostMs?: number;
   version?: string;
   log?: (message: string) => void;
 }
@@ -40,15 +43,17 @@ interface Session {
   readonly turns: Map<string, TurnProjection>;
   /** Updates go out one at a time, in order, before the prompt they belong to answers. */
   outbox: Promise<void>;
-  /** Streams held for this session on the shared socket. */
-  held: boolean;
+  /** This session's thread and flow streams on a socket: shared by every request that needs them. */
+  holding: { streams: DataStreamClient; ready: Promise<void> } | null;
 }
 
 interface Daemon {
   launch: AcpLaunch;
   http: FoundryClient;
-  streams: DataStreamClient;
+  readonly streams: DataStreamClient;
 }
+
+const DAEMON_LOST_MS = 30_000;
 
 type ThreadPayload =
   | TurnAppend
@@ -75,6 +80,15 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   let client: AgentContext | null = null;
   let clientName = 'unknown';
 
+  const lostMs = options.daemonLostMs ?? DAEMON_LOST_MS;
+  const lose = () => {
+    for (const session of sessions.values())
+      for (const turn of session.turns.values())
+        turn.lost(
+          `Lost the connection to the Foundry daemon for ${lostMs / 1000}s; the turn's outcome is in its thread journal.`,
+        );
+  };
+
   const attach = async (): Promise<Daemon> => {
     const launch = readAcpLaunch(launchPath);
     const http = new FoundryClient(launch);
@@ -82,24 +96,43 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       // An unhealthy daemon still answers; only an unreachable one is down.
       if (isNetworkFailure(error)) throw error;
     });
-    if (
-      daemon &&
-      daemon.launch.endpoint === launch.endpoint &&
-      daemon.launch.capability === launch.capability
-    )
+    // Same daemon origin: the socket re-reads the bearer whenever it reconnects.
+    if (daemon && daemon.launch.endpoint === launch.endpoint) {
+      daemon.launch = launch;
+      daemon.http = http;
       return daemon;
+    }
     daemon?.streams.dispose();
-    for (const session of sessions.values()) session.held = false;
+    let lostTimer: ReturnType<typeof setTimeout> | undefined;
     const streams = new DataStreamClient({
       endpoint: launch.endpoint,
       capability: launch.capability,
+      refreshCapability: () => {
+        try {
+          return readAcpLaunch(launchPath).capability;
+        } catch {
+          return undefined;
+        }
+      },
       onStatus: (state) => {
-        if (state === 'reconnecting') log('daemon socket dropped; reconnecting');
+        if (state === 'open') {
+          clearTimeout(lostTimer);
+          lostTimer = undefined;
+        } else if (state === 'closed' && daemon?.streams === streams) {
+          log('daemon socket dropped; reconnecting');
+          // Only the socket in use can lose turns; a replaced one is disposed and ignored.
+          lostTimer ??= setTimeout(() => {
+            if (daemon?.streams === streams) lose();
+          }, lostMs);
+        }
       },
     });
     await streams.connect();
-    daemon = { launch, http, streams };
-    return daemon;
+    const attached: Daemon = { launch, http, streams };
+    daemon = attached;
+    // Sessions with turns in flight follow the daemon to its new origin.
+    for (const session of sessions.values()) if (session.turns.size) await hold(session, attached);
+    return attached;
   };
 
   /** The running daemon, started through launchd when it is down. */
@@ -157,8 +190,17 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   };
 
   /** Hold the session's thread and flow streams; every live turn of the session reads them. */
-  const hold = async (session: Session, foundry: Daemon) => {
-    if (session.held) return;
+  const hold = (session: Session, foundry: Daemon): Promise<void> => {
+    if (session.holding?.streams === foundry.streams) return session.holding.ready;
+    const ready = openStreams(session, foundry).catch((error) => {
+      if (session.holding?.ready === ready) session.holding = null;
+      throw error;
+    });
+    session.holding = { streams: foundry.streams, ready };
+    return ready;
+  };
+
+  const openStreams = async (session: Session, foundry: Daemon) => {
     const forTurn = (turnId: string) => session.turns.get(turnId);
     await foundry.streams.open(`thread:${session.threadId}`, {
       snapshot: (payload) => {
@@ -175,6 +217,11 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           return forTurn(frame.turnId)?.activity(frame.row, frame.appended);
         forTurn(frame.turnId)?.terminal(frame.kind, frame.result);
       },
+      rejected: () => {
+        session.holding = null;
+        for (const turn of session.turns.values())
+          turn.lost('Foundry no longer holds this thread (the daemon restarted without it).');
+      },
     });
     await foundry.streams.open(`flow:${session.threadId}`, {
       snapshot: (payload) => {
@@ -187,7 +234,6 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         for (const turn of session.turns.values()) turn.flowTurn(frame.turn);
       },
     });
-    session.held = true;
   };
 
   const bind = async (thread: ThreadJSON, cwd: string): Promise<Session> => {
@@ -198,7 +244,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       cwd,
       turns: new Map(),
       outbox: Promise.resolve(),
-      held: false,
+      holding: null,
     };
     session.cwd = cwd;
     sessions.set(thread.threadId, session);
@@ -250,7 +296,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     .onRequest('session/resume', async (ctx) => {
       const foundry = await ensureDaemon().catch(httpError);
       let thread = await foundry.http.thread(ctx.params.sessionId).catch(httpError);
-      if (ctx.params.cwd && thread.meta.cwd !== ctx.params.cwd)
+      if (isAbsolute(ctx.params.cwd) && thread.meta.cwd !== ctx.params.cwd)
         thread = await foundry.http
           .updateThread(thread.threadId, { worktreePath: ctx.params.cwd })
           .catch(httpError);

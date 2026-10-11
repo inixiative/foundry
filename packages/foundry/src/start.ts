@@ -755,7 +755,7 @@ const viewer = await startViewer({
   acpCapability: acpLaunch?.capability,
 });
 
-console.log(`Viewer: http://localhost:${port}`);
+console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {
   try {
     writeAcpLaunch(acpLaunch.path, {

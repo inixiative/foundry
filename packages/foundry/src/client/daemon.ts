@@ -7,6 +7,9 @@ export const DAEMON_LABEL = 'com.inixiative.foundry';
 
 export const daemonPlistPath = (home = homedir()) =>
   join(home, 'Library', 'LaunchAgents', `${DAEMON_LABEL}.plist`);
+/** The user's launchd GUI domain, and the daemon's service target in it. */
+export const daemonDomain = () => `gui/${process.getuid?.() ?? 501}`;
+export const daemonTarget = () => `${daemonDomain()}/${DAEMON_LABEL}`;
 
 async function launchctl(args: string[]): Promise<{ code: number; output: string }> {
   const proc = Bun.spawn(['launchctl', ...args], { stdout: 'pipe', stderr: 'pipe' });
@@ -24,8 +27,8 @@ async function launchctl(args: string[]): Promise<{ code: number; output: string
  * Throws when no LaunchAgent is installed.
  */
 export async function startDaemon(): Promise<'kickstarted' | 'bootstrapped'> {
-  const domain = `gui/${process.getuid?.() ?? 501}`;
-  const target = `${domain}/${DAEMON_LABEL}`;
+  const domain = daemonDomain();
+  const target = daemonTarget();
   if ((await launchctl(['print', target])).code === 0) {
     const kick = await launchctl(['kickstart', target]);
     if (kick.code !== 0) throw Error(`launchctl kickstart failed: ${kick.output.slice(0, 200)}`);

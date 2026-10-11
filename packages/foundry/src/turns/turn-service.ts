@@ -24,9 +24,10 @@ import type { ViewerThreadDirectory } from '../viewer/thread-directory';
 import { createSerializedQueue, type SerializedQueue } from '../ws/serialized-queue';
 
 /**
- * The one turn path. Every turn, from the viewer, an ACP host or an Oracle run, is accepted,
- * queued on its thread, run through the thread's Harness, settled and persisted here. Routes are
- * thin callers.
+ * The one turn path for messages: viewer sends and ACP prompts (and Oracle, when it drives turns
+ * through the daemon) are accepted, queued on their thread, run through the thread's Harness,
+ * settled and persisted here. Routes are thin callers. Operator `agent:dispatch` actions are
+ * direct agent dispatches, not turns, and do not pass through here.
  *
  * A turn is accepted durably before it runs. A thread runs one turn at a time: a turn sent to a
  * busy thread waits in that thread's queue. A stop cancels a turn that has not reached native
@@ -77,8 +78,14 @@ export type TurnAcceptance =
     }
   | { ok: false; status: 404 | 409 | 503; body: Record<string, unknown> };
 
-/** `cancelled`: stopped before it ran. `requested`: it stops at native dispatch if it has not reached it. */
-export type InterruptOutcome = NativeInterruptOutcome | 'cancelled' | 'requested';
+/**
+ * `cancelled`: a queued turn, settled now without running. `requested`: a running turn not yet
+ * natively admitted; it is refused at native preflight or registration, before anything is sent
+ * (an executor that never seeks native admission runs to its end).
+ * `unsupported`: admitted on a runtime that cannot stop a turn; it runs to its end. Otherwise the
+ * runtime's own answer.
+ */
+export type InterruptOutcome = NativeInterruptOutcome | 'cancelled' | 'requested' | 'unsupported';
 export type InterruptResult =
   | { ok: true; outcome: InterruptOutcome }
   | { ok: false; status: 404 | 409; error: string };
@@ -87,8 +94,14 @@ interface LiveTurn {
   readonly threadId: string;
   phase: 'queued' | 'running' | 'settled';
   cancelRequested: boolean;
+  /** The executor's native admission is registered: native work is being sent. */
+  admitted: boolean;
+  /** The executor's native turn reached its terminal. */
+  nativeSettled: boolean;
   interrupt?: NativeInterrupt;
   stopping?: Promise<NativeInterruptOutcome>;
+  /** Settle a queued turn now, without running it. */
+  cancelQueued(): void;
 }
 
 const STOP_TIMEOUT_MS = 5_000;
@@ -213,11 +226,27 @@ export class TurnService {
       this.queues.set(threadId, queue);
     }
     const queued = queue.size() > 0;
-    const state: LiveTurn = { threadId, phase: 'queued', cancelRequested: false };
+    let resolveSettled!: (outcome: TurnOutcome) => void;
+    const settled = new Promise<TurnOutcome>((resolve) => {
+      resolveSettled = resolve;
+    });
+    const state: LiveTurn = {
+      threadId,
+      phase: 'queued',
+      cancelRequested: false,
+      admitted: false,
+      nativeSettled: false,
+      cancelQueued: () =>
+        resolveSettled(this.cancelBeforeStart(harness.thread, turnId, buffer, clientId)),
+    };
     this.live.set(turnId, state);
     const thread = queue;
-    const settled = thread
-      .run(() => this.run(harness, state, turnId, payload, buffer, clientId))
+    void thread
+      .run(async () => {
+        // A queued turn cancelled while it waited has already settled.
+        if (state.phase !== 'settled')
+          resolveSettled(await this.run(harness, state, turnId, payload, buffer, clientId));
+      })
       .finally(() => {
         state.phase = 'settled';
         this.live.delete(turnId);
@@ -238,12 +267,20 @@ export class TurnService {
     }
     if (state.phase === 'settled') return { ok: false, status: 409, error: 'turn is not running' };
     state.cancelRequested = true;
-    if (state.phase === 'queued') return { ok: true, outcome: 'cancelled' };
-    if (!state.interrupt) return { ok: true, outcome: 'requested' };
-    return { ok: true, outcome: await this.stop(state) };
+    if (state.phase === 'queued') {
+      state.phase = 'settled';
+      this.live.delete(turnId);
+      state.cancelQueued();
+      return { ok: true, outcome: 'cancelled' };
+    }
+    if (state.interrupt) return { ok: true, outcome: await this.stop(state) };
+    return { ok: true, outcome: state.admitted ? 'unsupported' : 'requested' };
   }
 
-  /** Ask the runtime to stop, retrying while the admission has not yet been written. */
+  /**
+   * Ask the runtime to stop, retrying while the admission is registered but not yet written. A
+   * stop that was not acknowledged can be asked again.
+   */
   private stop(state: LiveTurn): Promise<NativeInterruptOutcome> {
     state.stopping ??= (async () => {
       const deadline = Date.now() + STOP_TIMEOUT_MS;
@@ -251,12 +288,47 @@ export class TurnService {
         const outcome = await state.interrupt!({
           timeoutMs: Math.max(1, deadline - Date.now()),
         }).catch(() => 'unacknowledged' as const);
-        if (outcome !== 'no-turn' || state.phase === 'settled' || Date.now() >= deadline)
+        if (
+          outcome !== 'no-turn' ||
+          state.nativeSettled ||
+          state.phase === 'settled' ||
+          Date.now() >= deadline
+        )
           return outcome;
         await Bun.sleep(50);
       }
-    })();
+    })().finally(() => {
+      state.stopping = undefined;
+    });
     return state.stopping;
+  }
+
+  /** A queued turn cancelled while it waited: journalled failed with cancelled evidence; nothing ran. */
+  private cancelBeforeStart(
+    thread: Thread,
+    turnId: string,
+    buffer: StreamBuffer,
+    clientId?: string,
+  ): TurnOutcome {
+    const evidence = this.recordFailure(
+      thread,
+      turnId,
+      CANCELLED_BEFORE_START,
+      undefined,
+      '',
+      true,
+    );
+    this.publishTerminal(thread.id, clientId, turnId, 'error', {
+      id: turnId,
+      threadId: thread.id,
+      error: CANCELLED_BEFORE_START,
+      cancelled: true,
+      ...evidence,
+    });
+    buffer.fail(CANCELLED_BEFORE_START, { id: turnId, error: CANCELLED_BEFORE_START, ...evidence });
+    this.deps.streams.turns.drop(turnId);
+    this.deps.streams.threadsChanged(thread.id);
+    return { kind: 'failed', error: CANCELLED_BEFORE_START, evidence, cancelled: true };
   }
 
   private journalChanged(thread: Thread, turnId: string): boolean {
@@ -314,13 +386,22 @@ export class TurnService {
         if (!localStore) throw Error('Native admission requires an available ownership journal');
         localStore.assertNativeCapacity(thread, owner);
       },
+      // Registration precedes the native write, so a stop that arrived while the session was
+      // starting refuses the admission here and nothing is sent.
       register: (evidence: NativeEvidence) => {
+        if (state.cancelRequested) throw Error(CANCELLED_BEFORE_DISPATCH);
         if (!localStore) throw Error('Native admission requires an available ownership journal');
         localStore.registerNative(thread, evidence);
+        if (evidence.owner?.providerSessionKey === thread.id) state.admitted = true;
         if (evidence.owner?.messageId)
           streams.turns.get(evidence.owner.messageId)?.register(evidence);
       },
       observe: (evidence: NativeEvidence) => {
+        if (
+          evidence.owner?.providerSessionKey === thread.id &&
+          evidence.nativeOutcome !== 'unknown'
+        )
+          state.nativeSettled = true;
         if (evidence.owner?.messageId)
           streams.turns.get(evidence.owner.messageId)?.observe(evidence);
         localStore?.appendNative(thread, evidence);
@@ -586,7 +667,8 @@ export class TurnService {
         ...evidence,
       });
       buffer.fail(msg, { id: turnId, error: msg, ...evidence });
-      this.observeFailure(msg);
+      // A stop someone asked for is not a harness failure.
+      if (!cancelled) this.observeFailure(msg);
       return { kind: 'failed', error: msg, evidence, cancelled };
     } finally {
       this.deps.streams.turns.drop(turnId);

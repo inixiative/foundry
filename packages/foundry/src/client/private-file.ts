@@ -51,11 +51,10 @@ export function readPrivateJson(path: string, label: string): Record<string, unk
 }
 
 /**
- * Replace a private JSON file atomically: a fresh 0600 file beside it (never through a symlink),
- * renamed over the old one. The directory is created 0700 when missing.
+ * Replace a file atomically with private content: a fresh 0600 file beside it, created exclusively
+ * and never through a symlink, renamed over the old one.
  */
-export function writePrivateJson(path: string, value: Record<string, unknown>): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+export function writePrivateFile(path: string, content: string): void {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   const fd = openSync(
     temporary,
@@ -63,7 +62,7 @@ export function writePrivateJson(path: string, value: Record<string, unknown>): 
     0o600,
   );
   try {
-    writeSync(fd, JSON.stringify(value));
+    writeSync(fd, content);
   } finally {
     closeSync(fd);
   }
@@ -73,4 +72,10 @@ export function writePrivateJson(path: string, value: Record<string, unknown>): 
     rmSync(temporary, { force: true });
     throw error;
   }
+}
+
+/** A private JSON file, its directory created 0700 when missing. */
+export function writePrivateJson(path: string, value: Record<string, unknown>): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writePrivateFile(path, JSON.stringify(value));
 }

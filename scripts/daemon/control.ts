@@ -10,16 +10,21 @@ import { resolve } from 'node:path';
  *   bun run daemon:logs       bun run daemon:uninstall
  */
 import { $ } from 'bun';
+import {
+  daemonDomain,
+  daemonPlistPath,
+  daemonTarget,
+} from '../../packages/foundry/src/client/daemon';
 import { installLocations, resolveDaemonPath } from './agent-clis';
-import { buildPlist, DAEMON_LABEL } from './plist';
+import { buildPlist } from './plist';
 import { checkReadiness } from './ready';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const home = homedir();
-const plistPath = `${home}/Library/LaunchAgents/${DAEMON_LABEL}.plist`;
+const plistPath = daemonPlistPath(home);
 const logDir = `${home}/Library/Logs/foundry`;
-const target = `gui/${process.getuid?.() ?? 501}/${DAEMON_LABEL}`;
-const domain = `gui/${process.getuid?.() ?? 501}`;
+const target = daemonTarget();
+const domain = daemonDomain();
 
 const ok = (message: string) => console.log(`✓ ${message}`);
 const info = (message: string) => console.log(`  ${message}`);

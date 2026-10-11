@@ -1,14 +1,6 @@
-import {
-  lstatSync,
-  mkdirSync,
-  readlinkSync,
-  renameSync,
-  rmSync,
-  symlinkSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, readlinkSync, renameSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { writePrivateFile } from '../client/private-file';
 import { isDefaultProfile } from './default-profiles';
 
 function assertPrivateDirectory(directory: string): void {
@@ -76,7 +68,7 @@ export function assertProfile(directory: string, runtime: 'claude' | 'codex'): v
 
 export function writeProfileConfiguration(directory: string, path: string, content: string): void {
   assertPrivateProfile(directory);
-  writeAtomically(directory, path, content);
+  writePrivateFile(path, content);
 }
 
 /** A Foundry-owned CODEX_HOME holding Foundry's config and the profile's `auth.json` by link, never by copy:
@@ -85,7 +77,7 @@ export function writeProfileConfiguration(directory: string, path: string, conte
 export function writeCredentialHome(home: string, profile: string, config: string): void {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   assertPrivateDirectory(home);
-  writeAtomically(home, join(home, 'config.toml'), config);
+  writePrivateFile(join(home, 'config.toml'), config);
   const link = join(home, 'auth.json'),
     target = join(profile, 'auth.json');
   try {
@@ -99,17 +91,6 @@ export function writeCredentialHome(home: string, profile: string, config: strin
     renameSync(temporary, link);
   } catch (error) {
     unlinkSync(temporary);
-    throw error;
-  }
-}
-
-function writeAtomically(directory: string, path: string, content: string): void {
-  const temporary = join(directory, `.config-${crypto.randomUUID()}`);
-  try {
-    writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
-    renameSync(temporary, path);
-  } catch (error) {
-    rmSync(temporary, { force: true });
     throw error;
   }
 }

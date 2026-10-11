@@ -6,7 +6,7 @@
 
 export type { TurnTerminal } from '../viewer/data-streams';
 export type { LiveActivity, StreamBufferSnapshot, TurnAppend } from '../viewer/stream-buffer';
-export { DAEMON_LABEL, daemonPlistPath, startDaemon } from './daemon';
+export { DAEMON_LABEL, daemonDomain, daemonPlistPath, daemonTarget, startDaemon } from './daemon';
 export {
   DataStreamClient,
   type DataStreamClientOptions,

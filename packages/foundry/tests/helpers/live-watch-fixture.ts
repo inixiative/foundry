@@ -25,7 +25,7 @@ export async function until(check: () => unknown | Promise<unknown>, label: stri
 }
 /** Controlled normalized public Claude/Codex events; no native process or invented receipt.
  * Real provider, factory/runtime, file-backed journal and actual viewer HTTP entry. */
-export async function liveWatchFixture(dir: string) {
+export async function liveWatchFixture(dir: string, options: { interruptible?: boolean } = {}) {
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, 'P'));
   const attempts: any[] = [],
@@ -75,15 +75,18 @@ export async function liveWatchFixture(dir: string) {
           listeners.clear();
         },
         // Claude's control-protocol stop: acknowledged once the dispatched turn reaches its own (failed) terminal.
-        async interruptNative() {
-          const a = attempts.find(
-            (a) => a.session === s && !a.done && a.native.dispatch === 'attempted',
-          );
-          if (!a) return 'no-turn';
-          interrupts.push(a.native.admissionId);
-          a.finish(true);
-          return 'acknowledged';
-        },
+        interruptNative:
+          options.interruptible === false
+            ? undefined
+            : async () => {
+                const a = attempts.find(
+                  (a) => a.session === s && !a.done && a.native.dispatch === 'attempted',
+                );
+                if (!a) return 'no-turn';
+                interrupts.push(a.native.admissionId);
+                a.finish(true);
+                return 'acknowledged';
+              },
         async send(_prompt: string, opts: any) {
           let finish!: () => void, reject!: (error: Error) => void;
           const hold = new Promise<void>((r, j) => {
@@ -141,7 +144,15 @@ export async function liveWatchFixture(dir: string) {
             },
           };
           attempts.push(a);
-          await opts.onAdmission?.(structuredClone(native));
+          try {
+            await opts.onAdmission?.(structuredClone(native));
+          } catch (error) {
+            // A refused registration is a local rejection before the write, as agent-session reports it.
+            native.localOutcome = 'rejected';
+            native.localFailure = 'registration';
+            a.done = true;
+            throw Object.assign(error as Error, { attempt: structuredClone(native) });
+          }
           native.dispatch = 'attempted';
           if (closing) a.finish();
           await hold;
@@ -282,7 +293,8 @@ export async function liveWatchFixture(dir: string) {
             viewer.localStore!.nativeHistory(t.id, id),
           ),
         );
-      for (const a of attempts) {
+      // A refused registration never owned anything to clean up.
+      for (const a of attempts.filter((a) => a.native.localFailure !== 'registration')) {
         const e = history.find((e) => e.admissionId === a.native.admissionId && e.owner);
         if (!e?.owner) throw Error('Missing original cleanup owner');
         await until(async () => {

@@ -99,13 +99,21 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
 
   const updates = paseo.updates(sessionId);
   const contextId = updates[0].sessionUpdate === 'tool_call' ? updates[0].toolCallId : '';
-  expect(updates.map(shape)).toEqual([
-    { call: contextId, kind: 'think', status: 'in_progress' },
+  // The context item opens first and completes exactly once, once output starts (its journal read is asynchronous).
+  expect(shape(updates[0])).toEqual({ call: contextId, kind: 'think', status: 'in_progress' });
+  expect(
+    updates.filter((u) => u.sessionUpdate === 'tool_call_update' && u.toolCallId === contextId),
+  ).toHaveLength(1);
+  expect(
+    updates
+      .slice(1)
+      .filter((u) => !('toolCallId' in u) || u.toolCallId !== contextId)
+      .map(shape),
+  ).toEqual([
     { chunk: 'Reading ' },
     { chunk: 'now.' },
     { call: expect.stringContaining(':tool:c1'), kind: 'read', status: 'in_progress' },
     { update: expect.stringContaining(':tool:c1'), status: 'completed' },
-    { update: contextId, status: 'completed' },
   ]);
   const read = updates.find(
     (u): u is Extract<SessionUpdate, { sessionUpdate: 'tool_call' }> =>
@@ -119,7 +127,11 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
   const readDone = updates.find(
     (u) => u.sessionUpdate === 'tool_call_update' && u.toolCallId === read.toolCallId,
   )!;
-  expect(readDone).toMatchObject({ rawOutput: { output: 'export {}' } });
+  expect(readDone).toMatchObject({
+    title: 'Read: a.ts',
+    kind: 'read',
+    rawOutput: { output: 'export {}' },
+  });
 
   // Cancel mid-turn: the runtime is asked to stop and the prompt answers `cancelled`.
   const cancelBefore = f.attempts.length;
@@ -199,6 +211,10 @@ test("T3's sequence: v2 initialize gets a v1 answer; cancel then an immediate ne
     () => f.attempts.length === before + 2,
     'replacement admitted after the cancelled turn settled',
   );
+  // The replacement waited in the thread's queue: the cancelled turn had settled before it was admitted.
+  expect(f.attempts[before].done).toBe(true);
+  const firstTurn = f.viewer.localStore!.messages(sessionId)[0].turnId;
+  expect(f.viewer.localStore!.turn(firstTurn)?.status).toBe('failed');
   f.attempts[before + 1].finish(false, 'two done');
   expect(await second).toEqual({ stopReason: 'end_turn' });
   expect(f.viewer.directory.get(sessionId)!.meta.tags).toEqual(['acp', 'acp:t3-code']);
@@ -300,4 +316,41 @@ test('an unreachable daemon on a non-default launch path is reported, never star
   const error = await h.agent.request('initialize', PASEO_INITIALIZE).catch((e: Error) => e);
   expect(String((error as Error).message)).toContain('not reachable');
   expect(h.stderr()).not.toContain('starting it');
+});
+
+test('two sessions on one connection run side by side; an unknown session is refused', async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', PASEO_INITIALIZE);
+  const one = await h.agent.request('session/new', { cwd: join(dir, 'P'), mcpServers: [] });
+  const two = await h.agent.request('session/new', { cwd: join(dir, 'P'), mcpServers: [] });
+  expect(one.sessionId).not.toBe(two.sessionId);
+  const before = f.attempts.length;
+  const first = h.agent.request('session/prompt', {
+    sessionId: one.sessionId,
+    prompt: [{ type: 'text', text: 'a' }],
+  });
+  const second = h.agent.request('session/prompt', {
+    sessionId: two.sessionId,
+    prompt: [{ type: 'text', text: 'b' }],
+  });
+  // Different threads do not queue behind each other.
+  await until(() => f.attempts.length === before + 2, 'both sessions admitted at once');
+  for (const a of f.attempts.slice(before)) a.finish(false, 'ok');
+  expect(await first).toEqual({ stopReason: 'end_turn' });
+  expect(await second).toEqual({ stopReason: 'end_turn' });
+  expect(h.updates(one.sessionId).some((u) => u.sessionUpdate === 'agent_message_chunk')).toBe(
+    true,
+  );
+  expect(h.updates(two.sessionId).some((u) => u.sessionUpdate === 'agent_message_chunk')).toBe(
+    true,
+  );
+
+  const unknown = await h.agent
+    .request('session/prompt', {
+      sessionId: 'thread_missing',
+      prompt: [{ type: 'text', text: 'x' }],
+    })
+    .catch((e: Error) => e);
+  expect(String((unknown as Error).message)).toContain('Unknown session');
 });

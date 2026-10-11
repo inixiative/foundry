@@ -149,11 +149,14 @@ test('stopping a queued turn cancels it before it runs; it settles failed with c
   const stop = await v.interrupt('queued');
   expect(stop.status).toBe(200);
   expect(await stop.json()).toEqual({ outcome: 'cancelled' });
+  // Settled at once, while the turn ahead of it still runs.
+  const terminal = await v.terminal('queued');
+  expect(terminal).toMatchObject({ type: 'error', error: CANCELLED_BEFORE_START, cancelled: true });
+  expect(v.viewer.localStore!.turn('queued')?.status).toBe('failed');
+  expect(v.viewer.localStore!.turn('running')?.status).toBe('active');
 
   v.release('running');
   expect((await v.terminal('running')).type).toBe('done');
-  const terminal = await v.terminal('queued');
-  expect(terminal).toMatchObject({ type: 'error', error: CANCELLED_BEFORE_START, cancelled: true });
   expect(v.started).toEqual(['running']);
   const turn = v.viewer.localStore!.turn('queued');
   expect(turn?.status).toBe('failed');
@@ -221,7 +224,7 @@ test('a dispatched native turn is stopped by its runtime; the thread then takes 
   }
 });
 
-test('a stop that arrives while the native session is still starting interrupts it at admission', async () => {
+test('a stop that arrives while the native session is still starting refuses its admission: nothing is sent', async () => {
   const dir = await mkdtemp(resolve('.foundry/qa/turn-stop-'));
   const f = await liveWatchFixture(dir);
   try {
@@ -235,8 +238,31 @@ test('a stop that arrives while the native session is still starting interrupts 
     );
     expect(await stop.json()).toEqual({ outcome: 'requested' });
     f.releaseConstruction();
-    await until(() => f.interrupts.length === 1, 'interrupted once admitted');
     expect(await turn.done).toMatchObject({ type: 'error', cancelled: true });
+    expect(f.interrupts).toEqual([]);
+    expect(f.attempts.every((a) => a.native.dispatch === 'not-dispatched')).toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a runtime that cannot stop a turn says so, and the turn runs to its end', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-stop-'));
+  const f = await liveWatchFixture(dir, { interruptible: false });
+  try {
+    const turn = f.send('unstoppable');
+    await until(
+      () => f.attempts.length === 1 && f.attempts[0].native.dispatch === 'attempted',
+      'dispatched',
+    );
+    const stop = await f.viewer.app.request(
+      `/api/threads/${f.thread.id}/turns/unstoppable/interrupt`,
+      { method: 'POST' },
+    );
+    expect(await stop.json()).toEqual({ outcome: 'unsupported' });
+    f.attempts[0].finish();
+    expect(await turn.done).toMatchObject({ type: 'done', content: 'FINAL_ONLY' });
+    expect(f.viewer.localStore!.turn('unstoppable')?.status).toBe('completed');
   } finally {
     await f.close();
   }

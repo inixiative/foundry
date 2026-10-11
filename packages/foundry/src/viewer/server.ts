@@ -165,11 +165,14 @@ export function createViewer(config: ViewerConfig) {
 
   // A local ACP proxy holds the launch file's capability; with a tunnel active it is the only
   // bearer it can present, since the tunnel token never leaves the viewer's own credential file.
+  // It is honoured only on a direct loopback request: never through the tunnel, which forwards
+  // the public Host and its proxy headers to this same port.
   const acpAuthorized = (request: Request) => {
     const authorization = request.headers.get('authorization');
     return (
       !!config.acpCapability &&
       !!authorization &&
+      directLoopback(request) &&
       sameSecret(authorization, `Bearer ${config.acpCapability}`)
     );
   };
@@ -595,6 +598,25 @@ export async function startViewer(config: ViewerConfig) {
     localStore,
     kingdom: viewer.kingdom,
   };
+}
+
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+const PROXY_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'cf-ray',
+];
+
+/** Addressed to a loopback host and carrying no reverse-proxy headers. */
+function directLoopback(request: Request): boolean {
+  return (
+    LOOPBACK_HOSTS.includes(new URL(request.url).hostname) &&
+    !PROXY_HEADERS.some((header) => request.headers.has(header))
+  );
 }
 
 /** Paths served by the client-routed app; ui/route.js parses the same shapes. */

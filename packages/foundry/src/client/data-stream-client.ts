@@ -4,6 +4,8 @@ import type { FoundryEndpoint } from './foundry-client';
 export interface StreamHandlers {
   snapshot(payload: unknown): void;
   append(payload: unknown): void;
+  /** The daemon refused the stream, on first open or on a re-open after a reconnect. */
+  rejected?(): void;
 }
 
 export interface DataStreamClientOptions extends FoundryEndpoint {
@@ -11,8 +13,10 @@ export interface DataStreamClientOptions extends FoundryEndpoint {
   clientId?: string;
   reconnectDelayMs?: number;
   pingIntervalMs?: number;
-  /** Connection state changes, for diagnostics. */
+  /** Connection state changes. */
   onStatus?: (status: 'open' | 'closed' | 'reconnecting') => void;
+  /** The current bearer, read on every (re)connect: a restarted daemon publishes a new one. */
+  refreshCapability?: () => string | undefined;
 }
 
 interface Held {
@@ -59,10 +63,9 @@ export class DataStreamClient {
     if (this.disposed) return Promise.reject(Error('Data-stream client is closed'));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     this.connecting ??= new Promise<void>((resolve, reject) => {
+      const capability = this.options.refreshCapability?.() ?? this.options.capability;
       const socket = new WebSocket(this.url(), {
-        headers: this.options.capability
-          ? { authorization: `Bearer ${this.options.capability}` }
-          : {},
+        headers: capability ? { authorization: `Bearer ${capability}` } : {},
       });
       let opened = false;
       socket.onopen = () => {
@@ -124,6 +127,7 @@ export class DataStreamClient {
       this.held.delete(stream);
       for (const waiter of held.waiters.splice(0))
         waiter.reject(Error(`stream rejected: ${stream}`));
+      held.handlers.rejected?.();
       return;
     }
     if (frame.type === 'error' && frame.action === 'open') {

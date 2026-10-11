@@ -86,7 +86,7 @@ function tunnelled() {
     await viewer.analyticsReady.catch(() => {});
     viewer.localStore?.close();
   });
-  return { endpoint: `http://127.0.0.1:${server.port}`, capability };
+  return { endpoint: `http://127.0.0.1:${server.port}`, capability, viewer };
 }
 
 test('while tunnelled, the API accepts the ACP capability as a bearer and nothing weaker', async () => {
@@ -117,4 +117,21 @@ test('while tunnelled, the data-stream socket upgrades only with the capability'
   const refused = new DataStreamClient({ endpoint: t.endpoint });
   cleanup.push(() => refused.dispose());
   await expect(refused.connect()).rejects.toThrow();
+});
+
+test('the ACP capability is refused through the tunnel: a public Host or proxy headers', async () => {
+  const t = tunnelled();
+  const request = (url: string, headers: Record<string, string> = {}) =>
+    t.viewer.app.request(url, { headers: { authorization: `Bearer ${t.capability}`, ...headers } });
+  expect((await request('http://127.0.0.1:4500/api/threads/main')).status).toBe(200);
+  expect((await request('https://foundry-x.trycloudflare.com/api/threads/main')).status).toBe(401);
+  expect((await request('https://foundry-x.trycloudflare.com/api/settings')).status).toBe(401);
+  expect(
+    (await request('http://127.0.0.1:4500/api/threads/main', { 'x-forwarded-for': '203.0.113.9' }))
+      .status,
+  ).toBe(401);
+  expect(
+    (await request('http://localhost:4500/api/threads/main', { 'cf-connecting-ip': '203.0.113.9' }))
+      .status,
+  ).toBe(401);
 });

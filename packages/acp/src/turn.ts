@@ -37,6 +37,7 @@ export class TurnProjection {
   private readonly text = new Map<string, string>();
   private readonly tools = new Map<string, LiveActivity['state']>();
   private fallback: ReturnType<typeof setTimeout> | null = null;
+  private closing: Promise<void> | null = null;
   private resolve!: (reason: StopReason) => void;
   private reject!: (error: Error) => void;
 
@@ -99,6 +100,7 @@ export class TurnProjection {
 
   private chunk(text: string): void {
     if (!text) return;
+    this.output();
     this.streamed = true;
     this.emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
   }
@@ -127,13 +129,16 @@ export class TurnProjection {
       return;
     }
     const known = this.tools.get(row.id);
+    const title = toolTitle(row.toolName ?? 'Tool', row.input);
+    const kind = toolKind(row.toolName ?? '');
     if (known === undefined) {
+      this.output();
       this.tools.set(row.id, row.state);
       this.emit({
         sessionUpdate: 'tool_call',
         toolCallId: row.id,
-        title: toolTitle(row.toolName ?? 'Tool', row.input),
-        kind: toolKind(row.toolName ?? ''),
+        title,
+        kind,
         status: status(row.state),
         ...(row.input ? { rawInput: row.input } : {}),
         locations: toolLocations(row.input, this.cwd),
@@ -145,6 +150,9 @@ export class TurnProjection {
     this.emit({
       sessionUpdate: 'tool_call_update',
       toolCallId: row.id,
+      // Repeated so hosts that rebuild a call's label from each update keep it.
+      title,
+      kind,
       status: status(row.state),
       ...(row.output !== undefined
         ? {
@@ -198,23 +206,40 @@ export class TurnProjection {
     });
   }
 
-  /** The route and advice rows are durable before the executor runs; a fast turn reads them here. */
-  private async closeFromJournal(): Promise<void> {
-    if (!this.contextClosed && !this.summary && this.journal) {
-      const detail = await Promise.race([
-        this.journal().catch(() => null),
-        Bun.sleep(JOURNAL_WAIT_MS).then(() => null),
-      ]);
-      this.summary = contextSummary(detail);
-    }
-    this.closeContext();
+  /** The executor has produced output, so its route and advice rows are sealed: complete the context item now. */
+  private output(): void {
+    if (!this.contextClosed) void this.closeFromJournal();
+  }
+
+  /** The route and advice rows are durable before the executor runs; read them from the journal once. */
+  private closeFromJournal(): Promise<void> {
+    this.closing ??= (async () => {
+      if (!this.contextClosed && !this.summary && this.journal) {
+        const detail = await Promise.race([
+          this.journal().catch(() => null),
+          Bun.sleep(JOURNAL_WAIT_MS).then(() => null),
+        ]);
+        this.summary ??= contextSummary(detail);
+      }
+      this.closeContext();
+    })();
+    return this.closing;
+  }
+
+  /** The daemon has been unreachable too long to wait for this turn's outcome. */
+  lost(message: string): void {
+    this.fail(message);
   }
 
   /** The send itself failed; nothing was accepted. */
   abort(error: Error): void {
-    if (this.settled) return;
-    this.settled = true;
-    if (this.fallback) clearTimeout(this.fallback);
+    if (!this.settle()) return;
+    this.summary = {
+      text: `Not accepted by Foundry: ${error.message}`,
+      routing: null,
+      participants: [],
+    };
+    this.closeContext();
     this.reject(error);
   }
 
