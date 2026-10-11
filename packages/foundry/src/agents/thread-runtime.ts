@@ -600,6 +600,7 @@ export class ThreadRuntimeManager {
       const view = structuredClone(
         (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config,
       );
+      runtime.cartographer.setRoutePrompt(cartographerInstructions(view));
       try {
         const domains = resolveThreadDomains(
           view,
@@ -2552,7 +2553,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
   reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[] {
     if (this._disposed) return [];
-    this.cartographer.setRoutePrompt(cartographerInstructions(config));
     const deferred: string[] = [];
     const next = new Set<string>();
     for (const dc of domains) {

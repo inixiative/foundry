@@ -8,6 +8,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { configuredExperts } from '../src/agents/configured-experts';
 import {
   buildAgents,
   buildLayers,
@@ -278,9 +279,14 @@ test('project agents are standalone or extend a global agent; nothing in between
   c.projects.P!.layers = undefined;
   // A project-local version under another id supersedes its parent in that project.
   c.projects.P!.agents = { 'p-conventions': { extends: 'conventions-warden', prompt: 'Use Bun' } };
-  const agents = resolveProjectView(c, 'P')!.config.agents;
-  expect(agents['conventions-warden']).toBeUndefined();
-  expect(agents['p-conventions']).toMatchObject({ id: 'p-conventions', domain: 'conventions' });
+  const superseded = resolveProjectView(c, 'P')!.config;
+  expect(superseded.agents['conventions-warden']).toBeUndefined();
+  expect(superseded.agents['p-conventions']).toMatchObject({
+    id: 'p-conventions',
+    domain: 'conventions',
+  });
+  expect(superseded.layers.conventions!.writers).toEqual(['p-conventions']);
+  expect(configuredExperts(superseded).experts.map((e) => e.agentId)).toEqual(['p-conventions']);
   // A standalone entry is a full definition.
   c.projects.P!.agents = { 'conventions-warden': { ...warden(), prompt: 'ONLY_P' } };
   expect(resolveProjectView(c, 'P')!.config.agents['conventions-warden']!.prompt).toBe('ONLY_P');
@@ -355,4 +361,123 @@ test('the configured Cartographer instructions drive routing; runtime roles are 
     } as unknown as AgentSettingsConfig;
     expect(() => validateConfig(bad)).toThrow('is not configurable');
   }
+});
+
+test('a project extension edit and a guard-trigger edit reach a running project thread', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'foundry-live-project-'));
+  dirs.push(dir);
+  const store = new ConfigStore(dir);
+  const c = config();
+  c.agents['conventions-warden']!.guardTriggers = [];
+  c.projects.P!.agents = {
+    'conventions-warden': { extends: 'conventions-warden', prompt: 'Use Bun' },
+  };
+  await store.save(c);
+  const f = setup(structuredClone(store.config));
+  managers.push(f.manager);
+  store.onChange((next) => f.factory.reconfigure(next));
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
+  const lib = f.manager.get(thread.id)!.domainLibrarians.get('conventions')!;
+  expect(lib.shouldGuard('Write')).toBe(false);
+
+  await store.update((draft) => {
+    draft.projects.P!.agents!['conventions-warden'] = {
+      extends: 'conventions-warden',
+      prompt: 'Use Bun 1.4',
+      guardTriggers: { append: ['Write'] },
+    };
+  });
+  await store.settled();
+  await thread.dispatch('worker', 'Next turn');
+  expect(f.last('pre').messages[0]!.content).toContain('Use Bun 1.4');
+  expect(lib.shouldGuard('Write')).toBe(true);
+  const guard = await lib.guard({ tool: 'Write', input: { file_path: 'a.ts' } });
+  expect(guard.request).toMatchObject({ status: 'supplied' });
+  // Guard and advise share the instructions; the guard phase appends its own protocol.
+  const guarded = f.last('pre');
+  expect(guarded.messages[0]!.content).toBe(
+    '## Global instructions (conventions-warden)\n\nGLOBAL_RULES: merge yourself once green.\n\n## Project instructions (P)\n\nUse Bun 1.4',
+  );
+  expect(guarded.messages[1]!.content).toContain('## Response protocol (guard phase)');
+});
+
+test('an edit that cannot be built changes nothing on live threads', async () => {
+  const c = config();
+  const f = setup(structuredClone(c));
+  managers.push(f.manager);
+  const thread = f.factory.create('main');
+  const next = structuredClone(c);
+  next.agents.worker!.provider = 'unconstructed';
+  next.agents['conventions-warden']!.prompt = 'NEVER_APPLIED';
+  await expect(f.factory.reconfigure(next)).rejects.toThrow('No provider registered');
+  await thread.dispatch('worker', 'Turn');
+  expect(f.last('pre').messages[0]!.content).toBe(GLOBAL_RULES);
+  // The factory keeps the configuration it can build.
+  expect(() => f.factory.create('later')).not.toThrow();
+});
+
+test('a hand edit to settings.json is versioned as a file edit and applied', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'foundry-file-edit-'));
+  dirs.push(dir);
+  const store = new ConfigStore(dir);
+  await store.save(config());
+  const seen: string[] = [];
+  store.onChange((next) => {
+    seen.push(next.agents['conventions-warden']!.prompt);
+  });
+  const edited = config();
+  edited.agents['conventions-warden']!.prompt = 'HAND_EDITED';
+  await Bun.write(join(dir, 'settings.json'), JSON.stringify(edited));
+  await store.load();
+  await store.settled();
+  expect(seen).toEqual(['HAND_EDITED']);
+  const entry = (await store.history('agent:conventions-warden'))[0]!.entries.at(-1)!;
+  expect(entry.author).toBe('file');
+});
+
+test('ambiguous or unbuildable project agents are refused before they are saved', () => {
+  const c = config();
+  c.agents['docs-warden'] = {
+    ...warden(),
+    id: 'docs-warden',
+    domain: 'docs',
+    visibleLayers: ['docs'],
+    ownedLayers: ['docs'],
+  };
+  c.layers.docs = {
+    ...c.layers.conventions!,
+    id: 'docs',
+    domain: 'docs',
+    writers: ['docs-warden'],
+  };
+  // An extension may not take another global agent's id.
+  c.projects.P!.agents = { 'docs-warden': { extends: 'conventions-warden', prompt: 'x' } };
+  expect(() => validateConfig(c)).toThrow('names another agent');
+  // Nor the id another entry extends.
+  c.projects.P!.agents = {
+    'p-docs': { extends: 'conventions-warden', prompt: 'x' },
+    q: { extends: 'p-docs' },
+  };
+  expect(() => validateConfig(c)).toThrow('names another agent');
+  // Identity fields belong to the parent.
+  c.projects.P!.agents = {
+    'conventions-warden': {
+      extends: 'conventions-warden',
+      ownedLayers: ['docs'],
+    } as unknown as AgentSettingsConfig,
+  };
+  expect(() => validateConfig(c)).toThrow('cannot be set on an extension');
+  // What thread construction would refuse is refused at save.
+  c.projects.P!.agents = {
+    'conventions-warden': { extends: 'conventions-warden', override: ['instructions'], prompt: '' },
+  };
+  expect(() => validateConfig(c)).toThrow('requires explicit instructions');
+  c.projects.P!.agents = {
+    'conventions-warden': { extends: 'conventions-warden', domainKnowledge: ['missing-source'] },
+  };
+  expect(() => validateConfig(c)).toThrow('unknown sources');
+  // A Warden's instructions never restate a response format.
+  c.projects.P!.agents = {};
+  c.agents['conventions-warden']!.prompt = 'Rules.\nRespond with JSON: {"mode": "advise"}';
+  expect(() => validateConfig(c)).toThrow('must not state a response format');
 });

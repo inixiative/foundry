@@ -415,6 +415,31 @@ function standaloneAgent(
   return { id, scope: 'project-standalone', config, fields };
 }
 
+const EXTENSION_KEYS = new Set([
+  'extends',
+  'prompt',
+  'domainKnowledge',
+  'override',
+  'provider',
+  'model',
+  'temperature',
+  'maxDepth',
+  'tools',
+  'thinking',
+  'permissions',
+  'executionEnv',
+  'timeout',
+  'cacheControl',
+  'enabled',
+  'invocation',
+  'description',
+  'visibleLayers',
+  'guardTriggers',
+  'peers',
+  'browser',
+  'condition',
+]);
+
 /** A project agent extending a global one. Instructions compose here; domain knowledge on its layer. */
 function extendAgent(
   id: string,
@@ -427,6 +452,11 @@ function extendAgent(
   const fields: Record<string, FieldProvenance> = {};
   const resolved: AgentSettingsConfig = { ...base, id };
   const label = `project.agents.${id}`;
+  for (const key of Object.keys(extension))
+    if (!EXTENSION_KEYS.has(key))
+      throw new Error(
+        `[config] ${label}.${key} cannot be set on an extension; identity comes from ${JSON.stringify(extension.extends)}`,
+      );
   const overrides = new Set(extension.override ?? []);
   for (const chunk of overrides)
     if (chunk !== 'instructions' && chunk !== 'domainKnowledge')
@@ -445,7 +475,7 @@ function extendAgent(
             value: base.prompt,
           },
         ]),
-    ...(extension.prompt !== undefined
+    ...(extension.prompt?.trim()
       ? [
           {
             origin: 'project' as const,
@@ -467,7 +497,7 @@ function extendAgent(
         : 'merged',
     strategy: overrides.has('instructions')
       ? 'override'
-      : extension.prompt !== undefined
+      : extension.prompt?.trim()
         ? 'extend'
         : 'inherit',
     globalValue: base.prompt,
@@ -542,6 +572,7 @@ function domainKnowledgeChunks(
   projectId: string,
   project: ProjectSettingsConfig,
   label: string,
+  known: ReadonlySet<string>,
 ): { layerId: string; chunks: LayerChunk[] } | undefined {
   const override = extension.override?.includes('domainKnowledge') ?? false;
   if (extension.domainKnowledge === undefined) {
@@ -553,6 +584,11 @@ function domainKnowledgeChunks(
     extension.domainKnowledge.some((id) => typeof id !== 'string' || !id)
   )
     throw new Error(`[config] ${label}.domainKnowledge must be source ids`);
+  const unknown = extension.domainKnowledge.filter((id) => !known.has(id));
+  if (unknown.length)
+    throw new Error(
+      `[config] ${label}.domainKnowledge names unknown sources: ${unknown.join(', ')}`,
+    );
   const layerId = base.ownedLayers?.length === 1 ? base.ownedLayers[0] : undefined;
   if (!layerId || !layer)
     throw new Error(`[config] ${label} adds domain knowledge, but its parent owns no single layer`);
@@ -575,7 +611,10 @@ function domainKnowledgeChunks(
       {
         origin: 'project' as const,
         heading: `Project domain knowledge (${projectName(projectId, project)})`,
-        sourceIds: [...new Set(extension.domainKnowledge)],
+        // A source the parent already loads is not loaded twice.
+        sourceIds: [...new Set(extension.domainKnowledge)].filter(
+          (id) => override || !layer.sourceIds.includes(id),
+        ),
       },
     ],
   };
@@ -675,7 +714,13 @@ export function resolveProjectView(
   );
   const composed = new Map<string, { chunks: LayerChunk[]; agentId: string }>();
   const extended = new Set<string>();
-  for (const [id, entry] of Object.entries(project.agents ?? {})) {
+  /** Superseded parent id → the project agent that replaces it as a layer writer. */
+  const renamed = new Map<string, string>();
+  const entries = Object.entries(project.agents ?? {});
+  const targets = new Set(
+    entries.flatMap(([, entry]) => (isAgentExtension(entry) ? [entry.extends] : [])),
+  );
+  for (const [id, entry] of entries) {
     if (!isAgentExtension(entry)) {
       agents.set(id, standaloneAgent(id, entry, config.agents[id]));
       continue;
@@ -688,8 +733,15 @@ export function resolveProjectView(
     if (extended.has(entry.extends))
       throw new Error(`[config] two project agents extend ${JSON.stringify(entry.extends)}`);
     extended.add(entry.extends);
+    if (id !== entry.extends && (config.agents[id] || targets.has(id)))
+      throw new Error(
+        `[config] project.agents.${id} extends ${JSON.stringify(entry.extends)} but its id names another agent; use the parent's id or a new one`,
+      );
     // The extension is this project's version of its parent.
-    if (id !== entry.extends) agents.delete(entry.extends);
+    if (id !== entry.extends) {
+      agents.delete(entry.extends);
+      renamed.set(entry.extends, id);
+    }
     agents.set(id, extendAgent(id, base, entry, projectId, project));
     const label = `project.agents.${id}`;
     const knowledge = domainKnowledgeChunks(
@@ -699,6 +751,7 @@ export function resolveProjectView(
       projectId,
       project,
       label,
+      new Set(Object.keys(resolved.sources)),
     );
     if (knowledge) composed.set(knowledge.layerId, { chunks: knowledge.chunks, agentId: id });
   }
@@ -706,7 +759,18 @@ export function resolveProjectView(
 
   const layerIds = dedupe([...Object.keys(config.layers), ...Object.keys(project.layers ?? {})]);
   const layers = layerIds.map((id) => {
-    const layer = resolveLayerDefinition(id, config.layers[id], project.layers?.[id]);
+    const resolvedLayer = resolveLayerDefinition(id, config.layers[id], project.layers?.[id]);
+    const writers = resolvedLayer.config.writers;
+    const layer =
+      writers && writers.some((writer) => renamed.has(writer))
+        ? {
+            ...resolvedLayer,
+            config: {
+              ...resolvedLayer.config,
+              writers: writers.map((writer) => renamed.get(writer) ?? writer),
+            },
+          }
+        : resolvedLayer;
     const knowledge = composed.get(id);
     if (!knowledge) return layer;
     const sourceIds = dedupe(knowledge.chunks.flatMap((chunk) => chunk.sourceIds));
@@ -724,8 +788,8 @@ export function resolveProjectView(
         value: chunk.sourceIds,
       })),
     };
-    const agent = agents.get(knowledge.agentId)!;
-    agent.fields.domainKnowledge = field;
+    const agent = agents.get(knowledge.agentId);
+    if (agent) agent.fields.domainKnowledge = field;
     return {
       ...layer,
       scope: 'project-override' as const,

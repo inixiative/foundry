@@ -191,9 +191,10 @@ function chunkSource(id: string, heading: string, sources: ContextSource[]): Con
       const reports = sources
         .map((source) => source.report?.())
         .filter((report): report is SourceSelectionReport => !!report);
-      if (reports.length < 2) return reports[0];
-      // Ranges index each source's own text, so a merged report carries none.
+      if (!reports.length) return undefined;
+      // Ranges index each source's own text, not the headed chunk, so a chunk report carries none.
       return {
+        ...(reports.length === 1 ? reports[0] : {}),
         selected: reports.flatMap((r) => r.selected.map(({ ranges: _ranges, ...rest }) => rest)),
         omitted: reports.flatMap((r) => r.omitted),
         considered: reports.reduce((sum, r) => sum + r.considered, 0),
@@ -352,44 +353,59 @@ export class ThreadFactory {
     const base = this._configuration;
     if (!base) throw Error('Live settings need a factory built from configuration');
     const previous = base.config;
-    this._configuration = { ...base, config: structuredClone(config) };
-    const deferred: string[] = [];
-    for (const runtime of this._runtime?.runtimes.values() ?? []) {
-      const thread = runtime.thread;
+    const changed = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
+    // Build every thread's layers and agents first: a failure changes nothing.
+    const plans = [...(this._runtime?.runtimes.values() ?? [])].map(({ thread }) => {
       const view = (c: FoundryConfig) =>
         (thread.meta.projectId
           ? resolveProjectView(c, thread.meta.projectId)?.config
           : undefined) ?? c;
       const before = view(previous),
         after = view(config);
-      const changed = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
+      return {
+        thread,
+        before,
+        after,
+        layers: new Map(buildLayers(after, base.layers).map((layer) => [layer.id, layer])),
+        agents: buildAgents(after, thread.stack, base.agents),
+      };
+    });
+    this._configuration = { ...base, config: structuredClone(config) };
+    const deferred: string[] = [];
+    for (const { thread, before, after, layers, agents } of plans) {
       const scope: OwnershipScope = {
         threadId: thread.id,
         get projectId() {
           return thread.meta.projectId;
         },
       };
-      const built = new Map(buildLayers(after, base.layers).map((layer) => [layer.id, layer]));
       for (const id of new Set([...Object.keys(before.layers), ...Object.keys(after.layers)])) {
-        const sourceIds = new Set([
-          ...(before.layers[id]?.sourceIds ?? []),
-          ...(after.layers[id]?.sourceIds ?? []),
-        ]);
+        const prior = before.layers[id],
+          next = after.layers[id];
+        const sourceIds = new Set([...(prior?.sourceIds ?? []), ...(next?.sourceIds ?? [])]);
         if (
-          !changed(before.layers[id], after.layers[id]) &&
+          !changed(prior, next) &&
           ![...sourceIds].some((sourceId) =>
             changed(before.sources[sourceId], after.sources[sourceId]),
           )
         )
           continue;
         const layer = thread.stack.getLayer(id),
-          fresh = built.get(id);
+          fresh = layers.get(id);
         if (!layer || !fresh) {
           deferred.push(
-            `${thread.id}: layer ${id} ${fresh ? 'is added' : 'is removed'} for new threads`,
+            `${thread.id}: layer ${id} ${fresh ? 'is added' : 'is removed or disabled'} for new threads`,
           );
           continue;
         }
+        // Only sources, prompt and staleness change in place; identity and authority need a new thread.
+        const fixed = (['domain', 'segment', 'writers'] as const).filter((key) =>
+          changed(prior?.[key], next?.[key]),
+        );
+        if (fixed.length)
+          deferred.push(`${thread.id}: layer ${id} ${fixed.join(', ')} apply to new threads`);
+        // Never swap sources under an in-flight load.
+        if (layer.state === 'warming') await layer.warm().catch(() => undefined);
         for (const source of [...layer.sources]) layer.removeSource(source.id);
         for (const source of fresh.sources)
           layer.addSource(source.bind ? source.bind(scope) : source);
@@ -402,7 +418,6 @@ export class ThreadFactory {
           deferred.push(`${thread.id}: layer ${id} did not warm: ${(error as Error).message}`);
         }
       }
-      const agents = buildAgents(after, thread.stack, base.agents);
       for (const id of Object.keys(before.agents))
         if (!agents.has(id) && thread.getAgent(id)) thread.unregister(id);
       for (const [id, agent] of agents)

@@ -729,14 +729,14 @@ export class DomainLibrarian {
   private _llmOpts: CompletionOpts;
   private _reviewLlm: LLMProvider;
   private _reviewOpts: CompletionOpts;
-  private _guardTriggers: Set<string>;
-  private _advisePrompt: string;
-  private _guardPrompt: string;
+  private _guardTriggers!: Set<string>;
+  private _advisePrompt!: string;
+  private _guardPrompt!: string;
   private _programmaticGuard: boolean;
   private _guardFn?: (obs: ToolObservation, cache: string) => GuardFinding[];
   private _adviseStrategy: ProcessingStrategy;
   private _guardStrategy: ProcessingStrategy;
-  private _reviewPrompt: string;
+  private _reviewPrompt!: string;
   private _threadKnowledge: ThreadKnowledge;
 
   constructor(config: DomainLibrarianConfig) {
@@ -754,7 +754,6 @@ export class DomainLibrarian {
       maxTurns: 1,
       timeout: 0,
     };
-    this._guardTriggers = new Set();
     this._programmaticGuard = config.programmaticGuard ?? false;
     this._guardFn = config.guardFn;
     this._threadKnowledge = new ThreadKnowledge(
@@ -776,7 +775,6 @@ export class DomainLibrarian {
         ? { kind: 'programmatic', fn: () => '', compiler: null }
         : { kind: 'live', budget: 512 });
 
-    this._advisePrompt = this._reviewPrompt = this._guardPrompt = '';
     this.reconfigure(config);
   }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, watch } from 'node:fs';
 import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import {
@@ -12,6 +12,7 @@ import {
   type VersionLog,
   validateMemorySelection,
 } from '@inixiative/foundry-core';
+import { configuredExperts } from '../agents/configured-experts';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import {
@@ -850,6 +851,14 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
       agent.flowRole !== 'domain-advising'
     )
       throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
+    // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
+    if (
+      ['cartographer', 'decider', 'domain-librarian'].includes(agent.kind) &&
+      /respond with json/i.test(agent.prompt ?? '')
+    )
+      throw Error(
+        `${owner} agent ${JSON.stringify(id)}: instructions must not state a response format; the phase supplies it`,
+      );
   }
 }
 
@@ -914,11 +923,17 @@ export function validateConfig(config: FoundryConfig): void {
       (project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {},
     ))
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
-  for (const projectId of Object.keys(config.projects ?? {}))
-    validateAgentKinds(
-      `project ${JSON.stringify(projectId)}`,
-      resolveProjectView(config, projectId)!.config.agents,
-    );
+  configuredExperts(config);
+  for (const projectId of Object.keys(config.projects ?? {})) {
+    const view = resolveProjectView(config, projectId)!.config;
+    validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
+    // What thread construction checks, checked before the settings are saved.
+    try {
+      configuredExperts(view);
+    } catch (error) {
+      throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
+    }
+  }
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
       if (!src || src.selection === undefined || src.selection === false) continue;
@@ -1065,6 +1080,22 @@ export class ConfigStore {
     return () => this._listeners.delete(listener);
   }
 
+  /** Reload when settings.json is edited by hand; returns a stop function. An invalid edit is refused and logged. */
+  watch(): () => void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const watcher = watch(this._dir, (_event, file) => {
+      if (file !== 'settings.json') return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        this.load().catch((error) => console.warn(`[settings] ${(error as Error).message}`));
+      }, 200);
+    });
+    return () => {
+      clearTimeout(timer);
+      watcher.close();
+    };
+  }
+
   /** Resolves once every change listener has handled the changes committed so far. */
   settled(): Promise<void> {
     return this._notified;
@@ -1081,7 +1112,12 @@ export class ConfigStore {
     const logs = new Map<string, VersionLog<SettingsChange>>();
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
-      const edit = JSON.parse(line) as SettingsEdit;
+      let edit: SettingsEdit;
+      try {
+        edit = JSON.parse(line) as SettingsEdit;
+      } catch {
+        continue; // a torn final line from an interrupted append
+      }
       if (subject !== undefined && edit.subject !== subject) continue;
       const log = logs.get(edit.subject) ?? {
         subject: edit.subject,
@@ -1247,6 +1283,7 @@ export class ConfigStore {
     const previous = this._config;
     this._config = candidate;
     this._revision++;
+    this._loaded = true;
     await this._record(previous, candidate, 'user');
     return candidate;
   }

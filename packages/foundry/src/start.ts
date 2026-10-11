@@ -508,6 +508,7 @@ configStore.onChange(async (next) => {
   const effective = (subscription ? resolveSubscriptionPolicy(next)?.config : undefined) ?? next;
   for (const change of await factory.reconfigure(effective)) console.log(`[settings] ${change}`);
 });
+configStore.watch();
 
 // ---------------------------------------------------------------------------
 // Create main thread (lightweight handle over shared project state)

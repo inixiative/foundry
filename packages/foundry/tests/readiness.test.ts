@@ -136,14 +136,13 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
     fetch.mockRestore();
   }
 });
-test('readiness catches project-only expert ownership errors and unavailable providers', async () => {
+test('readiness refuses project expert ownership errors and catches unavailable providers', async () => {
   const config = team();
   config.projects.P!.layers = { docs: { writers: { replace: ['wrong-owner'] } } };
   let report = await inspectReadiness(config, local);
   expect(report.configurationReady).toBe(false);
-  expect(
-    report.issues.some((item) => item.scope === 'P' && item.code === 'invalid-expert-ownership'),
-  ).toBe(true);
+  // Validation now runs each project's expert checks, so the settings are refused outright.
+  expect(report.issues.some((item) => item.code === 'invalid-configuration')).toBe(true);
   delete config.projects.P!.layers;
   config.agents.expert!.provider = 'anthropic';
   report = await inspectReadiness(config, {
