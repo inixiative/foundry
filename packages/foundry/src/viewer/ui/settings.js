@@ -409,7 +409,7 @@ function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange 
           </select>
         </div>
       </div>`
-          : html`<p class="settings-desc">Subscription-only: decision roles run on the subscription decision profile (the Codex login with GPT-6 Luna unless <code>subscriptionOnly</code> names another). Set <code>apiTokens: true</code> to choose an API provider here.</p>`
+          : html`<p class="settings-desc">Subscription-only: decision roles run on the subscription decision profile (the Claude login with Haiku 5.5 unless <code>subscriptionOnly</code> names another runtime or model). Set <code>apiTokens: true</code> to choose an API provider here.</p>`
       }
 
       <div class="settings-card-actions">

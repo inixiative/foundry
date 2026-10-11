@@ -972,6 +972,8 @@ export class ConfigStore {
         next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
       } else if (section === 'learning') {
         next.learning = { ...next.learning, ...patch } as LearningSettings;
+      } else if (section === 'subscriptionOnly') {
+        next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
       } else if (section === 'apiTokens') {
         // Explicit opt-in to API-key providers; absent or false is subscription-only.
         if (patch.enabled === true) next.apiTokens = true;

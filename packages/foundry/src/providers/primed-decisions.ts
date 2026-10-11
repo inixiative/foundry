@@ -35,6 +35,8 @@ type DecisionProcess = ReturnType<CodexSpawn>;
 /** Primed Claude keys kept warm; each holds one spare CLI process (~215 MB). */
 const CLAUDE_PRIMED_SESSIONS = 16;
 const STATUS_DEADLINE_MS = 20_000;
+/** Re-check the Claude login at most this often, like the subscription worker. */
+const STATUS_TTL_MS = 5 * 60_000;
 
 /** Base instructions for every primed decision session (replaces the runtime's coding-agent prompt). */
 export const PRIMED_DECISION_CONTEXT =
@@ -243,11 +245,15 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         },
       });
 
-  /** The Claude login, checked as a subscription (never an API key) and registered as a shared holder
-   * for the host's lifetime; every decision process launches with its environment. */
+  /** The Claude login, checked as a subscription (never an API key) at most every five minutes and registered
+   * as a shared holder for the host's lifetime; every decision process launches with its environment. */
   function claudeLogin() {
-    let registered: { env: Record<string, string | undefined>; launch: { release(): void } };
+    let registered:
+      | { env: Record<string, string | undefined>; launch: { release(): void } }
+      | undefined;
     let pending: Promise<void> | undefined;
+    let verifiedAt = 0,
+      closed = false;
     const verify = async () => {
       const env = withProfile(
         nativeTextEnvironment(process.env),
@@ -285,6 +291,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           /* exited */
         }
       }
+      verifiedAt = Date.now();
+      if (registered) return;
       const launch = await auth.prepare(`primed-decisions:${hostId}`, 'claude');
       try {
         const command = launch.launch(['claude'], nativeTextEnvironment(process.env));
@@ -295,10 +303,17 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         release(launch);
         throw error;
       }
+      // A host closed while registering never keeps the login.
+      if (closed) {
+        release(launch);
+        registered = undefined;
+        throw Error('Decision host closed');
+      }
     };
     return {
       ready: (): Promise<void> => {
-        if (registered) return Promise.resolve();
+        if (closed) return Promise.reject(Error('Decision host closed'));
+        if (registered && Date.now() - verifiedAt < STATUS_TTL_MS) return Promise.resolve();
         pending ??= verify().finally(() => {
           pending = undefined;
         });
@@ -309,7 +324,9 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         return { ...registered.env, DISABLE_AUTOUPDATER: '1' };
       },
       release: () => {
+        closed = true;
         if (registered) release(registered.launch);
+        registered = undefined;
         // The CLI's per-cwd transcript directory for this host; its transcripts were deleted with their keys.
         try {
           rmdirSync(
@@ -546,8 +563,11 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     createRun,
     releaseFailures: () => releaseFailures,
     close: async () => {
-      await host.close();
-      claude?.release();
+      try {
+        await host.close();
+      } finally {
+        claude?.release();
+      }
     },
   };
 }

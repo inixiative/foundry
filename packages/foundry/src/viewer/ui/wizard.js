@@ -30,6 +30,7 @@ const FALLBACK_PROVIDERS = [
       { id: 'opus', label: 'Opus 5', tier: 'powerful' },
       { id: 'sonnet', label: 'Sonnet 5', tier: 'standard' },
       { id: 'haiku', label: 'Haiku 5.5', tier: 'fast' },
+      { id: 'claude-haiku-5-5', label: 'Haiku 5.5', tier: 'fast' },
     ],
   },
   {
@@ -116,7 +117,7 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
       </p>
       <p class="wizard-desc dim">
         Foundry is subscription-only by default: a Claude Code or Codex main thread
-        and Codex (GPT-6 Luna) decisions use your existing logins. A main thread on
+        and Claude (Haiku 5.5) decisions use your existing logins. A main thread on
         an API-key provider (Gemini, Meta, xAI or the Anthropic/OpenAI APIs) opts
         this install in to API tokens.
       </p>
@@ -426,16 +427,16 @@ export function Wizard() {
   };
 
   const handleExecutorNext = () => {
-    // Subscription default: Codex Luna decisions beside a Claude Code worker.
+    // Subscription default: Claude Haiku 5.5 decisions on the Claude login.
     // Otherwise default the classifier to the fastest model on the same provider.
     if (!classifierProvider) {
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('codex');
-      const id = subscription ? 'codex' : defaultProvider;
+        SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('claude-code');
+      const id = subscription ? 'claude-code' : defaultProvider;
       setClassifierProvider(id);
       const prov = providers.find((p) => p.id === id);
       const fast = subscription
-        ? prov?.models.find((m) => m.id === 'gpt-6-luna')
+        ? prov?.models.find((m) => m.id === 'claude-haiku-5-5')
         : prov?.models.find((m) => m.tier === 'fast');
       setClassifierModel(fast?.id || prov?.models[0]?.id || '');
     }
@@ -470,8 +471,14 @@ export function Wizard() {
 
       // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) && classifierProvider === 'codex';
+        SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
+        SUBSCRIPTION_WORKERS.includes(classifierProvider);
       await patchSettings('apiTokens', { enabled: !subscription });
+      if (subscription)
+        await patchSettings('subscriptionOnly', {
+          decisionRuntime: classifierProvider === 'codex' ? 'codex' : 'claude',
+          model: classifierModel,
+        });
 
       // Update defaults — executor model is the global default
       await patchSettings('defaults', {
