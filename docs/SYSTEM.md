@@ -485,9 +485,12 @@ First-class cost tracking and usage analytics panel:
 ### Data streams (`/ws`)
 
 A client opens only the streams it shows: `{ action: 'open', stream }` → `{ type: 'opened' }`, a
-`{ category: 'data', action: 'snapshot' }`, then `append` frames until `{ action: 'close' }` or the
-socket closes. No sequence numbers or replay: after a reconnect the client re-opens its streams and
-gets fresh snapshots. The upgrade is authorized like HTTP (loopback, or tunnel bearer/cookie); each
+`{ category: 'data', action: 'snapshot', seq }`, then `append` frames (`seq` + 1 each) until
+`{ action: 'close' }` or the socket closes. The seq is for gap detection only, numbered per
+connection and stream (a result addressed to one tab must not leave a gap for the others); there is
+no replay. The client ignores an append at or below its last seq and re-opens for a fresh snapshot
+on a gap. A frame Bun drops (`ws.send` returns 0) closes the connection (`1013`), and after a
+reconnect the client re-opens its streams and gets fresh snapshots. The upgrade is authorized like HTTP (loopback, or tunnel bearer/cookie); each
 open re-checks the paired Kingdoms, and losing authorization from every paired Kingdom closes every socket.
 
 | Stream | Snapshot | Appends |

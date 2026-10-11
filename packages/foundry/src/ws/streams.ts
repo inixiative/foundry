@@ -2,19 +2,22 @@
 //
 //   client → { action: 'open', stream }        authorize, then
 //   server → { type: 'opened', stream }
-//   server → { category: 'data', action: 'snapshot', stream, payload }
-//   server → { category: 'data', action: 'append', stream, payload } …
+//   server → { category: 'data', action: 'snapshot', stream, seq, payload }
+//   server → { category: 'data', action: 'append', stream, seq, payload } …
 //   client → { action: 'close', stream }  →  { type: 'closed', stream }
 //   socket close = every stream on it closed
 //
-// No sequence numbers and no replay: a reconnecting client re-opens its streams
-// and gets a fresh snapshot. A stream's producer runs only while some connection
-// has it open. Re-opening a stream already open on a connection re-sends its snapshot.
+// No replay. Each connection numbers its frames per stream: the snapshot carries the
+// seq of the last frame sent, each append the next one. A client that sees a gap
+// re-opens for a fresh snapshot; a frame Bun drops closes the connection
+// (delivery.ts), and a reconnecting client re-opens its streams. A stream's producer
+// runs only while some connection has it open. Re-opening a stream already open on a
+// connection re-sends its snapshot.
 // An append goes to every connection holding the stream; appendTo addresses one
 // client's connections (a result meant only for the tab that requested it).
 import { sendTo, sendToStreamLocal } from './delivery';
 import type { WSRegistry } from './registry';
-import { subscribeToStream, unsubscribeFromStream } from './subscriptions';
+import { nextStreamSeq, subscribeToStream, unsubscribeFromStream } from './subscriptions';
 import type { StreamFamily, StreamSource, WSSocket } from './types';
 
 const MAX_STREAM_NAME = 256;
@@ -41,8 +44,15 @@ export const createDataStreams = (
     typeof stream === 'string' && stream.length > 0 && stream.length <= MAX_STREAM_NAME
       ? families.find((family) => family.matches(stream))
       : undefined;
+  const appendFrame = (ws: WSSocket, stream: string, payload: unknown) => ({
+    category: 'data',
+    action: 'append',
+    stream,
+    seq: nextStreamSeq(ws, stream),
+    payload,
+  });
   const appendTo = (stream: string) => (payload: unknown) =>
-    sendToStreamLocal(registry, stream, { category: 'data', action: 'append', stream, payload });
+    sendToStreamLocal(registry, stream, (ws) => appendFrame(ws, stream, payload));
 
   const stop = (stream: string) => {
     const source = sources.get(stream);
@@ -75,9 +85,9 @@ export const createDataStreams = (
         throw error;
       }
       // Snapshot and subscription happen in one synchronous step: every later append follows the snapshot.
-      subscribeToStream(registry, ws, stream);
+      const seq = subscribeToStream(registry, ws, stream);
       sendTo(ws, { type: 'opened', stream });
-      sendTo(ws, { category: 'data', action: 'snapshot', stream, payload });
+      sendTo(ws, { category: 'data', action: 'snapshot', stream, seq, payload });
     },
     close(ws, stream) {
       unsubscribeFromStream(registry, ws, stream);
@@ -88,8 +98,7 @@ export const createDataStreams = (
     appendTo(clientId, stream, payload) {
       for (const id of registry.byStream.get(stream) ?? []) {
         const ws = registry.byId.get(id);
-        if (ws?.data.clientId === clientId)
-          sendTo(ws, { category: 'data', action: 'append', stream, payload });
+        if (ws?.data.clientId === clientId) sendTo(ws, appendFrame(ws, stream, payload));
       }
     },
     stopAll() {

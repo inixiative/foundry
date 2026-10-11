@@ -16,6 +16,7 @@ let seq = 0;
 export function createTestSocket(data?: Partial<WSData>) {
   const sent: string[] = [];
   let readyState = WS_OPEN;
+  let dropping = false;
   let closeInfo: { code: number; reason: string } | null = null;
   const socket = {
     data: {
@@ -24,7 +25,7 @@ export function createTestSocket(data?: Partial<WSData>) {
         data?.clientId === undefined
           ? `client-${seq}-${crypto.randomUUID().slice(0, 8)}`
           : data.clientId,
-      streams: data?.streams ?? new Set<string>(),
+      streams: data?.streams ?? new Map<string, number>(),
       lastPing: data?.lastPing ?? Date.now(),
       queue: data?.queue ?? createSerializedQueue(),
     } satisfies WSData,
@@ -32,7 +33,9 @@ export function createTestSocket(data?: Partial<WSData>) {
       return readyState;
     },
     send(message: string) {
+      if (dropping || readyState !== WS_OPEN) return 0;
       sent.push(message);
+      return message.length;
     },
     close(code: number, reason: string) {
       readyState = WS_CLOSED;
@@ -44,6 +47,10 @@ export function createTestSocket(data?: Partial<WSData>) {
     sent,
     markClosed: () => {
       readyState = WS_CLOSED;
+    },
+    /** Every later send is dropped, as Bun drops a frame over its backpressure limit (returns 0). */
+    dropSends: () => {
+      dropping = true;
     },
     closeInfo: () => closeInfo,
   };

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { createDataStreamSocket } from '../src/viewer/ui/data-stream-socket.js';
 
 // Adapted from the template's packages/ui/src/lib/ws/createApiWebsocket.test.ts.
@@ -116,6 +116,7 @@ test('a rejected stream is dropped and not replayed; frames for unheld streams a
     category: 'data',
     action: 'snapshot',
     stream: 'thread:a',
+    seq: 0,
     payload: { turns: [] },
   });
   receive(ws(), { category: 'data', action: 'append', stream: 'thread:gone', payload: {} });
@@ -131,6 +132,7 @@ test('a rejected stream is dropped and not replayed; frames for unheld streams a
       category: 'data',
       action: 'snapshot',
       stream: 'thread:a',
+      seq: 0,
       payload: { turns: [] },
       requestedAt: expect.any(Number),
     },
@@ -152,12 +154,14 @@ test('each snapshot carries when the open it answers was sent, oldest first', as
     category: 'data',
     action: 'snapshot',
     stream: 'thread:a',
+    seq: 0,
     payload: { turns: [] },
   });
   receive(ws(), {
     category: 'data',
     action: 'snapshot',
     stream: 'thread:a',
+    seq: 0,
     payload: { turns: [] },
   });
   expect(data[0].requestedAt).toBeNumber();
@@ -192,4 +196,88 @@ test("opened() waits for the server's ack, and a failed open is retried while st
   receive(ws(), { type: 'error', action: 'open', stream: 'events:a' });
   await Bun.sleep(1100);
   expect(sends(ws()).filter((f) => f.action === 'open' && f.stream === 'events:a')).toHaveLength(2);
+});
+
+describe('sequence numbers', () => {
+  const snapshot = (seq: number, ids: string[]) => ({
+    category: 'data',
+    action: 'snapshot',
+    stream: 'thread:a',
+    seq,
+    payload: { ids },
+  });
+  const append = (seq: number, id: string) => ({
+    category: 'data',
+    action: 'append',
+    stream: 'thread:a',
+    seq,
+    payload: { id },
+  });
+  const opens = (ws: FakeWebSocket) => sends(ws).filter((frame) => frame.action === 'open');
+
+  let warn: ReturnType<typeof spyOn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
+  const held = () => {
+    const client = socket();
+    open(client.ws());
+    client.api.open('thread:a');
+    receive(client.ws(), { type: 'opened', stream: 'thread:a' });
+    return client;
+  };
+  const applied = (data: any[]) =>
+    data.map((frame) => (frame.action === 'snapshot' ? frame.payload.ids : frame.payload.id));
+
+  test('applies the next seq and ignores an append already applied', () => {
+    const { ws, data } = held();
+    receive(ws(), snapshot(4, ['a']));
+    receive(ws(), append(4, 'already-in-snapshot'));
+    receive(ws(), append(5, 'b'));
+    receive(ws(), append(5, 'b-again'));
+    expect(applied(data)).toEqual([['a'], 'b']);
+    expect(opens(ws())).toHaveLength(1);
+  });
+
+  test('a dropped append makes the stream re-open, and the fresh snapshot converges', () => {
+    const { ws, data } = held();
+    receive(ws(), snapshot(0, []));
+    receive(ws(), append(1, 'a'));
+    receive(ws(), append(3, 'c')); // 2 was lost
+    expect(opens(ws())).toHaveLength(2);
+
+    receive(ws(), append(4, 'before-resync-snapshot'));
+    receive(ws(), snapshot(4, ['a', 'b', 'c', 'd']));
+    receive(ws(), append(4, 'stale-after-resync'));
+    receive(ws(), append(5, 'e'));
+    expect(applied(data)).toEqual([[], 'a', ['a', 'b', 'c', 'd'], 'e']);
+  });
+
+  test('a gap while an open is already pending waits for that snapshot instead of sending another', () => {
+    const { api, ws, data } = held();
+    receive(ws(), snapshot(0, []));
+    api.resync();
+    receive(ws(), append(2, 'gap'));
+    expect(opens(ws())).toHaveLength(2);
+    receive(ws(), snapshot(2, ['x', 'gap']));
+    expect(applied(data)).toEqual([[], ['x', 'gap']]);
+  });
+
+  test('after the server closes a socket that dropped a frame, the reconnect snapshot restores state', async () => {
+    const { ws, data } = held();
+    const first = ws();
+    receive(first, snapshot(0, []));
+    receive(first, append(1, 'a'));
+    first.close();
+    await Bun.sleep(5);
+    const second = ws();
+    open(second);
+    expect(opens(second)).toEqual([{ action: 'open', stream: 'thread:a' }]);
+    receive(second, append(9, 'before-snapshot'));
+    receive(second, snapshot(0, ['a', 'b']));
+    receive(second, append(1, 'c'));
+    expect(applied(data)).toEqual([[], 'a', ['a', 'b'], 'c']);
+  });
 });

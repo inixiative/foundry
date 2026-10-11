@@ -5,7 +5,10 @@
 // The set of open streams, refcounted across callers, is the single source of
 // truth: it is replayed on every (re)open because the server forgets a
 // connection's streams when it drops. Each re-open answers with a fresh
-// snapshot, which is the whole recovery story — no sequence numbers, no replay.
+// snapshot, which is the whole recovery story — no replay. Frames carry a
+// per-stream seq only to detect a lost one: an append at or below the last seq
+// is already applied, one further than the next is a gap, and the stream
+// re-opens for a fresh snapshot.
 import { createWebSocketClient } from './ws-client.js';
 
 const HEARTBEAT_MS = 30_000;
@@ -15,7 +18,7 @@ const OPEN_RETRY_MS = 1_000;
 
 /**
  * @param {string} url
- * @param {{ onData: (frame: { category: "data", action: "snapshot" | "append", stream: string, payload: any, requestedAt?: number }) => void,
+ * @param {{ onData: (frame: { category: "data", action: "snapshot" | "append", stream: string, seq: number, payload: any, requestedAt?: number }) => void,
  *   onStatus?: (status: "open" | "closed") => void, onReconnect?: () => void, onRejected?: (stream: string) => void,
  *   reconnectDelayMs?: number }} handlers
  * A snapshot frame carries `requestedAt`: when the open it answers left this client.
@@ -30,6 +33,8 @@ export function createDataStreamSocket(
   // Streams whose open this connection has acknowledged, and callers waiting for that.
   const acked = new Set();
   const ackWaiters = new Map();
+  // Per held stream, the seq of the last frame applied; absent while a snapshot is awaited.
+  const lastSeqs = new Map();
   let everOpened = false;
   let heartbeat;
   let pongTimer;
@@ -41,6 +46,24 @@ export function createDataStreamSocket(
     if (socket.status() !== 'open') return;
     requested.set(stream, [...(requested.get(stream) ?? []), Date.now()]);
     socket.send({ action: 'open', stream });
+  };
+
+  // Until the awaited snapshot arrives, appends on the wire are already in it.
+  const resyncStream = (stream) => {
+    lastSeqs.delete(stream);
+    if (!requested.get(stream)?.length) sendOpen(stream);
+  };
+
+  const admitAppend = (frame) => {
+    const lastSeq = lastSeqs.get(frame.stream);
+    if (lastSeq === undefined || frame.seq <= lastSeq) return false;
+    if (frame.seq > lastSeq + 1) {
+      console.warn(`data stream ${frame.stream}: seq ${frame.seq} after ${lastSeq}; resyncing`);
+      resyncStream(frame.stream);
+      return false;
+    }
+    lastSeqs.set(frame.stream, frame.seq);
+    return true;
   };
 
   const replayStreams = () => {
@@ -76,6 +99,7 @@ export function createDataStreamSocket(
           console.warn(`data stream open rejected: ${frame.stream}`);
           streams.delete(frame.stream);
           requested.delete(frame.stream);
+          lastSeqs.delete(frame.stream);
           settleWaiters(frame.stream);
           onRejected?.(frame.stream);
           return void settleReconnectAck(frame.stream);
@@ -98,7 +122,10 @@ export function createDataStreamSocket(
         if (!queue.length) requested.delete(frame.stream);
       }
       // Frames for a stream this client no longer holds are in flight from before its close.
-      if (streams.has(frame.stream)) onData(frame);
+      if (!streams.has(frame.stream)) return;
+      if (frame.action === 'snapshot') lastSeqs.set(frame.stream, frame.seq);
+      else if (!admitAppend(frame)) return;
+      onData(frame);
     },
     onOpen: () => {
       onStatus?.('open');
@@ -116,6 +143,7 @@ export function createDataStreamSocket(
       clearTimeout(pongTimer);
       requested.clear();
       acked.clear();
+      lastSeqs.clear();
       onStatus?.('closed');
     },
   });
@@ -145,6 +173,7 @@ export function createDataStreamSocket(
       streams.delete(stream);
       requested.delete(stream);
       acked.delete(stream);
+      lastSeqs.delete(stream);
       settleWaiters(stream);
       if (socket.status() === 'open') socket.send({ action: 'close', stream });
     },

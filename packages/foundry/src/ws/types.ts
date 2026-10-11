@@ -6,7 +6,7 @@ import type { SerializedQueue } from './serialized-queue';
 export type WSData = {
   connectionId: string; // unique per connection (multiple tabs = multiple ids)
   clientId: string | null; // the tab's own id, stable across its reconnects; addresses results to it
-  streams: Set<string>; // data streams this connection has open
+  streams: Map<string, number>; // open data streams → seq of the last frame sent on each
   lastPing: number; // staleness detection
   queue: SerializedQueue; // serializes this connection's async message handling
 };

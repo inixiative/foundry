@@ -106,7 +106,7 @@ export const createWebSocketServer = ({
       const data: WSData = {
         connectionId: crypto.randomUUID(),
         clientId: clientId && CLIENT_ID.test(clientId) ? clientId : null,
-        streams: new Set(),
+        streams: new Map(),
         lastPing: Date.now(),
         queue: createSerializedQueue(),
       };

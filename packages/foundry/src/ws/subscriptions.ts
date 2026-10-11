@@ -4,9 +4,18 @@
 import { deindexFrom, indexInto, type WSRegistry } from './registry';
 import type { WSSocket } from './types';
 
-export const subscribeToStream = (registry: WSRegistry, ws: WSSocket, stream: string): void => {
-  ws.data.streams.add(stream);
+// A re-open keeps the stream's seq, so no frame from before it can alias one after it.
+export const subscribeToStream = (registry: WSRegistry, ws: WSSocket, stream: string): number => {
+  const seq = ws.data.streams.get(stream) ?? 0;
+  ws.data.streams.set(stream, seq);
   indexInto(registry.byStream, stream, ws.data.connectionId);
+  return seq;
+};
+
+export const nextStreamSeq = (ws: WSSocket, stream: string): number => {
+  const seq = (ws.data.streams.get(stream) ?? 0) + 1;
+  ws.data.streams.set(stream, seq);
+  return seq;
 };
 
 export const unsubscribeFromStream = (registry: WSRegistry, ws: WSSocket, stream: string): void => {

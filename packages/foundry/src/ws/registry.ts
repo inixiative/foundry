@@ -53,7 +53,7 @@ export const addConnection = (registry: WSRegistry, ws: WSSocket): void => {
 export const removeConnection = (registry: WSRegistry, ws: WSSocket): void => {
   const { connectionId, streams } = ws.data;
   registry.byId.delete(connectionId);
-  for (const stream of [...streams]) {
+  for (const stream of [...streams.keys()]) {
     streams.delete(stream);
     if (deindexFrom(registry.byStream, stream, connectionId)) registry.onStreamIdle(stream);
   }

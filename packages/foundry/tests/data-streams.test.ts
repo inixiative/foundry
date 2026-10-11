@@ -113,6 +113,7 @@ test('open answers opened then a snapshot, appends follow in order, and close en
       category: 'data',
       action: 'snapshot',
       stream: 'thread:main',
+      seq: 0,
       payload: { threadId: 'main', turns: [] },
     },
   ]);
@@ -185,6 +186,58 @@ test('only the requesting connection receives the full result; watchers get the 
       .some((frame) => frame.payload?.kind === 'done' || frame.payload?.kind === 'error'),
   ).toBe(false);
   expect(JSON.stringify(watcher.frames())).not.toContain('injection');
+});
+
+test('each connection numbers its frames per stream, targeted appends included, and a re-open keeps counting', async () => {
+  const f = fixture();
+  const sender = connectStreams(f.viewer),
+    watcher = connectStreams(f.viewer);
+  await sender.open('thread:main');
+  await watcher.open('thread:main');
+  expect((await f.send('numbered', sender.socket.data.clientId)).status).toBe(202);
+  f.release();
+  await sender.terminal('main', 'numbered');
+  await watcher.next(
+    (frame) => frame.payload?.kind === 'turn' && frame.payload.turn.status === 'completed',
+    'bounded terminal',
+  );
+  await Bun.sleep(20);
+
+  const seqs = (client: ReturnType<typeof connectStreams>) =>
+    client.data('thread:main').map((frame) => frame.seq);
+  for (const client of [sender, watcher]) {
+    const numbered = seqs(client);
+    expect(numbered).toEqual(numbered.map((_, i) => i));
+  }
+  expect(seqs(sender).length).toBeGreaterThan(seqs(watcher).length);
+
+  const lastSeq = seqs(watcher).at(-1);
+  await watcher.open('thread:main');
+  expect(watcher.data('thread:main').at(-1)).toMatchObject({ action: 'snapshot', seq: lastSeq });
+});
+
+test('a frame Bun drops closes the connection; the reconnect snapshots the current state', async () => {
+  const f = fixture();
+  const dropped = connectStreams(f.viewer);
+  await dropped.open('thread:main');
+  dropped.dropSends();
+
+  expect((await f.send('during-drop', dropped.socket.data.clientId)).status).toBe(202);
+  for (let i = 0; i < 200 && !dropped.closeInfo(); i++) await Bun.sleep(5);
+  expect(dropped.closeInfo()).toEqual({ code: 1013, reason: 'frame dropped' });
+  expect(f.viewer.socket.registry.byId.has(dropped.socket.data.connectionId)).toBe(false);
+
+  const again = connectStreams(f.viewer, dropped.socket.data.clientId);
+  await again.open('thread:main');
+  expect(again.data('thread:main')[0]).toMatchObject({
+    action: 'snapshot',
+    seq: 0,
+    payload: { turns: [{ messageId: 'during-drop', status: 'running' }] },
+  });
+  f.release();
+  expect((await again.terminal('main', 'during-drop')).output).toBe('done:during-drop');
+  const numbered = again.data('thread:main').map((frame) => frame.seq);
+  expect(numbered).toEqual(numbered.map((_, i) => i));
 });
 
 test('opens are authorized: unknown streams, missing threads/projects and a failed admit are rejected', async () => {
