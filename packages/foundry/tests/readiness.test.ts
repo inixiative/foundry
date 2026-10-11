@@ -8,7 +8,12 @@ import { resolveProjectView } from '../src/viewer/config-resolve';
 
 function team() {
   const config = defaultConfig();
-  config.apiTokens = true; // OpenAI experts
+  config.apiTokens = true; // OpenAI experts on the OpenAI decision provider
+  config.defaults = {
+    ...config.defaults,
+    classifierProvider: 'openai',
+    classifierModel: 'gpt-6-luna',
+  };
   config.layers.docs = {
     id: 'docs',
     domain: 'docs',
@@ -87,7 +92,7 @@ test('the team example loads through production configuration with four separate
         .filter((profile) => profile.role !== 'execution')
         .every(
           (profile) =>
-            profile.provider === 'subscription-decisions' && profile.model === 'gpt-6-luna',
+            profile.provider === 'subscription-decisions' && profile.model === 'claude-haiku-5-5',
         ),
     ).toBe(true);
     process.env.HOME = join(directory, 'absent');

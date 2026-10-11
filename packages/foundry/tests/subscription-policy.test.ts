@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -99,13 +100,10 @@ for (const change of [
   'worker-api',
   'review-api',
   'review-model',
-  'same-profile',
   'gateway',
   'codex-worker',
   'expert-tools',
-  'claude-decision-model',
   'codex-observed-model',
-  'claude-concurrency',
 ] as const)
   test(`subscription startup refuses ${change} before provider construction`, () => {
     const f = fixture();
@@ -118,9 +116,6 @@ for (const change of [
         break;
       case 'review-model':
         f.c.learning = { review: { model: 'gpt-5.6-luna' } };
-        break;
-      case 'same-profile':
-        f.decision.profileDirectory = f.worker.profileDirectory;
         break;
       case 'gateway':
         f.c.nativeAuthentication![1] = {
@@ -138,14 +133,8 @@ for (const change of [
       case 'expert-tools':
         f.c.agents.router.tools = true;
         break;
-      case 'claude-decision-model':
-        delete f.c.subscriptionOnly!.model;
-        break;
       case 'codex-observed-model':
         f.c.nativeAuthentication![1].runtime = 'codex';
-        break;
-      case 'claude-concurrency':
-        f.c.subscriptionOnly!.maxConcurrent = 2;
         break;
     }
     expect(() => validateConfig(f.c)).toThrow();
@@ -191,12 +180,19 @@ test('an explicit Codex decision profile runs Codex decisions beside the Claude 
   });
 });
 
-test('different IDs or aliases cannot share the warm worker profile', () => {
+test('Claude decisions share the worker login, default to Haiku 5.5 and run concurrently', () => {
   const f = fixture();
-  const alias = join(f.root, 'alias');
-  symlinkSync(f.root, alias);
-  f.decision.profileDirectory = join(alias, 'worker');
-  expect(() => resolveSubscriptionPolicy(f.c)).toThrow('separate private profile');
+  f.decision.profileDirectory = f.worker.profileDirectory;
+  delete f.c.subscriptionOnly!.model;
+  delete f.c.defaults.classifierModel;
+  f.c.agents = {};
+  f.c.subscriptionOnly!.maxConcurrent = 4;
+  expect(resolveSubscriptionPolicy(f.c)!.policy).toMatchObject({
+    model: 'claude-haiku-5-5',
+    expectedObservedModel: 'decision-canonical',
+    maxConcurrent: 4,
+    effort: 'low',
+  });
 });
 
 test('native worker requires subscription status and strips paid credentials while preserving tools', async () => {
@@ -225,10 +221,31 @@ test('native worker requires subscription status and strips paid credentials whi
     expect(command.env.CLAUDE_CONFIG_DIR).toBe(realpathSync(f.worker.profileDirectory));
     expect(command.argv.slice(-2)).toEqual(['--setting-sources', '']);
     expect(command.argv).not.toContain('--tools');
+    // Worker threads and decisions are shared holders of the one login.
     const second = await auth.prepare('another-worker', 'claude');
-    expect(() => second.launch(['claude'], {})).toThrow('in use');
+    second.launch(['claude'], {});
+    expect(
+      readdirSync(join(f.worker.profileDirectory, '.foundry-auth-shared')).filter((name) =>
+        name.endsWith('.json'),
+      ),
+    ).toHaveLength(2);
+    second.release();
   } finally {
     launch.release();
+  }
+  expect(existsSync(join(f.worker.profileDirectory, '.foundry-auth-shared'))).toBe(false);
+  // An exclusive holder of the login still refuses them.
+  const exclusive = await new NativeAuthentication({
+    directory: f.root,
+    sources: [f.worker],
+    defaultSourceId: f.worker.id,
+  }).prepare('other-foundry', 'claude');
+  exclusive.launch(['claude'], {});
+  try {
+    const refused = await auth.prepare('worker', 'claude');
+    expect(() => refused.launch(['claude'], {})).toThrow('in use');
+  } finally {
+    exclusive.release();
   }
   const override = await auth.prepare('worker', 'claude');
   expect(() => override.launch(['claude', '--fallback-model=paid-model'], {})).toThrow('override');
@@ -402,10 +419,11 @@ test('Codex is a subscription main thread: GPT-6 Astra on the Codex login, no AP
   expect(() => resolveSubscriptionPolicy(f.c)).toThrow('runs on a codex profile');
 });
 
-test("a fresh Codex main thread defaults to the user's own ~/.codex login", () => {
+test("a fresh Codex main thread defaults to the user's own ~/.codex login; decisions stay on Claude unless set", () => {
   const root = mkdtempSync(join(tmpdir(), 'codex-main-'));
   roots.push(root);
   mkdirSync(join(root, '.codex'), { mode: 0o755 });
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
   writeFileSync(join(root, '.codex', 'auth.json'), '{}', { mode: 0o600 });
   const home = process.env.HOME;
   process.env.HOME = root;
@@ -418,7 +436,16 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login", () =
       runtime: 'codex',
       profileDirectory: join(root, '.codex'),
     });
-    expect(resolved.decision.profileDirectory).toBe(join(root, '.codex'));
+    expect(resolved.decision.profileDirectory).toBe(join(root, '.claude'));
+    c.subscriptionOnly = { decisionRuntime: 'codex' };
+    // The recorded Claude decision model does not silently follow the runtime switch.
+    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
+      'claude-haiku-5-5 is a claude model',
+    );
+    c.defaults.classifierModel = 'gpt-6-luna';
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.decision.profileDirectory).toBe(
+      join(root, '.codex'),
+    );
   } finally {
     process.env.HOME = home;
   }

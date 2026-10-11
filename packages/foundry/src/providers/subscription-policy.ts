@@ -1,16 +1,17 @@
-import { mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
   MODEL_REGISTRY,
   mainThreadRequirement,
+  registryModel,
+  SUBSCRIPTION_DECISION_MODELS,
   SUBSCRIPTION_WORKERS,
   type SubscriptionWorker,
   subscriptionWorker,
 } from '../models/registry';
 import type { AgentSettingsConfig, AgentSettingsOverride, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
-import { DECISION_MODEL } from './decision-provider';
 import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 
@@ -19,6 +20,8 @@ const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 /** Optional overrides of subscription mode. Every field has a default. */
 export const subscriptionSettingsSchema = z
   .object({
+    /** Decision runtime when no explicit source is named. Default claude. */
+    decisionRuntime: z.enum(['claude', 'codex']).optional(),
     decisionSourceId: z.string().uuid().optional(),
     model: model.optional(),
     expectedObservedModel: model.optional(),
@@ -75,21 +78,22 @@ export interface SubscriptionPolicy {
   maxQueuedPerThread: number;
   maxConcurrent: number;
   callTimeoutMs: number;
-  /** Codex decision reasoning effort. */
+  /** Decision reasoning effort. */
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
 }
 /**
  * Sized for many threads: each turn fans out classifier, router, Cartographer and every expert at once
- * (nine decisions with six experts), and tool calls add guards. Concurrency is turns on one warm process.
+ * (nine decisions with six experts), and tool calls add guards. Codex concurrency is turns on one warm
+ * process; each Claude decision is its own CLI process (~215 MB), so Claude admits one pre-message wave.
  * Decisions run at low effort: the model's default (medium) adds ~0.5 s per decision.
  */
 export const SUBSCRIPTION_DEFAULTS = {
   maxCalls: 10_000,
   maxQueued: 256,
   maxQueuedPerThread: 32,
-  maxConcurrent: 16,
+  maxConcurrent: { claude: 8, codex: 16 },
   callTimeoutMs: 30_000,
   effort: 'low',
   /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */
@@ -110,8 +114,8 @@ export interface SubscriptionResolution {
 
 /**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
- * providers. Without it the worker (Claude Code or Codex) and the decision profile (Codex by
- * default) both use subscription logins, referenced in place, with no paid fallback.
+ * providers. Without it the worker (Claude Code or Codex) and the decision profile (Claude by
+ * default, `decisionRuntime` to change) both use subscription logins, referenced in place, with no paid fallback.
  *
  * `startup` also checks the default login locations and prepares the default receipt
  * directory; configuration saves validate structure and explicit profiles only.
@@ -156,26 +160,23 @@ export function resolveSubscriptionPolicy(
     throw Error(`The ${workerProvider} subscription worker runs on a ${workerRuntime} profile`);
   const decision = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
-    : defaultProfileSource('codex');
-  if (decision.runtime === 'claude' && !settings.model)
-    throw Error('A Claude decision profile requires an explicit subscriptionOnly.model');
+    : defaultProfileSource(settings.decisionRuntime ?? 'claude');
+  if (settings.decisionRuntime && settings.decisionRuntime !== decision.runtime)
+    throw Error('subscriptionOnly.decisionRuntime does not match the decision source runtime');
   if (
     decision.runtime === 'codex' &&
     settings.expectedObservedModel !== undefined &&
     settings.expectedObservedModel !== settings.model
   )
     throw Error('Codex decisions cannot acknowledge a different observed model');
-  // A Claude profile has one refresh owner; only Codex decisions share their login concurrently.
-  if (decision.runtime === 'claude' && (settings.maxConcurrent ?? 1) !== 1)
-    throw Error('A Claude decision profile runs one decision at a time');
   const policy: SubscriptionPolicy = {
-    // The setup wizard records a Codex decision model as the subscription classifier default.
+    // The setup wizard records the decision model as the subscription classifier default.
     model:
       settings.model ??
-      (decision.runtime === 'codex' && config.defaults.classifierProvider === SUBSCRIPTION_DECISIONS
+      (config.defaults.classifierProvider === SUBSCRIPTION_DECISIONS
         ? config.defaults.classifierModel
         : undefined) ??
-      DECISION_MODEL,
+      SUBSCRIPTION_DECISION_MODELS[decision.runtime],
     ...(settings.expectedObservedModel
       ? { expectedObservedModel: settings.expectedObservedModel }
       : {}),
@@ -187,17 +188,23 @@ export function resolveSubscriptionPolicy(
       settings.maxQueuedPerThread ?? SUBSCRIPTION_DEFAULTS.maxQueuedPerThread,
       settings.maxQueued ?? SUBSCRIPTION_DEFAULTS.maxQueued,
     ),
-    maxConcurrent:
-      settings.maxConcurrent ??
-      (decision.runtime === 'codex' ? SUBSCRIPTION_DEFAULTS.maxConcurrent : 1),
+    maxConcurrent: settings.maxConcurrent ?? SUBSCRIPTION_DEFAULTS.maxConcurrent[decision.runtime],
     callTimeoutMs: settings.callTimeoutMs ?? SUBSCRIPTION_DEFAULTS.callTimeoutMs,
+    effort: settings.effort ?? SUBSCRIPTION_DEFAULTS.effort,
     ...(decision.runtime === 'codex'
-      ? {
-          effort: settings.effort ?? SUBSCRIPTION_DEFAULTS.effort,
-          hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs,
-        }
+      ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
       : {}),
   };
+  // A model registered only on the other runtime cannot run here, e.g. a recorded Claude model after switching to Codex.
+  const runtimeProvider = { claude: 'claude-code', codex: 'codex' } as const;
+  const other = decision.runtime === 'claude' ? 'codex' : 'claude';
+  if (
+    registryModel(runtimeProvider[other], policy.model) &&
+    !registryModel(runtimeProvider[decision.runtime], policy.model)
+  )
+    throw Error(
+      `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.classifierModel for ${decision.runtime} decisions`,
+    );
   if (options.startup) {
     for (const source of [worker, decision]) {
       try {
@@ -211,20 +218,7 @@ export function resolveSubscriptionPolicy(
     if (!settings.directory) mkdirSync(policy.directory, { recursive: true, mode: 0o700 });
   }
   if (options.startup || settings.directory) assertPrivateProfile(policy.directory);
-  const canonical = (path: string) => {
-    try {
-      return realpathSync(path);
-    } catch {
-      return path;
-    }
-  };
-  // A Claude worker holds its profile exclusively. A Codex worker shares its login with Codex
-  // decisions, each on its own private home linked to the one auth.json.
-  if (
-    worker.runtime === 'claude' &&
-    canonical(worker.profileDirectory) === canonical(decision.profileDirectory)
-  )
-    throw Error('Subscription decisions require a separate private profile from the warm worker');
+  // Worker and decisions are shared holders of one login, like interactive sessions on it.
 
   const { config: effective, rerouted } = routeDecisions(config, policy.model);
   const check = (view: FoundryConfig) => {

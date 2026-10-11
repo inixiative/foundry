@@ -15,8 +15,8 @@ import {
 const STATUS_DEADLINE_MS = 20_000;
 const STATUS_TTL_MS = 5 * 60_000;
 
-/** The main-thread worker on its subscription login: Claude Code holds its profile exclusively; Codex shares
- * the login with Codex decisions on a Foundry-private CODEX_HOME, so the user's Codex config never applies. */
+/** The main-thread worker on its subscription login, a shared holder alongside decisions on the same login.
+ * Codex runs on a Foundry-private CODEX_HOME, so the user's Codex config never applies. */
 export class SubscriptionAuthentication extends NativeAuthentication {
   private statusChild?: StatusProcess;
   private statusCheck?: Promise<void>;
@@ -32,7 +32,8 @@ export class SubscriptionAuthentication extends NativeAuthentication {
       directory,
       sources: [workerSource],
       defaultSourceId: workerSource.id,
-      ...(workerSource.runtime === 'codex' ? { shared: true, privateHome: true } : {}),
+      shared: true,
+      ...(workerSource.runtime === 'codex' ? { privateHome: true } : {}),
     });
     this.workerSource = structuredClone(workerSource);
   }

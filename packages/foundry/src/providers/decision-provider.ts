@@ -6,6 +6,7 @@ import {
   resolveDecisionModel,
 } from '../models/registry';
 import type { FoundryConfig } from '../viewer/config';
+import { AnthropicProvider } from './anthropic';
 import { createRegisteredProvider, providerApiKey } from './openai-compatible';
 
 /** Re-exported: the registry defaults and the resolver now live in core. */
@@ -43,6 +44,13 @@ export function createDecisionProvider(
     throw Error(
       `Foundry decisions require ${registered.envKey} for ${provider}/${model}; the worker model will not be used as a fallback.`,
     );
+  if (registered.type === 'anthropic' && apiKey)
+    return new AnthropicProvider({
+      apiKey,
+      defaultModel: model,
+      baseUrl: config.providers[provider]?.baseUrl,
+      id: `${provider}-decisions`,
+    });
   return createRegisteredProvider(provider, {
     apiKey,
     defaultModel: model,

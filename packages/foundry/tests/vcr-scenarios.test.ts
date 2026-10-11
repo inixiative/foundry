@@ -6,6 +6,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CodexPrimedSessions } from '@inixiative/agent-session';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
@@ -16,6 +17,7 @@ import {
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
+
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
 import {
@@ -42,6 +44,11 @@ import {
   sameAsLive,
   settleRecordings,
 } from './helpers/vcr';
+
+const codexHost = (host: ReturnType<typeof createPrimedDecisionHost>['host']) => {
+  if (!(host instanceof CodexPrimedSessions)) throw Error('Expected the Codex primed host');
+  return host;
+};
 
 const recording = vcrMode() === 'record';
 const roots: string[] = [];
@@ -199,7 +206,7 @@ test(
       const opts = { threadId: 'T:aux:domain:settings', stablePrefix: cache };
       try {
         // Prime explicitly so the recording's stdin order is fixed (no background priming racing a decision).
-        await primed.host.prime(primedRequest(primedMessages, opts, opts.threadId).spec);
+        await codexHost(primed.host).prime(primedRequest(primedMessages, opts, opts.threadId).spec);
         const first = await decisions.provider.complete(primedMessages, opts);
         const second = await decisions.provider.complete(primedMessages, opts);
         const stdin = transport.launches[0]!.stdin.split('\n')
@@ -241,6 +248,106 @@ test(
       cyclesSentOnlyTheMessage: true,
       receipts: [
         { valid: true, settled: true, prime: 'warm' },
+        { valid: true, settled: true, prime: 'warm' },
+      ],
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'claude primed decisions: Haiku 5.5 on the subscription login; a role primed once, then forked per cycle',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'primed', async () => {
+      // Primer, first fork, and the spare that serves the second decision. The spare started after it
+      // races shutdown and has no cassette; its start fails and nothing is lost.
+      const transport = recordedClaudeTransport(
+        { status: ['subscribed'], decision: ['primed-primer', 'primed-fork', 'primed-spare-1'] },
+        vcr,
+      );
+      const directory = root(),
+        receipts = join(directory, 'receipts');
+      mkdirSync(receipts, { mode: 0o700 });
+      const decisionSource = source('claude', directory);
+      const primed = createPrimedDecisionHost({
+        source: decisionSource,
+        directory: receipts,
+        model: LIVE.claudeObservedModel,
+        effort: 'low',
+        maxConcurrent: 2,
+        callTimeoutMs: 30_000,
+        spawn: transport.spawn,
+        statusSpawn: () => transport.statusSpawn('unused'),
+      });
+      const decisions = buildSubscriptionDecisions(
+        {
+          directory: receipts,
+          source: decisionSource,
+          model: LIVE.claudeObservedModel,
+          maxCalls: 4,
+          maxQueued: 2,
+          maxConcurrent: 2,
+          callTimeoutMs: 30_000,
+        },
+        primed.createRun,
+      );
+      const opts = { threadId: 'T:aux:domain:settings', stablePrefix: cache };
+      try {
+        const first = await decisions.provider.complete(primedMessages, opts);
+        const second = await decisions.provider.complete(primedMessages, opts);
+        const used = transport.launches.filter((launch) => launch.stdin);
+        const inputs = used.map((launch) =>
+          launch.stdin
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => {
+              const content = JSON.parse(line).message.content as string | { text?: string }[];
+              return typeof content === 'string'
+                ? content
+                : content.map((block) => block.text ?? '').join('');
+            }),
+        );
+        return {
+          contents: [first.content, second.content].map((c) => DECIDED.test(c)),
+          observedModel: second.native?.configuration?.observedModel,
+          launches: used.length,
+          statusChecks: transport.statusChecks,
+          primerCarriedContext: inputs[0]![0]!.startsWith(cache),
+          forks: used.filter((launch) => launch.argv.includes('--fork-session')).length,
+          textOnly: used.every(
+            (launch) =>
+              launch.argv.includes('--strict-mcp-config') &&
+              launch.argv.slice(-2).join('|') === '--setting-sources|',
+          ),
+          cyclesSentOnlyTheMessage: inputs
+            .slice(1)
+            .flat()
+            .every((t) => !t.includes('Domain cache') && t.includes('## Message')),
+          receipts: readFileSync(primed.receiptsPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => {
+              const r = JSON.parse(line);
+              return { valid: r.valid, settled: r.settled, prime: r.prime };
+            }),
+        };
+      } finally {
+        await decisions.shutdown();
+        await primed.close();
+      }
+    });
+    expect(out).toEqual({
+      contents: [true, true],
+      observedModel: LIVE.claudeObservedModel,
+      launches: 3,
+      statusChecks: 1,
+      primerCarriedContext: true,
+      forks: 2,
+      textOnly: true,
+      cyclesSentOnlyTheMessage: true,
+      receipts: [
+        { valid: true, settled: true, prime: 'cold' },
         { valid: true, settled: true, prime: 'warm' },
       ],
     });
@@ -305,7 +412,7 @@ test(
           { role: 'system' as const, content: NAMING_INSTRUCTIONS },
           { role: 'user' as const, content: 'prime' },
         ];
-        await primed.host.prime(primedRequest(role, {}, 'T:aux:naming').spec);
+        await codexHost(primed.host).prime(primedRequest(role, {}, 'T:aux:naming').spec);
         const decided = new Promise<void>((resolve) => {
           new ThreadNamer({
             provider: {

@@ -823,7 +823,7 @@ async function pickProvider(
     }
   } else {
     console.log(
-      `\n  Subscription-only: ${provider.label} worker, Codex decisions (no API key needed).`,
+      `\n  Subscription-only: ${provider.label} worker, Claude decisions (no API key needed).`,
     );
   }
 
@@ -1009,7 +1009,7 @@ async function configureDocsLayer(config: FoundryConfig) {
 // ---------------------------------------------------------------------------
 
 function buildStarterConfig(providerId: ProviderId | string, model: string): FoundryConfig {
-  // Claude Code and Codex are subscription-only with Codex decisions; any other worker opts in to API tokens.
+  // Claude Code and Codex are subscription-only with Claude decisions by default; any other worker opts in to API tokens.
   const config = starterConfig(providerId, model);
   const decision = config.apiTokens
     ? { provider: providerId, model }

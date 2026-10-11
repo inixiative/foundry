@@ -46,6 +46,7 @@ export {
   type RuntimeKind,
   registryModel,
   resolveDecisionModel,
+  SUBSCRIPTION_DECISION_MODELS,
 } from '@inixiative/foundry-core';
 
 /** Native harnesses that run a main thread on the user's own subscription login, and the profile each uses. */

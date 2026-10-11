@@ -71,9 +71,9 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 
 ## Model Routing
 
-**Cheap models for decisions, capable models for work.** Classifiers, routers, Wardens (advise + guard), and the Cartographer all run on GPT-6 Luna. Claude is too expensive for lightweight agents. Only the Artificer uses a capable model.
+**Cheap models for decisions, capable models for work.** Classifiers, routers, the Cartographer, the Librarian and Wardens (advise, guard and review) run on Claude Haiku 5.5 (`claude-haiku-5-5`). Heavier reasoning roles use Claude Opus 5.5 (`claude-opus-5-5`) or Fable 5.1 (`claude-fable-5-1`). Only the Artificer uses a capable model by default.
 
-Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) or, with `defaults.provider: "codex"`, on the Codex login, and every decision role runs GPT-6 Luna through the Codex CLI's ChatGPT login (`~/.codex`), with no API provider constructed and no paid fallback. API-key providers require `apiTokens: true`. Main threads run on Anthropic, OpenAI, Google, Meta and xAI models only. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
+Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) or, with `defaults.provider: "codex"`, on the Codex login, and every decision role runs Claude Haiku 5.5 on primed Claude Code sessions through the same Claude login, with no API provider constructed and no paid fallback. The decision runtime and model are settings (`subscriptionOnly.decisionRuntime`, `subscriptionOnly.model` / `defaults.classifierModel`), so Codex or another lab can run decisions again without code changes. API-key providers require `apiTokens: true`; their decision default is Anthropic Haiku 5.5. Main threads run on Anthropic, OpenAI, Google, Meta and xAI models only. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
 
 ## Design Principles
 
@@ -89,7 +89,7 @@ Foundry is subscription-only by default: the Artificer runs on the Claude Code l
 - Don't treat layers as parts of a shared context window. Each is independent.
 - Don't create hardcoded Warden subclasses. They're config-driven from settings.
 - Don't put behavioral opinions in core. Core is the engine.
-- Don't use Claude/Sonnet for classifiers or routers. Use GPT-6 Luna.
+- Don't put a capable model (Opus, Fable, Sonnet) on classifiers, routers or Wardens. Decisions use Haiku 5.5 unless settings say otherwise.
 - Use Claude Code's native auto-compaction policy (`providers/claude-context-budget.ts`). Don't implement a separate summarizer or compression loop; Foundry layer caches remain independent.
 - Don't add backwards-compat shims for removed features.
 - Don't confuse the singular Librarian (signal reconciliation, sole thread-state writer) with the Wardens (domain-specific advise + guard).

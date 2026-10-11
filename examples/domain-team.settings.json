@@ -3,7 +3,7 @@
     "provider": "claude-code",
     "model": "fable",
     "classifierProvider": "subscription-decisions",
-    "classifierModel": "gpt-6-luna"
+    "classifierModel": "claude-haiku-5-5"
   },
   "providers": {
     "claude-code": {
@@ -195,7 +195,7 @@
           "flowRole": "context-routing",
           "prompt": "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "temperature": 0,
           "tools": false,
           "visibleLayers": {
@@ -217,7 +217,7 @@
           "flowRole": "context-routing",
           "prompt": "Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {\"destination\": \"artificer\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "temperature": 0,
           "tools": false,
           "visibleLayers": {
@@ -263,7 +263,7 @@
           "domain": "docs",
           "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "tools": false,
           "visibleLayers": {
             "replace": ["domain-docs"]
@@ -284,7 +284,7 @@
           "domain": "architecture",
           "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "tools": false,
           "visibleLayers": {
             "replace": ["domain-architecture"]
@@ -305,7 +305,7 @@
           "domain": "security",
           "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "tools": false,
           "visibleLayers": {
             "replace": ["domain-security"]
@@ -326,7 +326,7 @@
           "domain": "testing",
           "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
           "provider": "subscription-decisions",
-          "model": "gpt-6-luna",
+          "model": "claude-haiku-5-5",
           "tools": false,
           "visibleLayers": {
             "replace": ["domain-testing"]

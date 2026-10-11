@@ -176,6 +176,10 @@ const decisions = subscription
   : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
+// API-token mode: agents saved on the decision provider's id resolve to the decision client.
+const decisionAlias = subscription
+  ? []
+  : [[resolveDecisionModel(config).provider, flowLlm] as const];
 
 console.log(
   `Foundry starting — provider: ${config.defaults.provider}, model: ${config.defaults.model}`,
@@ -242,10 +246,13 @@ function createProvider(config: FoundryConfig): {
   if (
     !subscription &&
     selectedAuth?.mode === 'native-profile' &&
-    !(config.providers.openai?.enabled && process.env.OPENAI_API_KEY)
+    !(
+      config.providers[resolveDecisionModel(config).provider]?.enabled &&
+      providerApiKey(resolveDecisionModel(config).provider)
+    )
   ) {
     throw Error(
-      'A native profile has one refresh owner. Configure the separate OpenAI decision provider or use a gateway authentication source before starting Foundry.',
+      'A native profile has one refresh owner. Configure the separate API decision provider or use a gateway authentication source before starting Foundry.',
     );
   }
 
@@ -454,20 +461,12 @@ const atlasRoot =
 const runtimeManager = new ThreadRuntimeManager({
   config,
   llm: flowLlm,
-  providers: new Map([
-    [provider.id, provider],
-    ...(!subscription ? [['openai', flowLlm] as const] : []),
-    [flowLlm.id, flowLlm],
-  ]),
+  providers: new Map([...decisionAlias, [provider.id, provider], [flowLlm.id, flowLlm]]),
   // Review uses its explicit phase profile, otherwise the configured flow policy.
   // No provider is constructed and no live binding/settings are changed by this resolver.
   learning: resolveLearningSettings(
     config.learning,
-    new Map([
-      [provider.id, provider],
-      ...(!subscription ? [['openai', flowLlm] as const] : []),
-      [flowLlm.id, flowLlm],
-    ]),
+    new Map([...decisionAlias, [provider.id, provider], [flowLlm.id, flowLlm]]),
     flowLlm,
     decisionModel,
   ),
@@ -499,11 +498,7 @@ const factory = new ThreadFactory({
       tools,
       // Refuse an unavailable explicit project provider; only these providers
       // have actually been constructed above.
-      providers: new Map([
-        ...(!subscription ? [['openai', flowLlm] as const] : []),
-        [flowLlm.id, flowLlm],
-        [provider.id, provider],
-      ]),
+      providers: new Map([...decisionAlias, [flowLlm.id, flowLlm], [provider.id, provider]]),
     },
   },
 });

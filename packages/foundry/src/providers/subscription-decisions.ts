@@ -11,7 +11,7 @@ import {
   sameNativeOwner,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from './decision-priority';
-import { createNativeTextProvider, type NativeTextConfig } from './native-text-provider';
+import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
 import { createPrimedDecisionHost } from './primed-decisions';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
@@ -26,9 +26,9 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   onPressure?: (event: DecisionPressure) => void;
   /** First rate-limit backoff; doubles to 60 s. Default 5 s. */
   rateLimitBackoffMs?: number;
-  /** Codex decisions: warm-host events (priming, eviction, recycles, limits); observers only. */
+  /** Primed-host events (priming, eviction, recycles, limits); observers only. */
   onPrimedEvent?: (event: PrimedEvent) => void;
-  /** Codex decision reasoning effort (the model's default when omitted). */
+  /** Decision reasoning effort (the model's default when omitted). */
   effort?: string;
   /** Codex decisions: hedge a decision still running after this long (off when omitted). */
   hedgeAfterMs?: number;
@@ -36,7 +36,11 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
   | { kind: 'rate-limited'; until: number; backoffMs: number };
-type TextRun = Pick<ReturnType<typeof createNativeTextProvider>, 'provider' | 'snapshot' | 'close'>;
+type TextRun = {
+  provider: LLMProvider;
+  snapshot(): { closed: boolean; calls: readonly NativeTextCall[] };
+  close(): void;
+};
 type Outcome = {
   admission: 'not-admitted' | 'attempted' | 'unknown';
   settlement: 'settled' | 'unknown';
@@ -56,20 +60,19 @@ type Pending = {
 };
 
 /**
- * Decisions run on the decision profile's own runtime. Codex decisions run on one
- * warm app-server with a primed session per middleware role (agent-session
- * CodexPrimedSessions); the scheduler below keeps priority and fairness and its
- * concurrency is turns on that process. A Claude decision profile keeps the
- * bounded text-only provider.
+ * Decisions run on the decision profile's own runtime, with a primed session per middleware role
+ * (agent-session ClaudePrimedSessions or CodexPrimedSessions); the scheduler below keeps priority
+ * and fairness, and its concurrency bounds the decisions running at once.
  */
 export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
   const { onPrimedEvent, ...options } = config;
-  if (config.source.runtime !== 'codex')
-    return buildSubscriptionDecisions(options, createNativeTextProvider);
   const primed = createPrimedDecisionHost({
     source: config.source,
     directory: config.directory,
     model: config.model,
+    ...(config.expectedObservedModel
+      ? { expectedObservedModel: config.expectedObservedModel }
+      : {}),
     effort: config.effort,
     hedgeAfterMs: config.hedgeAfterMs,
     maxConcurrent: config.maxConcurrent ?? 1,
@@ -83,7 +86,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       decisions.close();
       void primed.close();
     },
-    /** Shutdown also stops the warm process and deletes its primed threads. */
+    /** Shutdown also stops the decision processes and deletes their primed sessions. */
     shutdown: async (timeoutMs?: number) => {
       await decisions.shutdown(timeoutMs);
       await primed.close();

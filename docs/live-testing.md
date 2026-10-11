@@ -7,7 +7,7 @@ Foundry's hardest failures happen only against the real CLIs and the real launch
 | Command | What runs | When |
 |---|---|---|
 | `bun run test` | Replays only: no network and no CLI calls. Includes the freshness check. | Every change; CI |
-| `bun run test:live` | The same cassette-backed tests run live against this machine's subscriptions: Claude on `~/.claude`, Codex's ChatGPT login on `~/.codex` with `gpt-6-luna`, and local Kingdom. Every cassette is re-recorded, then everything replays. | Nightly, and after any CLI or agent-session upgrade |
+| `bun run test:live` | The same cassette-backed tests run live against this machine's subscriptions: Claude on `~/.claude`, Codex's ChatGPT login on `~/.codex` (recorded Codex decisions use `gpt-6-luna`), and local Kingdom. Every cassette is re-recorded, then everything replays. | Nightly, and after any CLI or agent-session upgrade |
 | `bun run test:live:daemon` | A small live smoke inside a throwaway LaunchAgent that uses the installed daemon's PATH and ProcessType and has no terminal environment. It runs the status probes and one decision per runtime. | Nightly, and after any daemon/plist change |
 | `bun run vcr:refresh` | `test:live`, then `test:live:daemon`. Exits non-zero on any failure or drift. | The scheduled job |
 | `bun run test:live:api` | The API-key provider smoke. It uses paid keys from `.env`, so it is off the subscription cadence. | On demand |

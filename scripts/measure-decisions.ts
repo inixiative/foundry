@@ -25,6 +25,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DECISION_MODEL } from '../packages/foundry/src/models/registry';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -86,7 +87,7 @@ const first = await start('generate');
 await first.stop();
 const settingsPath = join(project, '.foundry', 'settings.json');
 const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-const model = settings.defaults.classifierModel ?? 'gpt-6-luna';
+const model = settings.defaults.classifierModel ?? DECISION_MODEL;
 const knowledge = (d: string) =>
   Array.from(
     { length: 40 },

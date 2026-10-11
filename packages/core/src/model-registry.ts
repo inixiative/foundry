@@ -225,11 +225,17 @@ export interface ModelSweepOption {
 export const MODEL_REGISTRY_UPDATED_AT = '2026-09-24';
 
 /**
- * Decision default: the cheapest current model tagged `judgment`. Held here
- * rather than in an adapter so one map answers "what runs decisions".
+ * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
+ * rather than in an adapter so one map answers "what runs decisions". DECISION_PROVIDER is the
+ * API-token path; subscription decisions pick their model per runtime from SUBSCRIPTION_DECISION_MODELS.
  */
-export const DECISION_PROVIDER = 'openai';
-export const DECISION_MODEL = 'gpt-6-luna';
+export const DECISION_PROVIDER = 'anthropic';
+export const DECISION_MODEL = 'claude-haiku-5-5';
+/** Subscription decision default per native runtime; settings choose the runtime. */
+export const SUBSCRIPTION_DECISION_MODELS = {
+  claude: DECISION_MODEL,
+  codex: 'gpt-6-luna',
+} as const;
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
 const FAST = ['judgment', 'learning-review', 'tool-use'] as ModelCapability[];
@@ -291,6 +297,38 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: CLAUDE_REASONING,
       },
       {
+        id: 'claude-haiku-5-5',
+        label: 'Haiku 5.5',
+        tier: 'fast',
+        costTier: 'low',
+        contextWindow: 1_000_000,
+        runtimeKind: 'native-harness',
+        capabilities: FAST_REASONING,
+        reasoning: { ...CLAUDE_REASONING, efforts: ['low', 'medium', 'high'] },
+        notes: "Foundry's decision model; the CLI reports this id as the served model.",
+      },
+      {
+        id: 'claude-opus-5-5',
+        label: 'Opus 5.5',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_000_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
+      },
+      {
+        id: 'claude-fable-5-1',
+        label: 'Fable 5.1',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
+      },
+      {
         id: 'haiku',
         label: 'Haiku 5.5',
         tier: 'fast',
@@ -324,6 +362,17 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
         notes: 'Thinking is always on; steer with effort.',
+      },
+      {
+        id: 'claude-opus-5-5',
+        label: 'Claude Opus 5.5',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'api',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
       },
       {
         id: 'claude-opus-5',

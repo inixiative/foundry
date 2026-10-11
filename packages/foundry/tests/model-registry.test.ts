@@ -50,7 +50,7 @@ describe('model registry', () => {
     expect(config.defaults).toMatchObject({
       provider: 'claude-code',
       model: 'fable',
-      classifierModel: 'gpt-6-luna',
+      classifierModel: 'claude-haiku-5-5',
     });
     expect(config.providers.openai.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
     expect(config.providers.codex.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
@@ -260,7 +260,7 @@ describe('Muse Spark reaches the surfaces a user chooses from', () => {
 });
 
 describe('shipped defaults name a model that is actually served', () => {
-  test('decisions default to Codex Luna everywhere a new configuration is built from', async () => {
+  test('decisions default to Claude Haiku 5.5 everywhere a new configuration is built from', async () => {
     const { starterConfig } = await import('../src/viewer/config');
     const { SUBSCRIPTION_DECISIONS } = await import('../src/providers/subscription-policy');
     for (const config of [defaultConfig(), starterConfig(), starterConfig('claude-code', 'opus')])
@@ -268,9 +268,10 @@ describe('shipped defaults name a model that is actually served', () => {
         classifierProvider: SUBSCRIPTION_DECISIONS,
         classifierModel: DECISION_MODEL,
       });
-    expect(DECISION_MODEL).toBe('gpt-6-luna');
-    // The subscription decision profile is the Codex login; Luna is registered on it.
-    expect(registryModel('codex', DECISION_MODEL)!.runtimeKind).toBe('native-harness');
+    expect(DECISION_MODEL).toBe('claude-haiku-5-5');
+    // The subscription decision profile is the Claude login; Haiku 5.5 is registered on it and on the API.
+    expect(registryModel('claude-code', DECISION_MODEL)!.runtimeKind).toBe('native-harness');
+    expect(registryModel('anthropic', DECISION_MODEL)!.runtimeKind).toBe('api');
 
     const example = await Bun.file(
       new URL('../../../examples/domain-team.settings.json', import.meta.url),

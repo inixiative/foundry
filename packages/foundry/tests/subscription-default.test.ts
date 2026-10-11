@@ -59,7 +59,7 @@ const messages = [{ role: 'user' as const, content: 'private-input' }];
 afterAll(settleRecordings);
 const LIVE_TIMEOUT = 90_000;
 
-test("a fresh configuration is subscription-only: Claude worker and Codex Luna decisions from the user's own logins", () => {
+test("a fresh configuration is subscription-only: Claude worker and Claude Haiku 5.5 decisions on the user's own login", () => {
   const root = userHome(),
     cwd = join(root, 'project');
   mkdirSync(cwd);
@@ -72,38 +72,78 @@ test("a fresh configuration is subscription-only: Claude worker and Codex Luna d
     mode: 'native-profile',
     profileDirectory: join(root, '.claude'),
   });
-  expect(resolved.decision).toMatchObject({
-    runtime: 'codex',
-    mode: 'native-profile',
-    profileDirectory: join(root, '.codex'),
-  });
+  // Worker and decisions share the one Claude login.
+  expect(resolved.decision).toEqual(resolved.worker);
   expect(resolved.policy).toEqual({
-    model: 'gpt-6-luna',
+    model: 'claude-haiku-5-5',
     directory: join(cwd, '.foundry', 'decision-receipts'),
     maxCalls: 10000,
     maxQueued: 256,
     maxQueuedPerThread: 32,
-    maxConcurrent: 16,
+    maxConcurrent: 8,
     callTimeoutMs: 30000,
     effort: 'low',
-    hedgeAfterMs: 4000,
   });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({
     provider: 'claude-code',
     classifierProvider: 'subscription-decisions',
-    classifierModel: 'gpt-6-luna',
+    classifierModel: 'claude-haiku-5-5',
   });
   expect(resolved.rerouted).toEqual([]);
 });
 
+test('Codex decisions are a setting: decisionRuntime selects the Codex login and its Luna default', () => {
+  const root = userHome(),
+    config = defaultConfig();
+  delete config.defaults.classifierProvider;
+  delete config.defaults.classifierModel;
+  config.subscriptionOnly = { decisionRuntime: 'codex' };
+  const resolved = resolveSubscriptionPolicy(config, { cwd: root })!;
+  expect(resolved.decision).toMatchObject({
+    runtime: 'codex',
+    profileDirectory: join(root, '.codex'),
+  });
+  expect(resolved.policy).toMatchObject({
+    model: 'gpt-6-luna',
+    maxConcurrent: 16,
+    effort: 'low',
+    hedgeAfterMs: 4000,
+  });
+  // The recorded decision model wins over the runtime default.
+  config.defaults.classifierProvider = 'subscription-decisions';
+  config.defaults.classifierModel = 'gpt-5.6-luna';
+  expect(resolveSubscriptionPolicy(config, { cwd: root })!.policy.model).toBe('gpt-5.6-luna');
+  // A named source must match the requested runtime.
+  config.nativeAuthentication = [
+    {
+      ...defaultProfileSource('claude'),
+      id: crypto.randomUUID(),
+      connectionId: crypto.randomUUID(),
+    },
+  ];
+  config.subscriptionOnly = {
+    decisionRuntime: 'codex',
+    decisionSourceId: config.nativeAuthentication[0]!.id,
+  };
+  expect(() => resolveSubscriptionPolicy(config, { cwd: root })).toThrow(
+    'decisionRuntime does not match',
+  );
+});
+
 test("the user's default profiles are referenced in place but their credential files must stay private", () => {
   const root = userHome();
-  chmodSync(join(root, '.codex', 'auth.json'), 0o644);
+  writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o644 });
   expect(() => resolveSubscriptionPolicy(defaultConfig(), { startup: true, cwd: root })).toThrow(
+    'claude subscription profile unavailable',
+  );
+  chmodSync(join(root, '.claude', '.credentials.json'), 0o600);
+  const codex = defaultConfig();
+  codex.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-6-luna' };
+  chmodSync(join(root, '.codex', 'auth.json'), 0o644);
+  expect(() => resolveSubscriptionPolicy(codex, { startup: true, cwd: root })).toThrow(
     'codex subscription profile unavailable',
   );
-  chmodSync(join(root, '.codex', 'auth.json'), 0o600);
   rmSync(join(root, '.claude'), { recursive: true });
   expect(() => resolveSubscriptionPolicy(defaultConfig(), { startup: true, cwd: root })).toThrow(
     'claude subscription profile unavailable',
@@ -212,7 +252,7 @@ test('saved decision roles run on subscription decisions without rewriting the s
   ]);
   expect(resolved.config.agents.librarian).toMatchObject({
     provider: 'subscription-decisions',
-    model: 'gpt-6-luna',
+    model: 'claude-haiku-5-5',
   });
   expect(resolved.config.agents.artificer).toMatchObject({
     provider: 'claude-code',
@@ -220,7 +260,7 @@ test('saved decision roles run on subscription decisions without rewriting the s
   });
   expect(resolved.config.projects.P!.agents!.classifier).toMatchObject({
     provider: 'subscription-decisions',
-    model: 'gpt-6-luna',
+    model: 'claude-haiku-5-5',
   });
   config.agents.librarian.thinking = 'high';
   expect(() => validateConfig(config)).toThrow('sampling override');
@@ -611,7 +651,7 @@ test('a fresh install starts subscription-only with no settings, API provider or
       await Bun.sleep(25);
     }
     expect(foundry.output).toContain(
-      `Subscription-only: worker claude-code (${join(root, '.claude')}), decisions codex gpt-6-luna (${join(root, '.codex')}); no API providers`,
+      `Subscription-only: worker claude-code (${join(root, '.claude')}), decisions claude claude-haiku-5-5 (${join(root, '.claude')}); no API providers`,
     );
     expect(foundry.output).toContain('Librarian (subscription-decisions)');
     expect(foundry.output).not.toContain('openai-decisions');
@@ -623,7 +663,7 @@ test('a fresh install starts subscription-only with no settings, API provider or
     expect(saved.defaults).toMatchObject({
       provider: 'claude-code',
       classifierProvider: 'subscription-decisions',
-      classifierModel: 'gpt-6-luna',
+      classifierModel: 'claude-haiku-5-5',
     });
     expect(existsSync(foundry.probe)).toBe(false);
     expect(statSync(join(foundry.cwd, '.foundry', 'decision-receipts')).mode & 0o777).toBe(0o700);
@@ -640,12 +680,12 @@ test('API tokens opted in without a key refuse startup instead of falling back t
   writeFileSync(join(root, 'project', '.foundry', 'settings.json'), JSON.stringify(config), {
     mode: 0o600,
   });
-  const foundry = await startFoundry(root, { OPENAI_API_KEY: '' });
+  const foundry = await startFoundry(root, { ANTHROPIC_API_KEY: '' });
   const code = await foundry.child.exited;
   await foundry.stop();
   expect(code).not.toBe(0);
   expect(foundry.output).toContain(
-    'Foundry decisions require OPENAI_API_KEY for openai/gpt-6-luna',
+    'Foundry decisions require ANTHROPIC_API_KEY for anthropic/claude-haiku-5-5',
   );
   expect(foundry.output).not.toContain('Subscription-only');
 }, 10000);

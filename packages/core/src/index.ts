@@ -205,6 +205,7 @@ export {
   type RuntimeKind,
   registryModel,
   resolveDecisionModel,
+  SUBSCRIPTION_DECISION_MODELS,
 } from './model-registry';
 export * from './native-evidence';
 // Permission middleware

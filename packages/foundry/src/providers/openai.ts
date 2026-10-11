@@ -7,7 +7,11 @@ import type {
   LLMProvider,
   LLMStreamEvent,
 } from '@inixiative/foundry-core';
-import { DECISION_MODEL, type ModelReasoning, registryModel } from '../models/registry';
+import {
+  type ModelReasoning,
+  registryModel,
+  SUBSCRIPTION_DECISION_MODELS,
+} from '../models/registry';
 import { HttpCompletionSettlement } from './http-settlement';
 
 export interface OpenAIConfig {
@@ -66,7 +70,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? 'openai';
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? DECISION_MODEL;
+    this._defaultModel = config.defaultModel ?? SUBSCRIPTION_DECISION_MODELS.codex;
     this._apiRoot = config.apiRoot?.trim() || openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
     this._extraHeaders = config.headers ?? {};

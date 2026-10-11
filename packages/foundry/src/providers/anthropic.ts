@@ -19,6 +19,8 @@ export interface AnthropicConfig {
   defaultMaxTokens?: number;
   /** Override base URL (e.g. for proxies). */
   baseUrl?: string;
+  /** Provider identity; decisions use their own. Defaults to "anthropic". */
+  id?: string;
 }
 
 const DEFAULT_BASE = 'https://api.anthropic.com';
@@ -29,7 +31,7 @@ const API_VERSION = '2023-06-01';
  * Uses raw fetch — zero SDK dependency.
  */
 export class AnthropicProvider implements LLMProvider {
-  readonly id = 'anthropic';
+  readonly id: string;
   private readonly _settlement = new HttpCompletionSettlement();
   readonly completionLifecycle = this._settlement.lifecycle;
 
@@ -39,6 +41,7 @@ export class AnthropicProvider implements LLMProvider {
   private _baseUrl: string;
 
   constructor(config: AnthropicConfig) {
+    this.id = config.id ?? 'anthropic';
     this._apiKey = config.apiKey;
     this._defaultModel = config.defaultModel ?? 'claude-sonnet-4-20250514';
     this._defaultMaxTokens = config.defaultMaxTokens ?? 1024;

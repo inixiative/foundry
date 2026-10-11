@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  ClaudePrimedSessions,
   CodexPrimedSessions,
   type CodexSpawn,
   DecisionError,
@@ -17,16 +18,25 @@ import {
   type LLMProvider,
   type NativeEvidence,
 } from '@inixiative/foundry-core';
-import type { NativeProfileSource } from './default-profiles';
+import { type NativeProfileSource, withProfile } from './default-profiles';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
-import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
+import {
+  type NativeTextCall,
+  type NativeTextConfig,
+  type StatusProcess,
+  subscriptionStatus,
+} from './native-text-provider';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 import { formatMessagesForNativeSession } from './session-backed';
 
-type CodexTextProcess = ReturnType<CodexSpawn>;
+type DecisionProcess = ReturnType<CodexSpawn>;
 
-/** Base instructions for every primed decision session (replaces Codex's coding-agent prompt). */
+/** Primed Claude keys kept warm; each holds one spare CLI process (~215 MB). */
+const CLAUDE_PRIMED_SESSIONS = 16;
+const STATUS_DEADLINE_MS = 20_000;
+
+/** Base instructions for every primed decision session (replaces the runtime's coding-agent prompt). */
 export const PRIMED_DECISION_CONTEXT =
   "You are Foundry's internal decision middleware, not its coding executor. " +
   'Your only task is to return the classification, routing, or domain-advice JSON your developer instructions request. ' +
@@ -42,17 +52,21 @@ export interface PrimedDecisionHostConfig {
   /** Existing private receipt parent; this host writes below it. */
   directory: string;
   model: string;
+  /** Claude: the model id the CLI must report serving. Default: `model`. */
+  expectedObservedModel?: string;
   effort?: string;
-  /** Hedge a decision still running after this long on a second branch; the first to finish wins. */
+  /** Codex: hedge a decision still running after this long on a second branch; the first to finish wins. */
   hedgeAfterMs?: number;
-  /** Concurrent decision turns on the one warm process. */
+  /** Concurrent decisions: turns on the warm Codex process, or Claude CLI processes. */
   maxConcurrent: number;
   callTimeoutMs: number;
   /** Test seam: launcher used after credential registration, in place of Bun.spawn. */
   spawn?: (
     argv: string[],
     options: { cwd: string; env: Record<string, string | undefined> },
-  ) => CodexTextProcess;
+  ) => DecisionProcess;
+  /** Test seam: Claude subscription status check, in place of `claude auth status --json`. */
+  statusSpawn?: (env: Record<string, string | undefined>) => StatusProcess;
   onEvent?: (event: PrimedEvent) => void;
 }
 
@@ -98,18 +112,21 @@ export function primedRequest(
 }
 
 /**
- * One warm Codex app-server per decision profile. Every middleware role keeps
- * its own primed session on it (agent-session CodexPrimedSessions); the
- * subscription scheduler's per-call runs are cheap views onto this host.
+ * One primed decision host per decision profile. Every middleware role keeps its own primed
+ * session (agent-session CodexPrimedSessions on one warm app-server, or ClaudePrimedSessions
+ * forking a primed Claude session per decision); the subscription scheduler's per-call runs
+ * are cheap views onto this host.
  */
 export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const { source } = config;
-  if (source.runtime !== 'codex' || source.mode !== 'native-profile')
-    throw Error(
-      'Primed decisions require an explicit Codex native profile; API fallback is refused',
-    );
+  const { runtime } = source;
+  if (source.mode !== 'native-profile')
+    throw Error('Primed decisions require a native subscription profile; API fallback is refused');
+  const observedModel = config.expectedObservedModel ?? config.model;
   if (
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(config.model) ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(observedModel) ||
+    (runtime === 'codex' && observedModel !== config.model) ||
     !isAbsolute(config.directory) ||
     !Number.isSafeInteger(config.maxConcurrent) ||
     config.maxConcurrent < 1 ||
@@ -120,7 +137,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   )
     throw Error('Invalid primed decision configuration');
   assertPrivateProfile(config.directory);
-  assertProfile(source.profileDirectory, 'codex');
+  assertProfile(source.profileDirectory, runtime);
   const hostId = crypto.randomUUID();
   const root = join(config.directory, `primed-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
@@ -133,8 +150,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
       {
         schema: 1,
         hostId,
-        runtime: 'codex',
-        transport: 'codex-app-server',
+        runtime,
+        transport: runtime === 'codex' ? 'codex-app-server' : 'claude-cli',
         mode: config.spawn ? 'controlled-transport' : 'native-subscription',
         sourceId: source.id,
         connectionId: source.connectionId,
@@ -147,60 +164,167 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     ),
     { mode: 0o600 },
   );
-  // The warm process shares the user's Codex login like any decision process: a shared registration for its lifetime.
-  // It runs on a private home kept across hosts in the receipt directory: the login only, no user instructions.
+  // Decisions share the user's login like any other process on it: a shared registration for their lifetime.
+  // Codex runs on a private home kept across hosts in the receipt directory: the login only, no user instructions.
   const auth = new NativeAuthentication({
     directory: config.directory,
     sources: [source],
     defaultSourceId: source.id,
     shared: true,
-    privateHome: true,
+    ...(runtime === 'codex' ? { privateHome: true } : {}),
   });
   let releaseFailures = 0;
-  const host = new CodexPrimedSessions({
-    model: config.model,
-    effort: config.effort,
-    hedgeAfterMs: config.hedgeAfterMs,
-    cwd,
-    baseInstructions: PRIMED_DECISION_CONTEXT,
-    maxConcurrent: config.maxConcurrent,
-    timeoutMs: config.callTimeoutMs,
-    clientName: 'foundry-decisions',
-    onEvent: config.onEvent,
-    spawn: async (argv, options) => {
-      const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
-      let child: CodexTextProcess;
+  const release = (launch: { release(): void }) => {
+    try {
+      launch.release();
+    } catch {
+      releaseFailures++;
+    }
+  };
+  const claude = runtime === 'claude' ? claudeLogin() : undefined;
+  const host: CodexPrimedSessions | ClaudePrimedSessions = claude
+    ? new ClaudePrimedSessions({
+        model: config.model,
+        effort: config.effort,
+        cwd,
+        baseInstructions: PRIMED_DECISION_CONTEXT,
+        maxConcurrent: config.maxConcurrent,
+        maxSessions: CLAUDE_PRIMED_SESSIONS,
+        timeoutMs: config.callTimeoutMs,
+        onEvent: config.onEvent,
+        // Synchronous launcher: the login was verified and registered before the first decision.
+        spawn: (argv, options) => {
+          const env = claude.env();
+          // The user's hooks, permissions and plugins never apply to a decision.
+          const command = [...argv, '--setting-sources', ''];
+          return config.spawn
+            ? config.spawn(command, { cwd: options.cwd, env })
+            : (Bun.spawn(command, {
+                cwd: options.cwd,
+                env,
+                stdin: 'pipe',
+                stdout: 'pipe',
+                stderr: 'pipe',
+              }) as unknown as DecisionProcess);
+        },
+      })
+    : new CodexPrimedSessions({
+        model: config.model,
+        effort: config.effort,
+        hedgeAfterMs: config.hedgeAfterMs,
+        cwd,
+        baseInstructions: PRIMED_DECISION_CONTEXT,
+        maxConcurrent: config.maxConcurrent,
+        timeoutMs: config.callTimeoutMs,
+        clientName: 'foundry-decisions',
+        onEvent: config.onEvent,
+        spawn: async (argv, options) => {
+          const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
+          let child: DecisionProcess;
+          try {
+            const command = launch.launch(argv, options.env);
+            const env = nativeTextEnvironment(command.env);
+            child = config.spawn
+              ? config.spawn(command.argv, { cwd: options.cwd, env })
+              : (Bun.spawn(command.argv, {
+                  cwd: options.cwd,
+                  env,
+                  stdin: 'pipe',
+                  stdout: 'pipe',
+                  stderr: 'pipe',
+                }) as unknown as DecisionProcess);
+          } catch (error) {
+            release(launch);
+            throw error;
+          }
+          const done = () => release(launch);
+          void child.exited.then(done, done);
+          return child;
+        },
+      });
+
+  /** The Claude login, checked as a subscription (never an API key) and registered as a shared holder
+   * for the host's lifetime; every decision process launches with its environment. */
+  function claudeLogin() {
+    let registered: { env: Record<string, string | undefined>; launch: { release(): void } };
+    let pending: Promise<void> | undefined;
+    const verify = async () => {
+      const env = withProfile(
+        nativeTextEnvironment(process.env),
+        'claude',
+        source.profileDirectory,
+      );
+      const child = config.statusSpawn
+        ? config.statusSpawn(env)
+        : (Bun.spawn(['claude', 'auth', 'status', '--json'], {
+            env,
+            stdin: 'ignore',
+            stdout: 'pipe',
+            stderr: 'pipe',
+          }) as unknown as StatusProcess);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const command = launch.launch(argv, options.env);
-        const env = nativeTextEnvironment(command.env);
-        child = config.spawn
-          ? config.spawn(command.argv, { cwd: options.cwd, env })
-          : (Bun.spawn(command.argv, {
-              cwd: options.cwd,
-              env,
-              stdin: 'pipe',
-              stdout: 'pipe',
-              stderr: 'pipe',
-            }) as unknown as CodexTextProcess);
-      } catch (error) {
+        const subscribed = await Promise.race([
+          subscriptionStatus(child),
+          new Promise<false>((resolve) => {
+            timer = setTimeout(() => resolve(false), STATUS_DEADLINE_MS);
+          }),
+        ]);
+        if (!subscribed)
+          throw new DecisionError(
+            'Authenticated Claude subscription required; no API fallback',
+            'auth',
+            'not-dispatched',
+            true,
+          );
+      } finally {
+        clearTimeout(timer);
         try {
-          launch.release();
+          child.kill();
         } catch {
-          releaseFailures++;
+          /* exited */
         }
+      }
+      const launch = await auth.prepare(`primed-decisions:${hostId}`, 'claude');
+      try {
+        const command = launch.launch(['claude'], nativeTextEnvironment(process.env));
+        // This process is the holder: its registration is reclaimable once it is gone.
+        launch.adopt?.(process.pid);
+        registered = { env: nativeTextEnvironment(command.env), launch };
+      } catch (error) {
+        release(launch);
         throw error;
       }
-      const release = () => {
+    };
+    return {
+      ready: (): Promise<void> => {
+        if (registered) return Promise.resolve();
+        pending ??= verify().finally(() => {
+          pending = undefined;
+        });
+        return pending;
+      },
+      env: () => {
+        if (!registered) throw Error('Claude decision login is not registered');
+        return { ...registered.env, DISABLE_AUTOUPDATER: '1' };
+      },
+      release: () => {
+        if (registered) release(registered.launch);
+        // The CLI's per-cwd transcript directory for this host; its transcripts were deleted with their keys.
         try {
-          launch.release();
+          rmdirSync(
+            join(
+              source.profileDirectory,
+              'projects',
+              realpathSync(cwd).replace(/[^a-zA-Z0-9]/g, '-'),
+            ),
+          );
         } catch {
-          releaseFailures++;
+          /* absent, or a crashed decision left a transcript */
         }
-      };
-      void child.exited.then(release, release);
-      return child;
-    },
-  });
+      },
+    };
+  }
 
   const configuration = {
     requestedModel: config.model,
@@ -247,10 +371,10 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     // Closing the run (revocation, shutdown) cancels its decision: refused before dispatch, or interrupted and settled.
     const abort = new AbortController();
     const provider: LLMProvider = {
-      id: 'primed-codex-decisions',
+      id: `primed-${runtime}-decisions`,
       async complete(messages: LLMMessage[], opts: CompletionOpts = {}): Promise<CompletionResult> {
         if (closed || calls.length >= (run.maxCalls ?? 1))
-          throw Error('Codex text admission closed or occupied; no retry or queue');
+          throw Error('Decision admission closed or occupied; no retry or queue');
         const timeout = run.callTimeoutMs ?? config.callTimeoutMs;
         if (
           (opts.model && opts.model !== config.model) ||
@@ -261,8 +385,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           (opts.timeout !== undefined &&
             (!Number.isSafeInteger(opts.timeout) || opts.timeout < 100 || opts.timeout > timeout))
         )
-          throw Error('Codex text scope or model override refused');
-        if (JSON.stringify(messages).length > 100_000) throw Error('Codex text input cap exceeded');
+          throw Error('Decision scope or model override refused');
+        if (JSON.stringify(messages).length > 100_000) throw Error('Decision input cap exceeded');
         const id = crypto.randomUUID(),
           fallbackThread = `primed:${hostId}:${id}`;
         const owner = freezeEvidence({
@@ -300,7 +424,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         try {
           ({ spec, input } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
-          if (closed) throw Error('Codex text admission closed');
+          await claude?.ready();
+          if (closed) throw Error('Decision admission closed');
           result = await host.decide(spec, {
             input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
@@ -316,9 +441,9 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
                 configuration,
               });
               call.admission = admission;
-              // Registration precedes the native write, so a refused admission never reaches Codex.
+              // Registration precedes the native write, so a refused admission never reaches the runtime.
               await opts.nativeObservation?.register(admission);
-              if (closed) throw Error('Codex text admission closed');
+              if (closed) throw Error('Decision admission closed');
             },
           });
           const terminal = freezeEvidence<NativeEvidence>({
@@ -346,9 +471,9 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             const { providerUsage: _usage, ...usage } = result.tokens;
             call.usage = usage;
           }
-          // The app-server reports the model serving the session; a substitution is refused.
-          if (result.model && result.model !== config.model)
-            throw Error('Codex served a different model than requested');
+          // The runtime reports the model serving the session; a substitution is refused.
+          if (result.model && result.model !== observedModel)
+            throw Error('The decision runtime served a different model than requested');
           await opts.nativeObservation?.observe(terminal);
           call.valid = true;
           call.release = 'released';
@@ -382,7 +507,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             call.failure = admission ? 'provider-or-evidence' : 'not-admitted';
           }
           throw Object.assign(
-            Error('Codex text call failed; inspect retained ownership and release evidence'),
+            Error('Decision call failed; inspect retained ownership and release evidence'),
             { evidencePath: receiptsPath, callId: id },
           );
         } finally {
@@ -420,6 +545,9 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     receiptsPath,
     createRun,
     releaseFailures: () => releaseFailures,
-    close: () => host.close(),
+    close: async () => {
+      await host.close();
+      claude?.release();
+    },
   };
 }

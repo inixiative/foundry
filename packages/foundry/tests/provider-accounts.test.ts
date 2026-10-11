@@ -40,6 +40,7 @@ test('subscription mode reports the main-thread and decision profiles where they
     provider: 'claude-code',
     nativeAuthenticationId: config.nativeAuthentication[0]!.id,
   };
+  config.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-6-luna' };
   enable(config, 'claude-code', 'codex', 'anthropic');
 
   const accounts = Object.fromEntries(
@@ -58,6 +59,16 @@ test('subscription mode reports the main-thread and decision profiles where they
     detail: 'ANTHROPIC_API_KEY',
     ready: false,
   });
+});
+
+test('by default the Claude login runs both the main thread and the decisions', () => {
+  const config = defaultConfig();
+  enable(config, 'claude-code', 'codex');
+  const accounts = Object.fromEntries(
+    providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
+  );
+  expect(accounts['claude-code']!.uses).toEqual(['main thread', 'decisions']);
+  expect(accounts.codex!.uses).toEqual([]);
 });
 
 test('API providers report their variable by name, never its value', () => {
