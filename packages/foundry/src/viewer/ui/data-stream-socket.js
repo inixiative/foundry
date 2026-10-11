@@ -66,6 +66,14 @@ export function createDataStreamSocket(
     return true;
   };
 
+  // Opens are answered in order, by a snapshot or an error; either settles the oldest.
+  const answerOpen = (stream) => {
+    const queue = requested.get(stream) ?? [];
+    const requestedAt = queue.shift() ?? 0;
+    if (!queue.length) requested.delete(stream);
+    return requestedAt;
+  };
+
   const replayStreams = () => {
     for (const stream of streams.keys()) sendOpen(stream);
   };
@@ -109,6 +117,7 @@ export function createDataStreamSocket(
           return void settleReconnectAck(frame.stream);
         case 'error':
           // The server dropped or failed this open: ask again while it is still wanted.
+          if (frame.action === 'open') answerOpen(frame.stream);
           if (frame.action === 'open')
             setTimeout(() => {
               if (streams.has(frame.stream)) sendOpen(frame.stream);
@@ -116,11 +125,7 @@ export function createDataStreamSocket(
           return;
       }
       if (frame.category !== 'data') return;
-      if (frame.action === 'snapshot') {
-        const queue = requested.get(frame.stream) ?? [];
-        frame.requestedAt = queue.shift() ?? 0;
-        if (!queue.length) requested.delete(frame.stream);
-      }
+      if (frame.action === 'snapshot') frame.requestedAt = answerOpen(frame.stream);
       // Frames for a stream this client no longer holds are in flight from before its close.
       if (!streams.has(frame.stream)) return;
       if (frame.action === 'snapshot') lastSeqs.set(frame.stream, frame.seq);

@@ -265,6 +265,18 @@ describe('sequence numbers', () => {
     expect(applied(data)).toEqual([[], ['x', 'gap']]);
   });
 
+  test('an open the server answered with an error does not block a later gap from re-opening', async () => {
+    const { ws, data } = held();
+    receive(ws(), { type: 'error', action: 'open', stream: 'thread:a' });
+    await Bun.sleep(1100);
+    expect(opens(ws())).toHaveLength(2);
+    receive(ws(), snapshot(0, []));
+    receive(ws(), append(2, 'gap'));
+    expect(opens(ws())).toHaveLength(3);
+    receive(ws(), snapshot(2, ['gap']));
+    expect(applied(data)).toEqual([[], ['gap']]);
+  });
+
   test('after the server closes a socket that dropped a frame, the reconnect snapshot restores state', async () => {
     const { ws, data } = held();
     const first = ws();
