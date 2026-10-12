@@ -18,6 +18,7 @@ import {
 } from '@inixiative/foundry-core';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
+import { classifyCorrection, lintStatement } from '../src/feedback/sharpen';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   CODEX_HARNESS_INSTRUCTIONS_OFF,
@@ -175,6 +176,54 @@ test(
         statusProcessExit: 'exited',
       },
     });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'claude feedback classify: the shared correction contract on Haiku yields a sharp, lint-clean rule',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'feedback-classify', async () => {
+      const transport = recordedClaudeTransport(
+        { status: ['subscribed'], decision: ['feedback-classify'] },
+        vcr,
+      );
+      const directory = root();
+      const run = buildNativeTextProvider(
+        {
+          directory,
+          source: source('claude', directory),
+          runId: crypto.randomUUID(),
+          model: LIVE.claudeModel,
+          expectedObservedModel: LIVE.claudeObservedModel,
+          maxCalls: 1,
+          callTimeoutMs: 30_000,
+        },
+        transport,
+      );
+      const classified = await classifyCorrection(run.provider, {
+        text: "No, don't open a PR for me to merge. I told you already: on the agentic repos you merge it yourself once the full check is green.",
+        before:
+          'The change is ready and the check is green. Shall I open a PR for you to review and merge?',
+        priority: 0,
+      });
+      return {
+        isCorrection: classified?.isCorrection,
+        sharp: classified?.sharp,
+        rules: classified?.statements.length ?? 0,
+        lintClean: (classified?.statements ?? []).every((statement) => lintStatement(statement).ok),
+        aboutMerging: (classified?.statements ?? []).some((statement) => /merg/i.test(statement)),
+      };
+    });
+    expect(out).toEqual({
+      isCorrection: true,
+      sharp: true,
+      rules: expect.any(Number),
+      lintClean: true,
+      aboutMerging: true,
+    });
+    expect(out.rules).toBeGreaterThan(0);
   },
   LIVE_TIMEOUT,
 );

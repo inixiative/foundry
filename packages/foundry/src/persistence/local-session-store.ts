@@ -282,6 +282,7 @@ export class LocalSessionStore {
       );
       CREATE INDEX IF NOT EXISTS session_phase_turn ON session_phase(thread_id, turn_id, seq);
       CREATE INDEX IF NOT EXISTS session_phase_dispatch ON session_phase(thread_id, dispatch_id, seq);
+      CREATE INDEX IF NOT EXISTS session_phase_kind ON session_phase(phase, stored_at);
       PRAGMA user_version = 3;
     `);
     } catch (error) {
@@ -520,12 +521,12 @@ export class LocalSessionStore {
     return JSON.parse(row.record);
   }
 
-  /** Append one phase record. Idempotent for the same id and bytes; a different record under a known id is a conflict. */
-  appendPhase(thread: Pick<Thread, 'id' | 'meta'>, input: PhaseRecordInput): void {
+  /** Append one phase record; returns when it was stored. Idempotent for the same id and bytes; a different record under a known id is a conflict. */
+  appendPhase(thread: Pick<Thread, 'id' | 'meta'>, input: PhaseRecordInput): number {
     if (!input.id || !input.phase) throw Error('Phase record requires id and phase');
     const record = JSON.stringify(input.record);
     if (Buffer.byteLength(record) > 200_000) throw Error('Phase record exceeds size limit');
-    this.db.transaction(() => {
+    return this.db.transaction((): number => {
       this.saveThread(thread);
       // Idempotent only for an exact replay: the same thread, turn, dispatch, phase and bytes. Any contradiction
       // is refused without touching the original row.
@@ -535,9 +536,10 @@ export class LocalSessionStore {
         dispatch_id: string | null;
         phase: string;
         record: string;
+        stored_at: number;
       };
       const prior = this.query(
-        'SELECT thread_id, turn_id, dispatch_id, phase, record FROM session_phase WHERE id=?',
+        'SELECT thread_id, turn_id, dispatch_id, phase, record, stored_at FROM session_phase WHERE id=?',
       ).get(input.id) as PriorPhase | null;
       if (prior) {
         const same =
@@ -547,8 +549,9 @@ export class LocalSessionStore {
           prior.phase === input.phase &&
           prior.record === record;
         if (!same) throw Error('Phase record identity conflict');
-        return;
+        return prior.stored_at;
       }
+      const storedAt = Date.now();
       this.query(
         'INSERT INTO session_phase(id, thread_id, turn_id, dispatch_id, phase, record, checksum, stored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(
@@ -559,8 +562,9 @@ export class LocalSessionStore {
         input.phase,
         record,
         checksum(record),
-        Date.now(),
+        storedAt,
       );
+      return storedAt;
     })();
   }
 
@@ -606,6 +610,100 @@ export class LocalSessionStore {
         storedAt: row.stored_at,
       };
     });
+  }
+
+  /** Feedback lifecycle rows across threads, oldest first, with each thread's project (docs/FEEDBACK-LOOP.md). */
+  feedbackPhases(
+    opts: { projectId?: string } = {},
+  ): Array<StoredPhase & { projectId: string | null }> {
+    const rows = this.query(
+      `SELECT p.id, p.thread_id, p.turn_id, p.dispatch_id, p.phase, p.record, p.checksum, p.stored_at,
+              json_extract(t.meta, '$.projectId') AS project_id
+         FROM session_phase p JOIN session_threads t ON t.id = p.thread_id
+        WHERE p.phase LIKE 'feedback-%'${opts.projectId !== undefined ? " AND json_extract(t.meta, '$.projectId') = ?" : ''}
+        ORDER BY p.seq`,
+    ).all(...(opts.projectId !== undefined ? [opts.projectId] : [])) as Array<{
+      id: string;
+      thread_id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      phase: string;
+      record: string;
+      checksum: string;
+      stored_at: number;
+      project_id: string | null;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        id: row.id,
+        threadId: row.thread_id,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase: row.phase,
+        record: JSON.parse(row.record),
+        storedAt: row.stored_at,
+        projectId: row.project_id,
+      };
+    });
+  }
+
+  /**
+   * Advice and guard-request rows stored at or after `since` whose recorded input contains `marker`: the
+   * calls that had a feedback rule in front of a Warden. Roles are the participants whose segments hold it.
+   */
+  phasesContaining(
+    marker: string,
+    since: number,
+    limit = 500,
+  ): Array<{
+    threadId: string;
+    turnId: string | null;
+    phase: string;
+    roles: string[];
+    storedAt: number;
+  }> {
+    const rows = this.query(
+      `SELECT thread_id, turn_id, phase, record, stored_at FROM session_phase
+        WHERE phase IN ('advice', 'guard-request') AND stored_at >= ? AND instr(record, ?) > 0
+        ORDER BY seq DESC LIMIT ?`,
+    ).all(since, marker, limit) as Array<{
+      thread_id: string;
+      turn_id: string | null;
+      phase: string;
+      record: string;
+      stored_at: number;
+    }>;
+    // Only the composed input counts: a participant's segments, or a guard call's system instructions.
+    // The marker elsewhere (an observed tool input that read the role file) is not exposure.
+    return rows
+      .reverse()
+      .map((row) => {
+        const record = JSON.parse(row.record) as {
+          domain?: string;
+          request?: { messages?: Array<{ role?: string; content?: unknown }> };
+          participants?: Array<{ domain?: string; segments?: unknown }>;
+        };
+        const roles =
+          row.phase === 'guard-request'
+            ? record.domain &&
+              (record.request?.messages ?? []).some(
+                (m) => m.role === 'system' && JSON.stringify(m.content ?? '').includes(marker),
+              )
+              ? [record.domain]
+              : []
+            : (record.participants ?? [])
+                .filter((p) => p.domain && JSON.stringify(p.segments ?? '').includes(marker))
+                .map((p) => p.domain as string);
+        return {
+          threadId: row.thread_id,
+          turnId: row.turn_id,
+          phase: row.phase,
+          roles,
+          storedAt: row.stored_at,
+        };
+      })
+      .filter((row) => row.roles.length > 0);
   }
 
   learningHistory(threadId: string, limit = 100): StoredLearning[] {
