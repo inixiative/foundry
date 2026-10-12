@@ -7,6 +7,8 @@ import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
+import type { FeedbackService } from '../../feedback/service';
+import { byAttention, feedbackView } from '../../feedback/view';
 import { listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer } from '../../models/registry';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
@@ -45,6 +47,8 @@ export interface RuntimeRoutesDeps {
   streams: ViewerStreams;
   /** What hosts chose per thread for its executor session (mode, model, effort, MCP servers). */
   threadLaunch?: ThreadLaunchSettings;
+  /** The feedback lifecycle: typed turns and corrections are captured here. */
+  feedback?: FeedbackService | null;
 }
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
@@ -99,6 +103,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     localStore,
     directory,
     streams,
+    feedback: deps.feedback ?? null,
   });
 
   app.get('/api/health', async (c) => {
@@ -284,6 +289,72 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     return c.json(interventions.history.slice(0, limit));
   });
 
+  // The feedback lifecycle view: items with their route, changes, uses and recurrence.
+  app.get('/api/feedback', (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable', items: [] }, 503);
+    const projectId = c.req.query('projectId');
+    const items =
+      projectId === undefined ? feedback.lifecycle.items : feedback.lifecycle.forProject(projectId);
+    const attention = c.req.query('attention');
+    const views = items
+      .map((item) => feedbackView(feedback, item))
+      .filter((view) => !attention || view.attention === attention)
+      .sort(byAttention);
+    return c.json({ items: views });
+  });
+  app.get('/api/feedback/:itemId', (c) => {
+    const feedback = deps.feedback;
+    const item = feedback?.lifecycle.get(c.req.param('itemId'));
+    if (!feedback || !item) return c.json({ error: 'feedback item not found' }, 404);
+    return c.json({ item: feedbackView(feedback, item), uses: feedback.uses(item.id) });
+  });
+  // Answer an item's open tuning prompt; validated before it settles (an invalid edit is refused here).
+  app.post('/api/feedback/:itemId/answer', async (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);
+    const body = await c.req
+      .json<{ action?: unknown; input?: unknown; surface?: unknown }>()
+      .catch(() => ({}) as { action?: unknown; input?: unknown; surface?: unknown });
+    if (typeof body.action !== 'string') return c.json({ error: 'action is required' }, 400);
+    try {
+      feedback.submit(
+        c.req.param('itemId'),
+        body.action,
+        typeof body.input === 'string' ? body.input : undefined,
+        typeof body.surface === 'string' ? body.surface.slice(0, 80) : 'viewer',
+      );
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+  });
+  // Raise an item's tuning prompt again (after later, a timeout or a restart).
+  app.post('/api/feedback/:itemId/tune', (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);
+    try {
+      feedback.retune(c.req.param('itemId'));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+  });
+  app.post('/api/feedback/:itemId/undo', async (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);
+    const body = await c.req
+      .json<{ changeId?: unknown }>()
+      .catch(() => ({}) as { changeId?: unknown });
+    if (typeof body.changeId !== 'string') return c.json({ error: 'changeId is required' }, 400);
+    try {
+      const item = feedback.undo(c.req.param('itemId'), body.changeId);
+      return c.json({ item: feedbackView(feedback, item) });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+  });
+
   // A correction lands on the bus of the thread it was made in, so it is captured in that thread's scope.
   app.post('/api/threads/:threadId/interventions', async (c) => {
     const thread = directory.get(c.req.param('threadId'));
@@ -309,6 +380,13 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       typeof body.operator === 'string' ? body.operator : 'ui',
       typeof body.reason === 'string' ? body.reason : undefined,
     );
+    // A correction is explicit feedback: captured into the lifecycle off the request path.
+    if (deps.feedback && typeof body.correction === 'string')
+      void deps.feedback
+        .intervention(thread, body.correction)
+        .catch((error) =>
+          console.warn('[Feedback] correction not captured:', (error as Error).message),
+        );
     return c.json(result, 201);
   });
 

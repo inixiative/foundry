@@ -6,6 +6,7 @@ import {
   EventStream,
   Harness,
   InterventionLog,
+  type LLMProvider,
   TokenTracker,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../../src/agents/project';
@@ -28,7 +29,10 @@ export async function until(check: () => unknown | Promise<unknown>, label: stri
 }
 /** Controlled normalized public Claude/Codex events; no native process or invented receipt.
  * Real provider, factory/runtime, file-backed journal and actual viewer HTTP entry. */
-export async function liveWatchFixture(dir: string, options: { interruptible?: boolean } = {}) {
+export async function liveWatchFixture(
+  dir: string,
+  options: { interruptible?: boolean; feedbackProvider?: LLMProvider } = {},
+) {
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, 'P'));
   const attempts: any[] = [],
@@ -243,6 +247,7 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     tokenTracker: new TokenTracker(),
     actionQueue,
     threadLaunch,
+    ...(options.feedbackProvider ? { feedbackProvider: options.feedbackProvider } : {}),
   });
   toolGateFor = viewer.toolGate;
   /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
