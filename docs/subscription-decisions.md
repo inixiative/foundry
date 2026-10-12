@@ -132,6 +132,12 @@ The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. A
 
 The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
+## Warden pre-filtering (not built)
+
+Every Warden runs on every message; nothing decides beforehand which Wardens a message needs. Pre-filtering was considered and set aside (2026-10-12) because there is no easy, reliable way to make that call with the current decision runtime: a Haiku call to choose Wardens costs about what it saves.
+
+If it returns to the roadmap, the natural shape is a dedicated classification model rather than another chat decision: one bounded "which domains does this message touch?" judgment per message, gating the Warden fan-out. Jev ([TypeSafe / Jev decisions](typesafe-jev.md)) is one candidate; its Choice and Noul primitives fit that question, and its shadow runner already measures a gate-then-choose policy. This does not have to be hosted. Open-weight classifiers that run locally are reportedly as good or better and faster; evaluate them against the same fixtures before choosing.
+
 ## Ownership and bounds
 
 Decisions are bounded per call and per process. Guards retain their existing post-action semantics. The deadline includes queue, preflight and priming time; cleanup has its own bounded wait. Revocation or shutdown closes waiting admission and cancels active decisions: refused before dispatch, or interrupted with the interrupt's acknowledgment (or the process exit) as settlement. A worker authentication check with unknown exit likewise blocks further checks for that authentication instance.
