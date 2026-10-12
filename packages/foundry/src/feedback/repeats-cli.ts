@@ -74,7 +74,7 @@ async function reachableArchive() {
   try {
     await Promise.race([
       archive.sourceId(),
-      Bun.sleep(3_000).then(() => {
+      Bun.sleep(10_000).then(() => {
         throw Error('timeout');
       }),
     ]);
