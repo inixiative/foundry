@@ -13,6 +13,7 @@ import {
   newId,
   type SessionDelivery,
   standingPart,
+  standingParts,
 } from '@inixiative/foundry-core';
 import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
 import { DECISION_CONTEXT, SessionBackedProvider } from '../src/providers/session-backed';
@@ -406,4 +407,18 @@ test('a compaction while a turn runs leaves what that turn sent undelivered, so 
   } finally {
     await f.close();
   }
+});
+
+test('two layers sharing an id stay two standing parts with their own ledger records', () => {
+  const parts = standingParts([
+    { role: 'content', id: 'thread-state', text: 'A' },
+    { role: 'content', id: 'instructions', text: 'B' },
+    { role: 'layer', id: 'thread-state', text: 'prompt' },
+    { role: 'content', id: 'thread-state', text: 'C' },
+  ]);
+  expect(parts.map((part) => [part.id, part.text])).toEqual([
+    ['thread-state', 'A'],
+    ['instructions', 'B'],
+    ['thread-state#2', 'prompt\n\nC'],
+  ]);
 });

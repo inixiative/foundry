@@ -49,7 +49,13 @@ export function standingParts(blocks: readonly PromptBlock[]): StandingPart[] {
     if (last && last.id === id) last.texts.push(block.text);
     else parts.push({ id, texts: [block.text] });
   }
-  return parts.map(({ id, texts }) => standingPart(id, texts.join('\n\n')));
+  // Two layers may share an id (a configured layer and a runtime-owned one); each is its own part.
+  const seen = new Map<string, number>();
+  return parts.map(({ id, texts }) => {
+    const n = (seen.get(id) ?? 0) + 1;
+    seen.set(id, n);
+    return standingPart(n === 1 ? id : `${id}#${n}`, texts.join('\n\n'));
+  });
 }
 
 /** A warm layer as the standing part the executor assembles: its prompt, then its content. */
