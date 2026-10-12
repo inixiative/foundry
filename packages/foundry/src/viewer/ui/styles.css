@@ -5503,3 +5503,174 @@ a.thread-ref:hover {
     display: none;
   }
 }
+
+/* ---- Feedback lifecycle (feedback.js) ---- */
+.feedback-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.feedback-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.feedback-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.feedback-row[data-attention="needs attention"] {
+  border-color: var(--warn);
+}
+.feedback-row[data-attention="healthy"] {
+  border-color: var(--ok-dim);
+}
+.feedback-row[data-stage="dismissed"] {
+  opacity: 0.6;
+}
+.feedback-row-head {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.feedback-attention {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+}
+.feedback-attention[data-attention="needs attention"] {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-dim);
+}
+.feedback-attention[data-attention="healthy"] {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-dim);
+}
+.feedback-stages {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+  font-size: 10px;
+}
+.feedback-stage-step {
+  padding: 1px 6px;
+  color: var(--text-dimmer);
+  border: 1px solid var(--border);
+}
+.feedback-stage-step.done {
+  color: var(--text-dim);
+}
+.feedback-stage-step.current {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.feedback-stage-step[data-stage="recurred"].current {
+  border-color: var(--warn);
+  background: var(--warn-dim);
+}
+.feedback-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.feedback-path {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .feedback-row {
+    grid-template-columns: 1fr;
+  }
+}
+.feedback-stage-label {
+  color: var(--text-dimmer);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.feedback-stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-statement {
+  color: var(--text);
+}
+.feedback-dim {
+  color: var(--text-dim);
+}
+.feedback-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.feedback-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.feedback-change code {
+  font-size: 11px;
+  color: var(--accent);
+}
+.feedback-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.feedback-recurred {
+  color: var(--warn);
+}
+.feedback-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.feedback-lines dt {
+  color: var(--text-dim);
+}
+.feedback-lines dd {
+  margin: 0;
+}
+.feedback-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.feedback-edit textarea {
+  flex: 1 1 100%;
+}
