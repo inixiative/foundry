@@ -142,6 +142,8 @@ interface SendOptions {
    * provider. Fires once per message, before any provider call.
    */
   onExecutorInput?: () => void;
+  /** The payload the execute stage's agent receives instead of `message.payload` (see DispatchOptions.agentPayload). */
+  executorPayload?: unknown;
 }
 
 /**
@@ -664,6 +666,9 @@ export class Harness {
           role: stage.role,
           messageId: message.id,
           invocation: stage.invocation,
+          ...(stage.role === 'execute' && opts?.executorPayload !== undefined
+            ? { agentPayload: opts.executorPayload }
+            : {}),
           recordInjection: (artifact) => {
             stageSpan.annotations.injection = artifact;
             if (stage.role === 'execute' && !executorInput) {

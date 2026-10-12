@@ -22,6 +22,7 @@ import type { ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
 import type { ViewerThreadDirectory } from '../viewer/thread-directory';
 import { createSerializedQueue, type SerializedQueue } from '../ws/serialized-queue';
+import { splitHostInstructions } from './host-instructions';
 
 /**
  * The one turn path for messages: viewer sends and ACP prompts (and Oracle, when it drives turns
@@ -173,7 +174,14 @@ export class TurnService {
 
   /** Accept a turn durably, then run it after any turn already on its thread. */
   accept(request: TurnRequest): TurnAcceptance {
-    const { payload, clientId } = request;
+    const { clientId } = request;
+    // A host's instruction wrappers go to the executor verbatim; everything that learns from the
+    // message (and the journal's user message) reads only the user's words.
+    const split = splitHostInstructions(request.payload);
+    const payload = split?.userText ?? request.payload;
+    const hostMeta = split
+      ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
+      : undefined;
     const { db, localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
@@ -188,7 +196,7 @@ export class TurnService {
         body: { error: 'turn already accepted or live capacity unavailable', id: turnId },
       };
     try {
-      localStore?.beginTurn(harness.thread, turnId, payload);
+      localStore?.beginTurn(harness.thread, turnId, payload, hostMeta);
     } catch (err) {
       return {
         ok: false,
@@ -206,6 +214,7 @@ export class TurnService {
       actor: 'user',
       kind: 'text',
       content: payload,
+      ...(hostMeta ? { meta: hostMeta } : {}),
     }).catch(() => {
       db?.writeMessage({
         id: userMsgId,
@@ -214,6 +223,7 @@ export class TurnService {
         actor: 'user',
         kind: 'text',
         content: payload,
+        ...(hostMeta ? { meta: hostMeta } : {}),
       }).catch((err) => console.warn('[Turns] background op failed:', err.message ?? err));
     });
 
@@ -245,7 +255,17 @@ export class TurnService {
       .run(async () => {
         // A queued turn cancelled while it waited has already settled.
         if (state.phase !== 'settled')
-          resolveSettled(await this.run(harness, state, turnId, payload, buffer, clientId));
+          resolveSettled(
+            await this.run(
+              harness,
+              state,
+              turnId,
+              payload,
+              buffer,
+              clientId,
+              split && request.payload,
+            ),
+          );
       })
       .finally(() => {
         state.phase = 'settled';
@@ -617,6 +637,8 @@ export class TurnService {
     payload: string,
     buffer: StreamBuffer,
     clientId?: string,
+    /** The verbatim prompt for the executor, when host instructions were split off `payload`. */
+    executorPayload?: string | null,
   ): Promise<TurnOutcome> {
     const thread = harness.thread;
     const threadId = thread.id;
@@ -628,6 +650,7 @@ export class TurnService {
         { id: turnId, payload },
         {
           nativeObservation: this.nativeObservation(thread, state),
+          ...(executorPayload ? { executorPayload } : {}),
           onDelta: (text) => buffer.append(text),
           onTrace: (trace) => {
             attemptTrace = trace;

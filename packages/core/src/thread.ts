@@ -125,6 +125,12 @@ export interface DispatchOptions {
   messageId?: string;
   /** How the caller invoked the agent: always, conditional, on-demand, background. */
   invocation?: string;
+  /**
+   * What the agent itself receives when it differs from the payload that middleware and the
+   * dispatch observation read: a host's instruction wrappers go to the agent verbatim, while
+   * everything that learns from the message sees only the user's words.
+   */
+  agentPayload?: unknown;
 }
 
 /**
@@ -412,7 +418,11 @@ export class Thread {
 
     try {
       const result = await this.middleware.execute(ctx, () =>
-        agent.run(payload, filterOverride, meta),
+        agent.run(
+          opts?.agentPayload !== undefined ? (opts.agentPayload as TPayload) : payload,
+          filterOverride,
+          meta,
+        ),
       );
 
       const durationMs = performance.now() - start;

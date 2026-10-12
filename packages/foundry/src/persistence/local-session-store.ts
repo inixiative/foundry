@@ -659,7 +659,13 @@ export class LocalSessionStore {
     ).map((row) => row.id);
   }
 
-  beginTurn(thread: Pick<Thread, 'id' | 'meta'>, id: string, content: string): void {
+  /** Accept a turn: the user's message, with `meta` (host instructions, for one) beside it. */
+  beginTurn(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    id: string,
+    content: string,
+    meta?: Record<string, unknown>,
+  ): void {
     this.db.transaction(() => {
       if (this.turn(id) || this.traceForTurn(id))
         throw new Error(`Turn already accepted or archived: ${id}`);
@@ -676,6 +682,7 @@ export class LocalSessionStore {
         kind: 'text',
         content,
         timestamp,
+        ...(meta ? { meta } : {}),
       });
     })();
   }

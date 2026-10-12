@@ -75,6 +75,7 @@ function heldViewer() {
       body: JSON.stringify(body),
     });
   return {
+    main,
     viewer,
     client,
     started,
@@ -322,4 +323,38 @@ test('live tool rows carry bounded input and output; text rows carry exactly the
   } finally {
     await f.close();
   }
+});
+
+test('host instruction wrappers reach the executor verbatim; the journal and dispatch observation see only the user words', async () => {
+  const v = heldViewer();
+  const observed: string[] = [];
+  v.main.signals.on('dispatch', (signal) => {
+    observed.push((signal.content as { payload: string }).payload);
+  });
+  await v.client.open('thread:main');
+  const prompt =
+    '<t3_code_instructions>\nUse the T3 browser tools.\n</t3_code_instructions>\n\n<user_request>\nFix the flaky test\n</user_request>';
+  const response = await v.viewer.app.request('/api/messages/send', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: 'wrapped',
+      threadId: 'main',
+      message: prompt,
+      clientId: v.client.socket.data.clientId,
+    }),
+  });
+  expect(response.status).toBe(202);
+  await until(() => v.started.length === 1, 'wrapped started');
+  expect(v.started).toEqual([prompt]);
+  v.release(prompt);
+  expect((await v.terminal('wrapped')).type).toBe('done');
+  const user = v.viewer
+    .localStore!.messages('main')
+    .find((m) => m.turnId === 'wrapped' && m.actor === 'user')!;
+  expect(user.content).toBe('Fix the flaky test');
+  expect(user.meta).toEqual({
+    hostInstructions: [{ tag: 't3_code_instructions', text: 'Use the T3 browser tools.' }],
+  });
+  expect(observed).toEqual(['Fix the flaky test']);
 });
