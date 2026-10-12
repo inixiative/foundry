@@ -15,7 +15,7 @@ import type { PostgresMemory } from '../adapters/postgres-memory';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import { enqueueJob } from '../jobs/enqueue';
-import type { LocalSessionStore } from '../persistence/local-session-store';
+import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
 import type { ConfigStore } from '../viewer/config';
 import type { ViewerStreams } from '../viewer/data-streams';
@@ -510,7 +510,8 @@ export class TurnService {
     if (trace) trace.root.annotations.failure = meta;
     try {
       if (localStore) {
-        if (localStore.turn(turnId)?.status === 'active') {
+        const status = localStore.turn(turnId)?.status;
+        if (status && isOpenTurn(status)) {
           localStore.failTurn(thread, turnId, error, {
             meta,
             trace: trace ? serializeTrace(trace) : undefined,
@@ -630,6 +631,15 @@ export class TurnService {
           onDelta: (text) => buffer.append(text),
           onTrace: (trace) => {
             attemptTrace = trace;
+          },
+          // The journal's queued → active: nothing reaches the runtime before this.
+          onExecutorInput: () => {
+            if (state.cancelRequested) return;
+            try {
+              this.deps.localStore?.startTurn(thread, turnId);
+            } catch (error) {
+              console.warn('[Turns] could not mark turn active:', error);
+            }
           },
         },
       );

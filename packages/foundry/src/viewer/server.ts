@@ -242,7 +242,11 @@ export function createViewer(config: ViewerConfig) {
     },
   });
   if (localStore) {
-    localStore.recoverInterrupted();
+    const recovered = localStore.recoverInterrupted();
+    if (recovered.interrupted || recovered.neverSent)
+      log.warn(
+        `[Recovery] ${recovered.interrupted} turn(s) interrupted (native outcome unknown), ${recovered.neverSent} queued turn(s) never sent`,
+      );
     for (const warning of directory.restore(localStore.threads()))
       log.warn(`[Recovery] ${warning}`);
     for (const thread of directory.all()) localStore.saveThread(thread);

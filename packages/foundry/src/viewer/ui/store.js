@@ -1503,7 +1503,7 @@ async function _sendInBackground(text, tid, turnId) {
       projectId,
       content: '',
       startedAt: Date.now(),
-      status: 'accepted',
+      status: 'queued',
       activity: [],
       truncated: false,
       nativeDetail: 'unavailable',

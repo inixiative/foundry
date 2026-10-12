@@ -100,12 +100,14 @@ test('a busy thread queues: the second turn is accepted at once and runs after t
   expect(first.status).toBe(202);
   expect(await first.json()).toMatchObject({ status: 'accepted', queued: false });
   await until(() => v.started.length === 1, 'first started');
+  // The executor holds the first turn's input, so it is active; the second waits queued.
+  expect(v.viewer.localStore!.turn('first')?.status).toBe('active');
 
   const second = await v.send('second');
   expect(second.status).toBe(202);
   expect(await second.json()).toMatchObject({ status: 'accepted', queued: true });
   // Accepted durably while queued: the journal holds it, the executor has not seen it.
-  expect(v.viewer.localStore!.turn('second')?.status).toBe('active');
+  expect(v.viewer.localStore!.turn('second')?.status).toBe('queued');
   await Bun.sleep(50);
   expect(v.started).toEqual(['first']);
 

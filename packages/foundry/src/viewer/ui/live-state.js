@@ -28,7 +28,7 @@ export function liveWorkLabel(message) {
   let label;
   if (message.connectionStatus === 'unconfirmed' && !hasFullTerminal(message))
     label = 'Connection interrupted · outcome unconfirmed';
-  else if (status === 'accepted') label = 'Accepted · preparing';
+  else if (status === 'queued') label = 'Queued · not sent yet';
   else if (status === 'running') label = 'Running';
   else if (status === 'failed')
     label =
@@ -40,7 +40,7 @@ export function liveWorkLabel(message) {
 }
 
 export function liveThreadStatus(messages) {
-  if (messages.some((m) => ['accepted', 'running'].includes(liveExecutionStatus(m))))
+  if (messages.some((m) => ['queued', 'running'].includes(liveExecutionStatus(m))))
     return 'active';
   if (
     messages.some(

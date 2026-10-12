@@ -405,6 +405,7 @@ const TURN_STATUS_CLASS = {
   failed: 'error',
   interrupted: 'warn',
   active: 'pending',
+  queued: 'pending',
 };
 
 function TurnStrip({ turns, selected, onSelect }) {

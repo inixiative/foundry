@@ -137,6 +137,11 @@ interface SendOptions {
   onDelta?: (text: string) => void;
   /** Final trace for this attempt, independent of the bounded history cache. */
   onTrace?: (trace: Trace) => void;
+  /**
+   * The executor has prepared its input after every middleware ran and is handing it to its
+   * provider. Fires once per message, before any provider call.
+   */
+  onExecutorInput?: () => void;
 }
 
 /**
@@ -480,6 +485,7 @@ export class Harness {
     const requestedAgents = new Set<string>();
     const requestedLayers = new Set<string>();
     const stageResults = new Map<string, ExecutionResult>();
+    let executorInput = false;
 
     let classification: Decision<Classification> | undefined;
     let route: Decision<Route> | undefined;
@@ -660,6 +666,10 @@ export class Harness {
           invocation: stage.invocation,
           recordInjection: (artifact) => {
             stageSpan.annotations.injection = artifact;
+            if (stage.role === 'execute' && !executorInput) {
+              executorInput = true;
+              opts?.onExecutorInput?.();
+            }
           },
           nativeObservation: opts?.nativeObservation,
           recordNative: (evidence) => {

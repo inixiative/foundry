@@ -31,10 +31,18 @@ export interface StoredMessage {
   error?: string;
 }
 
+/**
+ * `queued`: accepted and not yet handed to the executor's runtime (waiting on its thread, or in
+ * classification, routing and pre-message middleware). `active`: the executor has its input, so
+ * work may have reached the runtime. `interrupted`: Foundry restarted while the turn was active; the native
+ * outcome is unknown. A queued turn found at restart was never sent and is failed instead.
+ */
+export type TurnStatus = 'queued' | 'active' | 'completed' | 'failed' | 'interrupted';
+
 export interface StoredTurn {
   id: string;
   threadId: string;
-  status: 'active' | 'completed' | 'failed' | 'interrupted';
+  status: TurnStatus;
   startedAt: number;
   endedAt?: number;
   error?: string;
@@ -84,6 +92,7 @@ export const SUMMARY_META_KEYS = [
   'providerOutcome',
   'inputEvidence',
   'deliveryAcknowledgment',
+  'neverSent',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;
@@ -657,7 +666,7 @@ export class LocalSessionStore {
       this.saveThread(thread);
       const timestamp = Date.now();
       this.query(
-        "INSERT INTO session_turns(id, thread_id, status, started_at) VALUES (?, ?, 'active', ?)",
+        "INSERT INTO session_turns(id, thread_id, status, started_at) VALUES (?, ?, 'queued', ?)",
       ).run(id, thread.id, timestamp);
       this.insertMessage({
         id: newId('msg'),
@@ -671,6 +680,14 @@ export class LocalSessionStore {
     })();
   }
 
+  /** The executor is handing the turn to its runtime: from here native work may exist. */
+  startTurn(thread: Pick<Thread, 'id' | 'meta'>, id: string): void {
+    this.db.transaction(() => {
+      this.requireOpen(id, thread.id);
+      this.query("UPDATE session_turns SET status='active' WHERE id=? AND status='queued'").run(id);
+    })();
+  }
+
   completeTurn(
     thread: Pick<Thread, 'id' | 'meta'>,
     id: string,
@@ -679,7 +696,7 @@ export class LocalSessionStore {
     trace: PersistedTraceRecord,
   ): void {
     this.db.transaction(() => {
-      this.requireActive(id, thread.id);
+      this.requireOpen(id, thread.id);
       if (trace.messageId !== id) throw new Error('Trace does not belong to this turn');
       this.saveThread(thread);
       this.query(
@@ -710,7 +727,7 @@ export class LocalSessionStore {
     evidence?: { trace?: PersistedTraceRecord; meta?: Record<string, unknown> },
   ): void {
     this.db.transaction(() => {
-      this.requireActive(id, thread.id);
+      this.requireOpen(id, thread.id);
       this.saveThread(thread);
       if (evidence?.trace) {
         if (evidence.trace.messageId !== id) throw new Error('Trace does not belong to this turn');
@@ -722,26 +739,38 @@ export class LocalSessionStore {
     })();
   }
 
-  /** Call only at server startup. Interrupted means native outcome is unknown. */
-  recoverInterrupted(): number {
+  /**
+   * Call only at server startup. An active turn becomes `interrupted`: native work may have
+   * continued and its outcome is unknown. A queued turn was never sent, so it fails cleanly.
+   */
+  recoverInterrupted(): { interrupted: number; neverSent: number } {
     return this.db.transaction(() => {
       const rows = this.query(
-        "SELECT id, thread_id AS threadId FROM session_turns WHERE status='active'",
-      ).all() as Array<{ id: string; threadId: string }>;
+        "SELECT id, thread_id AS threadId, status FROM session_turns WHERE status IN ('queued', 'active')",
+      ).all() as Array<{ id: string; threadId: string; status: 'queued' | 'active' }>;
       for (const row of rows) {
-        this.finishUncertain(
-          row.id,
-          row.threadId,
-          'interrupted',
-          'Foundry restarted before recording completion. Native work may have continued; its outcome must be checked before retrying.',
-          undefined,
-          {
+        if (row.status === 'queued')
+          this.finishUncertain(row.id, row.threadId, 'failed', TURN_NEVER_SENT, undefined, {
+            neverSent: true,
             inputEvidence: 'unavailable',
             deliveryAcknowledgment: 'unavailable',
             nativeOutcome: 'unknown',
             persistence: 'committed',
-          },
-        );
+          });
+        else
+          this.finishUncertain(
+            row.id,
+            row.threadId,
+            'interrupted',
+            'Foundry restarted before recording completion. Native work may have continued; its outcome must be checked before retrying.',
+            undefined,
+            {
+              inputEvidence: 'unavailable',
+              deliveryAcknowledgment: 'unavailable',
+              nativeOutcome: 'unknown',
+              persistence: 'committed',
+            },
+          );
         const stored = this.query('SELECT meta FROM session_threads WHERE id=?').get(
           row.threadId,
         ) as { meta: string };
@@ -749,7 +778,8 @@ export class LocalSessionStore {
         if (meta.status !== 'archived')
           this.saveThread({ id: row.threadId, meta: { ...meta, status: 'waiting' } });
       }
-      return rows.length;
+      const neverSent = rows.filter((row) => row.status === 'queued').length;
+      return { interrupted: rows.length - neverSent, neverSent };
     })();
   }
 
@@ -1200,7 +1230,7 @@ export class LocalSessionStore {
         !evidence.admissionId
       )
         throw Error('Native registration requires the owning logical turn');
-      this.requireActive(owner.messageId, thread.id);
+      this.requireOpen(owner.messageId, thread.id);
       if (
         this.query('SELECT 1 FROM session_native WHERE admission_id=? LIMIT 1').get(
           evidence.admissionId,
@@ -1224,7 +1254,7 @@ export class LocalSessionStore {
       !owner.messageId
     )
       throw Error('Native capacity owner mismatch');
-    this.requireActive(owner.messageId, thread.id);
+    this.requireOpen(owner.messageId, thread.id);
     const prior = this.query(
       'SELECT record FROM session_native WHERE thread_id=? ORDER BY seq',
     ).all(thread.id) as { record: string }[];
@@ -1323,10 +1353,11 @@ export class LocalSessionStore {
     };
   }
 
-  private requireActive(id: string, threadId: string): void {
+  /** The turn is accepted and not yet settled: queued or active. */
+  private requireOpen(id: string, threadId: string): void {
     const turn = this.turn(id);
-    if (!turn || turn.threadId !== threadId || turn.status !== 'active')
-      throw new Error(`Turn is not active in thread ${threadId}: ${id}`);
+    if (!turn || turn.threadId !== threadId || !isOpenTurn(turn.status))
+      throw new Error(`Turn is not open in thread ${threadId}: ${id}`);
   }
 
   private insertMessage(message: StoredMessage): void {
@@ -1362,6 +1393,14 @@ export class LocalSessionStore {
       id,
     );
   }
+}
+
+export const TURN_NEVER_SENT =
+  'Foundry restarted before this turn was sent. Nothing ran; send it again.';
+
+/** Accepted and not yet settled. */
+export function isOpenTurn(status: TurnStatus | 'unknown'): boolean {
+  return status === 'queued' || status === 'active';
 }
 
 function boundedLimit(value: number): number {

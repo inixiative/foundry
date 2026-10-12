@@ -26,7 +26,8 @@ export interface StreamBufferSnapshot {
   readonly startedAt: number;
   readonly completedAt?: number;
   readonly error?: string;
-  readonly status: 'accepted' | 'running' | 'completed' | 'failed';
+  /** `queued`: accepted, nothing sent to the runtime yet (the journal's `queued`). */
+  readonly status: 'queued' | 'running' | 'completed' | 'failed';
   readonly activity: readonly LiveActivity[];
   readonly truncated: boolean;
   readonly nativeDetail: 'available' | 'unavailable';
@@ -58,7 +59,7 @@ export class StreamBuffer {
   private _content = '';
   private _completedAt?: number;
   private _error?: string;
-  private _status: StreamBufferSnapshot['status'] = 'accepted';
+  private _status: StreamBufferSnapshot['status'] = 'queued';
   private _activity: LiveActivity[] = [];
   private _truncated = false;
   private _terminal?: Record<string, unknown>;

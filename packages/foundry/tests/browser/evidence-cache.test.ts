@@ -108,7 +108,8 @@ test("browser-only failure evidence survives quota fallback and reload, distinct
       );
     }
     store.beginTurn(thread, 'turn-interrupted', 'Question whose native work was interrupted');
-    expect(store.recoverInterrupted()).toBe(1);
+    store.startTurn(thread, 'turn-interrupted');
+    expect(store.recoverInterrupted()).toEqual({ interrupted: 1, neverSent: 0 });
     const interruptedAgent = store
       .messages('evidence', 1000)
       .find((m) => m.turnId === 'turn-interrupted' && m.actor === 'agent')!;

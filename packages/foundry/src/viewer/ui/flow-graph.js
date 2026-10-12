@@ -340,6 +340,7 @@ const TURN_STATUS = {
   failed: 'error',
   interrupted: 'warn',
   active: 'pending',
+  queued: 'pending',
   unreadable: 'error',
 };
 const LEARN_STATUS = {

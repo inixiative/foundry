@@ -59,7 +59,11 @@ export function failurePresentation(meta) {
       'Input unavailable: no executor snapshot is available. Delivery acknowledgment unavailable.',
     );
   }
-  notices.push(nativeNotice ?? 'Native outcome unknown; check before retrying.');
+  notices.push(
+    meta.neverSent
+      ? 'Never sent: Foundry restarted while this turn was queued, so nothing reached the runtime. Safe to send again.'
+      : (nativeNotice ?? 'Native outcome unknown; check before retrying.'),
+  );
   const browserEvidence = meta.browserFailureEvidence;
   if (browserEvidence)
     notices.push(

@@ -258,7 +258,7 @@ test('index summaries keep identity, semantic status and detail availability', (
   expect(failed.status).toMatchObject({ turn: 'failed', executionOutcome: 'failed' });
   expect(failed.detail).toMatchObject({ injection: true, trace: true });
   const pending = byTurn('t-main-042', 'user');
-  expect(pending.status.turn).toBe('active');
+  expect(pending.status.turn).toBe('queued');
   expect(rows.find((r) => r.turnId === 't-main-042' && r.actor === 'agent')).toBeUndefined();
   const user = byTurn('t-main-011', 'user');
   expect(user.detail).toEqual({
@@ -301,7 +301,7 @@ test('turn detail returns the full owned rows, trace, recorded injection and nat
   expect(store!.turnDetail('other', 't-main-010')).toBeUndefined();
   expect(store!.turnDetail('main', 'missing')).toBeUndefined();
   const pending = store!.turnDetail('main', 't-main-042')!;
-  expect(pending.turn?.status).toBe('active');
+  expect(pending.turn?.status).toBe('queued');
   expect(pending.trace).toBeNull();
   expect(pending.injection).toBeNull();
 });

@@ -130,7 +130,7 @@ test('open answers opened then a snapshot, appends follow in order, and close en
     .map((frame) => frame.payload);
   expect(appends[0]).toMatchObject({
     kind: 'turn',
-    turn: { messageId: 't1', status: 'accepted', content: '' },
+    turn: { messageId: 't1', status: 'queued', content: '' },
   });
   expect(appends.filter((p) => p.kind === 'delta').map((p) => p.text)).toEqual([
     'first ',
