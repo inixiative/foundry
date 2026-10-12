@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -633,7 +633,7 @@ export function defaultConfig(): FoundryConfig {
  */
 export function starterConfig(
   providerId: string = 'claude-code',
-  model: string = 'sonnet',
+  model: string = 'fable',
 ): FoundryConfig {
   const config = defaultConfig();
   config.defaults.provider = providerId;

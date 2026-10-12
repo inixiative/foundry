@@ -1,3 +1,4 @@
+import '../helpers/isolate-archive';
 import type { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
@@ -39,7 +40,7 @@ const out = process.env.G6_OUT
 if (existsSync(out) && !process.env.G6_OUT)
   throw new Error(`Refusing to reuse an existing output directory: ${out}`);
 mkdirSync(out, { recursive: true });
-const project = resolve(root, 'fixtures/harness-qa/sample-projects/release-notes');
+const project = resolve(root, 'fixtures/sample-projects/release-notes');
 const sha = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 const report: any = {
   scope:

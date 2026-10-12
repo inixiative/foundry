@@ -7,6 +7,8 @@
 
 I re-checked the claims this comparison rests on against code; see §6 for what was checked and what I corrected.
 
+> **Snapshot of 2026-10-11.** Stop, WS seq, the tool gate, queued turns, the instruction hierarchy, ACP, full-context resend and `demo.ts` have changed since; [INIXIATIVE.md, Updated since this snapshot](INIXIATIVE.md#updated-since-this-snapshot-2026-10-12) has the current state, and it wins where this comparison disagrees. Diffs, terminal and worktrees are left to the hosts by decision (2026-10-11), not gaps.
+
 **Framing (Aron, 2026-10-11).** Paseo and T3 Code are resources. Our insight is the middleware: feedback captured while working becomes a middleware layer, and Oracle measures whether the correction stuck. Foundry runs *inside* runners like these as an ACP agent, with the middleware in our own harness (see [FOUNDRY-ACP.md](FOUNDRY-ACP.md)), not in front of them through vendor hooks.
 
 **Maturity key:**

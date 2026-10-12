@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';

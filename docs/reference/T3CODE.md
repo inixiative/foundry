@@ -453,7 +453,7 @@ Foundry's thesis is a middleware layer that injects context, rewrites prompts, g
 | `dispatchWithReceipt` wrapper | commands only | ✔ | ✔ | ✔ | ✘ | yes |
 
 **Recommendation [opinion]:**
-- **Short term:** 5.1 (observe → Oracle) plus 5.2 (harness hooks give structural gates and context). This needs no fork and mirrors how Foundry would sit in front of any runner.
+- **Superseded (2026-10-11):** the harness-hooks plan (5.2) was rejected. **Chosen: 5.3**, Foundry as a local ACP agent command (`foundry-acp`; [FOUNDRY-ACP.md](FOUNDRY-ACP.md)). 5.1 (observe → Oracle) stays possible beside it.
 - **Long term:** if T3 becomes a primary surface, run a thin fork at `decorateRuntime`, or ask upstream for a supported "turn middleware" Layer. Upstream already has the `Context.Reference` no-op-default pattern (`RunFinalizationObserver`, `ProviderTurnAnalytics`, `AgentScope`), so a `TurnMiddleware` reference would be idiomatic for them.
 
 ---
@@ -467,7 +467,7 @@ Foundry's thesis is a middleware layer that injects context, rewrites prompts, g
 5. **Capabilities as data, policy in one place** (`CommandPolicy.ts`). Weakened by the fact that ~25 flags are unread; capabilities are partly aspirational.
 6. **Continuation keys** (`driver.ts:133-146`) decide whether a thread can switch accounts or instances natively (shared Codex home / Claude config dir) or needs a handoff. This is a clean model of "same conversation, different credential".
 7. **Deterministic, budgeted transcript handoff** instead of LLM summaries, with a footer pointing to `t3_thread_read` for the rest (`handoffBudget.ts:140-282`). Cheap and predictable; the docs still promise summaries.
-8. **Bounded wire.** Snapshot-or-replay decided by size and count caps, field truncation with on-demand fetch, per-tool-call coalescing, history paging (`ThreadStream.ts`, `WireProjection.ts`, `threadHistoryPaging.ts`). This is directly relevant to Foundry's planned `open → snapshot/append → close` data stream: T3 added seq-cursor replay with a snapshot fallback, which the Foundry 9/23 design deliberately skipped.
+8. **Bounded wire.** Snapshot-or-replay decided by size and count caps, field truncation with on-demand fetch, per-tool-call coalescing, history paging (`ThreadStream.ts`, `WireProjection.ts`, `threadHistoryPaging.ts`). This is directly relevant to Foundry's planned `open → snapshot/append → close` data stream: T3 added seq-cursor replay with a snapshot fallback. The Foundry 9/23 design skipped seq; since 2026-10-11 Foundry's frames carry a seq for gap detection and resync by snapshot, still with no replay.
 9. **Hidden-ref checkpoints with a temp index and HEAD as parent**, plus "authored paths" to exclude pulled-in changes from turn diffs (`GitVcsDriver.ts:810-1284`). File restore is refused unless the worktree is isolated (`CheckpointRestoreSafety.ts`), and provider rollback runs before filesystem restore.
 10. **Credentials out of argv.** MCP bearer tokens are sent to Claude over the SDK control channel, not `--mcp-config` (`ClaudeAdapterV2.ts:686-760`). WS tickets keep long-lived tokens out of URLs.
 11. **App-owned delegation via an injected MCP server** with mailbox completion semantics (cohorts, generations, ack/dispose) and a mode ceiling (`DispatchModeLimit`). This is the closest analogue to Foundry's cascading agents and agent-session routing, and it is cross-provider.

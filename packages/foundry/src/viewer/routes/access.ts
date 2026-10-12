@@ -141,7 +141,7 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
         message:
           status === 'needs-authentication'
             ? 'Kingdom rejected this access token. Issue a valid token for this Signet and replace the private file.'
-            : 'Access could not be verified. Check the private file, connection, Signet permissions and Kingdom availability.',
+            : 'Access could not be verified. Check the private file, integration, Signet permissions and Kingdom availability.',
       });
     }
   });

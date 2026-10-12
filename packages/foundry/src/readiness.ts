@@ -13,6 +13,7 @@ import {
   kingdomIntegrationId,
   listedSignets,
 } from './providers/kingdom-installation-connection';
+import { providerApiKey } from './providers/openai-compatible';
 import { assertProfile } from './providers/private-profile';
 import {
   resolveSubscriptionPolicy,
@@ -188,7 +189,7 @@ export async function inspectReadiness(
       'warning',
       source.id,
       'integration-access-unverified',
-      'The local grant is configured. Kingdom must verify its current Signet, connection, resources and allowance when used.',
+      'The local grant is configured. Kingdom must verify its current Signet, integration, resources and allowance when used.',
     );
   }
   const scopes: Array<readonly [string, FoundryConfig]> = [['global', config]];
@@ -346,12 +347,18 @@ export async function inspectReadiness(
           'The selected native profile directory is unavailable.',
         );
       }
-      if (!subscription && !(config.providers.openai?.enabled && environment.OPENAI_API_KEY))
+      if (
+        !subscription &&
+        !(
+          config.providers[decisionProvider]?.enabled &&
+          providerApiKey(decisionProvider, environment)
+        )
+      )
         issue(
           'error',
           source.id,
           'native-profile-decision-provider',
-          'The native profile has one refresh owner. Production startup requires the separate OpenAI decision provider.',
+          'The native profile has one refresh owner. Production startup requires the separate API decision provider and its key.',
         );
     } else if (source.credential.type === 'environment' && !environment[source.credential.variable])
       issue(

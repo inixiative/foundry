@@ -5012,32 +5012,32 @@ body {
   margin-bottom: 20px;
   color: var(--accent);
 }
-.kingdom-connection {
+.kingdom-pairing {
   display: grid;
   gap: 14px;
   line-height: 1.6;
   padding: 24px;
 }
-.kingdom-connection .settings-desc {
+.kingdom-pairing .settings-desc {
   margin: 0;
   color: #a3a3a3;
 }
-.kingdom-connection .action-btn {
+.kingdom-pairing .action-btn {
   justify-self: start;
   text-decoration: none;
   padding: 10px 14px;
 }
-.kingdom-connection a {
+.kingdom-pairing a {
   color: var(--accent);
 }
-.kingdom-connection code {
+.kingdom-pairing code {
   overflow-wrap: anywhere;
 }
-.kingdom-connection strong {
+.kingdom-pairing strong {
   color: var(--accent);
   letter-spacing: 0.08em;
 }
-.kingdom-connection [role="alert"] {
+.kingdom-pairing [role="alert"] {
   color: var(--error);
 }
 

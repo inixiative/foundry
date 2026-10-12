@@ -29,7 +29,7 @@ test('subscription mode reports the main-thread and decision profiles where they
   config.nativeAuthentication = [
     {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: worker,
@@ -134,14 +134,14 @@ test('a broken decision profile on the main runtime is never reported ready', ()
   config.nativeAuthentication = [
     {
       id: id(),
-      connectionId: id(),
+      integrationId: id(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: worker,
     },
     {
       id: id(),
-      connectionId: id(),
+      integrationId: id(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: join(worker, '..', 'missing-decision-profile'),

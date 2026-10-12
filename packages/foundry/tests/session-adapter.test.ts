@@ -874,7 +874,7 @@ describe('Native authentication adapter integration', () => {
     process.env[variable] = 'synthetic-adapter-token';
     const source = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
@@ -922,7 +922,7 @@ describe('Native authentication adapter integration', () => {
     const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-codex-'));
     const source = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'codex' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
@@ -968,7 +968,7 @@ test('revocation during admission prevents current and queued native writes', as
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-queue-'));
   const source = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',
@@ -1016,7 +1016,7 @@ test('authentication cleanup failure prevents reporting a fully released process
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-cleanup-'));
   const source = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',

@@ -57,7 +57,7 @@ export interface NativeSessionProfile {
   readonly transportMode?: 'controlled-fixture';
   readonly authentication?: Readonly<{
     sourceId: string;
-    connectionId: string;
+    integrationId: string;
     mode: string;
     model?: string;
     effort?: string;

@@ -13,7 +13,7 @@ Merge these fields into `.foundry/settings.json`; retain the rest of your existi
   "nativeAuthentication": [
     {
       "id": "a0566af5-80b6-4238-85f3-333841bc5a3e",
-      "connectionId": "2617c05a-f3c2-4f7d-9b29-603d1666908a",
+      "integrationId": "2617c05a-f3c2-4f7d-9b29-603d1666908a",
       "runtime": "claude",
       "mode": "gateway",
       "baseUrl": "https://gateway.example",
@@ -52,12 +52,12 @@ A command credential replaces the environment credential object:
 {
   "type": "command",
   "command": "/absolute/path/to/kingdom-token-helper",
-  "args": ["--connection", "2617c05a-f3c2-4f7d-9b29-603d1666908a"],
+  "args": ["--integration", "2617c05a-f3c2-4f7d-9b29-603d1666908a"],
   "refreshIntervalMs": 300000
 }
 ```
 
-A custom executable must already exist and print the token expected by the CLI. Kingdom configuration uses Foundry's bundled `kingdom-token-helper.ts` automatically; manual gateway sources must supply their own helper. Arguments and paths are configuration, not secret storage; never put tokens in arguments. Foundry passes the refresh interval into the native helper configuration. It is a cache/refresh setting, not a guarantee that authentication can renew unattended. A helper must enforce the connection's `autoRenew` policy and report required user interaction. The bundled Kingdom helper enforces the server's `autoRenew` policy for subsequent token issuance. Native-profile mode leaves native refresh behavior in the CLI and cannot promise to disable it through Kingdom.
+A custom executable must already exist and print the token expected by the CLI. Kingdom configuration uses Foundry's bundled `kingdom-token-helper.ts` automatically; manual gateway sources must supply their own helper. Arguments and paths are configuration, not secret storage; never put tokens in arguments. Foundry passes the refresh interval into the native helper configuration. It is a cache/refresh setting, not a guarantee that authentication can renew unattended. A helper must enforce the Integration's `autoRenew` policy and report required user interaction. The bundled Kingdom helper enforces the server's `autoRenew` policy for subsequent token issuance. Native-profile mode leaves native refresh behavior in the CLI and cannot promise to disable it through Kingdom.
 
 Refresh is distinct from buying capacity, consuming account resets or switching subscriptions. Passkey/MFA user presence cannot be replaced by a saved password bundle.
 

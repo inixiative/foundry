@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import { userInfo } from 'node:os';
 import type { ArchiveSnapshot } from '@inixiative/archive';

@@ -3,12 +3,12 @@
 > **PROPOSAL — needs Aron's yes before build.** Nothing here is built. It changes what a subagent *is* in Foundry (a child thread with its own middleware), so it follows the "talk the plan through before changing what something means" rule.
 
 **Basis:**
-- Foundry `feat/acp-host-mode` (origin/main `cbfe144` + the ACP host-mode change).
+- Foundry origin/main `5ad3fb3` (the `feat/acp-host-mode` branch, since merged).
 - agent-session main `fbd3207` (0.6.0).
 - Archive main.
 - Paseo `1939ee79e`, T3 Code `f23d0084b6`.
 - ACP SDK 1.8.0.
-- The composition-view config shape as described by the agent building it on `feat/composition-view`, 2026-10-12. **It is not on main and may change in review.**
+- The composition-view config shape from `feat/composition-view`, since merged to main (`02fbc5c`, `f040582`); re-check against main.
 
 **Path prefixes:** as in [FOUNDRY-ACP.md](FOUNDRY-ACP.md):
 - `pf/` = `foundry/packages/foundry/src`
