@@ -1,7 +1,8 @@
 node_modules
 dist
 *.tsbuildinfo
-.foundry/
+**/.foundry/*
+!/.foundry/roles/
 
 # Environment files (keep .example files)
 .env
