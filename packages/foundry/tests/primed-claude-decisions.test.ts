@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultProfileSource } from '../src/providers/default-profiles';
@@ -35,11 +43,19 @@ function claudeTransport(options: { model?: string } = {}) {
     env: Record<string, string | undefined>;
     inputs: string[];
     exited: boolean;
+    systemPrompt?: string;
   }[] = [];
   return {
     launches,
     spawn(argv: string[], config: { cwd: string; env: Record<string, string | undefined> }) {
-      const launch = { argv, env: config.env, inputs: [] as string[], exited: false };
+      const file = argv.indexOf('--append-system-prompt-file');
+      const launch = {
+        argv,
+        env: config.env,
+        inputs: [] as string[],
+        exited: false,
+        systemPrompt: file >= 0 ? readFileSync(argv[file + 1]!, 'utf8') : undefined,
+      };
       launches.push(launch);
       let controller!: ReadableStreamDefaultController<Uint8Array>, exit!: (code: number) => void;
       const stdout = new ReadableStream<Uint8Array>({
@@ -196,16 +212,49 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
         Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN|CLAUDE_CONFIG_DIR/.test(key)),
       ).toEqual([]);
     }
-    expect(flag(primer!.argv, '--append-system-prompt')).toContain(
-      "Foundry's internal decision middleware",
-    );
-    expect(flag(primer!.argv, '--append-system-prompt')).toContain('ADVISE');
+    expect(primer!.systemPrompt).toContain("Foundry's internal decision middleware");
+    expect(primer!.systemPrompt).toContain('ADVISE');
     for (const launch of decided) expect(launch.argv).toContain('--fork-session');
   } finally {
     await run.close();
   }
   expect(transport.launches.every((launch) => launch.exited)).toBe(true);
   expect(existsSync(join(run.root, '.claude', '.foundry-auth-shared'))).toBe(false);
+});
+
+test('phases and threads with the same primed content share one key; a key no session holds is dropped', async () => {
+  const transport = claudeTransport();
+  const run = claudeDecisions(transport);
+  const ask = (threadId: string, cache: string) =>
+    run.decisions.provider.complete(
+      [
+        { role: 'system', content: 'WARDEN' },
+        { role: 'user', content: `${cache}\n## Message\nhi` },
+      ],
+      { threadId, stablePrefix: cache },
+    );
+  const A = '## Domain cache (api)\nA\n',
+    B = '## Domain cache (api)\nB\n';
+  const primers = () => transport.launches.filter((l) => !l.argv.includes('--fork-session')).length;
+  try {
+    await ask('T1:aux:domain:api', A);
+    await ask('T1:aux:review:1:domain:api', A);
+    await ask('T2:aux:domain:api', A);
+    expect(primers()).toBe(1);
+    expect(run.primed.host.snapshot().sessions).toBe(1);
+    // T1's phases move on; T2 still holds A, so it stays primed.
+    await ask('T1:aux:domain:api', B);
+    await ask('T1:aux:review:1:domain:api', B);
+    expect(primers()).toBe(2);
+    expect(run.primed.host.snapshot().sessions).toBe(2);
+    // The last holder moves on: A is dropped.
+    await ask('T2:aux:domain:api', B);
+    await Bun.sleep(20);
+    expect(primers()).toBe(2);
+    expect(run.primed.host.snapshot().sessions).toBe(1);
+  } finally {
+    await run.close();
+  }
 });
 
 test('a login that is not a Claude subscription dispatches nothing and stays refused, with no API fallback', async () => {

@@ -270,7 +270,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
     `review: ${learned.job.id}`,
     '### Request\nAdd preferred names',
     '### Result\nCOMPLETED_CENTRAL_OUTPUT',
-    '## Configured domain knowledge (distinct from generated thread knowledge)\nDOMAIN_BEFORE',
+    '## Domain cache (architecture)\nDOMAIN_BEFORE',
     '## Your current understanding of this thread (revision 1)\nOWN_V1',
   ])
     expect(reviewUser).toContain(part);

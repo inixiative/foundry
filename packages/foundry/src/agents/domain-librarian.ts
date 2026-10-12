@@ -1012,11 +1012,11 @@ export class DomainLibrarian {
       }
       return lines.join('\n');
     });
-    // Domain knowledge heads the message and changes only when the composition does: a stable,
-    // primable prefix. Review primes its own session (its own key and header); the budget is checked
-    // where the runtime admits the review.
+    // Domain knowledge heads the message and changes only when the composition does: the same stable,
+    // primable prefix advice and guard send, so all three phases fork one primed session. The budget
+    // is checked where the runtime admits the review.
     const domainKnowledge = job?.segments.domainKnowledge ?? this._cache.content;
-    const stablePrefix = `## Configured domain knowledge (distinct from generated thread knowledge)\n${domainKnowledge}\n`;
+    const stablePrefix = domainCachePrefix(this.domain, domainKnowledge);
     const messages: LLMMessage[] = [
       {
         role: 'system',
@@ -1025,7 +1025,7 @@ export class DomainLibrarian {
       {
         role: 'user',
         content: [
-          `## Configured domain knowledge (distinct from generated thread knowledge)`,
+          `## Domain cache (${this.domain})`,
           domainKnowledge,
           `## Completed work`,
           ...(job
@@ -1184,7 +1184,7 @@ export class DomainLibrarian {
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
     // so custom instructions never have to restate the schema and never get rewritten to carry it.
     // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
-    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1314,7 +1314,7 @@ export class DomainLibrarian {
       opts?.threadKnowledge !== undefined
         ? opts.threadKnowledgeRevision
         : this._threadKnowledge.revision;
-    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1465,6 +1465,11 @@ export const ADVICE_RESPONSE_PROTOCOL = [
   '"snippets" are short notes from your domain, one point each; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
   STRICT_RULE,
 ].join('\n');
+
+/** The stable start of every phase's message: one primed session serves advice, guard and review. */
+export function domainCachePrefix(domain: string, domainKnowledge: string): string {
+  return `## Domain cache (${domain})\n${domainKnowledge}\n`;
+}
 
 /**
  * The post-work review phase's response contract. Sent with every review request, independent of

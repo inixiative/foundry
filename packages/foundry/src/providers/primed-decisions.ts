@@ -64,7 +64,7 @@ export interface PrimedDecisionHostConfig {
   maxConcurrent: number;
   /**
    * Claude: primed keys kept warm (least recently used beyond it is evicted and re-primes cold, ~5-8 s).
-   * Size it for every decision role: a Warden roster needs one advice and one review key per Warden.
+   * Size it for every decision role: a Warden roster needs one key per Warden (all its phases share it).
    */
   primedSessions?: number;
   callTimeoutMs: number;
@@ -80,13 +80,18 @@ export interface PrimedDecisionHostConfig {
 
 /**
  * Prime key, instructions, stable context and per-cycle input for one decision.
- * The key is the logical session (Foundry's auxiliary session id) plus the role
- * instructions, so advice and guard on one domain keep separate primed sessions.
+ *
+ * A shared key is the primed content itself (instructions and stable context), so every call that
+ * would prime the same state forks one primed session: a Warden's advice, guard and review, on every
+ * thread whose composition matches. Each decision is a fresh fork, so nothing carries between calls.
+ * Otherwise (`shared: false`: Codex, and one-shot calls) the key is the logical session plus its
+ * instructions, so changed context re-primes that key.
  */
 export function primedRequest(
   messages: LLMMessage[],
   opts: CompletionOpts,
   sessionKey: string,
+  shared = false,
 ): { spec: PrimeSpec; input: string } {
   const instructions = messages
     .filter((m) => m.role === 'system')
@@ -108,22 +113,26 @@ export function primedRequest(
     : turns;
   const input = rest.length === 1 ? rest[0]!.content : formatMessagesForNativeSession(rest);
   const context = primed ? prefix! : '';
+  const content = hash(`${instructions}\0${context}`);
   return {
     spec: {
-      key: `${sessionKey}#${hash(instructions).slice(0, 16)}`,
+      key: shared
+        ? `primed:${content.slice(0, 32)}`
+        : `${sessionKey}#${hash(instructions).slice(0, 16)}`,
       instructions,
       context,
-      hash: hash(`${instructions}\0${context}`),
+      hash: content,
     },
     input,
   };
 }
 
 /**
- * One primed decision host per decision profile. Every middleware role keeps its own primed
- * session (agent-session CodexPrimedSessions on one warm app-server, or ClaudePrimedSessions
- * forking a primed Claude session per decision); the subscription scheduler's per-call runs
- * are cheap views onto this host.
+ * One primed decision host per decision profile. Every distinct primed state (a role's instructions
+ * plus its stable context) keeps one primed session (agent-session CodexPrimedSessions on one warm
+ * app-server, or ClaudePrimedSessions forking a primed Claude session per decision), shared by every
+ * phase and thread that sends it; the subscription scheduler's per-call runs are cheap views onto
+ * this host.
  */
 export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const { source } = config;
@@ -181,6 +190,26 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     shared: true,
     ...(runtime === 'codex' ? { privateHome: true } : {}),
   });
+  // Claude holds one process per primed key, so identical primed content shares one key (every phase
+  // and thread of a Warden). Each logical session (an auxiliary session id) holds the content key it
+  // last used; a key no session holds any more is evicted at once, as a re-prime used to drop it.
+  // Codex keeps every key as a thread on one warm process, so it keeps per-session keys.
+  const sharedKeys = runtime === 'claude';
+  const holders = new Map<string, string>();
+  const holds = new Map<string, number>();
+  const hold = (sessionKey: string, key: string) => {
+    const previous = holders.get(sessionKey);
+    if (previous === key) return;
+    holders.set(sessionKey, key);
+    holds.set(key, (holds.get(key) ?? 0) + 1);
+    if (previous === undefined) return;
+    const left = (holds.get(previous) ?? 1) - 1;
+    if (left > 0) holds.set(previous, left);
+    else {
+      holds.delete(previous);
+      void host.evict(previous).catch(() => undefined);
+    }
+  };
   let releaseFailures = 0;
   const release = (launch: { release(): void }) => {
     try {
@@ -446,7 +475,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           result: DecisionResult | undefined,
           failedHedge = false;
         try {
-          ({ spec, input } = primedRequest(messages, opts, sessionKey));
+          ({ spec, input } = primedRequest(messages, opts, sessionKey, sharedKeys && !oneShot));
+          if (sharedKeys && !oneShot) hold(sessionKey, spec.key);
           await opts.nativeObservation?.preflight?.(owner);
           await claude?.ready();
           if (closed) throw Error('Decision admission closed');

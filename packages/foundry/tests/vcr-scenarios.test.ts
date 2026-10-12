@@ -906,7 +906,7 @@ test(
           answers: [first, second, third].map((r) => r.content.trim()),
           sessions: [first, second, third].map((r) => r.delivery!.session),
           sent: [first, second, third].map((r) => r.delivery!.sent.map((part) => part.id)),
-          systemPrompt: worker.launches[0]!.argv.includes('--append-system-prompt'),
+          systemPrompt: worker.launches[0]!.systemPrompt !== undefined,
           standingResent: worker.launches[0]!.stdin.includes('The standing codeword'),
           thirdReadsCache: (third.tokens?.cacheRead ?? 0) > 0,
           launches: worker.launches.length,
@@ -977,13 +977,7 @@ test(
         held = next;
         return result;
       };
-      const systemPrompt = (n: number) => {
-        const argv = worker.launches[n]!.argv;
-        const at = argv.findIndex((arg) => arg.startsWith('--append-system-prompt'));
-        return argv[at] === '--append-system-prompt'
-          ? argv[at + 1]
-          : readFileSync(argv[at + 1]!, 'utf8');
-      };
+      const systemPrompt = (n: number) => worker.launches[n]!.systemPrompt;
       try {
         const first = await ask('standing', learning('NONE'));
         const second = await ask('learned', learning('violet-anchor-7'));

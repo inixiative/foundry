@@ -43,6 +43,8 @@ export type Launch = {
   cwd: string;
   stdin: string;
   exited: boolean;
+  /** Claude's appended system prompt, read at launch (its private file is removed when the process ends). */
+  systemPrompt?: string;
 };
 
 type Options = {
@@ -111,7 +113,15 @@ export class ProcessCassettes {
 
   spawn = (argv: string[], options: SpawnOptions): RecordedProcess => {
     const path = this.vcr.popFixturePath(this.method);
-    const launch: Launch = { argv, env: options.env, cwd: options.cwd, stdin: '', exited: false };
+    const file = argv.indexOf('--append-system-prompt-file');
+    const launch: Launch = {
+      argv,
+      env: options.env,
+      cwd: options.cwd,
+      stdin: '',
+      exited: false,
+      ...(file >= 0 ? { systemPrompt: readFileSync(argv[file + 1]!, 'utf8') } : {}),
+    };
     this.launches.push(launch);
     const onWrite = (data: string) => {
       launch.stdin += data;

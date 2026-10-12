@@ -170,9 +170,10 @@ const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
       source: subscription.decision,
-      // Every decision role stays primed: an advice and a review key per Warden, plus the
-      // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      primedSessions: Math.max(16, 2 * configuredExperts(config).experts.length + 8),
+      // Every decision role stays primed: one key per Warden (advice, guard and review fork the same
+      // primed session), plus the Cartographer, the router roles and the feedback lifecycle. An
+      // evicted key re-primes cold.
+      primedSessions: Math.max(16, configuredExperts(config).experts.length + 8),
       onPressure: (event) => {
         const message =
           event.kind === 'shed'

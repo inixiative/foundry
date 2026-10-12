@@ -33,23 +33,97 @@ test('the stable prefix becomes primed context and only the rest is the per-cycl
     messages,
     { stablePrefix: '## Domain cache (x)\nCACHE\n' },
     'T:aux:domain:x',
+    true,
   );
   expect(spec).toMatchObject({ instructions: 'ROLE', context: '## Domain cache (x)\nCACHE\n' });
-  expect(spec.key).toStartWith('T:aux:domain:x#');
+  expect(spec.key).toBe(`primed:${spec.hash!.slice(0, 32)}`);
   expect(input).toBe('\n## Message\nhi');
-  // Same session and instructions, changed context: same key, new hash (re-prime).
+  // The key is the primed content: another session (phase or thread) with it shares the key.
+  expect(
+    primedRequest(
+      messages,
+      { stablePrefix: '## Domain cache (x)\nCACHE\n' },
+      'U:aux:review:1',
+      true,
+    ).spec.key,
+  ).toBe(spec.key);
+  // Changed context or instructions: another primed state, another key.
   const changed = primedRequest(
     [messages[0]!, { role: 'user', content: '## Domain cache (x)\nNEW\n\n## Message\nhi' }],
     { stablePrefix: '## Domain cache (x)\nNEW\n' },
     'T:aux:domain:x',
+    true,
   );
-  expect(changed.spec.key).toBe(spec.key);
-  expect(changed.spec.hash).not.toBe(spec.hash);
-  // Other instructions on the same aux session: another key.
+  expect(changed.spec.key).not.toBe(spec.key);
   expect(
-    primedRequest([{ role: 'system', content: 'GUARD' }, messages[1]!], {}, 'T:aux:domain:x').spec
-      .key,
+    primedRequest([{ role: 'system', content: 'GUARD' }, messages[1]!], {}, 'T:aux:domain:x', true)
+      .spec.key,
   ).not.toBe(spec.key);
+  // Unshared (Codex, one-shot): the logical session's own key.
+  const oneShot = primedRequest(
+    messages,
+    { stablePrefix: '## Domain cache (x)\nCACHE\n' },
+    'decision:1',
+    false,
+  );
+  expect(oneShot.spec.key).toStartWith('decision:1#');
+  expect(oneShot.spec.hash).toBe(spec.hash);
+});
+
+test("a configured Warden's advice, guard and review fork one primed state on every thread", async () => {
+  const specs: string[] = [];
+  const answers = [
+    'NO_COMMENT',
+    'NO_COMMENT',
+    'NO_COMMENT',
+    'NO_COMMENT',
+    'NO_COMMENT',
+    'NO_COMMENT',
+  ];
+  const llm: LLMProvider = {
+    id: 'recording',
+    async complete(messages, opts) {
+      const { spec, input } = primedRequest(messages, opts ?? {}, opts?.threadId ?? 'x', true);
+      expect(spec.context).not.toBe('');
+      expect(input).not.toContain('Routes live under src/api.');
+      specs.push(`${spec.key} ${spec.hash}`);
+      return { content: answers.shift()!, model: 'm' };
+    },
+  };
+  for (const thread of ['T1', 'T2']) {
+    const cache = new ContextLayer({ id: 'api', segment: 'domain-knowledge' });
+    cache.set('Routes live under src/api.');
+    const instructions = new ContextLayer({ id: 'api-instructions' });
+    instructions.set('You are the API Warden.');
+    const lib = new DomainLibrarian({
+      domain: 'api',
+      cache,
+      instructions,
+      signals: new SignalBus(),
+      llm: {
+        ...llm,
+        complete: (m, o) => llm.complete(m, { ...o, threadId: `${thread}:aux:domain:api` }),
+      },
+      reviewLlm: {
+        ...llm,
+        complete: (m, o) =>
+          llm.complete(m, { ...o, threadId: `${thread}:aux:review:1:domain:api` }),
+      },
+      guardTriggers: ['Bash'],
+    });
+    await lib.advise('Add a route', 'state');
+    await lib.guard({ tool: 'Bash', input: { command: 'ls' }, output: 'ok' } as never, 'state');
+    await lib.review({
+      evidence: { kind: 'dispatch', id: 'd1', timestamp: 1 },
+      agentId: 'a',
+      ok: true,
+      userMessage: 'Add a route',
+      output: 'done',
+      toolObservations: [],
+    });
+  }
+  expect(specs).toHaveLength(6);
+  expect(new Set(specs).size).toBe(1);
 });
 
 test('a prefix that does not match is never primed; the whole message is the input', () => {

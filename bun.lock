@@ -46,7 +46,7 @@
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
-        "@inixiative/agent-session": "^0.6.0",
+        "@inixiative/agent-session": "^0.6.1",
         "@inixiative/archive": "^0.17.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
@@ -115,7 +115,7 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.6.0", "", { "dependencies": { "@inixiative/json-rules": "^3.5.1" } }, "sha512-dcEtrxaEnTf+VlIo0nJaRnZIsSJP9VxTwItsQNOC9fOYpcC1T1Q/rt+sVT4kZBrr386SmXMTSpi3Afx1fm8NWw=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.6.1", "", { "dependencies": { "@inixiative/json-rules": "^3.5.4" } }, "sha512-gm2E847Lllbcg7dU4693Kta3UydPzEfGhg3TW1BT4GVqmg2QOYjsFCBG4woDfhiBum9ucIysC/TG3FJ/YpyVsQ=="],
 
     "@inixiative/archive": ["@inixiative/archive@0.17.0", "", { "dependencies": { "@inixiative/agent-session": "^0.6.0", "@inixiative/signet": "^0.3.1", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-yNehVhLAgi8jFf293vkxRYFOZO9gPqmq/p+QMwYiqht50HbJb7+YX2XMd2q7ZhSgmHyHw/aqx3ivA8g0db86Pg=="],
 
@@ -129,7 +129,7 @@
 
     "@inixiative/gloss": ["@inixiative/gloss@0.0.5", "", { "peerDependencies": { "typescript": ">=6.0.0" }, "bin": { "gloss": "dist/cli.js" } }, "sha512-D8UuMnT9OCJpbXfgoDQ689TpaKIhste2K4M4wD1kpRHnhcMyAyuAyLjTeu87ODm13ke9EqeA/Axk+MK2Imt3jA=="],
 
-    "@inixiative/json-rules": ["@inixiative/json-rules@3.5.1", "", { "dependencies": { "dayjs": "^1.11.13", "fastest-levenshtein": "^1.0.16", "re2js": "^2.8.6" }, "peerDependencies": { "@prisma/client": ">=6.0.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@prisma/client", "typescript"] }, "sha512-vaWgBhzKd5GglNTCPIvr+GBUigEgx0l1blL/4P52Cwy2c8fzNn5WcfVI1in7eeN1PHiI22dav/U3FbI+qmubNg=="],
+    "@inixiative/json-rules": ["@inixiative/json-rules@3.5.4", "", { "dependencies": { "dayjs": "^1.11.13", "fastest-levenshtein": "^1.0.16", "re2js": "^2.8.6" }, "peerDependencies": { "@prisma/client": ">=6.0.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@prisma/client", "typescript"] }, "sha512-Ow/M74grWwSStHizn34BZjdsN14aK6zf1NpHlwhMlwc+CtS53yT+aLRI/T0B5vX7lm/DVcD+ddIfEEQMkn1qYA=="],
 
     "@inixiative/signet": ["@inixiative/signet@0.3.1", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-CiTgqQSO+RA9nZNhqQzhv3uj9zdxooysslNwDbobPkrBqZJokCLprMeeejMWdq0Qez+pHIicwPrHmqPMW16q9A=="],
 
