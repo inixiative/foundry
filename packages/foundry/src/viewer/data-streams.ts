@@ -5,6 +5,8 @@ import type {
   StreamEvent,
   Thread,
 } from '@inixiative/foundry-core';
+import type { FeedbackItem } from '../feedback/lifecycle';
+import { type FeedbackService, feedbackView } from '../feedback/service';
 import type { StreamFamily } from '../ws/types';
 import { threadToJSON } from './http-helpers';
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from './stream-buffer';
@@ -25,6 +27,8 @@ import { FLOW_TURNS, type FlowJournal, flowSnapshot, readLearning, readTurn } fr
  *   prompts             snapshot { prompts }                      append { prompt }  (status says pending or settled)
  *   events              snapshot { events }  (runtime-wide)       append { event }
  *   events:<threadId>   snapshot { events }  (owned by thread)    append { event }  (plus threadless errors, for toasts)
+ *   feedback            snapshot { projectId: null, items }        append { item }  (the lifecycle view; see feedback/service.ts)
+ *   feedback:<projectId> snapshot { projectId, items }             append { item }
  *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, learningError, limits }  (bounded; see turn-flow.ts)
  *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review, learningError }
  */
@@ -74,6 +78,8 @@ export function createViewerStreams(deps: {
   deliverTo: (clientId: string, stream: string, payload: TurnTerminal) => void;
   /** The owned journal behind `flow:<threadId>`; without a store the stream reports it unavailable. */
   journal?: FlowJournal;
+  /** The feedback lifecycle behind `feedback` / `feedback:<projectId>`; created after the streams. */
+  feedback?: () => FeedbackService | null;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -302,9 +308,55 @@ export function createViewerStreams(deps: {
     },
   };
 
+  // Lifecycle view: every feedback item of a project (or all), each re-sent when it or its uses change.
+  const feedbackSinks = new Set<(item: FeedbackItem) => void>();
+  const feedback: StreamFamily = {
+    matches: (stream) => stream === 'feedback' || suffix(stream, 'feedback:') !== null,
+    authorize: () => !!deps.feedback?.(),
+    start(stream, append) {
+      const projectId = suffix(stream, 'feedback:');
+      const service = deps.feedback?.();
+      const inScope = (item: FeedbackItem) => projectId === null || item.projectId === projectId;
+      const sent = new Map<string, string>();
+      const send = (item: FeedbackItem) => {
+        if (!service || !inScope(item)) return;
+        const view = feedbackView(service, item);
+        const text = JSON.stringify(view);
+        if (sent.get(item.id) === text) return;
+        sent.set(item.id, text);
+        append({ item: view });
+      };
+      feedbackSinks.add(send);
+      // A journalled turn may carry a Warden call with an applied rule in front of it: re-count uses.
+      const unsubscribe = eventStream.subscribe((event) => {
+        if (event.kind !== 'journal' || !service) return;
+        for (const item of service.lifecycle.items) if (item.changes.length) send(item);
+      });
+      return {
+        snapshot() {
+          if (!service) return { projectId, items: [] };
+          const items = service.lifecycle.items.filter(inScope).map((item) => {
+            const view = feedbackView(service, item);
+            sent.set(item.id, JSON.stringify(view));
+            return view;
+          });
+          return { projectId, items };
+        },
+        stop() {
+          feedbackSinks.delete(send);
+          unsubscribe();
+        },
+      };
+    },
+  };
+
   return {
     turns,
-    families: [thread, threads, prompts, events, flow],
+    families: [thread, threads, prompts, events, flow, feedback],
+    /** A feedback item changed (captured, routed, tuned, applied, reverted). */
+    feedbackChanged: (item: FeedbackItem) => {
+      for (const send of feedbackSinks) send(item);
+    },
     /** Deliver a turn's full terminal to the client that sent it, on whichever of its connections holds the thread stream. */
     publishTerminal: (threadId: string, clientId: string | undefined, payload: TurnTerminal) => {
       if (clientId) deliverTo(clientId, `thread:${threadId}`, payload);

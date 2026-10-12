@@ -6,6 +6,7 @@ import {
   type PermissionOption,
   PROTOCOL_VERSION,
   RequestError,
+  type RequestPermissionResponse,
   type SessionUpdate,
   type StopReason,
 } from '@agentclientprotocol/sdk';
@@ -85,7 +86,24 @@ const COMMANDS = [
     description: 'Tell Foundry what the last turn should have done; it learns from the correction',
     input: { hint: 'what should have happened' },
   },
+  {
+    name: 'feedback',
+    description:
+      'Your feedback and where it went; apply, edit or dismiss one: /feedback apply <id>',
+    input: { hint: 'list | apply <id> | dismiss <id> | later <id> | edit <id> <rule>' },
+  },
 ];
+
+/** A feedback tuning prompt: its item and the three lines it shows. */
+interface FeedbackMeta {
+  itemId: string;
+  blocking: boolean;
+  shown: { happened: string; did: string; intend: string };
+}
+const feedbackMeta = (prompt: ActionPrompt): FeedbackMeta | undefined => {
+  const meta = prompt.meta?.feedback as FeedbackMeta | undefined;
+  return meta && typeof meta.itemId === 'string' ? meta : undefined;
+};
 
 interface Daemon {
   launch: AcpLaunch;
@@ -341,8 +359,93 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
 
   // Outstanding `session/request_permission` calls by prompt id; aborted when someone else answers.
   const asking = new Map<string, { controller: AbortController; threadId: string }>();
+  // Feedback cards shown per prompt id, so a settled prompt closes the card it opened.
+  const feedbackCards = new Set<string>();
+  /**
+   * A feedback tuning prompt: always a "Foundry: feedback" card; a blocking one is also a permission
+   * ask (Apply / Not a rule). A non-blocking one never opens a dialog: it is answered in the viewer
+   * or with `/feedback`.
+   */
+  const feedbackPrompt = (session: Session, prompt: ActionPrompt, meta: FeedbackMeta) => {
+    const toolCallId = `foundry-feedback:${prompt.id}`;
+    if (prompt.status !== 'pending') {
+      asking.get(prompt.id)?.controller.abort();
+      if (!feedbackCards.delete(prompt.id)) return;
+      const answer = prompt.resolution?.action ?? prompt.status;
+      send(session, {
+        sessionUpdate: 'tool_call_update',
+        toolCallId,
+        status: answer === 'dismiss' || prompt.status === 'expired' ? 'failed' : 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: `Answered: ${answer}` } }],
+      });
+      return;
+    }
+    if (feedbackCards.has(prompt.id)) return;
+    feedbackCards.add(prompt.id);
+    const text = [
+      `What happened: ${meta.shown.happened}`,
+      `What we did: ${meta.shown.did}`,
+      `What we intend: ${meta.shown.intend}`,
+      meta.blocking
+        ? ''
+        : `Answer with /feedback apply|edit|dismiss|later ${meta.itemId}, or in the Foundry viewer.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const card = {
+      toolCallId,
+      title: 'Foundry: feedback',
+      kind: 'think' as const,
+      status: 'pending' as const,
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text } }],
+    };
+    send(session, {
+      sessionUpdate: 'tool_call',
+      ...card,
+      _meta: { foundry: { promptId: prompt.id, feedbackItemId: meta.itemId } },
+    });
+    const target = client;
+    const foundry = daemon;
+    if (!meta.blocking || !target || !foundry || asking.has(prompt.id)) return;
+    const canApply = prompt.options?.some((option) => option.id === 'apply') ?? false;
+    const controller = new AbortController();
+    asking.set(prompt.id, { controller, threadId: session.threadId });
+    void session.outbox
+      .then(() =>
+        target.request(
+          'session/request_permission',
+          {
+            sessionId: session.threadId,
+            toolCall: card,
+            options: [
+              ...(canApply
+                ? [{ optionId: 'apply', name: 'Apply', kind: 'allow_once' as const }]
+                : []),
+              { optionId: 'dismiss', name: 'Not a rule', kind: 'reject_once' as const },
+              { optionId: 'later', name: 'Later', kind: 'reject_once' as const },
+            ],
+            _meta: { foundry: { promptId: prompt.id, feedbackItemId: meta.itemId } },
+          },
+          { cancellationSignal: controller.signal },
+        ),
+      )
+      .then((response) => {
+        const outcome = (response as RequestPermissionResponse).outcome;
+        const option = outcome.outcome === 'selected' ? outcome.optionId : 'later';
+        return foundry.http.answerPrompt(prompt.id, option);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        log(`feedback ${prompt.id}: ${(error as Error).message}`);
+        void foundry.http.answerPrompt(prompt.id, 'later').catch(() => {});
+      })
+      .finally(() => asking.delete(prompt.id));
+  };
+
   const permission = (prompt: ActionPrompt) => {
     const session = sessions.get(prompt.threadId);
+    const feedback = feedbackMeta(prompt);
+    if (session && feedback) return feedbackPrompt(session, prompt, feedback);
     // Only the tool gate's approval asks belong to the host.
     if (!session || prompt.kind !== 'approval' || typeof prompt.meta?.toolName !== 'string') return;
     if (prompt.status !== 'pending') {
@@ -443,6 +546,39 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       operator: `acp:${clientName}`,
     });
     return 'Correction recorded. Foundry will learn from it.';
+  };
+
+  /** `/feedback`: list this thread's project feedback, or answer one item's pending tuning prompt. */
+  const feedbackCommand = async (
+    session: Session,
+    foundry: Daemon,
+    body: string,
+  ): Promise<string> => {
+    const [verb = 'list', itemId, ...rest] = body.split(/\s+/).filter(Boolean);
+    if (verb === 'list') {
+      const thread = await foundry.http.thread(session.threadId).catch(() => undefined);
+      const { items } = await foundry.http.feedback(thread?.meta.projectId ?? undefined);
+      if (!items.length) return 'No feedback captured yet.';
+      return items
+        .slice(0, 10)
+        .map((item) => {
+          const roles = item.route?.roles.join(', ') ?? 'unrouted';
+          const changes = item.changes.filter((change) => !change.revertedAt).length;
+          return `${item.id} [${item.status}] ${item.statement}\n  → ${roles}${changes ? `; applied, used ${item.uses.exposures}×` : ''}; ↻ ${item.recurrence.total}`;
+        })
+        .join('\n');
+    }
+    if (!['apply', 'dismiss', 'later', 'edit'].includes(verb) || !itemId)
+      return 'Usage: /feedback [list] | apply <id> | dismiss <id> | later <id> | edit <id> <rule>';
+    const { prompts } = await foundry.http.prompts(session.threadId);
+    const prompt = prompts.find(
+      (candidate) => candidate.status === 'pending' && feedbackMeta(candidate)?.itemId === itemId,
+    );
+    if (!prompt) return `No open feedback prompt for ${itemId} in this session.`;
+    const rule = rest.join(' ').trim();
+    if (verb === 'edit' && !rule) return 'Usage: /feedback edit <id> <the rule, in one line>';
+    await foundry.http.answerPrompt(prompt.id, verb, verb === 'edit' ? rule : undefined);
+    return `${itemId}: ${verb === 'edit' ? 'edited and applied' : verb}.`;
   };
 
   const bind = async (thread: ThreadJSON, cwd: string): Promise<Session> => {
@@ -619,10 +755,15 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       await hold(session, foundry).catch(httpError);
       const text = promptText(ctx.params.prompt);
       const correction = /^\/correction(?:\s+([\s\S]*))?$/.exec(text.trim());
-      if (correction) {
-        const reply = await correct(session, foundry, correction[1]?.trim() ?? '').catch(
-          (error) => `Correction not recorded: ${(error as Error).message}`,
-        );
+      const feedback = /^\/feedback(?:\s+([\s\S]*))?$/.exec(text.trim());
+      if (correction || feedback) {
+        const reply = correction
+          ? await correct(session, foundry, correction[1]?.trim() ?? '').catch(
+              (error) => `Correction not recorded: ${(error as Error).message}`,
+            )
+          : await feedbackCommand(session, foundry, feedback?.[1]?.trim() ?? '').catch(
+              (error) => `Feedback: ${(error as Error).message}`,
+            );
         send(session, {
           sessionUpdate: 'agent_message_chunk',
           content: { type: 'text', text: reply },

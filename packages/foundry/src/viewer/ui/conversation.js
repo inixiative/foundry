@@ -11,6 +11,7 @@ import {
   browserStorageSummary,
   isUnsavedCompletion,
 } from './conversation-state.js';
+import { FeedbackPrompt } from './feedback.js';
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel } from './live-state.js';
@@ -693,6 +694,11 @@ function threadBreadcrumb(threadId) {
 }
 
 function PromptCard({ prompt }) {
+  if (prompt.meta?.feedback) return html`<${FeedbackPrompt} prompt=${prompt} />`;
+  return html`<${ActionPromptCard} prompt=${prompt} />`;
+}
+
+function ActionPromptCard({ prompt }) {
   const [input, setInput] = useState('');
   const [resolving, setResolving] = useState(false);
 
@@ -765,9 +771,9 @@ function PromptCard({ prompt }) {
           isChoice && options.length > 0
             ? options.map(
                 (opt) => html`
-          <button key=${opt.action}
+          <button key=${opt.id}
             class="prompt-btn"
-            onClick=${() => handleAction(opt.action)}
+            onClick=${() => handleAction(opt.id)}
             disabled=${resolving}
             title=${opt.description || ''}
           >${opt.label}</button>

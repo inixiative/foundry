@@ -14,6 +14,7 @@ import { Harness, newId } from '@inixiative/foundry-core';
 import type { PostgresMemory } from '../adapters/postgres-memory';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
+import type { FeedbackService } from '../feedback/service';
 import { enqueueJob } from '../jobs/enqueue';
 import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
@@ -42,6 +43,8 @@ export interface TurnServiceDeps {
   configStore: ConfigStore;
   deviceIdentityPath?: string;
   namer?: ThreadNamer;
+  /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
+  feedback?: FeedbackService | null;
   localStore?: LocalSessionStore | null;
   directory: ViewerThreadDirectory;
   streams: ViewerStreams;
@@ -236,6 +239,11 @@ export class TurnService {
 
     const buffer = streams.turns.open(turnId, threadId, harness.thread.meta.projectId);
     streams.threadsChanged(threadId);
+    try {
+      this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
+    } catch (error) {
+      console.warn('[Feedback] capture not started:', (error as Error).message);
+    }
 
     let queue = this.queues.get(threadId);
     if (!queue) {
@@ -659,6 +667,8 @@ export class TurnService {
     const threadId = thread.id;
     let attemptTrace: Trace | undefined;
     try {
+      // A blocking tuning prompt holds the turn until it is answered or times out.
+      await this.deps.feedback?.held(turnId);
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       state.phase = 'running';
       const result = await harness.send(

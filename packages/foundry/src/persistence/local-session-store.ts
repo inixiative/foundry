@@ -608,6 +608,91 @@ export class LocalSessionStore {
     });
   }
 
+  /** Feedback lifecycle rows across threads, oldest first, with each thread's project (docs/FEEDBACK-LOOP.md). */
+  feedbackPhases(
+    opts: { projectId?: string } = {},
+  ): Array<StoredPhase & { projectId: string | null }> {
+    const rows = this.query(
+      `SELECT p.id, p.thread_id, p.turn_id, p.dispatch_id, p.phase, p.record, p.checksum, p.stored_at,
+              json_extract(t.meta, '$.projectId') AS project_id
+         FROM session_phase p JOIN session_threads t ON t.id = p.thread_id
+        WHERE p.phase LIKE 'feedback-%'${opts.projectId !== undefined ? " AND json_extract(t.meta, '$.projectId') = ?" : ''}
+        ORDER BY p.seq`,
+    ).all(...(opts.projectId !== undefined ? [opts.projectId] : [])) as Array<{
+      id: string;
+      thread_id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      phase: string;
+      record: string;
+      checksum: string;
+      stored_at: number;
+      project_id: string | null;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        id: row.id,
+        threadId: row.thread_id,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase: row.phase,
+        record: JSON.parse(row.record),
+        storedAt: row.stored_at,
+        projectId: row.project_id,
+      };
+    });
+  }
+
+  /**
+   * Advice and guard-request rows stored at or after `since` whose recorded input contains `marker`: the
+   * calls that had a feedback rule in front of a Warden. Roles are the participants whose segments hold it.
+   */
+  phasesContaining(
+    marker: string,
+    since: number,
+    limit = 500,
+  ): Array<{
+    threadId: string;
+    turnId: string | null;
+    phase: string;
+    roles: string[];
+    storedAt: number;
+  }> {
+    const rows = this.query(
+      `SELECT thread_id, turn_id, phase, record, stored_at FROM session_phase
+        WHERE phase IN ('advice', 'guard-request') AND stored_at >= ? AND instr(record, ?) > 0
+        ORDER BY seq DESC LIMIT ?`,
+    ).all(since, marker, limit) as Array<{
+      thread_id: string;
+      turn_id: string | null;
+      phase: string;
+      record: string;
+      stored_at: number;
+    }>;
+    return rows.reverse().map((row) => {
+      const record = JSON.parse(row.record) as {
+        domain?: string;
+        participants?: Array<{ domain?: string; segments?: unknown }>;
+      };
+      const roles =
+        row.phase === 'guard-request'
+          ? record.domain
+            ? [record.domain]
+            : []
+          : (record.participants ?? [])
+              .filter((p) => p.domain && JSON.stringify(p.segments ?? '').includes(marker))
+              .map((p) => p.domain as string);
+      return {
+        threadId: row.thread_id,
+        turnId: row.turn_id,
+        phase: row.phase,
+        roles,
+        storedAt: row.stored_at,
+      };
+    });
+  }
+
   learningHistory(threadId: string, limit = 100): StoredLearning[] {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('Learning history limit must be an integer between 1 and 1000');

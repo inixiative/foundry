@@ -5503,3 +5503,113 @@ a.thread-ref:hover {
     display: none;
   }
 }
+
+/* ---- Feedback lifecycle (feedback.js) ---- */
+.feedback-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.feedback-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.feedback-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(110px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.feedback-row[data-status="applied"] {
+  border-color: var(--ok-dim);
+}
+.feedback-row[data-status="dismissed"] {
+  opacity: 0.6;
+}
+@media (max-width: 900px) {
+  .feedback-row {
+    grid-template-columns: 1fr;
+  }
+}
+.feedback-stage-label {
+  color: var(--text-dimmer);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.feedback-stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-statement {
+  color: var(--text);
+}
+.feedback-dim {
+  color: var(--text-dim);
+}
+.feedback-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.feedback-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.feedback-change code {
+  font-size: 11px;
+  color: var(--accent);
+}
+.feedback-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.feedback-recurred {
+  color: var(--warn);
+}
+.feedback-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.feedback-lines dt {
+  color: var(--text-dim);
+}
+.feedback-lines dd {
+  margin: 0;
+}
+.feedback-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.feedback-edit textarea {
+  flex: 1 1 100%;
+}

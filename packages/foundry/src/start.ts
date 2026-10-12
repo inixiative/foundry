@@ -768,6 +768,7 @@ const viewer = await startViewer({
   assistProvider: provider,
   assistModel: config.defaults.model,
   namingProvider: flowLlm,
+  feedbackProvider: flowLlm,
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,

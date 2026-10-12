@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -16,6 +17,9 @@ import { serveStatic } from 'hono/bun';
 import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
+import { MAIN_ROLE } from '../feedback/routing';
+import { FeedbackService } from '../feedback/service';
+import { classifyCorrection, matchExisting } from '../feedback/sharpen';
 import { log } from '../logger';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
@@ -71,6 +75,8 @@ export interface ViewerConfig {
   assistModel?: string;
   /** Decision provider that keeps agent thread names (optional; no naming without it). */
   namingProvider?: LLMProvider;
+  /** Decision provider for the feedback lifecycle (optional; no capture without it). */
+  feedbackProvider?: LLMProvider;
   /** Token tracker for analytics (optional but recommended). */
   tokenTracker?: TokenTracker;
   /** Directory for analytics data persistence. Defaults to .foundry/analytics/ */
@@ -238,6 +244,7 @@ export function createViewer(config: ViewerConfig) {
     directory,
     eventStream,
     actionQueue: config.actionQueue,
+    feedback: () => feedback,
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,
@@ -319,6 +326,32 @@ export function createViewer(config: ViewerConfig) {
     },
   });
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
+  // Feedback lifecycle: capture → tune → change, journalled; needs the journal and a decision provider.
+  const feedbackProvider = config.feedbackProvider;
+  const feedback: FeedbackService | null =
+    localStore && feedbackProvider
+      ? new FeedbackService({
+          store: localStore,
+          config: () => configStore.config,
+          queue: config.actionQueue ?? null,
+          thread: (id) => directory.get(id),
+          cartographer: (id) => config.threadFactory?.runtime?.get(id)?.cartographer,
+          classify: (input) => classifyCorrection(feedbackProvider, input),
+          match: (statement, candidates, priority) =>
+            matchExisting(feedbackProvider, statement, candidates, priority),
+          invalidate: (role, threadId) => {
+            if (role === MAIN_ROLE)
+              directory.get(threadId)?.stack.getLayer('instructions')?.invalidate();
+          },
+          roots: (thread) => {
+            const projectId = thread.meta.projectId;
+            const path = projectId ? configStore.config.projects[projectId]?.path : undefined;
+            return { home: homedir(), ...(path ? { project: path } : {}) };
+          },
+          changed: (item) => streams.feedbackChanged(item),
+          log: (message) => log.warn(message),
+        })
+      : null;
   registerKingdomRoutes(app, configStore, configDir, kingdom, () => tunnelHolder.tunnel?.token);
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerGlossRoutes(app, configStore);
@@ -370,6 +403,7 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     streams,
+    feedback,
   });
 
   registerControlRoutes(app, {

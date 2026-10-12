@@ -19,6 +19,7 @@ import {
   type Thread,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
+import type { FeedbackPhase } from '../feedback/types';
 import type { SessionAdapter } from '../providers/session-adapter';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
@@ -334,7 +335,8 @@ export interface PhaseRecordInput {
     | 'guard-request'
     | 'guard-outcome'
     | 'gate-request'
-    | 'gate-outcome';
+    | 'gate-outcome'
+    | FeedbackPhase;
   readonly record: Record<string, unknown>;
 }
 export type PhaseJournal = (runtime: ThreadRuntime, record: PhaseRecordInput) => void;
