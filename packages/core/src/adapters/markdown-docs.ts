@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -33,6 +33,8 @@ export class MarkdownDocs {
   /** Scan and load all matching files. */
   async load(): Promise<Map<string, string>> {
     const results = new Map<string, string>();
+    // A docs directory that doesn't exist yet (a fresh install's home) has no docs.
+    if (!existsSync(this.dir)) return results;
     const scanner = new Bun.Glob(this.glob).scan({ cwd: this.dir, absolute: false });
 
     for await (const relPath of scanner) {
@@ -65,6 +67,7 @@ export class MarkdownDocs {
   /** List all matching files. */
   async list(): Promise<string[]> {
     const paths: string[] = [];
+    if (!existsSync(this.dir)) return paths;
     const scanner = new Bun.Glob(this.glob).scan({ cwd: this.dir, absolute: false });
     for await (const relPath of scanner) {
       paths.push(relPath);

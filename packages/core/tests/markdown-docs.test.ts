@@ -247,3 +247,10 @@ describe('instruction @imports (Claude Code semantics)', () => {
     );
   });
 });
+
+test('a docs directory that does not exist yet has no docs', async () => {
+  const docs = new MarkdownDocs(join(tmpdir(), `foundry-no-docs-${crypto.randomUUID()}`));
+  expect(await docs.load()).toEqual(new Map());
+  expect(await docs.list()).toEqual([]);
+  expect(await docs.asSource('missing').load()).toBe('');
+});
