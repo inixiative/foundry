@@ -290,28 +290,17 @@ test('launch composition preserves unrelated tools, model/effort/budget and sani
       '--resume',
       'owned',
     ];
-    const after = withNativeBridge(prior, 'claude', f.lease);
+    const after = withNativeBridge(prior, f.lease);
     expect(after.filter((x) => x !== f.lease.launch.claudeJson)).toEqual(prior);
     expect(
-      withNativeBridge(['claude', '--mcp-config=old.json', '--model', 'chosen'], 'claude', f.lease),
+      withNativeBridge(['claude', '--mcp-config=old.json', '--model', 'chosen'], f.lease),
     ).toContain('old.json');
     for (const flag of ['--strict-mcp-config', '--bare', '--safe-mode'])
-      expect(() => withNativeBridge(['claude', flag], 'claude', f.lease)).toThrow('conflicts');
+      expect(() => withNativeBridge(['claude', flag], f.lease)).toThrow('conflicts');
     expect(() =>
-      withNativeBridge(['claude', '--mcp-config', f.lease.launch.claudeJson], 'claude', f.lease),
+      withNativeBridge(['claude', '--mcp-config', f.lease.launch.claudeJson], f.lease),
     ).toThrow('collision');
-    expect(() => withNativeBridge(['claude', '--mcp-config'], 'claude', f.lease)).toThrow(
-      'Ambiguous',
-    );
-    const mcp = [
-      'codex',
-      'mcp-server',
-      '-c',
-      'model=chosen',
-      '-c',
-      'mcp_servers.existing.command=other',
-    ];
-    expect(withNativeBridge(mcp, 'codex', f.lease).slice(0, mcp.length)).toEqual(mcp);
+    expect(() => withNativeBridge(['claude', '--mcp-config'], f.lease)).toThrow('Ambiguous');
     const safe = JSON.stringify(
       nativeLaunchEvidence([
         ...after,
@@ -328,7 +317,7 @@ test('launch composition preserves unrelated tools, model/effort/budget and sani
   }
 });
 
-for (const engine of ['claude', 'mcp'] as const)
+for (const engine of ['claude', 'app-server'] as const)
   test(`${engine}: an auxiliary cannot receive the launch capability`, async () => {
     const f = await fixture();
     let spawns = 0;

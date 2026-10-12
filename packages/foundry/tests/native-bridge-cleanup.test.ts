@@ -5,8 +5,9 @@ import {
   CodexSessionAdapter,
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
+import { appServerTransport } from './helpers/subscription-transport';
 
-for (const engine of ['claude', 'mcp'] as const)
+for (const engine of ['claude', 'app-server'] as const)
   for (const cleanupFailures of [0, 1])
     test(`${engine}: physical exit alone cannot claim pending bridge cleanup was released (failures=${cleanupFailures})`, async () => {
       let output!: ReadableStreamDefaultController<Uint8Array>,
@@ -24,7 +25,7 @@ for (const engine of ['claude', 'mcp'] as const)
       );
       const emit = (v: unknown) =>
         output.enqueue(new TextEncoder().encode(JSON.stringify(v) + '\n'));
-      const spawn = () => ({
+      const claudeSpawn = () => ({
         stdout: new ReadableStream<Uint8Array>({
           start(c) {
             output = c;
@@ -44,30 +45,15 @@ for (const engine of ['claude', 'mcp'] as const)
           }
         },
         stdin: {
-          write(s: string) {
-            const v = JSON.parse(s);
+          write() {
             queueMicrotask(() => {
-              if (v.method === 'initialize' || v.method === 'tools/list')
-                emit({ id: v.id, result: {} });
-              else if (engine === 'claude')
-                emit({
-                  type: 'result',
-                  subtype: 'success',
-                  is_error: false,
-                  result: 'done',
-                  session_id: 'owned',
-                });
-              else {
-                for (const type of ['task_started', 'task_complete'])
-                  emit({
-                    method: 'codex/event',
-                    params: { id: 'turn', msg: { type, turn_id: 'turn' } },
-                  });
-                emit({
-                  id: v.id,
-                  result: { structuredContent: { threadId: 'owned', content: 'done' } },
-                });
-              }
+              emit({
+                type: 'result',
+                subtype: 'success',
+                is_error: false,
+                result: 'done',
+                session_id: 'owned',
+              });
             });
           },
           flush() {},
@@ -79,7 +65,16 @@ for (const engine of ['claude', 'mcp'] as const)
         name: 'foundry_test',
         owner: { threadId: 'owner', generation: 'g' },
         configurationHash: 'test',
-        launch: { claudeJson: '{"mcpServers":{}}', codexOverrides: [] },
+        launch: {
+          claudeJson: JSON.stringify({
+            mcpServers: {
+              foundry_test: {
+                command: 'bun',
+                args: ['/controlled/proxy.ts', '/controlled/launch.json'],
+              },
+            },
+          }),
+        },
         check() {},
         register() {},
         observe() {},
@@ -99,12 +94,13 @@ for (const engine of ['claude', 'mcp'] as const)
           };
         },
       };
-      const defaults = { spawn };
+      const appServer = appServerTransport({ mcpTools: ['foundry_query', 'foundry_memory'] });
+      const exitedProcess = () => (engine === 'claude' ? didExit : !!appServer.launches[0]?.exited);
       const store = new InMemoryExternalSessionStore();
       const adapter =
         engine === 'claude'
-          ? new ClaudeCodeSessionAdapter({ store, defaults })
-          : new CodexSessionAdapter({ store, defaults });
+          ? new ClaudeCodeSessionAdapter({ store, defaults: { spawn: claudeSpawn } })
+          : new CodexSessionAdapter({ store, defaults: { spawn: appServer.spawn } });
       const session = await adapter.createSession({
         threadId: 'owner',
         cwd: '/controlled',
@@ -120,7 +116,7 @@ for (const engine of ['claude', 'mcp'] as const)
           return r;
         });
         await Bun.sleep(5);
-        expect(didExit).toBe(true);
+        expect(exitedProcess()).toBe(true);
         expect(closeCalls).toBeGreaterThan(0);
         expect(settled).toBe(false);
         release();

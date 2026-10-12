@@ -61,62 +61,46 @@ export function appServerBridgeConfiguration(
   };
 }
 
-/** Add only one process-owned unique server. Keep other tools/configuration and
- * all model/effort/budget arguments. Refuse explicit conflicting policy. */
-export function withNativeBridge(
-  argv: readonly string[],
-  engine: 'claude' | 'codex',
-  bridge: NativeBridgeLease,
-): string[] {
+/** Add only one process-owned unique server to a Claude argv. Keep other tools/configuration
+ * and all model/effort/budget arguments. Refuse explicit conflicting policy. */
+export function withNativeBridge(argv: readonly string[], bridge: NativeBridgeLease): string[] {
   bridge.check();
   if (bridge.toolPolicy)
     throw Error('Fixture lease requires the isolated transport; generic bridge launch refused');
   const result = [...argv];
-  if (engine === 'claude') {
-    if (argv.some((arg) => ['--safe-mode', '--strict-mcp-config', '--bare'].includes(arg)))
-      throw Error('Native bridge conflicts with the existing central MCP policy');
-    let insertion = -1;
-    for (let i = 1; i < result.length; i++) {
-      if (result[i].startsWith('--mcp-config='))
-        result.splice(i, 1, '--mcp-config', result[i].slice('--mcp-config='.length));
-      if (result[i] !== '--mcp-config') continue;
-      let end = i + 1;
-      while (end < result.length && !result[end].startsWith('-')) {
-        const value = result[end];
-        if (value.trimStart().startsWith('{')) {
-          let config: unknown;
-          try {
-            config = JSON.parse(value);
-          } catch {
-            throw Error('Existing MCP JSON is invalid');
-          }
-          if (
-            config &&
-            typeof config === 'object' &&
-            Object.hasOwn((config as any).mcpServers ?? {}, bridge.name)
-          )
-            throw Error('Native bridge server name collision');
+  if (argv.some((arg) => ['--safe-mode', '--strict-mcp-config', '--bare'].includes(arg)))
+    throw Error('Native bridge conflicts with the existing central MCP policy');
+  let insertion = -1;
+  for (let i = 1; i < result.length; i++) {
+    if (result[i].startsWith('--mcp-config='))
+      result.splice(i, 1, '--mcp-config', result[i].slice('--mcp-config='.length));
+    if (result[i] !== '--mcp-config') continue;
+    let end = i + 1;
+    while (end < result.length && !result[end].startsWith('-')) {
+      const value = result[end];
+      if (value.trimStart().startsWith('{')) {
+        let config: unknown;
+        try {
+          config = JSON.parse(value);
+        } catch {
+          throw Error('Existing MCP JSON is invalid');
         }
-        end++;
+        if (
+          config &&
+          typeof config === 'object' &&
+          Object.hasOwn((config as any).mcpServers ?? {}, bridge.name)
+        )
+          throw Error('Native bridge server name collision');
       }
-      if (end === i + 1 || insertion !== -1)
-        throw Error('Ambiguous existing MCP configuration arguments');
-      insertion = end;
-      i = end - 1;
+      end++;
     }
-    if (insertion < 0) result.push('--mcp-config', bridge.launch.claudeJson);
-    else result.splice(insertion, 0, bridge.launch.claudeJson);
-  } else {
-    // Do not read arbitrary user config files. Unique names avoid taking over an
-    // existing normal server; explicit argv collisions still fail closed.
-    if (
-      argv.some(
-        (arg) => arg.includes(`mcp_servers.${bridge.name}`) || arg.includes(`"${bridge.name}"`),
-      )
-    )
-      throw Error('Native bridge server name collision');
-    for (const override of bridge.launch.codexOverrides) result.push('-c', override);
+    if (end === i + 1 || insertion !== -1)
+      throw Error('Ambiguous existing MCP configuration arguments');
+    insertion = end;
+    i = end - 1;
   }
+  if (insertion < 0) result.push('--mcp-config', bridge.launch.claudeJson);
+  else result.splice(insertion, 0, bridge.launch.claudeJson);
   return result;
 }
 

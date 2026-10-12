@@ -28,5 +28,6 @@ export {
   defaultAcpLaunchPath,
   newAcpCapability,
   readAcpLaunch,
+  removeAcpLaunch,
   writeAcpLaunch,
 } from './launch';

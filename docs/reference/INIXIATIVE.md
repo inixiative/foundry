@@ -147,7 +147,7 @@ Still true from the snapshot: `oracle-worker` cannot boot; the pairing Signet ha
 |---|---|---|---|
 | Claude Code driver | `as/claude-code-session.ts:231` `ClaudeCodeSession` | One persistent `claude --print --input-format stream-json --output-format stream-json` process. Native resume and fork (`--resume <id> --fork-session`). Interrupt via the stdio control channel. | solid, verified live |
 | Codex driver (app-server) | `as/codex-session.ts:1099` `CodexAppServerSession` | JSON-RPC: thread/start, thread/resume, turn/start. `turn/interrupt`. `push()` → `turn/steer`. Every server request gets -32601. `fork()` throws (`:1267-1271`). | solid (no fork) |
-| Codex driver (mcp-server) | `as/codex-session.ts:830` | `codex mcp-server`. Still the default `CodexSession` export (`as/index.ts:30`). Foundry says Codex 0.155 dropped it (`pf/start.ts:299`) and defaults to app-server; agent-session AS-004 says it was verified on 0.155.1. **The repos disagree.** | solid / disputed |
+| Codex driver (mcp-server) | `as/codex-session.ts:830` | `codex mcp-server`. Codex CLI 0.155.1 has no `mcp-server`; Foundry runs only the app-server driver, and agent-session is removing this one. | removed |
 | Claude Agent SDK driver | `as/claude-agent-sdk-session.ts:271` | Caller supplies the SDK `query`. Has `canUseTool` per-call approval (`:37-47`). Not used by Foundry. | solid, unused |
 | ACP (Gemini CLI), API transports | `as/transports.ts:47-69` | Throw `TransportUnavailableError` | stub |
 | Transport capability descriptors | `as/transport.ts:26-48` `TRANSPORTS` | Each transport declares resume, fork, rollback, interrupt, push, approvals, usage, limits, primed and billing, so callers can branch on capabilities | solid |
@@ -462,7 +462,7 @@ Not needed from the foreign runner: model choice for decisions, auth for decisio
 11. **No subscription harness for Google, Meta or xAI.** ACP and API transports are stubs (`as/transports.ts:47-69`).
 12. **Foundry ignores agent-session's `SubscriptionPool`, routing and limit probes** and keeps its own account handling. Kingdom-supplied subscription accounts are wired nowhere.
 13. **Dead code.** `ClaudeCodeProvider` (`pf/providers/claude-code.ts`) and `RuntimeAdapter` implementations (`pf/providers/runtime.ts`).
-14. **The repos disagree on Codex mcp-server.** agent-session still defaults to it (`as/index.ts:30`); Foundry says Codex 0.155 dropped it (`pf/start.ts:299`).
+14. **Resolved: Codex mcp-server.** Codex CLI 0.155.1 has no `mcp-server`; the app-server is Foundry's only Codex engine and agent-session is removing `CodexMcpSession`.
 
 ### Kingdom, Oracle, Archive
 15. **The Foundry pairing Signet grants no operations** (`k/packages/access/src/catalog.ts:228-234`). Agent integration access goes through hand-issued static tokens in files (`docs/kingdom-access.md`), not "everything through the paired Signet".

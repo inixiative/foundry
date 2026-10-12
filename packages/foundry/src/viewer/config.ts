@@ -104,8 +104,6 @@ export interface FoundryConfig {
     model: string;
     nativeAuthenticationId?: string;
     kingdomOwnerKey?: string;
-    /** Explicit native selection; app-server is the default (Codex CLI 0.155 has no `mcp-server`). Applies on construction only. */
-    codexEngine?: 'mcp' | 'app-server';
     codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;

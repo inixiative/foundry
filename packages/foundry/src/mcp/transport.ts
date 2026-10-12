@@ -54,7 +54,6 @@ export interface LaunchDescriptor {
     readonly mcpConfig: { mcpServers: Record<string, { command: string; args: string[] }> };
     readonly mcpConfigJson: string;
   };
-  readonly codex: { readonly configOverrides: readonly string[] };
 }
 
 export type RejectionReason =
@@ -527,12 +526,6 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
       command: 'bun',
       args: Object.freeze(args),
       claude: Object.freeze({ mcpConfig, mcpConfigJson: JSON.stringify(mcpConfig) }),
-      codex: Object.freeze({
-        configOverrides: Object.freeze([
-          `mcp_servers.${serverName}.command="bun"`,
-          `mcp_servers.${serverName}.args=${JSON.stringify(args)}`,
-        ]),
-      }),
     });
     const close = async (): Promise<void> => {
       if (closing) return closing;

@@ -224,6 +224,15 @@ export interface HydrationResult {
   revisions: LayerRevision[];
   /** The composed decoration for the executor. */
   decoration: MessageDecoration;
+  /** Layers that did not warm within the deadline, or failed to; the turn went on without them. */
+  warmShortfalls: WarmShortfall[];
+}
+
+/** A cache that did not warm in time, or failed to: recorded, never blocking. */
+export interface WarmShortfall {
+  readonly id: string;
+  readonly outcome: 'timeout' | 'error';
+  readonly reason: string;
 }
 
 /** What the executor demonstrably received. */
@@ -864,9 +873,9 @@ export class FlowOrchestrator {
     const toWarm = this._stack.layers.filter(
       (l) => (layerIds.has(l.id) || l.sources.some((s) => s.focusable)) && !l.isWarm,
     );
-    if (toWarm.length > 0) {
-      await Promise.all(toWarm.map((l) => l.warm()));
-    }
+    const warmShortfalls = await this.warmWithin(
+      toWarm.map((layer) => ({ id: layer.id, warm: () => layer.warm() })),
+    );
 
     // Diff against ledger
     const injected: string[] = [];
@@ -922,7 +931,34 @@ export class FlowOrchestrator {
       pending,
       revisions,
       decoration: composeDecoration(plan, deliveredByDomain),
+      warmShortfalls,
     };
+  }
+
+  /**
+   * Warm caches without ever holding the turn: each gets the advise deadline, and a timeout or a
+   * failure comes back as a shortfall instead of throwing. A late warm keeps running and lands for a
+   * later turn.
+   */
+  async warmWithin(
+    warms: ReadonlyArray<{ id: string; warm: () => Promise<unknown> }>,
+  ): Promise<WarmShortfall[]> {
+    const unbounded: PlanClock = { passed: () => false, remaining: () => undefined };
+    const results = await Promise.all(
+      warms.map(async ({ id, warm }): Promise<WarmShortfall | null> => {
+        const settled = Promise.resolve()
+          .then(warm)
+          .then(
+            () => null,
+            (error: unknown) => (error instanceof Error ? error.message : String(error)),
+          );
+        const raced = await this._raceDeadline(settled, this._adviseTimeoutMs, 'advise', unbounded);
+        if (raced.timedOut)
+          return { id, outcome: 'timeout', reason: `not warm within ${this._adviseTimeoutMs}ms` };
+        return raced.value === null ? null : { id, outcome: 'error', reason: raced.value };
+      }),
+    );
+    return results.filter((shortfall): shortfall is WarmShortfall => shortfall !== null);
   }
 
   /**

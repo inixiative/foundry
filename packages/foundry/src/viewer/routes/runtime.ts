@@ -128,7 +128,8 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     }
 
     const allOk = Object.values(checks).every((check) => check.ok);
-    return c.json({ ok: allOk, checks }, allOk ? 200 : 503);
+    // The pid lets a local ACP proxy check it reached the daemon its launch file names.
+    return c.json({ ok: allOk, pid: process.pid, checks }, allOk ? 200 : 503);
   });
 
   app.get('/api/models', (c) => {

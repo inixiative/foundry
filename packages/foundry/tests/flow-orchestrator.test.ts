@@ -533,3 +533,35 @@ describe('FlowOrchestrator', () => {
     });
   });
 });
+
+describe('warming never holds the turn (Wardens never block)', () => {
+  it('a warm that hangs or fails comes back as a recorded shortfall within the advise deadline', async () => {
+    const { cartographer, librarian, stack, signals } = setup();
+    const orchestrator = new FlowOrchestrator({
+      cartographer,
+      domainLibrarians: new Map(),
+      librarian,
+      stack,
+      signals,
+      adviseTimeoutMs: 40,
+    });
+    const started = performance.now();
+    const shortfalls = await orchestrator.warmWithin([
+      { id: 'hangs', warm: () => new Promise(() => {}) },
+      { id: 'fails', warm: () => Promise.reject(Error('source unreachable')) },
+      {
+        id: 'throws',
+        warm: () => {
+          throw Error('bad config');
+        },
+      },
+      { id: 'ok', warm: async () => {} },
+    ]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(shortfalls).toEqual([
+      { id: 'hangs', outcome: 'timeout', reason: 'not warm within 40ms' },
+      { id: 'fails', outcome: 'error', reason: 'source unreachable' },
+      { id: 'throws', outcome: 'error', reason: 'bad config' },
+    ]);
+  });
+});

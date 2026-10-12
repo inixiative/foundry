@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import type {
   ClaudeCodeSessionConfig,
-  CodexSessionConfig,
   HarnessSession,
   SessionEvent,
 } from '@inixiative/agent-session';
@@ -12,13 +11,13 @@ import {
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
+import { appServerTransport } from './helpers/subscription-transport';
 
-// Offline: fake subprocesses capture the argv and first native MCP configuration
+// Offline: fake subprocesses capture the argv and the app-server thread configuration
 // the production adapters emit. Nothing here proves which model actually ran;
-// it proves what Foundry requested reached the engine's spawn or first call.
+// it proves what Foundry requested reached the engine's spawn or thread request.
 
 type ClaudeProc = ReturnType<NonNullable<ClaudeCodeSessionConfig['spawn']>>;
-type CodexProc = ReturnType<NonNullable<CodexSessionConfig['spawn']>>;
 
 function streamPair() {
   let ctrl!: ReadableStreamDefaultController<Uint8Array>;
@@ -94,89 +93,6 @@ function claudeCapture(sessionId = 'claude-native-1', initModel?: string) {
   return { calls, spawn };
 }
 
-function codexCapture(threadId = 'codex-thread-1', extra: { configuredModel?: string } = {}) {
-  const calls: Array<{ cmd: string[]; requests: Array<{ method?: string; params?: any }> }> = [];
-  const spawn = (cmd: string[]) => {
-    const s = streamPair();
-    const requests: Array<{ method?: string; params?: any }> = [];
-    calls.push({ cmd, requests });
-    const configured = () => {
-      if (extra.configuredModel)
-        s.emit({
-          jsonrpc: '2.0',
-          method: 'codex/event',
-          params: {
-            msg: {
-              type: 'session_configured',
-              thread_id: threadId,
-              session_id: threadId,
-              model: extra.configuredModel,
-            },
-          },
-        });
-    };
-    const proc: CodexProc = {
-      stdin: {
-        write(data: string) {
-          for (const line of data.split('\n')) {
-            if (!line.trim()) continue;
-            const msg = JSON.parse(line) as { id?: number; method?: string; params?: any };
-            requests.push({ method: msg.method, params: msg.params });
-            if (typeof msg.id !== 'number') continue;
-            queueMicrotask(() => {
-              if (msg.method === 'initialize')
-                s.emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: { protocolVersion: '2025-06-18', capabilities: {} },
-                });
-              else if (msg.method === 'tools/list')
-                s.emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: {
-                    tools: [
-                      { name: 'codex', inputSchema: {} },
-                      { name: 'codex-reply', inputSchema: {} },
-                    ],
-                  },
-                });
-              else if (msg.method === 'tools/call') {
-                configured();
-                // Explicit controlled protocol terminals; RPC resolution alone must
-                // not make the candidate engine available for another admission.
-                const turn = `controlled-turn-${msg.id}`;
-                for (const type of ['task_started', 'task_complete'])
-                  s.emit({
-                    jsonrpc: '2.0',
-                    method: 'codex/event',
-                    params: { id: turn, msg: { type, turn_id: turn } },
-                  });
-                s.emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: {
-                    structuredContent: { threadId, content: 'ok' },
-                    content: [{ type: 'text', text: 'ok' }],
-                  },
-                });
-              }
-            });
-          }
-        },
-        flush() {},
-        end() {},
-      },
-      stdout: s.stdout,
-      stderr: s.stderr,
-      exited: s.exited,
-      kill: s.kill,
-    };
-    return proc;
-  };
-  return { calls, spawn };
-}
-
 const argAfter = (cmd: string[], flag: string) => cmd[cmd.indexOf(flag) + 1];
 
 test('Claude adapter: explicit model reaches --model argv; absent model falls back to the adapter default', async () => {
@@ -205,11 +121,11 @@ test('Claude adapter: explicit model reaches --model argv; absent model falls ba
   fallback.kill();
 });
 
-test('Codex adapter: explicit and fallback models reach the first native `codex` call configuration', async () => {
-  const { calls, spawn } = codexCapture();
+test('Codex adapter: explicit and fallback models reach the app-server thread/start configuration', async () => {
+  const server = appServerTransport();
   const adapter = new CodexSessionAdapter({
     store: new InMemoryExternalSessionStore(),
-    defaults: { bin: 'codex', model: 'gpt-5.5', spawn },
+    defaults: { bin: 'codex', model: 'gpt-5.5', spawn: server.spawn },
   });
   const explicit = await adapter.createSession({
     threadId: 'c1',
@@ -221,10 +137,9 @@ test('Codex adapter: explicit and fallback models reach the first native `codex`
   const fallback = await adapter.createSession({ threadId: 'c2', cwd: '/tmp/p' });
   await fallback.start();
   await fallback.send('first');
-  const firstCall = (i: number) => calls[i].requests.find((r) => r.method === 'tools/call')!;
-  expect(firstCall(0).params.name).toBe('codex');
-  expect(firstCall(0).params.arguments.model).toBe('gpt-6-astra');
-  expect(firstCall(1).params.arguments.model).toBe('gpt-5.5');
+  const starts = server.requests.filter((r) => r.method === 'thread/start');
+  expect(server.launches).toHaveLength(2);
+  expect(starts.map((r) => r.params.model)).toEqual(['gpt-6-astra', 'gpt-5.5']);
   // Text-only remains unenforceable on this adapter and must still fail closed.
   await expect(
     adapter.createSession({ threadId: 'c3', cwd: '/tmp/p', model: 'gpt-6-astra', tools: false }),
@@ -351,15 +266,6 @@ test("SYNTHETIC: a supported init envelope for this session's own binding is ack
     { kind: 'result', timestamp: 2, raw: { type: 'result', model: 'X' } },
   ]).complete([{ role: 'user', content: 'one' }], { threadId: 'work' });
   expect((tool.raw as any).nativeModel).toBeUndefined();
-  // Codex: a session_configured envelope naming this thread binding is the supported equivalent.
-  const codex = await make([
-    {
-      kind: 'native_status',
-      timestamp: 1,
-      raw: { type: 'session_configured', thread_id: 'own-binding', model: 'gpt-6-astra' },
-    },
-  ]).complete([{ role: 'user', content: 'one' }], { threadId: 'work' });
-  expect((codex.raw as any).nativeModel).toBe('gpt-6-astra');
 });
 
 test('a failed binding lookup is retained as failed and unknown, never rewritten as fresh, and a pending lookup is unknown', async () => {
@@ -516,8 +422,8 @@ test('owned first-boundary facts win over forged returned events for an adapter 
   expect((result.raw as any).nativeModel).toBe('engine-observed-model');
 });
 
-test('Codex: session_configured for this thread is acknowledged from owned evidence and observer mutation cannot forge it', async () => {
-  const { spawn } = codexCapture('thread-7', { configuredModel: 'gpt-6-astra' });
+test('Codex: the thread configuration for this thread is acknowledged from owned evidence and observer mutation cannot forge it', async () => {
+  const { spawn } = appServerTransport({ threadId: 'thread-7', model: 'gpt-6-astra' });
   const adapter = new CodexSessionAdapter({
     store: new InMemoryExternalSessionStore(),
     defaults: { bin: 'codex', spawn },
@@ -532,16 +438,16 @@ test('Codex: session_configured for this thread is acknowledged from owned evide
     defaultCwd: '/tmp/p',
   });
   const first = await provider.complete([{ role: 'user', content: 'one' }], { threadId: 'work' });
-  const expectedModel = created.admissionProtocol === 'prewrite-v1' ? 'gpt-6-astra' : undefined;
-  expect((first.raw as any).nativeModel).toBe(expectedModel);
+  expect((first.raw as any).nativeModel).toBe('gpt-6-astra');
   expect(
     adapter.observedConfiguration(created)!.every((fact) => fact.model === 'gpt-6-astra'),
   ).toBe(true);
   const dispose = created.onEvent((event: any) => {
     try {
       Object.assign(event.raw, {
-        type: 'session_configured',
-        thread_id: 'thread-7',
+        type: 'thread-configured',
+        threadId: 'thread-7',
+        status: 'idle',
         model: 'FORGED',
       });
     } catch {}
@@ -551,7 +457,7 @@ test('Codex: session_configured for this thread is acknowledged from owned evide
     timeout: 500,
   });
   dispose();
-  expect((second.raw as any).nativeModel).toBe(expectedModel);
+  expect((second.raw as any).nativeModel).toBe('gpt-6-astra');
   expect((second.raw as any).events.every((event: any) => Object.isFrozen(event))).toBe(true);
 });
 
@@ -608,7 +514,7 @@ test('Claude auxiliary with only preserved coding history constructs fresh: prof
 
 test('Codex central thread: resumed binding is reported from construction; a fresh thread is fresh', async () => {
   const store = new InMemoryExternalSessionStore();
-  await store.save('central', 'codex', 'codex-thread-9');
+  await store.save('central', 'codex-app-server', 'codex-thread-9');
   const adapter = new CodexSessionAdapter({
     store,
     defaults: {
@@ -697,20 +603,26 @@ test('a concurrent different-profile request is refused while the first session 
 });
 
 // R1: real production adapters/providers over controlled subprocess streams.
-// The installed registry drops configuration notifications. Positive collection
-// tests therefore inject explicitly SYNTHETIC supported envelopes at its event
-// emitter, without changing parsing/send or claiming real native acknowledgment.
+// Claude's controlled init names no model, so it reports no configuration. Codex's
+// app-server reports the thread it opened (own binding, requested model) as `baseline`.
+// Further envelopes are explicitly SYNTHETIC, injected at the session's event emitter,
+// without changing parsing/send or claiming real native acknowledgment.
 async function configurationCollectionFixture(engine: 'claude-code' | 'codex') {
   const binding = `${engine}-controlled-binding`;
   const store = new InMemoryExternalSessionStore();
-  await store.save('work', engine, binding);
   const adapter =
     engine === 'claude-code'
       ? new ClaudeCodeSessionAdapter({ store, defaults: { spawn: claudeCapture(binding).spawn } })
-      : new CodexSessionAdapter({ store, defaults: { spawn: codexCapture(binding).spawn } });
+      : new CodexSessionAdapter({ store, defaults: { spawn: appServerTransport().spawn } });
+  await store.save('work', adapter.runtime, binding);
   let session!: HarnessSession;
+  let constructed: readonly ConfigurationEvidence[] | undefined;
   const create = adapter.createSession.bind(adapter);
-  adapter.createSession = async (opts) => (session = await create(opts));
+  adapter.createSession = async (opts) => {
+    session = await create(opts);
+    constructed = adapter.observedConfiguration(session);
+    return session;
+  };
   const provider = new SessionBackedProvider({
     id: engine,
     adapter,
@@ -729,16 +641,34 @@ async function configurationCollectionFixture(engine: 'claude-code' | 'codex') {
     store,
     provider,
     complete,
+    /** Models the engine itself reported for this binding during the first turn. */
+    baseline: engine === 'claude-code' ? [] : ['requested-only'],
+    /** The owned snapshot taken at construction, before any native event. */
+    get constructed() {
+      return constructed;
+    },
     get session() {
       return session;
+    },
+    isConfiguration(event: SessionEvent) {
+      return engine === 'claude-code'
+        ? event.kind === 'session_start'
+        : event.kind === 'native_status' &&
+            (event.raw as { type?: string } | undefined)?.type === 'thread-configured';
     },
     emitConfiguration(nativeBinding: string, model: string) {
       const raw =
         engine === 'claude-code'
           ? { type: 'system', subtype: 'init', session_id: nativeBinding, model }
-          : { type: 'session_configured', thread_id: nativeBinding, model };
+          : {
+              type: 'thread-configured',
+              method: 'thread/resume',
+              threadId: nativeBinding,
+              status: 'idle',
+              model,
+            };
       (session as unknown as { _emit(event: SessionEvent): void })._emit({
-        kind: 'session_start',
+        kind: engine === 'claude-code' ? 'session_start' : 'native_status',
         timestamp: Date.now(),
         raw,
       });
@@ -767,11 +697,13 @@ for (const engine of ['claude-code', 'codex'] as const) {
     const f = await configurationCollectionFixture(engine);
     try {
       const result = await f.complete();
-      expect((result.raw as { nativeModel?: string }).nativeModel).toBeUndefined();
-      const empty = f.adapter.observedConfiguration(f.session)!;
+      expect((result.raw as { nativeModel?: string }).nativeModel).toBe(f.baseline.at(-1));
+      const empty = f.constructed!;
       expect(empty).toEqual([]);
       expect(Object.isFrozen(empty)).toBe(true);
-      expect(f.adapter.observedConfiguration(f.session)).not.toBe(empty);
+      const reported = f.adapter.observedConfiguration(f.session)!;
+      expect(reported).not.toBe(empty);
+      expect(reported.map((fact) => fact.model)).toEqual(f.baseline);
       const foreignAdapter =
         engine === 'claude-code'
           ? new ClaudeCodeSessionAdapter({ store: f.store })
@@ -779,7 +711,8 @@ for (const engine of ['claude-code', 'codex'] as const) {
       expect(foreignAdapter.observedConfiguration(f.session)).toBeUndefined();
       f.emitConfiguration(f.binding, 'controlled-observed-A');
       expect(empty).toEqual([]);
-      expect(f.adapter.observedConfiguration(f.session)).toHaveLength(1);
+      expect(reported.map((fact) => fact.model)).toEqual(f.baseline);
+      expect(f.adapter.observedConfiguration(f.session)).toHaveLength(f.baseline.length + 1);
     } finally {
       f.close();
     }
@@ -792,6 +725,7 @@ for (const engine of ['claude-code', 'codex'] as const) {
         await f.complete();
         const source = f.emitConfiguration(f.binding, 'controlled-observed-A');
         const saved = f.adapter.observedConfiguration(f.session)!;
+        const injected = saved[f.baseline.length];
         const forged = Object.freeze({
           envelope: 'system-init' as const,
           binding: f.binding,
@@ -800,14 +734,13 @@ for (const engine of ['claude-code', 'codex'] as const) {
         });
         expect(() => mutate(saved as ConfigurationEvidence[], forged)).toThrow();
         expect(Object.isFrozen(saved)).toBe(true);
-        expect(Object.isFrozen(saved[0])).toBe(true);
-        expect(() => Object.assign(saved[0], { model: 'FORGED_FACT' })).toThrow();
+        expect(Object.isFrozen(injected)).toBe(true);
+        expect(() => Object.assign(injected, { model: 'FORGED_FACT' })).toThrow();
         source.model = 'FORGED_SOURCE';
         const next = await f.complete();
         expect((next.raw as { nativeModel?: string }).nativeModel).toBe('controlled-observed-A');
         expect(f.adapter.observedConfiguration(f.session)).toEqual(saved);
-        expect(saved).toHaveLength(1);
-        expect(saved[0].model).toBe('controlled-observed-A');
+        expect(saved.map((fact) => fact.model)).toEqual([...f.baseline, 'controlled-observed-A']);
         expect(f.session.turns).toBe(2);
       } finally {
         f.close();
@@ -824,7 +757,7 @@ for (const engine of ['claude-code', 'codex'] as const) {
       let rejectedMutations = 0;
       disposers.push(
         f.session.onEvent((event) => {
-          if (event.kind !== 'session_start') return;
+          if (!f.isConfiguration(event)) return;
           const facts = f.adapter.observedConfiguration(f.session)!;
           const forged = {
             envelope: 'system-init' as const,
@@ -843,14 +776,13 @@ for (const engine of ['claude-code', 'codex'] as const) {
       );
       disposers.push(
         f.session.onEvent((event) => {
-          if (event.kind === 'session_start')
-            retained.push(f.adapter.observedConfiguration(f.session)!);
+          if (f.isConfiguration(event)) retained.push(f.adapter.observedConfiguration(f.session)!);
         }),
       );
       f.emitConfiguration('foreign-binding', 'foreign-model');
       const foreign = f.adapter.observedConfiguration(f.session)!;
       const withoutOwn = await f.complete();
-      expect((withoutOwn.raw as { nativeModel?: string }).nativeModel).toBeUndefined();
+      expect((withoutOwn.raw as { nativeModel?: string }).nativeModel).toBe(f.baseline.at(-1));
       f.emitConfiguration(f.binding, 'controlled-observed-A');
       const firstOwn = f.adapter.observedConfiguration(f.session)!;
       const ownA = await f.complete();
@@ -859,9 +791,9 @@ for (const engine of ['claude-code', 'codex'] as const) {
       const ownB = await f.complete();
       expect((ownB.raw as { nativeModel?: string }).nativeModel).toBe('controlled-observed-B');
       expect(retained.map((facts) => facts.map((fact) => fact.model))).toEqual([
-        ['foreign-model'],
-        ['foreign-model', 'controlled-observed-A'],
-        ['foreign-model', 'controlled-observed-A', 'controlled-observed-B'],
+        [...f.baseline, 'foreign-model'],
+        [...f.baseline, 'foreign-model', 'controlled-observed-A'],
+        [...f.baseline, 'foreign-model', 'controlled-observed-A', 'controlled-observed-B'],
       ]);
       expect(rejectedMutations).toBe(9);
       expect(foreign).toEqual(retained[0]);
@@ -869,7 +801,7 @@ for (const engine of ['claude-code', 'codex'] as const) {
       expect(f.adapter.observedConfiguration(f.session)).toEqual(retained[2]);
       expect(f.session.turns).toBe(4);
       expect(f.provider.warmProfile('work')).toMatchObject({ resumedBinding: f.binding });
-      expect(await f.store.load('work', engine)).toBe(f.binding);
+      expect(await f.store.load('work', f.adapter.runtime)).toBe(f.binding);
     } finally {
       for (const dispose of disposers) dispose();
       f.close();
