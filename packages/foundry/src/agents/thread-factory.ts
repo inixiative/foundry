@@ -715,6 +715,8 @@ function buildAgent(
                 ...opts,
                 nativeObservation,
                 threadId: meta?.threadId,
+                // The native session runs where the thread works, never in the daemon's directory.
+                cwd: meta?.cwd,
                 toolCwd: meta?.cwd,
                 // Memory tools read and write within the dispatching thread's ownership.
                 toolScope: meta?.threadId
