@@ -267,7 +267,7 @@ test(
         },
         primed.createRun,
       );
-      const opts = { threadId: 'T:aux:domain:settings', stablePrefix: cache };
+      const opts = { threadId: 'decision-role-settings', stablePrefix: cache };
       try {
         // Prime explicitly so the recording's stdin order is fixed (no background priming racing a decision).
         await codexHost(primed.host).prime(primedRequest(primedMessages, opts, opts.threadId).spec);
@@ -356,7 +356,7 @@ test(
         },
         primed.createRun,
       );
-      const opts = { threadId: 'T:aux:domain:settings', stablePrefix: cache };
+      const opts = { threadId: 'T:aux:cartographer', stablePrefix: cache };
       try {
         const first = await decisions.provider.complete(primedMessages, opts);
         const second = await decisions.provider.complete(primedMessages, opts);
@@ -420,7 +420,117 @@ test(
 );
 
 test(
-  'claude composed Warden: the composition view is the primed prefix, forked per call, re-primed when it changes',
+  'claude pre-started Wardens: each holds its thread section and receives only the moment, all at once',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'prestarted', async () => {
+      const transport = recordedClaudeTransport(
+        { status: ['subscribed'], decision: ['prestarted-side-1'] },
+        vcr,
+      );
+      const directory = root(),
+        receipts = join(directory, 'receipts');
+      mkdirSync(receipts, { mode: 0o700 });
+      const decisionSource = source('claude', directory);
+      const primed = createPrimedDecisionHost({
+        source: decisionSource,
+        directory: receipts,
+        model: LIVE.claudeObservedModel,
+        effort: 'low',
+        maxConcurrent: 4,
+        callTimeoutMs: 30_000,
+        spawn: transport.spawn,
+        statusSpawn: () => transport.statusSpawn('unused'),
+      });
+      const decisions = buildSubscriptionDecisions(
+        {
+          directory: receipts,
+          source: decisionSource,
+          model: LIVE.claudeObservedModel,
+          maxCalls: 4,
+          maxQueued: 4,
+          maxConcurrent: 4,
+          callTimeoutMs: 30_000,
+        },
+        primed.createRun,
+      );
+      decisions.provider.prestart = primed.prestart;
+      const wardens = ['settings', 'naming'].map((domain) => {
+        const cache = new ContextLayer({ id: `${domain}-knowledge` });
+        cache.set(
+          domain === 'settings'
+            ? '- Settings UI lives under src/settings.'
+            : '- Kastle is a dead word: say Kingdom.',
+        );
+        const instructions = new ContextLayer({ id: `${domain}-instructions` });
+        instructions.set(`You are the ${domain} Warden. Advise only on ${domain}.`);
+        return new DomainLibrarian({
+          domain,
+          cache,
+          instructions,
+          signals: new SignalBus(),
+          llm: {
+            ...decisions.provider,
+            complete: (m, o) =>
+              decisions.provider.complete(m, { ...o, threadId: `T:aux:domain:${domain}` }),
+            prestart: (m, o) => primed.prestart(m, { ...o, threadId: `T:aux:domain:${domain}` }),
+          },
+          llmOpts: { maxTokens: 512, temperature: 0 },
+        });
+      });
+      try {
+        for (const w of wardens) w.prestart('Thread state: building the settings page.');
+        // Both are pre-started and holding their moment call before anything is asked.
+        for (let waited = 0; waited < 30_000; waited += 50) {
+          const stdin = transport.launches[0]?.stdin ?? '';
+          if ((stdin.match(/"mcp_response"/g) ?? []).length >= 2) break; // tools/list and initialize answered
+          await Bun.sleep(50);
+        }
+        await Bun.sleep(3_000);
+        const advice = await Promise.all(
+          wardens.map((w) =>
+            w.advise(
+              'Rename the Kastle settings toggle',
+              'Thread state: building the settings page.',
+            ),
+          ),
+        );
+        const stdin = transport.launches[0]!.stdin.split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l));
+        const moments = stdin.flatMap(
+          (m: {
+            response?: {
+              response?: { mcp_response?: { result?: { content?: { text?: string }[] } } };
+            };
+          }) => {
+            const text = m.response?.response?.mcp_response?.result?.content?.[0]?.text;
+            return text ? [text] : [];
+          },
+        );
+        return {
+          advised: advice.map((a) => a.error === undefined),
+          sideSessions: transport.launches.filter((l) => l.agents).length,
+          momentsWereOnlyTheTurn:
+            moments.length === 2 &&
+            moments.every((m) => m.includes('## Message') && !m.includes('Thread state')),
+        };
+      } finally {
+        await decisions.shutdown();
+        await primed.close();
+      }
+    });
+    expect(out).toEqual({
+      advised: [true, true],
+      sideSessions: 1,
+      momentsWereOnlyTheTurn: true,
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'claude composed Warden: the composition view is its subagent definition; each call is a fresh subagent given only the turn',
   async () => {
     const vcr = claudeVcr();
     const out = await scenario(vcr, 'composed', async () => {
@@ -454,9 +564,8 @@ test(
       const transport = recordedClaudeTransport(
         {
           status: ['subscribed'],
-          // Primer, fork, spare (the second decision), a spare dropped by the re-prime, the second
-          // primer and its fork. The spare started after that races shutdown and has no cassette.
-          decision: Array.from({ length: 6 }, (_, i) => `composed-${i + 1}`),
+          // The thread's side session, then the one holding the changed composition.
+          decision: ['composed-side-1', 'composed-side-2'],
         },
         vcr,
       );
@@ -473,6 +582,8 @@ test(
         callTimeoutMs: 30_000,
         spawn: transport.spawn,
         statusSpawn: () => transport.statusSpawn('unused'),
+        // Fan-outs only: pre-started Wardens are recorded in their own scenario.
+        prestart: false,
       });
       const decisions = buildSubscriptionDecisions(
         {
@@ -508,42 +619,39 @@ test(
         await load();
         const first = await warden.advise('Where do settings toggles live?');
         const second = await warden.advise('Is a disabled toggle a bug?');
-        // Its warm spare starts before the composition changes, live and in replay alike, so every
-        // launch takes the same cassette in both.
-        for (let waited = 0; transport.launches.length < 4 && waited < 10_000; waited += 10)
-          await Bun.sleep(10);
         put(roleFile, '- Settings UI lives under src/settings; toggles persist per project.');
         await load();
         const third = await warden.advise('Do toggles persist?');
-        const used = transport.launches.filter((launch) => launch.stdin);
-        const inputs = used.map((launch) =>
+        const sides = transport.launches.filter((launch) => launch.agents);
+        // What each subagent was given: the hook's rewritten Agent prompt, on the side session's stdin.
+        const given = sides.flatMap((launch) =>
           launch.stdin
             .split('\n')
             .filter(Boolean)
-            .map(
-              (line) => JSON.parse(line) as { message?: { content: string | { text?: string }[] } },
-            )
-            // User turns only: a spare's control lines carry no message.
-            .flatMap(({ message }) =>
-              !message
-                ? []
-                : typeof message.content === 'string'
-                  ? [message.content]
-                  : [message.content.map((block) => block.text ?? '').join('')],
-            )
-            .join('\n'),
+            .map((line) => JSON.parse(line))
+            .flatMap(
+              (m: {
+                response?: {
+                  response?: { hookSpecificOutput?: { updatedInput?: { prompt?: string } } };
+                };
+              }) => {
+                const prompt = m.response?.response?.hookSpecificOutput?.updatedInput?.prompt;
+                return prompt ? [prompt] : [];
+              },
+            ),
         );
-        const primers = inputs.filter((input) => input.startsWith('## Domain cache (settings)'));
         return {
           advised: [first, second, third].map((advice) => advice.error === undefined),
-          primers: primers.length,
-          primersCarriedComposition: primers.every(
-            (input) => input.includes('toggles are features') && input.includes('src/settings'),
+          sideSessions: sides.length,
+          definitionsCarriedComposition: sides.every(
+            (launch) =>
+              launch.agents!.includes('toggles are features') &&
+              launch.agents!.includes('src/settings'),
           ),
-          secondPrimerChanged: primers[1]?.includes('persist per project') ?? false,
-          cyclesSentOnlyTheTurn: inputs
-            .filter((input) => !input.startsWith('## Domain cache'))
-            .every(
+          secondDefinitionChanged: sides[1]?.agents?.includes('persist per project') ?? false,
+          subagentsGivenOnlyTheTurn:
+            given.length === 3 &&
+            given.every(
               (input) => !input.includes('toggles are features') && input.includes('## Message'),
             ),
           receipts: readFileSync(primed.receiptsPath, 'utf8')
@@ -551,7 +659,7 @@ test(
             .split('\n')
             .map((line) => {
               const r = JSON.parse(line);
-              return { valid: r.valid, settled: r.settled, prime: r.prime };
+              return { valid: r.valid, settled: r.settled };
             }),
         };
       } finally {
@@ -562,14 +670,14 @@ test(
     });
     expect(out).toEqual({
       advised: [true, true, true],
-      primers: 2,
-      primersCarriedComposition: true,
-      secondPrimerChanged: true,
-      cyclesSentOnlyTheTurn: true,
+      sideSessions: 2,
+      definitionsCarriedComposition: true,
+      secondDefinitionChanged: true,
+      subagentsGivenOnlyTheTurn: true,
       receipts: [
-        { valid: true, settled: true, prime: 'cold' },
-        { valid: true, settled: true, prime: 'warm' },
-        { valid: true, settled: true, prime: 'cold' },
+        { valid: true, settled: true },
+        { valid: true, settled: true },
+        { valid: true, settled: true },
       ],
     });
   },
@@ -906,9 +1014,7 @@ test(
           answers: [first, second, third].map((r) => r.content.trim()),
           sessions: [first, second, third].map((r) => r.delivery!.session),
           sent: [first, second, third].map((r) => r.delivery!.sent.map((part) => part.id)),
-          systemPrompt: worker.launches[0]!.argv.some((arg) =>
-            arg.startsWith('--append-system-prompt'),
-          ),
+          systemPrompt: worker.launches[0]!.systemPrompt !== undefined,
           standingResent: worker.launches[0]!.stdin.includes('The standing codeword'),
           thirdReadsCache: (third.tokens?.cacheRead ?? 0) > 0,
           launches: worker.launches.length,
@@ -956,7 +1062,6 @@ test(
         standingPart('learning', `The learned codeword is ${word}.`);
       let held: Record<string, string> = {};
       let turn = 0;
-      const prompts: (string | undefined)[] = [];
       const ask = async (question: string, part: StandingPart) => {
         turn++;
         const result = await provider.complete(
@@ -973,9 +1078,6 @@ test(
             delivery: { standing: [standing, part], turn: `Thread state: message ${turn}.`, held },
           },
         );
-        // agent-session removes a launch's system prompt file when that session ends: read it while it runs.
-        const latest = worker.launches.length - 1;
-        prompts[latest] ??= systemPrompt(latest);
         const report = result.delivery!;
         const next = report.session === 'started' ? {} : { ...held };
         for (const p of [...(report.session === 'started' ? report.base : []), ...report.sent])
@@ -983,13 +1085,7 @@ test(
         held = next;
         return result;
       };
-      const systemPrompt = (n: number) => {
-        const argv = worker.launches[n]!.argv;
-        const at = argv.findIndex((arg) => arg.startsWith('--append-system-prompt'));
-        return argv[at] === '--append-system-prompt'
-          ? argv[at + 1]
-          : readFileSync(argv[at + 1]!, 'utf8');
-      };
+      const systemPrompt = (n: number) => worker.launches[n]!.systemPrompt;
       try {
         const first = await ask('standing', learning('NONE'));
         const second = await ask('learned', learning('violet-anchor-7'));
@@ -1005,8 +1101,8 @@ test(
           ),
           launches: worker.launches.length,
           resumes: worker.launches.map((l) => l.argv.includes('--resume')),
-          stateInSystemPrompt: [0, 1, 2].some((n) => prompts[n]?.includes('Thread state')),
-          relaunchPromptsIdentical: prompts[1] !== undefined && prompts[1] === prompts[2],
+          stateInSystemPrompt: [0, 1, 2].some((n) => systemPrompt(n)?.includes('Thread state')),
+          relaunchPromptsIdentical: systemPrompt(1) === systemPrompt(2),
           relaunchReadsCache: (again.tokens?.cacheRead ?? 0) > 0,
         };
       } finally {

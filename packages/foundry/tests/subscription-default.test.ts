@@ -81,9 +81,10 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     maxCalls: 10000,
     maxQueued: 512,
     maxQueuedPerThread: 256,
-    maxConcurrent: 16,
+    maxConcurrent: 32,
     callTimeoutMs: 30000,
     effort: 'low',
+    prestart: true,
   });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({

@@ -38,6 +38,8 @@ export const subscriptionSettingsSchema = z
     callTimeoutMs: z.number().int().min(100).max(30_000).optional(),
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
     hedgeAfterMs: z.number().int().min(500).max(30_000).optional(),
+    /** Claude: keep each thread's Wardens pre-started between triggers (costs a standby turn per Warden per landed turn). Default true. */
+    prestartWardens: z.boolean().optional(),
   })
   .strict();
 export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
@@ -80,12 +82,15 @@ export interface SubscriptionPolicy {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
+  /** Claude: keep each thread's Wardens pre-started between triggers. */
+  prestart: boolean;
 }
 /**
  * Sized for a full Warden roster: every Warden is asked on every user message, and every
  * guard-triggered Warden on every action, so one turn fans out ~25 advice calls plus the
- * Cartographer, then guards per tool call and a review per Warden. Each Claude decision is its own
- * CLI process (~130-230 MB measured 2026-10-12), so 16 at once is ~2-4 GB. Queues are deep enough that
+ * Cartographer, then guards per tool call and a review per Warden. On Claude a thread's Wardens are
+ * subagents of its side sessions (one process per 12, measured 2026-10-12), so the scheduler admits a
+ * whole roster at once (32); the other roles each hold a CLI process. Queues are deep enough that
  * a burst of guards never refuses admission; a call still waiting at its deadline did not run, and
  * the turn goes on without it. Decisions run at low effort: the model's default (medium) adds ~0.5 s.
  */
@@ -93,7 +98,7 @@ export const SUBSCRIPTION_DEFAULTS = {
   maxCalls: 10_000,
   maxQueued: 512,
   maxQueuedPerThread: 256,
-  maxConcurrent: { claude: 16, codex: 16 },
+  maxConcurrent: { claude: 32, codex: 16 },
   callTimeoutMs: 30_000,
   effort: 'low',
   /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */
@@ -191,6 +196,7 @@ export function resolveSubscriptionPolicy(
     maxConcurrent: settings.maxConcurrent ?? SUBSCRIPTION_DEFAULTS.maxConcurrent[decision.runtime],
     callTimeoutMs: settings.callTimeoutMs ?? SUBSCRIPTION_DEFAULTS.callTimeoutMs,
     effort: settings.effort ?? SUBSCRIPTION_DEFAULTS.effort,
+    prestart: settings.prestartWardens ?? true,
     ...(decision.runtime === 'codex'
       ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
       : {}),

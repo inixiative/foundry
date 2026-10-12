@@ -86,7 +86,7 @@ test('decisions run concurrently up to the cap on one warm process sharing the C
   const transport = labelled(60);
   const { root, decisions, primed } = scheduler(transport, { maxConcurrent: 3 });
   const results = await Promise.all(
-    Array.from({ length: 7 }, (_, i) => ask(decisions, `d${i}`, `T${i}`)),
+    Array.from({ length: 7 }, (_, i) => ask(decisions, `d${i}`, 'T')),
   );
   expect(results).toEqual(['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6']);
   // Overlap is proven by concurrent in-flight turns, not wall-clock time (suite load varies).

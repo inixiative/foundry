@@ -3,11 +3,13 @@ import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } fro
 import { isAbsolute, join } from 'node:path';
 import {
   ClaudePrimedSessions,
+  ClaudeSubagentSessions,
   CodexPrimedSessions,
   type CodexSpawn,
   DecisionError,
   type DecisionResult,
   type PrimedEvent,
+  type PrimedSessions,
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import {
@@ -35,6 +37,9 @@ type DecisionProcess = ReturnType<CodexSpawn>;
 
 /** Primed Claude keys kept warm by default; each holds one spare CLI process (~130-230 MB). */
 const CLAUDE_PRIMED_SESSIONS = 16;
+const CODEX_THREAD_IDLE_MS = 30 * 60_000;
+/** A thread's Wardens ask to be pre-started within this window of each other. */
+const PRESTART_BATCH_MS = 25;
 const STATUS_DEADLINE_MS = 20_000;
 /** Re-check the Claude login at most this often, like the subscription worker. */
 const STATUS_TTL_MS = 5 * 60_000;
@@ -73,9 +78,26 @@ export interface PrimedDecisionHostConfig {
     argv: string[],
     options: { cwd: string; env: Record<string, string | undefined> },
   ) => DecisionProcess;
+  /** Claude: keep each thread's Wardens pre-started between triggers (`prestart`). Default true. */
+  prestart?: boolean;
   /** Test seam: Claude subscription status check, in place of `claude auth status --json`. */
   statusSpawn?: (env: Record<string, string | undefined>) => StatusProcess;
   onEvent?: (event: PrimedEvent) => void;
+}
+
+/** Auxiliary session ids are `<thread>:aux:<role>` (agents/thread-runtime auxiliarySessionId). */
+const AUXILIARY = ':aux:';
+/** The Foundry thread an auxiliary session belongs to; undefined for a call outside any thread. */
+export function decisionThread(sessionKey: string): string | undefined {
+  const at = sessionKey.indexOf(AUXILIARY);
+  return at > 0 ? sessionKey.slice(0, at) : undefined;
+}
+/** A Warden phase: advice and guard (`domain:<d>`) or post-work review (`review:<generation>:domain:<d>`). */
+export function isWardenSession(sessionKey: string): boolean {
+  const at = sessionKey.indexOf(AUXILIARY);
+  if (at <= 0) return false;
+  const role = sessionKey.slice(at + AUXILIARY.length);
+  return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
 /**
@@ -87,7 +109,7 @@ export function primedRequest(
   messages: LLMMessage[],
   opts: CompletionOpts,
   sessionKey: string,
-): { spec: PrimeSpec; input: string } {
+): { spec: PrimeSpec; input: string; standby?: string } {
   const instructions = messages
     .filter((m) => m.role === 'system')
     .map((m) => m.content.trim())
@@ -108,6 +130,11 @@ export function primedRequest(
     : turns;
   const input = rest.length === 1 ? rest[0]!.content : formatMessagesForNativeSession(rest);
   const context = primed ? prefix! : '';
+  // The per-thread part right after the stable prefix: a pre-started member holds it.
+  const standby =
+    primed && opts.threadPrefix && rest.length === 1 && input.startsWith(opts.threadPrefix)
+      ? opts.threadPrefix
+      : undefined;
   return {
     spec: {
       key: `${sessionKey}#${hash(instructions).slice(0, 16)}`,
@@ -116,14 +143,21 @@ export function primedRequest(
       hash: hash(`${instructions}\0${context}`),
     },
     input,
+    ...(standby !== undefined ? { standby } : {}),
   };
 }
 
 /**
- * One primed decision host per decision profile. Every middleware role keeps its own primed
- * session (agent-session CodexPrimedSessions on one warm app-server, or ClaudePrimedSessions
- * forking a primed Claude session per decision); the subscription scheduler's per-call runs
- * are cheap views onto this host.
+ * One decision host per decision profile; the subscription scheduler's per-call runs are cheap
+ * views onto it.
+ *
+ * Claude: a thread's Wardens (advice, guard and review) are subagents of one side session per
+ * thread (agent-session ClaudeSubagentSessions): decisions arriving together fan out in one turn,
+ * each Warden a fresh subagent holding its charter, instructions and domain knowledge. The other
+ * roles (Cartographer, classifiers, routers, feedback) keep a primed session each
+ * (ClaudePrimedSessions, forked per decision).
+ * Codex: one app-server per thread holds a primed thread per role (CodexPrimedSessions); calls
+ * outside a thread share one more app-server.
  */
 export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const { source } = config;
@@ -190,6 +224,56 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
   const claude = runtime === 'claude' ? claudeLogin() : undefined;
+  // Synchronous launcher: the login was verified and registered before the first decision.
+  const claudeSpawn = (argv: string[], options: { cwd: string }) => {
+    const env = claude!.env();
+    // The user's hooks, permissions and plugins never apply to a decision.
+    const command = [...argv, '--setting-sources', ''];
+    return config.spawn
+      ? config.spawn(command, { cwd: options.cwd, env })
+      : (Bun.spawn(command, {
+          cwd: options.cwd,
+          env,
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }) as unknown as DecisionProcess);
+  };
+  const codexHost = () =>
+    new CodexPrimedSessions({
+      model: config.model,
+      effort: config.effort,
+      hedgeAfterMs: config.hedgeAfterMs,
+      cwd,
+      baseInstructions: PRIMED_DECISION_CONTEXT,
+      maxConcurrent: config.maxConcurrent,
+      timeoutMs: config.callTimeoutMs,
+      clientName: 'foundry-decisions',
+      onEvent: config.onEvent,
+      spawn: async (argv, options) => {
+        const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
+        let child: DecisionProcess;
+        try {
+          const command = launch.launch(argv, options.env);
+          const env = nativeTextEnvironment(command.env);
+          child = config.spawn
+            ? config.spawn(command.argv, { cwd: options.cwd, env })
+            : (Bun.spawn(command.argv, {
+                cwd: options.cwd,
+                env,
+                stdin: 'pipe',
+                stdout: 'pipe',
+                stderr: 'pipe',
+              }) as unknown as DecisionProcess);
+        } catch (error) {
+          release(launch);
+          throw error;
+        }
+        const done = () => release(launch);
+        void child.exited.then(done, done);
+        return child;
+      },
+    });
   const host: CodexPrimedSessions | ClaudePrimedSessions = claude
     ? new ClaudePrimedSessions({
         model: config.model,
@@ -200,56 +284,49 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
         timeoutMs: config.callTimeoutMs,
         onEvent: config.onEvent,
-        // Synchronous launcher: the login was verified and registered before the first decision.
-        spawn: (argv, options) => {
-          const env = claude.env();
-          // The user's hooks, permissions and plugins never apply to a decision.
-          const command = [...argv, '--setting-sources', ''];
-          return config.spawn
-            ? config.spawn(command, { cwd: options.cwd, env })
-            : (Bun.spawn(command, {
-                cwd: options.cwd,
-                env,
-                stdin: 'pipe',
-                stdout: 'pipe',
-                stderr: 'pipe',
-              }) as unknown as DecisionProcess);
-        },
+        spawn: claudeSpawn,
       })
-    : new CodexPrimedSessions({
+    : codexHost();
+  const wardens = claude
+    ? new ClaudeSubagentSessions({
         model: config.model,
         effort: config.effort,
-        hedgeAfterMs: config.hedgeAfterMs,
         cwd,
         baseInstructions: PRIMED_DECISION_CONTEXT,
-        maxConcurrent: config.maxConcurrent,
         timeoutMs: config.callTimeoutMs,
-        clientName: 'foundry-decisions',
         onEvent: config.onEvent,
-        spawn: async (argv, options) => {
-          const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
-          let child: DecisionProcess;
-          try {
-            const command = launch.launch(argv, options.env);
-            const env = nativeTextEnvironment(command.env);
-            child = config.spawn
-              ? config.spawn(command.argv, { cwd: options.cwd, env })
-              : (Bun.spawn(command.argv, {
-                  cwd: options.cwd,
-                  env,
-                  stdin: 'pipe',
-                  stdout: 'pipe',
-                  stderr: 'pipe',
-                }) as unknown as DecisionProcess);
-          } catch (error) {
-            release(launch);
-            throw error;
-          }
-          const done = () => release(launch);
-          void child.exited.then(done, done);
-          return child;
-        },
-      });
+        spawn: claudeSpawn,
+      })
+    : undefined;
+  /** Codex: one app-server per thread, closed after half an hour without a decision. */
+  const codexThreads = new Map<string, { host: CodexPrimedSessions; lastUsed: number }>();
+  const codexIdle =
+    runtime === 'codex'
+      ? setInterval(() => {
+          for (const [thread, entry] of codexThreads)
+            if (Date.now() - entry.lastUsed > CODEX_THREAD_IDLE_MS) {
+              codexThreads.delete(thread);
+              void entry.host.close().catch(() => undefined);
+            }
+        }, 60_000)
+      : undefined;
+  (codexIdle as { unref?: () => void } | undefined)?.unref?.();
+  /** The host a decision runs on, and the thread it is grouped by. */
+  const route = (sessionKey: string): { target: PrimedSessions; group?: string } => {
+    const thread = decisionThread(sessionKey);
+    if (wardens)
+      return thread && isWardenSession(sessionKey)
+        ? { target: wardens, group: thread }
+        : { target: host };
+    if (!thread) return { target: host };
+    let entry = codexThreads.get(thread);
+    if (!entry) {
+      entry = { host: codexHost(), lastUsed: Date.now() };
+      codexThreads.set(thread, entry);
+    }
+    entry.lastUsed = Date.now();
+    return { target: entry.host, group: thread };
+  };
 
   /** The Claude login, checked as a subscription (never an API key) at most every five minutes and registered
    * as a shared holder for the host's lifetime; every decision process launches with its environment. */
@@ -442,16 +519,24 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         calls.push(call);
         let spec: PrimeSpec,
           input: string,
+          target: PrimedSessions = host,
+          group: string | undefined,
           admission: NativeEvidence | undefined,
           result: DecisionResult | undefined,
           failedHedge = false;
         try {
-          ({ spec, input } = primedRequest(messages, opts, sessionKey));
+          let standby: string | undefined;
+          ({ spec, input, standby } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
           await claude?.ready();
           if (closed) throw Error('Decision admission closed');
-          result = await host.decide(spec, {
-            input,
+          ({ target, group } = route(sessionKey));
+          // Side sessions take the standby context apart: a pre-started Warden holding it gets only the rest.
+          const split = target === wardens && standby !== undefined;
+          result = await target.decide(spec, {
+            ...(group ? { group } : {}),
+            ...(split ? { standby } : {}),
+            input: split ? input.slice(standby!.length) : input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
             signal: abort.signal,
             onAdmission: async (a) => {
@@ -549,7 +634,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
                 ? { hedged: true }
                 : {},
           );
-          if (oneShot && spec!) void host.evict(spec.key).catch(() => undefined);
+          if (oneShot && spec!) void target.evict(spec.key).catch(() => undefined);
         }
       },
     };
@@ -563,15 +648,78 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     };
   };
 
+  /** Pre-start requests of one thread arrive together (every Warden at once); they go out as one set. */
+  const prestarting = new Map<
+    string,
+    {
+      entries: Map<string, { spec: PrimeSpec; standby: string }>;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const prestart = (messages: LLMMessage[], opts: CompletionOpts) => {
+    const sessionKey = opts.threadId;
+    if (!wardens || config.prestart === false || !sessionKey || !isWardenSession(sessionKey))
+      return;
+    const thread = decisionThread(sessionKey)!;
+    const { spec, standby } = primedRequest(messages, opts, sessionKey);
+    if (standby === undefined) return;
+    let batch = prestarting.get(thread);
+    if (!batch) {
+      batch = {
+        entries: new Map(),
+        timer: setTimeout(() => {
+          prestarting.delete(thread);
+          // Like a decision, a pre-start runs only on the verified, registered subscription login.
+          void claude!
+            .ready()
+            .then(() => wardens.prestart(thread, [...batch!.entries.values()]))
+            .catch(() => undefined);
+        }, PRESTART_BATCH_MS),
+      };
+      prestarting.set(thread, batch);
+    }
+    batch.entries.set(sessionKey, { spec, standby });
+  };
+  const releaseThread = async (thread: string) => {
+    const batch = prestarting.get(thread);
+    if (batch) {
+      clearTimeout(batch.timer);
+      prestarting.delete(thread);
+    }
+    await wardens?.releaseGroup(thread);
+    const codex = codexThreads.get(thread);
+    if (codex) {
+      codexThreads.delete(thread);
+      await codex.host.close();
+    }
+  };
+
   return {
     host,
+    /** Claude: the side sessions that run each thread's Wardens. */
+    wardens,
+    prestart,
+    releaseThread,
+    snapshot: () => ({
+      primed: host.snapshot(),
+      ...(wardens ? { wardens: wardens.snapshot() } : {}),
+      ...(codexIdle ? { codexThreads: codexThreads.size } : {}),
+    }),
     hostId,
     receiptsPath,
     createRun,
     releaseFailures: () => releaseFailures,
     close: async () => {
+      clearInterval(codexIdle);
+      for (const batch of prestarting.values()) clearTimeout(batch.timer);
+      prestarting.clear();
       try {
-        await host.close();
+        await Promise.all([
+          host.close(),
+          wardens?.close(),
+          ...[...codexThreads.values()].map((entry) => entry.host.close()),
+        ]);
+        codexThreads.clear();
       } finally {
         claude?.release();
       }

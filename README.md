@@ -52,7 +52,7 @@ Setup is interactive — picks your worker and model, creates `.foundry/settings
 
 Provider choices come from the shared registry. All Claude for now (Claude Code through the subscription); Codex and API-key providers are settings.
 
-Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker or Codex decisions). API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
+Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker or Codex decisions). `gpt-6.1-sol` needs Codex CLI 0.159 or later. API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
 
 ### Environment variables
 

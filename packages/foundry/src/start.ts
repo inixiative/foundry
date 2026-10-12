@@ -44,7 +44,6 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
-import { configuredExperts } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
@@ -170,9 +169,9 @@ const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
       source: subscription.decision,
-      // Every decision role stays primed: an advice and a review key per Warden, plus the
-      // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      primedSessions: Math.max(16, 2 * configuredExperts(config).experts.length + 8),
+      // Wardens are subagents of each thread's side sessions; the primed keys are the other roles
+      // (Cartographer, routers, feedback lifecycle). An evicted key re-primes cold.
+      primedSessions: 16,
       onPressure: (event) => {
         const message =
           event.kind === 'shed'

@@ -3,7 +3,7 @@
 Foundry runs subscription-only by default. A fresh install, with no settings at all, runs the Claude Code worker and Foundry's decisions from the logins already on the machine:
 
 - **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset). Set `defaults.provider` to `codex` (for example with `defaults.model: "gpt-6-astra"`) to run main threads on Codex instead, on the Codex CLI's ChatGPT login (`~/.codex`).
-- **Decisions:** Claude Haiku 5.5 (`claude-haiku-5-5`) through the same Claude login (`~/.claude`), on primed Claude Code sessions. Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review), configured experts and thread naming all use this decision profile. The runtime is a setting: `subscriptionOnly.decisionRuntime: "codex"` runs decisions on the Codex CLI's ChatGPT login (`~/.codex`) with GPT-6 Luna instead.
+- **Decisions:** Claude Haiku 5.5 (`claude-haiku-5-5`) through the same Claude login (`~/.claude`). A thread's Wardens run as subagents of that thread's side sessions ([Wardens as subagents](#wardens-as-subagents-of-a-side-session)); the other roles run on primed Claude Code sessions. Classifiers, routers, the Cartographer, the Librarian, Wardens (advise, guard and review), configured experts and thread naming all use this decision profile. The runtime is a setting: `subscriptionOnly.decisionRuntime: "codex"` runs decisions on the Codex CLI's ChatGPT login (`~/.codex`) with GPT-6 Luna instead.
 
 No API provider is constructed in this mode. There is no paid fallback, no automatic retry and no model substitution. API-key providers need an explicit opt-in.
 
@@ -21,8 +21,9 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only: the id the CLI must report serving (for example the full id behind an alias). Codex does not acknowledge a different model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
 | `subscriptionOnly.maxCalls` | `10000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
-| `subscriptionOnly.maxConcurrent` | `16` | Decisions running at once across all threads: Claude CLI processes (~130–230 MB each), or concurrent turns on the one warm Codex process. Sized for a full Warden roster: every Warden is asked on every user message, and every guard-triggered Warden on every action. |
-| (primed keys) | `2 × Wardens + 8`, at least 16 | Claude decision roles kept primed, sized at startup from the enabled Wardens (an advice and a review key each). Each holds a spare CLI process (~130–230 MB): 25 Wardens is about 50 processes and 10 GB. An evicted key re-primes cold (5–8 s). Not a setting. |
+| `subscriptionOnly.maxConcurrent` | `32` for Claude, `16` for Codex | Decisions running at once across all threads. On Claude a Warden decision is a subagent (no process of its own), so a whole roster is admitted at once; each other role is a CLI process. On Codex, concurrent turns on the thread's warm app-server. |
+| `subscriptionOnly.prestartWardens` | `true` | Claude: keep each thread's Wardens pre-started between triggers, so advice and guard start at once. Costs one standby subagent turn per Warden per landed turn (cost per turn: measured on the first live run). |
+| (primed keys) | 16 | Claude roles other than Wardens kept primed (Cartographer, routers, the feedback lifecycle). Each holds a spare CLI process. An evicted key re-primes cold (5–8 s). Not a setting. |
 | `subscriptionOnly.maxQueued` | `512` | Waiting decisions across all threads (up to 1024). |
 | `subscriptionOnly.maxQueuedPerThread` | `256` | Waiting decisions per logical thread: deep enough that a burst of guards never refuses admission. |
 | `subscriptionOnly.effort` | `low` | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`; Haiku 5.5 accepts `low` to `high`). The model default, `medium`, adds latency per decision. |
@@ -75,7 +76,18 @@ Foundry adds processes to the logins the user already uses interactively, like a
 
 ## Claude decisions
 
-Claude decisions run on agent-session's `ClaudePrimedSessions`, with the same per-role keys and per-cycle split as Codex decisions below:
+### Wardens as subagents of a side session
+
+One Claude CLI process per thread (agent-session `ClaudeSubagentSessions`; more above 12 Wardens: one per 12, split evenly) runs that thread's Wardens as subagents, instead of a process per Warden and phase (about 50 processes and 10 GB for 25 Wardens before). Each Warden is a custom agent whose system prompt is the decision base, the charter, its instructions and its domain knowledge, read from the prompt cache; advice, guard and review share it. Every call is a fresh subagent: nothing of one call, phase or thread reaches another.
+
+- **Pre-started (`prestartWardens`).** When a thread starts, when a turn lands and when a Warden's thread knowledge changes, every Warden is pre-started holding its thread section (its understanding of the thread and the thread state). Each waits on a host tool (`mcp__foundry__moment`, an SDK MCP server over the control channel). An advice or guard whose thread section matches answers that held call with the moment and response protocol, so every Warden starts at once with no dispatch on the turn's path. A spare serves one call and is pre-started again.
+- **Fan-out (no matching spare: first use, changed thread section, review).** The Wardens of the thread that ask together go out in one dispatcher turn; a PreToolUse hook gives every subagent exactly its composed input, whatever the dispatcher wrote. A Warden the dispatcher skipped is sent once more. Measured 2026-10-12 (claude 2.1.296): all answers by 3.9 s for 8 Wardens, 4.4 s for 12, 7.9 s for 23 (about 0.23 s per Warden as the dispatcher emits calls one after another, hence the split at 12); 23 of 23, then 61 of 61 Warden calls dispatched with byte-identical inputs and verbatim outputs.
+- **Memory.** A side session is about 210 MB idle and 300–320 MB with 23 subagents running (measured 2026-10-12).
+- **Release.** A closed thread releases its side sessions; one idle for 30 minutes is closed.
+
+Codex (`decisionRuntime: "codex"`) runs one app-server per thread holding a primed thread per role (one app-server held 23 Warden threads in 169–189 MB, measured 2026-10-12); calls outside a thread share one more. `gpt-6.1-sol` needs Codex CLI 0.159 or later (0.155 is refused on a ChatGPT login).
+
+Claude decisions other than Wardens run on agent-session's `ClaudePrimedSessions`, with the same per-role keys and per-cycle split as Codex decisions below:
 
 - **Prime once.** A role with stable context (`CompletionOpts.stablePrefix`) gets one persisted Claude session: Foundry's decision base and the role instructions as the appended system prompt, plus one primer turn carrying the stable context. The primer process exits once primed.
 - **Fork per cycle.** Each decision forks the primed session (`--resume <id> --fork-session`, not persisted) and sends only the per-cycle part. After a decision, the next fork for that role is pre-spawned so a warm decision pays no process start. Roles without stable context run inline on a fresh process.
