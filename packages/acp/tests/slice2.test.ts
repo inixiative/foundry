@@ -170,6 +170,36 @@ test("a session starts in the mode the host's configuration passes; a mode the h
   expect(fresh.modes?.currentModeId).toBe('default');
 });
 
+test("load/resume keep a viewer thread at full access; an ACP thread that lost its mode takes the host's", async () => {
+  const { f, dir, host } = await nativeHost();
+  const cwd = join(dir, 'P');
+  const created = await f.viewer.app.request('/api/threads', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cwd }),
+  });
+  const viewerThread = ((await created.json()) as { threadId: string }).threadId;
+  const h = host(['--permission-mode', 'acceptEdits']);
+  await h.agent.request('initialize', INITIALIZE);
+  const resumed = await h.agent.request('session/resume', {
+    sessionId: viewerThread,
+    cwd,
+    mcpServers: [],
+  });
+  expect(resumed.modes?.currentModeId).toBe('bypassPermissions');
+  expect(f.threadLaunch.get(viewerThread).permissionMode).toBeUndefined();
+
+  const { sessionId } = await h.agent.request('session/new', { cwd, mcpServers: [] });
+  await h.agent.request('session/set_mode', { sessionId, modeId: 'plan' });
+  await h.close();
+  // A daemon restart forgets launch settings; the next host to load the thread supplies them.
+  f.threadLaunch.clear(sessionId);
+  const next = host(['--permission-mode', 'acceptEdits']);
+  await next.agent.request('initialize', INITIALIZE);
+  const loaded = await next.agent.request('session/load', { sessionId, cwd, mcpServers: [] });
+  expect(loaded.modes?.currentModeId).toBe('acceptEdits');
+});
+
 test('the mode is also a `mode` config option, kept in step with session/set_mode', async () => {
   const { f, dir, host } = await nativeHost();
   const h = host();

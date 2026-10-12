@@ -316,12 +316,21 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     );
   };
 
-  /** Mode and config for a session response; a thread with no mode yet takes the host's. */
-  const sessionSetup = async (session: Session, foundry: Daemon, patch: ThreadLaunchPatch) => {
+  /**
+   * Mode and config for a session response. A thread keeps its mode. An ACP thread with none (new,
+   * or its mode lost to a daemon restart) takes the host's; a viewer thread with none keeps its
+   * full access, because the host said nothing.
+   */
+  const sessionSetup = async (
+    session: Session,
+    foundry: Daemon,
+    patch: ThreadLaunchPatch,
+    thread: ThreadJSON,
+  ) => {
     let view = await applyLaunch(session, foundry, patch);
-    if (!view.permissionMode)
+    if (!view.permissionMode && thread.meta.tags.includes('acp'))
       view = await applyLaunch(session, foundry, { permissionMode: hostMode });
-    session.launch.permissionMode = view.permissionMode as ThreadLaunchPatch['permissionMode'];
+    if (view.permissionMode) session.launch.permissionMode = view.permissionMode as ModeId;
     setTimeout(
       () =>
         send(session, { sessionUpdate: 'available_commands_update', availableCommands: COMMANDS }),
@@ -504,10 +513,15 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         .createThread({ cwd: ctx.params.cwd, tags: ['acp', `acp:${clientName}`] })
         .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
-      const setup = await sessionSetup(session, foundry, {
-        permissionMode: hostMode,
-        mcpServers: clientMcpServers(ctx.params.mcpServers),
-      }).catch(httpError);
+      const setup = await sessionSetup(
+        session,
+        foundry,
+        {
+          permissionMode: hostMode,
+          mcpServers: clientMcpServers(ctx.params.mcpServers),
+        },
+        thread,
+      ).catch(httpError);
       return {
         sessionId: thread.threadId,
         ...setup,
@@ -522,9 +536,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           .updateThread(thread.threadId, { worktreePath: ctx.params.cwd })
           .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
-      const setup = await sessionSetup(session, foundry, {
-        mcpServers: clientMcpServers(ctx.params.mcpServers),
-      }).catch(httpError);
+      const setup = await sessionSetup(
+        session,
+        foundry,
+        {
+          mcpServers: clientMcpServers(ctx.params.mcpServers),
+        },
+        thread,
+      ).catch(httpError);
       // The history goes out before the response.
       for (const update of await replayHistory(foundry.http, thread.threadId, ctx.params.cwd).catch(
         httpError,
@@ -541,9 +560,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           .updateThread(thread.threadId, { worktreePath: ctx.params.cwd })
           .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
-      return sessionSetup(session, foundry, {
-        mcpServers: clientMcpServers(ctx.params.mcpServers),
-      }).catch(httpError);
+      return sessionSetup(
+        session,
+        foundry,
+        {
+          mcpServers: clientMcpServers(ctx.params.mcpServers),
+        },
+        thread,
+      ).catch(httpError);
     })
     .onRequest('session/set_mode', async (ctx) => {
       const session = sessionFor(ctx.params.sessionId);
