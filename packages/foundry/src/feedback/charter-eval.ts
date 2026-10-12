@@ -46,6 +46,12 @@ export interface CharterEvalOptions {
   /** Wardens in flight at once: the decision queue's size. */
   readonly concurrency?: number;
   readonly onAnswer?: (answer: WardenProbeAnswer) => void;
+  /**
+   * The auxiliary session each Warden's call runs under (`<thread>:aux:domain:<domain>`): one thread
+   * for every probe runs the roster as a live thread does (Claude side sessions). Omitted, each call
+   * is a one-off decision.
+   */
+  readonly sessionFor?: (warden: EvalWarden) => string;
 }
 
 /**
@@ -116,7 +122,13 @@ async function ask(
     cache,
     instructions,
     signals: new SignalBus(0),
-    llm: options.warden,
+    llm: options.sessionFor
+      ? {
+          ...options.warden,
+          complete: (messages, opts) =>
+            options.warden.complete(messages, { ...opts, threadId: options.sessionFor!(warden) }),
+        }
+      : options.warden,
     llmOpts: { maxTokens: 512, temperature: 0 },
     guardTriggers: [PROBE_MOMENT_TOOL],
     ...(options.charter !== undefined ? { charter: options.charter } : {}),

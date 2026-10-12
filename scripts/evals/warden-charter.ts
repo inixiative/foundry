@@ -4,7 +4,10 @@
  *
  *   bun scripts/evals/warden-charter.ts --probes ~/.foundry/evals/warden-probes.jsonl \
  *     --settings <roster settings.json> --knowledge <role knowledge dir> [--charter <file>] \
- *     [--per-kind 40] [--ctx inixiative] [--out <dir>]
+ *     [--per-kind 40] [--ctx inixiative] [--out <dir>] [--side-sessions]
+ *
+ * --side-sessions runs every Warden under one eval thread, so a probe's Wardens fan out together
+ * through a Claude side session as a live thread's do; without it each call is a one-off decision.
  *
  * Each probe runs as one turn: every Warden is asked at once on Haiku over the subscription, as live,
  * with --concurrency decisions in flight (the decision queue's size); remarks are judged by Opus.
@@ -37,6 +40,7 @@ const { values } = parseArgs({
     ctx: { type: 'string' },
     out: { type: 'string' },
     concurrency: { type: 'string' },
+    'side-sessions': { type: 'boolean' },
   },
 });
 if (!values.probes || !values.settings || !values.knowledge) {
@@ -133,6 +137,9 @@ try {
     judge: judges.provider,
     charter,
     concurrency,
+    ...(values['side-sessions']
+      ? { sessionFor: (w: EvalWarden) => `charter-eval:aux:domain:${w.domain}` }
+      : {}),
     onAnswer: () => {
       if (++done % 50 === 0)
         console.error(`  ${done} answers (${Math.round((Date.now() - started) / 1000)}s)`);
