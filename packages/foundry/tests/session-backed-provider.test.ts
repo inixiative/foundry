@@ -7,7 +7,7 @@ import type {
   SessionEventHandler,
   SessionResult,
 } from '@inixiative/agent-session';
-import limitTerminal from '../../../fixtures/harness-qa/native/claude-limit-terminal.json';
+import limitTerminal from '../../../fixtures/native/claude-limit-terminal.json';
 import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { ThreadLaunchSettings } from '../src/providers/thread-launch';

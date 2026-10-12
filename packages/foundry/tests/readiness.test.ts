@@ -233,7 +233,7 @@ test('readiness refuses wrong-runtime sources and missing or non-executable help
     config.nativeAuthentication = [
       {
         id: sourceId,
-        connectionId: crypto.randomUUID(),
+        integrationId: crypto.randomUUID(),
         runtime: 'codex',
         mode: 'gateway',
         baseUrl: 'http://127.0.0.1:1',
@@ -288,4 +288,36 @@ test('keyless providers read as ready: a local Ollama has no credential to be mi
   };
   const keyed = await inspectReadiness(config, { environment: {}, which: () => '/controlled/cli' });
   expect(keyed.issues.some((item) => item.code === 'provider-credential-missing')).toBe(true);
+});
+
+test('a native profile on API tokens needs the configured decision provider key, not an OpenAI one', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'foundry-native-profile-'));
+  try {
+    const config = defaultConfig(),
+      sourceId = crypto.randomUUID();
+    config.apiTokens = true;
+    config.defaults = { provider: 'claude-code', model: 'fable' };
+    config.nativeAuthentication = [
+      {
+        id: sourceId,
+        integrationId: crypto.randomUUID(),
+        runtime: 'claude',
+        mode: 'native-profile',
+        profileDirectory: directory,
+      },
+    ];
+    config.defaults.nativeAuthenticationId = sourceId;
+    const codes = async (environment: Record<string, string>) =>
+      (await inspectReadiness(config, { environment, which: () => '/controlled/cli' })).issues.map(
+        (item) => item.code,
+      );
+    expect(await codes({ OPENAI_API_KEY: 'synthetic' })).toContain(
+      'native-profile-decision-provider',
+    );
+    expect(await codes({ ANTHROPIC_API_KEY: 'synthetic' })).not.toContain(
+      'native-profile-decision-provider',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

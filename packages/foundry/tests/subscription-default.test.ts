@@ -119,7 +119,7 @@ test('Codex decisions are a setting: decisionRuntime selects the Codex login and
     {
       ...defaultProfileSource('claude'),
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
     },
   ];
   config.subscriptionOnly = {

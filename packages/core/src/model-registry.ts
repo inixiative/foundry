@@ -276,7 +276,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'opus',
-        label: 'Opus 5',
+        label: 'Opus 5.5',
         tier: 'powerful',
         costTier: 'high',
         contextWindow: 1_000_000,
@@ -284,10 +284,11 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         nativeAlias: true,
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        notes: 'Claude Code alias for claude-opus-5-5.',
       },
       {
         id: 'sonnet',
-        label: 'Sonnet 5',
+        label: 'Sonnet 5.5',
         tier: 'standard',
         costTier: 'medium',
         contextWindow: 1_000_000,
@@ -295,6 +296,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         nativeAlias: true,
         capabilities: STANDARD_REASONING,
         reasoning: CLAUDE_REASONING,
+        notes: 'Claude Code alias for claude-sonnet-5-5.',
       },
       {
         id: 'claude-haiku-5-5',

@@ -253,7 +253,7 @@ export interface ConstructionBinding {
   readonly transportMode?: 'controlled-fixture';
   readonly authentication?: Readonly<{
     sourceId: string;
-    connectionId: string;
+    integrationId: string;
     mode: string;
     model?: string;
     effort?: string;
@@ -727,7 +727,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
           ? {
               authentication: {
                 sourceId: auth.sourceId,
-                connectionId: auth.connectionId,
+                integrationId: auth.integrationId,
                 mode: auth.mode,
                 model: auth.model,
                 effort: auth.effort,
@@ -1059,7 +1059,7 @@ export class CodexSessionAdapter implements SessionAdapter {
           ? {
               authentication: {
                 sourceId: auth.sourceId,
-                connectionId: auth.connectionId,
+                integrationId: auth.integrationId,
                 mode: auth.mode,
                 model: auth.model,
                 effort: auth.effort,

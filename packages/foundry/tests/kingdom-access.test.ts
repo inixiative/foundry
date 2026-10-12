@@ -140,7 +140,7 @@ async function fixture() {
 test('project discovery exposes only local references; scoped reads retain server execution and UUID attribution', async () => {
   const f = await fixture();
   try {
-    const listed = await f.call('connections');
+    const listed = await f.call('integrations');
     expect((listed.data as any).body).toEqual([
       { id: f.source.id, name: 'Team issues', integrationId: f.source.integrationId },
     ]);
@@ -174,13 +174,13 @@ test('project discovery exposes only local references; scoped reads retain serve
 test('foreign, missing and model-forged scopes cannot discover or use a grant; callers cannot override transport', async () => {
   const f = await fixture();
   try {
-    expect((await f.tools.dispatch('kingdom_request', { url: 'connections' })).ok).toBe(false);
+    expect((await f.tools.dispatch('kingdom_request', { url: 'integrations' })).ok).toBe(false);
     const foreign = { ...scope, projectId: otherProjectId };
-    expect((await f.call('connections', {}, foreign)).data).toMatchObject({ body: [] });
+    expect((await f.call('integrations', {}, foreign)).data).toMatchObject({ body: [] });
     expect((await f.call('describe', { accessId: f.source.id }, foreign)).ok).toBe(false);
     for (const input of [
       { url: f.source.url },
-      { url: 'connections', headers: { authorization: 'override' } },
+      { url: 'integrations', headers: { authorization: 'override' } },
       {
         url: 'read',
         body: { accessId: f.source.id, operation: 'issues.write', resourceId: f.resourceId },
@@ -201,7 +201,7 @@ test('foreign, missing and model-forged scopes cannot discover or use a grant; c
       ).toBe(false);
     expect(f.requests).toHaveLength(0);
     registerKingdomAccess(f.tools, [{ ...f.source, threadIds: [crypto.randomUUID()] }]);
-    expect((await f.call('connections')).data).toMatchObject({ body: [] });
+    expect((await f.call('integrations')).data).toMatchObject({ body: [] });
   } finally {
     await f.close();
   }

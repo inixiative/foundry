@@ -7,15 +7,15 @@ export type NativeProfileSource = Extract<NativeAuthenticationSource, { mode: 'n
 type Runtime = NativeAuthenticationSource['runtime'];
 
 /** Stable local identities for the user's own logins; references only, never account names. */
-const DEFAULT_SOURCES: Record<Runtime, { id: string; connectionId: string; directory: string }> = {
+const DEFAULT_SOURCES: Record<Runtime, { id: string; integrationId: string; directory: string }> = {
   claude: {
     id: '5b0c1a0d-7d1e-4c1a-9e00-00000000c1a0',
-    connectionId: '5b0c1a0d-7d1e-4c1a-9e00-00000000c1a1',
+    integrationId: '5b0c1a0d-7d1e-4c1a-9e00-00000000c1a1',
     directory: '.claude',
   },
   codex: {
     id: '5b0c1a0d-7d1e-4c1a-9e00-00000000c0d0',
-    connectionId: '5b0c1a0d-7d1e-4c1a-9e00-00000000c0d1',
+    integrationId: '5b0c1a0d-7d1e-4c1a-9e00-00000000c0d1',
     directory: '.codex',
   },
 };
@@ -27,10 +27,10 @@ export function defaultProfileDirectory(runtime: Runtime): string {
 
 /** The runtime's standard login location, referenced in place. */
 export function defaultProfileSource(runtime: Runtime): NativeProfileSource {
-  const { id, connectionId } = DEFAULT_SOURCES[runtime];
+  const { id, integrationId } = DEFAULT_SOURCES[runtime];
   return {
     id,
-    connectionId,
+    integrationId,
     runtime,
     mode: 'native-profile',
     profileDirectory: defaultProfileDirectory(runtime),

@@ -154,7 +154,7 @@ export function buildNativeTextProvider(
             runId: config.runId,
             mode: controlled ? 'controlled-transport' : 'native-subscription',
             sourceId: source.id,
-            connectionId: source.connectionId,
+            integrationId: source.integrationId,
             model: config.model,
             expectedObservedModel: config.expectedObservedModel ?? config.model,
             maxCalls,

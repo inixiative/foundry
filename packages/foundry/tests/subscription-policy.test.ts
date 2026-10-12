@@ -48,7 +48,7 @@ function fixture() {
   const c = defaultConfig();
   const worker = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as 'claude' | 'codex',
     mode: 'native-profile' as const,
     profileDirectory: profile('worker'),
@@ -56,7 +56,7 @@ function fixture() {
   const decision = {
     ...worker,
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     profileDirectory: profile('decision'),
   };
   c.nativeAuthentication = [worker, decision];
@@ -120,7 +120,7 @@ for (const change of [
       case 'gateway':
         f.c.nativeAuthentication![1] = {
           id: f.decision.id,
-          connectionId: f.decision.connectionId,
+          integrationId: f.decision.integrationId,
           runtime: 'claude',
           mode: 'gateway',
           baseUrl: 'https://example.com',

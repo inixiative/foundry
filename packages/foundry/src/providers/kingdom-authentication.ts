@@ -189,7 +189,7 @@ export class KingdomAuthentication {
         sources: [
           {
             id: envelope.id,
-            connectionId: envelope.integrationId,
+            integrationId: envelope.integrationId,
             runtime,
             mode: 'gateway',
             baseUrl: `${source.url}${envelope.gatewayPath}`,

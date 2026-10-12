@@ -82,7 +82,7 @@ function source(runtime: 'claude' | 'codex', directory: string) {
   mkdirSync(profileDirectory, { mode: 0o700 });
   return {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime,
     mode: 'native-profile' as const,
     profileDirectory,

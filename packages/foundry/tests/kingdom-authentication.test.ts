@@ -65,7 +65,7 @@ test('Kingdom resolves once through the Signet, persists source identity, and de
   ]);
   expect(calls).toEqual(['resolveRun', 'delegateRun']);
   expect(a.bindingId).toBe(b.bindingId);
-  expect(a.connectionId).toBe(integrationId); // Local profile identity receives the selected remote Integration.
+  expect(a.integrationId).toBe(integrationId); // Local profile identity receives the selected remote Integration.
   expect(a.model).toBe('bound-model');
   expect(a.effort).toBe('low');
   const child = a.launch(['claude'], {});

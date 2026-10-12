@@ -34,7 +34,7 @@ const gateway = (
   variable = 'FOUNDRY_TEST_AUTH_A',
 ): NativeAuthenticationSource => ({
   id: crypto.randomUUID(),
-  connectionId: crypto.randomUUID(),
+  integrationId: crypto.randomUUID(),
   runtime,
   mode: 'gateway',
   baseUrl: 'http://127.0.0.1:34567/v1',
@@ -131,7 +131,7 @@ describe('Foundry native authentication', () => {
     mkdirSync(profile, { mode: 0o700 });
     const source: NativeAuthenticationSource = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: profile,
@@ -163,7 +163,7 @@ describe('Foundry native authentication', () => {
     mkdirSync(profile, { mode: 0o700 });
     const source: NativeAuthenticationSource = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: profile,
@@ -352,7 +352,7 @@ test('native profile onboarding refuses exposed directories, credential links an
   mkdirSync(profile, { mode: 0o755 });
   const source: NativeAuthenticationSource = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'codex',
     mode: 'native-profile',
     profileDirectory: profile,
@@ -409,7 +409,7 @@ test("a private Codex home holds only the profile's login, linked so refreshes l
   mkdirSync(join(profile, 'memories'));
   const source: NativeAuthenticationSource = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'codex',
     mode: 'native-profile',
     profileDirectory: profile,
@@ -453,7 +453,7 @@ test("a private Codex home holds only the profile's login, linked so refreshes l
 test('a private home is refused for Claude and gateway sources', () => {
   const claude: NativeAuthenticationSource = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude',
     mode: 'native-profile',
     profileDirectory: '/tmp/claude',

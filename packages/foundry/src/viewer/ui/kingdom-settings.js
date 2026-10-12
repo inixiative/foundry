@@ -54,7 +54,7 @@ export function KingdomSettings() {
   };
   const integrations = state?.integrations ?? [];
   const shown = error || state?.error;
-  return html`<section class="settings-card kingdom-connection">
+  return html`<section class="settings-card kingdom-pairing">
     <h2 class="settings-card-title">Paired Kingdoms</h2>
     <p class="settings-desc">Connect this Foundry to one or more Kingdoms. Approve it there and it becomes that owner's Foundry integration; it acts only through the Signets Kingdom grants it. Its key and Signets stay on this machine.</p>
     ${shown && html`<p role="alert">${shown}</p>`}
