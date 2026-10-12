@@ -15,6 +15,7 @@ import {
   FoundryHttpError,
   newAcpCapability,
   readAcpLaunch,
+  removeAcpLaunch,
   writeAcpLaunch,
 } from '../src/client';
 import { createViewer } from '../src/viewer/server';
@@ -134,4 +135,15 @@ test('the ACP capability is refused through the tunnel: a public Host or proxy h
     (await request('http://localhost:4500/api/threads/main', { 'cf-connecting-ip': '203.0.113.9' }))
       .status,
   ).toBe(401);
+});
+
+test("the daemon removes its launch file at shutdown, but never a newer daemon's", () => {
+  const path = join(tempDir(), 'acp-launch.json');
+  writeAcpLaunch(path, { port: 4999, capability: newAcpCapability(), pid: 4242 });
+  removeAcpLaunch(path, process.pid);
+  expect(readAcpLaunch(path).pid).toBe(4242);
+  removeAcpLaunch(path, 4242);
+  expect(() => readAcpLaunch(path)).toThrow();
+  // Already gone: nothing to do.
+  removeAcpLaunch(path, 4242);
 });

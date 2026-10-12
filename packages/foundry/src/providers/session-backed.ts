@@ -63,12 +63,13 @@ export interface NativeSessionProfile {
     effort?: string;
     capacityId?: string;
   }>;
-  readonly engine?: 'mcp' | 'app-server';
   readonly requestedEffort?: string;
   readonly bridgeKey?: string;
   readonly requestedModel: string;
   /** The host launch revision (ThreadLaunchSettings) this session was launched at; 0 for none. */
   readonly launchRevision?: number;
+  /** Whether the thread had structural tool rules (deny, prompt, protected paths) at launch. */
+  readonly structuralRules?: boolean;
   readonly textOnly: boolean;
   readonly maxTurns?: number | null;
   /**
@@ -415,7 +416,7 @@ export class SessionBackedProvider implements LLMProvider {
     const cwd = opts?.cwd ?? this._defaultCwd;
     const textOnly = threadId.includes(':aux:') || opts?.tools === false;
     // A host's choice applies to the thread's executor session only.
-    const host = textOnly ? undefined : this._launch?.get(threadId);
+    const host = textOnly ? undefined : this._launch?.forLaunch(threadId);
     const requestedModel = host?.model ?? opts?.model ?? this._defaultModel;
     const observation = opts?.nativeObservation
       ? {
@@ -449,6 +450,9 @@ export class SessionBackedProvider implements LLMProvider {
         textOnly,
         maxTurns,
         launchRevision: host?.revision ?? 0,
+        ...(this._adapter.structuralRulesAtLaunch && !textOnly
+          ? { structuralRules: this._toolGate?.(threadId)?.hasRules() ?? false }
+          : {}),
         ...(source
           ? {
               bridgeKey: source.key,
@@ -672,7 +676,6 @@ export class SessionBackedProvider implements LLMProvider {
         observedModel: nativeModel,
         requestedMaxTurns: maxTurns,
         ...(profile?.transportMode ? { transportMode: profile.transportMode } : {}),
-        ...(profile?.engine ? { engine: profile.engine } : {}),
         ...(profile?.requestedEffort ? { requestedEffort: profile.requestedEffort } : {}),
         ...(observedEffort !== undefined ? { observedEffort } : {}),
         ...(history ? { history } : {}),
@@ -816,6 +819,8 @@ export class SessionBackedProvider implements LLMProvider {
       textOnly: boolean;
       maxTurns?: number | null;
       launchRevision: number;
+      /** For an adapter that checks them at launch: the thread has structural rules. */
+      structuralRules?: boolean;
       bridgeKey?: string;
       toolPolicyIdentity?: string;
     },
@@ -832,14 +837,19 @@ export class SessionBackedProvider implements LLMProvider {
         'textOnly',
         'maxTurns',
         'launchRevision',
+        'structuralRules',
         'bridgeKey',
         'toolPolicyIdentity',
       ] as const;
       const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
-      // A host changed this thread's launch settings: relaunch the idle session, resuming its binding.
+      // A host changed this thread's launch settings, or its structural rules appeared or went:
+      // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
+      // (Codex) refuses on the next turn instead of running warm past the new rules.
       if (
-        changed.includes('launchRevision') &&
-        changed.every((field) => field === 'launchRevision' || field === 'requestedModel') &&
+        (changed.includes('launchRevision') || changed.includes('structuralRules')) &&
+        changed.every((field) =>
+          ['launchRevision', 'structuralRules', 'requestedModel'].includes(field),
+        ) &&
         this._bridgeSources.get(key) === source
       )
         return this._relaunch(key, existing, () =>
@@ -917,7 +927,7 @@ export class SessionBackedProvider implements LLMProvider {
         if (source) bridge = await source.acquire();
         if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity)
           throw Error('Owned fixture policy changed during acquisition');
-        const host = requested.textOnly ? undefined : this._launch?.get(threadId);
+        const host = requested.textOnly ? undefined : this._launch?.forLaunch(threadId);
         const gate = requested.textOnly ? undefined : this._toolGate?.(threadId);
         const session = await this._adapter.createSession({
           threadId,
@@ -991,7 +1001,6 @@ export class SessionBackedProvider implements LLMProvider {
                   bindingId: constructed.bindingId,
                   transportMode: constructed.transportMode,
                   authentication: constructed.authentication,
-                  engine: constructed.engine,
                   requestedEffort: constructed.requestedEffort,
                 }
               : {}),
@@ -1040,10 +1049,8 @@ export class SessionBackedProvider implements LLMProvider {
 }
 
 /**
- * Native model acknowledgment from supported configuration envelopes only, and only
- * when the envelope names this session's own native binding:
- *  - Claude stream-json `system`/`init` with `session_id` and `model`
- *  - Codex `session_configured` with `thread_id`/`session_id` and `model`
+ * Native model acknowledgment, for an adapter with no owned configuration evidence, from Claude
+ * stream-json `system`/`init` naming this session's own native binding (`session_id`) and `model`.
  * Anything else (tool events, unknown types, foreign bindings, missing binding) is
  * not evidence and leaves acknowledgment undefined.
  */
@@ -1057,10 +1064,7 @@ function acknowledgedModel(
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
     if (typeof r.model !== 'string' || !r.model) continue;
-    const claudeInit = r.type === 'system' && r.subtype === 'init' && r.session_id === binding;
-    const codexConfigured =
-      r.type === 'session_configured' && (r.thread_id === binding || r.session_id === binding);
-    if (claudeInit || codexConfigured) return r.model;
+    if (r.type === 'system' && r.subtype === 'init' && r.session_id === binding) return r.model;
   }
   return undefined;
 }

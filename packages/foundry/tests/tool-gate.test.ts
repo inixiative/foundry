@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import type { ToolRequest } from '@inixiative/agent-session';
 import { ActionQueue } from '@inixiative/foundry-core';
 import type { PermissionMode } from '../src/providers/thread-launch';
-import { createToolGate, rulesFor, type ToolRules } from '../src/turns/tool-gate';
+import { createToolGate, rulesFor, structuralLevel, type ToolRules } from '../src/turns/tool-gate';
 
 function gate(rules: ToolRules | undefined, mode?: PermissionMode) {
   const queue = new ActionQueue();
@@ -92,16 +92,56 @@ test('a withdrawn native request withdraws its prompt', async () => {
   expect(queue.pending()).toEqual([]);
 });
 
-test('acceptEdits accepts file changes the native runtime asks about', async () => {
+test("Codex's acceptEdits file-change asks are escalations and go to the user, as Claude's do", async () => {
   const { decide, queue } = gate(undefined, 'acceptEdits');
-  expect(
-    await decide({
-      stage: 'permission',
-      toolName: 'apply_patch',
-      toolInput: { path: '/repo/a.ts' },
-    }),
-  ).toEqual({ behavior: 'allow' });
+  const asked = decide({
+    stage: 'permission',
+    toolName: 'apply_patch',
+    toolInput: { changes: [{ path: '/elsewhere/a.ts' }] },
+  });
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+  queue.resolve(queue.pending()[0]!.id, 'rejected');
+  expect(await asked).toMatchObject({ behavior: 'deny' });
+});
+
+test('an ask no one answers times out and denies, saying so', async () => {
+  const queue = new ActionQueue();
+  const decide = createToolGate({
+    threadId: 'thread',
+    rules: () => undefined,
+    mode: () => 'default',
+    queue,
+    turnId: () => null,
+    journal: () => {},
+    askTimeoutMs: 30,
+  });
+  const decision = await decide(bash('permission'));
+  expect(decision).toMatchObject({ behavior: 'deny' });
+  expect(decision.behavior === 'deny' && decision.message).toContain('No one answered');
   expect(queue.pending()).toEqual([]);
+});
+
+test('an explicit file:write allow never switches protected paths off; an explicit deny still denies', () => {
+  const write = {
+    stage: 'pre-use' as const,
+    toolName: 'Write',
+    toolInput: { file_path: '/repo/.env' },
+  };
+  expect(
+    structuralLevel({ capabilities: { 'file:write': 'allow' }, protectedPaths: ['.env'] }, write)
+      .level,
+  ).toBe('prompt');
+  expect(
+    structuralLevel({ capabilities: { 'file:write': 'deny' }, protectedPaths: ['.env'] }, write)
+      .level,
+  ).toBe('deny');
+  expect(
+    structuralLevel(
+      { capabilities: { 'file:write': 'allow' }, protectedPaths: ['.env'] },
+      { ...write, toolInput: { file_path: '/repo/a.ts' } },
+    ).level,
+  ).toBe('allow');
 });
 
 test('project rules override global capabilities and add protected paths', () => {

@@ -110,8 +110,23 @@ export class ThreadLaunchSettings {
   private readonly threads = new Map<string, ThreadLaunch>();
   private readonly listeners = new Set<(threadId: string, launch: ThreadLaunch) => void>();
 
+  /** The mode a thread with none launches in; undefined leaves the runtime's own default. */
+  fallbackMode: (threadId: string) => PermissionMode | undefined = () => undefined;
+
   get(threadId: string): ThreadLaunch {
     return this.threads.get(threadId) ?? { revision: 0 };
+  }
+
+  /**
+   * What the thread's executor launches with: the host's choice, and without a mode the fallback.
+   * A host thread (ACP) whose mode was lost never escalates to the runtime's full-access default;
+   * its host re-applies the real mode on its next prompt.
+   */
+  forLaunch(threadId: string): ThreadLaunch {
+    const launch = this.get(threadId);
+    if (launch.permissionMode) return launch;
+    const permissionMode = this.fallbackMode(threadId);
+    return permissionMode ? { ...launch, permissionMode } : launch;
   }
 
   /** Apply a host's choice; `null` clears a field back to the thread's configured default. */

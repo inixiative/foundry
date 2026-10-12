@@ -51,13 +51,18 @@ export class FoundryClient {
     this.origin = new URL(connection.endpoint).origin;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    anonymous = false,
+  ): Promise<T> {
     const response = await fetch(`${this.origin}${path}`, {
       method,
       redirect: 'manual',
       headers: {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(this.connection.capability
+        ...(this.connection.capability && !anonymous
           ? { authorization: `Bearer ${this.connection.capability}` }
           : {}),
       },
@@ -79,6 +84,29 @@ export class FoundryClient {
 
   health(): Promise<{ ok: boolean }> {
     return this.request('GET', '/api/health');
+  }
+
+  /**
+   * The pid of the process answering on the endpoint, asked without the bearer so a listener that
+   * is not the daemon never receives it. An unhealthy daemon still answers; an unreachable one throws.
+   */
+  async daemonPid(): Promise<number | undefined> {
+    const body = await this.request<{ pid?: unknown }>('GET', '/api/health', undefined, true).catch(
+      (error) => {
+        if (error instanceof FoundryHttpError) return error.body as { pid?: unknown };
+        throw error;
+      },
+    );
+    return typeof body.pid === 'number' ? body.pid : undefined;
+  }
+
+  /** Archive a thread (its history stays on disk; it takes no more turns). */
+  archiveThread(threadId: string): Promise<{ ok: boolean }> {
+    return this.request('POST', '/api/actions', {
+      kind: 'thread:archive',
+      target: threadId,
+      operator: 'acp',
+    });
   }
 
   /** A new thread. `cwd` resolves its project; a directory outside every project is the global scope. */

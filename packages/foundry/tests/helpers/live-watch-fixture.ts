@@ -15,7 +15,7 @@ import { ThreadRuntimeManager } from '../../src/agents/thread-runtime';
 import type { CreateSessionOpts, SessionAdapter } from '../../src/providers/session-adapter';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
 import { ThreadLaunchSettings } from '../../src/providers/thread-launch';
-import type { ThreadToolGate } from '../../src/turns/tool-gate';
+import { lateBoundToolGate, type ThreadToolGate } from '../../src/turns/tool-gate';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { connectStreams } from './data-stream';
@@ -31,7 +31,12 @@ export async function until(check: () => unknown | Promise<unknown>, label: stri
  * Real provider, factory/runtime, file-backed journal and actual viewer HTTP entry. */
 export async function liveWatchFixture(
   dir: string,
-  options: { interruptible?: boolean; feedbackProvider?: LLMProvider } = {},
+  options: {
+    interruptible?: boolean;
+    feedbackProvider?: LLMProvider;
+    /** The adapter checks structural rules at launch, as Codex does. */
+    structuralRulesAtLaunch?: boolean;
+  } = {},
 ) {
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, 'P'));
@@ -49,6 +54,7 @@ export async function liveWatchFixture(
     closing = false;
   const adapter: SessionAdapter = {
     runtime: 'claude-code',
+    ...(options.structuralRulesAtLaunch ? { structuralRulesAtLaunch: true } : {}),
     async getExternalSessionId() {
       return null;
     },
@@ -183,7 +189,8 @@ export async function liveWatchFixture(
     adapter,
     defaultModel: 'fable',
     launch: threadLaunch,
-    toolGate: (threadId) => toolGateFor?.(threadId),
+    // The production wiring (start.ts): one late-bound wrapper resolving the thread's one gate per call.
+    toolGate: lateBoundToolGate(() => toolGateFor),
   });
   const config = starterConfig(provider.id, 'fable');
   config.setupComplete = true;

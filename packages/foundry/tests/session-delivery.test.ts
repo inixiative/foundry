@@ -515,7 +515,7 @@ describe('a relaunch in this process honors the ledger', () => {
       id: 'claude-code',
       adapter,
       defaultModel: 'm',
-      launch: { get: () => launch } as never,
+      launch: { get: () => launch, forLaunch: () => launch } as never,
     });
     adapter.releaseIdleSession = async () => 'released';
     let ledger: Record<string, string> = {};
@@ -588,7 +588,7 @@ test('a Codex relaunch in this process keeps its ledger, so nothing it held is s
     id: 'codex',
     adapter,
     defaultModel: 'm',
-    launch: { get: () => launch } as never,
+    launch: { get: () => launch, forLaunch: () => launch } as never,
   });
   adapter.releaseIdleSession = async () => 'released';
   const first = await provider.complete(user, { threadId: 'T', delivery: delivery() });

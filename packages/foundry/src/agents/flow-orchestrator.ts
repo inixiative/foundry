@@ -224,6 +224,15 @@ export interface HydrationResult {
   revisions: LayerRevision[];
   /** The composed decoration for the executor. */
   decoration: MessageDecoration;
+  /** Layers that did not warm within the deadline, or failed to; the turn went on without them. */
+  warmShortfalls: WarmShortfall[];
+}
+
+/** A cache that did not warm in time, or failed to: recorded, never blocking. */
+export interface WarmShortfall {
+  readonly id: string;
+  readonly outcome: 'timeout' | 'error';
+  readonly reason: string;
 }
 
 /** What the executor demonstrably received. */
@@ -864,9 +873,9 @@ export class FlowOrchestrator {
     const toWarm = this._stack.layers.filter(
       (l) => (layerIds.has(l.id) || l.sources.some((s) => s.focusable)) && !l.isWarm,
     );
-    if (toWarm.length > 0) {
-      await Promise.all(toWarm.map((l) => l.warm()));
-    }
+    const warmShortfalls = await this.warmWithin(
+      toWarm.map((layer) => ({ id: layer.id, warm: () => layer.warm() })),
+    );
 
     // Diff against ledger
     const injected: string[] = [];
@@ -922,7 +931,34 @@ export class FlowOrchestrator {
       pending,
       revisions,
       decoration: composeDecoration(plan, deliveredByDomain),
+      warmShortfalls,
     };
+  }
+
+  /**
+   * Warm caches without ever holding the turn: each gets the advise deadline, and a timeout or a
+   * failure comes back as a shortfall instead of throwing. A late warm keeps running and lands for a
+   * later turn.
+   */
+  async warmWithin(
+    warms: ReadonlyArray<{ id: string; warm: () => Promise<unknown> }>,
+  ): Promise<WarmShortfall[]> {
+    const unbounded: PlanClock = { passed: () => false, remaining: () => undefined };
+    const results = await Promise.all(
+      warms.map(async ({ id, warm }): Promise<WarmShortfall | null> => {
+        const settled = Promise.resolve()
+          .then(warm)
+          .then(
+            () => null,
+            (error: unknown) => (error instanceof Error ? error.message : String(error)),
+          );
+        const raced = await this._raceDeadline(settled, this._adviseTimeoutMs, 'advise', unbounded);
+        if (raced.timedOut)
+          return { id, outcome: 'timeout', reason: `not warm within ${this._adviseTimeoutMs}ms` };
+        return raced.value === null ? null : { id, outcome: 'error', reason: raced.value };
+      }),
+    );
+    return results.filter((shortfall): shortfall is WarmShortfall => shortfall !== null);
   }
 
   /**
@@ -948,35 +984,20 @@ export class FlowOrchestrator {
   /**
    * Re-warm every layer on the thread's stack that has gone stale (an instruction or role file
    * edited since it loaded, a staleness window passed), so the executor assembles current content
-   * and the change reaches the session as a delta. Fail-open and bounded: a layer that fails or
-   * outlasts `deadlineMs` keeps its last content (a stale standing layer still assembles) and
-   * finishes warming in the background. Returns the ids re-warmed in time.
+   * and the change reaches the session as a delta. Bounded like every warm (`warmWithin`): a layer
+   * that fails or is late keeps its last content (a stale or warming standing layer still
+   * assembles) and lands for a later turn. Returns the ids re-warmed in time.
    */
-  async refreshStale(deadlineMs = 5_000): Promise<string[]> {
+  async refreshStale(): Promise<string[]> {
     const stale = this._stack.layers.filter(
       (layer) => layer.checkStaleness() === 'stale' && layer.lastWarmed !== null,
     );
     if (!stale.length) return [];
-    const warmed: string[] = [];
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      Promise.all(
-        stale.map((layer) =>
-          layer.warm().then(
-            () => {
-              warmed.push(layer.id);
-            },
-            () => undefined,
-          ),
-        ),
-      ),
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, deadlineMs);
-        (timer as { unref?: () => void }).unref?.();
-      }),
-    ]);
-    clearTimeout(timer);
-    return warmed;
+    const shortfalls = await this.warmWithin(
+      stale.map((layer) => ({ id: layer.id, warm: () => layer.warm() })),
+    );
+    const missed = new Set(shortfalls.map((shortfall) => shortfall.id));
+    return stale.map((layer) => layer.id).filter((id) => !missed.has(id));
   }
 
   // -----------------------------------------------------------------------
