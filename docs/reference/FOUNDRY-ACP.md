@@ -167,7 +167,8 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 | **`session/load`** `{sessionId, cwd, mcpServers}` | Replay history as `user_message_chunk`/`agent_message_chunk`/`tool_call` from `GET /api/threads/:id/history` (`runtime.ts:394`) and turn detail (`:419`), then respond; advertise `loadSession: true`. | 2 |
 | **`session/set_mode`**, `session/set_config_option` | §4.5. `unstable_setSessionModel` is **not handled** (`packages/acp/src/agent.ts:639-845`); models change through the `model` config option only. | 2 |
 | **`session/request_permission`** | ActionQueue prompts for this session's thread (§5.2) | 2 |
-| `session/list`, `session/fork`, `session/close` | Not built. `list` → `GET /api/threads?project`. `fork` returns 501 today (`runtime.ts:718-735`), so it is not advertised. **`close` is not advertised, which leaves orphan threads:** Paseo's provider refresh and T3's provider probe each call `session/new`, so every probe persists an empty `acp:*` thread and may start the daemon. Fix: implement and advertise `session/close`, and archive or delete threads with no turns. | later |
+| **`session/close`** | Advertised as `sessionCapabilities.close` (`packages/acp/src/agent.ts:742`); handler at `:941-983`. Cancels this host's unsettled turns and withdraws only their asks, settles open prompts `cancelled`, drops the session and closes its `thread:`/`flow:` streams, then archives the thread if it is tagged `acp`, not active and has no history. A host probe (Paseo's provider refresh, T3's provider probe: `session/new` with no prompt) leaves no thread behind; a used thread is kept. | 2 |
+| `session/list`, `session/fork` | Not built. `list` → `GET /api/threads?project`. `fork` returns 501 today (`runtime.ts:718-735`), so it is not advertised. | later |
 | `authenticate` | Not offered (`authMethods: []`). Native logins stay where they are. | — |
 
 ### 4.3 `session/update` projection
