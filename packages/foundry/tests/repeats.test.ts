@@ -300,6 +300,44 @@ describe('repeatReport', () => {
     expect(refreshed.scan.length).toBeGreaterThan(0);
   });
 
+  test('test and eval runs never count: an exempt archive skips its harness file too', async () => {
+    const listing = (sessionId: string, tags: string[]) => ({
+      schemaVersion: 1 as const,
+      sourceId: '00000000-0000-4000-8000-000000000000',
+      source: 'claude-code' as const,
+      sessionId,
+      title: sessionId,
+      tags,
+      goalIds: [],
+      runIds: [],
+      capturedAt: NOW,
+      coverage: {
+        reasoning: 'unavailable' as const,
+        completeness: 'recorded' as const,
+        omissions: [],
+      },
+      id: `arch-${sessionId}`,
+      revision: 1,
+      digest: 'd',
+      entries: 0,
+      models: [],
+      suggestedTags: [],
+      references: [],
+    });
+    const asked: unknown[] = [];
+    const archive = {
+      list: async (filter?: unknown) => {
+        asked.push(filter);
+        return [listing('a', ['run:test'])];
+      },
+      read: async () => undefined,
+    };
+    const { report } = await run({ archive });
+    expect(asked).toEqual([{ exempt: 'include' }]);
+    expect(report.sources['claude-code']).toBe(1);
+    expect(report.fromArchive).toBe(0);
+  });
+
   test('Archive is read first; a harness file only fills what it lacks or has moved past', async () => {
     const snapshot: ArchiveSnapshot = {
       schemaVersion: 1,

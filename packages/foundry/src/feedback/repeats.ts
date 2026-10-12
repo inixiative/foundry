@@ -3,6 +3,7 @@ import { closeSync, existsSync, lstatSync, openSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { sessionMetadata, transcriptFiles } from '@inixiative/archive/collector';
+import { cwdRunTag, exemptRun } from '@inixiative/archive/exemption';
 import { typedPrompt } from '@inixiative/archive/import';
 import { importTranscriptFile } from '@inixiative/archive/import-file';
 import type { ArchiveClient } from '@inixiative/archive/remote';
@@ -101,7 +102,7 @@ export interface RepeatOptions {
   codexSessions?: string;
   /** Claude Code's prompt history: typed prompts outliving their transcripts. */
   history?: string;
-  /** The machine's Archive: the source of sessions; the harness files fill what it lacks. */
+  /** The machine's Archive: the source of sessions; the harness files fill what it lacks. Test and eval runs never count. */
   archive?: Pick<ArchiveClient, 'list' | 'read'>;
   /** Candidacy threshold on the detector's score. */
   minScore?: number;
@@ -226,14 +227,20 @@ export async function collectCandidates(options: RepeatOptions, since: number, u
   };
   // Archive first: it keeps sessions after the harness deletes them. When to capture is the collector's call.
   const archived = new Map<string, { capturedAt: number; messages: number }>();
+  // Test and eval runs are listed only so their harness files are skipped too.
   const listings = options.archive
-    ? await options.archive.list().catch(() => {
+    ? await options.archive.list({ exempt: 'include' }).catch(() => {
         failedSources++;
         return [];
       })
     : [];
+  const exempt = new Set<string>();
   if (options.archive) {
     for (const listing of listings) {
+      if (exemptRun(listing.tags)) {
+        exempt.add(`${listing.source}:${listing.sessionId}`);
+        continue;
+      }
       if (listing.capturedAt < since || listing.sessionId.includes('/agent-')) continue;
       if (
         listing.source !== 'claude-code' &&
@@ -260,6 +267,8 @@ export async function collectCandidates(options: RepeatOptions, since: number, u
     }
   }
   for (const { harness, file } of sessionFiles(options, since)) {
+    const cwd = sessionMetadata(file, harness)?.cwd;
+    if (cwd && cwdRunTag(cwd)) continue;
     let snapshot: ArchiveSnapshot;
     try {
       snapshot = importTranscriptFile(file, { source: harness, sourceId: ARCHIVE_SOURCE_ID });
@@ -267,6 +276,7 @@ export async function collectCandidates(options: RepeatOptions, since: number, u
       failedSources++;
       continue;
     }
+    if (exempt.has(`${harness}:${snapshot.sessionId}`)) continue;
     // A session Archive captured after the file last changed is already counted.
     const captured = archived.get(`${harness}:${snapshot.sessionId}`);
     if (captured && captured.capturedAt >= lstatSync(file).mtimeMs) continue;
@@ -302,6 +312,7 @@ export async function collectCandidates(options: RepeatOptions, since: number, u
       if (!inWindow(row.timestamp) || row.display.startsWith('/')) continue;
       const text = expandPastes(row.display, row.pastedContents);
       if (!text.trim() || repeatOf(text, row.timestamp, 'history')) continue;
+      if (typeof row.project === 'string' && cwdRunTag(row.project)) continue;
       const project = typeof row.project === 'string' ? tilde(row.project) : 'history';
       const turns = byProject.get(project) ?? [];
       turns.push({
