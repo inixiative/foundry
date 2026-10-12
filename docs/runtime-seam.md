@@ -27,7 +27,7 @@ Depend on this entrypoint, never on `@inixiative/foundry/src/...`. Internals mov
 
 The entrypoint is still called `runtime`; that name predates Installations. Its exports use the Installation vocabulary.
 
-Renaming the path to `./installation` would read better and is deliberately not done: it is a published import path, and Oracle consumes `@inixiative/foundry/runtime`. Tidying the name here breaks a consumer in another repo, so the path is the stable part and the vocabulary inside it is not.
+Renaming the path to `./installation` would read better and is deliberately not done: it is a published import path. `SignetClient` itself lives in `@inixiative/signet`; `./runtime` re-exports it, so a consumer that only presents Signets can depend on `@inixiative/signet` directly. Oracle's worker still imports runtime-job exports this entrypoint no longer has, so it is broken until reworked ([system map](SYSTEM-MAP.md), Oracle); it is not a reason to keep the name.
 
 ## Verifying it from outside
 

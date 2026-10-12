@@ -33,7 +33,7 @@ Explicit profile sources are credential references in `nativeAuthentication`, ne
 ```json
 {
   "nativeAuthentication": [
-    { "id": "22222222-2222-4222-8222-222222222222", "connectionId": "44444444-4444-4444-8444-444444444444",
+    { "id": "22222222-2222-4222-8222-222222222222", "integrationId": "44444444-4444-4444-8444-444444444444",
       "runtime": "codex", "mode": "native-profile", "profileDirectory": "/private/path/decisions" }
   ],
   "subscriptionOnly": { "decisionSourceId": "22222222-2222-4222-8222-222222222222" }

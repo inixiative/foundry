@@ -2,7 +2,7 @@
 
 This is the same row-by-row inventory used for the Paseo and T3 Code dissections, applied to inixiative's own stack.
 
-**Snapshot.** Read-only, from `origin/main` on 2026-10-11:
+**Snapshot of 2026-10-11** — see [Updated since this snapshot](#updated-since-this-snapshot-2026-10-12) first. Read-only, from `origin/main` on 2026-10-11:
 
 | Repo | Commit |
 |---|---|
@@ -26,7 +26,29 @@ This is the same row-by-row inventory used for the Paseo and T3 Code dissections
 - **stub:** code exists but isn't wired, or it throws.
 - **doc-only:** described in docs, absent from code.
 
-> **`docs/SYSTEM-MAP.md` (dated 2026-09-30) is stale in many places.** Each drift is flagged where it applies, and they are all listed again in §5.
+> **`docs/SYSTEM-MAP.md` was rewritten on 2026-10-12**; the SYSTEM-MAP drifts this snapshot flags (§5) are fixed there.
+
+---
+
+## Updated since this snapshot (2026-10-12)
+
+This document is a **snapshot of 2026-10-11**. The builds that landed since then (ACP slices 1 and 2, the composition view, warm-cache delivery) make several of its claims the opposite of the code. Where a row below and the body disagree, this section wins. Basis: Foundry `f040582`, agent-session `fbd3207` (0.6.0 on npm, 0.5.2 blessed).
+
+| Topic | The snapshot says | Now |
+|---|---|---|
+| Stop | No stop | Stop exists: viewer route `POST /api/threads/:threadId/turns/:turnId/interrupt` (`pf/viewer/routes/runtime.ts:217`) → `TurnService.interrupt` (`pf/turns/turn-service.ts:294`); the viewer's Stop button (`pf/viewer/ui/conversation.js:563`); ACP `session/cancel` (`foundry/packages/acp/src/agent.ts:674`). |
+| WS seq | No seq, by the 9/23 design | Superseded 2026-10-11: data-stream frames carry a per-stream `seq`; the client drops stale appends and re-opens for a snapshot on a gap. Foundry keeps it per connection (3cbbe92); Kingdom and template use a Redis counter. No replay. |
+| Pre-tool gate and approvals | No gate; ActionQueue has no producer; `permissionMiddleware` unwired | `permissionMiddleware` was deleted (f4f27c7). The structural tool gate (`pf/turns/tool-gate.ts`, core `permissionLevel`) decides each tool request; asks go through the ActionQueue. Claude permission prompts (`toolGate`), Codex approvals (`onToolRequest`) and ACP `session/request_permission` all route to it. |
+| Queued turns | Accepted turns are `active` | `queued` is its own turn status (`pf/persistence/local-session-store.ts:40,675`); a queued turn at restart is recorded failed / never sent. |
+| Instruction hierarchy | Not built | Built: global → org → project → personal ladder with `@path` imports (`pf/prompts/instruction-stack.ts`, `pc/adapters/markdown-hierarchy.ts`), and the composition view composes every role's slots from it. |
+| Corrections | Viewer interventions only | Also the ACP `/correction` command (`foundry/packages/acp/src/agent.ts:427`). foundry-core's detector (`pc/feedback/correction.ts`) is built but has no caller. |
+| Removed code | `RuntimeAdapter`, `ClaudeCodeProvider`, `permissionMiddleware` | Deleted (f4f27c7). Native sessions run through agent-session. |
+| ACP | Foundry is not an ACP agent | Foundry is an ACP v1 agent (`foundry/packages/acp`, `@inixiative/foundry-acp` 0.1.0, unpublished). Host sessions that use it get the full middleware. Spec: [FOUNDRY-ACP.md](FOUNDRY-ACP.md). |
+| Full-context resend | Every turn re-sends the whole context | Fixed: standing parts go in the system prompt once, then only changed layers (`pf/providers/session-delivery.ts`). |
+| `demo.ts` | A todo to delete it | Deleted (d925bcc). |
+| Runner features | Diffs, terminal and worktrees listed as gaps | Left to the hosts by decision (CLAUDE.md, 2026-10-11): the viewer grows no runner features. |
+
+Still true from the snapshot: `oracle-worker` cannot boot; the pairing Signet has `operations: []`; the memory guard is an LLM call; the Herald is unwired; `connectionId` remains (being renamed `integrationId` in the 2026-10-12 hygiene batch); revert and fork return 501.
 
 ---
 

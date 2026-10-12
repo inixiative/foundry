@@ -19,7 +19,7 @@ It changes what Foundry *is* to an outside client. Foundry becomes an agent you 
 - `paseo:` = `~/code/paseo`
 - `t3:` = `~/code/t3`
 
-Line references were checked against those commits. Anything not checked is marked **[unverified]**.
+Line references were checked against those commits; the ones touched on 2026-10-12 (the method map, §4.3 rows, §5.2 gate, §10 setup) were re-checked against Foundry `f040582`. Anything not checked is marked **[unverified]**.
 
 ---
 
@@ -89,7 +89,7 @@ Engine primitives with no runner and no I/O policy: Thread, the `Harness` pipeli
 
 **Changes:**
 - **Slice 1:** `NativeObservation.interruptible` (`pc/native-evidence.ts`): the provider hands the turn that owns an admission the means to stop it. The thread forwards it like the other observation fields (`pc/thread.ts`).
-- **Slice 2 (the gate):** `CapabilityGate` (`pc/capability.ts:136`) and `ActionQueue` (`pc/action-prompt.ts`) get their first real caller. `permissionMiddleware` (`pc/permission-middleware.ts:38`) gates `llm:call` per dispatch, not per tool call, and has no caller; delete it.
+- **Slice 2 (the gate):** core's capability policy (`permissionLevel`, `pc/capability.ts`) and `ActionQueue` (`pc/action-prompt.ts`) get their first real caller, the tool gate (`pf/turns/tool-gate.ts:7`). The gate calls `permissionLevel` directly, not `CapabilityGate.check`. `permissionMiddleware` gated `llm:call` per dispatch, not per tool call, and had no caller; **deleted** (f4f27c7).
 
 ### 2.2 Foundry (`packages/foundry`, `@inixiative/foundry`, BSL 1.1)
 
@@ -102,11 +102,11 @@ The one place a Foundry turn runs: the daemon, turn acceptance and lifecycle, th
 | **Stop.** `POST /api/threads/:threadId/turns/:turnId/interrupt` → `TurnService.interrupt`, answering one outcome: <br>• `cancelled`: a queued turn, settled at once without running. <br>• `requested`: a running turn not yet natively admitted; the native preflight or the admission registration (which precedes the native write) refuses it, so nothing is sent. <br>• `acknowledged` / `unacknowledged` / `no-turn`: a dispatched turn, stopped through `HarnessSession.interruptNative` (`as/harness-session.ts:251`), which `SessionBackedProvider` hands to the executor's turn through `NativeObservation.interruptible` (never to an auxiliary role's session). <br>• `unsupported`: admitted on a runtime with no native stop (Codex in agent-session 0.5.2); the turn runs to its end. <br>A cancelled turn is journalled `failed` with `cancelled: true`; `interrupted` stays reserved for "Foundry restarted and the native outcome is unknown". Live check (Claude, 2026-10-11): the stopped turn ends `Native terminal failed: aborted_streaming` and the thread takes the next turn. | 1 |
 | **`POST /api/threads` accepts `cwd`.** The daemon resolves the project: the longest registered project path containing `cwd`, else the registered project whose path is `cwd`'s main git worktree (`git worktree list`, `pf/git/worktree.ts`). No match means the global scope: the thread has no `projectId`, as threads created without a project always have. Foundry never creates worktrees. | 1 |
 | **`LiveActivity` carries tool input and output** (bounded) and text rows carry the exact appended text, so a client can stream deltas without diffing a bounded tail. The viewer ignores the new fields. | 1 |
-| **`./client` export.** Wire types (`TurnAppend`, `LiveActivity`, `StreamBufferSnapshot`, `TurnTerminal`), a loopback HTTP client, a data-stream socket client, the ACP launch file reader and the launchd starter. This is the **only** surface foundry-acp imports, and the one Oracle uses when it drives turns through the daemon. | 1 |
+| **`./client` export.** Wire types (`TurnAppend`, `LiveActivity`, `StreamBufferSnapshot`, `TurnTerminal`), a loopback HTTP client, a data-stream socket client, the ACP launch file reader and the launchd starter. This is the **only** surface foundry-acp imports, and the one Oracle will use when it drives turns through the daemon. | 1 |
 | **ACP launch file.** The daemon (`FOUNDRY_DAEMON=1`) writes `~/.foundry/acp-launch.json` at startup, mode 0600, never through a symlink: `{version: 1, endpoint: "http://127.0.0.1:<port>", capability, pid, createdAt}`. `FOUNDRY_ACP_LAUNCH` overrides the path (tests, a second Foundry). With a tunnel active, the viewer accepts `Authorization: Bearer <capability>` **only on a direct loopback request** (loopback `Host`, no reverse-proxy headers such as `X-Forwarded-For` or `Cf-Connecting-Ip`), so the capability never works through the tunnel; without a tunnel, loopback needs no auth (`pf/viewer/server.ts:166-176`). The pattern is the MCP bridge's (`pf/mcp/transport.ts:109`, read with the same private-file checks as `pf/mcp/proxy.ts` `readLaunchFile`). | 1 |
-| Delete `pf/demo.ts` and its scripts: CLAUDE.md lists demos in product repos as dead. | 1 |
+| Delete `pf/demo.ts` and its scripts: CLAUDE.md lists demos in product repos as dead. **Done** (d925bcc). | 1 |
 | Thinking rows in `LiveActivity` (for `agent_thought_chunk`). | 2 |
-| Delete `pf/providers/runtime.ts` `RuntimeAdapter` and its file injectors (never registered; the hook plan is dropped) and `pf/providers/claude-code.ts` `ClaudeCodeProvider` (imported in `pf/start.ts:42`, never constructed outside tests). Hard cut. | 2 |
+| Delete `pf/providers/runtime.ts` `RuntimeAdapter` and its file injectors (never registered; the hook plan is dropped) and `pf/providers/claude-code.ts` `ClaudeCodeProvider` (imported in `pf/start.ts:42`, never constructed outside tests). Hard cut. **Done** (f4f27c7). | 2 |
 
 ### 2.3 foundry-acp (`packages/acp`, `@inixiative/foundry-acp`, MIT)
 
@@ -160,31 +160,31 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 |---|---|---|
 | **`initialize`** → `{protocolVersion: 1, agentInfo: {name: "foundry", title: "Foundry", version}, agentCapabilities: {loadSession: true, sessionCapabilities: {resume: {}}, promptCapabilities: {image: false, audio: false, embeddedContext: true}, mcpCapabilities: {http: true, sse: false}}, authMethods: []}` | Read the launch file and `GET /api/health`. **Daemon down:** start it through launchd (`launchctl kickstart`, or `bootstrap` of the installed LaunchAgent) and wait, bounded, for a fresh launch file and a healthy daemon; otherwise a JSON-RPC error that says to run `bun run daemon:install`. Client `fs`/`terminal` capabilities are ignored: the native worker does its own file and shell I/O. | 1 |
 | **`session/new` `{cwd, mcpServers}`** → `{sessionId}` | `POST /api/threads {cwd, tags: ["acp", "acp:<clientInfo.name>"]}`. **`sessionId` is the thread id.** The client's name is a thread tag rather than a `ThreadContext` reference, because `ThreadContextTracker` re-derives references from Archive and would overwrite it (`pf/archives/thread-context.ts:83-101`). **Kingdom lock:** the daemon answers 503 with `recoveryUrl`; the error names `http://localhost:<port>/kingdom`. | 1 |
-| **`session/resume` `{sessionId, cwd, mcpServers}`** | Reattach to the existing thread, no replay. Both hosts use it when `loadSession` is not advertised (`paseo acp-agent.ts:1856-1866`; `t3 AcpSessionRuntime.ts:2312-2326`), so a host survives its own restart. A `cwd` that differs from the thread's re-points it (`PATCH /api/threads/:id {worktreePath}`). | 1 |
-| **`session/prompt` `{sessionId, prompt: ContentBlock[]}`** → `{stopReason}` | Content blocks flatten to one string: `text` verbatim, `resource_link` as `@<path or uri>`, embedded `resource` text fenced with its URI. The proxy holds `thread:<id>` and `flow:<id>` on its own socket client id, then `POST /api/messages/send {threadId, id, message, clientId}` (202). It answers when the sender-only terminal `{kind: 'done' \| 'error'}` arrives (`pf/viewer/data-streams.ts:21-22`); after a reconnect it settles from the thread snapshot's turn status instead. **stopReason:** `done` → `end_turn`; a cancel requested before the terminal → `cancelled`; `error` → a JSON-RPC error carrying the turn id. **Busy thread:** the turn queues (§2.2). | 1 |
-| **`session/cancel`** (notification) | `POST /api/threads/:id/turns/:turnId/interrupt` for the session's active and queued turns. The pending prompt resolves `cancelled`. (Slice 2: pending `request_permission` calls are answered `cancelled` and their prompts resolved `rejected`.) | 1 |
+| **`session/resume` `{sessionId, cwd, mcpServers}`** | Reattach to the existing thread, no replay. Both hosts use it only when `loadSession` is not advertised (`paseo acp-agent.ts:1856-1866`; `t3 AcpSessionRuntime.ts:2312-2326`). Foundry advertises `loadSession: true` (`packages/acp/src/agent.ts:502`), so hosts use `session/load` and resume is the fallback. A `cwd` that differs from the thread's re-points it (`PATCH /api/threads/:id {worktreePath}`). | 1 |
+| **`session/prompt` `{sessionId, prompt: ContentBlock[]}`** → `{stopReason}` | Content blocks flatten to one string: `text` verbatim, `resource_link` as `@<path or uri>`, embedded `resource` text wrapped as `<resource uri="…">…</resource>` (`packages/acp/src/prompt.ts:21`). The proxy holds `thread:<id>` and `flow:<id>` on its own socket client id, then `POST /api/messages/send {threadId, id, message, clientId}` (202). It answers when the sender-only terminal `{kind: 'done' \| 'error'}` arrives (`pf/viewer/data-streams.ts:21-22`); after a reconnect it settles from the thread snapshot's turn status instead. **stopReason:** `done` → `end_turn`; a cancel requested before the terminal → `cancelled`; `error` → a JSON-RPC error carrying the turn id. **Busy thread:** the turn queues (§2.2). | 1 |
+| **`session/cancel`** (notification) | `POST /api/threads/:id/turns/:turnId/interrupt` for the session's active and queued turns. The pending prompt resolves `cancelled`. (Slice 2: the client answers permission requests; on cancel the agent aborts its outstanding `request_permission` calls for that thread and resolves their Foundry prompts `rejected`, `packages/acp/src/agent.ts:674-690`.) | 1 |
 | **`session/update`** | §4.3 | 1 |
-| **`session/load`** `{sessionId, cwd, mcpServers}` | Replay history as `user_message_chunk`/`agent_message_chunk`/`tool_call` from `GET /api/threads/:id/history` (`runtime.ts:801`) and turn detail (`:826`), then respond; advertise `loadSession: true`. | 2 |
-| **`session/set_mode`**, `session/set_config_option`, `unstable_setSessionModel` | §4.5 | 2 |
+| **`session/load`** `{sessionId, cwd, mcpServers}` | Replay history as `user_message_chunk`/`agent_message_chunk`/`tool_call` from `GET /api/threads/:id/history` (`runtime.ts:316`) and turn detail (`:341`), then respond; advertise `loadSession: true`. | 2 |
+| **`session/set_mode`**, `session/set_config_option` | §4.5. `unstable_setSessionModel` is **not handled** (`packages/acp/src/agent.ts:480-695`); models change through the `model` config option only. | 2 |
 | **`session/request_permission`** | ActionQueue prompts for this session's thread (§5.2) | 2 |
-| `session/list`, `session/fork`, `session/close` | `list` → `GET /api/threads?project`. `fork` returns 501 today (`runtime.ts:1049`), so it is not advertised. | later |
+| `session/list`, `session/fork`, `session/close` | Not built. `list` → `GET /api/threads?project`. `fork` returns 501 today (`runtime.ts:640-657`), so it is not advertised. **`close` is not advertised, which leaves orphan threads:** Paseo's provider refresh and T3's provider probe each call `session/new`, so every probe persists an empty `acp:*` thread and may start the daemon. Fix: implement and advertise `session/close`, and archive or delete threads with no turns. | later |
 | `authenticate` | Not offered (`authMethods: []`). Native logins stay where they are. | — |
 
 ### 4.3 `session/update` projection
 
 | Source | ACP update | Slice |
 |---|---|---|
-| Turn accepted | `tool_call {toolCallId: "foundry-context:<turnId>", title: "Foundry: context", kind: "think", status: "in_progress"}`, so the host is never silent while the middleware runs. | 1 |
+| Turn sent (the item opens at send, before the daemon accepts it; `packages/acp/src/turn.ts:68`) | `tool_call {toolCallId: "foundry-context:<turnId>", title: "Foundry: context", kind: "think", status: "in_progress"}`, so the host is never silent while the middleware runs. | 1 |
 | `flow:<id>` turn append whose phases include the sealed `route`/`advice` rows (written before the executor, `thread-runtime.ts:946-988`) | `tool_call_update {status: "completed", content: <summary>, _meta: {foundry: {threadId, turnId, routing, participants}}}`. The summary names the routing outcome (status, layers, domains, confidence) and each Warden's decision and reason. When the executor's first output arrives first, the proxy reads the same rows from the turn-detail route (they are durable before the executor runs), so the item completes as the answer starts. A turn with no rows recorded completes saying so; a send Foundry refused completes with the refusal. | 1 |
 | `thread:<id>` `{kind: 'delta', text}` | `agent_message_chunk {content: {type: "text", text}}` | 1 |
 | `{kind: 'activity', row}` text rows | `agent_message_chunk` with the row's `appended` text; a snapshot row that extends the text already sent sends only the new suffix. | 1 |
-| `{kind: 'activity', row}` tool rows | First sight of a row: `tool_call {toolCallId: <admissionId>:<callId>, title, kind, status, rawInput, locations}`; later states: `tool_call_update {title, kind, status: completed \| failed, rawOutput, content}` (title and kind repeated, because T3 rebuilds a call's label from each update). `kind` comes from the tool name (Paseo renders `read/edit/delete/search/execute/fetch/think/switch_mode`, `acp-agent.ts:3774-3792`); `locations` from `file_path`/`path`/`notebook_path` in the input. | 1 |
+| `{kind: 'activity', row}` tool rows | First sight of a row: `tool_call {toolCallId: <admissionId>:<callId>, title, kind, status, rawInput, locations}`; later states: `tool_call_update {title, kind, status: completed \| failed, rawOutput, content}` (title and kind repeated, because T3 rebuilds a call's label from each update). Live ids are the stream row id (`<admissionId>:tool:<callId>`, `pf/viewer/stream-buffer.ts:176`); `session/load` replay uses `<turnId>:<callId>` (`packages/acp/src/session-state.ts:158`), so a replayed call does not match its live id. `kind` comes from the tool name (Paseo renders `read/edit/delete/search/execute/fetch/think/switch_mode`, `acp-agent.ts:3774-3792`); `locations` from `file_path`/`path`/`notebook_path` in the input. | 1 |
 | Terminal `done` with no text streamed at all | One `agent_message_chunk` with the final content. | 1 |
 | Native `thinking` events (`as/harness-session.ts:82-95`) | `agent_thought_chunk` (needs thinking rows in `LiveActivity`). | 2 |
 | Claude `TodoWrite`, Codex `update_plan` (`pf/viewer/turn-flow.ts` `TASK_SOURCES`) | `plan {entries}` | 2 |
 | Guard findings and critical post-hoc findings | `tool_call {kind: "think", title: "Foundry: guard"}`: a comment, never a block (§5.2). | 2 |
 | Mode or config changes | `current_mode_update`, `config_option_update` | 2 |
-| `available_commands_update` | `/correction <text>` → `POST /api/threads/:id/interventions` (`runtime.ts:772`): feedback typed in an editor reaches capture. | 2 |
+| `available_commands_update` | `/correction <text>` → `POST /api/threads/:id/interventions` (`runtime.ts:287`): feedback typed in an editor reaches capture. | 2 |
 
 ### 4.4 MCP servers passed by the client
 
@@ -219,7 +219,7 @@ Verified with the hosts' own clients from scratch copies (2026-10-12): Paseo's `
 
 An `ask` from the native runtime becomes `session/request_permission`. Whatever the host answers is the answer: if its mode auto-allows (T3 full access, Paseo "Auto Accept"), so be it. **Structural rules are the only denials** and hold in every mode, because they are the user's own configured structure, not a mode.
 
-**`configOptions`:** category `mode` (the mode again, above), category `model` (native models for the thread's runtime, `pf/models/registry.ts:53`), category `thought_level` (effort, `as/claude-code-session.ts:75-79`), and a `select` of the project's executor agents. Switching model within a runtime respawns with `--resume` and the new `--model` on the next turn.
+**`configOptions`:** category `mode` (the mode again, above), category `model` (native models for the thread's runtime, `pf/models/registry.ts:53`), category `thought_level` (effort, `as/claude-code-session.ts:75-79`). A `select` of the project's executor agents is **not built** (`packages/acp/src/session-state.ts:43-80` offers mode, model and effort only). Switching model within a runtime respawns with `--resume` and the new `--model` on the next turn.
 
 ---
 
@@ -245,7 +245,7 @@ Unchanged. `flow.prepare` starts early, in parallel with classify and route (`th
 **Contract (agent-session).** `HarnessSession.onToolRequest(gate: (call) => Promise<'allow' | {deny: reason} | {ask}>)`.
 
 **Decision (Foundry).** `SessionBackedProvider` routes the request to the thread's gate:
-1. **Structural (always, ~0 ms, no model call).** Classify the call into a capability (`Bash` → `exec:shell`; `Write`/`Edit` + path → `file:write` with `protectedPaths`; `mcp__*` → `net:api`), then `CapabilityGate.check` (`pc/capability.ts:158`) against the user's configured structural rules. `deny` is final and its reason reaches the model through the native deny message. Anything the native mode would ask about becomes `ActionQueue.prompt`.
+1. **Structural (always, ~0 ms, no model call).** Classify the call into a capability (`Bash` → `exec:shell`; `Write`/`Edit` + path → `file:write` with `protectedPaths`; `mcp__*` → `net:api`), then core `permissionLevel` (`pf/turns/tool-gate.ts:7,92`) against the user's configured structural rules. `deny` is final and its reason reaches the model through the native deny message. Anything the native mode would ask about becomes `ActionQueue.prompt`.
 2. **Wardens are a chorus, not a gate.** A Warden finding on a tool call is a comment: it is journalled and shown in the host as a "Foundry: guard" think item. It never turns into `ask` or `deny`. Wardens on this path run with a deadline; on timeout the call proceeds without them. The memory "programmatic" guard does not run here (it is an LLM call per tool today, `thread-runtime.ts:178,820`).
 
 **As built (slice 2).**
@@ -253,7 +253,7 @@ Unchanged. `flow.prepare` starts early, in parallel with classify and route (`th
 - Foundry: `toolRules` in settings (project capabilities override global; protected paths add up) through core `permissionLevel`; `pf/turns/tool-gate.ts`. `deny` is final in every mode; a structural `prompt` asks in every mode and is never answered by an "always" policy; a native ask becomes an `ActionQueue` prompt. Codex has no pre-use stage, so a Codex thread with deny/prompt rules refuses to start. The gate is bound lazily and fails closed before it exists.
 - Wardens stay the post-action chorus: their findings are journalled as `notes` on `guard-outcome` rows and shown in hosts as "Foundry: guard" comments. Nothing in that path blocks.
 
-**Escalation.** One prompt shows in two places and the first responder wins: the viewer's `prompts` stream (`pf/viewer/data-streams.ts:152-165`), and foundry-acp's `session/request_permission` with `allow_once`, `allow_always`, `reject_once`, `reject_always`. The answer goes to `POST /api/prompts/:id/resolve` (`pf/viewer/routes/control.ts:726`). `allow_always`/`reject_always` install a thread-scoped `ActionQueue.addPolicy` (`pc/action-prompt.ts:118`).
+**Escalation.** One prompt shows in two places and the first responder wins: the viewer's `prompts` stream (`pf/viewer/data-streams.ts:152-165`), and foundry-acp's `session/request_permission` with `allow_once`, `allow_always`, `reject_once`, `reject_always`. The answer goes to `POST /api/prompts/:id/resolve` (`pf/viewer/routes/control.ts:737`). `allow_always`/`reject_always` install a thread-scoped `ActionQueue.addPolicy` (`pc/action-prompt.ts:118`).
 
 **Journal.** `gate-request` and `gate-outcome` join the phase union (`thread-runtime.ts:331`), written through the same `session_phase` table.
 
@@ -347,7 +347,7 @@ ACP over stdio has no remote mode of its own.
 
 **Slice 2 (plan):**
 1. `session/load` with replay; client `mcpServers`; modes and `configOptions` (§4.5); `/correction`; wrapper stripping; thinking and plan updates; a viewer stop button on the existing route.
-2. The gate (§5.2): agent-session `onToolRequest`, Claude stdio permission prompt, Codex `requestApproval` (ships through the agentic train first); Foundry structural classification → `CapabilityGate` → `ActionQueue` → `request_permission`; gate journal rows; Warden chorus items; delete `permissionMiddleware`.
+2. The gate (§5.2): agent-session `onToolRequest`, Claude stdio permission prompt, Codex `requestApproval` (ships through the agentic train first); Foundry structural classification → `permissionLevel` → `ActionQueue` → `request_permission`; gate journal rows; Warden chorus items; delete `permissionMiddleware`.
 3. Dead code: `RuntimeAdapter`, `ClaudeCodeProvider`.
 4. CI: Paseo and T3 live conformance as a nightly job; a manual Zed smoke **[unverified: Zed's custom agent settings key]**.
 
@@ -357,9 +357,11 @@ ACP over stdio has no remote mode of its own.
 
 ## 10. Pointing a host at Foundry
 
-The daemon must be installed once (`bun run daemon:install` in the Foundry checkout); foundry-acp starts it when it is down. Use the checkout the daemon runs from.
+The daemon must be installed once (`bun run daemon:install` in the Foundry checkout); foundry-acp starts it when it is down, but only when it uses the default launch file: with `FOUNDRY_ACP_LAUNCH` set, it never starts a daemon (`packages/acp/src/agent.ts:117-119`). Use the checkout the daemon runs from.
 
-**Paseo** (`~/.paseo/config.json`, `paseo:docs/custom-providers.md:489-531`):
+Use the absolute path to `bun` (here `/Users/arongreenspan/.bun/bin/bun`; `which bun`): a host launched from the Dock or Finder may not have your shell's `PATH`.
+
+**Paseo** (`$PASEO_HOME/config.json`, by default `~/.paseo/config.json`; `paseo:docs/custom-providers.md:489-531`). `label` and `command` are required:
 
 ```json
 {
@@ -368,18 +370,18 @@ The daemon must be installed once (`bun run daemon:install` in the Foundry check
       "foundry": {
         "extends": "acp",
         "label": "Foundry",
-        "command": ["bun", "/Users/arongreenspan/code/inixiative/foundry/packages/acp/src/cli.ts"]
+        "command": ["/Users/arongreenspan/.bun/bin/bun", "/Users/arongreenspan/code/inixiative/foundry/packages/acp/src/cli.ts"]
       }
     }
   }
 }
 ```
 
-**T3 Code:** Settings → Providers → Add provider → **Local ACP command** (`t3:docs/user/providers-acp.md:26-35`). Executable `bun`; one argument `/Users/arongreenspan/code/inixiative/foundry/packages/acp/src/cli.ts`; display name `Foundry`.
+**T3 Code:** Settings → Providers → Add provider → **Local ACP command** (`t3:docs/user/providers-acp.md:26-35`). Executable `/Users/arongreenspan/.bun/bin/bun`; one argument `/Users/arongreenspan/code/inixiative/foundry/packages/acp/src/cli.ts`; **Label** `Foundry`; **Instance ID** `foundry` (required: starts with a letter, then letters, digits, `-` or `_`, at most 64 characters; `t3:apps/web/src/components/settings/AddProviderInstanceDialog.tsx:90-93,576,593`).
 
 **A default mode for every session a host opens:** add `--permission-mode <default | acceptEdits | plan | bypassPermissions>` after the `cli.ts` path (Paseo: two more `command` entries; T3: two more arguments). A mode picked for a session in the host still wins. Without it, a session the host sets no mode on starts in `default`, and the host answers each ask by its own policy.
 
-**Zed / JetBrains:** a custom agent server whose command is `bun` with the same argument **[unverified: exact settings key]**.
+**Zed / JetBrains:** a custom agent server whose command is the absolute `bun` path with the same argument **[unverified: exact settings key; no Zed install here]**.
 
 ---
 

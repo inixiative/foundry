@@ -1,6 +1,6 @@
 # Foundry
 
-Agent orchestration framework that wraps an Artificer (a Claude Code session) with persistent memory, project conventions, multi-thread awareness, and correctness checking. The system gets smarter after every interaction.
+Agent orchestration framework (the harness) that wraps an Artificer (a native Claude Code session, or Codex as a setting) with persistent memory, project conventions, multi-thread awareness, and correctness checking. The system gets smarter after every interaction.
 
 ## Monorepo Structure
 
@@ -8,11 +8,14 @@ Agent orchestration framework that wraps an Artificer (a Claude Code session) wi
 packages/
   core/       @inixiative/foundry-core   — minimal engine, zero opinions
   foundry/    @inixiative/foundry         — opinionated framework (agents, tools, viewer, jobs)
+  acp/        @inixiative/foundry-acp     — ACP agent: lets hosts (Paseo, T3 Code, Zed) drive Foundry threads
 ```
 
-**Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker) and the model registry (`model-registry.ts`: the capability vocabulary, the provider/model table and its lookups) — data and pure functions, so Oracle can reason about model fitness on a core-only dependency. No behavioral opinions, no specific agent implementations, no external service deps. Every adapter (`openai.ts`, `openai-compatible.ts`, `anthropic.ts`, `gemini.ts`, `claude-code.ts`, `codex.ts`) stays in foundry, because adapters do HTTP and process handling. If it makes a decision about *how* to use the primitives, it belongs in foundry.
+foundry-acp imports only `@inixiative/foundry/client` (the daemon client); it never runs a turn itself. Spec: [FOUNDRY-ACP.md](docs/reference/FOUNDRY-ACP.md).
 
-Oracle (eval/scoring) lives in its own repo (`../oracle`) and consumes the published `@inixiative/foundry-core` and `@inixiative/foundry/runtime` packages. See [the system map](docs/SYSTEM-MAP.md) for how the five apps divide responsibility. Its roles: **Oracle** (scores), **Steward** (chain of custody), **Prospector** (mines session transcripts + merged PRs into fixtures and correction signal — see `oracle mine`).
+**Core vs Foundry boundary is strict.** Core contains primitives (ContextLayer, ContextStack, Thread, Harness, SignalBus, BaseAgent, Middleware, Trace, Hooks, TokenTracker) and the model registry (`model-registry.ts`: the capability vocabulary, the provider/model table and its lookups) — data and pure functions, so Oracle can reason about model fitness on a core-only dependency. No behavioral opinions, no specific agent implementations, no external service deps. Every provider (`providers/openai.ts`, `openai-compatible.ts`, `anthropic.ts`, `gemini.ts`, and the native-session providers over `@inixiative/agent-session`: `session-adapter.ts`, `native-text-provider.ts`, `primed-decisions.ts`) stays in foundry, because providers do HTTP and process handling. If it makes a decision about *how* to use the primitives, it belongs in foundry.
+
+Oracle (eval/scoring) lives in its own repo (`../oracle`) and depends on the published `@inixiative/foundry-core`. Its worker and delegation path still import runtime-job exports that `@inixiative/foundry/runtime` no longer has, so they are broken until Oracle is reworked ([the system map](docs/SYSTEM-MAP.md), Oracle). The Prospector's correction detection now lives in core (`packages/core/src/feedback/correction.ts`). See the system map for how the five apps divide responsibility.
 
 ## Running
 
@@ -23,7 +26,10 @@ bun run test           # Core + foundry tests (cassette replays, no network)
 bun run test:browser   # Viewer browser suite (needs `bunx playwright install chromium`)
 bun run test:live      # Same tests live against this machine's subscriptions; re-records cassettes
 bun run test:live:daemon  # Live smoke inside a throwaway LaunchAgent with the daemon's environment
-bun run typecheck      # Both packages
+bun run typecheck      # core, foundry, acp, scripts, browser (5 targets)
+bun run test:acp       # foundry-acp tests
+bun run check          # typecheck + lint + test (the full check)
+bun run acp            # Run the ACP agent on stdio
 bun run viewer         # Dashboard only
 ```
 
@@ -37,8 +43,8 @@ Read `docs/FLOW.md` for the full architecture. These are the named agents:
 |------|-------|-------------|
 | Context routing | **Cartographer** | Reads the topology map, routes context slices. Sees everything, modifies nothing. |
 | Domain advising | **Wardens** (formerly called Domain Librarians) | Each maintains a warm cache for its domain (docs, convention, security, architecture, memory). Advise mode: "what context does this message need?" |
-| Domain advising (cross-thread) | **Herald** | Watches all threads. Detects convergence, divergence, resource conflicts. |
-| Execution | **Artificer** (the Claude Code session under the harness) | The real work. Full tool access, capable model. |
+| Domain advising (cross-thread) | **Herald** | Designed to watch all threads for convergence, divergence, resource conflicts. **Not wired**: `agents/herald.ts` exists but no runtime constructs it. |
+| Execution | **Artificer** (the native session under the harness) | The real work. Full tool access, capable model. |
 | Correctness checking | **Wardens** (guard mode) | Same agents as advising, different mode. "Did this action violate anything in my domain?" |
 | Signal reconciliation | **Librarian** | Sole writer to thread-state. Classifies signals, reconciles, feeds writeback. |
 
@@ -56,31 +62,33 @@ Wardens (docs, convention, security, architecture, memory) are instantiated from
 
 ### The FlowOrchestrator wires everything together
 
-`FlowOrchestrator` is the production entry point that connects Cartographer, Wardens, Librarian, and Herald into the pre-message and post-action flows. It runs in `start.ts`, not just tests.
+`FlowOrchestrator` is the production entry point that connects the Cartographer, Wardens and Librarian into the pre-message and post-action flows (the Herald is not wired). It runs in `start.ts`, not just tests.
 
 ### Delta-aware hydration
 
-The FlowOrchestrator tracks what context a session already has via the Librarian's injection ledger. On each message, it diffs against the ledger and only injects new or changed layers. Same-hash layers are skipped.
+The FlowOrchestrator tracks what context a session already has via the Librarian's injection ledger. On each message, it diffs against the ledger and only injects new or changed layers. Same-hash layers are skipped. What a native session actually receives is decided in `providers/session-delivery.ts` ([FLOW.md, Delivery](docs/FLOW.md#delivery-what-a-native-session-receives-each-turn)).
 
-## Four Communication Channels
+## Communication Channels
 
-1. **Pre-message** (Foundry -> Session): `.foundry-context.md` injection before each message
-2. **Mid-session** (Session -> Foundry): MCP tool calls when the agent discovers a gap
-3. **Post-action** (Session -> Foundry): PostToolUse hooks observe every tool call
-4. **Feedback** (Foundry -> Session): MCP push when guards flag something critical
+1. **Pre-message** (Foundry -> Session): standing context in the system prompt at session start (`--append-system-prompt`), then changed layers and Warden notes with each user message (`providers/session-delivery.ts`)
+2. **Mid-session** (Session -> Foundry): the `foundry` MCP server's seven tools when the agent discovers a gap
+3. **Post-action** (Session -> Foundry): tool calls observed on the native event stream; the structural tool gate (`turns/tool-gate.ts`) answers permission requests before a call runs
+4. **Feedback** (Foundry -> Session): guard findings become signals and reach the session on a later turn at best. No push path is built.
+
+There is no `.foundry-context.md` and no Claude Code hook: middleware runs in Foundry's own harness, never in vendor hooks.
 
 ## Model Routing
 
 **Cheap models for decisions, capable models for work.** Classifiers, routers, the Cartographer, the Librarian and Wardens (advise, guard and review) run on Claude Haiku 5.5 (`claude-haiku-5-5`). Heavier reasoning roles use Claude Opus 5.5 (`claude-opus-5-5`) or Fable 5.1 (`claude-fable-5-1`). Only the Artificer uses a capable model by default.
 
-Foundry is subscription-only by default: the Artificer runs on the Claude Code login (`~/.claude`) or, with `defaults.provider: "codex"`, on the Codex login, and every decision role runs Claude Haiku 5.5 on primed Claude Code sessions through the same Claude login, with no API provider constructed and no paid fallback. The decision runtime and model are settings (`subscriptionOnly.decisionRuntime`, `subscriptionOnly.model` / `defaults.classifierModel`), so Codex or another lab can run decisions again without code changes. API-key providers require `apiTokens: true`; their decision default is Anthropic Haiku 5.5. Main threads run on Anthropic, OpenAI, Google, Meta and xAI models only. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
+Foundry is subscription-only by default and all Claude for now (2026-10-11): the Artificer runs on the Claude Code login (`~/.claude`) (Codex, with `defaults.provider: "codex"`, is a setting), and every decision role runs Claude Haiku 5.5 on primed Claude Code sessions through the same Claude login, with no API provider constructed and no paid fallback. The decision runtime and model are settings (`subscriptionOnly.decisionRuntime`, `subscriptionOnly.model` / `defaults.classifierModel`), so Codex or another lab can run decisions again without code changes. API-key providers require `apiTokens: true`; their decision default is Anthropic Haiku 5.5. Main threads run on Anthropic, OpenAI, Google, Meta and xAI models only. See [subscription decisions](docs/subscription-decisions.md) for settings, bounds and ownership.
 
 ## Design Principles
 
 1. **Don't reinvent Claude Code.** Wrap it, don't replace it.
 2. **Pull over push.** Inject predicted context, let the session pull the rest via MCP.
 3. **Progressive depth.** Basic layers every message, deeper layers only on domain shift / low confidence / cross-cutting signals. Most steady-state messages reuse cached middleware output.
-4. **One writer, many readers.** The Librarian is the sole writer to thread-state. Wardens, guards, and Herald all emit signals; the Librarian reconciles.
+4. **One writer, many readers.** The Librarian is the sole writer to thread-state. Wardens and guards emit signals; the Librarian reconciles.
 5. **No backwards-compat cruft.** Remove unused systems entirely. No optional fallbacks, no re-exporting removed types, no `_unused` vars.
 6. **Every execution is a training step.** Map rebuilds, memory entries, convention proposals, signal ingestion all happen after each interaction.
 
@@ -118,6 +126,7 @@ Settings edits apply live: every committed change is appended to `.foundry/setti
 - **Language**: TypeScript (strict)
 - **Testing**: `bun test` (bun's built-in test runner)
 - **Jobs**: BullMQ (Redis-backed background jobs)
-- **Database**: PostgreSQL (via postgres.js) for persistent memory/traces
-- **Providers**: Anthropic, OpenAI, Gemini, Claude Code CLI, Codex CLI, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
-- **MCP**: Model Context Protocol server for mid-session bridge
+- **Database**: PostgreSQL via Prisma (`prisma/schema.prisma`) for persistent memory/traces; SQLite for the local session store
+- **Providers**: native Claude Code and Codex sessions via `@inixiative/agent-session` (subscription, the default); with `apiTokens: true`, Anthropic, OpenAI, Gemini, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
+- **MCP**: Model Context Protocol server for the mid-session bridge
+- **ACP**: foundry-acp, the Agent Client Protocol agent hosts talk to

@@ -38,6 +38,8 @@ The local viewer exposes:
 - `GET /api/archives/:id`: latest snapshot and chunks.
 - `POST /api/archives/search`: `{ query, projectId?, budget?, limit? }`, passed to the Archive's search.
 - `POST /api/archives/capture`: recapture every journal thread now.
+- `GET /api/archives/destinations?projectId=`: where a project's sessions publish, read from the local Archive: `{ destinations, paired, libraries }`. Archive owns the routing; Foundry only reads and asks.
+- `POST /api/archives/destinations/connect` and `POST /api/archives/destinations/remove`: `{ projectId, integrationId, resourceId }`, asking the local Archive to add or remove a Kingdom library as a destination for the project (`packages/foundry/src/archives/routes.ts:47-80`).
 
 The local viewer's existing authentication applies.
 
