@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  CORRECTION_CLASSIFY_PREFIX,
   type CorrectionClassification,
   correctionClassifyMessages,
   type LLMMessage,
   type LLMProvider,
-  parseCorrectionClassification,
+  parseCorrectionClassifications,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 
@@ -51,18 +52,19 @@ export const SAME_ITEM_CONFIDENCE = 0.7;
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-/** The shared classify contract (foundry-core), on a decision provider. */
+/** The shared classify contract (foundry-core), on a decision provider: a batch of one. */
 export async function classifyCorrection(
   provider: LLMProvider,
   input: { text: string; before: string; priority: number },
 ): Promise<(CorrectionClassification & { requestHash: string; providerId: string }) | undefined> {
-  const messages = correctionClassifyMessages({ before: input.before, correction: input.text });
+  const messages = correctionClassifyMessages([{ before: input.before, correction: input.text }]);
   const result = await provider.complete(messages, {
     maxTokens: 512,
     temperature: 0,
     priority: input.priority,
+    stablePrefix: CORRECTION_CLASSIFY_PREFIX,
   });
-  const parsed = parseCorrectionClassification(result.content);
+  const [parsed] = parseCorrectionClassifications(result.content, 1);
   return parsed && { ...parsed, requestHash: hash(messages), providerId: provider.id };
 }
 

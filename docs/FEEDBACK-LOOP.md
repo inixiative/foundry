@@ -339,6 +339,8 @@ The detector, from the repeat-report work, must land first. The composition view
 - Explicit phrases such as "remember this", "from now on", "always" and "never".
 - Repeat markers such as "again", "I thought we…" and "once and for all". These are the strongest sign that something already failed, and the opener regex misses most of Aron's process feedback.
 
+**Since 2026-10-12:** the Prospector's detection lives in foundry-core (`packages/core/src/feedback/correction.ts`): the prefilter patterns as data, `extractCorrections` over harness-agnostic turns, `scrubSecrets`, and one batch classify contract (`isCorrection`, `category`, `statements`, `sharp`). `oracle mine`, live capture and `foundry repeats` share it. `foundry repeats` is the backfill: it reads Archive first, then the Claude Code and Codex files and Claude Code's prompt history; classifies candidates in batches on the decision model; groups and sharpens them on a stronger model; and lists the rules given more than once.
+
 **Smallest change:** a new `FeedbackCapture` piece (`agents/feedback-capture.ts`).
 
 - It reads accepted user turns and operator corrections, after the turn is accepted and off the critical path.

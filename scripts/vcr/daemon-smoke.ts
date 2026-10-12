@@ -10,8 +10,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
+import { buildPlist, DAEMON_LABEL } from '../../packages/foundry/src/daemon/plist';
 import { cassettes } from '../../packages/foundry/src/vcr';
-import { buildPlist, DAEMON_LABEL } from '../daemon/plist';
 import { display, driftOf, fixturesDir, livePath, repoRoot } from './shared';
 
 const uid = process.getuid?.() ?? 501;
@@ -47,7 +47,13 @@ async function daemonEnvironment() {
 
 const daemon = await daemonEnvironment();
 const expectedType = /<key>ProcessType<\/key>\s*<string>(\w+)<\/string>/.exec(
-  buildPlist({ repoRoot, bunPath: daemon.bun, logDir: '/', port: 0, pathEntries: [] }),
+  buildPlist({
+    workingDirectory: repoRoot,
+    bunPath: daemon.bun,
+    logDir: '/',
+    port: 0,
+    pathEntries: [],
+  }),
 )?.[1];
 console.log(
   `  environment: ${daemon.source}\n  PATH: ${daemon.path}\n  ProcessType: ${daemon.processType}${expectedType && expectedType !== daemon.processType ? ` (daemon:install would write ${expectedType}; reinstall the daemon)` : ''}`,
@@ -58,7 +64,7 @@ const label = `com.inixiative.foundry.vcr-smoke.${process.pid}`;
 const reportPath = join(work, 'report.json'),
   recordings = join(work, 'cassettes');
 const plist = buildPlist({
-  repoRoot,
+  workingDirectory: repoRoot,
   bunPath: daemon.bun,
   logDir: work,
   port: 0,

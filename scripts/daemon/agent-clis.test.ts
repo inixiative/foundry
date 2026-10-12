@@ -2,7 +2,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { newestInstall } from './agent-clis';
+import { newestInstall } from '../../packages/foundry/src/daemon/agent-clis';
 
 const home = await mkdtemp(join(tmpdir(), 'foundry-agent-clis-'));
 afterAll(() => rm(home, { recursive: true, force: true }));

@@ -2,12 +2,15 @@
  * LaunchAgent plist generation — pure, so it can be tested without touching disk.
  */
 
-import { DAEMON_LABEL } from '../../packages/foundry/src/client/daemon';
+import { DAEMON_LABEL } from '../client/daemon';
 
 export { DAEMON_LABEL };
 
 export interface PlistOptions {
-  repoRoot: string;
+  /** The daemon's working directory: a Foundry checkout, or an installed Foundry's home. */
+  workingDirectory: string;
+  /** The daemon's program. Default: a checkout's supervisor, which stages and boots releases. */
+  program?: string[];
   bunPath: string;
   logDir: string;
   port: number;
@@ -30,10 +33,10 @@ const escapeXml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const buildPlist = (options: PlistOptions): string => {
-  const { repoRoot, bunPath, logDir, port, pathEntries, job } = options;
+  const { workingDirectory, bunPath, logDir, port, pathEntries, job } = options;
   const throttle = options.throttleSeconds ?? 10;
-  const supervisor = `${repoRoot}/scripts/daemon/supervisor.ts`;
-  const program = job?.programArguments ?? [bunPath, 'run', supervisor];
+  const program = job?.programArguments ??
+    options.program ?? [bunPath, 'run', `${workingDirectory}/scripts/daemon/supervisor.ts`];
   const extra = Object.entries(job?.environment ?? {})
     .map(
       ([key, value]) =>
@@ -51,7 +54,7 @@ export const buildPlist = (options: PlistOptions): string => {
 ${program.map((arg) => `    <string>${escapeXml(arg)}</string>`).join('\n')}
   </array>
   <key>WorkingDirectory</key>
-  <string>${escapeXml(repoRoot)}</string>
+  <string>${escapeXml(workingDirectory)}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

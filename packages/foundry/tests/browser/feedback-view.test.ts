@@ -17,14 +17,18 @@ test('a correction becomes a tuning card in chat; edit applies it; the Feedback 
   const provider = {
     id: 'decisions',
     async complete(messages: Array<{ content: unknown }>): Promise<CompletionResult> {
-      const classify = String(messages[0]?.content ?? '').startsWith('You classify one message');
+      const classify = String(messages[0]?.content ?? '').startsWith('You classify messages');
       return {
         content: classify
           ? JSON.stringify({
-              isCorrection: true,
-              category: 'approach',
-              statements: [RULE],
-              sharp: true,
+              results: {
+                M1: {
+                  isCorrection: true,
+                  category: 'approach',
+                  statements: [RULE],
+                  sharp: true,
+                },
+              },
             })
           : JSON.stringify({ itemId: null, confidence: 0 }),
       } as CompletionResult;

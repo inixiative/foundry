@@ -29,9 +29,9 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-12T02:39:39.957Z",
+    "recordedAt": "2026-10-12T05:49:53.778Z",
     "agentSession": "0.6.0",
     "environment": "terminal",
-    "durationMs": 224
+    "durationMs": 557
   }
 }

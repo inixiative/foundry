@@ -358,7 +358,9 @@ ACP over stdio has no remote mode of its own.
 
 ## 10. Pointing a host at Foundry
 
-The daemon must be installed once (`bun run daemon:install` in the Foundry checkout); foundry-acp starts it when it is down, but only when it uses the default launch file: with `FOUNDRY_ACP_LAUNCH` set, it never starts a daemon (`packages/acp/src/agent.ts:135-137`). Use the checkout the daemon runs from.
+**One command:** `bunx @inixiative/foundry-acp setup` (macOS). It installs `@inixiative/foundry-acp` globally with bun (so hosts and launchd get a stable path, plus the `foundry` and `foundry-acp` commands), installs the daemon as a launchd agent running the published Foundry from `~/.foundry/home`, prints the Paseo and T3 Code settings below with this install's paths (it writes Paseo's `config.json` only with `--write` or your yes, keeping a timestamped backup), and ends with `foundry repeats`. A daemon already installed from a checkout is left alone unless `--reinstall`. Linux and Windows are not supported yet: the daemon is a launchd agent.
+
+From a checkout instead: the daemon must be installed once (`bun run daemon:install` in the Foundry checkout); foundry-acp starts it when it is down, but only when it uses the default launch file: with `FOUNDRY_ACP_LAUNCH` set, it never starts a daemon (`packages/acp/src/agent.ts:135-137`). Use the checkout the daemon runs from.
 
 Use the absolute path to `bun` (here `/Users/arongreenspan/.bun/bin/bun`; `which bun`): a host launched from the Dock or Finder may not have your shell's `PATH`.
 

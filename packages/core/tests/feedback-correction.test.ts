@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CORRECTION_CLASSIFY_PREFIX,
   correctionClassifyMessages,
   detectCorrection,
   extractCorrections,
-  parseCorrectionClassification,
+  parseCorrectionClassifications,
   scrubSecrets,
   type TranscriptTurn,
 } from '../src';
@@ -21,18 +22,30 @@ const agent = (text: string): TranscriptTurn => ({
 });
 
 describe('detectCorrection', () => {
-  test('a repeat marker outranks an instruction', () => {
+  test('"again" beside a negation is a repeat and outranks an instruction', () => {
     const result = detectCorrection("Again, don't make me track approvals. Just merge it.");
-    expect(result).toMatchObject({ hit: true, signal: 'repeat', phrase: 'Again' });
+    expect(result).toMatchObject({ hit: true, signal: 'repeat', phrase: 'again' });
     expect(result.signals).toEqual(['repeat', 'explicit']);
-    expect(result.score).toBe(1);
+    expect(result.score).toBe(0.8);
   });
 
-  test('standing instructions and challenges are explicit', () => {
+  test('a retry or filler "again" is not a repeat', () => {
+    expect(detectCorrection('Can you try it again?').hit).toBe(false);
+    expect(detectCorrection('ok again').hit).toBe(false);
+    expect(detectCorrection('Again we should not be doing composers').signals).toContain('repeat');
+  });
+
+  test('standing instructions, challenges and reuse hints are explicit', () => {
     expect(detectCorrection('From now on run the full check').signal).toBe('explicit');
-    expect(detectCorrection('Why would you add an approver id? The audit log has it').signal).toBe(
-      'explicit',
-    );
+    expect(detectCorrection('Ok. Why would you add an approver id?').signal).toBe('explicit');
+    expect(detectCorrection('we have native db utils for this').signal).toBe('explicit');
+    expect(detectCorrection('get rid of the wrapper').signal).toBe('explicit');
+  });
+
+  test('pasted code, quotes and log lines are not the person speaking', () => {
+    expect(detectCorrection('see this:\n```\n// never do this\n```').hit).toBe(false);
+    expect(detectCorrection('> you should always X\nthoughts?').hit).toBe(false);
+    expect(detectCorrection('2026-10-01T10:00:00 never retried\nwhat happened?').hit).toBe(false);
   });
 
   test('an opener counts only at the start', () => {
@@ -71,6 +84,16 @@ describe('extractCorrections', () => {
     expect(corrections[0]!.before).toContain('util.ts');
   });
 
+  test('an identical resend within ten minutes counts once', () => {
+    const at = (minute: number) => `2026-06-12T10:${String(minute).padStart(2, '0')}:00Z`;
+    const { corrections } = extractCorrections('s1', [
+      user('never push to main', { timestamp: at(0) }),
+      user('never push to main', { timestamp: at(5) }),
+      user('never push to main', { timestamp: at(30) }),
+    ]);
+    expect(corrections).toHaveLength(2);
+  });
+
   test('a separate interruption record carries over to the next message', () => {
     const { corrections } = extractCorrections('s1', [
       agent('Running the subset.'),
@@ -102,29 +125,69 @@ describe('extractCorrections', () => {
 });
 
 describe('classification', () => {
-  test('the messages carry both turns', () => {
-    const [system, prompt] = correctionClassifyMessages({ before: '', correction: 'never do X' });
-    expect(system!.content).toContain('statements');
+  test('one batch carries every candidate with its prior agent turn', () => {
+    const [system, prompt] = correctionClassifyMessages([
+      { before: '', correction: 'never do X' },
+      { before: 'Did Y.', correction: 'stop doing Y' },
+    ]);
+    expect(system!.content).toContain('"results"');
+    expect(prompt!.content.startsWith(CORRECTION_CLASSIFY_PREFIX)).toBe(true);
+    expect(prompt!.content).toContain('## M1');
     expect(prompt!.content).toContain('(start of session)');
+    expect(prompt!.content).toContain('## M2');
   });
 
-  test('parses the contract and drops statements when not sharp', () => {
+  test('parses each result by id; missing or malformed answers are undefined', () => {
+    const parsed = parseCorrectionClassifications(
+      `ok {"results":{
+        "M1":{"isCorrection":true,"category":"process","statements":["Never X."],"sharp":true},
+        "M2":{"isCorrection":true,"category":"scope","statements":["x"],"sharp":false},
+        "M3":{"isCorrection":false},
+        "M5":{"nope":1}}}`,
+      5,
+    );
+    expect(parsed).toEqual([
+      { isCorrection: true, category: 'other', statements: ['Never X.'], sharp: true },
+      { isCorrection: true, category: 'scope', statements: [], sharp: false },
+      { isCorrection: false, category: 'other', statements: [], sharp: false },
+      undefined,
+      undefined,
+    ]);
+    expect(parseCorrectionClassifications('no json', 2)).toEqual([undefined, undefined]);
     expect(
-      parseCorrectionClassification(
-        'ok {"isCorrection":true,"category":"process","statements":["Never X."],"sharp":true}',
-      ),
-    ).toEqual({ isCorrection: true, category: 'other', statements: ['Never X.'], sharp: true });
-    expect(
-      parseCorrectionClassification(
-        '{"isCorrection":true,"category":"scope","statements":["x"],"sharp":false}',
-      ),
-    ).toEqual({ isCorrection: true, category: 'scope', statements: [], sharp: false });
-    expect(parseCorrectionClassification('{"isCorrection":false}')?.isCorrection).toBe(false);
-    expect(parseCorrectionClassification('no json')).toBeUndefined();
+      parseCorrectionClassifications(
+        '{"results":{"M1":{"isCorrection":false}}} trailing {brace}',
+        1,
+      )[0]?.isCorrection,
+    ).toBe(false);
   });
 });
 
 describe('scrubSecrets', () => {
+  test('keeps the label and hides the value', () => {
+    const { text, hits } = scrubSecrets(
+      'curl -H "Authorization: Bearer abcdefghijklmnopqrstuv" postgres://app:hunter22@db:5432/x RAILWAY_TOKEN=abcd1234efgh',
+    );
+    expect(hits).toBe(3);
+    expect(text).toContain('Bearer [REDACTED:credential]');
+    expect(text).toContain('postgres://app:[REDACTED:password]@db');
+    expect(text).toContain('RAILWAY_TOKEN=[REDACTED:value]');
+  });
+
+  test('lowercase and JSON-quoted secret keys are scrubbed too', () => {
+    const { text } = scrubSecrets('{"api_key": "abcd1234efgh"} and password=hunter2hunter2');
+    expect(text).not.toContain('abcd1234efgh');
+    expect(text).not.toContain('hunter2hunter2');
+    expect(text).toContain('"api_key": [REDACTED:value]');
+  });
+
+  test('a key cut by truncation is still scrubbed', () => {
+    const { corrections } = extractCorrections('s1', [
+      user(`never paste keys like ${'x'.repeat(3990)} sk-ant-abcdefghijklmnopqrst`),
+    ]);
+    expect(corrections[0]!.correction).not.toContain('sk-ant');
+  });
+
   test('leaves ordinary prose alone', () => {
     expect(scrubSecrets('just ordinary prose about skiing')).toEqual({
       text: 'just ordinary prose about skiing',
