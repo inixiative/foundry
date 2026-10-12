@@ -132,10 +132,33 @@ describe('classification', () => {
       undefined,
     ]);
     expect(parseCorrectionClassifications('no json', 2)).toEqual([undefined, undefined]);
+    expect(
+      parseCorrectionClassifications(
+        '{"results":{"M1":{"isCorrection":false}}} trailing {brace}',
+        1,
+      )[0]?.isCorrection,
+    ).toBe(false);
   });
 });
 
 describe('scrubSecrets', () => {
+  test('keeps the label and hides the value', () => {
+    const { text, hits } = scrubSecrets(
+      'curl -H "Authorization: Bearer abcdefghijklmnopqrstuv" postgres://app:hunter22@db:5432/x RAILWAY_TOKEN=abcd1234efgh',
+    );
+    expect(hits).toBe(3);
+    expect(text).toContain('Bearer [REDACTED:credential]');
+    expect(text).toContain('postgres://app:[REDACTED:password]@db');
+    expect(text).toContain('RAILWAY_TOKEN=[REDACTED:value]');
+  });
+
+  test('a key cut by truncation is still scrubbed', () => {
+    const { corrections } = extractCorrections('s1', [
+      user(`never paste keys like ${'x'.repeat(3990)} sk-ant-abcdefghijklmnopqrst`),
+    ]);
+    expect(corrections[0]!.correction).not.toContain('sk-ant');
+  });
+
   test('leaves ordinary prose alone', () => {
     expect(scrubSecrets('just ordinary prose about skiing')).toEqual({
       text: 'just ordinary prose about skiing',

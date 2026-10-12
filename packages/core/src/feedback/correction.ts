@@ -140,15 +140,16 @@ export function extractCorrections(
     const detection = detectCorrection(text, before, { interrupted: pendingInterruption });
     pendingInterruption = false;
     if (!detection.hit || !detection.signal || detection.score < minScore) continue;
-    const scrubbedBefore = scrubSecrets(before.slice(-2000));
-    const scrubbedText = scrubSecrets(text.trim().slice(0, 4000));
+    // Scrub before truncating, so a cut can't leave part of a secret unmatched.
+    const scrubbedBefore = scrubSecrets(before);
+    const scrubbedText = scrubSecrets(text.trim());
     secretsScrubbed += scrubbedBefore.hits + scrubbedText.hits;
     const event = {
       ...(turn.id ? { messageId: turn.id } : {}),
       ...(turn.sourceRef ? { sourceRef: turn.sourceRef } : {}),
       timestamp: turn.timestamp,
-      before: scrubbedBefore.text,
-      correction: scrubbedText.text,
+      before: scrubbedBefore.text.slice(-2000),
+      correction: scrubbedText.text.slice(0, 4000),
       signal: detection.signal,
       signals: detection.signals,
       ...(detection.phrase ? { phrase: detection.phrase } : {}),
@@ -173,6 +174,15 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   ],
   [/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '[REDACTED:jwt]'],
   [/\b[a-z]+_(?:live|test|prod|runtime)_[A-Za-z0-9]{16,}/g, '[REDACTED:token]'],
+  [/\b(?:npm_|glpat-|hf_)[A-Za-z0-9_-]{20,}/g, '[REDACTED:token]'],
+  [/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, '[REDACTED:slack-webhook]'],
+  [/\bASIA[A-Z0-9]{16}/g, '[REDACTED:aws-key]'],
+  [/\b(Bearer|Basic|DPoP)\s+[A-Za-z0-9._~+/=-]{16,}/g, '$1 [REDACTED:credential]'],
+  [/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/gi, '$1[REDACTED:password]@'],
+  [
+    /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD)[A-Z0-9_]*\s*[=:]\s*)["']?[^\s"']{8,}["']?/g,
+    '$1[REDACTED:value]',
+  ],
 ];
 
 /** Replace credential-shaped substrings. Transcripts are exactly where leaked keys live. */
@@ -180,9 +190,12 @@ export function scrubSecrets(text: string): { text: string; hits: number } {
   let hits = 0;
   let out = text;
   for (const [pattern, replacement] of SECRET_PATTERNS)
-    out = out.replace(pattern, () => {
+    out = out.replace(pattern, (...match: unknown[]) => {
       hits++;
-      return replacement;
+      return replacement.replace(/\$(\d)/g, (_, group: string) => {
+        const value = match[Number(group)];
+        return typeof value === 'string' ? value : '';
+      });
     });
   return { text: out, hits };
 }
@@ -266,6 +279,24 @@ function classification(value: unknown): CorrectionClassification | undefined {
   return { isCorrection: true, category, statements: sharp ? statements : [], sharp };
 }
 
+/** The first balanced `{...}` in a model answer, so prose or braces after it don't break parsing. */
+function firstJsonObject(content: string): string | undefined {
+  const start = content.indexOf('{');
+  if (start < 0) return undefined;
+  let depth = 0;
+  let quoted = false;
+  for (let i = start; i < content.length; i++) {
+    const char = content[i];
+    if (quoted) {
+      if (char === '\\') i++;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === '{') depth++;
+    else if (char === '}' && --depth === 0) return content.slice(start, i + 1);
+  }
+  return undefined;
+}
+
 /** One answer per message of the batch, in order; undefined where the answer is missing or malformed. */
 export function parseCorrectionClassifications(
   content: string,
@@ -273,7 +304,7 @@ export function parseCorrectionClassifications(
 ): (CorrectionClassification | undefined)[] {
   let raw: unknown;
   try {
-    raw = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? '');
+    raw = JSON.parse(firstJsonObject(content) ?? '');
   } catch {
     return Array.from({ length: count }, () => undefined);
   }
