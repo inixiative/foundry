@@ -117,8 +117,11 @@ export function registerKingdomRoutes(
       },
     }).then(
       async ({ settings }) => {
-        await connections.set(settings);
+        // The review is over once Kingdom approved: never show its code beside the live connection.
         if (pairing === current) pairing = undefined;
+        await connections.set(settings).catch((error) => {
+          failure = shown(error, 'Paired, but the connection to Kingdom did not start.');
+        });
       },
       (error) => {
         reviewed.reject(error);
