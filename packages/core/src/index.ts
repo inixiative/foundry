@@ -160,6 +160,7 @@ export { type ExecuteHandler, type ExecuteMeta, Executor, type ExecutorConfig } 
 // Feedback: correction detection (the Prospector's), shared by Oracle, live capture and `foundry repeats`
 export {
   CORRECTION_CATEGORIES,
+  CORRECTION_CLASSIFY_PREFIX,
   CORRECTION_CLASSIFY_PROMPT,
   CORRECTION_PATTERNS,
   type CorrectionCategory,
@@ -171,7 +172,9 @@ export {
   correctionId,
   detectCorrection,
   extractCorrections,
-  parseCorrectionClassification,
+  FEEDBACK_TAGS,
+  type FeedbackTag,
+  parseCorrectionClassifications,
   scrubSecrets,
   type TranscriptTurn,
 } from './feedback/correction';

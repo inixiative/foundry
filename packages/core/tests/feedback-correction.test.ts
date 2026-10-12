@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CORRECTION_CLASSIFY_PREFIX,
   correctionClassifyMessages,
   detectCorrection,
   extractCorrections,
-  parseCorrectionClassification,
+  parseCorrectionClassifications,
   scrubSecrets,
   type TranscriptTurn,
 } from '../src';
@@ -102,25 +103,35 @@ describe('extractCorrections', () => {
 });
 
 describe('classification', () => {
-  test('the messages carry both turns', () => {
-    const [system, prompt] = correctionClassifyMessages({ before: '', correction: 'never do X' });
-    expect(system!.content).toContain('statements');
+  test('one batch carries every candidate with its prior agent turn', () => {
+    const [system, prompt] = correctionClassifyMessages([
+      { before: '', correction: 'never do X' },
+      { before: 'Did Y.', correction: 'stop doing Y' },
+    ]);
+    expect(system!.content).toContain('"results"');
+    expect(prompt!.content.startsWith(CORRECTION_CLASSIFY_PREFIX)).toBe(true);
+    expect(prompt!.content).toContain('## M1');
     expect(prompt!.content).toContain('(start of session)');
+    expect(prompt!.content).toContain('## M2');
   });
 
-  test('parses the contract and drops statements when not sharp', () => {
-    expect(
-      parseCorrectionClassification(
-        'ok {"isCorrection":true,"category":"process","statements":["Never X."],"sharp":true}',
-      ),
-    ).toEqual({ isCorrection: true, category: 'other', statements: ['Never X.'], sharp: true });
-    expect(
-      parseCorrectionClassification(
-        '{"isCorrection":true,"category":"scope","statements":["x"],"sharp":false}',
-      ),
-    ).toEqual({ isCorrection: true, category: 'scope', statements: [], sharp: false });
-    expect(parseCorrectionClassification('{"isCorrection":false}')?.isCorrection).toBe(false);
-    expect(parseCorrectionClassification('no json')).toBeUndefined();
+  test('parses each result by id; missing or malformed answers are undefined', () => {
+    const parsed = parseCorrectionClassifications(
+      `ok {"results":{
+        "M1":{"isCorrection":true,"category":"process","statements":["Never X."],"sharp":true},
+        "M2":{"isCorrection":true,"category":"scope","statements":["x"],"sharp":false},
+        "M3":{"isCorrection":false},
+        "M5":{"nope":1}}}`,
+      5,
+    );
+    expect(parsed).toEqual([
+      { isCorrection: true, category: 'other', statements: ['Never X.'], sharp: true },
+      { isCorrection: true, category: 'scope', statements: [], sharp: false },
+      { isCorrection: false, category: 'other', statements: [], sharp: false },
+      undefined,
+      undefined,
+    ]);
+    expect(parseCorrectionClassifications('no json', 2)).toEqual([undefined, undefined]);
   });
 });
 

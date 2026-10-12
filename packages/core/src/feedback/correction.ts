@@ -122,7 +122,9 @@ export function correctionId(
 export function extractCorrections(
   sessionId: string,
   turns: Iterable<TranscriptTurn>,
+  options: { minScore?: number } = {},
 ): { corrections: CorrectionEvent[]; secretsScrubbed: number } {
+  const minScore = options.minScore ?? 0;
   const corrections: CorrectionEvent[] = [];
   let before = '';
   let pendingInterruption = false;
@@ -137,7 +139,7 @@ export function extractCorrections(
     if (!text.trim()) continue;
     const detection = detectCorrection(text, before, { interrupted: pendingInterruption });
     pendingInterruption = false;
-    if (!detection.hit || !detection.signal) continue;
+    if (!detection.hit || !detection.signal || detection.score < minScore) continue;
     const scrubbedBefore = scrubSecrets(before.slice(-2000));
     const scrubbedText = scrubSecrets(text.trim().slice(0, 4000));
     secretsScrubbed += scrubbedBefore.hits + scrubbedText.hits;
@@ -185,6 +187,24 @@ export function scrubSecrets(text: string): { text: string; hits: number } {
   return { text: out, hits };
 }
 
+/** FEEDBACK-LOG's tags plus process: the closed list feedback items and repeat rules are tagged with. */
+export const FEEDBACK_TAGS = [
+  'hygiene',
+  'naming',
+  'merge',
+  'reuse',
+  'overbuild',
+  'architecture',
+  'data',
+  'product',
+  'coordination',
+  'communication',
+  'tooling',
+  'security',
+  'process',
+] as const;
+export type FeedbackTag = (typeof FEEDBACK_TAGS)[number];
+
 export const CORRECTION_CATEGORIES = ['approach', 'scope', 'convention', 'fact', 'other'] as const;
 export type CorrectionCategory = (typeof CORRECTION_CATEGORIES)[number];
 
@@ -197,51 +217,68 @@ export interface CorrectionClassification {
   sharp: boolean;
 }
 
-export const CORRECTION_CLASSIFY_PROMPT = `You classify one message a person typed to an AI coding agent, given the agent's previous message.
+export const CORRECTION_CLASSIFY_PROMPT = `You classify messages a person typed to an AI coding agent. Each message comes with the agent's previous message, and each is judged on its own.
 
 A CORRECTION is feedback about how the agent works: the person redirects, fixes or rejects what the agent did, or states a rule or preference the agent should keep following beyond this task. These are NOT corrections: a new task or question, an answer to the agent's question, approving or reviewing one specific item, design discussion, status chatter.
 
-For a correction, write each rule it carries as a statement: one imperative sentence of at most 160 characters that says when it applies ("When X, do Y." or "Never X."), general enough to hold next time, in plain words without quoting the message. At most three statements. Use names (products, tools, terms) only when the rule is about them.
+For a correction, write each rule it carries as a statement: one imperative sentence of at most 160 characters that says when it applies ("When X, do Y." or "Never X."), general enough to hold next time, in plain words without quoting the message. At most three statements per message. Use names (products, tools, terms) only when the rule is about them.
 
-Respond with JSON only:
-{ "isCorrection": boolean, "category": "approach" | "scope" | "convention" | "fact" | "other", "statements": string[], "sharp": boolean }
+Respond with JSON only, one result per message id:
+{ "results": { "<id>": { "isCorrection": boolean, "category": "approach" | "scope" | "convention" | "fact" | "other", "statements": string[], "sharp": boolean } } }
 category: approach = how to do the work; scope = what to do or not do; convention = naming, style, process or tooling rules; fact = something about the world or the codebase the agent got wrong; other = anything else.
 sharp: false when it is a correction but no crisp rule can be stated; then statements is empty.`;
 
-/** The messages every caller sends for one candidate. */
+/** The stable start of every classify input: providers that prime a session reuse it (`stablePrefix`). */
+export const CORRECTION_CLASSIFY_PREFIX = 'Classify each message below.\n\n';
+
+/** The messages every caller sends for a batch of candidates (one is a batch of one). Ids are M1..Mn. */
 export function correctionClassifyMessages(
-  event: Pick<CorrectionEvent, 'before' | 'correction'>,
+  events: readonly Pick<CorrectionEvent, 'before' | 'correction'>[],
+  limits: { before?: number; correction?: number } = {},
 ): { role: 'system' | 'user'; content: string }[] {
+  const before = limits.before ?? 1200;
+  const correction = limits.correction ?? 3000;
+  const body = events
+    .map(
+      (event, index) =>
+        `## M${index + 1}\n### Agent's prior message\n${event.before.slice(-before) || '(start of session)'}\n\n### Person's message\n${event.correction.slice(0, correction)}`,
+    )
+    .join('\n\n');
   return [
     { role: 'system', content: CORRECTION_CLASSIFY_PROMPT },
-    {
-      role: 'user',
-      content: `## Agent's prior message\n${event.before || '(start of session)'}\n\n## Person's message\n${event.correction}`,
-    },
+    { role: 'user', content: `${CORRECTION_CLASSIFY_PREFIX}${body}` },
   ];
 }
 
-/** The classifier's answer, or undefined when it is not the contract's JSON. */
-export function parseCorrectionClassification(
+function classification(value: unknown): CorrectionClassification | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const item = value as Record<string, unknown>;
+  if (typeof item.isCorrection !== 'boolean') return undefined;
+  const category = CORRECTION_CATEGORIES.find((entry) => entry === item.category) ?? 'other';
+  const statements = Array.isArray(item.statements)
+    ? item.statements
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        .map((entry) => entry.trim().slice(0, 160))
+        .slice(0, 3)
+    : [];
+  if (!item.isCorrection) return { isCorrection: false, category, statements: [], sharp: false };
+  const sharp = item.sharp !== false && statements.length > 0;
+  return { isCorrection: true, category, statements: sharp ? statements : [], sharp };
+}
+
+/** One answer per message of the batch, in order; undefined where the answer is missing or malformed. */
+export function parseCorrectionClassifications(
   content: string,
-): CorrectionClassification | undefined {
+  count: number,
+): (CorrectionClassification | undefined)[] {
   let raw: unknown;
   try {
     raw = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? '');
   } catch {
-    return undefined;
+    return Array.from({ length: count }, () => undefined);
   }
-  if (!raw || typeof raw !== 'object') return undefined;
-  const value = raw as Record<string, unknown>;
-  if (typeof value.isCorrection !== 'boolean') return undefined;
-  const category = CORRECTION_CATEGORIES.find((item) => item === value.category) ?? 'other';
-  const statements = Array.isArray(value.statements)
-    ? value.statements
-        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-        .map((item) => item.trim().slice(0, 160))
-        .slice(0, 3)
-    : [];
-  if (!value.isCorrection) return { isCorrection: false, category, statements: [], sharp: false };
-  const sharp = value.sharp !== false && statements.length > 0;
-  return { isCorrection: true, category, statements: sharp ? statements : [], sharp };
+  const results =
+    raw && typeof raw === 'object' ? (raw as { results?: unknown }).results : undefined;
+  const byId = results && typeof results === 'object' ? (results as Record<string, unknown>) : {};
+  return Array.from({ length: count }, (_, index) => classification(byId[`M${index + 1}`]));
 }
