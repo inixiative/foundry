@@ -3,6 +3,6 @@
   "blessed": {
     "claude": "2.1.296",
     "codex": "0.155.1",
-    "@inixiative/agent-session": "0.5.2"
+    "@inixiative/agent-session": "0.6.0"
   }
 }
