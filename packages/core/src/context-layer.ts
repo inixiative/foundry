@@ -523,14 +523,14 @@ export class ContextLayer {
   }
 
   /**
-   * Whether assembly includes this layer: warm, or stale with content that does not depend on the
-   * message (no focusable source). A stale standing layer keeps its last content until it re-warms,
-   * so it never silently drops out of context.
+   * Whether assembly includes this layer: warm, or stale or re-warming with content that does not
+   * depend on the message (no focusable source). A standing layer keeps its last content until a
+   * re-warm completes, so it never drops out of context while one is slow or in flight.
    */
   get assemblable(): boolean {
     return (
       this._state === 'warm' ||
-      (this._state === 'stale' &&
+      ((this._state === 'stale' || this._state === 'warming') &&
         this._lastWarmed !== null &&
         !this._sources.some((source) => source.focusable))
     );

@@ -744,7 +744,7 @@ function findMatchingLayers(stack: ContextStack, query: string): ContextLayer[] 
   const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (keywords.length === 0) return [];
   return stack.layers
-    .filter((l) => l.isWarm && l.content.length > 0)
+    .filter((l) => l.assemblable && l.content.length > 0)
     .map((l) => {
       const lowerContent = l.content.toLowerCase();
       const lowerId = l.id.toLowerCase();

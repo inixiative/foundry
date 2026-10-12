@@ -526,18 +526,32 @@ export function instructionStackSource(
   scope?: OwnershipScope,
 ): ContextSource {
   let last: SourceSelectionReport | undefined;
-  let loaded: { view: RoleView; generation: number } | undefined;
+  let loaded: { view: RoleView; generation: number; where: string } | undefined;
+  /** Where the slot composes for now: the thread's cwd (its worktree or project), project and owner. */
+  const location = () => {
+    const projectId = scope?.projectId;
+    const projectPath = projectId ? options.projectPath?.(projectId) : undefined;
+    const owner = options.owner?.(projectId);
+    return {
+      cwd: scope?.cwd ?? projectPath ?? process.cwd(),
+      ...(projectId ? { projectId } : {}),
+      ...(projectPath ? { projectPath } : {}),
+      ...(owner ? { owner } : {}),
+    };
+  };
   return {
     id,
     bind: (next) => instructionStackSource(id, options, next),
-    // Checked before every assembly: an edited, added or removed instruction or role file, or an
-    // `invalidateComposition()`, makes the slot re-read on the next turn and reach it as a delta.
-    changed: () => !!loaded && (loaded.generation !== generation || roleViewChanged(loaded.view)),
+    // Checked before every assembly: an edited, added or removed instruction or role file, a moved
+    // cwd or project, or an `invalidateComposition()` makes the slot re-read on the next turn.
+    changed: () =>
+      !!loaded &&
+      (loaded.generation !== generation ||
+        loaded.where !== JSON.stringify(location()) ||
+        roleViewChanged(loaded.view)),
     async load() {
       const at = generation;
-      const projectId = scope?.projectId;
-      const projectPath = projectId ? options.projectPath?.(projectId) : undefined;
-      const owner = options.owner?.(projectId);
+      const where = location();
       const {
         projectPath: _path,
         owner: _owner,
@@ -552,13 +566,10 @@ export function instructionStackSource(
         role,
         ...(picks ? { picks } : {}),
         ...(dedupe ? { dedupe } : {}),
-        cwd: scope?.cwd ?? projectPath ?? process.cwd(),
-        ...(projectId ? { projectId } : {}),
-        ...(projectPath ? { projectPath } : {}),
-        ...(owner ? { owner } : {}),
+        ...where,
       });
       last = instructionStackReport(view, slot, picks?.audience ?? 'personal_private');
-      loaded = { view, generation: at };
+      loaded = { view, generation: at, where: JSON.stringify(where) };
       return view.slots[slot].text;
     },
     report: () => last,

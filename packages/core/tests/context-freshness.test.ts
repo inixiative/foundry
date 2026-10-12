@@ -103,3 +103,32 @@ test('a dispatch middleware can request an on-demand layer for the executor it w
   const after = await harness.send({ id: 'm2', payload: 'go' });
   expect(after.result.output).toContain('ON_DEMAND_CONVENTIONS');
 });
+
+test('a standing layer keeps assembling while a slow re-warm is in flight', async () => {
+  let text = 'RULE v1';
+  let release!: () => void;
+  let slow = false;
+  const layer = new ContextLayer({
+    id: 'instructions',
+    sources: [
+      {
+        id: 'src',
+        load: async () => {
+          if (slow) await new Promise<void>((resolve) => (release = resolve));
+          return text;
+        },
+      },
+    ],
+  });
+  const stack = new ContextStack([layer]);
+  await layer.warm();
+  slow = true;
+  text = 'RULE v2';
+  layer.invalidate();
+  const warming = layer.warm();
+  expect(layer.state).toBe('warming');
+  expect(stack.assemble().text).toContain('RULE v1');
+  release();
+  await warming;
+  expect(stack.assemble().text).toContain('RULE v2');
+});

@@ -563,11 +563,11 @@ export class Thread {
     return {
       hasLayer: (id) => {
         const l = stack.getLayer(id);
-        return l ? l.isWarm : false;
+        return l ? l.assemblable : false;
       },
       getContent: (id) => {
         const l = stack.getLayer(id);
-        return l?.isWarm ? l.content : '';
+        return l?.assemblable ? l.content : '';
       },
       getState: (id) => stack.getLayer(id)?.state,
       get layerIds() {

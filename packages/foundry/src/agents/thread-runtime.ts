@@ -1101,7 +1101,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // Compacted while the turn ran: what rode in its message may be summarized away. Only the
           // system prompt (base) is still held for certain.
           const compacted = this.librarian.ledgerEpoch !== ledgerEpoch;
-          if (session.session === 'started') this.librarian.clearInjectionLedger();
+          // A relaunch that resumed the ledger's own conversation keeps it (a Codex base is empty).
+          if (session.session === 'started' && !session.ledgerKept)
+            this.librarian.clearInjectionLedger();
           // One record per part: what was sent this turn supersedes the same part in the base.
           const parts = new Map(
             [

@@ -38,6 +38,11 @@ export interface SessionDeliveryReport {
   readonly base: readonly DeliveredPart[];
   /** Standing parts sent in this turn's message because the session did not hold their hash. */
   readonly sent: readonly DeliveredPart[];
+  /**
+   * A started session that resumed the conversation the thread's ledger describes (a relaunch in
+   * this process): the ledger still holds, so it is kept and extended rather than reset.
+   */
+  readonly ledgerKept?: true;
 }
 
 /** Group assembled layer blocks (a layer's prompt block, then its content block) into standing parts. */

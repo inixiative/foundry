@@ -28,6 +28,7 @@ import {
   type InstructionStackOptions,
   instructionStackReport,
   instructionStackSource,
+  roleViewChanged,
 } from '../src/prompts/instruction-stack';
 import { nativeTextEnvironment } from '../src/providers/native-text-environment';
 import {
@@ -785,4 +786,45 @@ test('every credential directory is refused, but a harness home under ~/.config 
   const text = (await compose({ ...options(repo), claudeConfigDir: xdgClaude })).text;
   expect(text).toContain('XDG_GLOBAL');
   expect(text).toContain('XDG_IMPORT');
+});
+
+test('legitimate symlinks still load: ~/.claude into ~/.config, CLAUDE.local.md to private notes, a rule added in a new subdirectory', async () => {
+  const xdg = join(home, '.config', 'claude');
+  write(join(xdg, 'CLAUDE.md'), 'DOTFILES_GLOBAL');
+  mkdirSync(home, { recursive: true });
+  symlinkSync(xdg, claudeDir);
+  write(join(root, 'notes', 'private.md'), 'PRIVATE_NOTES');
+  symlinkSync(join(root, 'notes', 'private.md'), join(repo, 'CLAUDE.local.md'));
+  const text = (await compose(options(repo))).text;
+  expect(text).toContain('DOTFILES_GLOBAL');
+  expect(text).toContain('PRIVATE_NOTES');
+  // A personal file never reaches a team audience, wherever it points.
+  expect((await compose(options(repo), 'team')).text).not.toContain('PRIVATE_NOTES');
+
+  write(join(repo, '.claude', 'rules', 'sub', 'README.txt'), 'not a rule');
+  // A file written as composition starts leaves the view unfingerprinted (re-read once); not here.
+  await Bun.sleep(5);
+  const view = await composeRoleView({ ...options(repo), role: 'main' });
+  expect(roleViewChanged(view)).toBe(false);
+  write(join(repo, '.claude', 'rules', 'sub', 'new.md'), 'NEW_RULE');
+  expect(roleViewChanged(view)).toBe(true);
+});
+
+test('a composed slot re-reads when its thread moves to another cwd', async () => {
+  const other = join(org, 'other');
+  mkdirSync(join(other, '.git'), { recursive: true });
+  write(join(repo, 'CLAUDE.md'), 'REPO_RULES');
+  write(join(other, 'CLAUDE.md'), 'OTHER_RULES');
+  await Bun.sleep(5);
+  const scope = { threadId: 't', cwd: repo };
+  const source = instructionStackSource(
+    'instructions',
+    { harness: 'claude', home, claudeConfigDir: claudeDir, codexHome },
+    scope,
+  );
+  expect(await source.load()).toContain('REPO_RULES');
+  expect(source.changed?.()).toBe(false);
+  scope.cwd = other;
+  expect(source.changed?.()).toBe(true);
+  expect(await source.load()).toContain('OTHER_RULES');
 });

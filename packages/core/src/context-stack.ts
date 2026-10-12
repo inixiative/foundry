@@ -206,7 +206,7 @@ export class ContextStack {
     const content = this.merge();
     const layerHashes: Record<string, string> = {};
     for (const layer of this._layers) {
-      if (layer.isWarm) {
+      if (layer.assemblable) {
         layerHashes[layer.id] = layer.hash;
       }
     }

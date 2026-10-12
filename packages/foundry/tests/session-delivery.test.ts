@@ -580,3 +580,41 @@ test('a thread keeps its thread state out of the system prompt and commits each 
     await f.close();
   }
 });
+
+test('a Codex relaunch in this process keeps its ledger, so nothing it held is sent again', async () => {
+  const adapter = new ResumingAdapter('first-turn');
+  let launch = { revision: 1 };
+  const provider = new SessionBackedProvider({
+    id: 'codex',
+    adapter,
+    defaultModel: 'm',
+    launch: { get: () => launch } as never,
+  });
+  adapter.releaseIdleSession = async () => 'released';
+  const first = await provider.complete(user, { threadId: 'T', delivery: delivery() });
+  // Codex has no system prompt: the first turn carries every part, and the ledger records them.
+  expect(ids(first.delivery!.sent)).toEqual(['instructions', 'learning', 'agent:worker']);
+  const held = Object.fromEntries(first.delivery!.sent.map((part) => [part.id, part.hash]));
+  launch = { revision: 2 };
+  const relaunched = await provider.complete(user, {
+    threadId: 'T',
+    delivery: delivery(learningV1, held),
+  });
+  expect(relaunched.delivery).toMatchObject({
+    session: 'started',
+    base: [],
+    sent: [],
+    ledgerKept: true,
+  });
+});
+
+test('a thread whose old session already died moves cwd without being wedged', async () => {
+  const adapter = new ResumingAdapter();
+  const provider = new SessionBackedProvider({ id: 'claude-code', adapter, defaultModel: 'm' });
+  adapter.releaseIdleSession = async () => 'unknown' as never;
+  await provider.complete(user, { threadId: 'T', cwd: '/A', delivery: delivery() });
+  adapter.sessions[0].kill();
+  const moved = await provider.complete(user, { threadId: 'T', cwd: '/B', delivery: delivery() });
+  expect(moved.delivery!.session).toBe('started');
+  expect(adapter.sessions).toHaveLength(2);
+});

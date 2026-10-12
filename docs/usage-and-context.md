@@ -186,8 +186,11 @@ stays personal). A configured path or a walked file, like an import, never reads
 a dotfile, key or credential file, judged on where its symlinks lead, and a
 walked file is held to its node's import boundary on where it resolves: a
 committed `CLAUDE.md` symlinked out of the repository is refused (one pointing
-inside it, like Kingdom's `CLAUDE.md -> AI/ENTRYPOINT.md`, loads). Refused files
-are listed in the Selection panel. The role's
+inside it, like Kingdom's `CLAUDE.md -> AI/ENTRYPOINT.md`, loads). A personal
+node's file (`CLAUDE.local.md` pointing at private notes) may point anywhere: it
+reaches no shared audience. Refused files are listed in the Selection panel.
+A repository inside a credential directory (`~/.config/nvim`) has its
+instruction files refused too. The role's
 `composition.roles.<role>.audience` (default `personal_private`) filters by tier through the corpus
 `VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
 
@@ -224,8 +227,8 @@ directory tree, checked on the symlink target too; managed and global files
 `imports`. Dotfiles (`.env`), key files and credential directories (`.ssh`,
 `.aws`, `.config`, `.local`, `.git`, ...) never import, unlike Claude Code, and a
 node's configured or walked files never read them either. The harness homes
-(`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) are judged only below themselves, so one
-under `~/.config` still loads. `claudemdSource` (a `markdown`
+(`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, as written and where their symlinks lead)
+are judged only below themselves, so one under `~/.config` still loads. `claudemdSource` (a `markdown`
 source naming one file) imports only within that file's directory.
 
 Not composed: subdirectory files and path-scoped rules, which Claude Code loads
@@ -383,8 +386,10 @@ re-reads:
 
 - before the next turn whenever a file it consulted changed: an edited
   `CLAUDE.md`, rule, role file or `MEMORY.md`, a new file where discovery looked
-  (a new `CLAUDE.local.md`), or a re-pointed symlink. The check is one stat per
-  consulted path; the re-read takes the composition's 6 to 15 ms. The main
+  (a new `CLAUDE.local.md`, a new rule in any rules subdirectory), a re-pointed
+  symlink, or the thread moving to another cwd or project. The check is one stat
+  per consulted path (about 0.5 to 0.8 ms for 50 paths); a re-read takes 15 to
+  40 ms warm, about 200 ms cold. The main
   thread receives the change as a delta (FLOW.md, "Delivery"); a Warden whose
   slot changed re-primes;
 - after 60 seconds;

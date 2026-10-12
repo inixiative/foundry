@@ -779,6 +779,35 @@ export class SessionBackedProvider implements LLMProvider {
     });
   }
 
+  /**
+   * Retire a thread's executor session in another cwd: released when idle and settled, or simply
+   * dropped when its process is already gone (no work can still be running there).
+   */
+  private async _retireElsewhere(
+    threadId: string,
+    cwd: string,
+  ): Promise<'released' | 'unknown' | 'unavailable'> {
+    const key = JSON.stringify([cwd, threadId]);
+    const pending = this._sessions.get(key);
+    const session = pending ? await pending.catch(() => undefined) : undefined;
+    if (
+      pending &&
+      this._sessions.get(key) === pending &&
+      !this._activeCalls.get(key) &&
+      !this._releasing.has(key) &&
+      (!session || !session.alive)
+    ) {
+      if (session) this._released.add(session);
+      this._sessions.delete(key);
+      this._profiles.delete(key);
+      this._bridgeSources.delete(key);
+      this._idle.delete(key);
+      this._uncertain.delete(key);
+      return 'released';
+    }
+    return this._releaseIdle({ threadId, cwd }, true);
+  }
+
   private _getSession(
     threadId: string,
     cwd: string,
@@ -843,11 +872,11 @@ export class SessionBackedProvider implements LLMProvider {
         .filter(([otherCwd, otherThread]) => otherThread === threadId && otherCwd !== cwd);
       if (elsewhere.length)
         return Promise.all(
-          elsewhere.map(([otherCwd]) => this._releaseIdle({ threadId, cwd: otherCwd }, true)),
+          elsewhere.map(([otherCwd]) => this._retireElsewhere(threadId, otherCwd)),
         ).then((statuses) => {
           if (statuses.some((status) => status !== 'released')) {
             const error = Error(
-              `Thread ${threadId} moved to ${cwd}, but its native session in ${elsewhere.map(([c]) => c).join(', ')} has unsettled work; nothing was sent. Try again once that turn settles.`,
+              `Thread ${threadId} moved to ${cwd}, but its native session in ${elsewhere.map(([c]) => c).join(', ')} still has unsettled work; nothing was sent. Retry once that turn settles, or end the thread's native session there.`,
             );
             this._notAdmitted.add(error);
             this._settled.add(error);

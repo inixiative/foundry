@@ -318,10 +318,36 @@ async function expandGlob(
   } catch {
     return [];
   }
-  // A file added or removed changes its directory: every directory holding a match is consulted.
-  for (const dir of new Set(found.map((path) => dirname(path)))) probe(dir);
+  // A file added or removed changes its directory: every directory the pattern can reach is
+  // consulted, matched or not yet (a new rules/sub/new.md), up to a bound.
+  if (pattern.includes('/') || pattern.includes('**')) {
+    let dirs = 0;
+    try {
+      for await (const rel of new Bun.Glob('**').scan({
+        cwd: base,
+        onlyFiles: false,
+        followSymlinks: true,
+      })) {
+        const path = join(base, rel);
+        if (!isDirectory(path)) continue;
+        probe(path);
+        if (++dirs >= GLOB_PROBE_DIRECTORIES) break;
+      }
+    } catch {
+      /* unreadable: the base directory's own change still shows */
+    }
+  }
   return found.sort();
 }
+
+const GLOB_PROBE_DIRECTORIES = 256;
+const isDirectory = (path: string) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
 
 /**
  * The state of `probes` (each path's identity, size and modification time, or its absence). Equal
@@ -403,7 +429,18 @@ export async function discoverHierarchy(
   const probe = (path: string) => {
     probes.add(path);
   };
-  const trusted = location.trusted ?? [];
+  // A trusted root is trusted as written and where its symlinks lead (~/.claude -> ~/.config/claude).
+  const trusted = [
+    ...new Set(
+      (location.trusted ?? []).flatMap((root) => {
+        try {
+          return [root, realpathSync(root)];
+        } catch {
+          return [root];
+        }
+      }),
+    ),
+  ];
   const secret = (path: string) => secretInstructionPath(path, trusted);
   const refused: HierarchyRefusal[] = [];
 
@@ -605,10 +642,11 @@ export async function discoverHierarchy(
               )
               .filter((root): root is string => !!root),
           );
-    // The file itself is held to its node's import boundary on where it resolves, like an import:
-    // a committed CLAUDE.md symlinked out of the repository never loads as the repository's.
+    // A shared node's file is held to its import boundary on where it resolves, like an import: a
+    // committed CLAUDE.md symlinked out of the repository never loads as the repository's. A
+    // personal node's file (CLAUDE.local.md pointing at private notes) reaches no shared audience.
     const real = realOf(unit.path);
-    if (allowed && isFile(unit.path) && !allowed(real)) {
+    if (!node.personal && allowed && isFile(unit.path) && !allowed(real)) {
       refused.push({ path: unit.path, node: node.id, real, reason: 'outside-boundary' });
       continue;
     }

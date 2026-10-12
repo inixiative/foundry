@@ -71,6 +71,7 @@ export function sessionTurn(
       session: session.started ? 'started' : 'held',
       base: session.base.map(({ id, hash }) => ({ id, hash })),
       sent: sent.map(({ id, hash }) => ({ id, hash })),
+      ...(session.started && session.ledgerHeld ? { ledgerKept: true as const } : {}),
     },
   };
 }
