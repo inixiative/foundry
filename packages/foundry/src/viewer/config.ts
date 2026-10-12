@@ -16,6 +16,7 @@ import { configuredExperts } from '../agents/configured-experts';
 import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
+import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import {
   type ModelCapability,
   type ProviderType,
@@ -90,6 +91,8 @@ export interface FoundryConfig {
   nativeAuthenticationSelections?: Record<string, string>;
   /** Background domain review phase; does not override classifier/router or executor profiles. */
   learning?: LearningSettings;
+  /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
+  feedback?: FeedbackSettings;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -185,6 +188,8 @@ export interface ProjectSettingsConfig {
   defaults?: Partial<FoundryConfig['defaults']>;
   /** Project tool rules: a capability here overrides the global one; protected paths add up. */
   toolRules?: ToolRules;
+  /** Project feedback settings: each field overrides the global one. */
+  feedback?: FeedbackSettings;
   /**
    * Base identity prompts — composed into CLAUDE.md, .cursorrules, etc.
    * This is the project's "front door" — the first thing any model reads.
@@ -943,6 +948,9 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
+  validateFeedbackSettings('feedback', config.feedback);
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
   if ('instructions' in config)
     throw Error(
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
@@ -1220,6 +1228,8 @@ export class ConfigStore {
         next.composition = { ...next.composition, ...patch } as CompositionSettings;
       } else if (section === 'subscriptionOnly') {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
+      } else if (section === 'feedback') {
+        next.feedback = { ...next.feedback, ...patch } as FeedbackSettings;
       } else if (section === 'toolRules') {
         next.toolRules = { ...next.toolRules, ...patch } as ToolRules;
       } else if (section === 'apiTokens') {

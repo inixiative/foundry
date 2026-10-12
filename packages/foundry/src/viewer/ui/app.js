@@ -8,6 +8,7 @@ import { AnalyticsPage } from './analytics.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { DetailDrawer } from './detail-drawer.js';
+import { FeedbackPanel } from './feedback.js';
 import { GlossButton, GlossReview } from './gloss.js';
 import { GraphPanel } from './graph-view.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
@@ -126,15 +127,18 @@ function PanelNavigation() {
 
 // Center panel mode: the conversation, or graphs of the structures behind it.
 function CenterViews() {
-  const current = activePanel.value === 'graph' ? 'graph' : 'conversation';
+  const current = ['graph', 'feedback'].includes(activePanel.value)
+    ? activePanel.value
+    : 'conversation';
   return html`<div class="center-views" role="tablist" aria-label="Center view">
     ${[
       ['conversation', 'Chat'],
       ['graph', 'Graph'],
+      ['feedback', 'Feedback'],
     ].map(
       ([id, label]) => html`<button key=${id} role="tab"
       class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
-      title=${id === 'graph' ? 'Threads, turn flow and learning loops (g)' : 'Conversation'}
+      title=${id === 'graph' ? 'Threads, turn flow and learning loops (g)' : id === 'feedback' ? 'Your feedback: where it went, what changed, whether it stuck' : 'Conversation'}
       onClick=${() => {
         activePanel.value = id;
       }}>${label}</button>`,
@@ -323,7 +327,9 @@ function App() {
             ${
               activePanel.value === 'graph'
                 ? html`<${GraphPanel} onLayerClick=${handleLayerClick} />`
-                : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${handleLayerClick} />`
+                : activePanel.value === 'feedback'
+                  ? html`<${FeedbackPanel} />`
+                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${handleLayerClick} />`
             }
           `
           }

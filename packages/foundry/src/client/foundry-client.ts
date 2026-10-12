@@ -1,4 +1,5 @@
 import type { ActionPrompt } from '@inixiative/foundry-core';
+import type { FeedbackView } from '../feedback/view';
 import type { MessageSummary } from '../persistence/local-session-store';
 import type { ThreadLaunchPatch } from '../providers/thread-launch';
 import type { threadToJSON } from '../viewer/http-helpers';
@@ -159,6 +160,26 @@ export class FoundryClient {
       action,
       ...(always ? { always: true } : {}),
     });
+  }
+
+  /** Answer a feedback item's open tuning prompt: apply, edit (with the rule), dismiss or later. */
+  answerFeedback(
+    itemId: string,
+    action: string,
+    surface: string,
+    input?: string,
+  ): Promise<{ ok: boolean }> {
+    return this.request('POST', `/api/feedback/${encodeURIComponent(itemId)}/answer`, {
+      action,
+      surface,
+      ...(input !== undefined ? { input } : {}),
+    });
+  }
+
+  /** Feedback lifecycle items, all or one project's. */
+  feedback(projectId?: string): Promise<{ items: FeedbackView[] }> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    return this.request('GET', `/api/feedback${query}`);
   }
 
   /** Record a correction against a turn's span: it reaches the thread's feedback capture. */
