@@ -82,15 +82,15 @@ flowchart LR
 
 ### L1. Capture: detect, then sharpen
 
-**Detect.** There is one detector, `detectCorrection(text, prevAssistant?)` in `pc/feedback/detect.ts`. Its patterns are exported data (`CORRECTION_PATTERNS`). It is owned and landed by the repeat-report work, and it replaces the miner's `CORRECTIVE_OPENERS` (`oracle:src/session-miner.ts:223-224`). Live capture, the repeat report and Oracle's backfill all use this same filter. It returns `{ hit, kind: interrupt | opener | explicit | repeat, phrase, score }`. Its inputs:
+**Detect.** Detection already exists. It is the **Prospector**, Oracle's session miner: `CORRECTIVE_OPENERS` and `extractUnits` (`oracle:src/session-miner.ts:223-282`), `scrubSecrets` (`:95`), `PROSPECTOR_CLASSIFY_PROMPT` and `classifyCorrections` (`:434-480`). The repeat-report work is moving its deterministic detection, its classify prompt and its secret scrubbing into foundry-core as data and pure functions, and it owns that module. Live capture, `foundry repeats` and `oracle mine` then import the one detector, and it gets polished in one place. The detector adds explicit markers ("from now on", "always", "never", "remember") and repeat markers ("again", "I thought we", "once and for all") to the miner's openers, and returns `{ hit, kind: interrupt | opener | explicit | repeat, phrase, score }`. Its inputs:
 
 - **Typed turns.** In `TurnService.accept` (`pf:turns/turn-service.ts:183`), after durable acceptance (`:206`), the capture reads `payload`. That text has already had host wrappers stripped by `splitHostInstructions` (`:187-189`), so a host's instructions never count as the user's words. Non-blocking capture is fire-and-forget at this point, the same way `ThreadNamer` hangs off `:690` (`pf:agents/thread-namer.ts:84`). The previous assistant message comes from the local journal.
 - **Explicit corrections.** These come from `/correction` over ACP (`pa:agent.ts:427-447`) and the viewer's Correction form (`pf:viewer/ui/detail-drawer.js:856-880`). Both post to `POST /api/threads/:threadId/interventions` (`pf:viewer/routes/runtime.ts:287`). That route calls the capture directly with `origin: "intervention"` and skips the prefilter. `InterventionLog.intervene` still emits its `correction` signal, which is audit-only (`pc:adapters/file-memory.ts:75`).
 
-**Sharpen.** A detector hit becomes a feedback item only after one decision call, `FeedbackSharpener` (`pf:feedback/capture.ts`). It runs on the decision provider (`flowLlm`, `pf:start.ts:770`, Haiku 5.5) at review priority, like the namer.
+**Sharpen.** A detector hit becomes a feedback item only after the Prospector's classify call, extended once for every caller. It runs in `pf:feedback/capture.ts` on the decision provider (`flowLlm`, `pf:start.ts:770`, Haiku 5.5) at review priority, like the namer. A second small call matches the item against open items.
 
 - **Inputs:** the user text, the previous assistant message (bounded), and the open items in scope (statement + id only).
-- **Output:** `{ feedback: none|process|convention|taste|fact, statement, sharp, tags, match: {itemId, confidence} | null, level, slot }`.
+- **Output:** the shared classify contract `{ isCorrection, category: approach|scope|convention|fact|other, statement, sharp }`. The Prospector's categories become the item's class. The match call adds `match: {itemId, confidence} | null`.
 
 "Sharp" is checked twice:
 
@@ -136,15 +136,15 @@ Routing reuses `Cartographer.route` (`pf:agents/cartographer.ts:377`), with the 
 - **No domain**, or `source: "keyword-fallback"`, routes the rule to role `main` (the thread's own instructions slot). The card says that routing was weak.
 - **Subagent roles** (`subagent-<kind>`, SUBAGENTS.md §5) are routing targets on the same footing as Wardens. They enter the topology map as soon as they exist.
 
-**Slot.** `fact` goes to `domainKnowledge`. `process`, `convention` and `taste` go to `instructions`.
+**Slot.** `fact` goes to `domainKnowledge`. `approach`, `scope`, `convention` and `other` go to `instructions`.
 
 **Level** comes from the composition view's ladder (CLAUDE.md, "One composition view"). The sharpener suggests a level and the user decides in the card:
 
 | Level | File (composition-view preset) | Written by this lifecycle | Default for |
 |---|---|---|---|
-| computer | `~/.foundry/roles/<role>/<slot>.md` | yes | taste |
+| computer | `~/.foundry/roles/<role>/<slot>.md` | yes | other |
 | org | `<org dir>/.foundry/roles/<role>/<slot>.md` (in git) | no, it needs a PR (L4) | — |
-| org personal | `<org dir>/.foundry/roles/<role>/<slot>.local.md` | yes | process |
+| org personal | `<org dir>/.foundry/roles/<role>/<slot>.local.md` | yes | approach, scope |
 | project | `<repo>/.foundry/roles/<role>/<slot>.md` (in git) | no, it needs a PR (L4) | — |
 | project personal | `<repo>/.foundry/roles/<role>/<slot>.local.md` | yes | convention, fact |
 
@@ -199,7 +199,7 @@ interface FeedbackCaptureRecord {      // phase: feedback-capture (turnId = the 
   detection?: { kind: 'interrupt' | 'opener' | 'explicit' | 'repeat'; phrase: string; score: number };
   quote: string; before: string;       // bounded, scrubbed
   statement: string; sharp: boolean;
-  class: 'process' | 'convention' | 'taste' | 'fact';
+  category: 'approach' | 'scope' | 'convention' | 'fact' | 'other';   // the Prospector's
   tags: string[];                      // FEEDBACK-LOG tags + process
   match: { itemId: string; confidence: number } | null;
   candidateDuplicateOf?: string;
@@ -237,7 +237,7 @@ interface FeedbackApplyRecord {        // phase: feedback-apply / feedback-rever
 
 Tests follow the repo conventions: `bun test`, cassette replays for the decision calls, browser tests for the viewer, plus one live cassette.
 
-1. **Detect → sharpen → item.** "No, merge it yourself once green, I told you" after an agent turn that asked to merge. Expect a `feedback-capture` with detection kind `repeat`, a sharp statement, class `process`, and `match: null`.
+1. **Detect → sharpen → item.** "No, merge it yourself once green, I told you" after an agent turn that asked to merge. Expect a `feedback-capture` with detection kind `repeat`, a sharp statement, category `approach`, and `match: null`.
 2. **Not sharp.** "hmm that feels off" gives `sharp: false`. The tuning prompt is an `input` asking for the rule. No route and no apply until the user answers.
 3. **Lint.** "Try to be more careful with tests" is rejected even when the model returns `sharp: true`.
 4. **Host wrapper.** A T3-wrapped prompt whose `<t3_code_instructions>` contains "never" does not trigger capture. Only the `<user_request>` body is read.
@@ -271,7 +271,7 @@ The detector, from the repeat-report work, must land first. The composition view
 
 1. **Default tuning mode.** `ask` (non-blocking) by default, with `block` for repeat markers as an opt-in. Or should repeat markers ("again", "how many times") block by default?
 2. **`tell` (auto-apply with undo).** This is the first automatic resolution, which this doc has held back (H3). Should it ship off by default and be switched on per project once the revert/edit rate is low, or should the threshold be automatic?
-3. **Default levels.** Process feedback goes to org personal, conventions to project personal, taste to computer. Should process feedback default to computer instead, so that it follows you across orgs?
+3. **Default levels.** Approach and scope feedback goes to org personal, conventions and facts to project personal, and other feedback to computer. Should process feedback default to computer instead, so that it follows you across orgs?
 4. **Committed levels.** Should org and project changes be offered as a PR from the card in the next slice, or are personal levels enough until the evidence says a rule should be committed?
 5. **Delete versus dismiss.** On rules you said: "If you delete a rule you should delete all the historical alerts of that rule too … we can have a disabled flag". The journal is immutable, so this proposes **dismiss** (disabled, kept, still counted) plus **revert** for a change. A true delete would need a journal tombstone. Is dismiss enough?
 6. **Citation protocol.** Is one line in the advise and guard protocols ("cite fb_ ids that drive what you say") acceptable, given the cost to every Warden's context?
