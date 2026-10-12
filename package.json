@@ -32,6 +32,7 @@
     "dev": "bun --watch run packages/foundry/src/start.ts",
     "viewer": "bun run packages/foundry/src/viewer/server.ts",
     "acp": "bun run packages/acp/src/cli.ts",
+    "repeats": "bun run packages/foundry/src/cli.ts repeats",
     "daemon:install": "bun run scripts/daemon/control.ts install",
     "daemon:uninstall": "bun run scripts/daemon/control.ts uninstall",
     "daemon:start": "bun run scripts/daemon/control.ts start",

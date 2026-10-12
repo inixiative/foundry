@@ -6,8 +6,8 @@
  * the viewer uses, rather than a second opinion that could disagree with it.
  */
 import { join } from 'node:path';
-import { inspectReadiness } from '../../packages/foundry/src/readiness';
-import { ConfigStore } from '../../packages/foundry/src/viewer/config';
+import { inspectReadiness } from '../readiness';
+import { ConfigStore } from '../viewer/config';
 
 export interface ReadinessGate {
   ready: boolean;

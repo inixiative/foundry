@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
 /**
  * Daemon lifecycle — install, start, stop, status, logs, uninstall.
  *
@@ -15,22 +14,16 @@ import {
   daemonPlistPath,
   daemonTarget,
 } from '../../packages/foundry/src/client/daemon';
-import { installLocations, resolveDaemonPath } from './agent-clis';
-import { buildPlist } from './plist';
-import { checkReadiness } from './ready';
+import { installDaemon } from '../../packages/foundry/src/daemon/install';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const home = homedir();
 const plistPath = daemonPlistPath(home);
-const logDir = `${home}/Library/Logs/foundry`;
 const target = daemonTarget();
 const domain = daemonDomain();
 
 const ok = (message: string) => console.log(`✓ ${message}`);
 const info = (message: string) => console.log(`  ${message}`);
-
-const resolveBun = async () =>
-  (await $`which bun`.quiet().text()).trim() || '/opt/homebrew/bin/bun';
 
 const isLoaded = async () => {
   try {
@@ -42,56 +35,21 @@ const isLoaded = async () => {
 };
 
 const install = async () => {
-  const gate = await checkReadiness(resolve(repoRoot, '.foundry'));
-  if (!gate.ready) {
-    console.error(
-      'Foundry is not configured, so the daemon would restart into a runtime that cannot start.\n',
+  const port = Number.parseInt(process.env.VIEWER_PORT ?? '4500', 10);
+  try {
+    const { logDir } = await installDaemon({ workingDirectory: repoRoot, port, log: info });
+    ok(`daemon installed and running — http://localhost:${port}`);
+    info(`logs: ${logDir}/foundry.out.log`);
+    info(
+      'auto-update is off by default; set daemon.autoUpdate to "apply" in .foundry/settings.json',
     );
-    for (const error of gate.errors) console.error(`  ✗ ${error}`);
+  } catch (error) {
+    console.error((error as Error).message);
     console.error(
       '\nRun `bun run setup` to configure a provider, then `bun run start` to check it works.',
     );
-    console.error('Install the daemon once it starts cleanly.');
     process.exit(1);
   }
-  for (const warning of gate.warnings) console.log(`  ! ${warning}`);
-
-  const bunPath = await resolveBun();
-  await mkdir(logDir, { recursive: true });
-  await mkdir(`${home}/Library/LaunchAgents`, { recursive: true });
-
-  const { pathEntries, resolved, missing } = await resolveDaemonPath(bunPath, home);
-  if (missing.length) {
-    console.error(`No working ${missing.join(' or ')} was found for the daemon's environment.`);
-    console.error(
-      'The daemon starts with only the PATH written to its LaunchAgent, so every agent CLI must launch there.',
-    );
-    for (const cli of missing)
-      console.error(
-        `  ✗ ${cli}: tried ${(await installLocations(cli, home)).join(', ') || 'no install found'}`,
-      );
-    process.exit(1);
-  }
-  for (const [cli, install] of resolved)
-    info(`${cli}: ${install.binary} (${install.version.join('.')})`);
-
-  await writeFile(
-    plistPath,
-    buildPlist({
-      repoRoot,
-      bunPath,
-      logDir,
-      port: Number.parseInt(process.env.VIEWER_PORT ?? '4500', 10),
-      pathEntries,
-    }),
-  );
-  ok(`wrote ${plistPath}`);
-
-  if (await isLoaded()) await $`launchctl bootout ${target}`.quiet().nothrow();
-  await $`launchctl bootstrap ${domain} ${plistPath}`;
-  ok(`daemon installed and running — http://localhost:${process.env.VIEWER_PORT ?? '4500'}`);
-  info(`logs: ${logDir}/foundry.out.log`);
-  info(`auto-update is off by default; set daemon.autoUpdate to "apply" in .foundry/settings.json`);
 };
 
 const uninstall = async () => {

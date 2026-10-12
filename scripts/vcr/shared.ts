@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { $ } from 'bun';
+import { resolveDaemonPath } from '../../packages/foundry/src/daemon/agent-clis';
 import {
   cassettes,
   compareSignatures,
@@ -10,7 +11,6 @@ import {
   signatureOf,
   volatileDifferences,
 } from '../../packages/foundry/src/vcr';
-import { resolveDaemonPath } from '../daemon/agent-clis';
 
 export const repoRoot = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
 export const fixturesDir = join(repoRoot, 'packages/foundry/tests/fixtures/vcr');

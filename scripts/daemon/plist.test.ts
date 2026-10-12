@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { buildPlist, DAEMON_LABEL } from './plist';
+import { buildPlist, DAEMON_LABEL } from '../../packages/foundry/src/daemon/plist';
 
 const options = {
-  repoRoot: '/Users/x/code/foundry',
+  workingDirectory: '/Users/x/code/foundry',
   bunPath: '/opt/homebrew/bin/bun',
   logDir: '/Users/x/Library/Logs/foundry',
   port: 4500,
@@ -36,7 +36,7 @@ describe('buildPlist', () => {
   });
 
   test('escapes XML metacharacters in paths', () => {
-    const plist = buildPlist({ ...options, repoRoot: '/Users/x/co<de>&more' });
+    const plist = buildPlist({ ...options, workingDirectory: '/Users/x/co<de>&more' });
     expect(plist).toContain('/Users/x/co&lt;de&gt;&amp;more');
     expect(plist).not.toContain('co<de>');
   });
@@ -65,6 +65,19 @@ describe('buildPlist', () => {
       '<key>FOUNDRY_DAEMON</key>',
     ])
       expect(plist).toContain(shared), expect(daemon).toContain(shared);
+  });
+
+  test('an installed Foundry runs its own program from its home', () => {
+    const plist = buildPlist({
+      ...options,
+      workingDirectory: '/Users/x/.foundry/home',
+      program: ['/opt/homebrew/bin/bun', 'run', '/pkg/foundry/src/start.ts'],
+    });
+    expect(plist).toContain('<string>/pkg/foundry/src/start.ts</string>');
+    expect(plist).not.toContain('supervisor.ts');
+    expect(plist).toContain(
+      '<key>WorkingDirectory</key>\n  <string>/Users/x/.foundry/home</string>',
+    );
   });
 
   test('labels the agent consistently', () => {

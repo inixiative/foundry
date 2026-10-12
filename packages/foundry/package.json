@@ -13,7 +13,9 @@
     "./tools": "./src/tools/index.ts",
     "./runtime": "./src/runtime/index.ts",
     "./kingdom": "./src/kingdom/index.ts",
-    "./client": "./src/client/index.ts"
+    "./client": "./src/client/index.ts",
+    "./daemon": "./src/daemon/index.ts",
+    "./repeats": "./src/feedback/repeats-cli.ts"
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
@@ -47,7 +49,7 @@
     "pino": "^10.3.1",
     "playwright": "^1.63.0"
   },
-  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core \u2014 providers, session adapters, planner, viewer and jobs",
+  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core — providers, session adapters, planner, viewer and jobs",
   "license": "SEE LICENSE IN LICENSE",
   "files": [
     "src"
@@ -62,5 +64,8 @@
   },
   "engines": {
     "bun": ">=1.4.2"
+  },
+  "bin": {
+    "foundry": "src/cli.ts"
   }
 }
