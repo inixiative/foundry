@@ -82,6 +82,7 @@ export function mockKingdom(
   const calls: string[] = [];
   const frames: Record<string, unknown>[] = [];
   const credentials: { integrationId: string; token: string }[] = [];
+  const logins: Record<string, unknown>[] = [];
   let url = '';
 
   const snapshotOf = (installation: Installation) => ({
@@ -242,6 +243,18 @@ export function mockKingdom(
             return refuse(403);
           return data(issue(signet, thumbprint));
         }
+        case 'setSubscriptionLogin': {
+          const paired = integrations.get(body.integrationId);
+          if (paired?.thumbprint !== thumbprint) return refuse(403);
+          logins.push(body);
+          return data({
+            integrationId: crypto.randomUUID(),
+            credentialId: crypto.randomUUID(),
+            resourceId: crypto.randomUUID(),
+            capacityId: crypto.randomUUID(),
+            owner: paired.owner,
+          });
+        }
         case 'setInstallationCredential': {
           if (integrations.get(body.integrationId)?.thumbprint !== thumbprint) return refuse(403);
           credentials.push({ integrationId: body.integrationId, token: body.token });
@@ -357,6 +370,7 @@ export function mockKingdom(
       for (const installation of installations.values()) installation.revoked = true;
       for (const ws of sockets.keys()) ws.send(JSON.stringify({ type: 'installationRevoked' }));
     },
+    logins,
     get installations() {
       return [...installations.values()];
     },

@@ -11,6 +11,8 @@ export const kingdomSelectionSchema = z
   .object({
     model: z.string().min(1).optional(),
     effort: z.string().min(1).optional(),
+    authentication: z.enum(['api-key', 'subscription']).optional(),
+    runtime: z.enum(['claude', 'codex']).optional(),
     poolId: z.string().uuid().optional(),
     capacityIds: z.array(z.string().uuid()).optional(),
     integrationIds: z.array(z.string().uuid()).optional(),
@@ -50,10 +52,45 @@ export const kingdomEnvelopeSchema = z
     model: z.string(),
     effort: z.string(),
     runtime: z.enum(['claude', 'codex']),
+    authentication: z.enum(['api-key', 'subscription']),
     expiresAt: z.string().datetime(),
     gatewayPath: z.string(),
   })
   .strict();
+/** A subscription login Kingdom released for one run: held in memory, never written by Foundry. */
+export const kingdomSubscriptionReleaseSchema = z
+  .object({
+    bindingId: z.string().uuid(),
+    integrationId: z.string().uuid(),
+    capacityId: z.string().uuid(),
+    executionId: z.string().uuid(),
+    runtime: z.enum(['claude', 'codex']),
+    accessToken: z.string().min(1),
+    idToken: z.string().nullable(),
+    accountId: z.string().nullable(),
+    expiresAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type KingdomSubscriptionRelease = z.infer<typeof kingdomSubscriptionReleaseSchema>;
+/** A provider limit reading, as Kingdom's capacity ordering reads it. */
+export const kingdomLimitReadingSchema = z
+  .object({
+    rateLimited: z.boolean(),
+    retryAfterMs: z.number().int().min(0).nullable(),
+    windows: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(60),
+            usedPercent: z.number().min(0).max(100).nullable(),
+            resetsAt: z.number().int().nullable(),
+          })
+          .strict(),
+      )
+      .max(10),
+  })
+  .strict();
+export type KingdomLimitReading = z.infer<typeof kingdomLimitReadingSchema>;
 export type KingdomSelection = z.infer<typeof kingdomSelectionSchema>;
 export type KingdomRunEnvelope = z.infer<typeof kingdomEnvelopeSchema>;
 /** Resolves, delegates and revokes native runs by presenting the Signet this Foundry's integration holds. */
@@ -82,7 +119,10 @@ export class KingdomClient {
         ...(spreadId ? { spreadId } : {}),
       }),
     );
-    const expected = `/api/v1/access/gateway/${run.id}${run.runtime === 'codex' ? '/v1' : ''}`;
+    const expected =
+      run.authentication === 'subscription'
+        ? '/api/v1/access/releaseSubscription'
+        : `/api/v1/access/gateway/${run.id}${run.runtime === 'codex' ? '/v1' : ''}`;
     if (
       run.gatewayPath !== expected ||
       run.runId !== runId ||
@@ -98,6 +138,21 @@ export class KingdomClient {
   }
   async revoke(bindingId: string) {
     await this.signet.post('revokeRun', { bindingId });
+  }
+  /** The subscription login for a run; Kingdom records the release as usage. */
+  async release(bindingId: string): Promise<KingdomSubscriptionRelease> {
+    const released = kingdomSubscriptionReleaseSchema.parse(
+      await this.signet.post('releaseSubscription', { bindingId }),
+    );
+    if (released.bindingId !== bindingId) throw Error('Kingdom released a different run');
+    return released;
+  }
+  /** Tells Kingdom how full a run's login is, so its pool ordering can skip an exhausted one. */
+  async reportLimits(bindingId: string, reading: KingdomLimitReading) {
+    await this.signet.post('reportSubscriptionLimits', {
+      bindingId,
+      reading: kingdomLimitReadingSchema.parse(reading),
+    });
   }
 }
 

@@ -123,6 +123,20 @@ export async function listedSignets(configDir: string, urls: readonly string[]) 
   return listed;
 }
 
+/** The local file of a Signet this Foundry holds from one Kingdom, enrolling it now if Kingdom lists it but no file exists yet. */
+export async function heldSignetFile(configDir: string, url: string, signetId: string) {
+  const { keyFile, directory } = await kingdomInstallation(configDir, url);
+  const file = signetCredentialFile(directory, signetId);
+  if (existsSync(file)) return file;
+  const listed = (await installationSignets(url, keyFile)).signets.filter(
+    (signet) => signet.signetId === signetId,
+  );
+  if (!listed.length) throw Error(`Kingdom does not list Signet ${signetId} for this Foundry`);
+  await holdInstallationSignets(url, keyFile, directory, listed);
+  if (!existsSync(file)) throw Error(`Signet ${signetId} could not be enrolled on this Foundry`);
+  return file;
+}
+
 /**
  * Gives every paired integration the credential Kingdom uses to reach this Foundry's viewer (its tunnel
  * token, presented to `POST /api/handoff`). Failures are logged; Kingdom keeps the last one it was given.

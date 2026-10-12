@@ -700,6 +700,10 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     )
       throw Error('Native authentication requires the prewrite-capable agent-session package');
     if (auth) this._authLaunches.set(session, auth);
+    if (auth?.observeLimits)
+      session.onEvent((event) => {
+        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
+      });
     if (opts.toolGate && opts.tools !== false && !fixture) {
       if (!session.onToolRequest)
         throw Error('Installed agent-session lacks onToolRequest; no process started');
@@ -1014,6 +1018,10 @@ export class CodexSessionAdapter implements SessionAdapter {
     )
       throw Error('Native authentication requires the prewrite-capable agent-session package');
     if (auth) this._authLaunches.set(session, auth);
+    if (auth?.observeLimits)
+      session.onEvent((event) => {
+        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
+      });
     this._constructions.set(
       session,
       Object.freeze({

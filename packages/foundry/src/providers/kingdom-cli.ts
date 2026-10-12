@@ -15,6 +15,7 @@ import {
   pairKingdomIntegration,
   viewerRunning,
 } from './kingdom-pairing';
+import { kingdomLogin, setProjectCapacity } from './kingdom-subscription-login';
 
 export const defaultInstallationName = () => `Foundry on ${hostname()}`.slice(0, 120);
 const restartHint =
@@ -127,8 +128,11 @@ export async function kingdomStatus(configDir: string) {
 /** KINGDOM_URL, then hosted production. */
 export const defaultKingdomUrl = () => process.env.KINGDOM_URL ?? HOSTED_KINGDOM_URL;
 
-const usage =
-  'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]';
+const usage = [
+  'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]',
+  '       bun run kingdom login <claude|codex> [--owner PAIRED_ID|OWNER_KEY|ORG_OR_USER_ID] [--kingdom ID|URL] [--name NAME]',
+  '       bun run kingdom capacity <FOUNDRY_PROJECT_ID> <local|kingdom> [--kingdom ID|URL] [--signet SIGNET_ID] [--project KINGDOM_PROJECT_ID]',
+].join('\n');
 
 async function main() {
   const { values: v, positionals } = parseArgs({
@@ -141,18 +145,71 @@ async function main() {
       kingdom: { type: 'string' },
       'config-dir': { type: 'string' },
       replace: { type: 'boolean' },
+      owner: { type: 'string' },
+      signet: { type: 'string' },
+      project: { type: 'string' },
       'no-open': { type: 'boolean' },
       help: { type: 'boolean' },
     },
   });
   const command = positionals[0];
-  if (v.help || !command || !['pair', 'status', 'disconnect'].includes(command)) {
+  if (
+    v.help ||
+    !command ||
+    !['pair', 'status', 'disconnect', 'login', 'capacity'].includes(command)
+  ) {
     console.log(usage);
     if (!v.help) process.exitCode = 1;
     return;
   }
   const configDir = v['config-dir'] ?? process.env.FOUNDRY_CONFIG_DIR ?? '.foundry';
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
+  if (command === 'login') {
+    const runtime = positionals[1];
+    if (runtime !== 'claude' && runtime !== 'codex') {
+      console.log(usage);
+      process.exitCode = 1;
+      return;
+    }
+    output(
+      await kingdomLogin({
+        configDir,
+        runtime,
+        store: new ConfigStore(configDir),
+        ...(v.owner ? { owner: v.owner } : {}),
+        ...(v.kingdom ? { kingdom: v.kingdom } : {}),
+        ...(v.name ? { name: v.name } : {}),
+      }),
+    );
+    return;
+  }
+  if (command === 'capacity') {
+    const [, projectId, source] = positionals;
+    if (!projectId || (source !== 'local' && source !== 'kingdom')) {
+      console.log(usage);
+      process.exitCode = 1;
+      return;
+    }
+    if (source === 'kingdom' && (!v.kingdom || !v.signet))
+      throw Error(
+        'Kingdom capacity needs --kingdom and --signet (bun run kingdom status lists them)',
+      );
+    const updated = await setProjectCapacity(
+      new ConfigStore(configDir),
+      projectId,
+      source === 'local'
+        ? { source }
+        : {
+            source,
+            kingdom: v.kingdom!,
+            signetId: v.signet!,
+            ...(v.project ? { projectId: v.project } : {}),
+          },
+    );
+    output({ project: projectId, capacity: updated.projects[projectId]?.capacity });
+    if (await viewerRunning()) console.error(restartHint);
+    return;
+  }
   if (command === 'status') {
     const status = await kingdomStatus(configDir);
     output(status);

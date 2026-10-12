@@ -35,6 +35,7 @@ test('Kingdom resolves once through the Signet, persists source identity, and de
           effort: 'low',
           runtime: 'claude',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          authentication: 'api-key',
           gatewayPath: `/api/v1/access/gateway/${bindingId}`,
         };
       return {
@@ -177,6 +178,7 @@ test('a transient resolution failure can retry the same durable run intent', asy
           effort: 'low',
           runtime: 'claude',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          authentication: 'api-key',
           gatewayPath: `/api/v1/access/gateway/${bindingId}`,
         };
       }

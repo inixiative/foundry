@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import type { LimitSnapshot } from '@inixiative/agent-session';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
 import {
@@ -76,7 +77,7 @@ export interface NativeAuthenticationLaunch {
   readonly model?: string;
   readonly effort?: string;
   readonly capacityId?: string;
-  readonly mode: NativeAuthenticationSource['mode'];
+  readonly mode: NativeAuthenticationSource['mode'] | 'kingdom-subscription' | 'local';
   check(): void;
   launch(
     argv: string[],
@@ -85,12 +86,55 @@ export interface NativeAuthenticationLaunch {
   /** Records the launched native child, so a lock left by a crashed owner can be reclaimed once both are dead. */
   adopt?(pid: number): void;
   release(): void;
+  /** Account limits the native session observed for this launch's login. */
+  observeLimits?(limits: LimitSnapshot): void;
 }
 
 export interface NativeAuthenticationProvider {
   bindingId(threadId: string, runtime: 'claude' | 'codex'): string;
   resolveBindingId?(threadId: string, runtime: 'claude' | 'codex'): Promise<string>;
   prepare(threadId: string, runtime: 'claude' | 'codex'): Promise<NativeAuthenticationLaunch>;
+}
+
+/** The child's environment without inherited credentials, endpoints or profile overrides: only the
+ * binding's own source may set them, after this. Foundry's instruction-file switch is policy, not a credential. */
+export function withoutCompetingCredentials(inherited: Record<string, string | undefined>) {
+  const env = { ...inherited };
+  for (const key of Object.keys(env))
+    if (
+      /^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(
+        key,
+      )
+    )
+      delete env[key];
+  if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1') env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
+  return env;
+}
+
+/** Codex launch overrides limited to launch controls. A denylist of provider keys can be bypassed by
+ * TOML quoting, dotted keys or new auth settings. */
+export function assertCodexLaunchArguments(argv: readonly string[]) {
+  for (let index = 1; index < argv.length; index++) {
+    const arg = argv[index]!;
+    if (/^(?:--profile(?:=|$)|--oss(?:=|$)|--local-provider(?:=|$)|-p)/.test(arg))
+      throw Error('Conflicting native authentication settings');
+    const override =
+      arg === '-c' || arg === '--config'
+        ? argv[++index]
+        : arg.startsWith('--config=')
+          ? arg.slice(9)
+          : arg.startsWith('-c')
+            ? arg.slice(2).replace(/^=/, '')
+            : undefined;
+    if (
+      override !== undefined &&
+      !/^(sandbox_mode|approval_policy|model_reasoning_effort)\s*=/.test(override) &&
+      !/^web_search\s*=\s*"disabled"$/.test(override)
+    )
+      throw Error('Conflicting native authentication settings');
+    if ((arg === '-c' || arg === '--config') && override === undefined)
+      throw Error('Missing native configuration override');
+  }
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -272,21 +316,10 @@ export class NativeAuthentication {
         check();
         if (active) throw Error('Authentication launch already owns a process');
         const lock = join(directory, '.foundry-auth-lock');
-        const env = { ...inherited };
-        // Clear competing credential, endpoint and profile overrides on the child only.
-        for (const key of Object.keys(env))
-          if (
-            /^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(
-              key,
-            )
-          )
-            delete env[key];
+        const env = withoutCompetingCredentials(inherited);
         for (const configured of this.sources.values())
           if (configured.mode === 'gateway' && configured.credential.type === 'environment')
             delete env[configured.credential.variable];
-        // Foundry's own instruction-file switch is policy, not a credential: keep it.
-        if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1')
-          env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
         // A default login location is selected by leaving the override unset.
         Object.assign(
           env,
@@ -325,31 +358,7 @@ export class NativeAuthentication {
             throw Error('Conflicting gateway authentication settings');
           launchArgs.push('--setting-sources', 'user');
         }
-        if (runtime === 'codex') {
-          for (let index = 1; index < argv.length; index++) {
-            const arg = argv[index]!;
-            if (/^(?:--profile(?:=|$)|--oss(?:=|$)|--local-provider(?:=|$)|-p)/.test(arg))
-              throw Error('Conflicting native authentication settings');
-            const override =
-              arg === '-c' || arg === '--config'
-                ? argv[++index]
-                : arg.startsWith('--config=')
-                  ? arg.slice(9)
-                  : arg.startsWith('-c')
-                    ? arg.slice(2).replace(/^=/, '')
-                    : undefined;
-            // Only launch controls are accepted here. A denylist of provider keys
-            // can be bypassed by TOML quoting, dotted keys or new auth settings.
-            if (
-              override !== undefined &&
-              !/^(sandbox_mode|approval_policy|model_reasoning_effort)\s*=/.test(override) &&
-              !/^web_search\s*=\s*"disabled"$/.test(override)
-            )
-              throw Error('Conflicting native authentication settings');
-            if ((arg === '-c' || arg === '--config') && override === undefined)
-              throw Error('Missing native configuration override');
-          }
-        }
+        if (runtime === 'codex') assertCodexLaunchArguments(argv);
         mkdirSync(directory, { recursive: true, mode: 0o700 });
         if (source.mode === 'native-profile') assertProfile(directory, runtime);
         else assertPrivateProfile(directory);

@@ -116,3 +116,18 @@ No actual credentials were imported and no deployment occurred. The Kingdom inte
 - Kingdom monorepo typechecks, post-Biome lint checks and CI rules passed. Canonical `kingdom:check` remains blocked by two formatting errors in concurrent archive work; it did not reach its full backend/frontend suites.
 - The final broader Foundry run recorded 1,413 passes, 8 skips and the same three failures listed above. It is not a fully green repository-wide result.
 - Adversarial review addressed missing final usage, credential replacement races, exhausted preferred capacities, binding retry identity, token lifetime, beta pricing headers and terminal-stream cancellation. Automatic renewal disabled plus a lost first token response requires a new-run recovery.
+
+## Kingdom-held subscription logins
+
+A project can run on a subscription login Kingdom holds instead of this machine's own (Aron, 2026-10-12: "each project should be able to have a pool assigned to it"). Design, provider policies and open security items: Kingdom's `docs/SUBSCRIPTION-CAPACITY.md`.
+
+1. **Store a login.** `bun run kingdom login claude|codex --owner <paired id | owner key | organization id>` runs the native sign-in in a throwaway config dir. For Claude that is `claude setup-token`, Anthropic's own flow; for Codex, `codex login`. It hands the result to that owner's Kingdom as this Installation (`setSubscriptionLogin`) and deletes the dir. A setup-token printed by Claude is masked in the output. The login lands on an Integration of the Foundry's owner, which must be a person (a user or a membership), never an organization.
+2. **Assign the pool in Kingdom.** Add the login's capacity to a pool, set the Kingdom project's pool, and grant this Foundry's integration a Signet with `subscription.use` on the login(s) for that project.
+3. **Point the Foundry project at it.** `bun run kingdom capacity <foundry project id> kingdom --kingdom <paired id> --signet <signet id> [--project <kingdom project id>]`. `capacity: local` (the default) keeps today's behaviour. Restart Foundry: routing is built at startup.
+
+At run time `ProjectCapacityAuthentication` sends each thread of a kingdom project to `KingdomSubscriptionAuthentication`. That resolves a run (`authentication: subscription`; Kingdom picks the login from the project's pool), then releases the token on every launch (each release is Kingdom usage). The native child gets one config dir per Kingdom integration: `.foundry/kingdom/subscriptions/<integrationId>/<runtime>`.
+
+- **Claude** gets `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_OAUTH_TOKEN`, from memory only. `claude auth status` reports this as `oauth_token`.
+- **Codex** gets an `auth.json` holding the access and id tokens and no refresh token. It cannot become a second refresher of the login Kingdom refreshes. The file is deleted when the last holder releases.
+
+The session's rate-limit events go back to Kingdom (`reportSubscriptionLimits`), so the pool skips an exhausted login. Every other thread keeps the machine's own login.

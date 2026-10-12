@@ -448,7 +448,8 @@ export async function codexSubscriptionStatus(proc: StatusProcess): Promise<bool
   }
 }
 
-/** Supported read-only status command. Never persist raw output or account identity. */
+/** Supported read-only status command: a claude.ai login, or a subscription `setup-token` (`oauth_token`).
+ * Never an API key. Never persist raw output or account identity. */
 export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {
   try {
     const [code, stdout] = await Promise.all([
@@ -458,7 +459,7 @@ export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> 
     ]);
     if (code !== 0) return false;
     const status = JSON.parse(stdout);
-    return status.loggedIn === true && status.authMethod === 'claude.ai';
+    return status.loggedIn === true && ['claude.ai', 'oauth_token'].includes(status.authMethod);
   } catch {
     return false;
   }

@@ -1,3 +1,13 @@
+/** The environment after a launch bound it: the allowlist plus the subscription token the binding itself set. */
+export function boundLaunchEnvironment(input: Record<string, string | undefined>) {
+  return {
+    ...nativeTextEnvironment(input),
+    ...(input.CLAUDE_CODE_OAUTH_TOKEN
+      ? { CLAUDE_CODE_OAUTH_TOKEN: input.CLAUDE_CODE_OAUTH_TOKEN }
+      : {}),
+  };
+}
+
 export function nativeTextEnvironment(input: Record<string, string | undefined>) {
   const keys = [
     'PATH',

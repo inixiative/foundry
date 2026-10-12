@@ -46,6 +46,7 @@ import {
 import {
   type KingdomIntegration,
   kingdomIntegrationsSchema,
+  selectKingdomIntegration,
 } from '../providers/kingdom-installation-connection';
 import {
   NativeAuthentication,
@@ -213,6 +214,19 @@ export interface ProjectSettingsConfig {
   sources?: Record<string, DataSourceConfig>;
   /** Whether this project is enabled. Default: true. */
   enabled?: boolean;
+  /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
+  capacity?: 'local' | 'kingdom';
+  /** Required when `capacity` is `kingdom`. */
+  kingdomCapacity?: ProjectKingdomCapacity;
+}
+
+/** A Kingdom-capacity project: the paired Kingdom, the Signet (`subscription.use`) it runs under, and the
+ * Kingdom project whose pool chooses the login (absent: the Signet's own project). */
+export interface ProjectKingdomCapacity {
+  /** Paired Kingdom id or API origin (`bun run kingdom status`). */
+  kingdom: string;
+  signetId: string;
+  projectId?: string;
 }
 
 /**
@@ -905,11 +919,34 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
   }
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateProjectCapacity(config: FoundryConfig, project: ProjectSettingsConfig) {
+  if (project.capacity === undefined && project.kingdomCapacity === undefined) return;
+  if (project.capacity !== 'local' && project.capacity !== 'kingdom')
+    throw Error(`Project ${project.id} capacity must be local or kingdom`);
+  if (project.capacity === 'local') return;
+  const capacity = project.kingdomCapacity;
+  if (
+    !capacity ||
+    !uuidPattern.test(capacity.signetId) ||
+    (capacity.projectId !== undefined && !uuidPattern.test(capacity.projectId))
+  )
+    throw Error(
+      `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId, projectId? }`,
+    );
+  selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
+  if (!['claude-code', 'codex'].includes(config.defaults.provider))
+    throw Error('Kingdom capacity requires a native runtime provider');
+}
+
 export function validateConfig(config: FoundryConfig): void {
   validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
+  for (const project of Object.values(config.projects ?? {}))
+    validateProjectCapacity(config, project);
   for (const validate of configValidators) validate(config);
   if (config.tunnel && 'password' in config.tunnel)
     throw Error(

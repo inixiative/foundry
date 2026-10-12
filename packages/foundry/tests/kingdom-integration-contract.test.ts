@@ -29,6 +29,7 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
     effort: 'low',
     runtime: 'claude',
     expiresAt: new Date(Date.now() + 60000).toISOString(),
+    authentication: 'api-key',
     gatewayPath: `/api/v1/access/gateway/${bindingId}`,
   });
   let calls = 0,

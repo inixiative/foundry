@@ -1,8 +1,19 @@
 #!/usr/bin/env bun
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
-import { NativeAuthentication } from './providers/native-authentication';
-import { nativeTextEnvironment } from './providers/native-text-environment';
+import {
+  heldSignetFile,
+  selectKingdomIntegration,
+} from './providers/kingdom-installation-connection';
+import {
+  KingdomSubscriptionAuthentication,
+  ProjectCapacityAuthentication,
+} from './providers/kingdom-subscription-authentication';
+import {
+  NativeAuthentication,
+  type NativeAuthenticationProvider,
+} from './providers/native-authentication';
+import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import { createSubscriptionDecisions } from './providers/subscription-decisions';
 import { resolveSubscriptionPolicy } from './providers/subscription-policy';
@@ -228,6 +239,43 @@ const hostSettings = {
   toolGate: lateBoundToolGate(() => toolGateFor),
 };
 
+// Which project a thread (or its auxiliary session) belongs to; bound once the runtimes exist.
+let threadProject: ((threadId: string) => string | undefined) | undefined;
+let liveConfig = config;
+
+/** Kingdom-capacity projects run their threads on a login Kingdom releases from the project's pool;
+ * every other thread keeps the machine's own login. Applies to projects set to kingdom at startup. */
+function projectCapacityAuthentication(
+  config: FoundryConfig,
+  local: NativeAuthenticationProvider | undefined,
+): NativeAuthenticationProvider | undefined {
+  if (!Object.values(config.projects ?? {}).some((project) => project.capacity === 'kingdom'))
+    return local;
+  const projectOf = (threadId: string) => {
+    const id = threadProject?.(threadId.split(':aux:')[0]!);
+    return id ? liveConfig.projects[id] : undefined;
+  };
+  return new ProjectCapacityAuthentication({
+    local,
+    usesKingdom: (threadId) => projectOf(threadId)?.capacity === 'kingdom',
+    kingdom: new KingdomSubscriptionAuthentication({
+      directory: `${process.cwd()}/.foundry/kingdom/subscriptions`,
+      capacity: async (threadId) => {
+        const capacity = projectOf(threadId)?.kingdomCapacity;
+        if (!capacity) throw Error('This project has no Kingdom capacity configured');
+        const { url } = selectKingdomIntegration(liveConfig.kingdomIntegrations, capacity.kingdom);
+        return {
+          url,
+          credentialFile: await heldSignetFile(FOUNDRY_DIR, url, capacity.signetId),
+          ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
+          model: liveConfig.defaults.model,
+          effort: liveConfig.defaults.codexEffort ?? 'default',
+        };
+      },
+    }),
+  });
+}
+
 function createProvider(config: FoundryConfig): {
   provider: LLMProvider;
   sessionAdapter?: SessionAdapter;
@@ -255,7 +303,8 @@ function createProvider(config: FoundryConfig): {
             defaultSourceId: config.defaults.nativeAuthenticationId,
           })
         : undefined;
-  if (authentication && !['claude-code', 'codex'].includes(providerId))
+  const routed = projectCapacityAuthentication(config, authentication);
+  if (routed && !['claude-code', 'codex'].includes(providerId))
     throw Error('Native authentication requires a native runtime provider');
   if (authentication instanceof NativeAuthentication)
     for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
@@ -285,7 +334,7 @@ function createProvider(config: FoundryConfig): {
         ) =>
           Bun.spawn(argv, {
             ...options,
-            env: nativeTextEnvironment(options.env),
+            env: boundLaunchEnvironment(options.env),
             stdin: 'pipe',
             stdout: 'pipe',
             stderr: 'pipe',
@@ -299,7 +348,7 @@ function createProvider(config: FoundryConfig): {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
         contextBudget: config.providers[providerId]?.contextBudget,
         store: sessionStore,
-        authentication,
+        authentication: routed,
         defaults: {
           model: config.defaults.model,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
@@ -319,7 +368,7 @@ function createProvider(config: FoundryConfig): {
     case 'codex': {
       const sessionAdapter = new CodexSessionAdapter({
         store: sessionStore,
-        authentication,
+        authentication: routed,
         ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
           model: config.defaults.model,
@@ -527,6 +576,7 @@ const factory = new ThreadFactory({
 // Settings edits reach live threads on their next turn; decision providers stay as started.
 configStore.onChange(async (next) => {
   const effective = (subscription ? resolveSubscriptionPolicy(next)?.config : undefined) ?? next;
+  liveConfig = effective;
   for (const change of await factory.reconfigure(effective)) console.log(`[settings] ${change}`);
 });
 configStore.watch();
@@ -551,6 +601,8 @@ const thread = factory.create('main', {
 const stack = thread.stack;
 
 const mainRuntime = runtimeManager.get(thread.id)!;
+threadProject = (threadId) =>
+  runtimeManager.get(threadId)?.thread.meta.projectId as string | undefined;
 
 // ---------------------------------------------------------------------------
 // Session adapter — long-lived HarnessSession factory with crash recovery
