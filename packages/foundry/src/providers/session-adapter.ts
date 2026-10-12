@@ -30,7 +30,6 @@ import {
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
   CodexAppServerSession,
-  CodexSession,
   type CodexSessionConfig,
   codexPermissions,
   type HarnessSession,
@@ -225,7 +224,7 @@ export interface CreateSessionOpts {
   maxTurns?: number | null;
   /**
    * Effective requested model for this native session. Adapters pass it to the
-   * engine (Claude `--model` argv, Codex first `codex` call `model` parameter);
+   * engine (Claude `--model` argv, Codex app-server `thread/start` `model`);
    * absent means the adapter's configured default. This is requested
    * configuration, not native acknowledgment of the model that actually ran.
    */
@@ -259,7 +258,6 @@ export interface ConstructionBinding {
     effort?: string;
     capacityId?: string;
   }>;
-  readonly engine?: 'mcp' | 'app-server';
   readonly requestedEffort?: string;
   /** Store key the adapter consulted for this session. */
   readonly bindingId: string;
@@ -325,7 +323,7 @@ export interface SessionAdapter {
 
 /** A supported native configuration envelope, copied once when first observed. */
 export interface ConfigurationEvidence {
-  readonly envelope: 'system-init' | 'session-configured' | 'thread-configured';
+  readonly envelope: 'system-init' | 'thread-configured';
   readonly effort?: string | null;
   readonly history?: Readonly<{
     source: 'thread/start' | 'thread/resume';
@@ -333,7 +331,7 @@ export interface ConfigurationEvidence {
     hasMore: boolean;
     turns: readonly Readonly<{ id: string; status: string }>[];
   }>;
-  /** Native binding the envelope named (Claude session_id, Codex thread_id/session_id). */
+  /** Native binding the envelope named (Claude session_id, Codex app-server threadId). */
   readonly binding: string;
   readonly model: string;
   readonly observedAt: number;
@@ -361,21 +359,6 @@ function configurationFact(raw: unknown): ConfigurationEvidence | undefined {
       model: r.model,
       observedAt: Date.now(),
     });
-  }
-  if (r.type === 'session_configured') {
-    const binding =
-      typeof r.thread_id === 'string'
-        ? r.thread_id
-        : typeof r.session_id === 'string'
-          ? r.session_id
-          : undefined;
-    if (binding)
-      return Object.freeze({
-        envelope: 'session-configured',
-        binding,
-        model: r.model,
-        observedAt: Date.now(),
-      });
   }
   if (r.type === 'thread-configured' && typeof r.threadId === 'string' && r.status === 'idle') {
     const h = r.history as Record<string, unknown> | undefined;
@@ -658,7 +641,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
               try {
                 const spawned = (opts.tools === false ? restrictedSpawn : defaultSpawn)(
                   opts.nativeBridge
-                    ? withNativeBridge(client.argv, 'claude', opts.nativeBridge)
+                    ? withNativeBridge(client.argv, opts.nativeBridge)
                     : client.argv,
                   { ...options, env: launch?.env ?? options.env },
                 );
@@ -864,8 +847,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
 
 export interface CodexSessionAdapterConfig {
   authentication?: NativeAuthenticationProvider;
-  /** Deliberate isolated selection. Existing MCP bindings are never migrated. */
-  engine?: 'mcp' | 'app-server';
   /** Explicit operator config only; copied once and never taken from disk. */
   appServerConfig?: Readonly<Record<string, unknown>>;
   /** Where to persist the (thread, external ID) mapping. */
@@ -880,9 +861,8 @@ export interface CodexSessionAdapterConfig {
 }
 
 export class CodexSessionAdapter implements SessionAdapter {
-  readonly runtime: string;
+  readonly runtime = 'codex-app-server';
   readonly structuralRulesAtLaunch = true;
-  private readonly _engine: 'mcp' | 'app-server';
   private readonly _appConfig: Readonly<Record<string, unknown>>;
   private _store: ExternalSessionStore;
   private _authentication?: NativeAuthenticationProvider;
@@ -896,10 +876,6 @@ export class CodexSessionAdapter implements SessionAdapter {
   private _signals: ThreadSignalBindings;
 
   constructor(config: CodexSessionAdapterConfig) {
-    if (config.engine !== undefined && !['mcp', 'app-server'].includes(config.engine))
-      throw Error('Unsupported Codex engine selection');
-    this._engine = config.engine ?? 'mcp';
-    this.runtime = this._engine === 'app-server' ? 'codex-app-server' : 'codex';
     this._appConfig = deepFreeze(structuredClone(config.appServerConfig ?? {}));
     if (
       config.authentication &&
@@ -937,17 +913,8 @@ export class CodexSessionAdapter implements SessionAdapter {
     }
     if (opts.tools === false) {
       throw new Error(
-        'Codex MCP adapter cannot enforce text-only sessions; use an explicitly configured decision provider until native policy support is implemented',
+        'Codex adapter cannot enforce text-only sessions; use an explicitly configured decision provider until native policy support is implemented',
       );
-    }
-    if (this._engine === 'mcp') {
-      // The MCP engine has no approval channel and runs with approvals and sandbox off.
-      if (opts.permissionMode && opts.permissionMode !== 'bypassPermissions')
-        throw Error(
-          `Codex's MCP engine runs with full access only; the ${opts.permissionMode} mode needs the app-server engine`,
-        );
-      if (opts.mcpServers?.length)
-        throw Error('Client MCP servers on Codex need the app-server engine');
     }
     const auth = await this._authentication?.prepare(opts.threadId, 'codex');
     const bindingId = auth?.bindingId ?? opts.threadId;
@@ -958,48 +925,42 @@ export class CodexSessionAdapter implements SessionAdapter {
       this._defaults?.spawn ??
       ((cmd, options) =>
         Bun.spawn(cmd, { ...options, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' }));
-    const Session = this._engine === 'app-server' ? CodexAppServerSession : CodexSession;
-    const appServer =
-      this._engine === 'app-server'
+    const appServer = {
+      requireConfiguration: true,
+      onThreadReady: async (id: string) => {
+        await this._store.save(bindingId, this.runtime, id);
+      },
+      config: appServerClientMcpConfiguration(
+        opts.mcpServers ?? [],
+        opts.nativeBridge
+          ? appServerBridgeConfiguration(opts.nativeBridge, this._appConfig)
+          : this._appConfig,
+      ),
+      ...(opts.permissionMode ? codexPermissions(opts.permissionMode) : {}),
+      ...(opts.nativeBridge
         ? {
-            requireConfiguration: true,
-            onThreadReady: async (id: string) => {
-              await this._store.save(bindingId, this.runtime, id);
+            requiredMcpServer: {
+              name: opts.nativeBridge.name,
+              tools: ['foundry_query', 'foundry_memory'],
             },
-            config: appServerClientMcpConfiguration(
-              opts.mcpServers ?? [],
-              opts.nativeBridge
-                ? appServerBridgeConfiguration(opts.nativeBridge, this._appConfig)
-                : this._appConfig,
-            ),
-            ...(opts.permissionMode ? codexPermissions(opts.permissionMode) : {}),
-            ...(opts.nativeBridge
-              ? {
-                  requiredMcpServer: {
-                    name: opts.nativeBridge.name,
-                    tools: ['foundry_query', 'foundry_memory'],
-                  },
-                }
-              : {}),
           }
-        : undefined;
+        : {}),
+    };
     let spawned = false;
-    const session = new Session({
+    const session = new CodexAppServerSession({
       ...this._defaults,
-      ...(appServer ? { appServer } : {}),
+      appServer,
       spawn: (cmd, options) => {
-        if (this._engine === 'app-server' && spawned)
+        if (spawned)
           throw Error('New native process requires new owned adapter construction and preflight');
         opts.nativeBridge?.check();
         const launch = auth?.launch(cmd, options.env);
         let child: ReturnType<typeof defaultSpawn>;
         try {
-          child = defaultSpawn(
-            opts.nativeBridge && this._engine === 'mcp'
-              ? withNativeBridge(launch?.argv ?? cmd, 'codex', opts.nativeBridge)
-              : (launch?.argv ?? cmd),
-            { ...options, env: launch?.env ?? options.env },
-          );
+          child = defaultSpawn(launch?.argv ?? cmd, {
+            ...options,
+            env: launch?.env ?? options.env,
+          });
         } catch (error) {
           auth?.release();
           throw error;
@@ -1035,15 +996,13 @@ export class CodexSessionAdapter implements SessionAdapter {
       );
     if (
       opts.toolGate &&
-      session instanceof CodexAppServerSession &&
       opts.permissionMode &&
       codexPermissions(opts.permissionMode).approvalPolicy !== 'never'
     )
       session.onToolRequest(opts.toolGate);
     if (
-      this._engine === 'app-server' &&
       (session as HarnessSession & { appServerProtocol?: string }).appServerProtocol !==
-        'owned-thread-v1'
+      'owned-thread-v1'
     )
       throw Error(
         'Installed native package lacks owned app-server integration; no process started',
@@ -1060,7 +1019,6 @@ export class CodexSessionAdapter implements SessionAdapter {
       Object.freeze({
         bindingId,
         resumedBinding: existing ?? null,
-        engine: this._engine,
         ...(auth
           ? {
               authentication: {
@@ -1083,15 +1041,6 @@ export class CodexSessionAdapter implements SessionAdapter {
 
     const runtime = this.runtime;
     const threadId = opts.threadId;
-    if (this._engine === 'mcp')
-      attachSessionIdPersistence({
-        session,
-        store: this._store,
-        runtime,
-        threadId: bindingId,
-        existing: existing ?? undefined,
-        logPrefix: 'CodexSessionAdapter',
-      });
     const originalSend = session.send.bind(session);
     session.send = (message, options) => {
       auth?.check();

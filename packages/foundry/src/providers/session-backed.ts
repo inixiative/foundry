@@ -63,7 +63,6 @@ export interface NativeSessionProfile {
     effort?: string;
     capacityId?: string;
   }>;
-  readonly engine?: 'mcp' | 'app-server';
   readonly requestedEffort?: string;
   readonly bridgeKey?: string;
   readonly requestedModel: string;
@@ -668,7 +667,6 @@ export class SessionBackedProvider implements LLMProvider {
         observedModel: nativeModel,
         requestedMaxTurns: maxTurns,
         ...(profile?.transportMode ? { transportMode: profile.transportMode } : {}),
-        ...(profile?.engine ? { engine: profile.engine } : {}),
         ...(profile?.requestedEffort ? { requestedEffort: profile.requestedEffort } : {}),
         ...(observedEffort !== undefined ? { observedEffort } : {}),
         ...(history ? { history } : {}),
@@ -939,7 +937,6 @@ export class SessionBackedProvider implements LLMProvider {
                   bindingId: constructed.bindingId,
                   transportMode: constructed.transportMode,
                   authentication: constructed.authentication,
-                  engine: constructed.engine,
                   requestedEffort: constructed.requestedEffort,
                 }
               : {}),
@@ -988,10 +985,8 @@ export class SessionBackedProvider implements LLMProvider {
 }
 
 /**
- * Native model acknowledgment from supported configuration envelopes only, and only
- * when the envelope names this session's own native binding:
- *  - Claude stream-json `system`/`init` with `session_id` and `model`
- *  - Codex `session_configured` with `thread_id`/`session_id` and `model`
+ * Native model acknowledgment, for an adapter with no owned configuration evidence, from Claude
+ * stream-json `system`/`init` naming this session's own native binding (`session_id`) and `model`.
  * Anything else (tool events, unknown types, foreign bindings, missing binding) is
  * not evidence and leaves acknowledgment undefined.
  */
@@ -1005,10 +1000,7 @@ function acknowledgedModel(
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
     if (typeof r.model !== 'string' || !r.model) continue;
-    const claudeInit = r.type === 'system' && r.subtype === 'init' && r.session_id === binding;
-    const codexConfigured =
-      r.type === 'session_configured' && (r.thread_id === binding || r.session_id === binding);
-    if (claudeInit || codexConfigured) return r.model;
+    if (r.type === 'system' && r.subtype === 'init' && r.session_id === binding) return r.model;
   }
   return undefined;
 }

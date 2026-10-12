@@ -119,10 +119,17 @@ export function subscriptionTransport(
   };
 }
 
+const SANDBOX_TYPES: Record<string, string> = {
+  'read-only': 'readOnly',
+  'workspace-write': 'workspaceWrite',
+  'danger-full-access': 'dangerFullAccess',
+};
+
 /**
- * Controlled `codex app-server` process (JSON-RPC over stdio) for primed decisions: records
- * launches and requests, answers account reads, serves threads, forks and turns, and tracks
- * concurrent decision turns. `response` sees the turn input (never the primer).
+ * Controlled `codex app-server` process (JSON-RPC over stdio): records launches and requests,
+ * answers account reads, serves threads (start, resume, fork) with the configuration they were
+ * opened with, reports configured MCP servers as connected, runs turns, and tracks concurrent
+ * decision turns. `response` sees the turn input (never the primer).
  */
 export function appServerTransport(
   options: {
@@ -136,6 +143,10 @@ export function appServerTransport(
     model?: string;
     /** The process exits (crashes) when a decision turn with this input starts. */
     crashOn?: string;
+    /** Id of the thread `thread/start` opens; default `thread-<n>`. */
+    threadId?: string;
+    /** Tools every configured MCP server reports once connected. */
+    mcpTools?: readonly string[];
   } = {},
 ) {
   const launches: {
@@ -184,13 +195,19 @@ export function appServerTransport(
         }
       };
       const inflight = new Map<string, () => void>();
+      let threadConfig: Record<string, unknown> = {};
       const handle = (m: any) => {
         const reply = (result: unknown) => emit({ id: m.id, result });
         const p = m.params ?? {};
         if (m.id !== undefined && m.method) requests.push({ method: m.method, params: p });
         switch (m.method) {
           case 'initialize':
-            return reply({ userAgent: 'controlled' });
+            return reply({
+              userAgent: 'controlled',
+              platformFamily: 'unix',
+              platformOs: 'macos',
+              codexHome: config.env.CODEX_HOME ?? '/controlled/codex-home',
+            });
           case 'account/read':
             return reply({
               account:
@@ -212,14 +229,41 @@ export function appServerTransport(
           case 'thread/delete':
             return reply({ status: 'ok' });
           case 'thread/start':
-          case 'thread/fork':
+          case 'thread/resume':
+          case 'thread/fork': {
+            ++threads;
+            if (m.method !== 'thread/fork') threadConfig = p.config ?? {};
             return reply({
               thread: {
-                id: `${m.method === 'thread/fork' ? 'fork' : 'thread'}-${++threads}`,
+                id:
+                  m.method === 'thread/resume'
+                    ? p.threadId
+                    : m.method === 'thread/fork'
+                      ? `fork-${threads}`
+                      : (options.threadId ?? `thread-${threads}`),
                 status: { type: 'idle' },
                 turns: [],
               },
-              model: options.model ?? p.model,
+              model: options.model ?? p.model ?? 'controlled-model',
+              modelProvider: 'openai',
+              cwd: p.cwd,
+              approvalPolicy: p.approvalPolicy,
+              approvalsReviewer: 'user',
+              sandbox: { type: SANDBOX_TYPES[p.sandbox] },
+            });
+          }
+          case 'mcpServerStatus/list':
+            return reply({
+              data: Object.keys(threadConfig)
+                .filter((key) => key.startsWith('mcp_servers.'))
+                .map((key) => ({
+                  name: key.slice('mcp_servers.'.length),
+                  runtimeStatus: 'connected',
+                  tools: Object.fromEntries(
+                    (options.mcpTools ?? []).map((name) => [name, { name }]),
+                  ),
+                })),
+              nextCursor: null,
             });
           case 'turn/interrupt': {
             reply({});

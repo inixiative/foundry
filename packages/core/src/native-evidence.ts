@@ -167,7 +167,7 @@ export interface NativeBridgeLease {
   readonly toolPolicy?: NativeToolPolicy;
   /** Private, empty native cwd owned by a restricted fixture lease. */
   readonly fixtureCwd?: string;
-  readonly launch: { readonly claudeJson: string; readonly codexOverrides: readonly string[] };
+  readonly launch: { readonly claudeJson: string };
   check(): void;
   register(evidence: NativeEvidence): void;
   observe(evidence: NativeEvidence): void;

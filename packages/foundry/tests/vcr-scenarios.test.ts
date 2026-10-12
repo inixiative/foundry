@@ -941,7 +941,6 @@ test(
       writeFileSync(join(cwd, 'AGENTS.md'), `The project codeword is ${CODEWORD}.\n`);
       const ask = async (appServerConfig?: Readonly<Record<string, unknown>>) => {
         const adapter = new CodexSessionAdapter({
-          engine: 'app-server',
           store: new InMemoryExternalSessionStore(),
           ...(appServerConfig ? { appServerConfig } : {}),
           defaults: { spawn: server.spawn, effort: 'low' },
@@ -985,7 +984,6 @@ test(
         cwd = join(directory, 'project');
       mkdirSync(cwd);
       const adapter = new CodexSessionAdapter({
-        engine: 'app-server',
         store: new InMemoryExternalSessionStore(),
         defaults: { spawn: server.spawn },
       });
@@ -1042,7 +1040,6 @@ test(
         status.statusSpawn,
       );
       const adapter = new CodexSessionAdapter({
-        engine: 'app-server',
         authentication: auth,
         store: new InMemoryExternalSessionStore(),
         defaults: { spawn: worker.spawn },

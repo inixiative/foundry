@@ -5,7 +5,6 @@
 export {
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
-  CodexSession,
   type CodexSessionConfig,
   type HarnessSession,
   type SessionArtifact,

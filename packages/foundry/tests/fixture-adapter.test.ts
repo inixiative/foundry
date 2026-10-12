@@ -53,7 +53,6 @@ function fixture(transport = subscriptionTransport()) {
           },
         },
       }),
-      codexOverrides: [],
     },
     check() {
       if (closed) throw Error('closed');
@@ -190,7 +189,7 @@ test('normal native, Codex, and auxiliary paths cannot acquire fixture launch pr
       nativeBridge: f.lease,
     }),
   ).rejects.toThrow('cannot be granted');
-  expect(() => withNativeBridge(['claude'], 'claude', f.lease)).toThrow('isolated transport');
+  expect(() => withNativeBridge(['claude'], f.lease)).toThrow('isolated transport');
   expect(spawns).toBe(0);
 });
 

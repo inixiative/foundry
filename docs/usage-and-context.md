@@ -239,8 +239,7 @@ restart.
   AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting. Subscription
   and native-profile workers run on a Foundry-private CODEX_HOME without one, so
   Foundry composes the user's file; a worker on the user's own CODEX_HOME reads
-  it natively, so Foundry leaves that level out. The legacy MCP engine takes no
-  thread config, so suppression does not reach it.
+  it natively, so Foundry leaves that level out.
 - The off switch is kept through every authentication launch (subscription,
   gateway, Kingdom), which otherwise clear `CLAUDE_CODE_*` variables.
 
