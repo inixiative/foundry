@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { kingdomUrl, pairInstallation, signetCredentialFile } from '@inixiative/signet';
+import type { RequestedResource } from '@inixiative/signet/contracts';
 import { z } from 'zod';
 import { log } from '../logger';
 import type { ConfigStore } from '../viewer/config';
@@ -32,8 +33,15 @@ export const kingdomPairInputSchema = z
       }
     }),
     name: z.string().trim().min(1).max(120),
+    /** The organization (slug or id) this Foundry asks to belong to; the review opens on it. */
+    organization: z.string().trim().min(1).max(120).optional(),
   })
   .strict();
+
+/** What a Foundry asks Kingdom for: inference on the owner's models. */
+export const foundryPairingResources = [
+  { resourceKind: 'model', operations: ['inference.create'] },
+] as const satisfies RequestedResource[];
 
 /** What a person needs to approve the pairing in Kingdom. */
 export type KingdomReview = { url: string; reviewCode: string; review: string; expiresAt: string };
@@ -41,6 +49,7 @@ export type KingdomReview = { url: string; reviewCode: string; review: string; e
 export interface PairKingdomIntegration {
   url: string;
   name: string;
+  organization?: string;
   /** Id of the paired Kingdom being paired again; approval must come from its owner. */
   replace?: string;
   onReview: (review: KingdomReview) => void;
@@ -82,7 +91,11 @@ export async function pairKingdomIntegration(
   configDir: string,
   input: PairKingdomIntegration,
 ) {
-  const { url, name } = kingdomPairInputSchema.parse({ url: input.url, name: input.name });
+  const { url, name, organization } = kingdomPairInputSchema.parse({
+    url: input.url,
+    name: input.name,
+    organization: input.organization,
+  });
   const integrations = (await store.load()).kingdomIntegrations ?? [];
   const replaced = input.replace
     ? integrations.find((integration) => kingdomIntegrationId(integration) === input.replace)
@@ -99,7 +112,8 @@ export async function pairKingdomIntegration(
       terms: {
         name,
         lifecycle: 'ongoing',
-        resources: [],
+        ...(organization ? { owner: { ownerModel: 'Organization', organization } } : {}),
+        resources: [...foundryPairingResources],
         expiresAt: null,
         maxRequests: null,
         maxConcurrent: 2,

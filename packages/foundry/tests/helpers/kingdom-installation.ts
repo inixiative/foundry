@@ -9,6 +9,7 @@ import {
   verifySignetProof,
   writePrivateJson,
 } from '@inixiative/signet';
+import { type RegistrationRequest, requestRegistrationSchema } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
 
 /** Kingdom's owner reference for an owner key (`ownerModel:userId:organizationId:spaceId`). */
@@ -44,6 +45,7 @@ type Installation = {
   thumbprint: string;
   name: string;
   pending: { reviewCode: string; expiresAt: string } | null;
+  requested?: RegistrationRequest;
   declinedAt: string | null;
   inquiries: Inquiry[];
   revoked: boolean;
@@ -212,6 +214,7 @@ export function mockKingdom(
       if (!installation || installation.revoked) return refuse(401);
       switch (action) {
         case 'requestRegistration': {
+          installation.requested = requestRegistrationSchema.parse(body).terms;
           installation.pending = {
             reviewCode: random(6)
               .replace(/[^A-Za-z0-9]/g, 'A')
@@ -337,6 +340,8 @@ export function mockKingdom(
     frames,
     credentials,
     approve,
+    /** What the latest installation asked for when it requested registration. */
+    requested: () => [...installations.values()].at(-1)?.requested,
     /** A person declines the waiting registration. */
     decline() {
       const installation = latest();
