@@ -16,7 +16,7 @@
     },
     "packages/acp": {
       "name": "@inixiative/foundry-acp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": {
         "foundry-acp": "src/cli.ts",
       },
@@ -38,7 +38,7 @@
     },
     "packages/foundry": {
       "name": "@inixiative/foundry",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
