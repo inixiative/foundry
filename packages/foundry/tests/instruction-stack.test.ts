@@ -463,8 +463,8 @@ test("a registered ladder composes every applicable level, in order, for the thr
 
 test('dedupe runs after the audience filter: a personal copy never hides the shared one from a team', async () => {
   const section = '## Merging\n\nMerge once green.';
-  write(join(org, 'CLAUDE.md'), `# Org\n\n${section}\n\n## Ports\n\nFrom the registry.`);
-  write(join(repo, 'CLAUDE.local.md'), `# Mine\n\n${section}`);
+  write(join(org, 'CLAUDE.md'), `# Rules\n\n${section}\n\n## Ports\n\nFrom the registry.`);
+  write(join(repo, 'CLAUDE.local.md'), `# Rules\n\n${section}`);
   const stack = await discoverInstructionStack(options(repo));
   const own = composeInstructionStack(stack);
   expect(own.text.split('Merge once green.')).toHaveLength(2);
@@ -705,4 +705,17 @@ test('settings that would crash a warm are refused when saved', () => {
     [{ a: { ...node, sources: [{ path: 'x.md', glob: '*' }] } }, 'unknown field glob'],
   ] as const)
     expect(() => validateConfig(config(nodes))).toThrow(message);
+});
+
+test('a symlink never widens a personal file: ownership is judged on where it leads', async () => {
+  write(join(claudeDir, 'CLAUDE.md'), 'PERSONAL_GLOBAL');
+  symlinkSync(join(claudeDir, 'CLAUDE.md'), join(repo, 'CLAUDE.md'));
+  write(join(repo, 'CLAUDE.local.md'), 'PERSONAL_LOCAL');
+  symlinkSync(join(repo, 'CLAUDE.local.md'), join(repo, 'AGENTS.md'));
+  for (const harnessLoadsGlobal of [false, true]) {
+    const stack = await discoverInstructionStack({ ...options(repo), harnessLoadsGlobal });
+    const team = composeInstructionStack(stack, { audience: 'team' }).text;
+    expect(team).not.toContain('PERSONAL_GLOBAL');
+    expect(team).not.toContain('PERSONAL_LOCAL');
+  }
 });

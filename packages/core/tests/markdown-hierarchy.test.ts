@@ -310,7 +310,7 @@ test('identical sections: removed from the more general file with their subsecti
     '```',
   ].join('\n');
   const specific = [
-    '# Project',
+    'Project notes.',
     '',
     '## merging',
     '',
@@ -418,4 +418,13 @@ test('section dedupe keeps a heading path, indentation and untouched code blank 
 
 test('frontmatter is not a section', () => {
   expect(markdownSections('---\n# key: v\n---\n## A\n\nbody').map((s) => s.heading)).toEqual(['A']);
+});
+
+test('a lone title is part of the heading path: Testing > Rules is not Deploy > Rules', () => {
+  const rules = '## Rules\n\n- never mock the database';
+  const result = dedupeHierarchy([
+    file('/org.md', 'org', `# Testing\n\n${rules}`),
+    file('/app.md', 'project', `# Deploy\n\n${rules}`),
+  ]);
+  expect(result.duplicates).toEqual([]);
 });

@@ -179,7 +179,8 @@ in order. So: computer personal, org, org personal, project, project personal.
 ### Tiers and dedupe
 
 Each file keeps the narrower of its node's tier and the tier of any node that
-owns its path, whether a node found it or a file imported it (a
+owns its path (as spelled or where its symlinks lead), whether a node found it
+or a file imported it (a
 `CLAUDE.local.md` imported by `CLAUDE.md`, or matched by a shared node's glob,
 stays personal). A configured path, like an import, never reads a dotfile, key
 or credential file, judged on where its symlinks lead. The source's
@@ -196,8 +197,9 @@ the shared one from a team.
   personal one still reaches the team (its own imports keep their tiers).
 - **Identical content** (the same normalization, hashed): e.g. a worktree's
   `CLAUDE.md` and its main checkout's. The worktree's copy is kept.
-- **Identical sections**: the same heading path (enclosing headings, not the
-  document's lone title), heading and body with its subsections. Blank lines
+- **Identical sections**: the same heading path (every enclosing heading,
+  the document title included, so `Testing > Rules` never matches
+  `Deploy > Rules`), heading and body with its subsections. Blank lines
   and spacing inside a line do not count; indentation does. Headings in code
   fences and frontmatter are not sections. The section is cut from the more
   general file, nothing else in it changes, and a file left empty is dropped.

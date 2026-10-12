@@ -417,13 +417,17 @@ export async function discoverHierarchy(
       dirs: expandAll(entry.node.owns?.dirs, vars),
     };
   });
-  const owner = (path: string): HierarchyNode | undefined => {
+  /** The narrowest node owning the path as spelled or where its symlinks lead. */
+  const owner = (spelled: string): HierarchyNode | undefined => {
     let narrowest: HierarchyNode | undefined;
+    const paths = [...new Set([spelled, realOf(spelled)])];
     for (const own of owners) {
-      const hit =
-        own.names?.includes(basename(path)) ||
-        (own.within?.length && withinAny(own.within)(path)) ||
-        own.dirs?.includes(dirname(path));
+      const hit = paths.some(
+        (path) =>
+          own.names?.includes(basename(path)) ||
+          (own.within?.length && withinAny(own.within)(path)) ||
+          own.dirs?.includes(dirname(path)),
+      );
       if (hit && (!narrowest || options.tierRank(own.node.tier) < options.tierRank(narrowest.tier)))
         narrowest = own.node;
     }
@@ -554,8 +558,8 @@ interface Section {
 
 /**
  * ATX sections outside fenced code and frontmatter; each spans its subsections. A section's key
- * covers its enclosing headings too, so `Testing > Rules` and `Deploy > Rules` never match. A
- * document title (a lone level-1 heading that opens the document) is not part of that path.
+ * covers its enclosing headings too, document title included, so `Testing > Rules` and
+ * `Deploy > Rules` never match.
  */
 export function markdownSections(text: string): Section[] {
   const all = text.split('\n');
@@ -573,15 +577,13 @@ export function markdownSections(text: string): Section[] {
       });
     line += lines.length;
   }
-  const titled =
-    headings[0]?.level === 1 && headings.filter((heading) => heading.level === 1).length === 1;
   return headings.map((heading, i) => {
     const next = headings.slice(i + 1).find((other) => other.level <= heading.level);
     const end = next ? next.line : all.length;
     const body = normalizeBody(all.slice(heading.line + 1, end).join('\n'));
     const path: string[] = [];
     let level = heading.level;
-    for (let j = i - 1; j >= (titled ? 1 : 0); j--)
+    for (let j = i - 1; j >= 0; j--)
       if (headings[j]!.level < level) {
         path.unshift(normalizeHeading(headings[j]!.heading));
         level = headings[j]!.level;
