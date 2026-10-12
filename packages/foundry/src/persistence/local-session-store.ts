@@ -1248,6 +1248,11 @@ export class LocalSessionStore {
       this.query(
         'INSERT INTO session_native(admission_id, thread_id, turn_id, record, stored_at) VALUES (?, ?, ?, ?, ?)',
       ).run(evidence.admissionId, thread.id, owner.messageId, JSON.stringify(evidence), Date.now());
+      // The executor's own admission sends the turn, whatever path got it here.
+      if (owner.providerSessionKey === thread.id)
+        this.query("UPDATE session_turns SET status='active' WHERE id=? AND status='queued'").run(
+          owner.messageId,
+        );
     })();
   }
 

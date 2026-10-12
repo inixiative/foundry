@@ -321,7 +321,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   const asking = new Map<string, { controller: AbortController; threadId: string }>();
   const permission = (prompt: ActionPrompt) => {
     const session = sessions.get(prompt.threadId);
-    if (!session) return;
+    // Only the tool gate's approval asks belong to the host.
+    if (!session || prompt.kind !== 'approval' || typeof prompt.meta?.toolName !== 'string') return;
     if (prompt.status !== 'pending') {
       asking.get(prompt.id)?.controller.abort();
       return;
@@ -367,15 +368,26 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       .then((response) => {
         const outcome = response.outcome;
         const option = outcome.outcome === 'selected' ? outcome.optionId : 'reject_once';
+        const allowed = option.startsWith('allow');
+        // A card Foundry opened for the ask settles with the answer.
+        if (call.startsWith('foundry-gate:'))
+          send(session, {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: call,
+            status: allowed ? 'completed' : 'failed',
+          });
         return foundry.http.resolvePrompt(
           prompt.id,
-          option.startsWith('allow') ? 'approved' : 'rejected',
+          allowed ? 'approved' : 'rejected',
           option.endsWith('always'),
         );
       })
       .catch((error) => {
-        // Answered elsewhere first, or withdrawn: nothing to resolve.
-        if (!controller.signal.aborted) log(`permission ${prompt.id}: ${(error as Error).message}`);
+        // Answered elsewhere first, or withdrawn: nothing to resolve. Otherwise the host could not
+        // answer (an error, or the connection closed): reject it so the turn is not left waiting.
+        if (controller.signal.aborted) return;
+        log(`permission ${prompt.id}: ${(error as Error).message}`);
+        void foundry.http.resolvePrompt(prompt.id, 'rejected').catch(() => {});
       })
       .finally(() => asking.delete(prompt.id));
   };
@@ -416,6 +428,13 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     session.cwd = cwd;
     sessions.set(thread.threadId, session);
     await hold(session, foundry);
+    // Asks raised before this host bound the session (a host restart mid-turn) still reach it.
+    void foundry.http
+      .prompts(thread.threadId)
+      .then(({ prompts }) => {
+        for (const prompt of prompts) if (prompt.status === 'pending') permission(prompt);
+      })
+      .catch((error) => log(`pending prompts unavailable: ${(error as Error).message}`));
     return session;
   };
 
@@ -429,7 +448,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   return agent({ name: 'foundry' })
     .onConnect((connection) => {
       client = connection.client;
-      void connection.closed.then(() => {
+      void connection.closed.then(async () => {
+        // Nobody is left to answer this host's open asks: reject them so their turns can proceed.
+        const foundry = daemon;
+        await Promise.all(
+          [...asking.keys()].map((promptId) =>
+            foundry?.http.resolvePrompt(promptId, 'rejected').catch(() => {}),
+          ),
+        );
         daemon?.streams.dispose();
         daemon = null;
       });

@@ -29,30 +29,46 @@ const READ = new Set(['Read', 'NotebookRead', 'LS', 'Glob', 'Grep']);
 const FETCH = new Set(['WebFetch', 'WebSearch']);
 const PATH_KEYS = ['file_path', 'path', 'notebook_path'] as const;
 
-/** The capability a native tool call exercises, and the path it touches when it names one. */
+/** Every path a call names: its own path keys, Claude's blocked path, Codex file changes. */
+function toolPaths(request: Pick<ToolRequest, 'toolInput' | 'blockedPath'>): string[] {
+  const { toolInput } = request;
+  const changes = Array.isArray(toolInput.changes) ? toolInput.changes : [];
+  return [
+    request.blockedPath,
+    ...PATH_KEYS.map((key) => toolInput[key]),
+    ...changes.flatMap((change) => {
+      const c = change as { path?: unknown; movePath?: unknown } | null;
+      return [c?.path, c?.movePath];
+    }),
+  ].filter(
+    (value, index, all): value is string =>
+      typeof value === 'string' && !!value && all.indexOf(value) === index,
+  );
+}
+
+/** The capability a native tool call exercises, and the paths it touches. */
 export function classifyTool(
   request: Pick<ToolRequest, 'toolName' | 'toolInput' | 'blockedPath'>,
 ): {
   capability: Capability;
-  path?: string;
+  paths: string[];
 } {
-  const { toolName, toolInput } = request;
-  const path =
-    request.blockedPath ??
-    PATH_KEYS.map((key) => toolInput[key]).find(
-      (value): value is string => typeof value === 'string',
-    );
-  if (SHELL.has(toolName)) return { capability: 'exec:shell', ...(path ? { path } : {}) };
-  if (WRITE.has(toolName)) return { capability: 'file:write', ...(path ? { path } : {}) };
-  if (READ.has(toolName)) return { capability: 'file:read', ...(path ? { path } : {}) };
-  if (FETCH.has(toolName)) return { capability: 'net:fetch' };
-  if (toolName.startsWith('mcp__')) return { capability: 'net:api' };
-  return { capability: `tool:${toolName}` };
+  const { toolName } = request;
+  const paths = toolPaths(request);
+  if (SHELL.has(toolName)) return { capability: 'exec:shell', paths };
+  if (WRITE.has(toolName)) return { capability: 'file:write', paths };
+  if (READ.has(toolName)) return { capability: 'file:read', paths };
+  if (FETCH.has(toolName)) return { capability: 'net:fetch', paths: [] };
+  if (toolName.startsWith('mcp__')) return { capability: 'net:api', paths: [] };
+  return { capability: `tool:${toolName}`, paths };
 }
 
 const RANK: Record<PermissionLevel, number> = { allow: 0, prompt: 1, deny: 2 };
+/** A level the rules name; anything else is a misconfiguration and fails closed. */
+const level = (value: unknown): PermissionLevel =>
+  value === 'allow' || value === 'prompt' || value === 'deny' ? value : 'deny';
 
-/** The strictest level the rules give this call: its capability, or a rule naming the tool. */
+/** The strictest level the rules give this call: its capability on each path, or a rule naming the tool. */
 export function structuralLevel(
   rules: ToolRules | undefined,
   request: ToolRequest,
@@ -61,19 +77,27 @@ export function structuralLevel(
   capability: Capability;
   path?: string;
 } {
-  const { capability, path } = classifyTool(request);
+  const { capability, paths } = classifyTool(request);
+  const path = paths[0];
   if (!rules) return { level: 'allow', capability, ...(path ? { path } : {}) };
   const policy = {
     defaults: 'allow' as const,
-    capabilities: rules.capabilities ?? {},
+    capabilities: Object.fromEntries(
+      Object.entries(rules.capabilities ?? {}).map(([key, value]) => [key, level(value)]),
+    ),
     ...(rules.protectedPaths?.length ? { protectedPaths: rules.protectedPaths } : {}),
   };
   const levels = [
-    permissionLevel(policy, capability, { meta: path ? { path } : {} }),
-    rules.capabilities?.[`tool:${request.toolName}`] ?? 'allow',
+    ...(paths.length ? paths : [undefined]).map((p) =>
+      permissionLevel(policy, capability, { meta: p ? { path: p } : {} }),
+    ),
+    policy.capabilities[`tool:${request.toolName}`] ?? 'allow',
   ];
-  const level = levels.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
-  return { level, capability, ...(path ? { path } : {}) };
+  const strictest = levels.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
+  const hit =
+    paths.find((p) => permissionLevel(policy, capability, { meta: { path: p } }) === strictest) ??
+    path;
+  return { level: strictest, capability, ...(hit ? { path: hit } : {}) };
 }
 
 export interface ToolGateDeps {
@@ -143,8 +167,8 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
     // A pre-use call the rules allow is the runtime's own mode's to decide.
     if (level === 'allow' && request.stage === 'pre-use')
       return outcome({ behavior: 'allow' }, 'mode');
-    // Codex asks about file changes in acceptEdits; that mode accepts them.
-    if (level === 'allow' && deps.mode() === 'acceptEdits' && capability === 'file:write')
+    // Codex asks about file changes in acceptEdits; that mode accepts them (Claude decides its own).
+    if (level === 'allow' && deps.mode() === 'acceptEdits' && request.toolName === 'apply_patch')
       return outcome({ behavior: 'allow' }, 'mode');
     if (!deps.queue)
       return outcome(
@@ -160,6 +184,8 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       urgency: capability === 'exec:shell' ? 'high' : 'normal',
       ...(request.signal ? { signal: request.signal } : {}),
       meta: {
+        // A structural ask is the user's own rule: never answered by an "always" policy.
+        structural: level === 'prompt',
         stage: request.stage,
         toolName: request.toolName,
         toolInput: bounded(request.toolInput),
@@ -197,3 +223,25 @@ export function rulesFor(
     ...(protectedPaths.length ? { protectedPaths } : {}),
   };
 }
+
+/** A thread's gate as the provider holds it: the gate, and whether its rules can deny or ask. */
+export interface ThreadToolGate {
+  readonly gate: ToolGate;
+  /** The thread has structural rules (a deny, a prompt or protected paths) to enforce. */
+  hasRules(): boolean;
+}
+
+/** Rules that can deny or ask (allow-only rules change nothing). */
+export function enforces(rules: ToolRules | undefined): boolean {
+  return (
+    !!rules?.protectedPaths?.length ||
+    Object.values(rules?.capabilities ?? {}).some((level) => level !== 'allow')
+  );
+}
+
+/** Before a thread's gate can be built (daemon starting, thread unknown): fail closed. */
+export const UNBOUND_GATE: ToolGate = () => ({
+  behavior: 'deny',
+  message:
+    "Foundry cannot check this tool call yet (the thread's tool gate is not bound); it did not run.",
+});

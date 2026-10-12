@@ -1,4 +1,4 @@
-import type { HarnessSession, ToolGate } from '@inixiative/agent-session';
+import type { HarnessSession } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -14,6 +14,7 @@ import {
   sameNativeOwner,
   splitSystemMessage,
 } from '@inixiative/foundry-core';
+import type { ThreadToolGate } from '../turns/tool-gate';
 import { projectNative } from './native-evidence';
 import type { ConstructionBinding, SessionAdapter } from './session-adapter';
 import type { ThreadLaunchSettings } from './thread-launch';
@@ -33,7 +34,7 @@ export interface SessionBackedProviderConfig {
   /** What hosts chose per thread (mode, model, effort, MCP servers) for executor sessions. */
   launch?: ThreadLaunchSettings;
   /** The thread's tool gate, registered on every executor session (never an auxiliary's). */
-  toolGate?: (threadId: string) => ToolGate | undefined;
+  toolGate?: (threadId: string) => ThreadToolGate | undefined;
 }
 
 /**
@@ -720,10 +721,15 @@ export class SessionBackedProvider implements LLMProvider {
         idle && this._adapter.releaseIdleSession
           ? await this._adapter.releaseIdleSession(session).catch(() => 'unknown' as const)
           : 'unknown';
-      if (released !== 'released')
-        throw Error(
+      if (released !== 'released') {
+        const error = Error(
           'Launch settings changed while native work on this thread is unsettled; nothing was sent. Try again once the current turn settles.',
         );
+        // Nothing was admitted: the refusal is settled no-send evidence, never uncertain native work.
+        this._notAdmitted.add(error);
+        this._settled.add(error);
+        throw error;
+      }
       this._released.add(session);
       if (this._sessions.get(key) === existing) {
         this._sessions.delete(key);
@@ -832,7 +838,7 @@ export class SessionBackedProvider implements LLMProvider {
           ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
           ...(host?.effort ? { effort: host.effort } : {}),
           ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
-          ...(gate ? { toolGate: gate } : {}),
+          ...(gate ? { toolGate: gate.gate, structuralRules: gate.hasRules() } : {}),
         });
         if (bridge) this._bridges.set(session, bridge);
         const observations = new Map<string, NativeObservation>();

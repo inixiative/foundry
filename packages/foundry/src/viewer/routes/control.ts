@@ -57,6 +57,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** What an "always" answer covers: the capability and tool, and for a shell call its command name. */
+function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
+  const tool = prompt.meta?.toolName;
+  if (typeof tool !== 'string' || !prompt.capability) return null;
+  const input = prompt.meta?.toolInput as { command?: unknown } | undefined;
+  const command =
+    prompt.capability === 'exec:shell' && typeof input?.command === 'string'
+      ? (input.command.trim().split(/\s+/)[0] ?? '')
+      : '';
+  return `${prompt.capability}|${tool}|${command}`;
+}
+
 function isActionKind(value: string): value is OperatorAction['kind'] {
   return [
     'thread:pause',
@@ -739,14 +751,15 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       input: typeof body.input === 'string' ? body.input : undefined,
     });
     if (!ok || !prompt) return c.json({ error: 'Prompt not found or already resolved.' }, 404);
-    // "Always": the same answer for this tool in this thread from now on (a thread-scoped policy).
-    if (body.always === true) {
+    // "Always": the same answer for this kind of call in this thread from now on (a thread-scoped
+    // policy). Never for a structural ask, which is the user's own rule and is asked every time.
+    const key = alwaysKey(prompt);
+    if (body.always === true && key && prompt.meta?.structural !== true) {
       const action = body.action;
-      const tool = prompt.meta?.toolName;
       actionQueue.addPolicy((next) =>
         next.threadId === prompt.threadId &&
-        next.capability === prompt.capability &&
-        next.meta?.toolName === tool
+        next.meta?.structural !== true &&
+        alwaysKey(next) === key
           ? { by: 'policy', action, timestamp: Date.now() }
           : null,
       );

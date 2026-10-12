@@ -1,3 +1,4 @@
+import type { ActionPrompt } from '@inixiative/foundry-core';
 import type { MessageSummary } from '../persistence/local-session-store';
 import type { ThreadLaunchPatch } from '../providers/thread-launch';
 import type { threadToJSON } from '../viewer/http-helpers';
@@ -141,6 +142,11 @@ export class FoundryClient {
 
   updateLaunch(threadId: string, patch: ThreadLaunchPatch): Promise<ThreadLaunchView> {
     return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}/launch`, patch);
+  }
+
+  /** A thread's prompts (pending and settled). */
+  prompts(threadId: string): Promise<{ prompts: ActionPrompt[] }> {
+    return this.request('GET', `/api/prompts?threadId=${encodeURIComponent(threadId)}`);
   }
 
   /** Answer a pending prompt; `always` keeps the answer for this tool in this thread. */

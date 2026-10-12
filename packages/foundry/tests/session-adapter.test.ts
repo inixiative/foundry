@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ClaudeCodeSessionConfig, CodexSessionConfig } from '@inixiative/agent-session';
 import { type Signal, SignalBus } from '@inixiative/foundry-core';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -147,6 +147,22 @@ test('text-only Claude sessions disable tools and customizations without strippi
     decision.kill();
     worker.kill();
   }
+});
+
+test('Codex refuses to start a thread whose structural tool rules it cannot hold', async () => {
+  const adapter = new CodexSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    engine: 'app-server',
+  });
+  await expect(
+    adapter.createSession({
+      threadId: 't',
+      cwd: '/tmp',
+      permissionMode: 'default',
+      toolGate: () => ({ behavior: 'allow' }),
+      structuralRules: true,
+    }),
+  ).rejects.toThrow('no pre-use stage');
 });
 
 test("Codex's MCP engine refuses a host mode or MCP servers it cannot honour", async () => {
@@ -516,21 +532,24 @@ describe('ClaudeCodeSessionAdapter', () => {
       expect(cmd[cmd.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
       expect(cmd[cmd.indexOf('--effort') + 1]).toBe('high');
       expect(cmd).toContain('--permission-prompt-tool');
-      expect(JSON.parse(cmd[cmd.indexOf('--mcp-config') + 1])).toEqual({
+      // The servers go in a private file: never argv, never the inherited environment.
+      const file = cmd[cmd.indexOf('--mcp-config') + 1]!;
+      expect((statSync(file).mode & 0o777).toString(8)).toBe('600');
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
         mcpServers: {
-          paseo: { command: 'paseo', args: ['mcp'], env: { PASEO_TOKEN: '${FOUNDRY_MCP_0}' } },
+          paseo: { command: 'paseo', args: ['mcp'], env: { PASEO_TOKEN: 'secret-token' } },
           docs: {
             type: 'http',
             url: 'https://mcp.example.com',
-            headers: { Authorization: '${FOUNDRY_MCP_1}' },
+            headers: { Authorization: 'Bearer secret-header' },
           },
         },
       });
       expect(cmd.join(' ')).not.toContain('secret');
-      expect(env).toMatchObject({
-        FOUNDRY_MCP_0: 'secret-token',
-        FOUNDRY_MCP_1: 'Bearer secret-header',
-      });
+      expect(JSON.stringify(env)).not.toContain('secret');
+      session.kill();
+      for (let i = 0; i < 100 && existsSync(file); i++) await Bun.sleep(10);
+      expect(existsSync(file)).toBe(false);
       // The PreToolUse callback is registered over the control channel before any turn.
       expect(JSON.parse(stdin[0]!)).toMatchObject({
         type: 'control_request',

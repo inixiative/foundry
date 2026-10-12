@@ -238,6 +238,8 @@ export interface CreateSessionOpts {
   mcpServers?: readonly ClientMcpServer[];
   /** Per-call tool decisions (structural denies, asks); registered before the session starts. */
   toolGate?: ToolGate;
+  /** The thread has structural rules: a runtime that cannot consult the gate must refuse to start. */
+  structuralRules?: boolean;
 }
 
 /**
@@ -638,15 +640,21 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
           : (() => {
               const client = withClientMcpServers(
                 launch?.argv ?? cmd,
-                launch?.env ?? options.env,
                 opts.tools === false ? [] : (opts.mcpServers ?? []),
               );
-              return (opts.tools === false ? restrictedSpawn : defaultSpawn)(
-                opts.nativeBridge
-                  ? withNativeBridge(client.argv, 'claude', opts.nativeBridge)
-                  : client.argv,
-                { ...options, env: client.env },
-              );
+              try {
+                const spawned = (opts.tools === false ? restrictedSpawn : defaultSpawn)(
+                  opts.nativeBridge
+                    ? withNativeBridge(client.argv, 'claude', opts.nativeBridge)
+                    : client.argv,
+                  { ...options, env: launch?.env ?? options.env },
+                );
+                void spawned.exited.finally(client.release).catch(() => {});
+                return spawned;
+              } catch (error) {
+                client.release();
+                throw error;
+              }
             })();
       } catch (error) {
         auth?.release();
@@ -1005,7 +1013,12 @@ export class CodexSessionAdapter implements SessionAdapter {
       baseContext: opts.baseContext,
       externalSessionId: existing ?? undefined,
     });
-    // Codex asks only under an approval policy other than `never` (default, acceptEdits); it has no pre-use stage.
+    // Codex asks only under an approval policy other than `never` (default, acceptEdits) and has no
+    // pre-use stage, so it cannot hold structural rules in every mode: with rules it refuses to start.
+    if (opts.structuralRules)
+      throw Error(
+        'Structural tool rules are configured, and Codex cannot apply them before a tool runs (it has no pre-use stage). Run this thread on Claude, or remove the deny/prompt rules.',
+      );
     if (
       opts.toolGate &&
       session instanceof CodexAppServerSession &&

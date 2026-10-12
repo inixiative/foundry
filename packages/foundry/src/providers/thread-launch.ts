@@ -101,7 +101,7 @@ export function clientMcpServers(value: unknown): ClientMcpServer[] {
 export function describeMcpServers(servers: readonly ClientMcpServer[] | undefined) {
   return (servers ?? []).map((server) =>
     server.type === 'http'
-      ? { name: server.name, type: 'http' as const, url: server.url }
+      ? { name: server.name, type: 'http' as const, url: server.url.replace(/[?#].*$/, '') }
       : { name: server.name, type: 'stdio' as const, command: server.command },
   );
 }

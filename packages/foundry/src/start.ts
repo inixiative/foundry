@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import type { ToolGate } from '@inixiative/agent-session';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import { NativeAuthentication } from './providers/native-authentication';
@@ -64,6 +63,7 @@ import { BunScript } from './tools/bun-script';
 import { registerKingdomAccess } from './tools/kingdom-access';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
+import { type ThreadToolGate, UNBOUND_GATE } from './turns/tool-gate';
 import {
   ConfigStore,
   createProject,
@@ -217,10 +217,14 @@ for (const project of Object.values(config.projects)) {
 
 // What hosts chose per thread, and each thread's tool gate (bound once the viewer exists).
 const threadLaunch = new ThreadLaunchSettings();
-let toolGateFor: ((threadId: string) => ToolGate | undefined) | undefined;
+let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
 const hostSettings = {
   launch: threadLaunch,
-  toolGate: (threadId: string) => toolGateFor?.(threadId),
+  // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
+  toolGate: (threadId: string): ThreadToolGate => ({
+    gate: (request) => (toolGateFor?.(threadId).gate ?? UNBOUND_GATE)(request),
+    hasRules: () => toolGateFor?.(threadId).hasRules() ?? true,
+  }),
 };
 
 function createProvider(config: FoundryConfig): {

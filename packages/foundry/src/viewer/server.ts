@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ToolGate } from '@inixiative/agent-session';
 import type {
   ActionQueue,
   EventStream,
@@ -26,7 +25,13 @@ import {
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
-import { createToolGate, rulesFor } from '../turns/tool-gate';
+import {
+  createToolGate,
+  enforces,
+  rulesFor,
+  type ThreadToolGate,
+  UNBOUND_GATE,
+} from '../turns/tool-gate';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -343,6 +348,12 @@ export function createViewer(config: ViewerConfig) {
   const db = config.db ?? null;
 
   const threadLaunch = config.threadLaunch ?? new ThreadLaunchSettings();
+  // Settled prompts (each with its bounded tool input) leave the queue after an hour.
+  if (config.actionQueue) {
+    const queue = config.actionQueue;
+    const pruner = setInterval(() => queue.prune(3_600_000), 600_000);
+    (pruner as { unref?: () => void }).unref?.();
+  }
   const { turns } = registerRuntimeRoutes(app, {
     threadLaunch,
     harness,
@@ -507,19 +518,20 @@ export function createViewer(config: ViewerConfig) {
   };
 
   /** A thread's tool gate: structural rules, then asks to whoever answers first (viewer, ACP host). */
-  const toolGate = (threadId: string): ToolGate | undefined => {
+  const toolGate = (threadId: string): ThreadToolGate => {
     const thread = directory.get(threadId);
-    if (!thread) return undefined;
-    return createToolGate({
+    if (!thread) return { gate: UNBOUND_GATE, hasRules: () => true };
+    const rules = () => {
+      const settings = configStore.config;
+      const projectId = thread.meta.projectId;
+      return rulesFor(
+        settings.toolRules,
+        projectId ? settings.projects[projectId]?.toolRules : undefined,
+      );
+    };
+    const gate = createToolGate({
       threadId,
-      rules: () => {
-        const settings = configStore.config;
-        const projectId = thread.meta.projectId;
-        return rulesFor(
-          settings.toolRules,
-          projectId ? settings.projects[projectId]?.toolRules : undefined,
-        );
-      },
+      rules,
       mode: () => threadLaunch.get(threadId).permissionMode,
       queue: config.actionQueue ?? null,
       turnId: () => turns.runningTurn(threadId),
@@ -539,6 +551,7 @@ export function createViewer(config: ViewerConfig) {
         }
       },
     });
+    return { gate, hasRules: () => enforces(rules()) };
   };
 
   return {

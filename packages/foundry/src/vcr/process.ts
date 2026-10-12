@@ -284,13 +284,39 @@ function observedModel(transcript: ProcessTranscript): string | undefined {
   return undefined;
 }
 
-type JsonRpc = { id?: string | number; method?: string; type?: string };
-/** A stdin line as compared on replay: JSON-RPC request ids are the client's choice, everything else must match. */
+type JsonRpc = {
+  id?: string | number;
+  method?: string;
+  type?: string;
+  request_id?: string;
+  response?: { request_id?: string };
+};
+/** The client's own request id: JSON-RPC `id`, or a Claude control request's `request_id`. */
+const clientRequestId = (value: JsonRpc | undefined) =>
+  value?.method !== undefined && value.id !== undefined
+    ? value.id
+    : value?.type === 'control_request' && typeof value.request_id === 'string'
+      ? value.request_id
+      : undefined;
+/** Hook callback ids a Claude control `initialize` registers: the client's choice, like request ids. */
+const hookCallbackIds = (value: JsonRpc | undefined): string[] => {
+  const hooks = (value as { request?: { subtype?: string; hooks?: unknown } } | undefined)?.request;
+  if (value?.type !== 'control_request' || hooks?.subtype !== 'initialize') return [];
+  return (
+    JSON.stringify(hooks.hooks ?? {})
+      .match(/"hookCallbackIds":\[([^\]]*)\]/g)
+      ?.flatMap((group) => [...group.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).slice(1)) ?? []
+  );
+};
+/** A stdin line as compared on replay: request and hook callback ids are the client's choice, everything else must match. */
 const comparable = (line: string) => {
   const value = json(line);
-  if (!value || value.method === undefined || value.id === undefined) return line.trim();
-  const { id: _id, ...rest } = value as Record<string, unknown>;
-  return JSON.stringify(rest);
+  if (!value || clientRequestId(value) === undefined) return line.trim();
+  const { id: _id, request_id: _requestId, ...rest } = value as Record<string, unknown>;
+  let text = JSON.stringify(rest);
+  for (const callback of hookCallbackIds(value))
+    text = text.replaceAll(`"${callback}"`, '"<hook>"');
+  return text;
 };
 const json = (line: string): JsonRpc | undefined => {
   try {
@@ -332,6 +358,7 @@ function replay(
     ended = false;
   // JSON-RPC request ids the client chose live vs now, so replayed responses answer this run's requests.
   const ids = new Map<string, string | number>();
+  const hooks = new Map<string, string>();
   const close = (code: number) => {
     if (closed) return;
     closed = true;
@@ -347,12 +374,27 @@ function replay(
   };
   const remap = (line: string) => {
     const value = json(line);
+    if (!value) return line;
+    // A Claude hook callback names the callback id this run registered.
+    const callback = (value as { request?: { subtype?: string; callback_id?: string } }).request;
     if (
-      !value ||
-      value.method !== undefined ||
-      value.id === undefined ||
-      !ids.has(String(value.id))
+      value.type === 'control_request' &&
+      callback?.subtype === 'hook_callback' &&
+      typeof callback.callback_id === 'string' &&
+      hooks.has(callback.callback_id)
     )
+      return JSON.stringify({
+        ...value,
+        request: { ...callback, callback_id: hooks.get(callback.callback_id) },
+      });
+    // A Claude control response answers the control request this run sent.
+    const control = value.type === 'control_response' ? value.response?.request_id : undefined;
+    if (control !== undefined && ids.has(control))
+      return JSON.stringify({
+        ...value,
+        response: { ...value.response, request_id: ids.get(control) },
+      });
+    if (value.method !== undefined || value.id === undefined || !ids.has(String(value.id)))
       return line;
     return JSON.stringify({ ...value, id: ids.get(String(value.id)) });
   };
@@ -406,8 +448,15 @@ function replay(
             mismatch(
               `stdin line ${stdinLines} differs from the recording (${now?.method ?? now?.type ?? 'text'} vs ${live?.method ?? live?.type ?? 'text'})`,
             );
-          if (live?.id !== undefined && now?.id !== undefined && live.method !== undefined)
-            ids.set(String(live.id), now.id);
+          const recordedId = clientRequestId(live),
+            currentId = clientRequestId(now);
+          if (recordedId !== undefined && currentId !== undefined)
+            ids.set(String(recordedId), currentId);
+          const recordedHooks = hookCallbackIds(live),
+            currentHooks = hookCallbackIds(now);
+          recordedHooks.forEach((id, index) => {
+            if (currentHooks[index]) hooks.set(id, currentHooks[index]!);
+          });
         }
         events++;
         release();

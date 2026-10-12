@@ -268,7 +268,7 @@ test("a host's launch change relaunches the idle executor session on the next tu
     adapter,
     defaultModel: 'fable',
     launch,
-    toolGate: (threadId) => (threadId === 'thread' ? gate : undefined),
+    toolGate: (threadId) => (threadId === 'thread' ? { gate, hasRules: () => false } : undefined),
   });
   await provider.complete([{ role: 'user', content: 'first' }], { threadId: 'thread' });
   expect(adapter.created[0]).toMatchObject({ model: 'fable', toolGate: gate });

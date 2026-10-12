@@ -136,6 +136,9 @@ test('a turn is queued until the executor takes it, then active', () => {
     owner: { ...executorAdmission(a, 'turn', 'x').owner, providerSessionKey: `${a.id}:aux:route` },
   });
   expect(store.turn('turn')?.status).toBe('queued');
+  // The executor's own admission activates a queued turn too.
+  store.registerNative(a, executorAdmission(a, 'turn', 'executor-admission'));
+  expect(store.turn('turn')?.status).toBe('active');
   store.startTurn(a, 'turn');
   expect(store.turn('turn')?.status).toBe('active');
   expect(store.messageIndex(a.id).messages[0]?.status.turn).toBe('active');

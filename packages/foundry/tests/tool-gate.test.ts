@@ -116,3 +116,29 @@ test('project rules override global capabilities and add protected paths', () =>
   });
   expect(rulesFor(undefined, undefined)).toBeUndefined();
 });
+
+test('Codex file changes are checked on every path they touch; a misspelled level fails closed', async () => {
+  const { decide } = gate({ protectedPaths: ['/secrets/'] }, 'default');
+  const asked = decide({
+    stage: 'permission',
+    toolName: 'apply_patch',
+    toolInput: { changes: [{ path: '/repo/a.ts' }, { path: '/repo/secrets/key.env' }] },
+  });
+  const typo = gate({ capabilities: { 'exec:shell': 'block' as never } }, 'bypassPermissions');
+  expect(await typo.decide(bash('pre-use'))).toMatchObject({ behavior: 'deny' });
+  // The protected path makes the change a structural ask, even under acceptEdits' shortcut.
+  const edits = gate({ protectedPaths: ['/secrets/'] }, 'acceptEdits');
+  const structural = edits.decide({
+    stage: 'permission',
+    toolName: 'apply_patch',
+    toolInput: { changes: [{ path: '/repo/secrets/key.env' }] },
+  });
+  await Bun.sleep(0);
+  expect(edits.queue.pending()[0]?.meta).toMatchObject({
+    structural: true,
+    path: '/repo/secrets/key.env',
+  });
+  edits.queue.resolve(edits.queue.pending()[0]!.id, 'rejected');
+  expect(await structural).toMatchObject({ behavior: 'deny' });
+  void asked;
+});

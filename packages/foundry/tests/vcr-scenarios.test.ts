@@ -3,11 +3,11 @@
 // live, re-records it, then replays the fresh cassette in-process and requires the same
 // conclusion. Each replay also compares against the conclusion live reached when recorded.
 import { afterAll, afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexPrimedSessions } from '@inixiative/agent-session';
-import { ContextStack, Thread } from '@inixiative/foundry-core';
+import { ActionQueue, ContextStack, Thread } from '@inixiative/foundry-core';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -21,9 +21,10 @@ import {
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
-
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
+import { ThreadLaunchSettings } from '../src/providers/thread-launch';
+import { createToolGate } from '../src/turns/tool-gate';
 import {
   httpCassettes,
   ProcessCassettes,
@@ -517,6 +518,77 @@ test(
       statusChecks: 1,
       sameSession: true,
     });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  "claude worker gate: a structural deny holds under full access, through the CLI's own permission channel",
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'worker-gate', async () => {
+      const transport = recordedClaudeTransport({ status: ['subscribed'], decision: [] }, vcr);
+      vcr.queue('worker', 'gate');
+      const worker = new ProcessCassettes(vcr, 'worker');
+      const directory = root(),
+        cwd = join(directory, 'project');
+      mkdirSync(cwd);
+      const auth = new SubscriptionAuthentication(
+        directory,
+        source('claude', directory),
+        transport.statusSpawn,
+      );
+      const adapter = new ClaudeCodeSessionAdapter({
+        authentication: auth,
+        store: new InMemoryExternalSessionStore(),
+        defaults: { spawn: worker.spawn },
+      });
+      const launch = new ThreadLaunchSettings();
+      launch.update('gated', { permissionMode: 'bypassPermissions' });
+      const rows: Array<{ phase: string; record: Record<string, unknown> }> = [];
+      const gate = createToolGate({
+        threadId: 'gated',
+        rules: () => ({ capabilities: { 'exec:shell': 'deny' } }),
+        mode: () => 'bypassPermissions',
+        queue: new ActionQueue(),
+        turnId: () => 'turn',
+        journal: (_id, phase, _turnId, record) => rows.push({ phase, record }),
+      });
+      const provider = new SessionBackedProvider({
+        id: 'worker',
+        adapter,
+        defaultModel: LIVE.claudeModel,
+        defaultCwd: cwd,
+        launch,
+        toolGate: () => ({ gate, hasRules: () => true }),
+      });
+      try {
+        const result = await provider.complete(
+          [
+            {
+              role: 'user',
+              content:
+                'Use the Bash tool to run exactly `echo gate-probe > probe.txt`. If the tool is denied, do not retry it any other way; reply with exactly DENIED.',
+            },
+          ],
+          { threadId: 'gated', cwd },
+        );
+        const outcomes = rows.filter((row) => row.phase === 'gate-outcome');
+        return {
+          denied: outcomes.some(
+            (row) => row.record.decision === 'deny' && row.record.by === 'structure',
+          ),
+          bashRequested: rows.some(
+            (row) => row.phase === 'gate-request' && row.record.toolName === 'Bash',
+          ),
+          fileWritten: existsSync(join(cwd, 'probe.txt')),
+          answered: result.content.includes('DENIED'),
+        };
+      } finally {
+        await adapter.releaseAll();
+      }
+    });
+    expect(out).toEqual({ denied: true, bashRequested: true, fileWritten: false, answered: true });
   },
   LIVE_TIMEOUT,
 );

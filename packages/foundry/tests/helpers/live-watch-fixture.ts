@@ -1,6 +1,5 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ToolGate } from '@inixiative/agent-session';
 import {
   ActionQueue,
   ContextStack,
@@ -15,6 +14,7 @@ import { ThreadRuntimeManager } from '../../src/agents/thread-runtime';
 import type { CreateSessionOpts, SessionAdapter } from '../../src/providers/session-adapter';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
 import { ThreadLaunchSettings } from '../../src/providers/thread-launch';
+import type { ThreadToolGate } from '../../src/turns/tool-gate';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { connectStreams } from './data-stream';
@@ -39,7 +39,7 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     created: CreateSessionOpts[] = [];
   const actionQueue = new ActionQueue();
   const threadLaunch = new ThreadLaunchSettings();
-  let toolGateFor: ((threadId: string) => ToolGate | undefined) | undefined;
+  let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
   let startHold = Promise.resolve(),
     releaseStart = () => {},
     closing = false;
