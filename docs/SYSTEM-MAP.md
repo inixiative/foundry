@@ -121,16 +121,15 @@ Three packages: `@inixiative/foundry-core` 0.4.0 (MIT, `packages/core`), `@inixi
 
 ### Foundry
 - **Oracle product material:** `PROPOSAL.md:60,319-358` (Oracle service and pricing), `LICENSE:35-38` ("Foundry Oracle — Proprietary"), `docs/THREE_SYSTEMS.md`, `docs/BOUNDARY-BENCHMARK.md`, `docs/DISTILLATION.md`. Code in the same area: `mcp/fixture-bridge.ts` and `providers/native-launch.ts:126` (`withIsolatedFixture`, used from `session-adapter.ts:642`). These look like eval-run infrastructure; confirm whether Oracle should own them.
-- **Connection as a term:** the `connectionId` profile field and the `foundry_access` action `'connections'`. Being renamed to `integrationId` / `'integrations'` in the 2026-10-12 hygiene batch.
 
 ### Oracle
 - **Dead runtime protocol:** see Oracle above; `scripts/fixtures/{authority,delegation,project}-consumer.ts` also import the dead exports and Kingdom source (`KINGDOM_TEST_SOURCE`).
 - **Needs Foundry to talk to Kingdom:** Oracle peer-depends on `@inixiative/foundry` for `SignetClient`, which now lives in `@inixiative/signet`; it can depend on that directly.
 - **Paid API only:** `src/providers.ts` (Anthropic and Gemini with `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) is the only way `oracle run` executes. There is no subscription path.
-- **One-off records and lab references:** `.oracle/qa/*` (35 tracked files, being removed in the 2026-10-12 hygiene batch), `docs/MACHINE-HANDOFF-2026-09-10.md`, and "Lab owns experiment orchestration" (`docs/HOSTED-ORACLE.md:21`).
+- **Lab references:** "Lab owns experiment orchestration" (`docs/HOSTED-ORACLE.md:21`). The `.oracle/qa` records and the 09-10 machine handoff note were removed on 2026-10-12.
 
 ### agent-session
-- **QA handoff notes:** `docs/S1-*.md` (being removed in the 2026-10-12 hygiene batch) and the `scripts/s0/*` evidence recorders.
+- **Evidence recorders:** `scripts/s0/*`, which re-record the `fixtures/s0` cassettes its tests replay. The S1 handoff notes were removed on 2026-10-12.
 
 ### Archive
 - Clean: Kingdom forwarding uses `integration-id`, not a connection.

@@ -49,7 +49,7 @@ This document is a **snapshot of 2026-10-11**. The builds that landed since then
 | Codex transport | agent-session defaults to `codex mcp-server`; app-server is "experimental" | Codex CLI 0.155 dropped `mcp-server`, so app-server is the only Codex path. `CodexMcpSession` and the `codex-mcp` transport are being deleted, with app-server as the default `CodexSession` (agent-session branch `fix/codex-app-server-default`, not on main yet). |
 | Runner features | Diffs, terminal and worktrees listed as gaps | Left to the hosts by decision (CLAUDE.md, 2026-10-11): the viewer grows no runner features. |
 
-Still true from the snapshot: `oracle-worker` cannot boot; the pairing Signet has `operations: []`; the memory guard is an LLM call; the Herald is unwired; `connectionId` remains (being renamed `integrationId` in the 2026-10-12 hygiene batch); revert and fork return 501.
+Still true from the snapshot: `oracle-worker` cannot boot; the pairing Signet has `operations: []`; the memory guard is an LLM call; the Herald is unwired; revert and fork return 501.
 
 ---
 
