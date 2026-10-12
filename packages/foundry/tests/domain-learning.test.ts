@@ -41,12 +41,11 @@ interface SetupOpts {
 
 const LEARN = (text: string) =>
   JSON.stringify({
-    decision: 'learn',
     knowledge: text,
     facts: [text],
     reason: 'observed in completed work',
   });
-const ABSTAIN = JSON.stringify({ decision: 'abstain', reason: 'nothing new' });
+const NO_COMMENT_ANSWER = 'NO_COMMENT';
 
 function setup(opts: SetupOpts = {}) {
   const domains = opts.domains ?? ['security'];
@@ -95,7 +94,9 @@ function setup(opts: SetupOpts = {}) {
       if (user.includes('## Completed work')) {
         reviewCalls.push({ domain, messages: structuredClone(messages) });
         const reviewer = opts.reviewers?.[domain];
-        const content = reviewer ? await reviewer(messages, id.split(':aux:')[0]) : ABSTAIN;
+        const content = reviewer
+          ? await reviewer(messages, id.split(':aux:')[0])
+          : NO_COMMENT_ANSWER;
         return { model: 'mock', content };
       }
       return {
@@ -190,7 +191,7 @@ describe('per-domain thread knowledge and causal learning', () => {
   test("segments are domain-specific: instructions, configured knowledge and this domain's own thread understanding", async () => {
     const { runtime, factory } = setup({
       domains: ['security', 'docs'],
-      reviewers: { security: () => LEARN('SECURITY-LEARNED'), docs: () => ABSTAIN },
+      reviewers: { security: () => LEARN('SECURITY-LEARNED'), docs: () => NO_COMMENT_ANSWER },
     });
     const thread = factory.create('a', { projectId: 'P' });
     const owned = runtime.get('a')!;
@@ -202,7 +203,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     expect(security.threadKnowledge.content).toContain('SECURITY-LEARNED');
     expect(docs.threadKnowledge.content).toBe('');
     expect(docs.threadKnowledge.revision).toBe(0);
-    expect(docs.threadKnowledge.history.at(-1)).toMatchObject({ decision: 'abstain' });
+    expect(docs.threadKnowledge.history.at(-1)).toMatchObject({ decision: 'no-comment' });
 
     const plan = planOf(await thread.dispatch('worker', 'Next'));
     const byDomain = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
@@ -219,12 +220,12 @@ describe('per-domain thread knowledge and causal learning', () => {
   });
 
   test('learning never reaches another thread, another project, or the template', async () => {
-    // Only thread A's reviewer learns; B and C abstain, so anything they
+    // Only thread A's reviewer learns; B and C answer NO_COMMENT, so anything they
     // carry must have leaked from A.
     const { runtime, factory, providerInputs, template } = setup({
       reviewers: {
         security: (_messages, threadId) =>
-          threadId === 'a' ? LEARN('PRIVATE-A-LEARNING') : ABSTAIN,
+          threadId === 'a' ? LEARN('PRIVATE-A-LEARNING') : NO_COMMENT_ANSWER,
       },
     });
     const a = factory.create('a', { projectId: 'P' });
@@ -548,7 +549,7 @@ describe('per-domain thread knowledge and causal learning', () => {
       reviewers: {
         security: async () => {
           await held;
-          return ABSTAIN;
+          return NO_COMMENT_ANSWER;
         },
       },
     });
@@ -680,7 +681,9 @@ describe('per-domain thread knowledge and causal learning', () => {
 
   test('review input is bounded, structured, and marks completed work as data', async () => {
     const big = 'x'.repeat(20_000);
-    const { runtime, factory, reviewCalls } = setup({ reviewers: { security: () => ABSTAIN } });
+    const { runtime, factory, reviewCalls } = setup({
+      reviewers: { security: () => NO_COMMENT_ANSWER },
+    });
     const thread = factory.create('a', { projectId: 'P' });
     thread.register(new Executor({ id: 'worker', stack: thread.stack, handler: async () => big }));
     await thread.dispatch('worker', big);

@@ -27,7 +27,7 @@ export interface InjectionBlock {
 /** One decorator's recorded participation in a turn. */
 export interface DecorationParticipant {
   readonly id: string;
-  /** contribute | abstain | error | timeout | omitted */
+  /** contribute | no-comment | skipped | error | timeout | excluded | omitted */
   readonly decision: string;
   readonly reason?: string;
   /** The three named inputs the participant worked from, never inferred. */

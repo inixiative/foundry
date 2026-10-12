@@ -38,13 +38,9 @@ export const interpretation = (thread: string, d: Domain) =>
     ? `ARCH_${thread}: preserve display_name alias while adding preferred_name; expand before contract.`
     : `TEST_${thread}: retain a display_name projection regression when preferred_name is populated.`;
 export const privateReason = (thread: string, d: Domain) => `PRIVATE_${thread}_${d}_RATIONALE`;
-export const abstain = JSON.stringify({
-  decision: 'abstain',
-  reason: 'No additional owned interpretation.',
-});
+export const noComment = 'NO_COMMENT';
 export const learned = (thread: string, d: Domain) =>
   JSON.stringify({
-    decision: 'learn',
     knowledge: interpretation(thread, d),
     facts: [interpretation(thread, d)],
     reason: privateReason(thread, d),
@@ -262,7 +258,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         else
           content = messages.some((m) => m.content.includes('MIGRATION_APPLIED'))
             ? learned(call.thread, domain)
-            : abstain;
+            : noComment;
         call.response = content;
         return { model: 'controlled', content };
       },
@@ -280,7 +276,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         layerId: d,
         guardTriggers: [],
         advisePrompt: `${instructions(d)} Advise with JSON layers/snippets/confidence.`,
-        reviewPrompt: `${instructions(d)} You are the ${d} reviewer. Review actual completion evidence and replace only your thread interpretation with JSON decision/knowledge/facts/reason.`,
+        reviewPrompt: `${instructions(d)} You are the ${d} reviewer. Review actual completion evidence and replace only your thread interpretation with JSON knowledge/facts/reason.`,
       })),
     });
     const detach = manager.addSignalSink((signal, owner) => {

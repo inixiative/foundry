@@ -17,6 +17,7 @@ import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { chartered } from '../src/agents/warden-charter';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
@@ -43,7 +44,7 @@ function gate() {
   });
   return { promise, resolve, reject };
 }
-const GUARD = '## Response protocol (guard phase)';
+const GUARD = '## Response protocol (guard phase';
 async function until(predicate: () => boolean, label: string, ms = 1500) {
   const end = performance.now() + ms;
   while (!predicate()) {
@@ -87,7 +88,7 @@ function fixture(
       if (messages.some((m) => m.content.includes(GUARD)))
         return {
           model: 'controlled',
-          content: await (opts.guard ?? (() => '{"findings":[]}'))(messages),
+          content: await (opts.guard ?? (() => 'NO_COMMENT'))(messages),
         };
       if (messages.some((m) => m.content.includes('## Message to route')))
         return {
@@ -103,7 +104,7 @@ function fixture(
   const reviewer: LLMProvider = {
     id: 'controlled-review',
     async complete() {
-      return { model: 'controlled', content: '{"decision":"abstain","reason":"nothing new"}' };
+      return { model: 'controlled', content: 'NO_COMMENT' };
     },
   };
   const manager = new ThreadRuntimeManager({
@@ -199,7 +200,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   const path = join(dir, 'sessions.sqlite');
   const f = fixture(path, { guard: () => held.promise });
   closes.push(() => {
-    held.resolve('{"findings":[]}');
+    held.resolve('NO_COMMENT');
     f.store.close();
   });
   const done = await f.turn('turn-1', 'Add preferred names');
@@ -228,7 +229,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   expect((request.record.request as any).messages).toEqual(guardCall);
   expect((request.record.request as any).messages[0]).toEqual({
     role: 'system',
-    content: 'CUSTOM_GUARD: storage only.',
+    content: chartered('CUSTOM_GUARD: storage only.'),
   });
   // The completed turn's own meta says the guard is pending; nothing anywhere says all-clear.
   const detail = f.store.turnDetail(f.thread.id, 'turn-1')!;
@@ -270,7 +271,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
     advice: 'durable',
   });
   // Late answer: the outcome row references the original request; the request row is unchanged.
-  held.resolve('{"findings":[]}');
+  held.resolve('NO_COMMENT');
   await until(
     () =>
       f.store
@@ -505,7 +506,7 @@ test('review records say whether their requested record reached the journal; wit
     .learningHistory(f.thread.id, 100)
     .map((r) => r.signal.content as any)
     .filter((r) => r.evidence?.messageId === 'turn-1');
-  expect(rows.map((r) => r.decision)).toEqual(['requested', 'abstain']);
+  expect(rows.map((r) => r.decision)).toEqual(['requested', 'no-comment']);
   expect(rows[0]).toMatchObject({
     request: { status: 'supplied', phase: 'review' },
     eligibility: 'open',
@@ -521,13 +522,13 @@ test('review records say whether their requested record reached the journal; wit
   const memory = g.runtime.domainLibrarians
     .get('architecture')!
     .threadKnowledge.history.filter((r: any) => r.evidence?.messageId === 'turn-1');
-  expect(memory.map((r: any) => r.decision)).toEqual(['abstain']);
+  expect(memory.map((r: any) => r.decision)).toEqual(['no-comment']);
   expect((memory[0] as any).requestJournal).toBe('absent');
   expect((memory[0] as any).request.status).toBe('supplied');
   const inMemoryWithJournal = f.runtime.domainLibrarians
     .get('architecture')!
     .threadKnowledge.history.filter((r: any) => r.evidence?.messageId === 'turn-1');
-  expect(inMemoryWithJournal.map((r: any) => r.decision)).toEqual(['abstain']); // never "requested" in memory
+  expect(inMemoryWithJournal.map((r: any) => r.decision)).toEqual(['no-comment']); // never "requested" in memory
   expect(
     (
       g.store.turnDetail(g.thread.id, 'turn-1')!.messages.find((m) => m.actor === 'agent')!

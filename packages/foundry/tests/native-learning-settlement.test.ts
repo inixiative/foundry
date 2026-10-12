@@ -27,7 +27,7 @@ afterEach(() => {
   for (const close of closes.splice(0).reverse()) close();
 });
 const fact = 'Zephyr rollback requires migration C before B.';
-const answer = JSON.stringify({ decision: 'learn', knowledge: fact, facts: [fact] });
+const answer = JSON.stringify({ knowledge: fact, facts: [fact] });
 const tick = () => Bun.sleep(0);
 type Inspection = 'available' | 'missing' | 'error';
 function fixture(
@@ -492,7 +492,7 @@ for (const content of [
   '[]',
   'invalid-json',
   'x'.repeat(20001),
-  JSON.stringify({ decision: 'learn', knowledge: 'K'.repeat(4001) }),
+  JSON.stringify({ knowledge: 'K'.repeat(4001) }),
 ]) {
   test(`late public answer uses the same bounded parser: ${content.slice(0, 12)}`, async () => {
     const f = fixture();

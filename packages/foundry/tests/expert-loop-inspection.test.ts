@@ -32,7 +32,7 @@ const participantsFixture = {
       },
       {
         id: 'testing',
-        decision: 'abstain',
+        decision: 'no-comment',
         segments: { instructions: 'I_T', domainKnowledge: 'D_T', threadKnowledge: '' },
         provenance: { threadKnowledgeRevision: 0, snippets: [] },
       },
@@ -56,7 +56,7 @@ test('participants: exact recorded segments, revision, decision and guidance; em
     domainKnowledge: 'D_A',
     threadKnowledge: 'T_A rev1',
   });
-  expect(t!).toMatchObject({ decision: 'abstain', revision: 0, reason: null, snippets: [] });
+  expect(t!).toMatchObject({ decision: 'no-comment', revision: 0, reason: null, snippets: [] });
   expect(t!.segments.threadKnowledge).toBe('');
   expect(record.omissions).toEqual([{ id: 'security', reason: 'timeout' }]);
 });
@@ -113,7 +113,7 @@ const history = [
       kind: 'domain_learning',
       content: {
         domain: 'architecture',
-        decision: 'abstain',
+        decision: 'no-comment',
         reason: 'No additional owned interpretation.',
         evidence: { messageId: 't2' },
       },
@@ -134,7 +134,7 @@ test('learning entries and explanation: a learned record without a reason is lab
   ).toEqual([
     ['architecture', 'learned', 1, 0, 't1'],
     ['testing', 'delayed', null, null, 't1'],
-    ['architecture', 'abstain', null, null, 't2'],
+    ['architecture', 'no-comment', null, null, 't2'],
   ]);
   expect(explanationLabel(entries[0]!)).toMatchObject({ state: 'absent' });
   expect(explanationLabel(entries[0]!).text).toMatch(/not recorded by the runtime/);
@@ -174,7 +174,7 @@ test('domain understanding: committed revision, before→after change, latest po
     content: 'ARCH_a interpretation',
     revisionChange: '0 → 1',
   });
-  expect(arch.latest!.decision).toBe('abstain');
+  expect(arch.latest!.decision).toBe('no-comment');
   expect(arch.latest!.evidenceMessageId).toBe('t2');
   expect(arch.latestLearned!.evidenceMessageId).toBe('t1');
   const testing = domainUnderstanding(summary, summary.history, 'testing');
@@ -236,7 +236,7 @@ const snapshotOnly = {
         kind: 'domain_learning',
         content: {
           domain: 'architecture',
-          decision: 'abstain',
+          decision: 'no-comment',
           reason: 'Nothing new.',
           evidence: { messageId: 'later-abstention' },
         },

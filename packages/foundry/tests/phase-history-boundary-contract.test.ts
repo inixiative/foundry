@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
-import { abstain, m0Scenario } from './helpers/m0-domain-loop';
+import { m0Scenario, noComment } from './helpers/m0-domain-loop';
 
 test('a configured request-journal failure withholds learning before admitting any reviewer and keeps the thread', async () => {
-  const f = await m0Scenario({ review: () => abstain });
+  const f = await m0Scenario({ review: () => noComment });
   const runtime = f.current.manager.get('a')!;
   const store = f.current.localStore!;
   try {

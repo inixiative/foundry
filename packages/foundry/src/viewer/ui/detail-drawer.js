@@ -621,7 +621,7 @@ function ExpertParticipants({ injection, phases, trace }) {
       <div class="expert-participant" key=${p.id} data-domain=${p.id} data-decision=${p.decision} data-revision=${p.revision === null ? 'unrecorded' : String(p.revision)}>
         <div class="detail-meta-row">
           <div class="detail-meta"><label>Expert</label><span>${p.id}</span></div>
-          <div class="detail-meta"><label>Decision</label><span class="detail-status ${p.decision === 'contribute' ? 'ok' : p.decision === 'abstain' ? 'cold' : 'stale'}">${p.decision}</span></div>
+          <div class="detail-meta"><label>Decision</label><span class="detail-status ${p.decision === 'contribute' ? 'ok' : p.decision === 'no-comment' || p.decision === 'skipped' ? 'cold' : 'stale'}">${p.decision}</span></div>
           <div class="detail-meta"><label>Understanding revision then</label><span>${p.revision === null ? 'not recorded' : p.revision}${p.revisionDrift ? ' (drifted before delivery)' : ''}</span></div>
           ${(() => {
             const d = deliveredUnderstanding(trace, p.id);
@@ -641,9 +641,9 @@ function ExpertParticipants({ injection, phases, trace }) {
           })()}
           ${p.confidence !== null ? html`<div class="detail-meta"><label>Confidence</label><span>${p.confidence}</span></div>` : null}
         </div>
-        <div class="detail-meta participant-rationale" data-state=${p.reason ? 'recorded' : 'absent'}><label>Rationale</label><span>${p.reason ?? (p.decision === 'abstain' ? 'Abstained without a recorded reason.' : 'No rationale recorded for this decision.')}</span></div>
+        <div class="detail-meta participant-rationale" data-state=${p.reason ? 'recorded' : 'absent'}><label>Rationale</label><span>${p.reason ?? (p.decision === 'no-comment' ? 'No comment: nothing to add.' : 'No rationale recorded for this decision.')}</span></div>
         <div class="detail-meta participant-guidance"><label>Attributed guidance</label>
-          <span>${p.snippets.length ? html`<ul class="participant-snippets">${p.snippets.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>` : p.decision === 'abstain' ? 'Abstained: no guidance supplied.' : 'No guidance recorded.'}</span></div>
+          <span>${p.snippets.length ? html`<ul class="participant-snippets">${p.snippets.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>` : p.decision === 'no-comment' ? 'No comment: nothing to add.' : 'No guidance recorded.'}</span></div>
         ${['instructions', 'domainKnowledge', 'threadKnowledge'].map(
           (key) => html`
           <${Section} key=${key} title=${segmentTitle[key]} open=${true}>
@@ -1515,7 +1515,7 @@ function LearningHistory({
       <div class="learning-entry" key=${e.id ?? i} data-domain=${e.domain} data-decision=${e.decision} data-revision=${e.revision === null ? 'none' : String(e.revision)}>
         <span class="learning-entry-when">${e.at ? new Date(e.at).toLocaleTimeString() : 'time unrecorded'}</span>
         <span class="learning-entry-domain">${e.domain}</span>
-        <span class="detail-status ${e.decision === 'learned' ? 'ok' : e.decision === 'abstain' ? 'cold' : 'stale'}">${e.decision}</span>
+        <span class="detail-status ${e.decision === 'learned' ? 'ok' : e.decision === 'no-comment' ? 'cold' : 'stale'}">${e.decision}</span>
         <span class="learning-entry-revision">${e.decision === 'learned' ? `revision ${e.baseRevision ?? 0} → ${e.revision ?? '?'}` : e.revision !== null ? `revision ${e.revision}` : 'no revision change'}</span>
         ${e.evidenceMessageId ? html`<button class="back-btn knowledge-open-turn" onClick=${() => openEvidenceTurn(e.evidenceMessageId)} title="Open the turn this outcome reviewed">turn ${e.evidenceMessageId}</button>` : html`<span class="detail-null">evidence turn unrecorded</span>`}
         <span class="learning-entry-reason knowledge-explanation" data-state=${explanationLabel(e).state}>${explanationLabel(e).text}</span>

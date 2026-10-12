@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { abstain, domains, gate, m0Scenario, until } from './helpers/m0-domain-loop';
+import { domains, gate, m0Scenario, noComment, until } from './helpers/m0-domain-loop';
 
 test("an executing review's exact input is durable before its answer or soft deadline", async () => {
   const held = gate<string>();
@@ -34,7 +34,7 @@ test("an executing review's exact input is durable before its answer or soft dea
       ).toBe(true);
     }
   } finally {
-    held.resolve(abstain);
+    held.resolve(noComment);
     await fixture.close();
   }
 });

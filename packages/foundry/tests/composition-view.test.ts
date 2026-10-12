@@ -19,6 +19,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { chartered } from '../src/agents/warden-charter';
 import type { RoleComposition } from '../src/prompts/instruction-settings';
 import {
   claudeProjectDirName,
@@ -280,12 +281,12 @@ function setup(
         phase === 'route'
           ? JSON.stringify({ layers: routeLayers, domains: ['conventions'], confidence: 1 })
           : phase === 'advise'
-            ? JSON.stringify({ layers: [], snippets: advice.snippets, confidence: 1 })
-            : phase === 'guard'
-              ? JSON.stringify({ findings: [] })
-              : phase === 'review'
-                ? JSON.stringify({ decision: 'abstain', facts: [], reason: 'nothing new' })
-                : 'done';
+            ? advice.snippets.length
+              ? JSON.stringify({ layers: [], snippets: advice.snippets, confidence: 1 })
+              : 'NO_COMMENT'
+            : phase === 'guard' || phase === 'review'
+              ? 'NO_COMMENT'
+              : 'done';
       return { model: 'controlled', content };
     },
   });
@@ -333,7 +334,7 @@ test('a Warden and the main thread take their slots from the view; the Warden sl
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     const advise = f.last('advise');
-    expect(advise.messages[0]!.content).toStartWith('CONVENTION_WARDEN');
+    expect(advise.messages[0]!.content).toStartWith(chartered('CONVENTION_WARDEN'));
     expect(advise.messages[0]!.content).toContain('PROJECT_RULES');
     expect(advise.messages[1]!.content).toContain('PROJECT_WARDEN_KNOWLEDGE');
     const central = JSON.stringify(f.last('central').messages);

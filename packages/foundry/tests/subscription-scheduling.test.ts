@@ -165,9 +165,7 @@ test('full queues shed lower-priority waits instead of refusing a turn', async (
     { kind: 'shed', threadId: 'B', priority: DECISION_PRIORITY.guard, queued: 1 },
   ]);
   const second = ask(decisions, 'turn2', 'E');
-  expect(await ask(decisions, 'refused', 'F', DECISION_PRIORITY.review)).toContain(
-    'admission closed or full',
-  );
+  expect(await ask(decisions, 'refused', 'F', DECISION_PRIORITY.review)).toContain('queue full');
   // A second turn sheds the remaining guard too; with only turns queued, the review is refused.
   expect(await guards[1]).toContain('shed under load');
   expect([await running, await turn, await second]).toEqual(['running', 'turn', 'turn2']);
@@ -285,3 +283,20 @@ test('load: 10 threads with tool calls, before (serial, 8 queued) and after (def
   expect(after).toMatchObject({ calls: 180, rejected: 0 });
   expect(after.turnMax * 3).toBeLessThan(serial.turnMax);
 }, 30_000);
+
+test('a decision that waited in the queue still gets its full run budget once it starts', async () => {
+  // 1 slot, 400 ms calls, 600 ms budget: the second waits ~400 ms, then needs another 400 ms to run.
+  // Cutting its run to the queue deadline would interrupt it mid-turn; an unacknowledged interrupt
+  // closes admission for good.
+  const { decisions, pressure } = scheduler(labelled(400), {
+    maxConcurrent: 1,
+    callTimeoutMs: 600,
+  });
+  const [first, second] = await Promise.all([
+    ask(decisions, 'first', 'A'),
+    ask(decisions, 'second', 'B'),
+  ]);
+  expect([first, second]).toEqual(['first', 'second']);
+  expect(decisions.snapshot()).toMatchObject({ closed: false });
+  expect(pressure).toEqual([]);
+});

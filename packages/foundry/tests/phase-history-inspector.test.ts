@@ -217,7 +217,10 @@ test('learning entries carry the review request state and job id; malformed shap
         },
       },
     },
-    { storedAt: 12, signal: { id: 'c', content: { domain: 'architecture', decision: 'abstain' } } },
+    {
+      storedAt: 12,
+      signal: { id: 'c', content: { domain: 'architecture', decision: 'no-comment' } },
+    },
     {
       storedAt: 13,
       signal: {
@@ -234,7 +237,7 @@ test('learning entries carry the review request state and job id; malformed shap
   expect(entries.map((e: any) => [e.decision, e.jobId, e.request.state])).toEqual([
     ['learned', 'review-1', 'recorded'],
     ['discarded', null, 'not-sent'],
-    ['abstain', null, 'not-recorded'],
+    ['no-comment', null, 'not-recorded'],
     ['error', null, 'not-recorded'],
   ]);
   expect(entries[0]!.request.messages).toEqual(supplied.messages);

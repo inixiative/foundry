@@ -20,7 +20,7 @@ const closes: Array<() => void> = [];
 afterEach(() => {
   for (const close of closes.splice(0).reverse()) close();
 });
-const abstain = { model: 'controlled', content: '{"decision":"abstain"}' };
+const noComment = { model: 'controlled', content: 'NO_COMMENT' };
 function held<T>() {
   let resolve!: (v: T) => void;
   const promise = new Promise<T>((r) => {
@@ -127,7 +127,7 @@ test('review refused during owned native cleanup is durably deferred with job/ev
         return {
           admissionId: 'owned-review-admission',
           nativeOutcome: 'completed',
-          content: abstain.content,
+          content: noComment.content,
           externalSessionId: 'own',
           events: [
             { kind: 'result', raw: { type: 'result', subtype: 'success', session_id: 'own' } },
@@ -164,7 +164,7 @@ test('review refused during owned native cleanup is durably deferred with job/ev
 });
 
 test('hot queue is bounded while active; overflow and hard-closed payloads become durable evidence links', async () => {
-  const wait = held<typeof abstain>();
+  const wait = held<typeof noComment>();
   let calls = 0;
   const f = fixture(
     {
@@ -191,7 +191,7 @@ test('hot queue is bounded while active; overflow and hard-closed payloads becom
       .filter((r) => r.decision === 'deferred')
       .every((r) => r.owner.projectId === 'P' && !r.userMessage && !r.output),
   ).toBe(true);
-  wait.resolve(abstain);
+  wait.resolve(noComment);
   await Bun.sleep(0);
   expect(calls).toBe(1);
   expect(
@@ -243,7 +243,7 @@ test('unknown error remains closed across runtime reconstruction and never calls
 });
 
 test('disposed stateless late settlement releases only original occupancy; replacement cannot steal it', async () => {
-  const wait = held<typeof abstain>();
+  const wait = held<typeof noComment>();
   let calls = 0,
     releases = 0;
   const f = fixture({
@@ -269,7 +269,7 @@ test('disposed stateless late settlement releases only original occupancy; repla
   await replacement.dispatch('worker', 'while unknown');
   await blocked.learningSettled();
   expect(calls).toBe(1);
-  wait.resolve(abstain);
+  wait.resolve(noComment);
   await f.runtime.learningSettled();
   await Bun.sleep(0);
   expect(releases).toBe(1);
@@ -291,7 +291,7 @@ test('publication failure audit is durable before a hanging observer and survive
       calls++;
       return {
         model: 'controlled',
-        content: '{"decision":"learn","knowledge":"Zephyr rollback C before B"}',
+        content: '{"knowledge":"Zephyr rollback C before B"}',
       };
     },
   });
@@ -434,13 +434,13 @@ test('review defaults follow the supplied flow profile; an explicit central prof
   const flow: LLMProvider = {
     id: 'flow',
     async complete() {
-      return abstain;
+      return noComment;
     },
   };
   const central: LLMProvider = {
     id: 'central',
     async complete() {
-      return abstain;
+      return noComment;
     },
   };
   const providers = new Map([
@@ -463,7 +463,7 @@ test('review defaults follow the supplied flow profile; an explicit central prof
       {
         id: 'uncontracted',
         async complete() {
-          return abstain;
+          return noComment;
         },
       },
       { threadId: 'T' },
@@ -570,7 +570,7 @@ test('pending owned exit prevents new admission and pool eviction until actual r
 
 test("cleanup keeps the completed call's cwd when the owning thread changes worktree", async () => {
   let cwd = '/owned/original';
-  const wait = held<typeof abstain>();
+  const wait = held<typeof noComment>();
   let released: unknown;
   const provider = scopedProvider(
     {
@@ -589,7 +589,7 @@ test("cleanup keeps the completed call's cwd when the owning thread changes work
   );
   const work = provider.complete([{ role: 'user', content: 'work' }]);
   cwd = '/owned/new-worktree';
-  wait.resolve(abstain);
+  wait.resolve(noComment);
   await work;
   await provider.completionLifecycle!.releaseIdle!({});
   expect(released).toMatchObject({ threadId: 'T:aux:review:owned', cwd: '/owned/original' });

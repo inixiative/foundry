@@ -20,7 +20,7 @@ async function observedState(failed: boolean) {
       id: 'parent-guard-state',
       async complete() {
         if (failed) throw Error('CONTROLLED_CHECK_UNAVAILABLE');
-        return { model: 'controlled', content: '{"findings":[]}' };
+        return { model: 'controlled', content: 'NO_COMMENT' };
       },
     },
   });
@@ -43,7 +43,7 @@ async function observedState(failed: boolean) {
   });
   const observation = {
     tool: 'Write',
-    input: { file_path: 'contacts.ts' },
+    input: { file_path: 'src/architecture/contacts.ts' },
     output: 'Migration edited',
   };
   try {
@@ -75,6 +75,8 @@ test('shared thread activity distinguishes a failed guard from a completed all-c
   const completed = await observedState(false);
   const failed = await observedState(true);
   expect(failed.activity).not.toEqual(completed.activity);
+  // Silence is not activity: a NO_COMMENT all-clear adds no line to the shared state.
+  expect(completed.activity).toEqual(completed.originalActivity);
 });
 
 test('legacy guard reports say unrecorded and never expose private inputs or errors', async () => {

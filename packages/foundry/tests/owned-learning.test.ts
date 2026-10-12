@@ -20,7 +20,7 @@ afterEach(() => {
 });
 const fact = 'Zephyr rollback requires migration order C before B.';
 const answer = (knowledge = fact) =>
-  JSON.stringify({ decision: 'learn', knowledge, facts: [fact], reason: 'observed' });
+  JSON.stringify({ knowledge, facts: [fact], reason: 'observed' });
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -136,7 +136,7 @@ test('delayed owned review commits after soft expiry; immediate work does not wa
 });
 
 test('review freezes all three segments, full knowledge tail, owner/base and separate phase options', async () => {
-  const f = fixture(() => '{"decision":"abstain"}', {
+  const f = fixture(() => 'NO_COMMENT', {
     reviewOpts: { model: 'explicit-review-model', maxTokens: 1600, thinking: 'high' },
   });
   const base = f.runtime.knowledgeSnapshot();
@@ -180,7 +180,7 @@ for (const raw of [
   'true',
   'bad-json',
   answer('x'.repeat(4001)),
-  JSON.stringify({ decision: 'abstain', facts: ['x'.repeat(1001)] }),
+  JSON.stringify({ knowledge: 'k', facts: ['x'.repeat(1001)] }),
   ' '.repeat(20001),
 ]) {
   test(`invalid reviewer output is recorded without publication: ${raw.slice(0, 30)}`, async () => {
@@ -498,12 +498,12 @@ test('a foreign dispatch envelope is diagnosed without admitting or retaining it
 
 test('unavailable native budgets stay unenforced and over-budget knowledge is a reported error, never clipped', async () => {
   let sends = 0;
-  const f = fixture(() => '{"decision":"abstain"}', {
+  const f = fixture(() => 'NO_COMMENT', {
     reviewProvider: {
       id: 'claude-code',
       complete: async () => {
         sends++;
-        return { model: 'requested-not-acknowledged', content: '{"decision":"abstain"}' };
+        return { model: 'requested-not-acknowledged', content: 'NO_COMMENT' };
       },
     },
     reviewOpts: { thinking: 'high' },

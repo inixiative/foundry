@@ -10,13 +10,14 @@ import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type FlowTimingConfig } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { chartered } from '../src/agents/warden-charter';
 import { expertParticipants, participantRequest } from '../src/viewer/ui/inspector-data.js';
 
 // Author cases for advice-phase request capture (Fable, CORE-006 LI). Controlled providers only; no model.
 // The parent's protected expert-phase-provenance fixture proves the protocol is findable in the historical
 // record; these cover attribution, freezing, failure paths, absence semantics and the inspector projection.
 
-const PROTOCOL_HEADING = '## Response protocol (advice phase)';
+const PROTOCOL_HEADING = '## Response protocol (advice phase, trigger: user-message)';
 type Respond = (messages: LLMMessage[]) => Promise<string> | string;
 function gate() {
   let resolve!: () => void;
@@ -180,7 +181,9 @@ test('concurrent experts: each recorded request is attributed to its own domain 
       if (c.request.status !== 'supplied') throw Error(`${c.domain} request not supplied`);
       expect(c.request.messages).toEqual(h.calls.get(c.domain)![0]!);
       expect(c.request.providerId).toBe(`controlled-${c.domain}`);
-      expect(c.request.messages[0]!.content).toBe(`INSTRUCTIONS(${c.domain}): assess ${c.domain}.`);
+      expect(c.request.messages[0]!.content).toBe(
+        chartered(`INSTRUCTIONS(${c.domain}): assess ${c.domain}.`),
+      );
       expect(c.request.messages[1]!.content).toContain(`## Domain cache (${c.domain})`);
       const other = c.domain === 'architecture' ? 'TEST_KNOWLEDGE' : 'ARCH_KNOWLEDGE';
       expect(JSON.stringify(c.request)).not.toContain(other);
@@ -255,7 +258,7 @@ test('cold cache and deadline exclusion record why no request was made; no reque
   try {
     const plan = await cold.flow.preMessage('Add preferred names');
     expect(plan.contributions[0]).toMatchObject({
-      decision: 'abstain',
+      decision: 'skipped',
       reason: 'cold-cache',
       request: { status: 'not-sent', phase: 'advice', reason: 'cold-cache' },
     });

@@ -72,8 +72,9 @@ describe('advice phase protocol independent of domain instructions', () => {
     ['string confidence', { layers: [], snippets: [], confidence: '0.5' }],
     ['negative confidence', { layers: [], snippets: [], confidence: -1 }],
     ['confidence above one', { layers: [], snippets: [], confidence: 2 }],
-    ['non-boolean abstention', { layers: [], snippets: [], confidence: 0, abstain: 'yes' }],
-    ['non-string reason', { layers: [], snippets: [], confidence: 0, abstain: true, reason: {} }],
+    ['retired abstention field', { layers: [], snippets: [], confidence: 0, abstain: true }],
+    ['empty contribution', { layers: [], snippets: [], confidence: 0 }],
+    ['empty snippet', { layers: [], snippets: [''], confidence: 0.5 }],
   ];
   for (const [name, value] of invalid) {
     it(`records an explicit failure for ${name}, not successful empty advice`, async () => {
@@ -85,19 +86,20 @@ describe('advice phase protocol independent of domain instructions', () => {
       expect(result.layers).toEqual([]);
       expect(result.snippets).toEqual([]);
       expect(result.confidence).toBe(0);
-      expect(result.abstain).not.toBe(true);
+      expect(result.noComment).not.toBe(true);
     });
   }
 
-  it('preserves valid fenced advice and explicit abstention', async () => {
-    const advice = {
+  it('preserves valid fenced advice and reads NO_COMMENT as nothing to add', async () => {
+    const advice = { layers: [], snippets: ['Keep the migration reversible'], confidence: 0.6 };
+    const { lib } = fixture(`\`\`\`json\n${JSON.stringify(advice)}\n\`\`\``);
+    expect(await lib.advise('update the spelling')).toEqual(advice);
+    const silent = fixture('NO_COMMENT');
+    expect(await silent.lib.advise('update the spelling')).toEqual({
       layers: [],
       snippets: [],
       confidence: 0,
-      abstain: true,
-      reason: 'No relevant architecture change',
-    };
-    const { lib } = fixture(`\`\`\`json\n${JSON.stringify(advice)}\n\`\`\``);
-    expect(await lib.advise('update the spelling')).toEqual(advice);
+      noComment: true,
+    });
   });
 });

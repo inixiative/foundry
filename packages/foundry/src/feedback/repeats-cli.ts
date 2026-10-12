@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -7,9 +7,7 @@ import {
   type CorrectionClassification,
   SUBSCRIPTION_DECISION_MODELS,
 } from '@inixiative/foundry-core';
-import { createSubscriptionDecisions } from '../providers/subscription-decisions';
-import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
-import { starterConfig } from '../viewer/config';
+import { decisionHost, privateDirectory } from '../providers/decision-host';
 import {
   renderReport,
   renderShareMarkdown,
@@ -43,29 +41,6 @@ const STATE = join(homedir(), '.foundry', 'repeats');
 /** The heavier decision models subscription-decisions.md names for roles that need them. */
 const POLISH_MODELS = { claude: 'claude-opus-5-5', codex: 'gpt-6-astra' } as const;
 const CACHE = join(STATE, 'classifications.jsonl');
-
-function privateDirectory(path: string) {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
-  chmodSync(path, 0o700);
-  return path;
-}
-
-/** A subscription decision host for one stage's model, on the machine's own login. */
-function decisionHost(model: string, runtime: 'claude' | 'codex', concurrency: number) {
-  const directory = privateDirectory(join(STATE, 'decision-receipts'));
-  const config = starterConfig('claude-code', 'sonnet');
-  config.subscriptionOnly = {
-    decisionRuntime: runtime,
-    model,
-    directory,
-    maxConcurrent: concurrency,
-    maxQueued: 1_024,
-    maxQueuedPerThread: 1_024,
-  };
-  const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd: STATE });
-  if (!resolved) throw Error('The repeat report runs on subscription decisions only');
-  return createSubscriptionDecisions({ ...resolved.policy, source: resolved.decision });
-}
 
 /** This machine's Archive, when it is set up and answering; the harness files cover the rest. */
 async function reachableArchive() {
@@ -154,8 +129,9 @@ export async function runRepeats(args: string[]) {
   // The scan runs on the runtime's decision model; polish on a stronger model of the same runtime.
   const scanModel = values['scan-model'] ?? SUBSCRIPTION_DECISION_MODELS[runtime];
   const polishModel = values['polish-model'] ?? POLISH_MODELS[runtime];
-  const scanHost = decisionHost(scanModel, runtime, concurrency);
-  const polishHost = polishModel === scanModel ? scanHost : decisionHost(polishModel, runtime, 1);
+  const scanHost = decisionHost(scanModel, runtime, concurrency, STATE);
+  const polishHost =
+    polishModel === scanModel ? scanHost : decisionHost(polishModel, runtime, 1, STATE);
   const cache = loadCache();
   const archive = values['no-archive'] ? undefined : await reachableArchive();
   const progress = process.stderr.isTTY

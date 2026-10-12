@@ -3,7 +3,6 @@ import type { DeliveryRecord, InjectionArtifact } from '@inixiative/foundry-core
 import type { LearningRecord } from '../src/agents/domain-librarian';
 import type { InjectionPlan } from '../src/agents/flow-orchestrator';
 import {
-  abstain,
   domainKnowledge,
   domains,
   gate,
@@ -11,6 +10,7 @@ import {
   interpretation,
   learned,
   m0Scenario,
+  noComment,
   privateReason,
   until,
 } from './helpers/m0-domain-loop';
@@ -145,9 +145,8 @@ test('M4: failed executor evidence is rejected by both post hooks and cannot bec
 
 for (const raw of [
   'null',
-  JSON.stringify({ decision: 'learn', knowledge: 'X'.repeat(4001), facts: [] }),
+  JSON.stringify({ knowledge: 'X'.repeat(4001), facts: [] }),
   JSON.stringify({
-    decision: 'learn',
     knowledge: interpretation('a', 'architecture'),
     facts: [],
     reason: 'X'.repeat(1001),
@@ -186,7 +185,7 @@ test('M4: duplicate observation cannot double-review, and stale restore cannot o
   const f = await m0Scenario({
     review: (c) => (holding ? held.promise : learned(c.thread, c.domain!)),
   });
-  f.releases.push(() => held.resolve(abstain));
+  f.releases.push(() => held.resolve(noComment));
   try {
     await f.send('a', 'original', 'Perform the migration');
     await f.settled();
@@ -232,7 +231,7 @@ test('M4: hard closure and disposal retain late evidence without admitting repla
       learning: { clock: () => now, hardTimeoutMs: 1000 },
       review: () => held.promise,
     });
-    f.releases.push(() => held.resolve(abstain));
+    f.releases.push(() => held.resolve(noComment));
     try {
       await f.send('a', `${close}-origin`, 'Perform the migration');
       const runtime = f.current.manager.get('a')!;
@@ -264,7 +263,7 @@ test('M4: unknown reviewer failure retains durable closure through restart with 
   const f = await m0Scenario({
     review: (c) => {
       if (c.domain === 'architecture') throw Error('CONTROLLED_UNKNOWN_REVIEW_FAILURE');
-      return abstain;
+      return noComment;
     },
   });
   try {
@@ -305,7 +304,7 @@ test('M4: real SQLite commit failure preserves completed central output and the 
   const f = await m0Scenario({
     review: (c) => (failWrite ? held.promise : learned(c.thread, c.domain!)),
   });
-  f.releases.push(() => held.resolve(abstain));
+  f.releases.push(() => held.resolve(noComment));
   try {
     await f.send('a', 'durable-base', 'Perform the migration');
     await f.settled();
@@ -367,9 +366,9 @@ test("M4: foreign bundle restore refuses the actual learned owner without changi
 test('M4: committed knowledge survives publication failure and reconstructs without repeating central or review work', async () => {
   const held = gate<string>();
   const f = await m0Scenario({
-    review: (c) => (c.domain === 'architecture' ? held.promise : abstain),
+    review: (c) => (c.domain === 'architecture' ? held.promise : noComment),
   });
-  f.releases.push(() => held.resolve(abstain));
+  f.releases.push(() => held.resolve(noComment));
   try {
     const completed = await f.send('a', 'publish-failed', 'Perform the migration');
     const runtime = f.current.manager.get('a')!;
@@ -408,9 +407,9 @@ test('M3-M4: pending review does not serialize immediate work; first post-commit
   const held = { architecture: gate<string>(), testing: gate<string>() };
   const f = await m0Scenario({
     review: (c) =>
-      text(c.messages).includes('MIGRATION_APPLIED') ? held[c.domain!].promise : abstain,
+      text(c.messages).includes('MIGRATION_APPLIED') ? held[c.domain!].promise : noComment,
   });
-  for (const d of domains) f.releases.push(() => held[d].resolve(abstain));
+  for (const d of domains) f.releases.push(() => held[d].resolve(noComment));
   try {
     const first = await f.send('a', 'pending-origin', 'Perform the migration');
     const original = text(first.trace);
@@ -458,12 +457,11 @@ for (const supplied of [true, false])
       review: (c) =>
         text(c.messages).includes('MIGRATION_APPLIED')
           ? JSON.stringify({
-              decision: 'learn',
               knowledge: interpretation(c.thread, c.domain!),
               facts: ['legacy-read=PASS'],
               ...(supplied ? { reason: reason(c.domain!) } : {}),
             })
-          : abstain,
+          : noComment,
     });
     try {
       const first = await f.send('a', 'owned-rationale', 'Perform the migration');
@@ -532,19 +530,20 @@ for (const supplied of [true, false])
     }
   });
 
-test("M1 ownership: an expert's private abstention rationale stays in its audit, not another expert's pre-message state", async () => {
-  const f = await m0Scenario({
-    review: (c) =>
-      JSON.stringify({ decision: 'abstain', reason: privateReason(c.thread, c.domain!) }),
-  });
+test("M1 ownership: an expert's NO_COMMENT stays in its own audit and adds nothing to another expert's pre-message state", async () => {
+  const f = await m0Scenario({ review: () => 'NO_COMMENT' });
   try {
     await f.send('a', 'private-abstention');
     await f.settled();
     const history = f.current.localStore!.learningHistory('a');
     for (const d of domains)
-      expect(history.some((r) => (r.signal.content as any).reason === privateReason('a', d))).toBe(
-        true,
-      );
+      expect(
+        history.some(
+          (r) =>
+            (r.signal.content as any).domain === d &&
+            (r.signal.content as any).decision === 'no-comment',
+        ),
+      ).toBe(true);
     await f.send('a', 'after-private-abstention');
     await f.settled();
     for (const d of domains) {
@@ -552,13 +551,10 @@ test("M1 ownership: an expert's private abstention rationale stays in its audit,
       const pre = f.calls
         .filter((c) => c.thread === 'a' && c.domain === d && c.phase === 'pre')
         .at(-1)!;
-      expect(text(pre.messages)).not.toContain(privateReason('a', other));
       expect(text(pre.messages)).toContain('Dispatched: worker'); // shared actual activity remains available
-      expect(text(pre.messages)).toContain(`Learning (${other}): abstain`); // outcome remains factual shared metadata
+      expect(text(pre.messages)).not.toContain(`Learning (${other})`); // silence is not shared activity
     }
-    await f.checkpoint(
-      'private rationale retained only in owned audit; shared outcomes remain visible',
-    );
+    await f.checkpoint('NO_COMMENT retained only in owned audit; shared state carries no silence');
   } finally {
     await f.close();
   }

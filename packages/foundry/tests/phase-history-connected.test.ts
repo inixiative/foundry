@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import type { StreamEvent } from '@inixiative/foundry-core';
 import { selectedDetailTarget } from '../src/viewer/ui/conversation-state.js';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
-import { abstain, gate, learned, m0Scenario, until } from './helpers/m0-domain-loop';
+import { gate, learned, m0Scenario, noComment, until } from './helpers/m0-domain-loop';
 
 test('selected detail refresh requires the original active thread and exact turn', () => {
   const selected = { threadId: 'a', turnId: 'original' };
@@ -92,12 +92,12 @@ test('pending and settled review journal changes notify only the original owner 
     ).toBe(true);
     expect(JSON.stringify(requested)).not.toContain('messages');
     const count = requested.length;
-    held.resolve(abstain);
+    held.resolve(noComment);
     await f.settled();
     expect((await learningJournal()).length).toBeGreaterThan(count);
     expect(f.calls.filter((c) => c.phase === 'post')).toHaveLength(2);
   } finally {
-    held.resolve(abstain);
+    held.resolve(noComment);
     await f.close();
   }
 });
@@ -106,7 +106,7 @@ for (const mode of ['sql', 'publication'] as const)
   test(`late ${mode} failure invalidates the original selected audit without replay or false durable status`, async () => {
     const held = gate<string>();
     const f = await m0Scenario({
-      review: (call) => (call.domain === 'architecture' ? held.promise : abstain),
+      review: (call) => (call.domain === 'architecture' ? held.promise : noComment),
     });
     try {
       await f.send('a', 'original-failure', 'Continue');
@@ -149,7 +149,7 @@ for (const mode of ['sql', 'publication'] as const)
         mode === 'sql' ? 0 : 1,
       );
     } finally {
-      held.resolve(abstain);
+      held.resolve(noComment);
       await f.close();
     }
   });

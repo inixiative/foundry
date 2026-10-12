@@ -4,7 +4,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import {
-  abstain,
   type Call,
   domainKnowledge,
   gate,
@@ -12,6 +11,7 @@ import {
   interpretation,
   learned,
   m0Scenario,
+  noComment,
 } from '../helpers/m0-domain-loop';
 
 // M1/M2 expert-loop inspection over the production factory/runtime/HTTP/SQLite (Astra's M0 helper,
@@ -49,7 +49,7 @@ const check = (name: string, ok: boolean, detail: unknown = {}) =>
 const A = interpretation('a', 'architecture'),
   T = interpretation('a', 'testing');
 
-test('expert loop: before work, after post-hooks (pending, commit, abstention), historical pre-hook segments, immutability, evidence navigation, 1440 and 390', async () => {
+test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), historical pre-hook segments, immutability, evidence navigation, 1440 and 390', async () => {
   for (const f of [
     'packages/foundry/src/viewer/ui/detail-drawer.js',
     'packages/foundry/src/viewer/ui/inspector-data.js',
@@ -65,7 +65,7 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
       await held.promise;
     return call.messages.some((m) => m.content.includes('MIGRATION_APPLIED'))
       ? learned(call.thread, call.domain!)
-      : abstain;
+      : noComment;
   };
   let scenario: Awaited<ReturnType<typeof m0Scenario>> | null = null;
   let server: ReturnType<typeof Bun.serve> | null = null;
@@ -269,7 +269,7 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
       { layerAfter, testingLayerState },
     );
 
-    // ---- turn 2 prepared while testing is pending; then release (commit); turn 3 abstentions ----
+    // ---- turn 2 prepared while testing is pending; then release (commit); turn 3 NO_COMMENT reviews ----
     const t2 = await scenario.send('a', 't2', 'Continue');
     released = true;
     held.resolve();
@@ -296,21 +296,18 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
         .locator(".knowledge-domain[data-domain='testing']")
         .first()
         .getAttribute('data-status'),
-      abstentions: entries.filter((e: any) => e.decision === 'abstain'),
-      abstainReasonShown: entries.some(
-        (e: any) => e.decision === 'abstain' && /No additional owned interpretation/.test(e.text),
-      ),
+      // NO_COMMENT carries no fields, so a silent review shows its decision and nothing else.
+      silences: entries.filter((e: any) => e.decision === 'no-comment'),
       learnedBoth: ['architecture', 'testing'].every((d) =>
         entries.some((e: any) => e.domain === d && e.decision === 'learned' && e.revision === '1'),
       ),
     };
     await shot(page, '1440-after-t3-history');
     check(
-      'after commit and turn 3: learning history lists both learned revision-1 entries and later abstentions with the recorded abstention reason, per domain, without raw ids as the only identity',
+      'after commit and turn 3: learning history lists both learned revision-1 entries and later NO_COMMENT reviews, per domain, without raw ids as the only identity',
       afterT3.statuses.every((s) => s === 200) &&
         afterT3.learnedBoth &&
-        afterT3.abstentions.length >= 2 &&
-        afterT3.abstainReasonShown,
+        afterT3.silences.length >= 2,
       afterT3,
     );
 
@@ -385,7 +382,7 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
     );
     // ---- evidence navigation from thread knowledge to the owning turn ----
     await page.locator('.back-btn').filter({ hasText: 'Clear' }).click();
-    // The committed revision's evidence (turn t1) and the latest post-hook (an abstention at t3) are distinct controls.
+    // The committed revision's evidence (turn t1) and the latest post-hook (a NO_COMMENT at t3) are distinct controls.
     const revisionEvidence = await text(
       drawer(page).locator(
         ".knowledge-domain[data-domain='architecture'] .knowledge-revision-evidence",
@@ -410,7 +407,7 @@ test('expert loop: before work, after post-hooks (pending, commit, abstention), 
       { revisionEvidence, latestEvidence, navigated: navigated.slice(0, 200) },
     );
     await shot(page, '1440-evidence-navigation');
-    // ---- recent history omits the original learn outcome: 52 more real Continue turns (104 abstentions) ----
+    // ---- recent history omits the original learn outcome: 52 more real Continue turns (104 NO_COMMENT reviews) ----
     for (let n = 4; n <= 55; n++) {
       const r = await scenario.send('a', `t${n}`, 'Continue');
       if (r.status !== 200) throw new Error(`t${n} status ${r.status}`);

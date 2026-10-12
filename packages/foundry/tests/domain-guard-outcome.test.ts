@@ -14,6 +14,7 @@ import {
 } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { chartered } from '../src/agents/warden-charter';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
 // The parent's protected domain-guard-evidence fixture proves failures differ from a completed all-clear;
@@ -68,11 +69,12 @@ const learn = (lib: DomainLibrarian, text: string) =>
     'reviewer',
   );
 
-test('valid empty findings and actual findings both complete; findings are normalized and emitted as signals', async () => {
-  const clear = fixture(() => '{"findings":[]}');
+test('NO_COMMENT and actual findings both complete; findings are normalized and emitted as signals', async () => {
+  const clear = fixture(() => 'NO_COMMENT');
   const cleared = await clear.lib.guard(observation);
   expect(cleared).toMatchObject({
     findings: [],
+    noComment: true,
     ran: true,
     status: 'completed',
     threadKnowledgeRevision: 0,
@@ -83,7 +85,7 @@ test('valid empty findings and actual findings both complete; findings are norma
   expect(clear.emitted).toHaveLength(0);
   const found = fixture(
     () =>
-      '```json\n{"findings":[{"severity":"critical","description":"Schema drops legacy column","location":"contacts.ts:12","extra":"ignored"},{"severity":"advisory","description":"Add a migration test"}]}\n```',
+      '```json\n{"findings":[{"severity":"critical","description":"Schema drops legacy column","location":"contacts.ts:12"},{"severity":"advisory","description":"Add a migration test"}]}\n```',
   );
   const result = await found.lib.guard(observation, 'COMMON_EVIDENCE');
   expect(result).toMatchObject({
@@ -112,9 +114,15 @@ test('valid empty findings and actual findings both complete; findings are norma
 
 test('invalid schema is an explicit invalid-response with a bounded error that never echoes the answer; nothing is emitted', async () => {
   const secret = 'PRIVATE_GUARD_OUTPUT_SENTINEL';
-  const completed = await fixture(() => '{"findings":[]}').lib.guard(observation);
+  const completed = await fixture(() => 'NO_COMMENT').lib.guard(observation);
   for (const bad of [
     `not json ${secret}`,
+    // Silence is NO_COMMENT alone: an empty findings list, NO_COMMENT with text, or prose-wrapped JSON is malformed.
+    '{"findings":[]}',
+    `NO_COMMENT ${secret}`,
+    `NO_COMMENT.`,
+    `Here you go: {"findings":[{"severity":"critical","description":"${secret}"}]}`,
+    `{"findings":[{"severity":"critical","description":"d"}],"note":"${secret}"}`,
     `{"assessment":"${secret}"}`,
     `{"findings":"${secret}"}`,
     `[{"severity":"critical","description":"${secret}"}]`,
@@ -201,14 +209,14 @@ test("provider error is a provider-error with the provider's lifecycle classific
 });
 
 test('scoped no-admission: a trigger-gated tool is skipped and a cold cache is cold-cache; neither calls the provider or invents a result', async () => {
-  const gated = fixture(() => '{"findings":[]}');
+  const gated = fixture(() => 'NO_COMMENT');
   expect(await gated.lib.guard({ tool: 'Read', input: {} })).toEqual({
     findings: [],
     ran: false,
     status: 'skipped',
     request: { status: 'not-sent', phase: 'guard', reason: 'skipped' },
   });
-  const cold = fixture(() => '{"findings":[]}', { knowledge: null });
+  const cold = fixture(() => 'NO_COMMENT', { knowledge: null });
   expect(await cold.lib.guard(observation)).toEqual({
     findings: [],
     ran: true,
@@ -220,13 +228,13 @@ test('scoped no-admission: a trigger-gated tool is skipped and a cold cache is c
   expect(cold.requests).toHaveLength(0);
 });
 
-test("configured instructions stay verbatim as the system message; the guard protocol, this domain's own frozen understanding, its knowledge and the shared evidence are separate user parts; another domain's private state never enters", async () => {
+test("configured instructions stay verbatim under the charter as the system message; the guard protocol, this domain's own frozen understanding, its knowledge and the shared evidence are separate user parts; another domain's private state never enters", async () => {
   const signals = new SignalBus();
-  const a = fixture(() => '{"findings":[]}', {
+  const a = fixture(() => 'NO_COMMENT', {
     guardPrompt: 'CUSTOM_GUARD_INSTRUCTIONS: check storage compatibility only.',
     signals,
   });
-  const b = fixture(() => '{"findings":[]}', { domain: 'testing', signals });
+  const b = fixture(() => 'NO_COMMENT', { domain: 'testing', signals });
   learn(a.lib, 'A_OWN_INTERPRETATION: legacy callers use display_name.');
   learn(b.lib, 'B_PRIVATE_INTERPRETATION: flaky timer test.');
   const live = await a.lib.guard(observation, 'COMMON_EVIDENCE: migration being edited.');
@@ -234,11 +242,12 @@ test("configured instructions stay verbatim as the system message; the guard pro
   const [system, user] = a.requests[0]!;
   expect(system).toEqual({
     role: 'system',
-    content: 'CUSTOM_GUARD_INSTRUCTIONS: check storage compatibility only.',
+    content: chartered('CUSTOM_GUARD_INSTRUCTIONS: check storage compatibility only.'),
   });
   expect(user!.role).toBe('user');
   expect(user!.content).toContain(GUARD_RESPONSE_PROTOCOL);
-  expect(user!.content).toContain('## Response protocol (guard phase)');
+  expect(user!.content).toContain('## Response protocol (guard phase, trigger: agent-action)');
+  expect(user!.content).toContain('respond with exactly NO_COMMENT and nothing else');
   expect(user!.content).not.toContain('Respond with JSON only.\n');
   expect(system!.content).not.toContain('findings');
   for (const part of [
@@ -259,7 +268,7 @@ test("configured instructions stay verbatim as the system message; the guard pro
   // Frozen by the caller: a later learning cannot enter a request already prepared from the frozen revision.
   const slow = fixture(async () => {
     await Bun.sleep(5);
-    return '{"findings":[]}';
+    return 'NO_COMMENT';
   });
   learn(slow.lib, 'FROZEN_V1');
   const pending = slow.lib.guard(observation, undefined, {
@@ -271,7 +280,7 @@ test("configured instructions stay verbatim as the system message; the guard pro
   expect(frozen.threadKnowledgeRevision).toBe(1);
   expect(slow.requests[0]![1]!.content).toContain('FROZEN_V1');
   expect(slow.requests[0]![1]!.content).not.toContain('LATER_V2');
-  const unknownRevision = await fixture(() => '{"findings":[]}').lib.guard(observation, undefined, {
+  const unknownRevision = await fixture(() => 'NO_COMMENT').lib.guard(observation, undefined, {
     threadKnowledge: 'SUPPLIED_WITHOUT_REVISION',
   });
   expect(unknownRevision.threadKnowledgeRevision).toBeUndefined();
@@ -325,13 +334,19 @@ test("orchestrator: the guard report and emitted observation carry each domain's
   try {
     const report = await flow.postAction(observation);
     expect(report.domainsChecked).toEqual(['architecture', 'testing', 'security']);
+    expect(report.skipped).toEqual([]);
     expect(report.findings).toEqual([
       { severity: 'advisory', description: 'Add a migration test' },
     ]);
     expect(report.critical).toEqual([]);
     expect(report.advisory).toHaveLength(1);
     expect(report.outcomes.map(({ request, ...rest }) => rest)).toEqual([
-      { domain: 'architecture', status: 'completed', findings: 1, threadKnowledgeRevision: 1 },
+      {
+        domain: 'architecture',
+        status: 'completed',
+        findings: 1,
+        threadKnowledgeRevision: 1,
+      },
       {
         domain: 'testing',
         status: 'provider-error',
@@ -344,7 +359,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
         domain: 'security',
         status: 'invalid-response',
         findings: 0,
-        error: 'guard response requires "findings": array',
+        error: 'guard response has 1 field(s) outside the protocol',
         threadKnowledgeRevision: 0,
       },
     ]);

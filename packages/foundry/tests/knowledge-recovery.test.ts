@@ -75,7 +75,6 @@ function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
             ? {
                 model: 'mock',
                 content: JSON.stringify({
-                  decision: 'learn',
                   knowledge,
                   facts: ['Observed evidence'],
                 }),

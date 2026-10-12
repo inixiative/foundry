@@ -54,6 +54,8 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
+import { WARDEN_CHARTER_VERSION } from './warden-charter';
+import type { TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
 // Session identity
@@ -773,6 +775,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const record = signal.content as
           | (Partial<LearningRecord> & { domain?: string })
           | undefined;
+        // Silence is not activity: a NO_COMMENT review adds nothing to the shared state.
+        if (record?.decision === 'no-comment') return;
         return factualSignals.emit({
           ...signal,
           content: {
@@ -938,7 +942,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const barrier = await this._awaitPendingLearning();
       // Newly resolved project experts read their actual owned sources on the first pre-hook, not
       // only the global template. Wardens never block: a warm that is late or fails is recorded and
-      // the turn goes on (that Warden advises from what it holds, or abstains).
+      // the turn goes on (that Warden advises from what it holds, or is skipped with a cold cache).
       const warmShortfalls = await flow.warmWithin(
         domains
           .filter((d) => d.expert)
@@ -1046,18 +1050,32 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             sealedAt: plan.sealedAt,
             routing: plan.routing,
           });
+          // Every Warden's decision is journalled, silence and skips included, so the silence rate is
+          // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
           const adviceJournal = journalSealed('advice', {
+            trigger: 'user-message' satisfies TriggerPoint,
+            charter: WARDEN_CHARTER_VERSION,
             inputHash: plan.input.hash,
             sealedAt: plan.sealedAt,
-            participants: plan.contributions.map((c) => ({
-              domain: c.domain,
-              decision: c.decision,
-              ...(c.reason ? { reason: c.reason } : {}),
-              segments: c.segments,
-              request: c.request,
-              threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
-              cacheHash: c.provenance.cacheHash,
-            })),
+            participants: plan.contributions
+              .filter((c) => c.decision !== 'skipped')
+              .map((c) => ({
+                domain: c.domain,
+                decision: c.decision,
+                ...(c.reason ? { reason: c.reason } : {}),
+                segments: c.segments,
+                request: c.request,
+                threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
+                cacheHash: c.provenance.cacheHash,
+              })),
+            skipped: Object.fromEntries(
+              Object.entries(
+                Object.groupBy(
+                  plan.contributions.filter((c) => c.decision === 'skipped'),
+                  (c) => c.reason ?? 'skipped',
+                ),
+              ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
+            ),
             ...(warmShortfalls.length || prepared.warmShortfalls.length
               ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
               : {}),
@@ -1324,11 +1342,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             },
           );
           const outcomeJournal = journalOutcome({
+            trigger: 'agent-action' satisfies TriggerPoint,
+            charter: WARDEN_CHARTER_VERSION,
             observation,
             correlation,
             status: 'reported',
             finishedAt: Date.now(),
             domainsChecked: report.domainsChecked,
+            skipped: report.skipped,
             failed: report.failed,
             findings: report.findings.length,
             critical: report.critical.length,

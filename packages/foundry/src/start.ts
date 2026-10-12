@@ -33,6 +33,7 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
+import { configuredExperts } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
@@ -158,11 +159,16 @@ const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
       source: subscription.decision,
+      // Every decision role stays primed: an advice and a review key per Warden, plus the
+      // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
+      primedSessions: Math.max(16, 2 * configuredExperts(config).experts.length + 8),
       onPressure: (event) => {
         const message =
           event.kind === 'shed'
             ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
-            : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+            : event.kind === 'closed'
+              ? `Decision admission closed until restart: ${event.reason}`
+              : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
         console.warn(`[subscription-decisions] ${message}`);
         eventStream.pushError('subscription-decisions', message, 'warn');
       },

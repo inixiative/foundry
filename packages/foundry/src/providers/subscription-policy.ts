@@ -82,16 +82,18 @@ export interface SubscriptionPolicy {
   hedgeAfterMs?: number;
 }
 /**
- * Sized for many threads: each turn fans out classifier, router, Cartographer and every expert at once
- * (nine decisions with six experts), and tool calls add guards. Codex concurrency is turns on one warm
- * process; each Claude decision is its own CLI process (~215 MB), so Claude admits one pre-message wave.
- * Decisions run at low effort: the model's default (medium) adds ~0.5 s per decision.
+ * Sized for a full Warden roster: every Warden is asked on every user message, and every
+ * guard-triggered Warden on every action, so one turn fans out ~25 advice calls plus the
+ * Cartographer, then guards per tool call and a review per Warden. Each Claude decision is its own
+ * CLI process (~130-230 MB measured 2026-10-12), so 16 at once is ~2-4 GB. Queues are deep enough that
+ * a burst of guards never refuses admission; a call still waiting at its deadline did not run, and
+ * the turn goes on without it. Decisions run at low effort: the model's default (medium) adds ~0.5 s.
  */
 export const SUBSCRIPTION_DEFAULTS = {
   maxCalls: 10_000,
-  maxQueued: 256,
-  maxQueuedPerThread: 32,
-  maxConcurrent: { claude: 8, codex: 16 },
+  maxQueued: 512,
+  maxQueuedPerThread: 256,
+  maxConcurrent: { claude: 16, codex: 16 },
   callTimeoutMs: 30_000,
   effort: 'low',
   /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */

@@ -109,7 +109,7 @@ function providers(delayMs: number) {
       // Post-turn learning review runs after the worker; only pre-message decisions are measured.
       if (id.includes(':aux:review:'))
         return {
-          content: JSON.stringify({ decision: 'skip', facts: [], reason: 'controlled' }),
+          content: 'NO_COMMENT',
           model: 'luna',
         };
       calls++;
@@ -127,7 +127,7 @@ function providers(delayMs: number) {
                 layers: DOMAINS.map((d) => `${d}-reference`),
                 confidence: 1,
               })
-            : JSON.stringify({ layers: [], snippets: [], confidence: 1 });
+            : 'NO_COMMENT';
       void messages;
       return { content, model: 'luna' };
     },

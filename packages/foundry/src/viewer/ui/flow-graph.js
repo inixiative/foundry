@@ -329,7 +329,8 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 const ROUTE_STATUS = { routed: 'ok', fallback: 'warn', timeout: 'warn', error: 'error' };
 const DECISION_STATUS = {
   contribute: 'ok',
-  abstain: 'skip',
+  'no-comment': 'skip',
+  skipped: 'skip',
   error: 'error',
   timeout: 'warn',
   excluded: 'skip',
@@ -346,7 +347,7 @@ const TURN_STATUS = {
 const LEARN_STATUS = {
   learned: 'ok',
   restored: 'ok',
-  abstain: 'skip',
+  'no-comment': 'skip',
   delayed: 'pending',
   requested: 'pending',
   deferred: 'pending',
@@ -957,7 +958,7 @@ export function learningLoop(flow, { maxTurns = 16 } = {}) {
     const committed = flow?.knowledge?.domains?.[domain];
     const review = flow?.review?.[domain];
     if (!committed && !review) continue;
-    const pending = review && !['idle', 'learned', 'abstain'].includes(review.status);
+    const pending = review && !['idle', 'learned', 'no-comment'].includes(review.status);
     nodes.push({
       id: `now:${domain}`,
       kind: 'knowledge',

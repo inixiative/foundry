@@ -62,17 +62,16 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
         reviews.push({ domain: domain!, text: messages.map((m) => m.content).join('\n') });
         return {
           model: 'controlled',
-          content: JSON.stringify({ decision: 'abstain', reason: 'controlled' }),
+          content: 'NO_COMMENT',
         };
       }
       return {
         model: 'controlled',
-        content: JSON.stringify({
-          domains,
-          layers: domain ? [domain] : domains,
-          snippets: [],
-          confidence: 1,
-        }),
+        content: JSON.stringify(
+          domain
+            ? { layers: [domain], snippets: [], confidence: 1 }
+            : { domains, layers: domains, confidence: 1 },
+        ),
       };
     },
   };

@@ -123,7 +123,7 @@ function setup(scripts: Record<string, Step[]>) {
           .split('\n')
           .filter((line) => /^- (memory-file_search|no-such_tool|Read|Write)\b/.test(line));
         reviews.push({ request, tools: toolLines, user });
-        return { model: 'mock', content: '{"decision":"abstain","reason":"recorded"}' };
+        return { model: 'mock', content: 'NO_COMMENT' };
       }
       return { model: 'mock', content: '{"layers":["security"],"snippets":[],"confidence":1}' };
     },

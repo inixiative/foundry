@@ -16,6 +16,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { chartered } from '../src/agents/warden-charter';
 import {
   type AgentSettingsConfig,
   ConfigStore,
@@ -115,7 +116,7 @@ function setup(c: FoundryConfig) {
               ? JSON.stringify({ layers: ['conventions'], domains: [], confidence: 1 })
               : phase === 'pre'
                 ? JSON.stringify({ layers: ['conventions'], snippets: [], confidence: 1 })
-                : JSON.stringify({ decision: 'abstain', facts: [], reason: 'nothing new' }),
+                : 'NO_COMMENT',
       };
     },
   });
@@ -184,7 +185,7 @@ test('an extending project Warden appends its instructions under its own heading
   managers.push(f.manager);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a script');
-  expect(f.last('pre').messages[0]!.content).toBe(composed);
+  expect(f.last('pre').messages[0]!.content).toBe(chartered(composed));
 });
 
 test('override replaces the instructions chunk while domain knowledge still concatenates', async () => {
@@ -217,7 +218,7 @@ test('override replaces the instructions chunk while domain knowledge still conc
   const lib = f.manager.get(thread.id)!.domainLibrarians.get('conventions')!;
   expect(lib.cache.content).toBe(knowledge);
   const pre = f.last('pre');
-  expect(pre.messages[0]!.content).toBe('Use Bun');
+  expect(pre.messages[0]!.content).toBe(chartered('Use Bun'));
   expect(pre.messages[1]!.content).toContain(knowledge);
 
   // Overriding domain knowledge keeps only the project chunk.
@@ -247,7 +248,7 @@ test('without a project entry the global Warden applies unchanged', async () => 
   managers.push(f.manager);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a script');
-  expect(f.last('pre').messages[0]!.content).toBe(GLOBAL_RULES);
+  expect(f.last('pre').messages[0]!.content).toBe(chartered(GLOBAL_RULES));
   expect(f.manager.get(thread.id)!.domainLibrarians.get('conventions')!.cache.content).toBe(
     '## How I work\n\nGLOBAL_KNOWLEDGE: look for what exists first.',
   );
@@ -292,7 +293,7 @@ test('a settings edit reaches a running thread on its next turn, with a versione
   const thread = f.factory.create('main');
 
   await thread.dispatch('worker', 'First turn');
-  expect(f.last('pre').messages[0]!.content).toBe(GLOBAL_RULES);
+  expect(f.last('pre').messages[0]!.content).toBe(chartered(GLOBAL_RULES));
   expect(f.last('central').messages[0]!.content).toContain('WORKER_INSTRUCTIONS');
 
   await store.update((draft) => {
@@ -304,7 +305,7 @@ test('a settings edit reaches a running thread on its next turn, with a versione
 
   await thread.dispatch('worker', 'Second turn');
   const pre = f.last('pre');
-  expect(pre.messages[0]!.content).toBe('EDITED_RULES');
+  expect(pre.messages[0]!.content).toBe(chartered('EDITED_RULES'));
   expect(pre.messages[1]!.content).toContain('EDITED_KNOWLEDGE');
   expect(f.last('central').messages[0]!.content).toContain('EDITED_WORKER');
 
@@ -385,9 +386,13 @@ test('a project extension edit and a guard-trigger edit reach a running project 
   // Guard and advise share the instructions; the guard phase appends its own protocol.
   const guarded = f.last('pre');
   expect(guarded.messages[0]!.content).toBe(
-    '## Global instructions (conventions-warden)\n\nGLOBAL_RULES: merge yourself once green.\n\n## Project instructions (P)\n\nUse Bun 1.4',
+    chartered(
+      '## Global instructions (conventions-warden)\n\nGLOBAL_RULES: merge yourself once green.\n\n## Project instructions (P)\n\nUse Bun 1.4',
+    ),
   );
-  expect(guarded.messages[1]!.content).toContain('## Response protocol (guard phase)');
+  expect(guarded.messages[1]!.content).toContain(
+    '## Response protocol (guard phase, trigger: agent-action)',
+  );
 });
 
 test('an edit that cannot be built changes nothing on live threads', async () => {
@@ -400,7 +405,7 @@ test('an edit that cannot be built changes nothing on live threads', async () =>
   next.agents['conventions-warden']!.prompt = 'NEVER_APPLIED';
   await expect(f.factory.reconfigure(next)).rejects.toThrow('No provider registered');
   await thread.dispatch('worker', 'Turn');
-  expect(f.last('pre').messages[0]!.content).toBe(GLOBAL_RULES);
+  expect(f.last('pre').messages[0]!.content).toBe(chartered(GLOBAL_RULES));
   // The factory keeps the configuration it can build.
   expect(() => f.factory.create('later')).not.toThrow();
 });

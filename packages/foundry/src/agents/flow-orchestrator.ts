@@ -61,6 +61,7 @@ import type {
   ToolObservation,
 } from './domain-librarian';
 import type { Librarian } from './librarian';
+import type { TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,15 +69,19 @@ import type { Librarian } from './librarian';
 
 /**
  * What one domain decided about one input.
- * - contribute / abstain: the domain answered.
+ * - contribute: the domain answered with something to add.
+ * - no-comment: the domain answered NO_COMMENT; nothing reaches the thread.
+ * - skipped: it holds no knowledge yet (a cold cache); no call was made.
  * - error: the domain's model call failed.
  * - timeout: the domain started but had not answered by its deadline (call still outstanding).
- * - excluded: the domain never started because the plan deadline passed while it was queued.
+ * - excluded: the domain never started: the plan deadline passed while it was queued, or the
+ *   decision queue never admitted its call.
  * - omitted: the domain contributed but the composition budget excluded it.
  */
 export type ContributionDecision =
   | 'contribute'
-  | 'abstain'
+  | 'no-comment'
+  | 'skipped'
   | 'error'
   | 'timeout'
   | 'excluded'
@@ -112,6 +117,8 @@ export interface ContributionProvenance {
 export interface DomainContribution {
   readonly domain: string;
   readonly decision: ContributionDecision;
+  /** The trigger point it was asked at. */
+  readonly trigger: TriggerPoint;
   readonly reason?: string;
   readonly layers: string[];
   readonly snippets: string[];
@@ -257,6 +264,8 @@ export interface GuardOutcome {
   readonly domain: string;
   readonly status: GuardStatus;
   readonly findings: number;
+  /** The check completed with NO_COMMENT: nothing to add. */
+  readonly noComment?: true;
   readonly error?: string;
   /** Provider lifecycle classification of a failed call, "unknown", or "not-admitted" when the call was refused before the provider. */
   readonly admission?: GuardCallEvidence | 'unknown' | 'not-admitted';
@@ -285,6 +294,8 @@ export interface GuardReport {
   advisory: GuardFinding[];
   /** Which domain guards were triggered (completed or not). */
   domainsChecked: string[];
+  /** Domains whose guard triggers do not name this tool: not asked. */
+  skipped: string[];
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
   /** Domains whose check did not complete: provider-error, invalid-response or not-admitted. No all-clear exists for them. */
@@ -524,7 +535,8 @@ export class FlowOrchestrator {
     };
     const outstanding: OutstandingCall[] = [];
 
-    // 2. Assess: domains start immediately (bounded pool); routing runs alongside.
+    // 2. Assess: the user-message trigger point asks every Warden; each decides under the charter
+    //    (bounded pool). Routing runs alongside.
     const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
       this._assess(p, input, clock, outstanding),
     );
@@ -670,18 +682,23 @@ export class FlowOrchestrator {
     ): DomainContribution => ({
       domain: p.lib.domain,
       decision,
+      trigger: 'user-message',
       layers: [],
       snippets: [],
       confidence: 0,
       ...extra,
-      segments,
+      // A skipped domain was given nothing: no call, so no inputs to record.
+      segments:
+        decision === 'skipped'
+          ? { instructions: '', domainKnowledge: '', threadKnowledge: '' }
+          : segments,
       provenance: provenance(),
       request: request(decision, extra.reason),
     });
 
+    if (!p.cache) return decided('skipped', { reason: 'cold-cache' });
     // Queued behind the pool until the plan deadline passed: never started.
     if (clock.passed()) return decided('excluded', { reason: 'deadline-queued' });
-    if (!p.cache) return decided('abstain', { reason: 'cold-cache' });
 
     const task = p.lib
       .advise(input.message, input.threadState, {
@@ -715,12 +732,9 @@ export class FlowOrchestrator {
     if (outcome.kind === 'error') return decided('error', { reason: outcome.error });
     const { result } = outcome;
     if (result.error) return decided('error', { reason: result.error });
-    if (result.abstain || (result.layers.length === 0 && result.snippets.length === 0)) {
-      return decided('abstain', {
-        reason: result.reason ?? 'no relevant context',
-        confidence: result.confidence,
-      });
-    }
+    if (result.skipped) return decided('skipped', { reason: result.skipped });
+    if (result.notStarted) return decided('excluded', { reason: result.notStarted });
+    if (result.noComment) return decided('no-comment');
     return decided('contribute', {
       layers: [...result.layers],
       snippets: [...result.snippets],
@@ -1012,12 +1026,12 @@ export class FlowOrchestrator {
     const start = Date.now();
     const threadState = this._librarian.layer.content;
 
-    // The Librarian decides which domain librarians fire
+    // The agent-action trigger point asks every domain whose guard triggers name this tool.
     const domainsToCheck: DomainLibrarian[] = [];
+    const skipped: string[] = [];
     for (const [, domainLib] of this._domains) {
-      if (domainLib.shouldGuard(observation.tool)) {
-        domainsToCheck.push(domainLib);
-      }
+      if (domainLib.shouldGuard(observation.tool)) domainsToCheck.push(domainLib);
+      else skipped.push(domainLib.domain);
     }
 
     // Freeze each domain's OWN thread understanding before any await, so every guard checks
@@ -1082,6 +1096,7 @@ export class FlowOrchestrator {
         domain: domainsToCheck[i].domain,
         status: r.status,
         findings: r.status === 'completed' ? r.findings.length : 0,
+        ...(r.status === 'completed' && r.noComment ? { noComment: true as const } : {}),
         ...(r.error !== undefined ? { error: r.error } : {}),
         ...(r.admission !== undefined ? { admission: r.admission } : {}),
         ...(r.threadKnowledgeRevision !== undefined
@@ -1112,6 +1127,7 @@ export class FlowOrchestrator {
         input: observation.input,
         filesAffected: observation.filesAffected,
         guardsRan: domainsChecked,
+        guardsSkipped: skipped,
         guardOutcomes: outcomes,
         guardsFailed: failed,
         findingsCount: findings.length,
@@ -1125,6 +1141,7 @@ export class FlowOrchestrator {
       critical,
       advisory,
       domainsChecked,
+      skipped,
       outcomes,
       failed,
       elapsed: Date.now() - start,
@@ -1255,9 +1272,11 @@ function composeDecoration(
 ): MessageDecoration {
   const blocks: PromptBlock[] = [];
 
-  const decisions = plan.contributions.map(
-    (c) => `${c.domain}: ${c.decision}${c.reason ? ` (${c.reason})` : ''}`,
-  );
+  // Only a contribution the budget dropped is news to the session (its notes are missing). Silence,
+  // skips and failures add nothing to the turn, not even a line; the journal keeps every decision.
+  const decisions = plan.contributions
+    .filter((c) => c.decision === 'omitted')
+    .map((c) => `${c.domain}: ${c.decision}${c.reason ? ` (${c.reason})` : ''}`);
   const routingLine =
     plan.routing.status === 'routed'
       ? `Router selected domains: ${plan.routing.domains.length ? plan.routing.domains.join(', ') : 'none'} (confidence ${plan.routing.confidence}).`
@@ -1269,7 +1288,7 @@ function composeDecoration(
     segment: 'routing',
     text: [
       routingLine,
-      `Domain decisions: ${decisions.join('; ') || 'none'}.`,
+      ...(decisions.length ? [`Domain decisions: ${decisions.join('; ')}.`] : []),
       ...(plan.conflicts.length
         ? [
             `Unresolved conflicts: ${plan.conflicts.map((c) => `${c.domain} ${c.kind}`).join('; ')}.`,

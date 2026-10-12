@@ -119,7 +119,6 @@ function setup(
                 : review
                   ? await review(call)
                   : JSON.stringify({
-                      decision: 'learn',
                       knowledge: `PRIVATE_${domain}: ${messages.some((m) => m.content.includes('additive migration')) ? 'additive migration verified' : 'observed completed work'}`,
                       facts: [],
                       reason: `OWNED_${domain}_REASON`,
@@ -381,7 +380,7 @@ test('configured review pending does not block Continue or create another same-d
     });
     expect(f.calls.filter((c) => c.phase === 'post')).toHaveLength(1);
     expect(JSON.stringify(next.meta?.injection)).not.toContain('PENDING_FACT');
-    release(JSON.stringify({ decision: 'learn', knowledge: 'PENDING_FACT', facts: [] }));
+    release(JSON.stringify({ knowledge: 'PENDING_FACT', facts: [] }));
     await runtime.learningSettled();
     await t.dispatch('worker', 'Continue');
     await runtime.learningSettled();
@@ -390,7 +389,7 @@ test('configured review pending does not block Continue or create another same-d
     );
     expect(JSON.stringify(next.meta?.injection)).not.toContain('PENDING_FACT');
   } finally {
-    release('{"decision":"abstain"}');
+    release('NO_COMMENT');
     await f.close();
   }
 });

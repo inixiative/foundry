@@ -51,6 +51,8 @@ function config(project: string): FoundryConfig {
       flowRole: 'domain-advising',
       domain: 'conventions',
       prompt: 'WARDEN_RULES',
+      // The Warden holds knowledge, so it is asked on every turn (a cold Warden is skipped).
+      domainKnowledge: ['conventions-knowledge'],
       provider: 'expert',
       model: 'warden-model',
       tools: false,
@@ -61,6 +63,13 @@ function config(project: string): FoundryConfig {
     },
   };
   c.layers = {};
+  c.sources['conventions-knowledge'] = {
+    id: 'conventions-knowledge',
+    label: 'Conventions',
+    type: 'inline',
+    uri: 'CONVENTIONS_KNOWLEDGE: scripts live in package.json.',
+    enabled: true,
+  };
   // Only the personal role files compose: nothing from the machine running the tests.
   c.composition = {
     preset: 'none',
@@ -101,9 +110,7 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
             ? 'done'
             : phase === 'route'
               ? JSON.stringify({ layers: [], domains: ['conventions'], confidence: 0.9 })
-              : phase === 'pre'
-                ? JSON.stringify({ layers: [], snippets: [], confidence: 1 })
-                : JSON.stringify({ decision: 'abstain', facts: [], reason: 'nothing new' }),
+              : 'NO_COMMENT',
       };
     },
   });
@@ -111,10 +118,12 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
     flow = provider('flow'),
     expert = provider('expert');
   const providers = new Map([central, flow, expert].map((p) => [p.id, p]));
-  const sourceResolver: SourceResolver = () => null;
+  const sourceResolver: SourceResolver = (id, cfg) =>
+    cfg.sources[id] ? { id, load: async () => cfg.sources[id]!.uri } : null;
   const stack = new ContextStack(buildLayers(c, { sourceResolver }));
   const manager = new ThreadRuntimeManager({
     config: c,
+    resolveSource: sourceResolver,
     llm: flow,
     providers,
     log() {},

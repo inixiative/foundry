@@ -97,8 +97,8 @@ test('flow snapshot: recent turns as recorded flows, learning history and commit
     expect.arrayContaining([
       't1:architecture:learned',
       't1:testing:learned',
-      't2:architecture:abstain',
-      't2:testing:abstain',
+      't2:architecture:no-comment',
+      't2:testing:no-comment',
     ]),
   );
   // Requests are reduced to their status and message count; expert segments to their lengths; knowledge text stays in the journal.

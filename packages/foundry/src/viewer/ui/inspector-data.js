@@ -244,7 +244,7 @@ const KNOWN_REVIEW_STATUSES = new Set([
   'pending',
   'delayed',
   'learned',
-  'abstain',
+  'no-comment',
   'invalid',
   'error',
   'expired',

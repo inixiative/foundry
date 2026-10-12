@@ -84,7 +84,7 @@ async function fixture(name: string, withNative = false) {
             content: messages.some((m) => m.content.includes('## Completed work'))
               ? ++reviews === 1
                 ? await held
-                : '{"decision":"abstain"}'
+                : 'NO_COMMENT'
               : '{"domains":["conventions"],"layers":["conventions"],"snippets":[],"confidence":1}',
           };
         },
@@ -188,7 +188,7 @@ async function fixture(name: string, withNative = false) {
       return p;
     };
     const close = async () => {
-      release('{"decision":"abstain"}');
+      release('NO_COMMENT');
       const failures = await releaseAll([
         ['learning', () => owned.learningSettled()],
         ['browser', () => browser.close()],
@@ -463,7 +463,6 @@ test('Turn Context shows historical pending learning that stays fixed after comm
     // Commit the fact; the selected historical record must not change.
     f.release(
       JSON.stringify({
-        decision: 'learn',
         knowledge: fact,
         facts: [fact],
         reason: 'Verified completed work',
@@ -498,9 +497,9 @@ test('Turn Context shows historical pending learning that stays fixed after comm
       .waitFor();
     await current.getByText(/^conventions: /).waitFor();
     const text = await current.innerText();
-    // The controlled reviewer abstains on the post-commit work, so the live
-    // status is abstain while the durable revision remains the committed fact.
-    expect(text).toMatch(/Review status\s*\n?\s*abstain/i);
+    // The controlled reviewer answers NO_COMMENT on the post-commit work, so the live
+    // status is no-comment while the durable revision remains the committed fact.
+    expect(text).toMatch(/Review status\s*\n?\s*no-comment/i);
     expect(text).toMatch(/Latest committed revision\s*\n?\s*1 by conventions-reviewer/);
     expect(text).toMatch(/Native outcome\s*\n?\s*unknown/);
     expect(text).not.toMatch(/acknowledged by/i);

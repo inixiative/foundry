@@ -299,7 +299,7 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
           decision: 'contribute',
           segments: { instructions: readFileSync(change.path, 'utf8') },
         },
-        { domain: 'docs', decision: 'abstain', segments: { instructions: 'other' } },
+        { domain: 'docs', decision: 'no-comment', segments: { instructions: 'other' } },
       ],
     },
   });

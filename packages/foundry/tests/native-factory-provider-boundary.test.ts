@@ -149,21 +149,18 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
         reviews.push({ domain: domain!, text });
         return {
           model: 'controlled',
-          content: JSON.stringify(
-            text.includes(MARK)
-              ? { decision: 'learn', knowledge: `${domain}: ${MARK}`, facts: [MARK] }
-              : { decision: 'abstain', reason: 'result not supplied' },
-          ),
+          content: text.includes(MARK)
+            ? JSON.stringify({ knowledge: `${domain}: ${MARK}`, facts: [MARK] })
+            : 'NO_COMMENT',
         };
       }
       return {
         model: 'controlled',
-        content: JSON.stringify({
-          domains,
-          layers: domain ? [domain] : domains,
-          snippets: [],
-          confidence: 1,
-        }),
+        content: JSON.stringify(
+          domain
+            ? { layers: [domain], snippets: [], confidence: 1 }
+            : { domains, layers: domains, confidence: 1 },
+        ),
       };
     },
   };

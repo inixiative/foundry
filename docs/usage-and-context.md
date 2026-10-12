@@ -421,6 +421,9 @@ turn. A changed composition is a new prime hash, and the next call re-primes
 `The <domain> Warden chimed in:` followed by its points. It is placed after the
 message (`PromptBlock.placement: "after-message"`), not in the context. Routing
 stays in the per-turn context, and a contribution of layers only adds context.
+Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
+nothing to the message. Every Warden runs under the fixed Warden charter
+([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
 
 **Aron's setup.** Main plus the Convention Warden, across computer, org, org
 personal, project and project personal:

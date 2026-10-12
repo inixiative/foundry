@@ -21,9 +21,10 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only: the id the CLI must report serving (for example the full id behind an alias). Codex does not acknowledge a different model. |
 | `subscriptionOnly.directory` | `<project>/.foundry/decision-receipts` | Private (0700) receipt directory. The default is created at startup; an explicit directory must already exist and be private. |
 | `subscriptionOnly.maxCalls` | `10000` | Finite decision attempt budget for this Foundry process, including failed admitted attempts. It does not renew automatically. |
-| `subscriptionOnly.maxConcurrent` | `8` for Claude, `16` for Codex | Decisions running at once across all threads: Claude CLI processes (one pre-message fan-out of classifier, router, Cartographer and five Wardens), or concurrent turns on the one warm Codex process. |
-| `subscriptionOnly.maxQueued` | `256` | Waiting decisions across all threads (up to 1024). |
-| `subscriptionOnly.maxQueuedPerThread` | `32` | Waiting decisions per logical thread. |
+| `subscriptionOnly.maxConcurrent` | `16` | Decisions running at once across all threads: Claude CLI processes (~130–230 MB each), or concurrent turns on the one warm Codex process. Sized for a full Warden roster: every Warden is asked on every user message, and every guard-triggered Warden on every action. |
+| (primed keys) | `2 × Wardens + 8`, at least 16 | Claude decision roles kept primed, sized at startup from the enabled Wardens (an advice and a review key each). Each holds a spare CLI process (~130–230 MB): 25 Wardens is about 50 processes and 10 GB. An evicted key re-primes cold (5–8 s). Not a setting. |
+| `subscriptionOnly.maxQueued` | `512` | Waiting decisions across all threads (up to 1024). |
+| `subscriptionOnly.maxQueuedPerThread` | `256` | Waiting decisions per logical thread: deep enough that a burst of guards never refuses admission. |
 | `subscriptionOnly.effort` | `low` | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`; Haiku 5.5 accepts `low` to `high`). The model default, `medium`, adds latency per decision. |
 | `subscriptionOnly.hedgeAfterMs` | `4000` for Codex | A decision still running after this long starts the same input on a second branch; the first to finish wins (500 to 30000). |
 | `subscriptionOnly.callTimeoutMs` | `30000` | Per-decision deadline including queue and preflight time (100 to 30000). |

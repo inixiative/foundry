@@ -281,7 +281,12 @@ export class Librarian {
   }
 
   private _handleGuardObservation(data?: {
-    guardOutcomes?: Array<{ domain?: string; status?: string; findings?: number }>;
+    guardOutcomes?: Array<{
+      domain?: string;
+      status?: string;
+      findings?: number;
+      noComment?: boolean;
+    }>;
   }): void {
     if (!Array.isArray(data?.guardOutcomes)) {
       this._pushActivity('Guard review: outcome not recorded');
@@ -293,6 +298,8 @@ export class Librarian {
     }
     // Shared activity carries outcome metadata, not private guard inputs or error payloads.
     for (const outcome of data.guardOutcomes) {
+      // Silence is not activity: a guard that answered NO_COMMENT adds nothing to the shared state.
+      if (outcome?.noComment === true) continue;
       const domain = typeof outcome?.domain === 'string' ? outcome.domain.slice(0, 60) : 'unknown';
       const status = [
         'completed',
@@ -300,6 +307,7 @@ export class Librarian {
         'cold-cache',
         'provider-error',
         'invalid-response',
+        'not-admitted',
       ].includes(outcome?.status ?? '')
         ? outcome.status
         : 'outcome not recorded';

@@ -10,6 +10,7 @@ import {
   DomainLibrarian,
   validateAdviceResponse,
 } from '../src/agents/domain-librarian';
+import { chartered } from '../src/agents/warden-charter';
 
 // Author cases for the advice-phase response contract (Fable). Controlled provider only; no model.
 // The parent's protected protocol fixture covers the invalid-shape matrix; these cover the boundary
@@ -45,12 +46,12 @@ function fixture(
 
 test('composition-style broad instructions stay verbatim as the system message; the protocol is a separate phase block in the request', async () => {
   const { lib, calls } = fixture(() => ({
-    content: '{"layers":["architecture"],"snippets":[],"confidence":0.7,"domain":"architecture"}',
+    content: '{"layers":["architecture"],"snippets":[],"confidence":0.7}',
   }));
   const result = await lib.advise('Add preferred names', 'shared thread state');
-  expect(result).toEqual({ layers: ['architecture'], snippets: [], confidence: 0.7 }); // unknown extra keys are tolerated; the schema fields are what count
+  expect(result).toEqual({ layers: ['architecture'], snippets: [], confidence: 0.7 }); // a layers-only contribution is valid
   expect(lib.advisePrompt).toBe(BROAD_INSTRUCTIONS); // stored instructions untouched: inspectable provenance
-  expect(calls[0]![0]).toEqual({ role: 'system', content: BROAD_INSTRUCTIONS });
+  expect(calls[0]![0]).toEqual({ role: 'system', content: chartered(BROAD_INSTRUCTIONS) });
   expect(calls[0]![1]!.role).toBe('user');
   expect(calls[0]![1]!.content).toContain(ADVICE_RESPONSE_PROTOCOL);
   expect(calls[0]![1]!.content).toContain('## Message\nAdd preferred names');
@@ -75,11 +76,17 @@ test('protocol errors are explicit, bounded and never echo response content; pro
     `not json at all ${secret}`,
     `{"layers":["${secret}"],"snippets":[],"confidence":1.5}`,
     'x'.repeat(20_001),
+    // Unknown fields, the retired abstain field, empty contributions and NO_COMMENT mixed with text are errors.
+    `{"layers":["architecture"],"snippets":[],"confidence":0.7,"domain":"${secret}"}`,
+    `{"layers":[],"snippets":[],"confidence":0,"abstain":true,"reason":"${secret}"}`,
+    '{"layers":[],"snippets":[],"confidence":0}',
+    `NO_COMMENT because ${secret}`,
+    `Sure: {"layers":[],"snippets":["${secret}"],"confidence":1}`,
   ]) {
     const { lib } = fixture(() => ({ content: bad }));
     const result = await lib.advise('m');
     expect(result).toMatchObject({ layers: [], snippets: [], confidence: 0 });
-    expect(result.abstain).toBeUndefined();
+    expect(result.noComment).toBeUndefined();
     expect(typeof result.error).toBe('string');
     expect(result.error!.length).toBeLessThan(200);
     expect(result.error).not.toContain(secret);
@@ -90,29 +97,28 @@ test('protocol errors are explicit, bounded and never echo response content; pro
   expect((await failing.lib.advise('m')).error).toBe('CONTROLLED_PROVIDER_FAILURE'); // existing propagation of the model call's failure
 });
 
-test('valid forms: fenced JSON, confidence at both bounds, explicit abstention with reason, abstention defaulting its reason', async () => {
+test('valid forms: fenced JSON, confidence at both bounds, and NO_COMMENT alone (surrounding whitespace allowed)', async () => {
   expect(
-    validateAdviceResponse('```json\n{"layers":[],"snippets":[],"confidence":0}\n```'),
-  ).toEqual({ layers: [], snippets: [], confidence: 0 });
+    validateAdviceResponse('```json\n{"layers":[],"snippets":["s"],"confidence":0}\n```'),
+  ).toEqual({ layers: [], snippets: ['s'], confidence: 0 });
   expect(validateAdviceResponse('{"layers":["a"],"snippets":["b"],"confidence":1}')).toEqual({
     layers: ['a'],
     snippets: ['b'],
     confidence: 1,
   });
-  expect(
-    validateAdviceResponse(
-      '{"layers":[],"snippets":[],"confidence":0,"abstain":true,"reason":"nothing relevant"}',
-    ),
-  ).toEqual({ layers: [], snippets: [], confidence: 0, abstain: true, reason: 'nothing relevant' });
-  expect(
-    validateAdviceResponse('{"layers":[],"snippets":[],"confidence":0,"abstain":true}'),
-  ).toEqual({ layers: [], snippets: [], confidence: 0, abstain: true, reason: 'declined' });
-  expect(
-    validateAdviceResponse(
-      '{"layers":[],"snippets":[],"confidence":0.4,"abstain":false,"reason":"ignored when not abstaining"}',
-    ),
-  ).toEqual({ layers: [], snippets: [], confidence: 0.4 });
-  expect(validateAdviceResponse('{"layers":[],"snippets":[],"confidence":"0.5"}')).toEqual({
+  expect(validateAdviceResponse('NO_COMMENT')).toEqual({
+    layers: [],
+    snippets: [],
+    confidence: 0,
+    noComment: true,
+  });
+  expect(validateAdviceResponse('\n NO_COMMENT \n')).toEqual({
+    layers: [],
+    snippets: [],
+    confidence: 0,
+    noComment: true,
+  });
+  expect(validateAdviceResponse('{"layers":[],"snippets":["s"],"confidence":"0.5"}')).toEqual({
     error: 'advice response requires "confidence": finite number from 0 to 1',
   });
   expect(validateAdviceResponse(42 as unknown as string)).toEqual({
@@ -120,7 +126,7 @@ test('valid forms: fenced JSON, confidence at both bounds, explicit abstention w
   });
 });
 
-test('a cold cache still abstains explicitly before any model call', async () => {
+test('a cold cache is skipped explicitly before any model call', async () => {
   const calls: LLMMessage[][] = [];
   const llm: LLMProvider = {
     id: 'controlled-advice',
@@ -140,8 +146,7 @@ test('a cold cache still abstains explicitly before any model call', async () =>
     layers: [],
     snippets: [],
     confidence: 0,
-    abstain: true,
-    reason: 'cold-cache',
+    skipped: 'cold-cache',
   });
   expect(calls).toHaveLength(0);
 });

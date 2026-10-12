@@ -261,20 +261,22 @@ test('tool and model overrides fail before any subprocess', async () => {
 test('actual factory classification, routing, advice, guard and learning use the subscription lifecycle and retain private thread knowledge', async () => {
   const f = fixture(
     subscriptionTransport({
-      response: () =>
-        JSON.stringify({
-          category: 'feature',
-          destination: 'worker',
-          contextSlice: ['docs'],
-          layers: ['docs'],
-          domains: ['docs'],
-          snippets: [],
-          confidence: 1,
-          findings: [],
-          decision: 'learn',
-          knowledge: 'Accepted private thread knowledge',
-          facts: [],
-        }),
+      // Each Warden phase answers in its own strict protocol; the other roles share one routing answer.
+      response: (input) =>
+        input.includes('## Response protocol (post-work review)')
+          ? JSON.stringify({ knowledge: 'Accepted private thread knowledge', facts: [] })
+          : input.includes('## Response protocol (advice phase')
+            ? JSON.stringify({ layers: ['docs'], snippets: [], confidence: 1 })
+            : input.includes('## Response protocol (guard phase')
+              ? 'NO_COMMENT'
+              : JSON.stringify({
+                  category: 'feature',
+                  destination: 'worker',
+                  contextSlice: ['docs'],
+                  layers: ['docs'],
+                  domains: ['docs'],
+                  confidence: 1,
+                }),
     }),
   );
   const c = starterConfig('central', 'worker-model');
@@ -476,7 +478,7 @@ test('queue bound rejects excess waiting calls before native admission', async (
   const first = f.provider.complete(messages);
   await until(() => transport.writes === 1);
   const queued = f.provider.complete(messages).catch((error) => error);
-  await expect(f.provider.complete(messages)).rejects.toThrow('closed or full');
+  await expect(f.provider.complete(messages)).rejects.toThrow('queue full');
   expect(f.snapshot().queued).toBe(1);
   f.close();
   finish('done');

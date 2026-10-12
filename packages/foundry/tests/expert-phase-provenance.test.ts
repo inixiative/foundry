@@ -60,7 +60,9 @@ test('historical expert evidence retains the actual phase protocol, separately f
     const prepared = await flow.hydrateDelta(plan);
     expect(calls).toHaveLength(1);
     const actualUserInput = calls[0]!.find((message) => message.role === 'user')!.content;
-    const protocolStart = actualUserInput.indexOf('## Response protocol (advice phase)');
+    const protocolStart = actualUserInput.indexOf(
+      '## Response protocol (advice phase, trigger: user-message)',
+    );
     expect(protocolStart).toBeGreaterThanOrEqual(0);
     const actualProtocol = actualUserInput.slice(protocolStart).trim();
     expect(actualProtocol).toContain('"layers"');

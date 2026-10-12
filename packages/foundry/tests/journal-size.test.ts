@@ -97,7 +97,7 @@ async function viewerWith(c: FoundryConfig) {
     threadId.endsWith(':cartographer')
       ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
       : messages.some((m) => String(m.content).includes('## Completed work'))
-        ? JSON.stringify({ decision: 'learn', knowledge: 'Learned a fact.', facts: ['A fact'] })
+        ? JSON.stringify({ knowledge: 'Learned a fact.', facts: ['A fact'] })
         : threadId.includes(':aux:')
           ? JSON.stringify({ layers: [], snippets: ['Mind the fact.'], confidence: 1 })
           : 'done';

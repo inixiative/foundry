@@ -124,6 +124,25 @@ Each Warden maintains knowledge, advises when asked, and guards when triggered:
 
 Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** the memory domain sets `programmaticGuard: true` (`agents/thread-runtime.ts:196`) but nothing supplies a `guardFn`, so `DomainLibrarian.guard` falls through to the LLM guard (`agents/domain-librarian.ts:1259-1271`). Every guard is an LLM call today.
 
+### When a Warden weighs in: the charter, trigger points and NO_COMMENT
+
+**The Warden charter** (`agents/warden-charter.ts`) is how every Warden works. It is one fixed meta-instruction set, part of Foundry, never settings, and never edited per project. It heads the system message of every Warden call, above that Warden's own composed instructions. It sets scope discipline (a point is yours only when you can name the rule, fact or `fb_` item in your instructions or knowledge that it touches), `NO_COMMENT` as the default answer, what each moment asks, and how to speak: at most three short points, each citing its `fb_` id or rule. Its wording is iterated against real sessions with the charter eval (below), never hand-tuned per Warden.
+
+**Trigger points.** A Warden is asked at a named trigger point, and every Warden the point reaches is asked; there is no relevance prefilter. Deciding what is in a domain is the Warden's job under the charter, for any system, language or preference. A keyword or path filter would fail silently: a Warden that should have spoken is never asked, and nothing records the miss.
+
+| Trigger point | Phase | Who is asked | The charter asks |
+|---|---|---|---|
+| `user-message` | advice | every Warden, on every user message | what does the user usually add here, in your domain, so they need not say it perfectly every time? |
+| `agent-action` | guard | every Warden whose `guardTriggers` name the tool | does this action go against your domain? |
+
+After the work, every Warden reviews it (post-work review) under the same charter. Next trigger points, each with its own input, protocol text and NO_COMMENT default: `subagent-spawn` (brief the handoff), `agent-question` (answer on the user's behalf when confident and backed by a recorded ruling), `hand-back` (process Wardens review the final message before it lands, one extra pass at most).
+
+**NO_COMMENT is the expected answer** in every phase protocol (advice, guard, review): exactly `NO_COMMENT`, nothing else. It adds nothing to the thread: no note, no "Domain decisions" line, nothing in the shared thread state. It is still journalled as the Warden's decision (`no-comment`), so the silence rate is measurable. Any other answer outside the protocol (an empty contribution, extra fields, prose around JSON, NO_COMMENT with anything else) is an error, never a comment.
+
+**Load.** Asking every Warden is handled by sizing the decision queue for the roster (`subscriptionOnly.maxConcurrent`, default 16) and keeping every role primed (two primed keys per Warden, advice and review, sized at startup from the roster), not by asking fewer. A decision's queue wait is bounded by its caller's deadline; once started it gets its full run budget, so no running decision is cut short. Measured 2026-10-12 with 25 Wardens: about 50 decision processes and 10 GB resident, plan latency 2.5–10 s once warm, and the first one or two turns after a start time out while 51 keys prime. A Warden the queue never admitted in time is recorded as `excluded` (advice) or `not-admitted` (guard): it did not run, and the turn goes on without it. Any future gating has to be justified by the eval's per-turn data and be domain-agnostic.
+
+**The charter eval** (`scripts/evals/warden-charter.ts`, scoring in foundry-core `feedback/warden-probes.ts` so Oracle scores the same way) runs a charter wording over probes built from real sessions (`scripts/evals/warden-probes.ts`). Each probe is one turn, with every Warden asked at once. It reports silence precision (NO_COMMENT when nothing of the Warden's applied), speak precision (a remark matched the user's later real correction, judged by Opus), scope violations, recall, and per-turn calls and latency at roster scale. Probes hold session text and are never committed.
+
 ### Why correctness checking matters more as sessions grow
 
 As context fills, agents become more random — instruction-following decays, earlier context gets diluted, the model starts drifting from conventions it was following at message 5. The guard-mode agents don't degrade with session length because they compare tool outputs against their own warm caches, which are stable and compact regardless of how large the session context has grown. At message 50, the security check compares against the same patterns it had at message 1.
@@ -462,7 +481,7 @@ A thread's context has three parts, and each reaches a native session (Claude Co
 | Stable | composed instructions (`instructions` layer), the executor's own prompt | once, in the session's base context; an edited instruction file is a new hash (below) |
 | Slowly changing | Warden thread knowledge, memory; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
 | Per turn | Cartographer routing (the decoration) | every turn, with the user message |
-| Warden notes | each Warden that chimed in: `The <domain> Warden chimed in:` and its points | every turn, appended to the end of the user's message (`placement: "after-message"`) |
+| Warden notes | each Warden that chimed in: `The <domain> Warden chimed in:` and its points; a NO_COMMENT adds nothing | every turn, appended to the end of the user's message (`placement: "after-message"`) |
 | Thread-state | the Librarian's layer (domain, recent activity, flags; not the ledger or timestamps) | every turn, with the per-turn text; never in the base (`perTurn`), so the system prompt stays byte-stable |
 
 **The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions as one `agent` part) at its current hash, and the latest version in its context is the current one. Each part is labelled `## Context: <id>`, in the system prompt and in a delta. The mechanics:

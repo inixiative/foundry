@@ -186,11 +186,11 @@ describe('parallel message decoration', () => {
     expect(plan.snippets).toEqual(['ADVICE-ok']);
   });
 
-  test('cold caches abstain explicitly without a model call and stale caches are marked', async () => {
+  test('cold caches are skipped explicitly without a model call and stale caches are marked', async () => {
     const { flow, calls } = setup(['cold', 'stale', 'warm'], { cold: ['cold'], stale: ['stale'] });
     const plan = await flow.preMessage('Freshness matters');
     const byDomain = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
-    expect(byDomain.cold.decision).toBe('abstain');
+    expect(byDomain.cold.decision).toBe('skipped');
     expect(byDomain.cold.reason).toBe('cold-cache');
     expect(calls.has('cold')).toBe(false);
     expect(byDomain.stale.decision).toBe('contribute');

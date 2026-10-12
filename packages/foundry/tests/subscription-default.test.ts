@@ -79,9 +79,9 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     model: 'claude-haiku-5-5',
     directory: join(cwd, '.foundry', 'decision-receipts'),
     maxCalls: 10000,
-    maxQueued: 256,
-    maxQueuedPerThread: 32,
-    maxConcurrent: 8,
+    maxQueued: 512,
+    maxQueuedPerThread: 256,
+    maxConcurrent: 16,
     callTimeoutMs: 30000,
     effort: 'low',
   });

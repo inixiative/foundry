@@ -80,7 +80,7 @@ function layers(turn: number): Array<{ id: string; kind: 'stable' | 'slow'; text
 
 /** Per-turn decoration: the Cartographer's routing line and one Warden's advice. */
 const decoration = (turn: number) =>
-  `Router selected domains: conventions (confidence 0.${(turn % 9) + 1}).\nDomain decisions: conventions: contribute; security: abstain (no relevant context).\n\n## conventions advice\n- Turn ${turn}: prefer the existing ledger over new bookkeeping.`;
+  `Router selected domains: conventions (confidence 0.${(turn % 9) + 1}).\nDomain decisions: conventions: contribute.\n\n## conventions advice\n- Turn ${turn}: prefer the existing ledger over new bookkeeping.`;
 
 const QUESTIONS = [
   'In one sentence: what is a context layer in Foundry?',

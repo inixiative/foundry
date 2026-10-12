@@ -33,7 +33,7 @@ import { formatMessagesForNativeSession } from './session-backed';
 
 type DecisionProcess = ReturnType<CodexSpawn>;
 
-/** Primed Claude keys kept warm; each holds one spare CLI process (~215 MB). */
+/** Primed Claude keys kept warm by default; each holds one spare CLI process (~130-230 MB). */
 const CLAUDE_PRIMED_SESSIONS = 16;
 const STATUS_DEADLINE_MS = 20_000;
 /** Re-check the Claude login at most this often, like the subscription worker. */
@@ -62,6 +62,11 @@ export interface PrimedDecisionHostConfig {
   hedgeAfterMs?: number;
   /** Concurrent decisions: turns on the warm Codex process, or Claude CLI processes. */
   maxConcurrent: number;
+  /**
+   * Claude: primed keys kept warm (least recently used beyond it is evicted and re-primes cold, ~5-8 s).
+   * Size it for every decision role: a Warden roster needs one advice and one review key per Warden.
+   */
+  primedSessions?: number;
   callTimeoutMs: number;
   /** Test seam: launcher used after credential registration, in place of Bun.spawn. */
   spawn?: (
@@ -192,7 +197,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         cwd,
         baseInstructions: PRIMED_DECISION_CONTEXT,
         maxConcurrent: config.maxConcurrent,
-        maxSessions: CLAUDE_PRIMED_SESSIONS,
+        maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
         timeoutMs: config.callTimeoutMs,
         onEvent: config.onEvent,
         // Synchronous launcher: the login was verified and registered before the first decision.

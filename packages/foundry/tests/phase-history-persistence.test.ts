@@ -13,6 +13,7 @@ import {
 import { GUARD_RESPONSE_PROTOCOL, reviewResponseProtocol } from '../src/agents/domain-librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { chartered } from '../src/agents/warden-charter';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
@@ -66,7 +67,6 @@ function fixture(path: string) {
       return {
         model: 'controlled',
         content: JSON.stringify({
-          decision: 'learn',
           knowledge: `OWN_V${reviews}: legacy callers use display_name (turn ${reviews}).`,
           facts: ['migration passed'],
           reason: 'observed result',
@@ -212,9 +212,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
     threadKnowledge: 'OWN_V1: legacy callers use display_name (turn 1).',
   });
   expect(participant.request.status).toBe('supplied');
-  expect(participant.request.messages).toEqual(
-    auxiliaryCall('## Response protocol (advice phase)'),
-  );
+  expect(participant.request.messages).toEqual(auxiliaryCall('## Response protocol (advice phase'));
 
   // Guard: recorded on the dispatch under the observation identity; a completed check, its request and the frozen own understanding.
   expect(Array.isArray(annotations.guards)).toBe(true);
@@ -235,11 +233,11 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   expect(outcome).toMatchObject({ domain: 'architecture', threadKnowledgeRevision: 1 });
   expect(['completed', 'invalid-response', 'provider-error']).toContain(outcome.status); // the configured advice provider answered the guard; whatever it returned, the status is explicit
   expect(outcome.request.status).toBe('supplied');
-  expect(outcome.request.messages).toEqual(auxiliaryCall('## Response protocol (guard phase)'));
+  expect(outcome.request.messages).toEqual(auxiliaryCall('## Response protocol (guard phase'));
   const guardUser = outcome.request.messages.find((m: any) => m.role === 'user').content;
   expect(outcome.request.messages[0]).toEqual({
     role: 'system',
-    content: 'CUSTOM_GUARD: storage compatibility only.',
+    content: chartered('CUSTOM_GUARD: storage compatibility only.'),
   });
   expect(guardUser).toContain(GUARD_RESPONSE_PROTOCOL);
   expect(guardUser).toContain('## Your understanding of this thread\nOWN_V1');
@@ -263,7 +261,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   expect(learned.request.messages).toEqual(f.requests.review[1]!);
   expect(learned.request.messages[0]).toEqual({
     role: 'system',
-    content: 'CUSTOM_REVIEW: track architecture decisions.',
+    content: chartered('CUSTOM_REVIEW: track architecture decisions.'),
   });
   const reviewUser = learned.request.messages[1].content;
   expect(reviewUser).toContain(reviewResponseProtocol(domainLib.threadKnowledge.maxChars));
@@ -308,7 +306,7 @@ test('older journal rows without captures read back as not recorded; nothing is 
     timestamp: 5,
     content: {
       domain: 'architecture',
-      decision: 'abstain',
+      decision: 'no-comment',
       reason: 'older record',
       owner: { threadId: 'legacy', projectId: 'P' },
       evidence: { kind: 'dispatch', id: 'old', timestamp: 4, messageId: 'old-turn' },

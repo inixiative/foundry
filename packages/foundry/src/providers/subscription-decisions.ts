@@ -20,6 +20,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   callTimeoutMs: number;
   /** Decisions running at once across all threads, each its own native process. Default 1. */
   maxConcurrent?: number;
+  /** Claude primed keys kept warm (see createPrimedDecisionHost). */
+  primedSessions?: number;
   /** Waiting decisions per logical thread. Default: maxQueued. */
   maxQueuedPerThread?: number;
   /** Load and rate-limit events (shedding, backoff); observers only. */
@@ -35,7 +37,9 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
 }
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
-  | { kind: 'rate-limited'; until: number; backoffMs: number };
+  | { kind: 'rate-limited'; until: number; backoffMs: number }
+  /** Admission closed for good: every later decision is refused until restart. */
+  | { kind: 'closed'; reason: string };
 type TextRun = {
   provider: LLMProvider;
   snapshot(): { closed: boolean; calls: readonly NativeTextCall[] };
@@ -76,6 +80,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     effort: config.effort,
     hedgeAfterMs: config.hedgeAfterMs,
     maxConcurrent: config.maxConcurrent ?? 1,
+    ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
     callTimeoutMs: config.callTimeoutMs,
     onEvent: onPrimedEvent,
   });
@@ -153,12 +158,16 @@ export function buildSubscriptionDecisions(
       /* Observers cannot change scheduling. */
     }
   };
-  const reject = (message: string) => {
-    const error = Error(message);
+  /** `capacity`: refused for queue capacity (full, shed, expired waiting), not for auth, config or budget. */
+  const reject = (message: string, capacity = false) => {
+    const error = capacity
+      ? Object.assign(Error(message), { decisionCapacity: true })
+      : Error(message);
     outcomes.set(error, { admission: 'not-admitted', settlement: 'settled' });
     return error;
   };
-  const close = () => {
+  const close = (reason = 'shut down') => {
+    if (!closed) pressure({ kind: 'closed', reason });
     closed = true;
     for (const pending of queue.splice(0)) {
       clearTimeout(pending.timer);
@@ -226,6 +235,10 @@ export function buildSubscriptionDecisions(
       });
     try {
       check(pending);
+      // The caller's deadline bounds the wait in the queue. A started decision gets its full run
+      // budget: cutting it short to the queue deadline interrupts it mid-turn, and an interrupt the
+      // runtime does not acknowledge leaves native state unknown, which closes admission for good.
+      pending.deadline = Date.now() + config.callTimeoutMs;
       let preflightTimer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
@@ -248,7 +261,7 @@ export function buildSubscriptionDecisions(
         ...config,
         runId: crypto.randomUUID(),
         maxCalls: 1,
-        callTimeoutMs: Math.min(config.callTimeoutMs, pending.deadline - Date.now()),
+        callTimeoutMs: pending.deadline - Date.now(),
       });
       running.add(run);
       const result = await run.provider.complete(pending.messages, {
@@ -327,7 +340,7 @@ export function buildSubscriptionDecisions(
         run.close();
         finalized = true;
       } catch {
-        close();
+        close('a settled decision could not be finalized');
         throw Error('Subscription receipt finalization failed');
       }
       const native = freezeEvidence({ ...result.native, owner, content: result.content });
@@ -342,9 +355,11 @@ export function buildSubscriptionDecisions(
         inspection: { evidence: native, call: 'settled', capacity: 'settled', cleanup: 'released' },
       });
       try {
-        void Promise.resolve(opts.nativeObservation?.observe(native)).catch(close);
+        void Promise.resolve(opts.nativeObservation?.observe(native)).catch(() =>
+          close('the owner refused the observation of a settled decision'),
+        );
       } catch {
-        close();
+        close('the owner refused the observation of a settled decision');
       }
       outcomes.set(completion, { admission: 'attempted', settlement: 'settled' });
       backoffMs = initialBackoff;
@@ -393,14 +408,19 @@ export function buildSubscriptionDecisions(
         call?.transport === 'primed'
           ? ['not-admitted', 'rate-limited', 'deadline', 'native-failed', 'process-lost']
           : ['not-admitted', 'rate-limited'];
-      if (!settled || (call?.failure && !settledFailures.includes(call.failure))) close();
+      if (!settled || (call?.failure && !settledFailures.includes(call.failure)))
+        close(
+          settled
+            ? `decision failed with ${call?.failure}; native state unknown`
+            : 'a failed decision did not settle; native state unknown',
+        );
       pending.reject(error);
     } finally {
       if (run && !finalized) {
         try {
           run.close();
         } catch {
-          close();
+          close('a decision run could not be closed');
         }
       }
       if (run) running.delete(run);
@@ -456,12 +476,11 @@ export function buildSubscriptionDecisions(
         if (scope.length < limit) continue;
         const lowest = Math.min(...scope.map((p) => p.priority));
         const victim = lowest < priority ? scope.find((p) => p.priority === lowest) : undefined;
-        if (!victim)
-          return Promise.reject(reject('Subscription decision admission closed or full'));
+        if (!victim) return Promise.reject(reject('Subscription decision queue full', true));
         queue.splice(queue.indexOf(victim), 1);
         clearTimeout(victim.timer);
         shed++;
-        victim.reject(reject('Subscription decision shed under load; no fallback or retry'));
+        victim.reject(reject('Subscription decision shed under load; no fallback or retry', true));
         pressure({
           kind: 'shed',
           threadId: victim.thread,
@@ -508,7 +527,7 @@ export function buildSubscriptionDecisions(
               const index = queue.indexOf(pending);
               if (index >= 0) {
                 queue.splice(index, 1);
-                rejectCall(reject('Subscription decision expired in queue'));
+                rejectCall(reject('Subscription decision expired in queue', true));
               }
             },
             Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs),

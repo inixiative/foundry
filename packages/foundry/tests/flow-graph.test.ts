@@ -355,7 +355,7 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
       contributions: [
         {
           domain: 'architecture',
-          decision: 'abstain',
+          decision: 'no-comment',
           provenance: { threadKnowledgeRevision: 0, elapsedMs: 17 },
           snippets: [],
         },
@@ -374,7 +374,7 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
   expect(byId.get('plan')).toMatchObject({ status: 'warn', sub: '1 layer · 42 ms' });
   expect(byId.get('domain:architecture')).toMatchObject({
     status: 'skip',
-    sub: 'abstain · rev 0 · 17 ms',
+    sub: 'no-comment · rev 0 · 17 ms',
   });
   expect(byId.get('routing').sub).toBe('routed · 30 ms');
   expect(byId.get('executor').status).toBe('pending');
@@ -438,7 +438,7 @@ test('learning loop: a learned revision links to the first later turn that asses
       entry('old', 't0', 'architecture', 'learned', 0),
       entry('l1', 't1', 'architecture', 'learned', 1),
       entry('l2', 't1', 'testing', 'learned', 1),
-      entry('l3', 't2', 'architecture', 'abstain'),
+      entry('l3', 't2', 'architecture', 'no-comment'),
       entry('b', 't2', 'testing', 'capacity-settled'),
     ],
     knowledge: { domains: { architecture: { revision: 1 }, testing: { revision: 1 } } },
