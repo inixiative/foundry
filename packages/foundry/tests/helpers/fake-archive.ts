@@ -8,7 +8,7 @@ import {
 } from '@inixiative/archive';
 import { ArchiveClient, type ArchiveListing } from '@inixiative/archive/remote';
 import { defaultSettings } from '@inixiative/archive/schemas';
-import { archiveReferences, suggestTags } from '@inixiative/archive/tags';
+import { archiveReferences } from '@inixiative/archive/tags';
 
 type Revision = { revision: number; digest: string; snapshot: ArchiveSnapshot };
 
@@ -50,7 +50,7 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
       digest,
       entries: entries.length,
       models: [...models.values()],
-      suggestedTags: suggestTags(snapshot),
+      suggestedTags: [],
       references: archiveReferences(snapshot),
     };
   };
