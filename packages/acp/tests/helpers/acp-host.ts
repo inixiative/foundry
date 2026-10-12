@@ -40,10 +40,10 @@ export function serveDaemon(
 
 /**
  * An ACP host: spawns `foundry-acp` the way Paseo and T3 do (a child process, ACP over its
- * stdio) and records every `session/update` it receives, per session, in arrival order.
+ * stdio, with the arguments the host's configuration gives it) and records every `session/update` it receives, per session, in arrival order.
  */
-export function spawnFoundryAcp(launchPath: string) {
-  const proc = Bun.spawn(['bun', CLI], {
+export function spawnFoundryAcp(launchPath: string, args: readonly string[] = []) {
+  const proc = Bun.spawn(['bun', CLI, ...args], {
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',

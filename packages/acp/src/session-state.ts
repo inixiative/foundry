@@ -8,6 +8,7 @@ import type {
   ClientMcpServer,
   FoundryClient,
   MessageSummary,
+  ThreadLaunchPatch,
   ThreadLaunchView,
 } from '@inixiative/foundry/client';
 import { toolKind, toolLocations, toolTitle } from './tools';
@@ -22,18 +23,40 @@ export const MODES: SessionModeState['availableModes'] = [
   { id: 'plan', name: 'Plan', description: 'Read and plan; no edits or commands' },
   { id: 'bypassPermissions', name: 'Full access', description: 'Never ask' },
 ];
-/** A session a host opens runs in the host's default mode until it picks another. */
-export const DEFAULT_MODE = 'default';
+export type ModeId = NonNullable<ThreadLaunchPatch['permissionMode']>;
 
-export function modeState(view: ThreadLaunchView): SessionModeState {
-  return { currentModeId: view.permissionMode ?? 'bypassPermissions', availableModes: MODES };
+/** The mode of a session whose host expressed none: asks go to the host. */
+export const DEFAULT_MODE: ModeId = 'default';
+
+export function isModeId(value: unknown): value is ModeId {
+  return MODES.some((mode) => mode.id === value);
 }
 
+/** A thread with no host mode runs the executor's own default, full access. */
+const currentMode = (view: ThreadLaunchView) => view.permissionMode ?? 'bypassPermissions';
+
+export function modeState(view: ThreadLaunchView): SessionModeState {
+  return { currentModeId: currentMode(view), availableModes: MODES };
+}
+
+/** The mode again as a `mode` config option, for hosts that drive modes through config options. */
 export function configOptions(view: ThreadLaunchView): SessionConfigOption[] {
   const models = view.options.models.map((model) => ({ value: model.id, name: model.label }));
   if (!models.some((model) => model.value === view.model))
     models.unshift({ value: view.model, name: view.model });
   return [
+    {
+      id: 'mode',
+      name: 'Mode',
+      category: 'mode',
+      type: 'select',
+      currentValue: currentMode(view),
+      options: MODES.map((mode) => ({
+        value: mode.id,
+        name: mode.name,
+        description: mode.description,
+      })),
+    },
     {
       id: 'model',
       name: 'Model',

@@ -30,11 +30,13 @@ import {
   clientMcpServers,
   configOptions,
   DEFAULT_MODE,
+  isModeId,
   MODES,
+  type ModeId,
   modeState,
   replayHistory,
 } from './session-state';
-import { toolKind, toolTitle } from './tools';
+import { toolKind, toolLocations, toolTitle } from './tools';
 import { TurnFailedError, TurnProjection } from './turn';
 
 export interface FoundryAgentOptions {
@@ -46,6 +48,12 @@ export interface FoundryAgentOptions {
   daemonWaitMs?: number;
   /** How long in-flight turns wait for an unreachable daemon before they fail. */
   daemonLostMs?: number;
+  /**
+   * The mode the host's configuration gives every session it opens (`--permission-mode`), for
+   * hosts that keep their own permission policy to themselves. A mode the host sets on the
+   * session wins; without either, a session starts in `default`.
+   */
+  permissionMode?: string;
   version?: string;
   log?: (message: string) => void;
 }
@@ -100,6 +108,11 @@ const isNetworkFailure = (error: unknown) => !(error instanceof FoundryHttpError
  * exactly as on a viewer turn. This process holds no thread, context or middleware of its own.
  */
 export function createFoundryAgent(options: FoundryAgentOptions = {}) {
+  if (options.permissionMode !== undefined && !isModeId(options.permissionMode))
+    throw Error(
+      `Unknown permission mode ${options.permissionMode}; expected one of ${MODES.map((mode) => mode.id).join(', ')}`,
+    );
+  const hostMode: ModeId = options.permissionMode ?? DEFAULT_MODE;
   const launchPath = options.launchPath ?? acpLaunchPath();
   // launchd owns only the daemon that publishes the default launch file; any other path is someone else's Foundry.
   const start =
@@ -303,11 +316,11 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     );
   };
 
-  /** Mode and config for a session response; an ACP session without a mode starts in the host default. */
+  /** Mode and config for a session response; a thread with no mode yet takes the host's. */
   const sessionSetup = async (session: Session, foundry: Daemon, patch: ThreadLaunchPatch) => {
     let view = await applyLaunch(session, foundry, patch);
     if (!view.permissionMode)
-      view = await applyLaunch(session, foundry, { permissionMode: DEFAULT_MODE });
+      view = await applyLaunch(session, foundry, { permissionMode: hostMode });
     session.launch.permissionMode = view.permissionMode as ThreadLaunchPatch['permissionMode'];
     setTimeout(
       () =>
@@ -340,6 +353,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       .map((turn) => turn.toolCallFor(callId))
       .find(Boolean);
     const title = toolTitle(toolName, rawInput);
+    // Hosts answer by their own policy from the call's kind and paths (T3 confines edits to the workspace).
+    const locations = toolLocations(rawInput, session.cwd);
     if (!toolCallId) {
       toolCallId = `foundry-gate:${prompt.id}`;
       send(session, {
@@ -349,6 +364,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         kind: toolKind(toolName),
         status: 'pending',
         ...(rawInput ? { rawInput } : {}),
+        locations,
       });
     }
     const call = toolCallId;
@@ -358,7 +374,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           'session/request_permission',
           {
             sessionId: session.threadId,
-            toolCall: { toolCallId: call, title, kind: toolKind(toolName), status: 'pending' },
+            toolCall: {
+              toolCallId: call,
+              title,
+              kind: toolKind(toolName),
+              status: 'pending',
+              ...(rawInput ? { rawInput } : {}),
+              locations,
+            },
             options: PERMISSION_OPTIONS,
             _meta: { foundry: { promptId: prompt.id, capability: prompt.capability ?? null } },
           },
@@ -482,7 +505,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
       const setup = await sessionSetup(session, foundry, {
-        permissionMode: DEFAULT_MODE,
+        permissionMode: hostMode,
         mcpServers: clientMcpServers(ctx.params.mcpServers),
       }).catch(httpError);
       return {
@@ -524,16 +547,16 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     })
     .onRequest('session/set_mode', async (ctx) => {
       const session = sessionFor(ctx.params.sessionId);
-      if (!MODES.some((mode) => mode.id === ctx.params.modeId))
-        throw RequestError.invalidParams({ modeId: ctx.params.modeId }, 'Unknown mode');
+      const modeId = ctx.params.modeId;
+      if (!isModeId(modeId)) throw RequestError.invalidParams({ modeId }, 'Unknown mode');
       const foundry = await ensureDaemon().catch(httpError);
-      const view = await applyLaunch(session, foundry, {
-        permissionMode: ctx.params.modeId as ThreadLaunchPatch['permissionMode'],
-      }).catch(httpError);
+      const view = await applyLaunch(session, foundry, { permissionMode: modeId }).catch(httpError);
       send(session, {
         sessionUpdate: 'current_mode_update',
         currentModeId: modeState(view).currentModeId,
       });
+      // The `mode` config option shows the same mode.
+      send(session, { sessionUpdate: 'config_option_update', configOptions: configOptions(view) });
       return {};
     })
     .onRequest('session/set_config_option', async (ctx) => {
@@ -544,19 +567,26 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           { configId: ctx.params.configId },
           'Expected a select value',
         );
+      const configId = ctx.params.configId;
+      if (configId === 'mode' && !isModeId(value))
+        throw RequestError.invalidParams({ configId, value }, 'Unknown mode');
       const patch: ThreadLaunchPatch =
-        ctx.params.configId === 'model'
-          ? { model: value }
-          : ctx.params.configId === 'effort'
-            ? { effort: value === 'default' ? null : (value as ThreadLaunchPatch['effort']) }
-            : (() => {
-                throw RequestError.invalidParams(
-                  { configId: ctx.params.configId },
-                  'Unknown config option',
-                );
-              })();
+        configId === 'mode'
+          ? { permissionMode: value as ModeId }
+          : configId === 'model'
+            ? { model: value }
+            : configId === 'effort'
+              ? { effort: value === 'default' ? null : (value as ThreadLaunchPatch['effort']) }
+              : (() => {
+                  throw RequestError.invalidParams({ configId }, 'Unknown config option');
+                })();
       const foundry = await ensureDaemon().catch(httpError);
       const view = await applyLaunch(session, foundry, patch).catch(httpError);
+      if (configId === 'mode')
+        send(session, {
+          sessionUpdate: 'current_mode_update',
+          currentModeId: modeState(view).currentModeId,
+        });
       return { configOptions: configOptions(view) };
     })
     .onRequest('session/prompt', async (ctx): Promise<{ stopReason: StopReason }> => {

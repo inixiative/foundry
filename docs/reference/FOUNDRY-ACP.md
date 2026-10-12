@@ -207,9 +207,19 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 
 The ids are the Claude Code ACP adapter's, which Zed and Paseo already render. T3's runtime modes (`approval-required`, `auto-accept-edits`, `full-access`, `dangerFullAccess`) select them by the same meaning **[unverified: T3's mode-id matching for ACP agents]**. Today the native worker runs `bypassPermissions` (`as/claude-code-session.ts:84-85,320`); slice 2 makes the host's choice reach it.
 
+**Which mode a session starts in (built 2026-10-12, Aron: "access follows the host").** Neither Paseo nor T3 puts a mode in `session/new`; each sets the user's choice right after it, before the first prompt. So a session's mode is, in order:
+1. a mode the host sets on the session: `session/set_mode`, or `session/set_config_option` on the `mode` option. Paseo sends `set_mode` for the mode chosen for the agent (`applyConfiguredOverrides`, `paseo acp-agent.ts:2926-2935`); T3 sends the composer's persisted Mode selection, which is a native config option once the agent offers one (`t3 adapter.ts:6336-6412`, `sessionConfig.ts:18`) and plan mode through the same option (`:6424-6445`);
+2. the thread's current mode, on `session/load` and `session/resume`;
+3. the mode the host's configuration passes: `foundry-acp --permission-mode <mode>` in the host's command (§10), for a host whose own setting never reaches the agent. T3's runtime mode (Full access by default) and Paseo's Auto Accept toggle are such settings: each answers `request_permission` by its own policy (`t3 clientPolicy.ts:178-236`; `paseo acp-agent.ts:860-875`) and tells the agent nothing;
+4. otherwise `default`.
+
+The mode is advertised twice and kept in step: as `modes` and as a `mode` config option (category `mode`), so a host that drives modes through config options (T3, Zed) sees one Mode control. Each `request_permission` carries the call's `rawInput` and `locations`, which a host's policy reads (T3 confines edits to the workspace by path).
+
+Verified with the hosts' own clients from scratch copies (2026-10-12): Paseo's `GenericACPAgentClient` with a chosen mode, with `--permission-mode` in its command, with both (the chosen mode wins) and with neither (`default`); its features stay `auto_accept` only. T3's `AcpSessionRuntime` with T3's own `acpProviderOptionDescriptors` (one Mode option, no synthetic duplicate), a persisted Mode selection and plan through the config option, `--permission-mode`, and asks answered by T3's own `acpPermissionDisposition` in each runtime mode. Zero decode failures. In each case the executor launched in the expected mode.
+
 An `ask` from the native runtime becomes `session/request_permission`. Whatever the host answers is the answer: if its mode auto-allows (T3 full access, Paseo "Auto Accept"), so be it. **Structural rules are the only denials** and hold in every mode, because they are the user's own configured structure, not a mode.
 
-**`configOptions`:** category `model` (native models for the thread's runtime, `pf/models/registry.ts:53`), category `thought_level` (effort, `as/claude-code-session.ts:75-79`), and a `select` of the project's executor agents. Switching model within a runtime respawns with `--resume` and the new `--model` on the next turn.
+**`configOptions`:** category `mode` (the mode again, above), category `model` (native models for the thread's runtime, `pf/models/registry.ts:53`), category `thought_level` (effort, `as/claude-code-session.ts:75-79`), and a `select` of the project's executor agents. Switching model within a runtime respawns with `--resume` and the new `--model` on the next turn.
 
 ---
 
@@ -366,6 +376,8 @@ The daemon must be installed once (`bun run daemon:install` in the Foundry check
 ```
 
 **T3 Code:** Settings → Providers → Add provider → **Local ACP command** (`t3:docs/user/providers-acp.md:26-35`). Executable `bun`; one argument `/Users/arongreenspan/code/inixiative/foundry/packages/acp/src/cli.ts`; display name `Foundry`.
+
+**A default mode for every session a host opens:** add `--permission-mode <default | acceptEdits | plan | bypassPermissions>` after the `cli.ts` path (Paseo: two more `command` entries; T3: two more arguments). A mode picked for a session in the host still wins. Without it, a session the host sets no mode on starts in `default`, and the host answers each ask by its own policy.
 
 **Zed / JetBrains:** a custom agent server whose command is `bun` with the same argument **[unverified: exact settings key]**.
 

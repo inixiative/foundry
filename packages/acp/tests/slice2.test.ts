@@ -30,8 +30,8 @@ async function nativeHost() {
     daemon.stop();
     await f.close();
   });
-  const host = () => {
-    const h = spawnFoundryAcp(daemon.launchPath);
+  const host = (args: readonly string[] = []) => {
+    const h = spawnFoundryAcp(daemon.launchPath, args);
     cleanup.push(() => h.close());
     return h;
   };
@@ -89,6 +89,7 @@ test("modes and config options are the host's: they reach the executor launch an
     ],
   });
   expect(created.configOptions?.map((option) => [option.id, option.category])).toEqual([
+    ['mode', 'mode'],
     ['model', 'model'],
     ['effort', 'thought_level'],
   ]);
@@ -133,6 +134,124 @@ test("modes and config options are the host's: they reach the executor launch an
   // Secrets stay in daemon memory: the launch view names servers only.
   const view = await f.viewer.app.request(`/api/threads/${sessionId}/launch`);
   expect(JSON.stringify(await view.json())).not.toContain('secret-token');
+});
+
+test("a session starts in the mode the host's configuration passes; a mode the host sets wins", async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host(['--permission-mode', 'bypassPermissions']);
+  await h.agent.request('initialize', INITIALIZE);
+  const cwd = join(dir, 'P');
+  const created = await h.agent.request('session/new', { cwd, mcpServers: [] });
+  const { sessionId } = created;
+  expect(created.modes?.currentModeId).toBe('bypassPermissions');
+  expect(created.configOptions?.find((o) => o.id === 'mode')).toMatchObject({
+    currentValue: 'bypassPermissions',
+  });
+  await turn(h, f, sessionId, 'first');
+  expect(f.created.at(-1)).toMatchObject({
+    threadId: sessionId,
+    permissionMode: 'bypassPermissions',
+  });
+
+  // A mode the host sets on the session wins over its configured one, and holds across a resume.
+  await h.agent.request('session/set_mode', { sessionId, modeId: 'plan' });
+  await h.close();
+  const again = host(['--permission-mode', 'bypassPermissions']);
+  await again.agent.request('initialize', INITIALIZE);
+  const resumed = await again.agent.request('session/resume', { sessionId, cwd, mcpServers: [] });
+  expect(resumed.modes?.currentModeId).toBe('plan');
+  await turn(again, f, sessionId, 'second');
+  expect(f.created.at(-1)).toMatchObject({ permissionMode: 'plan' });
+
+  // A host that expresses nothing gets `default`.
+  const plain = host();
+  await plain.agent.request('initialize', INITIALIZE);
+  const fresh = await plain.agent.request('session/new', { cwd, mcpServers: [] });
+  expect(fresh.modes?.currentModeId).toBe('default');
+});
+
+test('the mode is also a `mode` config option, kept in step with session/set_mode', async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', INITIALIZE);
+  const { sessionId } = await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+  });
+  const set = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'mode',
+    value: 'acceptEdits',
+  });
+  expect(set.configOptions.find((o) => o.id === 'mode')).toMatchObject({
+    category: 'mode',
+    currentValue: 'acceptEdits',
+  });
+  await until(
+    () =>
+      h
+        .updates(sessionId)
+        .some(
+          (u) => u.sessionUpdate === 'current_mode_update' && u.currentModeId === 'acceptEdits',
+        ),
+    'mode update from the config option',
+  );
+  await turn(h, f, sessionId, 'edit');
+  expect(f.created.at(-1)).toMatchObject({ permissionMode: 'acceptEdits' });
+
+  await h.agent.request('session/set_mode', { sessionId, modeId: 'bypassPermissions' });
+  await until(
+    () =>
+      h
+        .updates(sessionId)
+        .some(
+          (u) =>
+            u.sessionUpdate === 'config_option_update' &&
+            u.configOptions.find((o) => o.id === 'mode')?.currentValue === 'bypassPermissions',
+        ),
+    'config option update from set_mode',
+  );
+  const unknown = await h.agent
+    .request('session/set_config_option', { sessionId, configId: 'mode', value: 'yolo' })
+    .catch((e: Error) => e);
+  expect(String((unknown as Error).message)).toContain('Unknown mode');
+});
+
+test('foundry-acp refuses a permission mode or flag it does not know', async () => {
+  for (const args of [
+    ['--permission-mode', 'yolo'],
+    ['--mode', 'plan'],
+  ]) {
+    const proc = Bun.spawn(['bun', join(import.meta.dir, '../src/cli.ts'), ...args], {
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, FOUNDRY_ACP_LAUNCH: join(import.meta.dir, 'no-such-launch.json') },
+    });
+    expect(await proc.exited).toBe(2);
+    expect(await new Response(proc.stderr).text()).toContain('foundry-acp:');
+  }
+});
+
+test('an ask names the call and its paths, so a host can answer it by its own policy', async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', INITIALIZE);
+  const cwd = join(dir, 'P');
+  const { sessionId } = await h.agent.request('session/new', { cwd, mcpServers: [] });
+  h.answerPermissions(async () => ({ outcome: { outcome: 'selected', optionId: 'allow_once' } }));
+  await turn(h, f, sessionId, 'edit', async (attempt) => {
+    const gate = attempt.session.toolGate as ToolGate;
+    const toolInput = { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' };
+    expect(await gate({ stage: 'permission', toolName: 'Edit', toolInput, callId: 'e1' })).toEqual({
+      behavior: 'allow',
+    });
+    expect(h.permissions[0]!.request.toolCall).toMatchObject({
+      kind: 'edit',
+      rawInput: toolInput,
+      locations: [{ path: join(cwd, 'src/a.ts') }],
+    });
+  });
 });
 
 test('a native ask reaches the host as request_permission; allow_always remembers; the viewer can answer first', async () => {
