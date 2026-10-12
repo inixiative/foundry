@@ -25,3 +25,6 @@ export const DECISION_LATENCY_BUDGET = {
    */
   messageToWorkerP95Ms: 9_000,
 } as const;
+
+/** Characters a decision's serialized messages may take; a native decision call refuses more. */
+export const DECISION_INPUT_CAP = 100_000;

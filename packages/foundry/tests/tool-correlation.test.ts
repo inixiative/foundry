@@ -87,6 +87,7 @@ function setup(scripts: Record<string, Step[]>) {
   tools.register(MemoryToolAdapter.fromFileMemory(memory), 'Project memory');
 
   const config = starterConfig('mock', 'mock');
+  config.composition = { preset: 'none' };
   config.agents = {
     worker: {
       id: 'worker',

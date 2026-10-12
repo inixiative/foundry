@@ -14,6 +14,7 @@ import { Harness, newId } from '@inixiative/foundry-core';
 import type { PostgresMemory } from '../adapters/postgres-memory';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
+import type { FeedbackService } from '../feedback/service';
 import { enqueueJob } from '../jobs/enqueue';
 import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
@@ -42,6 +43,8 @@ export interface TurnServiceDeps {
   configStore: ConfigStore;
   deviceIdentityPath?: string;
   namer?: ThreadNamer;
+  /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
+  feedback?: FeedbackService | null;
   localStore?: LocalSessionStore | null;
   directory: ViewerThreadDirectory;
   streams: ViewerStreams;
@@ -236,6 +239,11 @@ export class TurnService {
 
     const buffer = streams.turns.open(turnId, threadId, harness.thread.meta.projectId);
     streams.threadsChanged(threadId);
+    try {
+      this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
+    } catch (error) {
+      console.warn('[Feedback] capture not started:', (error as Error).message);
+    }
 
     let queue = this.queues.get(threadId);
     if (!queue) {
@@ -260,6 +268,8 @@ export class TurnService {
     const thread = queue;
     void thread
       .run(async () => {
+        // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
+        await this.deps.feedback?.held(turnId);
         // A queued turn cancelled while it waited has already settled.
         if (state.phase !== 'settled')
           resolveSettled(
@@ -304,6 +314,7 @@ export class TurnService {
     if (state.phase === 'queued') {
       state.phase = 'settled';
       this.live.delete(turnId);
+      this.deps.feedback?.release(turnId);
       state.cancelQueued();
       return { ok: true, outcome: 'cancelled' };
     }

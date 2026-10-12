@@ -21,8 +21,13 @@ function configuration(explicit = false) {
     ]),
   );
   if (explicit) {
-    c.layers.docs.domain = 'docs';
-    c.layers.docs.writers = ['docs-expert'];
+    c.sources['docs-source'] = {
+      id: 'docs-source',
+      type: 'inline',
+      label: 'Docs',
+      uri: 'PRIVATE_SOURCE',
+      enabled: true,
+    };
     c.agents['docs-expert'] = {
       id: 'docs-expert',
       kind: 'decider',
@@ -32,8 +37,8 @@ function configuration(explicit = false) {
       model: 'expert-model',
       provider: 'controlled',
       tools: false,
-      visibleLayers: ['docs'],
-      ownedLayers: ['docs'],
+      visibleLayers: [],
+      domainKnowledge: ['docs-source'],
       peers: [],
       maxDepth: 1,
       enabled: true,
@@ -98,67 +103,10 @@ function setup(config: FoundryConfig) {
   };
 }
 
-for (const metadata of ['domain', 'writers'] as const) {
-  for (const location of ['configuration', 'instance'] as const) {
-    test(`passive ${metadata} on a legacy ${location} layer reports its suppression without creating an expert`, () => {
-      const c = configuration();
-      const definition =
-        metadata === 'domain' ? { domain: 'passive-catalog' } : { writers: ['catalog-editor'] };
-      if (location === 'configuration') Object.assign(c.layers.docs, definition);
-      const original = JSON.stringify(c),
-        f = setup(c);
-      const t =
-        location === 'configuration'
-          ? f.factory.create('diagnostic')
-          : new Thread(
-              'diagnostic',
-              new ContextStack([
-                new ContextLayer({ id: 'docs', definition: { id: 'docs', ...definition } }),
-                new ContextLayer({ id: 'conventions' }),
-              ]),
-            );
-      try {
-        const runtime = f.manager.attach(t);
-        expect([...runtime.domainLibrarians.keys()]).toEqual(['conventions']);
-        expect(t.stack.getLayer('thread-knowledge:docs')).toBeUndefined();
-        expect(f.warnings).toHaveLength(1);
-        expect(f.warnings[0]).toContain('legacy-expert-suppressed');
-        expect(f.warnings[0]).toContain('domain="docs" layer="docs"');
-        expect(f.warnings[0]).toContain(`metadata=${metadata}`);
-        expect(f.warnings[0]).toContain('domain-advising');
-        expect(f.warnings[0]).toContain('ownedLayers');
-        expect(f.warnings[0].length).toBeLessThan(900);
-        expect(f.warnings.join('\n')).not.toContain('PRIVATE_');
-        expect(f.warnings.join('\n')).not.toContain('catalog-editor');
-        expect(f.manager.attach(t)).toBe(runtime);
-        expect(f.warnings).toHaveLength(1);
-        expect(JSON.stringify(c)).toBe(original);
-        expect(f.calls).toBe(0);
-        expect(f.loads).toBe(0);
-      } finally {
-        t.dispose();
-        f.manager.disposeAll();
-      }
-    });
-  }
-}
-
-for (const mode of [
-  'explicit-enabled',
-  'agent-disabled',
-  'layer-disabled',
-  'generated',
-  'absent',
-] as const) {
-  test(`${mode} does not receive a misleading passive suppression diagnostic`, () => {
-    const c = configuration(mode !== 'generated' && mode !== 'absent');
+for (const mode of ['explicit-enabled', 'agent-disabled', 'absent'] as const) {
+  test(`${mode} attaches without diagnostics, model calls or source loads`, () => {
+    const c = configuration(mode !== 'absent');
     if (mode === 'agent-disabled') c.agents['docs-expert'].enabled = false;
-    if (mode === 'layer-disabled') c.layers.docs.enabled = false;
-    if (mode === 'generated') {
-      c.layers.docs.segment = 'thread-knowledge';
-      c.layers.docs.domain = 'docs';
-    }
-    if (mode === 'absent') delete c.layers.docs;
     const f = setup(c);
     try {
       const t = f.factory.create(mode),
@@ -173,10 +121,10 @@ for (const mode of [
   });
 }
 
-test('contradictory explicit writer mappings still refuse before warnings or partial attachment', () => {
+test('a Warden that owns a layer is refused before warnings or partial attachment', () => {
   const c = configuration(true),
     f = setup(c);
-  c.layers.docs.writers = ['foreign-expert'];
+  c.agents['docs-expert'].ownedLayers = ['docs'];
   const manager = new ThreadRuntimeManager({
     config: c,
     llm: f.llm,
@@ -184,7 +132,7 @@ test('contradictory explicit writer mappings still refuse before warnings or par
   });
   const t = new Thread('invalid', new ContextStack([new ContextLayer({ id: 'docs' })]));
   try {
-    expect(() => manager.attach(t)).toThrow('Conflicting writers');
+    expect(() => manager.attach(t)).toThrow('reads its knowledge from the composition view');
     expect(manager.runtimes.size).toBe(0);
     expect(manager.stacks.size).toBe(0);
     expect(t.stack.layers).toHaveLength(1);
@@ -220,7 +168,7 @@ test('explicit review override is reported while requested phase settings and pr
     const resolved = resolveThreadDomains(
       c,
       new Map(buildLayers(c, { sourceResolver: () => null }).map((l) => [l.id, l])),
-      { legacy: DEFAULT_THREAD_DOMAINS, llm: f.llm, providers: f.providers },
+      { policy: DEFAULT_THREAD_DOMAINS, programmatic: [], llm: f.llm, providers: f.providers },
     ).find((d) => d.domain === 'docs')!;
     expect(resolved.adviseOpts).toMatchObject({
       model: 'expert-model',
@@ -230,7 +178,7 @@ test('explicit review override is reported while requested phase settings and pr
     });
     expect(f.warnings).toHaveLength(1);
     expect(f.warnings[0]).toContain('expert-review-profile-override');
-    expect(f.warnings[0]).toContain('domain="docs" layer="docs"');
+    expect(f.warnings[0]).toContain('domain="docs" agent="docs-expert"');
     expect(f.warnings[0]).toContain('learning.review');
     expect(f.warnings[0]).toContain('changed=provider,model,thinking,maxTokens');
     expect(f.warnings[0]).toContain('requested');
@@ -261,10 +209,10 @@ test('an explicit review profile equal to the expert profile does not claim an o
 test('a later generated-layer conflict does not publish a successful resolution diagnostic', () => {
   const c = configuration(),
     f = setup(c);
-  c.layers.docs.domain = 'passive';
   const manager = new ThreadRuntimeManager({
     config: c,
     llm: f.llm,
+    domains: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
     warn: (message) => f.warnings.push(message),
   });
   const t = new Thread(
@@ -279,42 +227,6 @@ test('a later generated-layer conflict does not publish a successful resolution 
     expect(() => manager.attach(t)).toThrow('Generated expert layer already exists');
     expect(f.warnings).toHaveLength(0);
     expect(manager.runtimes.size).toBe(0);
-    expect(f.calls).toBe(0);
-  } finally {
-    t.dispose();
-    manager.disposeAll();
-    f.manager.disposeAll();
-  }
-});
-
-test('passive diagnostics bound and escape legacy identities without copying metadata values', () => {
-  const c = configuration(),
-    f = setup(c);
-  const layerId = `legacy\n${'x'.repeat(1000)}`,
-    domain = 'docs';
-  const layer = new ContextLayer({
-    id: layerId,
-    definition: {
-      id: layerId,
-      domain: 'PRIVATE_METADATA'.repeat(1000),
-      writers: ['PRIVATE_WRITER'],
-    },
-  });
-  const manager = new ThreadRuntimeManager({
-    config: c,
-    llm: f.llm,
-    domains: [{ domain, layerId, guardTriggers: [] }],
-    warn: (message) => f.warnings.push(message),
-  });
-  const t = new Thread('bounded-diagnostic', new ContextStack([layer]));
-  try {
-    expect(manager.attach(t).domainLibrarians.size).toBe(0);
-    expect(f.warnings).toHaveLength(1);
-    expect(f.warnings[0].length).toBeLessThan(900);
-    expect(f.warnings[0]).toContain('metadata=domain,writers');
-    expect(f.warnings[0]).toContain('legacy\\n');
-    expect(f.warnings[0]).not.toContain('\n');
-    expect(f.warnings[0]).not.toContain('PRIVATE_');
     expect(f.calls).toBe(0);
   } finally {
     t.dispose();

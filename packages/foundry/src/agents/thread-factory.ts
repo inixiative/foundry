@@ -21,7 +21,6 @@ import {
   type OwnershipScope,
   type Route,
   Router,
-  type SourceSelectionReport,
   standingPart,
   Thread,
   type ThreadConfig,
@@ -31,11 +30,11 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
-import { resolveInstructionLadder } from '../prompts/instruction-settings';
-import { codexReadsUserHome, instructionStackSource } from '../prompts/instruction-stack';
+import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings';
+import { compositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
-import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from '../viewer/config';
+import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { configuredExperts } from './configured-experts';
 import { createNativeToolProjector } from './native-tool-projection';
@@ -77,18 +76,14 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
       case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
       case 'instructions':
-        // The registered instruction ladder for the thread's cwd, project and owner; the global file follows the harness.
-        return instructionStackSource(srcCfg.id, {
-          harness: cfg.defaults.provider === 'codex' ? 'codex' : 'claude',
-          harnessLoadsGlobal: codexReadsUserHome(cfg),
-          audience: srcCfg.audience,
-          ladder: resolveInstructionLadder(cfg.instructions),
-          ...(cfg.instructions?.dedupe ? { dedupe: cfg.instructions.dedupe } : {}),
-          projectPath: (projectId) => cfg.projects[projectId]?.path,
-          owner: (projectId) =>
-            (projectId ? cfg.projects[projectId]?.defaults?.kingdomOwnerKey : undefined) ??
-            cfg.defaults.kingdomOwnerKey,
-        });
+        // The main thread's slot of the composition view, for the thread's cwd, project and owner.
+        return compositionSource(
+          cfg,
+          srcCfg.id,
+          MAIN_ROLE,
+          srcCfg.slot ?? 'instructions',
+          mainSlots(cfg),
+        );
       case 'file':
         // Bounded selection by default: the owned log stays complete and
         // searchable, the automatic input is a deterministic, reported subset.
@@ -118,6 +113,17 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
   };
 }
 
+/** The main thread's delivered slots: those an enabled `instructions` source returns. */
+function mainSlots(cfg: FoundryConfig): CompositionSlot[] {
+  return [
+    ...new Set(
+      Object.values(cfg.sources)
+        .filter((source) => source.enabled && source.type === 'instructions')
+        .map((source) => source.slot ?? 'instructions'),
+    ),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Project-level builders — create shared layers and agents from config
 // ---------------------------------------------------------------------------
@@ -139,11 +145,7 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
 
     const resolve = (ids: string[]) =>
       ids.map((srcId) => deps.sourceResolver(srcId, config)).filter(Boolean) as ContextSource[];
-    const sources = layerCfg.chunks
-      ? layerCfg.chunks.map((chunk, i) =>
-          chunkSource(`${id}#${i}`, chunk.heading, resolve(chunk.sourceIds)),
-        )
-      : resolve(layerCfg.sourceIds ?? []);
+    const sources = resolve(layerCfg.sourceIds ?? []);
 
     layers.push(
       new ContextLayer({
@@ -184,49 +186,6 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
   }
 
   return layers;
-}
-
-/** One heading-labelled group of a composed layer's sources. An empty group contributes nothing. */
-function chunkSource(id: string, heading: string, sources: ContextSource[]): ContextSource {
-  return {
-    id,
-    focusable: sources.some((source) => source.focusable),
-    bind: (scope) =>
-      chunkSource(
-        id,
-        heading,
-        sources.map((source) => (source.bind ? source.bind(scope) : source)),
-      ),
-    async load(hint) {
-      const parts: string[] = [];
-      for (const source of sources) parts.push(await source.load(hint));
-      const text = parts.filter((part) => part.trim()).join('\n\n');
-      return text ? `## ${heading}\n\n${text}` : '';
-    },
-    report() {
-      const reports = sources
-        .map((source) => source.report?.())
-        .filter((report): report is SourceSelectionReport => !!report);
-      if (!reports.length) return undefined;
-      // Ranges index each source's own text, not the headed chunk, so a chunk report carries none.
-      return {
-        ...(reports.length === 1 ? reports[0] : {}),
-        selected: reports.flatMap((r) => r.selected.map(({ ranges: _ranges, ...rest }) => rest)),
-        omitted: reports.flatMap((r) => r.omitted),
-        considered: reports.reduce((sum, r) => sum + r.considered, 0),
-        retained: {
-          count: reports.reduce((sum, r) => sum + r.retained.count, 0),
-          chars: reports.reduce((sum, r) => sum + r.retained.chars, 0),
-        },
-        budget: {
-          chars: reports.reduce((sum, r) => sum + r.budget.chars, 0),
-          used: reports.reduce((sum, r) => sum + r.budget.used, 0),
-          exceeded: reports.some((r) => r.budget.exceeded),
-        },
-        conflicts: reports.flatMap((r) => r.conflicts),
-      };
-    },
-  };
 }
 
 export interface BuildAgentsDeps {
@@ -402,8 +361,13 @@ export class ThreadFactory {
         const prior = before.layers[id],
           next = after.layers[id];
         const sourceIds = new Set([...(prior?.sourceIds ?? []), ...(next?.sourceIds ?? [])]);
+        // A composition edit (nodes, picks, dedupe) re-sources every layer that composes.
+        const composes = [...sourceIds].some(
+          (sourceId) => after.sources[sourceId]?.type === 'instructions',
+        );
         if (
           !changed(prior, next) &&
+          !(composes && changed(before.composition, after.composition)) &&
           ![...sourceIds].some((sourceId) =>
             changed(before.sources[sourceId], after.sources[sourceId]),
           )
@@ -493,7 +457,7 @@ export class ThreadFactory {
       });
     }
     try {
-      this._runtime?.attach(thread, config);
+      this._runtime?.attach(thread, config, base?.layers.sourceResolver);
     } catch (error) {
       thread.dispose();
       throw error;

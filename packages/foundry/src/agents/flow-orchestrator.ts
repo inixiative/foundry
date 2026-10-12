@@ -1220,14 +1220,18 @@ function composeDecoration(
     ].join('\n'),
   });
 
+  // Wardens are fresh each call and never hold the conversation: each one that contributed is
+  // appended to the end of the user's message as its own note.
+  // A contribution of layers only adds context; it has nothing to say.
   for (const c of plan.contributions) {
-    if (c.decision !== 'contribute') continue;
+    if (c.decision !== 'contribute' || !c.snippets.length) continue;
     blocks.push({
       role: 'content',
       id: `decoration:${c.domain}`,
       source: c.domain,
       segment: 'domain-knowledge',
-      text: `## ${c.domain} advice\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
+      placement: 'after-message',
+      text: `The ${c.domain} Warden chimed in:\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
     });
   }
 

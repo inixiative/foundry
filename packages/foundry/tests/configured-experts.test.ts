@@ -33,7 +33,7 @@ import { resolveProjectView } from '../src/viewer/config-resolve';
 const expert = (
   domain = 'compatibility',
   id = `${domain}-expert`,
-  layerId = `${domain}-reference`,
+  sourceId = `${domain}-source`,
 ): AgentSettingsConfig => ({
   id,
   kind: 'decider',
@@ -43,8 +43,8 @@ const expert = (
   provider: 'expert',
   model: 'explicit-fable',
   tools: false,
-  visibleLayers: [layerId],
-  ownedLayers: [layerId],
+  visibleLayers: [],
+  domainKnowledge: [sourceId],
   peers: [],
   maxDepth: 1,
   enabled: true,
@@ -65,18 +65,7 @@ function config() {
     },
     'compatibility-expert': expert(),
   };
-  c.layers = {
-    'compatibility-reference': {
-      id: 'compatibility-reference',
-      domain: 'compatibility',
-      segment: 'domain-knowledge',
-      prompt: 'Compatibility context',
-      sourceIds: ['compatibility-source'],
-      writers: ['compatibility-expert'],
-      staleness: 0,
-      enabled: true,
-    },
-  };
+  c.layers = {};
   c.sources = {
     'compatibility-source': {
       id: 'compatibility-source',
@@ -184,13 +173,6 @@ test('saved experts learn through production factory/journal, remain separate an
   try {
     const c = config();
     c.agents['testing-expert'] = expert('testing');
-    c.layers['testing-reference'] = {
-      ...c.layers['compatibility-reference'],
-      id: 'testing-reference',
-      domain: 'testing',
-      writers: ['testing-expert'],
-      sourceIds: ['testing-source'],
-    };
     c.sources['testing-source'] = {
       id: 'testing-source',
       label: 'Testing',
@@ -209,10 +191,8 @@ test('saved experts learn through production factory/journal, remain separate an
     const a = f.factory.create('A', { projectId: 'P' }),
       runtime = f.manager.get('A')!;
     expect([...runtime.domainLibrarians.keys()]).toEqual(['compatibility', 'testing']);
-    expect(a.stack.getLayer('compatibility-reference')!.definition).toMatchObject({
-      domain: 'compatibility',
-      writers: ['compatibility-expert'],
-    });
+    // A Warden's composed slots are private: never on the thread's stack, never sent centrally.
+    expect(a.stack.layers.some((layer) => layer.id.startsWith('role:'))).toBe(false);
     const first = await a.dispatch('worker', 'Implement the migration', undefined, {
       messageId: 'A1',
     });
@@ -244,6 +224,7 @@ test('saved experts learn through production factory/journal, remain separate an
     await a.dispatch('worker', 'Continue', undefined, { messageId: 'A2' });
     await runtime.learningSettled();
     const central = f.calls.filter((call) => call.phase === 'central').at(-1)!;
+    expect(JSON.stringify(central.messages)).not.toContain('DOMAIN_COMPAT');
     expect(JSON.stringify(central.messages)).toContain('PRIVATE_compatibility');
     expect(JSON.stringify(central.messages)).toContain('PRIVATE_testing');
     expect(JSON.stringify(central.messages)).not.toContain('OWNED_compatibility_REASON');
@@ -320,19 +301,6 @@ test('project-only/override/disabled definitions use resolved sources and profil
       'compatibility-expert': { extends: 'compatibility-expert', enabled: false },
       'testing-expert': expert('testing'),
     },
-    layers: {
-      'compatibility-reference': { enabled: false },
-      'testing-reference': {
-        id: 'testing-reference',
-        domain: 'testing',
-        segment: 'domain-knowledge',
-        enabled: true,
-        sourceIds: { replace: ['testing-source'] },
-        writers: { replace: ['testing-expert'] },
-        prompt: 'Project testing',
-        staleness: 0,
-      },
-    },
     sources: {
       'testing-source': {
         id: 'testing-source',
@@ -356,8 +324,6 @@ test('project-only/override/disabled definitions use resolved sources and profil
       g = f.factory.create('global-thread');
     expect([...f.manager.get(p.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
     expect([...f.manager.get(q.id)!.domainLibrarians.keys()]).toEqual(['testing']);
-    expect(q.stack.getLayer('compatibility-reference')).toBeUndefined();
-    expect(p.stack.getLayer('testing-reference')).toBeUndefined();
     for (const thread of [p, q, g]) {
       await thread.dispatch('worker', 'Work');
       await f.manager.get(thread.id)!.learningSettled();
@@ -429,28 +395,26 @@ test('configured review pending does not block Continue or create another same-d
   }
 });
 
-for (const state of ['disabled-agent', 'disabled-layer', 'passive', 'generated'] as const)
+for (const state of ['disabled-agent', 'layer-named-like-a-domain'] as const)
   test(`${state} cannot resurrect a configured or built-in expert`, async () => {
     const c = config();
     c.agents = {
       worker: c.agents.worker,
-      'security-expert': expert('security', 'security-expert', 'security'),
-    };
-    c.layers = {
-      security: {
-        ...c.layers['compatibility-reference'],
-        id: 'security',
-        domain: 'security',
-        writers: ['security-expert'],
-      },
+      'security-expert': expert('security', 'security-expert', 'compatibility-source'),
     };
     if (state === 'disabled-agent') c.agents['security-expert'].enabled = false;
-    if (state === 'disabled-layer') c.layers.security.enabled = false;
-    if (state === 'passive' || state === 'generated') {
+    if (state === 'layer-named-like-a-domain') {
+      // A layer with a built-in domain's name and metadata is passive: only settings make Wardens.
       delete c.agents['security-expert'];
-      delete c.layers.security.writers;
+      c.layers.security = {
+        id: 'security',
+        domain: 'security',
+        prompt: 'Security',
+        sourceIds: ['compatibility-source'],
+        staleness: 0,
+        enabled: true,
+      };
     }
-    if (state === 'generated') c.layers.security.segment = 'thread-knowledge';
     const f = setup(c);
     try {
       const t = f.factory.create(state);
@@ -469,39 +433,15 @@ for (const [label, mutate] of [
     },
   ],
   [
-    'foreign-writer',
+    'owned-layer',
     (c: FoundryConfig) => {
-      c.layers['compatibility-reference'].writers = ['somebody-else'];
+      c.agents['compatibility-expert'].ownedLayers = ['compatibility-reference'];
     },
   ],
   [
-    'multiple-writers',
+    'unknown-knowledge-source',
     (c: FoundryConfig) => {
-      c.layers['compatibility-reference'].writers!.push('worker');
-    },
-  ],
-  [
-    'conflicting-owner',
-    (c: FoundryConfig) => {
-      c.agents.worker.ownedLayers = ['compatibility-reference'];
-    },
-  ],
-  [
-    'multiple-layers',
-    (c: FoundryConfig) => {
-      c.layers.extra = { ...c.layers['compatibility-reference'], id: 'extra' };
-    },
-  ],
-  [
-    'foreign-domain',
-    (c: FoundryConfig) => {
-      c.layers['compatibility-reference'].domain = 'testing';
-    },
-  ],
-  [
-    'generated-owner',
-    (c: FoundryConfig) => {
-      c.layers['compatibility-reference'].segment = 'thread-knowledge';
+      c.agents['compatibility-expert'].domainKnowledge = ['absent-source'];
     },
   ],
   [
@@ -609,12 +549,11 @@ test('missing provider and unsupported actual native profiles are refused before
   }
 });
 
-test('legacy built-in docs prompt remains an explicit default only when ownership metadata is absent', () => {
+test('a code-registered Warden reads the stack layer it names, with its own prompt', () => {
   const c = config();
   c.agents = { worker: c.agents.worker };
-  c.layers = {};
   const layer = new ContextLayer({ id: 'docs' });
-  layer.set('LEGACY_DOCS');
+  layer.set('CODE_DOCS');
   const manager = new ThreadRuntimeManager({
     config: c,
     llm: {
@@ -623,17 +562,17 @@ test('legacy built-in docs prompt remains an explicit default only when ownershi
         throw Error('No inspection model call');
       },
     },
-    legacyDomains: [
+    domains: [
       { domain: 'docs', layerId: 'docs', advisePrompt: DOCS_ADVISE_PROMPT, guardTriggers: [] },
     ],
     log() {},
     warn() {},
   });
-  const thread = new Thread('legacy', new ContextStack([layer]));
+  const thread = new Thread('code', new ContextStack([layer]));
   try {
-    expect(manager.attach(thread).domainLibrarians.get('docs')!.advisePrompt).toBe(
-      DOCS_ADVISE_PROMPT,
-    );
+    const lib = manager.attach(thread).domainLibrarians.get('docs')!;
+    expect(lib.advisePrompt).toBe(DOCS_ADVISE_PROMPT);
+    expect(lib.cache).toBe(layer);
   } finally {
     thread.dispose();
     manager.disposeAll();
@@ -644,15 +583,7 @@ test('an explicit built-in expert retains its guard triggers without replacing i
   const c = config();
   c.agents = {
     worker: c.agents.worker,
-    'security-expert': expert('security', 'security-expert', 'security'),
-  };
-  c.layers = {
-    security: {
-      ...c.layers['compatibility-reference'],
-      id: 'security',
-      domain: 'security',
-      writers: ['security-expert'],
-    },
+    'security-expert': expert('security', 'security-expert', 'compatibility-source'),
   };
   const f = setup(c);
   try {

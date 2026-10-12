@@ -36,6 +36,11 @@ export interface PromptBlock {
   readonly segment?: string;
   /** Who produced this block (a domain, the router, a layer id). */
   readonly source?: string;
+  /**
+   * "after-message": a per-turn note appended to the end of the user's message rather than placed
+   * in the context (a Warden chiming in). Default: in the context.
+   */
+  readonly placement?: 'after-message';
 }
 
 /** Structured prompt assembled from agent prompt + layer prompts + layer content. */

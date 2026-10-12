@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
 import { configuredExperts } from '../src/agents/configured-experts';
+import { buildRoleLayers } from '../src/agents/role-layers';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
 import { atlasSection, developmentTeam } from '../src/development-team';
 import { resolveProjectView } from '../src/viewer/config-resolve';
@@ -31,20 +32,27 @@ test('development team resolves ordinary UUID-owned experts and warms attributed
       .experts.map((e) => e.domain)
       .sort(),
   ).toEqual(['architecture', 'features', 'primitives', 'testing']);
-  for (const entries of [config.agents, config.layers, config.sources])
+  for (const entries of [config.agents, config.sources])
     for (const [key, entry] of Object.entries(entries)) {
       expect(key).toMatch(/^[a-f0-9-]{36}$/);
       expect(entry.id).toBe(key);
     }
-  const stack = new ContextStack(
-    buildLayers(effective, {
-      sourceResolver: createSourceResolver({ memory: new FileMemory('/tmp/unused-team-memory') }),
-    }),
-  );
+  const resolveSource = createSourceResolver({
+    memory: new FileMemory('/tmp/unused-team-memory'),
+  });
+  // Evidence is each Warden's own domain knowledge, never the executor's stack.
+  const stack = new ContextStack(buildLayers(effective, { sourceResolver: resolveSource }));
   await stack.warmAll();
-  expect(stack.assemble().text).toContain('base-sha:MAP.md');
-  expect(stack.assemble().text).toContain('SHA-256:');
-  expect(stack.assemble().text).not.toContain('Source not connected');
+  expect(stack.assemble().text).not.toContain('base-sha:MAP.md');
+  const knowledge: string[] = [];
+  for (const { agentId } of configuredExperts(effective).experts) {
+    const { domainKnowledge } = buildRoleLayers(effective, agentId, { resolveSource });
+    await domainKnowledge.warm();
+    knowledge.push(domainKnowledge.content);
+  }
+  expect(knowledge.join('\n')).toContain('base-sha:MAP.md');
+  expect(knowledge.join('\n')).toContain('SHA-256:');
+  expect(knowledge.join('\n')).not.toContain('Source not connected');
   const router = Object.values(config.agents).find((a) => a.kind === 'router')!;
   expect(router.prompt).toContain(
     Object.values(config.agents).find((a) => a.kind === 'executor')!.id,

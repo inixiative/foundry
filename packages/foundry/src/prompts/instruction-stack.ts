@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import {
   type ContextSource,
-  dedupeHierarchy,
+  dedupeHierarchySlots,
   discoverHierarchy,
   type HierarchyDedupeOptions,
   type HierarchyDuplicate,
@@ -17,9 +17,15 @@ import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import {
+  COMPOSITION_SLOTS,
+  type CompositionSlot,
   DEFAULT_INSTRUCTION_LADDER,
   HARNESS_GLOBAL_SOURCE,
   type InstructionNodeSettings,
+  MAIN_ROLE,
+  type RoleComposition,
+  resolveInstructionLadder,
+  roleComposition,
 } from './instruction-settings';
 
 /**
@@ -27,7 +33,7 @@ import {
  * them for any harness from a registered hierarchy (core `discoverHierarchy`): a ladder or tree of
  * nodes (computer, org, project; shared or personal), each naming its files and corpus tier. The
  * default ladder is Claude Code's own discovery (docs/usage-and-context.md), so a Codex session gets
- * CLAUDE.md and a Claude session gets AGENTS.md; `instructions.nodes` registers more.
+ * CLAUDE.md and a Claude session gets AGENTS.md; `composition.nodes` registers more.
  */
 export type InstructionHarness = 'claude' | 'codex';
 /** The default ladder's nodes. */
@@ -90,6 +96,12 @@ export interface InstructionStackOptions {
   projectId?: string;
   projectPath?: string;
   owner?: string;
+  /** The role composed for (`{role}` in paths). Default: main. */
+  role?: string;
+  /** The slot composed (`{slot}` in paths). Default: instructions. */
+  slot?: CompositionSlot;
+  /** Which nodes' unslotted files compose into the slot. Default: all for instructions, none otherwise. */
+  unslotted?: 'all' | readonly string[];
 }
 
 const TIER_RANK: Readonly<Record<CorpusTier, number>> = {
@@ -190,6 +202,10 @@ export async function discoverInstructionStack(
       cwd,
       home,
       harness: options.harness,
+      role: options.role ?? MAIN_ROLE,
+      slot: options.slot ?? 'instructions',
+      unslotted:
+        options.unslotted ?? ((options.slot ?? 'instructions') === 'instructions' ? 'all' : []),
       ...(options.harnessLoadsGlobal ? { harnessLoads: [HARNESS_GLOBAL_SOURCE] } : {}),
       ...(options.projectId ? { projectId: options.projectId } : {}),
       ...(options.owner ? { owner: options.owner } : {}),
@@ -225,37 +241,110 @@ export async function discoverInstructionStack(
 
 export interface ComposedInstructions {
   readonly text: string;
-  /** The files composed, after audience filtering and dedupe. */
+  /** The files composed, after selection, audience filtering and dedupe. */
   readonly files: InstructionStackFile[];
   /** Files the audience may not see. */
   readonly hidden: InstructionStackFile[];
-  /** Everything removed as a duplicate: second reaches, identical files, identical sections. */
-  readonly duplicates: HierarchyDuplicate[];
+  /** Files of nodes the role excluded from this slot. */
+  readonly excluded: InstructionStackFile[];
+  /**
+   * Everything removed as a duplicate: second reaches, identical files, identical sections.
+   * `keptIn` names the other slot when the kept copy is there.
+   */
+  readonly duplicates: Array<HierarchyDuplicate & { keptIn?: CompositionSlot }>;
+}
+
+/** One role's composition: each slot's stack as discovered and as composed. */
+export interface RoleView {
+  readonly role: string;
+  readonly stacks: Readonly<Record<CompositionSlot, InstructionStack>>;
+  readonly slots: Readonly<Record<CompositionSlot, ComposedInstructions>>;
+  /** Nodes whose general files the role pulled into a slot they do not compose by default. */
+  readonly included: Readonly<Record<CompositionSlot, readonly string[]>>;
+}
+
+const EMPTY_STACK: InstructionStack = { files: [], duplicates: [], labels: {} };
+
+/** A slot's files as one block. Instructions carry Claude Code's preamble; domain knowledge does not. */
+function renderSlot(
+  slot: CompositionSlot,
+  files: readonly InstructionStackFile[],
+  labels: Readonly<Record<string, string>>,
+): string {
+  const sections = files
+    .filter((file) => file.content.trim())
+    .map(
+      (file) =>
+        `Contents of ${file.path} (${labels[file.level] ?? file.level}):\n\n${file.content.trim()}`,
+    );
+  if (!sections.length) return '';
+  return (slot === 'instructions' ? [PREAMBLE, ...sections] : sections).join('\n\n');
 }
 
 /**
- * The stack as one block for `audience`: a file reaches it only if its tier is visible there, then
- * repeated files and sections are removed, keeping the most specific copy.
+ * Every slot of one role from the ladder (docs/usage-and-context.md, "Composition view"): each slot
+ * gets the files that apply to it (role files, plus CLAUDE.md and the like for instructions and for
+ * any node the role includes), minus the nodes it excludes; then files the role's audience may not
+ * see are hidden, and repeats are removed across both slots, keeping the later copy (so a file in
+ * both slots stays in domain knowledge).
  */
-export function composeInstructionStack(
-  stack: InstructionStack,
-  options: { audience?: CorpusTier; dedupe?: HierarchyDedupeOptions } = {},
-): ComposedInstructions {
-  const audience = options.audience ?? 'personal_private';
-  const visible = stack.files.filter((file) => visibleTo(file.tier, audience));
-  const hidden = stack.files.filter((file) => !visibleTo(file.tier, audience));
-  const deduped = dedupeHierarchy(visible, options.dedupe);
-  const files = deduped.files.filter((file) => file.content.trim());
-  const sections = files.map(
-    (file) =>
-      `Contents of ${file.path} (${stack.labels[file.level] ?? file.level}):\n\n${file.content.trim()}`,
+export async function composeRoleView(
+  options: Omit<InstructionStackOptions, 'role' | 'slot' | 'unslotted'> & {
+    role: string;
+    picks?: RoleComposition;
+    dedupe?: HierarchyDedupeOptions;
+  },
+): Promise<RoleView> {
+  const { picks = {}, dedupe, ...discover } = options;
+  const audience = picks.audience ?? 'personal_private';
+  const stacks = {} as Record<CompositionSlot, InstructionStack>;
+  const included = {} as Record<CompositionSlot, readonly string[]>;
+  for (const slot of COMPOSITION_SLOTS) {
+    const pick = picks[slot];
+    const general = (pick ? pick.general : undefined) ?? (slot === 'instructions' ? 'all' : []);
+    included[slot] = slot === 'instructions' || general === 'all' ? [] : [...general];
+    stacks[slot] =
+      pick === false
+        ? EMPTY_STACK
+        : await discoverInstructionStack({ ...discover, slot, unslotted: general });
+  }
+  const parts = COMPOSITION_SLOTS.map((slot) => {
+    const pick = picks[slot];
+    const exclude = new Set(pick ? (pick.exclude ?? []) : []);
+    const files = stacks[slot].files;
+    const excluded = files.filter((file) => exclude.has(file.level));
+    const kept = files.filter((file) => !exclude.has(file.level));
+    return {
+      excluded,
+      hidden: kept.filter((file) => !visibleTo(file.tier, audience)),
+      visible: kept.filter((file) => visibleTo(file.tier, audience)),
+    };
+  });
+  const deduped = dedupeHierarchySlots(
+    parts.map((part) => part.visible),
+    { ...dedupe, ...picks.dedupe },
   );
-  return {
-    text: sections.length ? [PREAMBLE, ...sections].join('\n\n') : '',
-    files,
-    hidden,
-    duplicates: [...stack.duplicates, ...deduped.duplicates],
-  };
+  const slots = {} as Record<CompositionSlot, ComposedInstructions>;
+  COMPOSITION_SLOTS.forEach((slot, i) => {
+    const files = deduped.slots[i]!.filter((file) => file.content.trim());
+    slots[slot] = {
+      text: renderSlot(slot, files, stacks[slot].labels),
+      files,
+      hidden: parts[i]!.hidden,
+      excluded: parts[i]!.excluded,
+      // Each removal is reported on the slot whose copy was removed.
+      duplicates: [
+        ...stacks[slot].duplicates,
+        ...deduped.duplicates
+          .filter((duplicate) => duplicate.slot === i)
+          .map(({ slot: _slot, keptSlot, ...duplicate }) => ({
+            ...duplicate,
+            ...(keptSlot !== i ? { keptIn: COMPOSITION_SLOTS[keptSlot] } : {}),
+          })),
+      ],
+    };
+  });
+  return { role: options.role, stacks, slots, included };
 }
 
 const DUPLICATE_REASON: Readonly<Record<HierarchyDuplicate['kind'], string>> = {
@@ -264,22 +353,33 @@ const DUPLICATE_REASON: Readonly<Record<HierarchyDuplicate['kind'], string>> = {
   section: 'identical section in a more specific file',
 };
 
-/** The composition as a selection report, so the viewer's Selection panel shows what was deduped. */
+/** One slot of a role view as a selection report, so the viewer's Selection panel shows what was picked and why. */
 export function instructionStackReport(
-  stack: InstructionStack,
-  composed: ComposedInstructions,
+  view: RoleView,
+  slot: CompositionSlot,
   audience: CorpusTier,
 ): SourceSelectionReport {
+  const stack = view.stacks[slot];
+  const composed = view.slots[slot];
+  const included = new Set(view.included[slot]);
+  const label = (level: string) =>
+    `${stack.labels[level] ?? level}${included.has(level) ? ` [included in ${slot} by composition.roles.${view.role}]` : ''}`;
   const chars = stack.files.reduce((sum, file) => sum + file.content.length, 0);
   return {
     subject: 'instructions',
     selected: composed.files.map((file) => ({
       id: file.path,
-      reason: stack.labels[file.level] ?? file.level,
+      reason: label(file.level),
       chars: file.content.length,
       kind: file.level,
     })),
     omitted: [
+      ...composed.excluded.map((file) => ({
+        id: file.path,
+        reason: `excluded from ${slot} by composition.roles.${view.role}`,
+        chars: file.content.length,
+        kind: file.level,
+      })),
       ...composed.hidden.map((file) => ({
         id: file.path,
         reason: `not visible to ${audience}`,
@@ -291,7 +391,7 @@ export function instructionStackReport(
         reason: DUPLICATE_REASON[duplicate.kind],
         chars: duplicate.chars,
         kind: duplicate.node,
-        duplicateOf: `${duplicate.keptPath} (${duplicate.keptNode})`,
+        duplicateOf: `${duplicate.keptPath} (${duplicate.keptNode}${duplicate.keptIn ? `, ${duplicate.keptIn}` : ''})`,
       })),
     ],
     considered: stack.files.length,
@@ -301,9 +401,37 @@ export function instructionStackReport(
   };
 }
 
+/** A role's two slots warm together: one composition serves both. */
+const SHARED_VIEW_MS = 250;
+const sharedViews = new Map<string, { at: number; view: Promise<RoleView> }>();
+/** Drop shared compositions, so the next load reads the files again. */
+export function forgetSharedRoleViews(): void {
+  sharedViews.clear();
+}
+
+function sharedRoleView(options: Parameters<typeof composeRoleView>[0]): Promise<RoleView> {
+  const key = JSON.stringify(options);
+  const now = Date.now();
+  for (const [k, entry] of sharedViews) if (now - entry.at > SHARED_VIEW_MS) sharedViews.delete(k);
+  const hit = sharedViews.get(key);
+  if (hit) return hit.view;
+  const view = composeRoleView(options);
+  sharedViews.set(key, { at: now, view });
+  view.catch(() => sharedViews.delete(key));
+  return view;
+}
+
 export interface InstructionStackSourceOptions
-  extends Omit<InstructionStackOptions, 'cwd' | 'projectId' | 'projectPath' | 'owner'> {
-  audience?: CorpusTier;
+  extends Omit<
+    InstructionStackOptions,
+    'cwd' | 'projectId' | 'projectPath' | 'owner' | 'role' | 'slot' | 'unslotted'
+  > {
+  /** The role composed for. Default: main. */
+  role?: string;
+  /** The slot this source returns. Default: instructions. */
+  slot?: CompositionSlot;
+  /** The role's picks (`composition.roles[role]`). */
+  picks?: RoleComposition;
   dedupe?: HierarchyDedupeOptions;
   /** Where a thread with no cwd works: its project's directory. */
   projectPath?: (projectId: string) => string | undefined;
@@ -312,8 +440,9 @@ export interface InstructionStackSourceOptions
 }
 
 /**
- * A layer source composing the stack for the session's location. Bound to a thread, it follows the
- * thread's cwd (its worktree or project) and project; unbound, it reads from the process's cwd.
+ * A layer source returning one slot of one role's composition for the session's location. Bound to
+ * a thread, it follows the thread's cwd (its worktree or project) and project; unbound, it reads
+ * from the process's cwd.
  */
 export function instructionStackSource(
   id: string,
@@ -331,27 +460,58 @@ export function instructionStackSource(
       const {
         projectPath: _path,
         owner: _owner,
-        audience: _audience,
+        role = MAIN_ROLE,
+        slot = 'instructions',
+        picks,
         dedupe,
         ...discover
       } = options;
-      const stack = await discoverInstructionStack({
+      const view = await sharedRoleView({
         ...discover,
+        role,
+        ...(picks ? { picks } : {}),
+        ...(dedupe ? { dedupe } : {}),
         cwd: scope?.cwd ?? projectPath ?? process.cwd(),
         ...(projectId ? { projectId } : {}),
         ...(projectPath ? { projectPath } : {}),
         ...(owner ? { owner } : {}),
       });
-      const audience = options.audience ?? 'personal_private';
-      const composed = composeInstructionStack(stack, {
-        audience,
-        ...(dedupe ? { dedupe } : {}),
-      });
-      last = instructionStackReport(stack, composed, audience);
-      return composed.text;
+      last = instructionStackReport(view, slot, picks?.audience ?? 'personal_private');
+      return view.slots[slot].text;
     },
     report: () => last,
   };
+}
+
+/**
+ * The source for one role's slot under `config`: the registered ladder, the role's picks and the
+ * harness the global file follows. The main thread's `instructions` source and every middleware
+ * role's slots are this one source. `delivered` names the slots the role actually receives: a slot
+ * nobody delivers is not composed, so dedupe never moves text into it.
+ */
+export function compositionSource(
+  config: FoundryConfig,
+  id: string,
+  role: string,
+  slot: CompositionSlot,
+  delivered: readonly CompositionSlot[],
+): ContextSource {
+  const settings = config.composition;
+  const { budget: _budget, ...picks } = roleComposition(settings, role);
+  for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
+  return instructionStackSource(id, {
+    harness: config.defaults.provider === 'codex' ? 'codex' : 'claude',
+    harnessLoadsGlobal: codexReadsUserHome(config),
+    role,
+    slot,
+    ladder: resolveInstructionLadder(settings),
+    picks,
+    ...(settings?.dedupe ? { dedupe: settings.dedupe } : {}),
+    projectPath: (projectId) => config.projects[projectId]?.path,
+    owner: (projectId) =>
+      (projectId ? config.projects[projectId]?.defaults?.kingdomOwnerKey : undefined) ??
+      config.defaults.kingdomOwnerKey,
+  });
 }
 
 /** Claude Code skips every CLAUDE.md, rule, AGENTS.md and auto memory file at launch and on demand. */
@@ -364,9 +524,9 @@ export const CODEX_HARNESS_INSTRUCTIONS_OFF: Readonly<Record<string, unknown>> =
   project_doc_max_bytes: 0,
 });
 
-/** Whether the native harness loads instruction files itself (`instructions.harnessLoading`). */
+/** Whether the native harness loads instruction files itself (`composition.harnessLoading`). */
 export function harnessLoadsInstructions(config: FoundryConfig): boolean {
-  const explicit = config.instructions?.harnessLoading;
+  const explicit = config.composition?.harnessLoading;
   if (explicit) return explicit === 'load';
   const views = [
     config,
@@ -378,10 +538,9 @@ export function harnessLoadsInstructions(config: FoundryConfig): boolean {
     Object.values(view.layers ?? {}).some(
       (layer) =>
         layer.enabled &&
-        [
-          ...(layer.sourceIds ?? []),
-          ...(layer.chunks ?? []).flatMap((chunk) => chunk.sourceIds),
-        ].some((id) => view.sources[id]?.enabled && view.sources[id]?.type === 'instructions'),
+        (layer.sourceIds ?? []).some(
+          (id) => view.sources[id]?.enabled && view.sources[id]?.type === 'instructions',
+        ),
     );
   // Suppression is process-wide, so it needs every view to compose: otherwise a thread could get neither.
   return !views.every((view) => !view || composes(view));

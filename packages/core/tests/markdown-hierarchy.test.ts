@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   dedupeHierarchy,
+  dedupeHierarchySlots,
   discoverHierarchy,
   type HierarchyFile,
   type HierarchyLocation,
@@ -427,4 +428,81 @@ test('a lone title is part of the heading path: Testing > Rules is not Deploy > 
     file('/app.md', 'project', `# Deploy\n\n${rules}`),
   ]);
   expect(result.duplicates).toEqual([]);
+});
+
+test('roles and slots: one ladder serves every role and slot; unslotted files compose only where asked', async () => {
+  write(join(org, 'ORG.md'), 'ORG_GENERAL');
+  write(join(org, 'roles', 'warden', 'instructions.md'), 'WARDEN_INSTRUCTIONS');
+  write(join(org, 'roles', 'warden', 'knowledge.md'), 'WARDEN_KNOWLEDGE');
+  write(join(org, 'roles', 'main', 'instructions.md'), 'MAIN_INSTRUCTIONS');
+  write(join(home, 'only-warden.md'), 'WARDEN_ONLY_NODE');
+  const nodes: HierarchyNode[] = [
+    {
+      id: 'org',
+      scope: 'org',
+      personal: false,
+      tier: 'org',
+      when: { paths: ['{orgRoot}'] },
+      sources: [
+        { path: '{anchor}/ORG.md' },
+        { path: '{anchor}/roles/{role}/{slot}.md', when: { slots: ['instructions', 'knowledge'] } },
+      ],
+    },
+    {
+      id: 'warden-only',
+      scope: 'computer',
+      personal: true,
+      tier: 'personal',
+      when: { roles: ['warden'], slots: ['instructions'] },
+      sources: [{ path: '{home}/only-warden.md' }],
+    },
+  ];
+  const read = async (role: string, slot: string, unslotted?: 'all' | string[]) =>
+    (
+      await discoverHierarchy(
+        nodes,
+        at(project, { role, slot, ...(unslotted ? { unslotted } : {}) }),
+        { tierRank },
+      )
+    ).files.map((file) => file.content);
+  // Instructions: general files for everyone, then the role's own; a role-restricted node only for it.
+  expect(await read('warden', 'instructions')).toEqual([
+    'WARDEN_ONLY_NODE',
+    'ORG_GENERAL',
+    'WARDEN_INSTRUCTIONS',
+  ]);
+  expect(await read('main', 'instructions')).toEqual(['ORG_GENERAL', 'MAIN_INSTRUCTIONS']);
+  // Another slot takes only slotted files, unless the role pulls a node's general files in.
+  expect(await read('warden', 'knowledge', [])).toEqual(['WARDEN_KNOWLEDGE']);
+  expect(await read('warden', 'knowledge', ['org'])).toEqual(['ORG_GENERAL', 'WARDEN_KNOWLEDGE']);
+  // No role or slot named: a slotted source never applies, a role-restricted node never applies.
+  const plain = await discoverHierarchy(nodes, at(project), { tierRank });
+  expect(plain.files.map((file) => file.content)).toEqual(['ORG_GENERAL']);
+});
+
+test('slots dedupe together: a repeat in a later slot is kept there and cut from the earlier one', () => {
+  const file = (path: string, node: string, content: string): HierarchyFile => ({
+    path,
+    node,
+    tier: 'org',
+    content,
+    depth: 0,
+  });
+  const shared = '# Rules\n\n## Merge\n\nMerge once green.';
+  const { slots, duplicates } = dedupeHierarchySlots([
+    [file('/a/GLOBAL.md', 'global', 'Global only'), file('/org/CLAUDE.md', 'org', shared)],
+    [file('/org/CLAUDE.md', 'org', shared)],
+  ]);
+  expect(slots[0]!.map((f) => f.path)).toEqual(['/a/GLOBAL.md']);
+  expect(slots[1]!.map((f) => f.path)).toEqual(['/org/CLAUDE.md']);
+  expect(slots[1]![0]!.node).toBe('org');
+  expect(duplicates).toEqual([
+    expect.objectContaining({
+      kind: 'content',
+      node: 'org',
+      slot: 0,
+      keptNode: 'org',
+      keptSlot: 1,
+    }),
+  ]);
 });

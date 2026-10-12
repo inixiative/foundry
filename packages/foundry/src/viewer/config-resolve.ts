@@ -7,7 +7,6 @@ import {
   type InvocationCondition,
   type InvocationConditionOverride,
   isAgentExtension,
-  type LayerChunk,
   type LayerSettingsConfig,
   type LayerSettingsOverride,
   type ListPatch,
@@ -447,6 +446,7 @@ function extendAgent(
   extension: AgentExtension,
   projectId: string,
   project: ProjectSettingsConfig,
+  known: ReadonlySet<string>,
 ): ResolvedAgentDefinition {
   const scope = 'agent-override';
   const fields: Record<string, FieldProvenance> = {};
@@ -506,6 +506,12 @@ function extendAgent(
     chunks,
   };
 
+  const knowledge = domainKnowledgeField(extension, base, projectId, project, label, known);
+  if (knowledge) {
+    resolved.domainKnowledge = knowledge.value;
+    fields.domainKnowledge = knowledge.provenance;
+  }
+
   const scalars = [
     'provider',
     'model',
@@ -564,16 +570,15 @@ function extendAgent(
   return { id, scope: 'project-extension', extends: extension.extends, config: resolved, fields };
 }
 
-/** The extension's domain-knowledge chunks for the parent's owned layer, or undefined when it adds none. */
-function domainKnowledgeChunks(
+/** The extension's domain knowledge sources appended to (or, with `override`, replacing) the parent's. */
+function domainKnowledgeField(
   extension: AgentExtension,
   base: AgentSettingsConfig,
-  layer: LayerSettingsConfig | undefined,
   projectId: string,
   project: ProjectSettingsConfig,
   label: string,
   known: ReadonlySet<string>,
-): { layerId: string; chunks: LayerChunk[] } | undefined {
+): { value: string[]; provenance: FieldProvenance } | undefined {
   const override = extension.override?.includes('domainKnowledge') ?? false;
   if (extension.domainKnowledge === undefined) {
     if (override) throw new Error(`[config] ${label} overrides domainKnowledge without sources`);
@@ -589,34 +594,39 @@ function domainKnowledgeChunks(
     throw new Error(
       `[config] ${label}.domainKnowledge names unknown sources: ${unknown.join(', ')}`,
     );
-  const layerId = base.ownedLayers?.length === 1 ? base.ownedLayers[0] : undefined;
-  if (!layerId || !layer)
-    throw new Error(`[config] ${label} adds domain knowledge, but its parent owns no single layer`);
-  if (project.layers?.[layerId]?.sourceIds !== undefined)
-    throw new Error(
-      `[config] ${label} composes layer ${JSON.stringify(layerId)}; remove project.layers.${layerId}.sourceIds`,
-    );
+  const inherited = base.domainKnowledge ?? [];
+  // A source the parent already loads is not loaded twice.
+  const added = [...new Set(extension.domainKnowledge)].filter(
+    (id) => override || !inherited.includes(id),
+  );
+  const value = override ? added : [...inherited, ...added];
   return {
-    layerId,
-    chunks: [
-      ...(override
-        ? []
-        : [
-            {
-              origin: 'global' as const,
-              heading: `Global domain knowledge (${layerId})`,
-              sourceIds: [...layer.sourceIds],
-            },
-          ]),
-      {
-        origin: 'project' as const,
-        heading: `Project domain knowledge (${projectName(projectId, project)})`,
-        // A source the parent already loads is not loaded twice.
-        sourceIds: [...new Set(extension.domainKnowledge)].filter(
-          (id) => override || !layer.sourceIds.includes(id),
-        ),
-      },
-    ],
+    value,
+    provenance: {
+      origin: override || !inherited.length ? 'project' : 'merged',
+      strategy: override ? 'override' : 'extend',
+      globalValue: inherited,
+      projectValue: extension.domainKnowledge,
+      resolvedValue: value,
+      chunks: [
+        ...(override || !inherited.length
+          ? []
+          : [
+              {
+                origin: 'global' as const,
+                from: extension.extends,
+                heading: `Global domain knowledge (${extension.extends})`,
+                value: inherited,
+              },
+            ]),
+        {
+          origin: 'project' as const,
+          from: projectId,
+          heading: `Project domain knowledge (${projectName(projectId, project)})`,
+          value: added,
+        },
+      ],
+    },
   };
 }
 
@@ -701,6 +711,9 @@ export function resolveProjectView(
 
   const resolved: FoundryConfig = {
     ...(config.learning !== undefined ? { learning: structuredClone(config.learning) } : {}),
+    ...(config.composition !== undefined
+      ? { composition: structuredClone(config.composition) }
+      : {}),
     defaults: { ...config.defaults, ...project.defaults },
     providers: config.providers,
     agents: { ...config.agents },
@@ -712,7 +725,6 @@ export function resolveProjectView(
   const agents = new Map<string, ResolvedAgentDefinition>(
     Object.entries(config.agents).map(([id, agent]) => [id, globalAgent(id, agent)]),
   );
-  const composed = new Map<string, { chunks: LayerChunk[]; agentId: string }>();
   const extended = new Set<string>();
   /** Superseded parent id → the project agent that replaces it as a layer writer. */
   const renamed = new Map<string, string>();
@@ -742,18 +754,10 @@ export function resolveProjectView(
       agents.delete(entry.extends);
       renamed.set(entry.extends, id);
     }
-    agents.set(id, extendAgent(id, base, entry, projectId, project));
-    const label = `project.agents.${id}`;
-    const knowledge = domainKnowledgeChunks(
-      entry,
-      base,
-      config.layers[base.ownedLayers?.[0] ?? ''],
-      projectId,
-      project,
-      label,
-      new Set(Object.keys(resolved.sources)),
+    agents.set(
+      id,
+      extendAgent(id, base, entry, projectId, project, new Set(Object.keys(resolved.sources))),
     );
-    if (knowledge) composed.set(knowledge.layerId, { chunks: knowledge.chunks, agentId: id });
   }
   resolved.agents = Object.fromEntries([...agents].map(([id, agent]) => [id, agent.config]));
 
@@ -771,31 +775,7 @@ export function resolveProjectView(
             },
           }
         : resolvedLayer;
-    const knowledge = composed.get(id);
-    if (!knowledge) return layer;
-    const sourceIds = dedupe(knowledge.chunks.flatMap((chunk) => chunk.sourceIds));
-    const composedLayer = { ...layer.config, sourceIds, chunks: knowledge.chunks };
-    const field: FieldProvenance = {
-      origin: knowledge.chunks.length > 1 ? 'merged' : 'project',
-      strategy: knowledge.chunks.length > 1 ? 'extend' : 'override',
-      globalValue: layer.config.sourceIds,
-      projectValue: knowledge.chunks.at(-1)!.sourceIds,
-      resolvedValue: sourceIds,
-      chunks: knowledge.chunks.map((chunk) => ({
-        origin: chunk.origin,
-        from: chunk.origin === 'global' ? id : projectId,
-        heading: chunk.heading,
-        value: chunk.sourceIds,
-      })),
-    };
-    const agent = agents.get(knowledge.agentId);
-    if (agent) agent.fields.domainKnowledge = field;
-    return {
-      ...layer,
-      scope: 'project-override' as const,
-      config: composedLayer,
-      fields: { ...layer.fields, sourceIds: field },
-    };
+    return layer;
   });
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 

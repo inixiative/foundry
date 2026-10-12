@@ -135,13 +135,14 @@ describe('scanRepoDocs', () => {
     expect(layer.domain).toBe('docs');
     expect(layer.sourceIds).toEqual([source.id]);
     expect(layer.activation).toBe('conditional');
-    expect(layer.writers).toEqual([agent.id]);
+    expect(layer.writers).toBeUndefined();
 
     expect(agent.kind).toBe('domain-librarian');
     expect(agent.domain).toBe('docs');
     expect(agent.prompt).toBe(DOCS_ADVISE_PROMPT);
     expect(agent.tools).toBe(false);
-    expect(agent.visibleLayers).toContain(layer.id);
+    expect(agent.domainKnowledge).toEqual([source.id]);
+    expect(agent.ownedLayers).toBeUndefined();
   });
 
   test('honours custom candidateDirs', async () => {

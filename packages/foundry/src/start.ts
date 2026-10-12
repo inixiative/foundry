@@ -25,7 +25,6 @@ import {
   buildAgents,
   buildLayers,
   createSourceResolver,
-  DEFAULT_THREAD_DOMAINS,
   EventStream,
   Harness,
   InterventionLog,
@@ -56,7 +55,6 @@ import {
   SessionBackedProvider,
 } from './providers';
 import { ThreadLaunchSettings } from './providers/thread-launch';
-import { DOCS_ADVISE_PROMPT } from './setup/scan-docs';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
 import { BunScript } from './tools/bun-script';
@@ -497,11 +495,8 @@ const runtimeManager = new ThreadRuntimeManager({
   ),
   eventStream,
   atlasRoot,
-  // Docs warden uses the probe-validated topology-aware prompt from
-  // setup/scan-docs.ts (single source of truth for generated configs too).
-  legacyDomains: DEFAULT_THREAD_DOMAINS.map((d) =>
-    d.domain === 'docs' ? { ...d, advisePrompt: DOCS_ADVISE_PROMPT } : d,
-  ),
+  // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
+  resolveSource: sourceResolver,
   signalSinks: [memory.signalWriter()],
   // Native session lifecycle (compaction) binds per thread: central session
   // to the thread bus, auxiliaries (classifier/router/cartographer/wardens)
@@ -768,6 +763,7 @@ const viewer = await startViewer({
   assistProvider: provider,
   assistModel: config.defaults.model,
   namingProvider: flowLlm,
+  feedbackProvider: flowLlm,
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,

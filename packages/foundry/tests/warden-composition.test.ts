@@ -36,8 +36,8 @@ const warden = (): AgentSettingsConfig => ({
   provider: 'expert',
   model: 'warden-model',
   tools: false,
-  visibleLayers: ['conventions'],
-  ownedLayers: ['conventions'],
+  visibleLayers: [],
+  domainKnowledge: ['global-conventions'],
   peers: [],
   maxDepth: 1,
   enabled: true,
@@ -59,18 +59,9 @@ function config(): FoundryConfig {
     },
     'conventions-warden': warden(),
   };
-  c.layers = {
-    conventions: {
-      id: 'conventions',
-      domain: 'conventions',
-      segment: 'domain-knowledge',
-      prompt: 'Conventions',
-      sourceIds: ['global-conventions'],
-      writers: ['conventions-warden'],
-      staleness: 0,
-      enabled: true,
-    },
-  };
+  c.layers = {};
+  // Only settings compose here: no instruction files from the machine running the tests.
+  c.composition = { preset: 'none' };
   c.sources = {
     'global-conventions': {
       id: 'global-conventions',
@@ -185,7 +176,7 @@ test('an extending project Warden appends its instructions under its own heading
   expect(view.config.agents['conventions-warden']).toMatchObject({
     kind: 'decider',
     domain: 'conventions',
-    ownedLayers: ['conventions'],
+    domainKnowledge: ['global-conventions'],
     model: 'warden-model',
   });
 
@@ -212,7 +203,7 @@ test('override replaces the instructions chunk while domain knowledge still conc
   const agent = view.agents.find((a) => a.id === 'conventions-warden')!;
   expect(agent.fields.prompt).toMatchObject({ origin: 'project', strategy: 'override' });
   expect(agent.fields.domainKnowledge).toMatchObject({ origin: 'merged', strategy: 'extend' });
-  expect(view.config.layers.conventions!.sourceIds).toEqual([
+  expect(view.config.agents['conventions-warden']!.domainKnowledge).toEqual([
     'global-conventions',
     'project-conventions',
   ]);
@@ -222,8 +213,9 @@ test('override replaces the instructions chunk while domain knowledge still conc
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a script');
   const knowledge =
-    '## Global domain knowledge (conventions)\n\nGLOBAL_KNOWLEDGE: look for what exists first.\n\n## Project domain knowledge (P)\n\nPROJECT_KNOWLEDGE: this repo runs on Bun.';
-  expect(thread.stack.getLayer('conventions')!.content).toBe(knowledge);
+    '## How I work\n\nGLOBAL_KNOWLEDGE: look for what exists first.\n\n## Project CLAUDE.md\n\nPROJECT_KNOWLEDGE: this repo runs on Bun.';
+  const lib = f.manager.get(thread.id)!.domainLibrarians.get('conventions')!;
+  expect(lib.cache.content).toBe(knowledge);
   const pre = f.last('pre');
   expect(pre.messages[0]!.content).toBe('Use Bun');
   expect(pre.messages[1]!.content).toContain(knowledge);
@@ -235,7 +227,9 @@ test('override replaces the instructions chunk while domain knowledge still conc
     override: ['domainKnowledge'],
   };
   const replaced = resolveProjectView(c, 'P')!;
-  expect(replaced.config.layers.conventions!.sourceIds).toEqual(['project-conventions']);
+  expect(replaced.config.agents['conventions-warden']!.domainKnowledge).toEqual([
+    'project-conventions',
+  ]);
   expect(replaced.config.agents['conventions-warden']!.prompt).toBe(GLOBAL_RULES);
 });
 
@@ -244,7 +238,6 @@ test('without a project entry the global Warden applies unchanged', async () => 
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
   expect(view.config.agents['conventions-warden']).toEqual(c.agents['conventions-warden']!);
-  expect(view.config.layers.conventions).toEqual(c.layers.conventions!);
   expect(view.agents.find((a) => a.id === 'conventions-warden')).toMatchObject({
     scope: 'global',
     fields: { prompt: { origin: 'global', strategy: 'inherit', resolvedValue: GLOBAL_RULES } },
@@ -255,8 +248,8 @@ test('without a project entry the global Warden applies unchanged', async () => 
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a script');
   expect(f.last('pre').messages[0]!.content).toBe(GLOBAL_RULES);
-  expect(thread.stack.getLayer('conventions')!.content).toBe(
-    'GLOBAL_KNOWLEDGE: look for what exists first.',
+  expect(f.manager.get(thread.id)!.domainLibrarians.get('conventions')!.cache.content).toBe(
+    '## How I work\n\nGLOBAL_KNOWLEDGE: look for what exists first.',
   );
 });
 
@@ -274,9 +267,6 @@ test('project agents are standalone or extend a global agent; nothing in between
       domainKnowledge: ['project-conventions'],
     },
   };
-  c.projects.P!.layers = { conventions: { sourceIds: { append: ['project-conventions'] } } };
-  expect(() => validateConfig(c)).toThrow('remove project.layers.conventions.sourceIds');
-  c.projects.P!.layers = undefined;
   // A project-local version under another id supersedes its parent in that project.
   c.projects.P!.agents = { 'p-conventions': { extends: 'conventions-warden', prompt: 'Use Bun' } };
   const superseded = resolveProjectView(c, 'P')!.config;
@@ -285,7 +275,6 @@ test('project agents are standalone or extend a global agent; nothing in between
     id: 'p-conventions',
     domain: 'conventions',
   });
-  expect(superseded.layers.conventions!.writers).toEqual(['p-conventions']);
   expect(configuredExperts(superseded).experts.map((e) => e.agentId)).toEqual(['p-conventions']);
   // A standalone entry is a full definition.
   c.projects.P!.agents = { 'conventions-warden': { ...warden(), prompt: 'ONLY_P' } };
@@ -437,19 +426,7 @@ test('a hand edit to settings.json is versioned as a file edit and applied', asy
 
 test('ambiguous or unbuildable project agents are refused before they are saved', () => {
   const c = config();
-  c.agents['docs-warden'] = {
-    ...warden(),
-    id: 'docs-warden',
-    domain: 'docs',
-    visibleLayers: ['docs'],
-    ownedLayers: ['docs'],
-  };
-  c.layers.docs = {
-    ...c.layers.conventions!,
-    id: 'docs',
-    domain: 'docs',
-    writers: ['docs-warden'],
-  };
+  c.agents['docs-warden'] = { ...warden(), id: 'docs-warden', domain: 'docs' };
   // An extension may not take another global agent's id.
   c.projects.P!.agents = { 'docs-warden': { extends: 'conventions-warden', prompt: 'x' } };
   expect(() => validateConfig(c)).toThrow('names another agent');
@@ -463,7 +440,7 @@ test('ambiguous or unbuildable project agents are refused before they are saved'
   c.projects.P!.agents = {
     'conventions-warden': {
       extends: 'conventions-warden',
-      ownedLayers: ['docs'],
+      domain: 'docs',
     } as unknown as AgentSettingsConfig,
   };
   expect(() => validateConfig(c)).toThrow('cannot be set on an extension');
