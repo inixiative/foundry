@@ -317,8 +317,6 @@ function createProvider(config: FoundryConfig): {
       const sessionAdapter = new CodexSessionAdapter({
         store: sessionStore,
         authentication,
-        // Codex CLI 0.155 dropped `codex mcp-server`; the app-server is the native session protocol.
-        engine: config.defaults.codexEngine ?? 'app-server',
         ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
           model: config.defaults.model,

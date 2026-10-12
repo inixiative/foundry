@@ -63,7 +63,6 @@ export interface NativeSessionProfile {
     effort?: string;
     capacityId?: string;
   }>;
-  readonly engine?: 'mcp' | 'app-server';
   readonly requestedEffort?: string;
   readonly bridgeKey?: string;
   readonly requestedModel: string;
@@ -663,7 +662,6 @@ export class SessionBackedProvider implements LLMProvider {
         observedModel: nativeModel,
         requestedMaxTurns: maxTurns,
         ...(profile?.transportMode ? { transportMode: profile.transportMode } : {}),
-        ...(profile?.engine ? { engine: profile.engine } : {}),
         ...(profile?.requestedEffort ? { requestedEffort: profile.requestedEffort } : {}),
         ...(observedEffort !== undefined ? { observedEffort } : {}),
         ...(history ? { history } : {}),
@@ -927,7 +925,6 @@ export class SessionBackedProvider implements LLMProvider {
                   bindingId: constructed.bindingId,
                   transportMode: constructed.transportMode,
                   authentication: constructed.authentication,
-                  engine: constructed.engine,
                   requestedEffort: constructed.requestedEffort,
                 }
               : {}),

@@ -155,7 +155,6 @@ export function nativeBridgeSource(
           .digest('hex'),
         launch: Object.freeze({
           claudeJson: bridge.launch.claude.mcpConfigJson,
-          codexOverrides: bridge.launch.codex.configOverrides,
         }),
         check() {
           check();
