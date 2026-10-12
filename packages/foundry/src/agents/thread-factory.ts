@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TokenCounts } from '@inixiative/foundry-core';
 import {
@@ -94,23 +96,52 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
           selection: srcCfg.selection === false ? false : { ...(srcCfg.selection ?? {}) },
         });
       case 'markdown':
-        // A single markdown file (CLAUDE.md, a convention doc) is loaded whole.
-        if (srcCfg.uri.endsWith('.md'))
-          return claudemdSource(
-            srcCfg.id,
-            srcCfg.uri.startsWith('file:') ? fileURLToPath(srcCfg.uri) : srcCfg.uri,
-          );
-        // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting
-        // the full content blows the layer budget. topologySource() produces a
-        // compact H1+H2 index (~44 tokens/file) that the domain warden can
-        // reason over; file bodies get hydrated on demand.
-        return new MarkdownDocs(
+        return markdownSource(
+          srcCfg.id,
           srcCfg.uri.startsWith('file:') ? fileURLToPath(srcCfg.uri) : srcCfg.uri,
-        ).topologySource(srcCfg.id);
+          cfg,
+        );
       default:
         return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
     }
   };
+}
+
+/** A markdown file or directory at an absolute path. */
+function markdownAt(id: string, path: string): ContextSource {
+  // A single markdown file (CLAUDE.md, a convention doc) is loaded whole.
+  if (path.endsWith('.md')) return claudemdSource(id, path);
+  // A markdown directory. For non-trivial corpora (> ~3k tokens) emitting the full content blows the
+  // layer budget. topologySource() produces a compact H1+H2 index (~44 tokens/file) that the domain
+  // warden can reason over; file bodies get hydrated on demand.
+  return new MarkdownDocs(path).topologySource(id);
+}
+
+/**
+ * A markdown source. A relative path names a place in the reading thread's project (its cwd when it
+ * has no project), never the daemon's working directory: unbound, or where the project has no such
+ * path, it reads nothing. The project is resolved on every load, so a later project assignment holds.
+ */
+export function markdownSource(id: string, path: string, cfg: FoundryConfig): ContextSource {
+  if (isAbsolute(path)) return markdownAt(id, path);
+  const bound = (scope: OwnershipScope | undefined): ContextSource => {
+    let current: { path: string; source: ContextSource } | undefined;
+    return {
+      id,
+      bind: (next) => bound(next),
+      async load(hint) {
+        const root =
+          (scope?.projectId ? cfg.projects?.[scope.projectId]?.path : undefined) ?? scope?.cwd;
+        if (!root) return '';
+        const resolved = resolvePath(root, path);
+        if (!existsSync(resolved)) return '';
+        if (current?.path !== resolved)
+          current = { path: resolved, source: markdownAt(id, resolved) };
+        return current.source.load(hint);
+      },
+    };
+  };
+  return bound(undefined);
 }
 
 /** The main thread's delivered slots: those an enabled `instructions` source returns. */
@@ -684,6 +715,8 @@ function buildAgent(
                 ...opts,
                 nativeObservation,
                 threadId: meta?.threadId,
+                // The native session runs where the thread works, never in the daemon's directory.
+                cwd: meta?.cwd,
                 toolCwd: meta?.cwd,
                 // Memory tools read and write within the dispatching thread's ownership.
                 toolScope: meta?.threadId

@@ -253,8 +253,14 @@ test('real SQL failure rolls back candidate/event and preserves completed output
       .learningHistory('owned')
       .some((row) => (row.signal.content as any).decision === 'write-failed'),
   ).toBe(true);
-  const replacement = f.factory.create('owned', { projectId: 'P' });
-  expect(replacement.disposed).toBe(true); // replacement is not an implicit storage repair/retry
+  // Learning is withheld; the thread keeps working and nothing new commits.
+  expect(f.runtime.disposed).toBe(false);
+  expect((await f.thread.dispatch('worker', 'Keep working')).output).toBe(
+    'Completed verified work',
+  );
+  await f.runtime.learningSettled();
+  expect(f.store.knowledge('owned')).toBeUndefined();
+  expect(f.knowledge.revision).toBe(0);
 });
 
 test('durable success followed by publication failure is reconciliation-needed, never unsaved or replayed', async () => {
@@ -270,6 +276,25 @@ test('durable success followed by publication failure is reconciliation-needed, 
   expect(f.persistence.inspect('owned')).toMatchObject({ status: 'reconciliation-needed' });
   expect(f.calls).toHaveLength(1);
   expect(f.inputs).toHaveLength(1);
+});
+
+test('a publication that fails once is republished from the journal without disposing the thread', async () => {
+  const held = deferred<string>();
+  const f = fixture(() => held.promise);
+  await f.thread.dispatch('worker', 'Work');
+  const set = f.knowledge.layer.set.bind(f.knowledge.layer);
+  let failures = 1;
+  f.knowledge.layer.set = (...args: Parameters<typeof set>) => {
+    if (failures-- > 0) throw Error('publication observer failed once');
+    return set(...args);
+  };
+  held.resolve(answer());
+  await f.runtime.learningSettled();
+  await tick();
+  await Bun.sleep(5);
+  expect(f.runtime.disposed).toBe(false);
+  expect(f.knowledge.content).toBe(fact);
+  expect(f.persistence.inspect('owned')).toMatchObject({ status: 'durable' });
 });
 
 test('terminal at the hard boundary latches closed before candidate validation and never drains queued work', async () => {
@@ -426,7 +451,7 @@ test('a real layer mutation observer failure preserves durable commit and record
     'original mutation observer error',
   );
   expect(f.inputs).toHaveLength(1);
-  expect(f.runtime.disposed).toBe(true);
+  expect(f.runtime.disposed).toBe(false);
 });
 
 test('a foreign owner change during review cannot commit and does not adopt the old queue', async () => {
