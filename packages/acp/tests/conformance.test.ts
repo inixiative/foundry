@@ -50,7 +50,7 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
     protocolVersion: 1,
     agentInfo: { name: 'foundry', title: 'Foundry' },
     agentCapabilities: {
-      loadSession: false,
+      loadSession: true,
       sessionCapabilities: { resume: {} },
       promptCapabilities: { image: false, audio: false, embeddedContext: true },
     },
@@ -155,7 +155,7 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
   await restarted.agent.request('initialize', PASEO_INITIALIZE);
   expect(
     await restarted.agent.request('session/resume', { sessionId, cwd, mcpServers: [] }),
-  ).toEqual({});
+  ).toMatchObject({ modes: { currentModeId: 'default' } });
   const resumedBefore = f.attempts.length;
   const resumed = restarted.agent.request('session/prompt', {
     sessionId,

@@ -1216,6 +1216,13 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             failed: report.failed,
             findings: report.findings.length,
             critical: report.critical.length,
+            // What the Wardens said: a comment on the tool call (shown to hosts), never a block.
+            notes: report.findings.slice(0, 16).map((finding) => ({
+              severity: finding.severity,
+              description: finding.description.slice(0, 500),
+              ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
+              ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
+            })),
             elapsed: report.elapsed,
             requests: requestsJournal(),
             requestJournal: requestJournalStates(),

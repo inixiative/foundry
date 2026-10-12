@@ -36,14 +36,16 @@ test('streamed send: accepted before text, owned activity separate from final, t
     );
     state = await f.snapshot();
     expect(state.turns[0].content).toBe('');
-    expect(JSON.stringify(state)).not.toContain('PRIVATE_REASONING');
+    // Thinking is live display only (FOUNDRY-ACP slice 2): a thought row, never content or journal.
+    expect(state.turns[0].activity.find((x: any) => x.kind === 'thought')?.text).toBe(
+      'PRIVATE_REASONING',
+    );
     expect(state.turns[0].activity.some((x: any) => x.toolName === 'Bash')).toBe(true);
-    // The sender's own open stream carried the same activity as it happened, never the private reasoning.
+    // The sender's own open stream carried the same activity as it happened.
     const live = turn.client.data(`thread:${f.thread.id}`);
     expect(
       live.some((x) => x.payload.kind === 'activity' && x.payload.row.text === 'PUBLIC_PROGRESS'),
     ).toBe(true);
-    expect(JSON.stringify(live)).not.toContain('PRIVATE_REASONING');
     a.finish();
     expect((await turn.done).type).toBe('done');
     state = await f.snapshot();
@@ -55,6 +57,9 @@ test('streamed send: accepted before text, owned activity separate from final, t
         .localStore!.nativeHistory(f.thread.id, 'external')
         .some((e) => e.kind === 'tool_use'),
     ).toBe(true);
+    expect(JSON.stringify(f.viewer.localStore!.turnDetail(f.thread.id, 'external'))).not.toContain(
+      'PRIVATE_REASONING',
+    );
     expect(f.attempts).toHaveLength(1);
   } finally {
     await f.close();

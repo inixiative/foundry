@@ -4,6 +4,9 @@
  * through the daemon's API (the viewer's own routes and data streams).
  */
 
+export type { ActionPrompt } from '@inixiative/foundry-core';
+export type { MessageSummary } from '../persistence/local-session-store';
+export type { ClientMcpServer, ThreadLaunchPatch } from '../providers/thread-launch';
 export type { TurnTerminal } from '../viewer/data-streams';
 export type { LiveActivity, StreamBufferSnapshot, TurnAppend } from '../viewer/stream-buffer';
 export { DAEMON_LABEL, daemonDomain, daemonPlistPath, daemonTarget, startDaemon } from './daemon';
@@ -17,6 +20,7 @@ export {
   type FoundryEndpoint,
   FoundryHttpError,
   type ThreadJSON,
+  type ThreadLaunchView,
 } from './foundry-client';
 export {
   type AcpLaunch,

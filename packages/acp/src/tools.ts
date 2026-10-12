@@ -1,5 +1,5 @@
 import { isAbsolute, join } from 'node:path';
-import type { ToolCallLocation, ToolKind } from '@agentclientprotocol/sdk';
+import type { PlanEntry, ToolCallLocation, ToolKind } from '@agentclientprotocol/sdk';
 
 const KINDS: Record<string, ToolKind> = {
   Read: 'read',
@@ -60,4 +60,36 @@ export function toolTitle(
     if (typeof value === 'string' && value.trim()) return `${name}: ${clip(value.trim())}`;
   }
   return name;
+}
+
+/** The executor's own plan tools: Claude `TodoWrite {todos}`, Codex `update_plan {plan}`. */
+export const PLAN_TOOLS = new Set(['TodoWrite', 'update_plan']);
+
+const PLAN_STATUS: Record<string, PlanEntry['status']> = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  inProgress: 'in_progress',
+  completed: 'completed',
+};
+
+/** ACP plan entries from a plan tool's input, or null when it carries none. */
+export function planEntries(
+  toolName: string,
+  input: Readonly<Record<string, unknown>> | undefined,
+): PlanEntry[] | null {
+  if (!input || !PLAN_TOOLS.has(toolName)) return null;
+  const [list, label] = toolName === 'TodoWrite' ? [input.todos, 'content'] : [input.plan, 'step'];
+  if (!Array.isArray(list)) return null;
+  return list.flatMap((item) => {
+    const entry = item as Record<string, unknown> | null;
+    const content = entry?.[label];
+    if (typeof content !== 'string' || !content.trim()) return [];
+    return [
+      {
+        content,
+        priority: 'medium' as const,
+        status: PLAN_STATUS[String(entry?.status)] ?? 'pending',
+      },
+    ];
+  });
 }

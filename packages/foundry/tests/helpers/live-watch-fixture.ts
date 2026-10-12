@@ -1,6 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ToolGate } from '@inixiative/agent-session';
 import {
+  ActionQueue,
   ContextStack,
   EventStream,
   Harness,
@@ -10,8 +12,9 @@ import {
 import { ProjectRegistry } from '../../src/agents/project';
 import { buildAgents, ThreadFactory } from '../../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../../src/agents/thread-runtime';
-import type { SessionAdapter } from '../../src/providers/session-adapter';
+import type { CreateSessionOpts, SessionAdapter } from '../../src/providers/session-adapter';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
+import { ThreadLaunchSettings } from '../../src/providers/thread-launch';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { connectStreams } from './data-stream';
@@ -32,7 +35,11 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     sessions: any[] = [],
     interrupts: string[] = [],
     exits: string[] = [],
-    requests: Promise<unknown>[] = [];
+    requests: Promise<unknown>[] = [],
+    created: CreateSessionOpts[] = [];
+  const actionQueue = new ActionQueue();
+  const threadLaunch = new ThreadLaunchSettings();
+  let toolGateFor: ((threadId: string) => ToolGate | undefined) | undefined;
   let startHold = Promise.resolve(),
     releaseStart = () => {},
     closing = false;
@@ -50,9 +57,12 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
       if (!exits.includes(s.resource)) exits.push(s.resource);
       return 'released';
     },
-    async createSession() {
+    async createSession(opts) {
       const listeners = new Set<(e: any) => void>();
+      created.push(opts);
       const s: any = {
+        /** The thread's tool gate, as a real adapter registers it on the native session. */
+        toolGate: opts.toolGate,
         resource: `controlled-resource-${sessions.length + 1}`,
         externalSessionId: `controlled-native-${sessions.length + 1}`,
         admissionProtocol: 'prewrite-v1',
@@ -168,6 +178,8 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     id: 'controlled-native',
     adapter,
     defaultModel: 'fable',
+    launch: threadLaunch,
+    toolGate: (threadId) => toolGateFor?.(threadId),
   });
   const config = starterConfig(provider.id, 'fable');
   config.setupComplete = true;
@@ -228,7 +240,10 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     configStore,
     configDir: dir,
     tokenTracker: new TokenTracker(),
+    actionQueue,
+    threadLaunch,
   });
+  toolGateFor = viewer.toolGate;
   /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
   const send = (id: string, stream = true) => {
     const client = connectStreams(viewer);
@@ -252,6 +267,9 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
   };
   return {
     viewer,
+    actionQueue,
+    threadLaunch,
+    created,
     manager,
     events,
     thread,

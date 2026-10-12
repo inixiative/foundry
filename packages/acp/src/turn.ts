@@ -1,7 +1,8 @@
 import type { SessionUpdate, StopReason, ToolCallStatus } from '@agentclientprotocol/sdk';
 import type { LiveActivity, StreamBufferSnapshot } from '@inixiative/foundry/client';
 import { type ContextSummary, contextSummary } from './context';
-import { toolKind, toolLocations, toolTitle } from './tools';
+import { guardComments } from './guard';
+import { planEntries, toolKind, toolLocations, toolTitle } from './tools';
 
 /** How long a finished turn seen only in a snapshot waits for its own terminal before settling from the snapshot. */
 const TERMINAL_GRACE_MS = 1_000;
@@ -36,6 +37,11 @@ export class TurnProjection {
   private summary: ContextSummary | null = null;
   private readonly text = new Map<string, string>();
   private readonly tools = new Map<string, LiveActivity['state']>();
+  private readonly thoughts = new Map<string, string>();
+  /** Native call id → the ACP tool call id shown for it, for permission requests. */
+  private readonly calls = new Map<string, string>();
+  private readonly guards = new Set<string>();
+  private lastPlan = '';
   private fallback: ReturnType<typeof setTimeout> | null = null;
   private closing: Promise<void> | null = null;
   private resolve!: (reason: StopReason) => void;
@@ -105,10 +111,29 @@ export class TurnProjection {
     this.emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
   }
 
-  /** A `flow:<threadId>` turn: its sealed route/advice rows complete the context item. */
+  /** The ACP tool call already shown for a native call, if any. */
+  toolCallFor(callId: string | undefined): string | undefined {
+    return callId ? this.calls.get(callId) : undefined;
+  }
+
+  /** A `flow:<threadId>` turn: its sealed route/advice rows complete the context item; Warden notes become comments. */
   flowTurn(turn: unknown): void {
-    if (this.settled || this.contextClosed) return;
+    if (this.settled) return;
     if ((turn as { turnId?: unknown } | null)?.turnId !== this.turnId) return;
+    for (const guard of guardComments(turn)) {
+      if (this.guards.has(guard.id)) continue;
+      this.guards.add(guard.id);
+      this.emit({
+        sessionUpdate: 'tool_call',
+        toolCallId: `foundry-guard:${guard.id}`,
+        title: 'Foundry: guard',
+        kind: 'think',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: guard.text } }],
+        _meta: { foundry: { threadId: this.threadId, turnId: this.turnId, guard: guard.meta } },
+      });
+    }
+    if (this.contextClosed) return;
     const summary = contextSummary(turn);
     if (!summary) return;
     this.summary = summary;
@@ -121,6 +146,25 @@ export class TurnProjection {
 
   activity(row: LiveActivity, appended?: string): void {
     if (this.settled) return;
+    if (row.kind === 'thought') {
+      const prior = this.thoughts.get(row.id) ?? '';
+      const next = row.text ?? '';
+      this.thoughts.set(row.id, next);
+      const text = appended ?? (next.startsWith(prior) ? next.slice(prior.length) : '');
+      if (text)
+        this.emit({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } });
+      return;
+    }
+    // The executor's plan tool is the host's plan, not a tool call.
+    const plan = row.kind === 'tool' ? planEntries(row.toolName ?? '', row.input) : null;
+    if (plan) {
+      const key = JSON.stringify(plan);
+      if (key !== this.lastPlan) {
+        this.lastPlan = key;
+        this.emit({ sessionUpdate: 'plan', entries: plan });
+      }
+      return;
+    }
     if (row.kind === 'text') {
       const prior = this.text.get(row.id) ?? '';
       const next = row.text ?? '';
@@ -134,6 +178,7 @@ export class TurnProjection {
     if (known === undefined) {
       this.output();
       this.tools.set(row.id, row.state);
+      if (row.callId) this.calls.set(row.callId, row.id);
       this.emit({
         sessionUpdate: 'tool_call',
         toolCallId: row.id,

@@ -1,4 +1,23 @@
+import type { MessageSummary } from '../persistence/local-session-store';
+import type { ThreadLaunchPatch } from '../providers/thread-launch';
 import type { threadToJSON } from '../viewer/http-helpers';
+
+/** GET /api/threads/:id/launch. */
+export interface ThreadLaunchView {
+  threadId: string;
+  provider: string;
+  permissionMode: string | null;
+  model: string;
+  modelOverride: string | null;
+  effort: string | null;
+  mcpServers: Array<{ name: string; type: 'stdio' | 'http' }>;
+  revision: number;
+  options: {
+    permissionModes: readonly string[];
+    models: Array<{ id: string; label: string }>;
+    efforts: readonly string[];
+  };
+}
 
 /** Where a local client reaches the daemon: its loopback origin and, while a tunnel is active, the bearer. */
 export interface FoundryEndpoint {
@@ -100,6 +119,57 @@ export class FoundryClient {
       'GET',
       `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/detail`,
     );
+  }
+
+  /** One page of the thread's journalled history (newest page first; `before` pages older). */
+  history(
+    threadId: string,
+    before?: string,
+  ): Promise<{
+    messages: MessageSummary[];
+    hasMore: boolean;
+    nextCursor: string | null;
+  }> {
+    const query = new URLSearchParams({ limit: '200', ...(before ? { before } : {}) });
+    return this.request('GET', `/api/threads/${encodeURIComponent(threadId)}/history?${query}`);
+  }
+
+  /** What hosts chose for the thread's executor session, and the options. */
+  launch(threadId: string): Promise<ThreadLaunchView> {
+    return this.request('GET', `/api/threads/${encodeURIComponent(threadId)}/launch`);
+  }
+
+  updateLaunch(threadId: string, patch: ThreadLaunchPatch): Promise<ThreadLaunchView> {
+    return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}/launch`, patch);
+  }
+
+  /** Answer a pending prompt; `always` keeps the answer for this tool in this thread. */
+  resolvePrompt(
+    promptId: string,
+    action: 'approved' | 'rejected',
+    always = false,
+  ): Promise<{ ok: boolean }> {
+    return this.request('POST', `/api/prompts/${encodeURIComponent(promptId)}/resolve`, {
+      action,
+      ...(always ? { always: true } : {}),
+    });
+  }
+
+  /** Record a correction against a turn's span: it reaches the thread's feedback capture. */
+  intervene(
+    threadId: string,
+    body: {
+      traceId: string;
+      spanId: string;
+      correction: string;
+      reason?: string;
+      operator: string;
+    },
+  ): Promise<{ id: string }> {
+    return this.request('POST', `/api/threads/${encodeURIComponent(threadId)}/interventions`, {
+      actual: null,
+      ...body,
+    });
   }
 
   interrupt(threadId: string, turnId: string): Promise<{ outcome: string }> {

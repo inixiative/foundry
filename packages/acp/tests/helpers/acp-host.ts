@@ -5,6 +5,8 @@ import {
   type ClientConnection,
   client,
   ndJsonStream,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
   type SessionNotification,
   type SessionUpdate,
 } from '@agentclientprotocol/sdk';
@@ -61,7 +63,14 @@ export function spawnFoundryAcp(launchPath: string) {
     },
   });
   const updates = new Map<string, SessionUpdate[]>();
+  const permissions: Array<{ request: RequestPermissionRequest; signal: AbortSignal }> = [];
+  let answer: (request: RequestPermissionRequest) => Promise<RequestPermissionResponse> = () =>
+    new Promise(() => {});
   const connection: ClientConnection = client({ name: 'conformance-host' })
+    .onRequest('session/request_permission', (ctx) => {
+      permissions.push({ request: ctx.params, signal: ctx.signal });
+      return answer(ctx.params);
+    })
     .onNotification('session/update', (ctx) => {
       const notification = ctx.params as SessionNotification;
       const list = updates.get(notification.sessionId) ?? [];
@@ -71,7 +80,15 @@ export function spawnFoundryAcp(launchPath: string) {
     .connect(ndJsonStream(toAgent, proc.stdout as ReadableStream<Uint8Array>));
   return {
     agent: connection.agent,
-    updates: (sessionId: string) => updates.get(sessionId) ?? [],
+    /** Turn updates; the session's command list is under `all`. */
+    updates: (sessionId: string) =>
+      (updates.get(sessionId) ?? []).filter((u) => u.sessionUpdate !== 'available_commands_update'),
+    all: (sessionId: string) => updates.get(sessionId) ?? [],
+    permissions,
+    /** How the host answers `session/request_permission` (default: never). */
+    answerPermissions(fn: typeof answer) {
+      answer = fn;
+    },
     stderr: () => stderr,
     async close() {
       connection.close();
