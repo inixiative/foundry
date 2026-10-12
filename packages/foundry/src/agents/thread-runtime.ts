@@ -1005,6 +1005,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         ctx.annotations.heldLayers = Object.fromEntries(
           this.librarian.state.injectedLayers.map((record) => [record.id, record.hash]),
         );
+        const ledgerEpoch = this.librarian.ledgerEpoch;
         const result = await next();
 
         // Historical phase record carried on the turn's own result meta (the journalled agent message):
@@ -1031,9 +1032,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const session = artifact?.providerMessages ? artifact.sessionDelivery : undefined;
         const commitSession = async () => {
           if (!session) return undefined;
+          // Compacted while the turn ran: what rode in its message may be summarized away. Only the
+          // system prompt (base) is still held for certain.
+          const compacted = this.librarian.ledgerEpoch !== ledgerEpoch;
           if (session.session === 'started') this.librarian.clearInjectionLedger();
           return flow.commitDelivery({
-            layers: [...(session.session === 'started' ? session.base : []), ...session.sent],
+            layers: [
+              ...(session.session === 'started' ? session.base : []),
+              ...(compacted ? [] : session.sent),
+            ],
           });
         };
         if (prepared && plan && artifact?.providerMessages && artifact.layers) {
@@ -1087,9 +1094,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             });
           const committed =
             (await commitSession()) ??
+            // A stateless provider received every assembled part; the ledger keys parts by their own hash.
             (layers.length > 0
               ? await flow.commitDelivery({
-                  layers: layers.map((l) => ({ id: l.id, hash: l.deliveredHash })),
+                  layers: (artifact.standingParts ?? []).filter((part) =>
+                    layers.some((l) => l.id === part.id),
+                  ),
                 })
               : []);
           const delivery: DeliveryRecord = {

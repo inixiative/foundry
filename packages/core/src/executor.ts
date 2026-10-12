@@ -136,6 +136,7 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
       executorContext: context,
       providerMessages,
       ...(sessionDelivery ? { sessionDelivery } : {}),
+      standingParts: delivery.standing.map(({ id, hash }) => ({ id, hash })),
       layers,
       ...(plan !== undefined ? { plan } : {}),
     });

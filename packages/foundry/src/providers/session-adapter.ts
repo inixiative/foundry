@@ -273,8 +273,9 @@ export interface SessionAdapter {
   readonly runtime: string;
   /**
    * Where a session's base context lives. "system-prompt" (Claude `--append-system-prompt`) is
-   * re-sent with every request and survives compaction; "first-turn" is prepended to the first
-   * message and can be compacted away. Absent: "first-turn".
+   * re-sent with every request and survives compaction, so warm-cache delivery puts the standing
+   * context there. "first-turn" (Codex) is only a prefix of the first message, so delivery sends the
+   * standing context in its own turn messages instead. Absent: "first-turn".
    */
   readonly baseContextPlacement?: 'system-prompt' | 'first-turn';
 

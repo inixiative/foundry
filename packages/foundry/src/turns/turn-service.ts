@@ -134,8 +134,15 @@ function configureHarness(harness: Harness, configStore: ConfigStore): void {
 function buildInjectionProvenance(
   artifact: InjectionArtifact | undefined,
 ): Array<{ id: string; hash: string; tokens: number }> | undefined {
+  // A session provider delivered only what its session lacked (and, once, its system prompt).
+  const session = artifact?.sessionDelivery;
+  const delivered = session
+    ? new Set(
+        [...session.sent, ...(session.session === 'started' ? session.base : [])].map((p) => p.id),
+      )
+    : undefined;
   const records = (artifact?.layers ?? [])
-    .filter((layer) => layer.included)
+    .filter((layer) => layer.included && (!delivered || delivered.has(layer.id)))
     .map((layer) => ({
       id: layer.id,
       hash: layer.hash,

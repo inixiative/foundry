@@ -220,8 +220,8 @@ Present in core but **not wired anywhere** (exported only): `HookRegistry` with 
 7. **commitDelivery** runs only if the executor produced `meta.injection.providerMessages` (evidence of delivery), emitting `context_loaded` per layer so the Librarian ledger reflects what was delivered (`thread-runtime.ts:1016-1074`, `flow-orchestrator.ts:930-943`). Assessed-vs-delivered revision drift is recorded per layer (`relation: assessed | advanced | inconsistent | unknown`).
 
 Important mechanism facts:
-- **The ledger does not reduce tokens.** The header comment says so explicitly: "The executor assembles every warm layer on every turn … `skipped` is informational for stateless providers" (`flow-orchestrator.ts:19-25`). The router's layer selection influences warming/focus and the decoration text, not which layers reach the worker.
-- **How context reaches a native worker.** The executor sends `[system: <assembled context + agent prompt>, user: <payload>]` (`thread-factory.ts:635-644`). For Claude Code / Codex, `SessionBackedProvider` flattens that into one text turn `# System Context … # User Message …` (`providers/session-backed.ts:885-899`) and `send()`s it into the persistent native session **every turn**. So the full context is re-sent as user-turn text each message; it is not `--append-system-prompt`.
+- **The ledger now reduces tokens for native sessions** (2026-10-12, FLOW.md "Delivery"). A native session starts with every standing layer in its system prompt, and later turns carry only layers whose hash the ledger does not hold, plus the decoration. For stateless API providers `skipped` stays informational. The router's layer selection influences warming/focus and the decoration text, not which layers reach the worker.
+- **How context reaches a native worker.** The executor sends `[system: <assembled context + agent prompt>, user: <payload>]` (`thread-factory.ts:635-644`). For Claude Code / Codex, `SessionBackedProvider` flattens that into one text turn `# System Context … # User Message …` (`providers/session-backed.ts:885-899`) and `send()`s it into the persistent native session. Since 2026-10-12 the standing layers go once into `--append-system-prompt` and each turn's `# System Context` carries only changed layers and the decoration (`providers/session-delivery.ts`).
 - Pre-message failure is non-fatal: the turn proceeds with no decoration (`thread-runtime.ts:993-995`).
 
 #### F4. Decision roles: Cartographer, Wardens, Librarian — **solid (Cartographer, Wardens advise/guard/review), partial (Librarian)**
@@ -394,7 +394,7 @@ Mapped to what Foundry consumes today:
 
 | Need | What Foundry does today | What the foreign runner must expose |
 |---|---|---|
-| **Pre-turn context injection** (required) | Re-sends the whole assembled context + decoration as `# System Context` text inside the user turn (`session-backed.ts:885-899`) | A hook that runs **before** a user turn is sent, can await ~2–7 s, and can prepend text (or set per-turn system/developer instructions). Must carry a stable turn id (`messageId`) so plan, delivery and tool evidence correlate. |
+| **Pre-turn context injection** (required) | Standing layers once in the session's system prompt; each turn sends the decoration plus changed layers as `# System Context` text (FLOW.md "Delivery") | A hook that runs **before** a user turn is sent, can await ~2–7 s, and can prepend text (or set per-turn system/developer instructions). Must carry a stable turn id (`messageId`) so plan, delivery and tool evidence correlate. |
 | **Delivery acknowledgment** | `result.meta.injection.providerMessages` gates `commitDelivery` (`thread-runtime.ts:1018`) | A confirmation that the turn was actually submitted with the injected text (else the ledger stays uncommitted, which is safe). |
 | **Turn observation** (required for guards + learning) | Native tool events → `tool_observation {tool, input, output?, filesAffected?, dispatchId, callId}`; turn completion → `dispatch` signal with output | A per-turn event stream: tool call + tool result (name, input, output, files touched), assistant final text, turn completed/failed — each tagged with the turn id. PostToolUse-level is enough; streaming deltas optional. |
 | **Session reset / compaction** | `session_compacted` signal clears the injection ledger (`flow-orchestrator.ts:1114-1126`) | An event when the runner compacts, clears, forks or replaces the underlying session, so the next turn re-delivers everything. |
@@ -416,7 +416,7 @@ Not needed from the foreign runner: model choice for decisions, auth for decisio
    - Neither FLOW.md's "push immediately via MCP" nor HARNESS_LIFECYCLE's mid-turn push exists.
    - `permissionMiddleware`, `CapabilityGate`, `HookRegistry` and `ActionQueue` are present but not wired.
 2. **The "free" memory guard is an LLM call on every tool.** It sets `programmaticGuard: true` but has no `guardFn` (`thread-runtime.ts:178,820`; `domain-librarian.ts:816-820,1191-1245`).
-3. **Full context is re-sent every turn as user-turn text** (`pf/providers/session-backed.ts:885-899`).
+3. ~~Full context is re-sent every turn as user-turn text~~ Fixed 2026-10-12: warm-cache delivery (FLOW.md "Delivery", `pf/providers/session-delivery.ts`).
    - The injection ledger's `skipped` is informational only (`flow-orchestrator.ts:19-25`).
    - The router's layer choice does not reduce what the worker receives.
    - agent-session's `onBeforeSend` / `baseContext` (`--append-system-prompt`) are unused.

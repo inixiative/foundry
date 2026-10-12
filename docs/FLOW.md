@@ -458,15 +458,18 @@ A thread's context has three parts, and each reaches a native session (Claude Co
 | Part | Examples | Delivered |
 |---|---|---|
 | Stable | composed instructions (`instructions` layer), conventions, the executor's own prompt | once, in the session's base context |
-| Slowly changing | Warden thread knowledge, memory, thread-state; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
+| Slowly changing | Warden thread knowledge, memory; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
 | Per turn | Cartographer routing, Warden advice (the decoration) | every turn, with the user message |
+| Thread-state | the Librarian's layer, which carries timestamps and the ledger itself | as a delta on nearly every turn, because its hash changes nearly every turn |
 
-**The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions) at its current hash. It never receives the same revision twice in its conversation. The mechanics:
+**The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions as one `agent` part) at its current hash, and the latest version in its context is the current one. Each part is labelled `## Context: <id>`, in the system prompt and in a delta. The mechanics:
 
-- **Session start.** The provider starts the session with every standing part as its base context. On Claude this is `--append-system-prompt`, a system prompt Claude re-sends and caches on every request. On Codex the base is prepended to the first turn. The turn's report says `started`, and the delivery ledger is reset to exactly the base.
+- **Session start.** On Claude the provider starts the session with every standing part as its system prompt (`--append-system-prompt`), which Claude re-sends and caches on every request. Codex has no system prompt, so its first delivered turn carries every part in its message, and so does a retry when that first send failed. The turn's report says `started`, and the delivery ledger is reset to what the session then holds.
+- **Resume.** A session that resumed a native conversation may already hold older versions of some parts as messages. Its first turn sends every part once, so the latest version in context is the current one.
 - **Later turns.** The executor passes the ledger (`SessionDelivery.held`). The provider sends only the parts whose hash the session does not hold, each headed "current version; it replaces any earlier version", plus the per-turn text. The report lists what was `sent`, and `commitDelivery` records exactly that.
-- **Compaction** (`session_compacted`) clears the ledger. What lived only in the conversation is sent again. A Claude system prompt survives compaction, so base parts whose hash is unchanged are not re-sent. A Codex first-turn base does not survive it, so everything is sent again.
+- **Compaction** (`session_compacted`) clears the ledger. What lived only in the conversation is sent again. A Claude system prompt survives compaction, so parts it holds at an unchanged hash are not re-sent. Without a system prompt, everything is sent again. A compaction while a turn runs leaves that turn's sent parts out of the ledger.
 - **Reset, resume, relaunch.** Any new native session process (a new thread, a daemon restart that resumes the binding, a host launch change) starts again from the current layers. It reports `started`, and the ledger follows.
+- **No retraction.** A layer that stops being included (a per-dispatch filter, a layer gone cold) stays in what the session already holds until the session restarts or compacts.
 - **Layer change.** A changed layer (a settings edit, an edited CLAUDE.md, a learned interpretation) is a new hash, and it is delivered once as a delta.
 
 The provider (`providers/session-delivery.ts`) decides what to send, the Librarian's ledger is the record, and the turn's `DeliveryRecord.session` and `InjectionArtifact.sessionDelivery` show what was delivered. `providerMessages` stays what the executor handed the provider. Stateless API providers still receive every warm layer on every turn.

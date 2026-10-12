@@ -353,6 +353,13 @@ export class Librarian {
     this._state.inContext = this._state.injectedLayers.map((r) => r.id);
   }
 
+  private _ledgerEpoch = 0;
+
+  /** Advances each time the ledger is cleared, so a turn can tell its session was compacted while it ran. */
+  get ledgerEpoch(): number {
+    return this._ledgerEpoch;
+  }
+
   /**
    * Clear the injection ledger — used when the session's context is reset
    * (e.g., Claude Code auto-compaction, Codex session restart). After a
@@ -363,6 +370,7 @@ export class Librarian {
    * invalidation reporting).
    */
   clearInjectionLedger(): string[] {
+    this._ledgerEpoch++;
     const cleared = this._state.injectedLayers.map((r) => r.id);
     this._state.injectedLayers = [];
     this._state.inContext = [];

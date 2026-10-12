@@ -671,7 +671,11 @@ function buildAgent(
                 ...meta.delivery,
                 standing: [
                   ...meta.delivery.standing,
-                  standingPart(`agent:${id}`, systemParts.slice(1).join('\n\n')),
+                  // One slot for the executor's instructions: switching agents replaces it.
+                  standingPart(
+                    'agent',
+                    [`Active agent: ${id}`, ...systemParts.slice(1)].join('\n\n'),
+                  ),
                 ],
               }
             : undefined;

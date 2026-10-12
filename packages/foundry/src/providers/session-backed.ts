@@ -453,7 +453,8 @@ export class SessionBackedProvider implements LLMProvider {
           : {}),
       },
       source,
-      delivery
+      // Only a system prompt holds a base across turns and compaction; elsewhere the first turn carries it.
+      delivery && this._adapter.baseContextPlacement === 'system-prompt'
         ? {
             text: baseContextOf(delivery),
             parts: delivery.standing.map(({ id, hash }) => ({ id, hash })),
@@ -478,13 +479,13 @@ export class SessionBackedProvider implements LLMProvider {
     calls.add(call);
     const bridge = this._bridges.get(session);
     bridge?.check();
-    // Warm-cache delivery: standing context lives in the session's base context; a turn carries only
+    // Warm-cache delivery: standing context lives in the session's system prompt; a turn carries only
     // what the session does not hold, plus the per-turn context.
     const turn: SessionTurn | undefined = delivery
       ? sessionTurn(delivery, messages, {
           base: this._bases.get(session) ?? [],
           started: !this._delivered.has(session),
-          placement: this._adapter.baseContextPlacement ?? 'first-turn',
+          resumed: (this.warmProfile(threadId, cwd)?.resumedBinding ?? null) !== null,
         })
       : undefined;
     const prompt = formatMessagesForNativeSession(turn?.messages ?? messages);

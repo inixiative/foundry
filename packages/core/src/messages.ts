@@ -96,7 +96,7 @@ export interface DeliveryRecord {
     readonly assessedHash?: string;
     /** Owner revision the decorator assessed, for owner-versioned layers. */
     readonly assessedRevision?: number;
-    /** Hash the executor assembled and sent. */
+    /** Hash the executor assembled; a session provider sends only what `session` lists. */
     readonly deliveredHash: string;
     /** Owner revision of the bytes actually assembled, from the layer's own version mark at assembly. */
     readonly deliveredRevision?: number;
@@ -147,6 +147,8 @@ export interface InjectionArtifact {
   readonly providerMessages?: LLMMessage[];
   /** What a session provider delivered: its system prompt parts and the parts sent with this turn. */
   readonly sessionDelivery?: import('./session-delivery').SessionDeliveryReport;
+  /** Every standing part the executor assembled (layer with its prompt), by id and hash. */
+  readonly standingParts?: Array<import('./session-delivery').DeliveredPart>;
   readonly layers?: Array<
     LayerInstanceState & {
       id: string;

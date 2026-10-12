@@ -16,7 +16,7 @@ import {
 } from '@inixiative/foundry-core';
 import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
 import { DECISION_CONTEXT, SessionBackedProvider } from '../src/providers/session-backed';
-import { sessionTurn } from '../src/providers/session-delivery';
+import { baseContextOf, sessionTurn } from '../src/providers/session-delivery';
 import {
   domainKnowledge,
   domains,
@@ -30,12 +30,15 @@ import {
 class RecordingSession implements HarnessSession {
   readonly admissionProtocol = 'prewrite-v1' as const;
   alive = false;
-  externalSessionId: string | undefined = 'native-1';
+  /** Fresh sessions learn their native id on the first turn; a resumed one would know it at construction. */
+  externalSessionId: string | undefined;
   events: readonly SessionEvent[] = [];
   turns = 0;
   totalTokens = { input: 0, output: 0 };
   sent: string[] = [];
   fail = false;
+  /** Runs while the turn is in flight, e.g. a native compaction. */
+  during?: () => Promise<void>;
   private _attempts = new Map<string, Record<string, unknown>>();
 
   async start(): Promise<void> {
@@ -52,6 +55,7 @@ class RecordingSession implements HarnessSession {
     opts?: { onAdmission?: (attempt: unknown) => Promise<void> },
   ): Promise<SessionResult> {
     this.sent.push(message);
+    this.externalSessionId ??= 'native-1';
     if (this.fail) {
       this.fail = false;
       throw Error('send failed before admission');
@@ -68,6 +72,7 @@ class RecordingSession implements HarnessSession {
     };
     this._attempts.set(attempt.admissionId as string, attempt);
     await opts?.onAdmission?.(structuredClone(attempt));
+    await this.during?.();
     Object.assign(attempt, {
       dispatch: 'attempted',
       content: `turn ${this.turns}`,
@@ -148,12 +153,19 @@ const base = [instructionsPart, learningV1, agentPart].map(({ id, hash }) => ({ 
 const user = [{ role: 'user' as const, content: 'USER_MESSAGE' }];
 
 describe('sessionTurn', () => {
-  test('a started session holds its base context: the turn carries only the per-turn text', () => {
-    const turn = sessionTurn(delivery(learningV1, { learning: 'stale-from-old-session' }), user, {
-      base,
-      started: true,
-      placement: 'first-turn',
-    });
+  const opts = (over: Partial<{ base: typeof base; started: boolean; resumed: boolean }> = {}) => ({
+    base,
+    started: false,
+    resumed: false,
+    ...over,
+  });
+
+  test('a started session holds its system prompt: the turn carries only the per-turn text', () => {
+    const turn = sessionTurn(
+      delivery(learningV1, { learning: 'stale-from-old-session' }),
+      user,
+      opts({ started: true }),
+    );
     expect(turn.report).toEqual({ session: 'started', base, sent: [] });
     expect(turn.messages).toEqual([
       { role: 'system', content: 'ROUTING_AND_ADVICE' },
@@ -161,58 +173,64 @@ describe('sessionTurn', () => {
     ]);
   });
 
+  test('a session without a system prompt gets every part in its first turn', () => {
+    const turn = sessionTurn(delivery(), user, opts({ base: [], started: true }));
+    expect(ids(turn.report.sent)).toEqual(['instructions', 'learning', 'agent:worker']);
+    expect(turn.messages[0].content).toContain('STANDING_INSTRUCTIONS');
+  });
+
+  test('a resumed conversation may hold older versions as messages: its first turn re-sends every part', () => {
+    const turn = sessionTurn(delivery(), user, opts({ started: true, resumed: true }));
+    expect(ids(turn.report.sent)).toEqual(['instructions', 'learning', 'agent:worker']);
+    const next = sessionTurn(delivery(learningV1, {}), user, opts({ resumed: true }));
+    expect(next.report.sent).toEqual([]);
+  });
+
   test('a held session receives only the parts whose hash the ledger does not hold', () => {
     const held = Object.fromEntries(base.map((part) => [part.id, part.hash]));
-    const turn = sessionTurn(delivery(learningV2, held), user, {
-      base,
-      started: false,
-      placement: 'system-prompt',
-    });
+    const turn = sessionTurn(delivery(learningV2, held), user, opts());
     expect(ids(turn.report.sent)).toEqual(['learning']);
     expect(turn.messages[0].content).toContain('## Context: learning');
+    expect(turn.messages[0].content).toContain('it replaces any earlier version');
     expect(turn.messages[0].content).toContain('LEARNING_V2');
     expect(turn.messages[0].content).not.toContain('STANDING_INSTRUCTIONS');
     expect(turn.messages[0].content).toEndWith('ROUTING_AND_ADVICE');
   });
 
-  test('after compaction a system prompt still holds the base; a first-turn base does not', () => {
-    const kept = sessionTurn(delivery(learningV2, {}), user, {
-      base,
-      started: false,
-      placement: 'system-prompt',
-    });
-    expect(ids(kept.report.sent)).toEqual(['learning']);
-    const lost = sessionTurn(delivery(learningV2, {}), user, {
-      base,
-      started: false,
-      placement: 'first-turn',
-    });
-    expect(ids(lost.report.sent)).toEqual(['instructions', 'learning', 'agent:worker']);
+  test('after compaction the system prompt still holds its parts; without one everything is sent', () => {
+    expect(ids(sessionTurn(delivery(learningV2, {}), user, opts()).report.sent)).toEqual([
+      'learning',
+    ]);
+    expect(
+      ids(sessionTurn(delivery(learningV2, {}), user, opts({ base: [] })).report.sent),
+    ).toEqual(['instructions', 'learning', 'agent:worker']);
   });
 
   test('the ledger wins over the base: a part that changed back to its base version is sent again', () => {
-    const turn = sessionTurn(delivery(learningV1, { learning: learningV2.hash }), user, {
-      base,
-      started: false,
-      placement: 'system-prompt',
-    });
+    const turn = sessionTurn(delivery(learningV1, { learning: learningV2.hash }), user, opts());
     expect(ids(turn.report.sent)).toEqual(['learning']);
   });
 
-  test('a part that is neither in the base nor the ledger is sent; no per-turn text sends no empty block', () => {
+  test('a part in neither the base nor the ledger is sent; no per-turn text sends no empty block', () => {
     const extra = standingPart('docs', 'DOCS');
-    const turn = sessionTurn({ standing: [instructionsPart, extra], turn: '', held: {} }, user, {
-      base: [base[0]],
-      started: false,
-      placement: 'system-prompt',
-    });
+    const turn = sessionTurn(
+      { standing: [instructionsPart, extra], turn: '', held: {} },
+      user,
+      opts({ base: [base[0]] }),
+    );
     expect(ids(turn.report.sent)).toEqual(['docs']);
-    const quiet = sessionTurn({ standing: [instructionsPart], turn: '', held: {} }, user, {
-      base: [base[0]],
-      started: false,
-      placement: 'system-prompt',
-    });
+    const quiet = sessionTurn(
+      { standing: [instructionsPart], turn: '', held: {} },
+      user,
+      opts({ base: [base[0]] }),
+    );
     expect(quiet.messages).toEqual(user);
+  });
+
+  test('the system prompt labels each part the way a later delta names it', () => {
+    expect(baseContextOf(delivery())).toBe(
+      '## Context: instructions\n\nSTANDING_INSTRUCTIONS\n\n## Context: learning\n\nLEARNING_V1\n\n## Context: agent:worker\n\nAGENT_PROMPT',
+    );
   });
 });
 
@@ -225,9 +243,7 @@ describe('SessionBackedProvider warm-cache delivery', () => {
       { role: 'user' as const, content: 'first' },
     ];
     const first = await provider.complete(messages, { threadId: 't', delivery: delivery() });
-    expect(adapter.created[0].baseContext).toBe(
-      'STANDING_INSTRUCTIONS\n\nLEARNING_V1\n\nAGENT_PROMPT',
-    );
+    expect(adapter.created[0].baseContext).toBe(baseContextOf(delivery()));
     expect(adapter.sessions[0].sent[0]).toBe(
       '# System Context\n\nROUTING_AND_ADVICE\n\n# User Message\n\nfirst',
     );
@@ -247,7 +263,7 @@ describe('SessionBackedProvider warm-cache delivery', () => {
     expect(prompt).not.toContain('AGENT_PROMPT');
   });
 
-  test('a session whose first turn failed is still treated as started on the next turn', async () => {
+  test('without a system prompt the first turn carries every part, also when the first send failed', async () => {
     const adapter = new RecordingAdapter('first-turn');
     const provider = new SessionBackedProvider({ id: 'codex', adapter, defaultModel: 'm' });
     const create = adapter.createSession.bind(adapter);
@@ -259,11 +275,19 @@ describe('SessionBackedProvider warm-cache delivery', () => {
     await expect(provider.complete(user, { threadId: 't', delivery: delivery() })).rejects.toThrow(
       'send failed',
     );
+    expect(adapter.created[0].baseContext).toBeUndefined();
     const retry = await provider.complete(user, {
       threadId: 't',
       delivery: delivery(learningV1, { instructions: 'from-an-earlier-session' }),
     });
-    expect(retry.delivery).toEqual({ session: 'started', base, sent: [] });
+    // Nothing reached the model before, so the retry carries every part itself.
+    expect(retry.delivery).toEqual({ session: 'started', base: [], sent: base });
+    expect(adapter.sessions[0].sent[1]).toContain('STANDING_INSTRUCTIONS');
+    const next = await provider.complete(user, {
+      threadId: 't',
+      delivery: delivery(learningV1, Object.fromEntries(base.map((p) => [p.id, p.hash]))),
+    });
+    expect(next.delivery).toEqual({ session: 'held', base: [], sent: [] });
   });
 
   test('decision sessions keep their own base context and ignore delivery', async () => {
@@ -342,6 +366,43 @@ test('a thread delivers standing context once, sends a post-hoc learning update 
       expect(session().sent[3]).not.toContain(instructions(d));
     }
     expect(fourth.delivery.session!.session).toBe('held');
+  } finally {
+    await f.close();
+  }
+});
+
+test('a compaction while a turn runs leaves what that turn sent undelivered, so the next turn sends it again', async () => {
+  const adapter = new RecordingAdapter();
+  const f = await m0Scenario({
+    session: () => adapter,
+    review: (call) => learned(call.thread, call.domain!),
+  });
+  try {
+    const send = async (id: string) => {
+      const turn = await f.send('a', id);
+      if (turn.status !== 200) throw Error(JSON.stringify(turn.body).slice(0, 2000));
+      return (turn.body as Body).meta;
+    };
+    await send('c1');
+    await f.settled();
+    const runtime = f.current.manager.get('a')!;
+    const session = adapter.sessions.find((s) => s.sent.length > 0)!;
+    session.during = async () => {
+      session.during = undefined;
+      await runtime.thread.signals.emit({
+        id: newId('compact'),
+        kind: 'session_compacted',
+        source: 'session-adapter:fake',
+        content: { source: 'fake', threadId: 'a' },
+        timestamp: Date.now(),
+      });
+    };
+    const second = await send('c2');
+    await f.settled();
+    for (const d of domains) expect(session.sent[1]).toContain(interpretation('a', d));
+    expect(second.delivery.committed).toEqual([]);
+    await send('c3');
+    for (const d of domains) expect(session.sent[2]).toContain(interpretation('a', d));
   } finally {
     await f.close();
   }
