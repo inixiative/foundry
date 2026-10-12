@@ -164,7 +164,7 @@ export function selectionSummary(layer) {
       .map((o) => ({ id: o.id, reason: o.reason, keptIn: o.duplicateOf })),
   );
   const notice = instructions
-    ? `${selected.length} instruction files were composed for this layer; ${omittedCount} were left out (hidden from this audience or duplicates). Preparation is not acknowledgment of what the model retained.`
+    ? `${selected.length} instruction files were composed for this layer; ${omittedCount} entries were left out (files hidden from this audience, duplicate files or duplicate sections). Preparation is not acknowledgment of what the model retained.`
     : layer.included === false
       ? `This layer was not included in the prepared input for this turn. ${selected.length} of ${retained.count} retained records had been selected; the full owned log stays searchable with the memory tool.`
       : `${selected.length} of ${retained.count} owned records were prepared as model input; ${omittedCount} were left out for the reasons below. Preparation is not acknowledgment of what the model retained. The full owned log stays searchable with the memory tool.`;

@@ -137,6 +137,9 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     // selection. No retry/replay is implied by refusing this provider call.
     const mismatched = layers.filter((layer) => {
       if (!layer.included || !layer.selection) return false;
+      // A composition report (instruction files) is not a per-message selection.
+      if (layer.selection.sources.every((source) => source.report.subject === 'instructions'))
+        return false;
       const selectedFor = layer.selection.currentMessage;
       // Standalone legacy sources have no request-identity contract. A flow
       // plan does: even its unidentified loads must not replace identified work.

@@ -185,7 +185,21 @@ function checkMatch(where: string, when: unknown): void {
   }
 }
 
+const FILE_KEYS = ['id', 'when', 'path', 'rules', 'raw', 'maxLines', 'maxBytes'];
+
 function checkFile(where: string, source: HierarchyFileSource): void {
+  if (!source || typeof source !== 'object' || Array.isArray(source))
+    throw Error(`${where} must be an object`);
+  for (const key of Object.keys(source))
+    if (!FILE_KEYS.includes(key)) throw Error(`${where}: unknown field ${key}`);
+  if (source.id !== undefined && (typeof source.id !== 'string' || !source.id))
+    throw Error(`${where}: id must be a string`);
+  checkMatch(where, source.when);
+  for (const key of ['rules', 'raw'] as const)
+    if (source[key] !== undefined && typeof source[key] !== 'boolean')
+      throw Error(`${where}: ${key} must be true or false`);
+  if ((source.maxLines !== undefined || source.maxBytes !== undefined) && !source.raw)
+    throw Error(`${where}: maxLines and maxBytes apply to raw sources only`);
   const path = source.path as unknown;
   if (!(typeof path === 'string' && path) && !(isStrings(path) && path.length))
     throw Error(`${where}: path must be a path or a non-empty list of paths`);
@@ -199,6 +213,8 @@ function checkFile(where: string, source: HierarchyFileSource): void {
 
 function checkSpan(where: string, span: HierarchySpan | undefined): void {
   if (span === undefined) return;
+  if (!span || typeof span !== 'object' || Array.isArray(span))
+    throw Error(`${where}: span must be an object`);
   for (const [key, value] of Object.entries(span)) {
     if (!['within', 'outside', 'only', 'except'].includes(key))
       throw Error(`${where}: span.${key} is not one of within, outside, only, except`);
@@ -236,20 +252,37 @@ export function validateInstructionSettings(
     if (node.personal && node.tier !== undefined && !node.tier.startsWith('personal'))
       throw Error(`${where}: a personal node's tier is personal_private or personal_public`);
     checkMatch(where, node.when);
+    for (const key of ['label', 'parent', 'anchor'] as const)
+      if (node[key] !== undefined && (typeof node[key] !== 'string' || !node[key]))
+        throw Error(`${where}: ${key} must be a non-empty string`);
+    if (node.owns !== undefined) {
+      if (!node.owns || typeof node.owns !== 'object' || Array.isArray(node.owns))
+        throw Error(`${where}: owns must be an object`);
+      for (const [key, value] of Object.entries(node.owns)) {
+        if (!['names', 'within', 'dirs'].includes(key))
+          throw Error(`${where}: owns.${key} is not one of names, within, dirs`);
+        if (!isStrings(value)) throw Error(`${where}: owns.${key} must be a list of strings`);
+      }
+    }
     if (node.imports !== undefined && node.imports !== 'anywhere' && !isStrings(node.imports))
       throw Error(`${where}: imports is "anywhere" or a list of roots`);
     if (!Array.isArray(node.sources) || !node.sources.length)
       throw Error(`${where}: sources must list at least one source`);
-    node.sources.forEach((source, i) => {
+    for (const [i, source] of node.sources.entries()) {
       const at = `${where}.sources[${i}]`;
-      checkMatch(at, source.when);
+      if (!source || typeof source !== 'object' || Array.isArray(source))
+        throw Error(`${at} must be an object`);
       if ('walk' in source) {
+        for (const key of Object.keys(source))
+          if (!['id', 'when', 'walk', 'span'].includes(key))
+            throw Error(`${at}: unknown field ${key}`);
+        checkMatch(at, source.when);
         if (!Array.isArray(source.walk) || !source.walk.length)
           throw Error(`${at}: walk must list at least one file`);
         for (const [j, file] of source.walk.entries()) checkFile(`${at}.walk[${j}]`, file);
         checkSpan(at, source.span);
       } else checkFile(at, source);
-    });
+    }
   }
   const ids = new Set(ladder.map((node) => node.id));
   const parents = new Map(ladder.map((node) => [node.id, node.parent]));

@@ -151,13 +151,17 @@ the walk. A node's fields:
   list whose first existing file loads; `{ "walk": [...], "span": {...} }` looks
   the files up in each directory from the filesystem root to the cwd, limited by
   `span` (`within`, `outside`, `only`, `except`). `rules: true` is rule-file
-  handling (frontmatter stripped, `paths:` rules skipped); `raw`, `maxLines`,
-  `maxBytes` read a file as is and cut it.
+  handling (frontmatter stripped, `paths:` rules skipped); `raw` reads a file
+  as is (no comment stripping, no imports) and `maxLines` / `maxBytes` cut a raw
+  file. Glob characters count only in the configured pattern, never in a
+  directory a variable names (`app/[slug]` is literal).
 - Paths take `~/` and variables: `{home}`, `{cwd}`, `{project}` (the working
   tree root), `{repository}` (the main checkout), `{projectId}`, `{projectPath}`
   (the configured project), `{claudeConfigDir}`, `{codexHome}`, `{managed}`,
   `{claudeProjectKey}`, `{anchor}`, and `{dir}` inside a walk. A path naming an
-  absent variable is skipped. Relative paths resolve against the anchor.
+  absent variable is skipped, a span exclusion (`outside`, `except`) naming one
+  leaves the walk empty, and an `anchor` naming one keeps the node out: unknown
+  places fail closed. Relative paths resolve against the anchor.
 - `anchor`: the directory the node is about, which places it in the order.
   Default: the matched `when.paths` entry, else the parent's anchor; none means
   computer level.
@@ -174,9 +178,11 @@ in order. So: computer personal, org, org personal, project, project personal.
 
 ### Tiers and dedupe
 
-Each file loads once however it is reached, and an import keeps the narrower of
-its importer's tier and the tier of any node that owns its path (a
-`CLAUDE.local.md` imported by `CLAUDE.md` stays personal). The source's
+Each file keeps the narrower of its node's tier and the tier of any node that
+owns its path, whether a node found it or a file imported it (a
+`CLAUDE.local.md` imported by `CLAUDE.md`, or matched by a shared node's glob,
+stays personal). A configured path, like an import, never reads a dotfile, key
+or credential file, judged on where its symlinks lead. The source's
 `audience` (default `personal_private`) filters by tier through the corpus
 `VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
 
@@ -185,12 +191,16 @@ order). Dedupe runs after the audience filter, so a personal copy never hides
 the shared one from a team.
 
 - **Same file** (real path): a second reach, a symlink, a file imported twice.
-  The first reach is kept, as Claude Code does.
-- **Identical content** (whitespace-insensitive hash): e.g. a worktree's
+  It loads once, where first reached, as Claude Code does. A later reach that
+  would give it a wider tier widens it, so a shared file imported first by a
+  personal one still reaches the team (its own imports keep their tiers).
+- **Identical content** (the same normalization, hashed): e.g. a worktree's
   `CLAUDE.md` and its main checkout's. The worktree's copy is kept.
-- **Identical sections** (normalized heading and body, subsections included,
-  headings in code fences ignored): the section is cut from the more general
-  file; a file left empty is dropped.
+- **Identical sections**: the same heading path (enclosing headings, not the
+  document's lone title), heading and body with its subsections. Blank lines
+  and spacing inside a line do not count; indentation does. Headings in code
+  fences and frontmatter are not sections. The section is cut from the more
+  general file, nothing else in it changes, and a file left empty is dropped.
 
 `instructions.dedupe` (`content`, `sections`, both default true) turns the last
 two off. Every removal is reported with the copy kept in its place: the layer's

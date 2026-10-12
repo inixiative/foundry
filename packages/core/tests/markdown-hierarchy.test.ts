@@ -356,3 +356,66 @@ test('sections ignore headings inside fenced code and carry their subsections', 
     ['B', 2, 14, 16, false],
   ]);
 });
+
+test('section dedupe keeps a heading path, indentation and untouched code blank lines', () => {
+  const general = [
+    '# Testing',
+    '',
+    '## Rules',
+    '',
+    '- never mock the database',
+    '',
+    '# Config',
+    '',
+    '```yaml',
+    'a:',
+    '  b: 1',
+    '```',
+    '',
+    '## Shared',
+    '',
+    'same',
+    '',
+    '## Code',
+    '',
+    '```py',
+    'x = 1',
+    '',
+    '',
+    'y = 2',
+    '```',
+  ].join('\n');
+  const specific = [
+    '# Deploy',
+    '',
+    '## Rules',
+    '',
+    '- never mock the database',
+    '',
+    '# Config',
+    '',
+    '```yaml',
+    'a:',
+    'b: 1',
+    '```',
+    '',
+    '## Shared',
+    '',
+    'same',
+  ].join('\n');
+  const result = dedupeHierarchy([
+    file('/g.md', 'org', general),
+    file('/s.md', 'project', specific),
+  ]);
+  const kept = result.files[0]!.content;
+  // Testing > Rules is not Deploy > Rules; the YAML differs by indentation.
+  expect(kept).toContain('- never mock the database');
+  expect(kept).toContain('  b: 1');
+  // Config > Shared is the same section: removed, and the Python block's double blank line survives.
+  expect(result.duplicates.map((d) => d.heading)).toEqual(['Shared']);
+  expect(kept).toContain('x = 1\n\n\ny = 2');
+});
+
+test('frontmatter is not a section', () => {
+  expect(markdownSections('---\n# key: v\n---\n## A\n\nbody').map((s) => s.heading)).toEqual(['A']);
+});

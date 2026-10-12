@@ -3,6 +3,7 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   fenceSegments,
+  INSTRUCTION_FILE_LIMIT,
   type InstructionFile,
   readInstructionFile,
   secretInstructionPath,
@@ -224,6 +225,8 @@ export function selectHierarchyNodes(
         : node.when?.paths
           ? matchedPath(node.when.paths, location)
           : undefined;
+    // A declared anchor that cannot resolve (an absent variable) means the node has nowhere to be.
+    if (node.anchor !== undefined && !own) return;
     const anchor = own ? resolve(own) : inherited;
     selected.push({ node, rank: position, ...(anchor ? { anchor } : {}) });
     for (const child of children.get(node.id) ?? []) visit(child, anchor);
@@ -245,11 +248,8 @@ interface Unit {
   readonly path: string;
 }
 
-async function expandGlob(path: string): Promise<string[]> {
-  const parts = path.split(sep);
-  const first = parts.findIndex((part) => GLOB.test(part));
-  const base = parts.slice(0, first).join(sep) || sep;
-  const pattern = parts.slice(first).join('/');
+/** Files under `base` matching `pattern`, in path order. Glob characters in `base` are literal. */
+async function expandGlob(base: string, pattern: string): Promise<string[]> {
   const found: string[] = [];
   try {
     if (!statSync(base).isDirectory()) return [];
@@ -290,6 +290,12 @@ function inSpan(
   const outside = expand(span.outside);
   const only = expand(span.only);
   const except = expand(span.except);
+  // An exclusion that cannot resolve (an absent variable) fails closed: nothing is in the span.
+  if (
+    (outside && outside.length !== span.outside?.length) ||
+    (except && except.length !== span.except?.length)
+  )
+    return false;
   if (within && !within.some((root) => withinPath(dir, root))) return false;
   if (outside?.some((root) => withinPath(dir, root))) return false;
   if (only && !only.includes(dir)) return false;
@@ -315,6 +321,13 @@ export async function discoverHierarchy(
   const units: Unit[] = [];
   let seq = 0;
 
+  const realOf = (path: string) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
   const varsFor = (entry: SelectedHierarchyNode, dir?: string) => ({
     ...location.vars,
     ...(entry.anchor ? { anchor: entry.anchor } : {}),
@@ -337,20 +350,36 @@ export async function discoverHierarchy(
     vars: Readonly<Record<string, string | undefined>>,
   ) => {
     if (!matches(source.when, location) || (source.id && loadedNatively.has(source.id))) return;
-    const candidates = (typeof source.path === 'string' ? [source.path] : source.path)
-      .map((path) => expandHierarchyPath(path, vars, location.home))
-      .filter((path): path is string => !!path)
-      .flatMap((path) => (isAbsolute(path) ? [path] : base ? [join(base, path)] : []));
+    const place = (path: string) => (isAbsolute(path) ? path : base ? join(base, path) : undefined);
+    const literal = (template: string) => {
+      const expanded = expandHierarchyPath(template, vars, location.home);
+      return expanded === undefined ? undefined : place(expanded);
+    };
     let paths: string[];
     if (typeof source.path !== 'string') {
-      const first = candidates.find(isFile);
+      const first = source.path
+        .map(literal)
+        .filter((path): path is string => !!path)
+        .find(isFile);
       paths = first ? [first] : [];
     } else {
-      const only = candidates[0];
-      paths = !only ? [] : GLOB.test(only) ? await expandGlob(only) : [only];
+      // Glob characters count only where the template has them, never in a directory a variable names.
+      const segments = source.path.split('/');
+      const globAt = segments.findIndex((segment) => GLOB.test(segment));
+      if (globAt < 0) {
+        const path = literal(source.path);
+        paths = path ? [path] : [];
+      } else {
+        const root = segments.slice(0, globAt).join('/');
+        const dir =
+          root === '' && source.path.startsWith('/') ? '/' : root ? literal(root) : place('.');
+        paths = dir ? await expandGlob(resolve(dir), segments.slice(globAt).join('/')) : [];
+      }
     }
-    // A configured path is held to the import rule too: no dotfiles, keys or credential directories.
-    paths = paths.filter((path) => !secretInstructionPath(path));
+    // A configured path is held to the import rule too, on where it resolves: no dotfiles, keys or credentials.
+    paths = paths.filter(
+      (path) => !secretInstructionPath(path) && !secretInstructionPath(realOf(path)),
+    );
     if (source.rules) paths = paths.filter(launchRule);
     for (const path of paths)
       units.push({ position, rank: entry.rank, seq: seq++, selected: entry, source, path });
@@ -401,42 +430,58 @@ export async function discoverHierarchy(
     return narrowest;
   };
 
+  /** The node a file reached through `via` belongs to: the narrower of `via` and any node owning its path. */
+  const tierOf = (path: string, via: HierarchyNode) => {
+    const own = owner(path);
+    return own && options.tierRank(own.tier) < options.tierRank(via.tier) ? own : via;
+  };
   const seen = new Set<string>();
-  const kept = new Map<string, { path: string; node: string }>();
-  const files: HierarchyFile[] = [];
-  const duplicates: HierarchyDuplicate[] = [];
-  const realOf = (path: string) => {
-    try {
-      return realpathSync(path);
-    } catch {
-      return path;
+  /** Each loaded file by real path: where it was kept and its index in `files`. */
+  const kept = new Map<string, { path: string; node: string; index: number }>();
+  /**
+   * A file reached again loads once, where first reached. A later reach that would give it a wider
+   * tier (a shared file also imported by a personal one) widens it, so a personal first reach never
+   * hides a shared file from a team.
+   */
+  const reachedAgain = (path: string, real: string, via: HierarchyNode) => {
+    const prior = kept.get(real);
+    if (!prior) return;
+    duplicates.push({
+      kind: 'path',
+      path,
+      node: via.id,
+      chars: 0,
+      keptPath: prior.path,
+      keptNode: prior.node,
+    });
+    const wider = tierOf(path, via);
+    const file = files[prior.index]!;
+    if (options.tierRank(wider.tier) > options.tierRank(file.tier)) {
+      files[prior.index] = { ...file, node: wider.id, tier: wider.tier };
+      kept.set(real, { ...prior, node: wider.id });
     }
   };
+  const files: HierarchyFile[] = [];
+  const duplicates: HierarchyDuplicate[] = [];
   for (const unit of units) {
     const { node } = unit.selected;
     if (unit.source.raw) {
       if (!isFile(unit.path)) continue;
       const real = realOf(unit.path);
-      const prior = kept.get(real);
-      if (prior) {
-        duplicates.push({
-          kind: 'path',
-          path: unit.path,
-          node: node.id,
-          chars: 0,
-          keptPath: prior.path,
-          keptNode: prior.node,
-        });
+      if (kept.has(real)) {
+        reachedAgain(unit.path, real, node);
         continue;
       }
+      if (statSync(real).size > INSTRUCTION_FILE_LIMIT) continue;
       let content = readFileSync(unit.path, 'utf8');
       if (unit.source.maxLines !== undefined)
         content = content.split('\n').slice(0, unit.source.maxLines).join('\n');
       if (unit.source.maxBytes !== undefined)
         content = Buffer.from(content).subarray(0, unit.source.maxBytes).toString('utf8');
+      const final = tierOf(unit.path, node);
       seen.add(real);
-      kept.set(real, { path: unit.path, node: node.id });
-      files.push({ path: unit.path, content, depth: 0, node: node.id, tier: node.tier });
+      kept.set(real, { path: unit.path, node: final.id, index: files.length });
+      files.push({ path: unit.path, content, depth: 0, node: final.id, tier: final.tier });
       continue;
     }
     const allowed =
@@ -458,25 +503,14 @@ export async function discoverHierarchy(
       seen,
       ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
       ...(allowed ? { allows: allowed } : {}),
-      onDuplicate: ({ path, real }) => {
-        const prior = kept.get(real);
-        if (prior)
-          duplicates.push({
-            kind: 'path',
-            path,
-            node: node.id,
-            chars: 0,
-            keptPath: prior.path,
-            keptNode: prior.node,
-          });
-      },
+      onDuplicate: ({ path, real }) => reachedAgain(path, real, node),
     });
     for (const file of read) {
       let content = file.content;
       if (file.depth === 0 && unit.source.rules) content = content.replace(FRONTMATTER, '');
-      const own = file.importedBy ? owner(file.path) : undefined;
-      const final = own && options.tierRank(own.tier) < options.tierRank(node.tier) ? own : node;
-      kept.set(realOf(file.path), { path: file.path, node: final.id });
+      // Every file keeps the narrower tier of its node and any node owning its path, found or imported.
+      const final = tierOf(file.path, node);
+      kept.set(realOf(file.path), { path: file.path, node: final.id, index: files.length });
       files.push({ ...file, content, node: final.id, tier: final.tier });
     }
   }
@@ -485,12 +519,18 @@ export async function discoverHierarchy(
 
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
 
-/** Whitespace runs, blank lines and line endings do not make two texts different. */
+/**
+ * Blank lines, trailing whitespace, line endings and runs of spaces inside a line do not make two
+ * texts different; indentation does (nested lists, YAML, code).
+ */
 const normalizeBody = (text: string) =>
   text
     .split(/\r?\n|\r/)
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
+    .map((line) => {
+      const indent = /^[ \t]*/.exec(line)![0];
+      return indent + line.slice(indent.length).replace(/\s+/g, ' ').trimEnd();
+    })
+    .filter((line) => line.trim())
     .join('\n');
 
 const normalizeHeading = (heading: string) =>
@@ -508,11 +548,19 @@ interface Section {
   /** Line range [start, end) including the heading and every subsection. */
   readonly start: number;
   readonly end: number;
+  /** Same heading path, heading and body (subsections included). Absent for a section with no body. */
   readonly key?: string;
 }
 
-/** ATX sections outside fenced code; each spans its subsections. A section with no body has no key. */
+/**
+ * ATX sections outside fenced code and frontmatter; each spans its subsections. A section's key
+ * covers its enclosing headings too, so `Testing > Rules` and `Deploy > Rules` never match. A
+ * document title (a lone level-1 heading that opens the document) is not part of that path.
+ */
 export function markdownSections(text: string): Section[] {
+  const all = text.split('\n');
+  const front = FRONTMATTER.exec(text)?.[0];
+  const skip = front ? front.split('\n').length - (front.endsWith('\n') ? 1 : 0) : 0;
   const headings: Array<{ line: number; level: number; heading: string }> = [];
   let line = 0;
   for (const segment of fenceSegments(text)) {
@@ -520,25 +568,54 @@ export function markdownSections(text: string): Section[] {
     if (!segment.code)
       lines.forEach((value, i) => {
         const match = HEADING.exec(value);
-        if (match)
+        if (match && line + i >= skip)
           headings.push({ line: line + i, level: match[1]!.length, heading: match[2] ?? '' });
       });
     line += lines.length;
   }
-  const all = text.split('\n');
+  const titled =
+    headings[0]?.level === 1 && headings.filter((heading) => heading.level === 1).length === 1;
   return headings.map((heading, i) => {
     const next = headings.slice(i + 1).find((other) => other.level <= heading.level);
     const end = next ? next.line : all.length;
     const body = normalizeBody(all.slice(heading.line + 1, end).join('\n'));
-    const title = normalizeHeading(heading.heading);
+    const path: string[] = [];
+    let level = heading.level;
+    for (let j = i - 1; j >= (titled ? 1 : 0); j--)
+      if (headings[j]!.level < level) {
+        path.unshift(normalizeHeading(headings[j]!.heading));
+        level = headings[j]!.level;
+      }
     return {
       heading: heading.heading.replace(/[ \t]+#+[ \t]*$/, '').trim(),
       level: heading.level,
       start: heading.line,
       end,
-      ...(body ? { key: digest(`${heading.level}\n${title}\n${body}`) } : {}),
+      ...(body
+        ? {
+            key: digest(
+              `${path.join('\n')}\n${heading.level}\n${normalizeHeading(heading.heading)}\n${body}`,
+            ),
+          }
+        : {}),
     };
   });
+}
+
+/** `lines` without the dropped ranges; a blank line left doubled at a cut is removed, nothing else changes. */
+function cut(lines: readonly string[], dropped: readonly Section[]): string {
+  const out: string[] = [];
+  let atCut = false;
+  lines.forEach((line, i) => {
+    if (dropped.some((section) => i >= section.start && i < section.end)) {
+      atCut = true;
+      return;
+    }
+    if (atCut && !line.trim() && (out.length === 0 || !out.at(-1)!.trim())) return;
+    atCut = atCut && !line.trim();
+    out.push(line);
+  });
+  return out.join('\n');
 }
 
 export interface HierarchyDedupeOptions {
@@ -620,11 +697,7 @@ export function dedupeHierarchy<F extends HierarchyFile>(
         keep.unshift(file);
         continue;
       }
-      const content = file.content
-        .split('\n')
-        .filter((_, i) => !dropped.some((section) => i >= section.start && i < section.end))
-        .join('\n')
-        .replace(/\n{3,}/g, '\n\n');
+      const content = cut(file.content.split('\n'), dropped);
       if (content.trim()) keep.unshift({ ...file, content });
     }
     out = keep;

@@ -257,7 +257,7 @@ export function secretInstructionPath(path: string): boolean {
 }
 
 /** Claude Code skips an instruction file larger than this. */
-const INSTRUCTION_FILE_LIMIT = 4 * 1024 * 1024;
+export const INSTRUCTION_FILE_LIMIT = 4 * 1024 * 1024;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /** Splits markdown into prose and fenced-code segments, in order. */
@@ -349,13 +349,13 @@ export async function readInstructionFile(
     } catch {
       return;
     }
+    // An import is judged on where it resolves and where its symlinks lead.
+    if (importedBy && (secretInstructionPath(real) || (options.allows && !options.allows(real))))
+      return;
     if (seen.has(real)) {
       options.onDuplicate?.({ path: file, real, ...(importedBy ? { importedBy } : {}) });
       return;
     }
-    // An import is judged on where it resolves and where its symlinks lead.
-    if (importedBy && (secretInstructionPath(real) || (options.allows && !options.allows(real))))
-      return;
     seen.add(real);
     const content = stripInstructionComments(await Bun.file(real).text());
     files.push({ path: file, content, depth, ...(importedBy ? { importedBy } : {}) });

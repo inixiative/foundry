@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
@@ -533,4 +541,168 @@ test('the source reports what it composed and what it deduped, for the Selection
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
   }
+});
+
+test('an identified dispatch is not refused because the instructions layer reports its composition', async () => {
+  const { ThreadFactory, buildAgents } = await import('../src/agents/thread-factory');
+  const { ThreadRuntimeManager } = await import('../src/agents/thread-runtime');
+  const { ToolRegistry } = await import('@inixiative/foundry-core');
+  write(join(repo, 'CLAUDE.md'), '# P\n\nproject rule\n');
+  const agent = {
+    provider: 'mock',
+    model: 'mock',
+    temperature: 0,
+    maxTokens: 256,
+    visibleLayers: [],
+    peers: [],
+    maxDepth: 1,
+    enabled: true,
+  };
+  const config = {
+    defaults: { provider: 'mock', model: 'mock' },
+    providers: {},
+    agents: { worker: { ...agent, id: 'worker', kind: 'executor', prompt: 'Execute' } },
+    layers: {
+      instructions: {
+        id: 'instructions',
+        prompt: 'Standing',
+        sourceIds: ['instructions'],
+        staleness: 60_000,
+        enabled: true,
+      },
+    },
+    sources: {
+      instructions: {
+        id: 'instructions',
+        type: 'instructions',
+        label: 'I',
+        uri: '',
+        enabled: true,
+      },
+    },
+    projects: { P: { id: 'P', path: repo, enabled: true } },
+  } as unknown as FoundryConfig;
+  const provider = {
+    id: 'mock',
+    complete: async () => ({ model: 'mock', content: 'ok' }),
+  } as unknown as Parameters<typeof buildAgents>[2]['provider'];
+  const template = new ContextStack(
+    buildLayers(config, {
+      sourceResolver: createSourceResolver({ memory: new FileMemory(join(root, 'memory')) }),
+    }),
+  );
+  await template.warmAll();
+  const agents = buildAgents(config, template, { provider, tools: new ToolRegistry() });
+  const runtime = new ThreadRuntimeManager({
+    config,
+    domains: [],
+    log: () => {},
+    warn: () => {},
+    llm: provider,
+    signalSinks: [],
+  } as unknown as ConstructorParameters<typeof ThreadRuntimeManager>[0]);
+  const factory = new ThreadFactory({ stack: template, agents, runtime });
+  const thread = factory.create('work', { projectId: 'P', cwd: repo });
+  try {
+    for (const messageId of ['first', 'second'])
+      await thread.dispatch('worker', 'hello', undefined, { messageId });
+    expect(thread.stack.getLayer('instructions')!.selection?.sources[0]?.report.subject).toBe(
+      'instructions',
+    );
+  } finally {
+    thread.dispose();
+    runtime.disposeAll();
+  }
+});
+
+test('glob characters in a directory name are literal; only the configured pattern globs', async () => {
+  const route = join(repo, 'app', '[slug]');
+  write(join(route, 'CLAUDE.md'), 'ROUTE');
+  write(join(repo, 'app', 's', 'CLAUDE.md'), 'SIBLING');
+  const contents = (await discoverInstructionStack(options(route))).files.map((f) => f.content);
+  expect(contents).toEqual(['ROUTE']);
+});
+
+test("a shared node's glob never publishes a file a personal node owns", async () => {
+  write(join(repo, 'sub', 'CLAUDE.local.md'), 'SECRET_LOCAL');
+  write(join(repo, 'sub', 'notes.md'), 'TEAM_NOTES');
+  const ladder = resolveInstructionLadder({
+    nodes: {
+      notes: {
+        scope: 'project',
+        personal: false,
+        when: { paths: [repo] },
+        sources: [{ path: '{anchor}/sub/*.md' }],
+      },
+    },
+  });
+  const stack = await discoverInstructionStack({ ...options(repo), ladder });
+  expect(stack.files.find((f) => f.content === 'SECRET_LOCAL')).toMatchObject({
+    level: 'local',
+    tier: 'personal_private',
+  });
+  const team = composeInstructionStack(stack, { audience: 'team' }).text;
+  expect(team).toContain('TEAM_NOTES');
+  expect(team).not.toContain('SECRET_LOCAL');
+});
+
+test('a shared file first reached through a personal import still reaches the team', async () => {
+  write(join(claudeDir, 'CLAUDE.md'), `@${join(org, 'CLAUDE.md')} @${join(repo, 'CLAUDE.md')}`);
+  write(join(org, 'CLAUDE.md'), 'ORG_RULES');
+  write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
+  const stack = await discoverInstructionStack(options(repo));
+  const team = composeInstructionStack(stack, { audience: 'team' }).text;
+  expect(team).toContain('ORG_RULES');
+  expect(team).toContain('TEAM_RULES');
+  expect(stack.duplicates.map((d) => d.kind)).toEqual(['path', 'path']);
+});
+
+test('fail closed: an unresolvable exclusion, anchor or symlinked secret loads nothing', async () => {
+  write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
+  write(join(org, 'NOTES.md'), 'ORG_NOTES');
+  write(join(home, '.aws', 'credentials'), 'SECRET_AWS');
+  symlinkSync(join(home, '.aws', 'credentials'), join(repo, 'NOTES.md'));
+  const ladder = resolveInstructionLadder({
+    preset: 'none',
+    nodes: {
+      wide: {
+        scope: 'org',
+        personal: false,
+        sources: [{ walk: [{ path: 'CLAUDE.md' }], span: { outside: ['{projectPath}'] } }],
+      },
+      parent: {
+        scope: 'org',
+        personal: false,
+        when: { paths: [org] },
+        sources: [{ path: '{project}/NOTES.md' }],
+      },
+      child: {
+        scope: 'project',
+        personal: false,
+        parent: 'parent',
+        anchor: '{projectPath}',
+        sources: [{ path: '{anchor}/NOTES.md' }],
+      },
+    },
+  });
+  const stack = await discoverInstructionStack({ ...options(repo), ladder });
+  expect(stack.files).toEqual([]);
+});
+
+test('settings that would crash a warm are refused when saved', () => {
+  const config = (nodes: unknown) =>
+    ({ ...starterConfig(), instructions: { nodes } }) as unknown as FoundryConfig;
+  const node = { scope: 'org', personal: false, sources: [{ path: 'x.md' }] };
+  for (const [nodes, message] of [
+    [{ a: { ...node, owns: { within: '~/x' } } }, 'owns.within'],
+    [{ a: { ...node, anchor: 5 } }, 'anchor'],
+    [
+      { a: { ...node, sources: [{ walk: [{ path: 'X.md', when: { paths: 'oops' } }] }] } },
+      'when.paths',
+    ],
+    [{ a: { ...node, sources: [null] } }, 'must be an object'],
+    [{ a: { ...node, sources: [{ path: 'x.md', maxLines: 5 }] } }, 'raw sources only'],
+    [{ a: { ...node, sources: [{ path: 'x.md', glob: '*' }] } }, 'unknown field glob'],
+  ] as const)
+    expect(() => validateConfig(config(nodes))).toThrow(message);
 });
