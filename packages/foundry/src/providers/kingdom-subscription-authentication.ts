@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import type { LimitSnapshot } from '@inixiative/agent-session';
 import { kingdomUrl } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
 import {
@@ -14,6 +13,7 @@ import {
   assertCodexLaunchArguments,
   type NativeAuthenticationLaunch,
   type NativeAuthenticationProvider,
+  type NativeLimitSnapshot,
   withoutCompetingCredentials,
 } from './native-authentication';
 import { assertPrivateProfile } from './private-profile';
@@ -36,7 +36,7 @@ const fingerprintOf = (capacity: KingdomCapacity) =>
   createHash('sha256').update(JSON.stringify(capacity)).digest('hex');
 
 /** A run's login as Kingdom reads limits: blocked means rate limited until the fullest window resets. */
-export function limitReading(snapshot: LimitSnapshot, now = Date.now()): KingdomLimitReading {
+export function limitReading(snapshot: NativeLimitSnapshot, now = Date.now()): KingdomLimitReading {
   const resets = snapshot.windows
     .filter((window) => window.usedPercent >= 100 && window.resetsAt)
     .map((window) => window.resetsAt!);
@@ -174,7 +174,7 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
             } catch {}
         }
       },
-      observeLimits: (snapshot: LimitSnapshot) => {
+      observeLimits: (snapshot: NativeLimitSnapshot) => {
         void run.client
           .reportLimits(run.envelope.id, limitReading(snapshot))
           .catch((error: unknown) =>

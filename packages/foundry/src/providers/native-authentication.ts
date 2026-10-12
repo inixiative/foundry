@@ -10,7 +10,6 @@ import {
 } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import type { LimitSnapshot } from '@inixiative/agent-session';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
 import {
@@ -70,6 +69,21 @@ const sourceSchema = z.discriminatedUnion('mode', [
     .strict(),
 ]);
 
+/** The account limits a native session reports (agent-session's LimitSnapshot), declared here so a
+ * consumer of this module never compiles agent-session's sources. */
+export interface NativeLimitSnapshot {
+  readonly runtime: 'claude' | 'codex';
+  readonly source: 'poll' | 'stream';
+  readonly observedAt: number;
+  readonly windows: readonly {
+    readonly id: string;
+    readonly usedPercent: number;
+    readonly resetsAt?: number;
+    readonly windowMinutes?: number;
+  }[];
+  readonly blocked?: boolean;
+}
+
 export interface NativeAuthenticationLaunch {
   readonly bindingId: string;
   readonly sourceId: string;
@@ -87,7 +101,7 @@ export interface NativeAuthenticationLaunch {
   adopt?(pid: number): void;
   release(): void;
   /** Account limits the native session observed for this launch's login. */
-  observeLimits?(limits: LimitSnapshot): void;
+  observeLimits?(limits: NativeLimitSnapshot): void;
 }
 
 export interface NativeAuthenticationProvider {
