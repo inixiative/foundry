@@ -445,7 +445,9 @@ export class SessionBackedProvider implements LLMProvider {
         textOnly,
         maxTurns,
         launchRevision: host?.revision ?? 0,
-        structuralRules: !textOnly && (this._toolGate?.(threadId)?.hasRules() ?? false),
+        ...(this._adapter.structuralRulesAtLaunch && !textOnly
+          ? { structuralRules: this._toolGate?.(threadId)?.hasRules() ?? false }
+          : {}),
         ...(source
           ? {
               bridgeKey: source.key,
@@ -778,8 +780,8 @@ export class SessionBackedProvider implements LLMProvider {
       textOnly: boolean;
       maxTurns?: number | null;
       launchRevision: number;
-      /** The thread's structural rules can deny or ask; a change relaunches the session. */
-      structuralRules: boolean;
+      /** For an adapter that checks them at launch: the thread has structural rules. */
+      structuralRules?: boolean;
       bridgeKey?: string;
       toolPolicyIdentity?: string;
     },
@@ -879,7 +881,7 @@ export class SessionBackedProvider implements LLMProvider {
           ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
           ...(host?.effort ? { effort: host.effort } : {}),
           ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
-          ...(gate ? { toolGate: gate.gate, structuralRules: requested.structuralRules } : {}),
+          ...(gate ? { toolGate: gate.gate, structuralRules: gate.hasRules() } : {}),
         });
         if (!requested.textOnly) this._bases.set(session, base?.parts ?? []);
         if (bridge) this._bridges.set(session, bridge);

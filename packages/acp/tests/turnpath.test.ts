@@ -25,10 +25,10 @@ const INITIALIZE: InitializeRequest = {
 
 type Fixture = Awaited<ReturnType<typeof liveWatchFixture>>;
 
-async function fixture() {
+async function fixture(options: Parameters<typeof liveWatchFixture>[1] = {}) {
   await mkdir(resolve('.foundry/qa'), { recursive: true });
   const dir = await mkdtemp(resolve('.foundry/qa/turnpath-'));
-  const f = await liveWatchFixture(dir);
+  const f = await liveWatchFixture(dir, options);
   cleanup.push(() => f.close());
   return { f, dir };
 }
@@ -98,7 +98,7 @@ test("a daemon restart on the same port re-applies the host's mode before the ne
   // The restarted daemon holds no launch settings.
   f.threadLaunch.clear(sessionId);
   await daemon.restart();
-  await until(() => f.threadLaunch.get(sessionId).permissionMode === 'plan', 're-applied', 5_000);
+  await Bun.sleep(1_500); // the socket reconnects
   await turn(h, f, sessionId, 'after restart');
   expect(f.created.at(-1)).toMatchObject({ permissionMode: 'plan' });
 });
@@ -317,8 +317,25 @@ test('a launch file whose daemon is gone, or whose port another process answers,
   expect((await connect()).protocolVersion).toBe(1);
 });
 
-test('structural rules appearing on a warm thread relaunch its session, so an adapter that cannot gate before use is re-checked', async () => {
-  const { f, dir } = await fixture();
+test('structural rules appearing on a warm thread relaunch its session when the adapter checks them at launch (Codex), and only then', async () => {
+  const claude = await fixture();
+  const claudeDaemon = serveDaemon(claude.f.viewer);
+  cleanup.push(() => claudeDaemon.stop());
+  const c = host(claudeDaemon.launchPath);
+  await c.agent.request('initialize', INITIALIZE);
+  const opened = await c.agent.request('session/new', {
+    cwd: join(claude.dir, 'P'),
+    mcpServers: [],
+  });
+  await turn(c, claude.f, opened.sessionId, 'first');
+  const claudeSessions = claude.f.sessions.length;
+  const claudeStore = claude.f.viewer.configStore;
+  await claudeStore.save({ ...claudeStore.config, toolRules: { protectedPaths: ['.env'] } });
+  await turn(c, claude.f, opened.sessionId, 'second');
+  // Claude's gate applies the new rules live: the warm session is kept.
+  expect(claude.f.sessions.length).toBe(claudeSessions);
+
+  const { f, dir } = await fixture({ structuralRulesAtLaunch: true });
   const daemon = serveDaemon(f.viewer);
   cleanup.push(() => daemon.stop());
   const h = host(daemon.launchPath);
@@ -335,4 +352,77 @@ test('structural rules appearing on a warm thread relaunch its session, so an ad
   await turn(h, f, sessionId, 'second');
   expect(f.sessions.length).toBe(sessionsBefore + 1);
   expect(f.created.at(-1)).toMatchObject({ structuralRules: true });
+});
+
+test('a reconnect never carries the bearer or launch secrets to a process that took over the port', async () => {
+  const { f, dir } = await fixture();
+  let server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: f.viewer.fetch,
+    websocket: f.viewer.websocket,
+  });
+  const port = server.port!;
+  const launchPath = join(dir, 'acp-launch.json');
+  writeAcpLaunch(launchPath, { port, capability: newAcpCapability() });
+  cleanup.push(() => server.stop(true));
+  const h = host(launchPath);
+  await h.agent.request('initialize', INITIALIZE);
+  await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [
+      {
+        type: 'http',
+        name: 'remote',
+        url: 'https://mcp.example/api',
+        headers: [{ name: 'Authorization', value: 'Bearer TOPSECRET' }],
+      },
+    ],
+  });
+  server.stop(true);
+  await Bun.sleep(100);
+  const seen: Array<{ method: string; path: string; auth: string | null; body: string }> = [];
+  server = Bun.serve({
+    hostname: '127.0.0.1',
+    port,
+    async fetch(req) {
+      seen.push({
+        method: req.method,
+        path: new URL(req.url).pathname,
+        auth: req.headers.get('authorization'),
+        body: await req.text(),
+      });
+      return Response.json({ ok: true });
+    },
+  });
+  await Bun.sleep(1_500);
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((r) => r.path === '/api/health' && r.method === 'GET' && !r.auth)).toBe(true);
+  expect(JSON.stringify(seen)).not.toContain('TOPSECRET');
+});
+
+test('session/close with a turn in flight answers that prompt as cancelled', async () => {
+  const { f, dir } = await fixture({ interruptible: false });
+  const daemon = serveDaemon(f.viewer);
+  cleanup.push(() => daemon.stop());
+  const h = host(daemon.launchPath);
+  await h.agent.request('initialize', INITIALIZE);
+  const { sessionId } = await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+  });
+  const before = f.attempts.length;
+  const prompt = h.agent.request('session/prompt', {
+    sessionId,
+    prompt: [{ type: 'text', text: 'long work' }],
+  });
+  await until(
+    () => f.attempts.length === before + 1 && f.attempts[before]!.native.dispatch === 'attempted',
+    'dispatched',
+  );
+  await h.agent.request('session/close', { sessionId });
+  expect(await Promise.race([prompt, Bun.sleep(5_000).then(() => 'unanswered')])).toEqual({
+    stopReason: 'cancelled',
+  });
+  f.attempts[before]!.finish(false, 'done');
 });

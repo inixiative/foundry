@@ -73,6 +73,8 @@ interface Session {
   launchedOn: DataStreamClient | null;
   /** Prompts still connecting (daemon start, stream hold): a cancel marks them so they never send. */
   readonly connecting: Set<{ cancelled: boolean }>;
+  /** Launch changes reach the daemon one at a time, in order, so a re-apply never overwrites a newer choice. */
+  launching: Promise<unknown>;
 }
 
 const PERMISSION_OPTIONS: PermissionOption[] = [
@@ -120,6 +122,17 @@ type ThreadPayload =
   | { kind: 'event' }
   | { kind: 'done' | 'error'; turnId: string; result: Record<string, unknown> };
 
+/** The listener is the daemon the launch file names (asked without the bearer), or this throws. */
+async function identify(http: FoundryClient, launch: AcpLaunch): Promise<void> {
+  if (!processAlive(launch.pid))
+    throw Error(`stale launch file: daemon process ${launch.pid} is not running`);
+  const pid = await http.daemonPid();
+  if (pid !== launch.pid)
+    throw Error(
+      `the process on ${launch.endpoint} is not the daemon that wrote the launch file (pid ${pid ?? 'unknown'}, expected ${launch.pid})`,
+    );
+}
+
 /** Whether a process exists (a permission error still means it does). */
 function processAlive(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
@@ -166,15 +179,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   const attach = async (): Promise<Daemon> => {
     const launch = readAcpLaunch(launchPath);
     // A launch file whose daemon is gone is stale: whatever listens on its port now is not Foundry's daemon.
-    if (!processAlive(launch.pid))
-      throw Error(`stale launch file: daemon process ${launch.pid} is not running`);
     const http = new FoundryClient(launch);
-    // Identify the listener before any request carries the bearer.
-    const pid = await http.daemonPid();
-    if (pid !== launch.pid)
-      throw Error(
-        `the process on ${launch.endpoint} is not the daemon that wrote the launch file (pid ${pid ?? 'unknown'}, expected ${launch.pid})`,
-      );
+    await identify(http, launch);
     // The same daemon instance: the socket re-reads the bearer whenever it reconnects.
     if (
       daemon &&
@@ -201,18 +207,21 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           return undefined;
         }
       },
+      // A reconnect carries the bearer: only to the daemon the launch file names, at this origin.
+      beforeReconnect: async () => {
+        const current = readAcpLaunch(launchPath);
+        if (current.endpoint !== launch.endpoint) throw Error('the daemon moved');
+        await identify(new FoundryClient(current), current);
+      },
       onStatus: (state) => {
         if (state === 'open') {
           clearTimeout(lostTimer);
           lostTimer = undefined;
-          // Reconnected: the daemon may have restarted on the same port and lost every launch.
+          // Reconnected: the daemon may have restarted on the same port and lost every launch. The
+          // next prompt re-applies it, after attach has identified the daemon.
           if (dropped && daemon?.streams === streams) {
             dropped = false;
-            const current = daemon;
-            for (const session of sessions.values()) {
-              session.launchedOn = null;
-              void relaunch(session, current);
-            }
+            for (const session of sessions.values()) session.launchedOn = null;
           }
         } else if (state === 'closed' && daemon?.streams === streams) {
           dropped = true;
@@ -303,7 +312,12 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   const hold = (session: Session, foundry: Daemon): Promise<void> => {
     if (session.holding?.streams === foundry.streams) return session.holding.ready;
     const ready = openStreams(session, foundry)
-      .then(() => relaunch(session, foundry))
+      .then(() =>
+        // A failure here is retried, and then refused, by the prompt that needs it.
+        relaunch(session, foundry).catch((error) =>
+          log(`launch settings not re-applied: ${(error as Error).message}`),
+        ),
+      )
       .catch((error) => {
         if (session.holding?.ready === ready) session.holding = null;
         throw error;
@@ -348,25 +362,33 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     });
   };
 
+  /** One launch change at a time per session, in the order they were asked for. */
+  const inLaunchOrder = <T>(session: Session, work: () => Promise<T>): Promise<T> => {
+    const run = session.launching.then(work);
+    session.launching = run.catch(() => {});
+    return run;
+  };
+
   /** Apply a host's launch choice to the daemon and remember it for a restarted daemon. */
-  const applyLaunch = async (
+  const applyLaunch = (
     session: Session,
     foundry: Daemon,
     patch: ThreadLaunchPatch,
-  ): Promise<ThreadLaunchView> => {
-    const view = await foundry.http.updateLaunch(session.threadId, patch);
-    session.launch = { ...session.launch, ...patch };
-    session.launchedOn = foundry.streams;
-    return view;
-  };
+  ): Promise<ThreadLaunchView> =>
+    inLaunchOrder(session, async () => {
+      const view = await foundry.http.updateLaunch(session.threadId, patch);
+      session.launch = { ...session.launch, ...patch };
+      session.launchedOn = foundry.streams;
+      return view;
+    });
 
-  /** A daemon that restarted lost what this host chose; apply it again. */
-  const relaunch = async (session: Session, foundry: Daemon) => {
-    if (session.launchedOn === foundry.streams || !Object.keys(session.launch).length) return;
-    await applyLaunch(session, foundry, session.launch).catch((error) =>
-      log(`launch settings not re-applied: ${(error as Error).message}`),
-    );
-  };
+  /** A daemon that restarted lost what this host chose; apply it again (the latest choice, in order). */
+  const relaunch = (session: Session, foundry: Daemon): Promise<void> =>
+    inLaunchOrder(session, async () => {
+      if (session.launchedOn === foundry.streams || !Object.keys(session.launch).length) return;
+      await foundry.http.updateLaunch(session.threadId, { ...session.launch });
+      session.launchedOn = foundry.streams;
+    });
 
   /**
    * Mode and config for a session response. A thread keeps its mode. An ACP thread with none (new,
@@ -642,6 +664,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       launch: {},
       launchedOn: null,
       connecting: new Set(),
+      launching: Promise.resolve(),
     };
     session.cwd = cwd;
     sessions.set(thread.threadId, session);
@@ -840,9 +863,11 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       let foundry: Daemon;
       try {
         foundry = await ensureDaemon().catch(httpError);
+        if (pending.cancelled) return { stopReason: 'cancelled' };
         await hold(session, foundry).catch(httpError);
-        // A restarted daemon lost this host's mode, model, effort and MCP servers: apply them first.
-        await relaunch(session, foundry);
+        // A restarted daemon lost this host's mode, model, effort and MCP servers: apply them first,
+        // or refuse the turn rather than run it under settings the host did not choose.
+        await relaunch(session, foundry).catch(httpError);
       } finally {
         session.connecting.delete(pending);
       }
@@ -921,6 +946,9 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       const foundry = daemon;
       if (!foundry) return {};
       await cancelSession(session, foundry);
+      // The streams close now, so their terminals never arrive: the open turns settle here.
+      for (const turn of session.turns.values())
+        if (!turn.isSettled) turn.terminal('error', { cancelled: true });
       if (session.holding?.streams === foundry.streams) {
         foundry.streams.close(`thread:${session.threadId}`);
         foundry.streams.close(`flow:${session.threadId}`);

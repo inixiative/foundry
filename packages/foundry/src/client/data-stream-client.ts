@@ -17,6 +17,8 @@ export interface DataStreamClientOptions extends FoundryEndpoint {
   onStatus?: (status: 'open' | 'closed' | 'reconnecting') => void;
   /** The current bearer, read on every (re)connect: a restarted daemon publishes a new one. */
   refreshCapability?: () => string | undefined;
+  /** Checked before every reconnect (the bearer goes with it); a throw waits and tries again. */
+  beforeReconnect?: () => Promise<void>;
 }
 
 interface Held {
@@ -112,7 +114,15 @@ export class DataStreamClient {
     this.options.onStatus?.('reconnecting');
     setTimeout(() => {
       if (this.disposed) return;
-      this.connect().catch(() => this.reconnect());
+      Promise.resolve()
+        .then(() => this.options.beforeReconnect?.())
+        .then(() => {
+          if (this.disposed) return;
+          return this.connect();
+        })
+        .catch(() => {
+          if (!this.disposed) this.reconnect();
+        });
     }, this.options.reconnectDelayMs ?? 500);
   }
 

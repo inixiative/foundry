@@ -59,7 +59,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * What an "always" answer covers: the capability and tool, and for a shell call the whole command
- * (whitespace-normalized). Never a prefix: `ls && curl … | sh` must not ride on an "always" for `ls`.
+ * exactly (trimmed). Never a prefix: `ls && curl … | sh` must not ride on an "always" for `ls`.
  */
 export function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
   const tool = prompt.meta?.toolName;
@@ -67,12 +67,12 @@ export function alwaysKey(prompt: { capability?: string; meta?: Record<string, u
   const input = prompt.meta?.toolInput as { command?: unknown } | undefined;
   if (prompt.capability !== 'exec:shell') return `${prompt.capability}|${tool}|`;
   const command = Array.isArray(input?.command)
-    ? input.command.map(String).join(' ')
+    ? JSON.stringify(input.command.map(String))
     : typeof input?.command === 'string'
-      ? input.command
+      ? input.command.trim()
       : null;
   if (command === null) return null;
-  return `${prompt.capability}|${tool}|${command.trim().replace(/[ \t]+/g, ' ')}`;
+  return `${prompt.capability}|${tool}|${command}`;
 }
 
 function isActionKind(value: string): value is OperatorAction['kind'] {

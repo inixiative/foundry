@@ -31,7 +31,12 @@ export async function until(check: () => unknown | Promise<unknown>, label: stri
  * Real provider, factory/runtime, file-backed journal and actual viewer HTTP entry. */
 export async function liveWatchFixture(
   dir: string,
-  options: { interruptible?: boolean; feedbackProvider?: LLMProvider } = {},
+  options: {
+    interruptible?: boolean;
+    feedbackProvider?: LLMProvider;
+    /** The adapter checks structural rules at launch, as Codex does. */
+    structuralRulesAtLaunch?: boolean;
+  } = {},
 ) {
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, 'P'));
@@ -49,6 +54,7 @@ export async function liveWatchFixture(
     closing = false;
   const adapter: SessionAdapter = {
     runtime: 'claude-code',
+    ...(options.structuralRulesAtLaunch ? { structuralRulesAtLaunch: true } : {}),
     async getExternalSessionId() {
       return null;
     },

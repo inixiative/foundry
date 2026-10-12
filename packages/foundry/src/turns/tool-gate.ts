@@ -167,7 +167,8 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
         },
         'structure',
       );
-    if (request.stage === 'permission' && request.callId && approved.has(request.callId))
+    // The native ask for a call approved at pre-use comes once; the approval is used up by it.
+    if (request.stage === 'permission' && request.callId && approved.delete(request.callId))
       return outcome({ behavior: 'allow' }, 'pre-use approval');
     // A pre-use call the rules allow is the runtime's own mode's to decide. A native ask goes to the
     // user: Codex never asks about edits inside the workspace, so in acceptEdits the file changes it

@@ -278,6 +278,11 @@ export interface SessionAdapter {
    * standing context in its own turn messages instead. Absent: "first-turn".
    */
   readonly baseContextPlacement?: 'system-prompt' | 'first-turn';
+  /**
+   * The adapter cannot gate a tool call before it runs, so it checks the thread's structural rules
+   * at launch (Codex refuses under them): a change in whether rules exist relaunches its session.
+   */
+  readonly structuralRulesAtLaunch?: boolean;
 
   /** Bind native lifecycle events to a thread; returned disposer releases ownership. */
   bindSignals?(threadId: string, signals: SignalBus): () => void;
@@ -876,6 +881,7 @@ export interface CodexSessionAdapterConfig {
 
 export class CodexSessionAdapter implements SessionAdapter {
   readonly runtime: string;
+  readonly structuralRulesAtLaunch = true;
   private readonly _engine: 'mcp' | 'app-server';
   private readonly _appConfig: Readonly<Record<string, unknown>>;
   private _store: ExternalSessionStore;
