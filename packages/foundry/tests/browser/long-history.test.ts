@@ -105,6 +105,9 @@ test('long history after-run: index pagination to the oldest record, lazy detail
   const readme = readFileSync(join(project, 'README.md'), 'utf8');
   try {
     const config = starterConfig('controlled', 'controlled');
+    // The fixture lives inside the checkout: keep the machine's and the repo's instruction files out of
+    // the Cartographer's composed instructions, so row sizes stay what the quota cases assume.
+    config.composition = { preset: 'none' };
     config.setupComplete = true;
     config.agents = {
       worker: {

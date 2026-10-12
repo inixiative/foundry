@@ -142,3 +142,28 @@ export function revertChange(
   writeFileSync(applied.path, after);
   return { ...applied, beforeHash: sha(before), afterHash: sha(after), found: true };
 }
+
+/**
+ * A thread's rungs. The composer walks from the filesystem root to the thread's cwd, so a personal file
+ * in the project's checkout is read from its worktrees beneath it too: the project rung is the
+ * configured project directory when the cwd is inside it, else the cwd's repository. The org rung is
+ * the directory above the project.
+ */
+export function feedbackRoots(
+  thread: { meta: { projectId?: string; cwd?: string } },
+  config: { projects: Record<string, { path?: string } | undefined> },
+): LevelRoots {
+  const projectId = thread.meta.projectId;
+  const configured = projectId ? config.projects[projectId]?.path : undefined;
+  const cwd = thread.meta.cwd;
+  const inside = (dir: string, root: string) => {
+    const rel = relative(root, dir);
+    return !rel.startsWith('..') && !rel.startsWith('/');
+  };
+  let project = configured;
+  if (cwd && (!configured || !inside(cwd, configured))) {
+    const top = git(cwd, ['rev-parse', '--show-toplevel']);
+    project = top.code === 0 ? top.out : cwd;
+  }
+  return { home: homedir(), ...(project ? { project, org: dirname(project) } : {}) };
+}

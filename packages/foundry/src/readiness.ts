@@ -35,7 +35,6 @@ export interface ReadinessProfile {
   provider: string;
   model: string;
   domain?: string;
-  layerId?: string;
 }
 export interface ReadinessKingdom {
   id: string;
@@ -214,7 +213,7 @@ export async function inspectReadiness(
         'error',
         scope,
         'invalid-expert-ownership',
-        "Check each enabled expert's domain, single owned layer, instructions and context policy.",
+        "Check each enabled expert's domain, domain knowledge sources, instructions and context policy.",
       );
       continue;
     }
@@ -230,7 +229,7 @@ export async function inspectReadiness(
         role: agent.flowRole ?? agent.kind,
         provider,
         model,
-        ...(expert ? { domain: expert.domain, layerId: expert.layerId } : {}),
+        ...(expert ? { domain: expert.domain } : {}),
       });
       checkProvider(provider, scope);
       if (

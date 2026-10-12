@@ -1,13 +1,13 @@
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
+import { roleComposition } from '../prompts/instruction-settings';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
-import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from './domain-librarian';
+import { threadKnowledgeLayerId } from './domain-librarian';
 import { resolveLearningSettings, validateLearningSettings } from './learning-config';
 import type { LearningConfig, ThreadDomainConfig } from './thread-runtime';
 
 export interface ConfiguredExpert {
   readonly agentId: string;
   readonly domain: string;
-  readonly layerId: string;
   readonly agent: AgentSettingsConfig;
 }
 
@@ -20,66 +20,56 @@ const diagnosticLabel = (value: string): string => {
   return escaped.length <= 202 ? escaped : `${escaped.slice(0, 199)}...`;
 };
 
-/** Resolve declarations only. No provider construction, layer writes or runtime attachment. */
+/**
+ * Resolve declarations only. No provider construction, layer writes or runtime attachment. A
+ * Warden's instructions and domain knowledge come from the composition view (its `prompt` and
+ * `domainKnowledge` sources, then the ladder's files for its role); it owns no configured layer.
+ */
 export function configuredExperts(config: FoundryConfig): {
   experts: ConfiguredExpert[];
   claimedDomains: Set<string>;
-  claimedLayers: Set<string>;
 } {
   const experts: ConfiguredExpert[] = [],
-    claimedDomains = new Set<string>(),
-    claimedLayers = new Set<string>();
-  const owners = new Map<string, string>(),
-    domains = new Map<string, string>();
+    claimedDomains = new Set<string>();
+  const domains = new Map<string, string>();
   for (const [id, agent] of Object.entries(config.agents)) {
     if (agent.flowRole !== 'domain-advising') continue;
     if (!identity(id) || agent.id !== id || !identity(agent.domain))
       throw Error(`Invalid configured expert identity: ${id}`);
     if (typeof agent.enabled !== 'boolean') throw Error(`Invalid expert enablement: ${id}`);
     claimedDomains.add(agent.domain);
-    for (const layer of agent.ownedLayers ?? []) claimedLayers.add(layer);
     if (!agent.enabled) continue;
     if (!['decider', 'domain-librarian'].includes(agent.kind))
       throw Error(`Unsupported configured expert kind: ${id}`);
-    if (!Array.isArray(agent.ownedLayers) || agent.ownedLayers.length !== 1)
-      throw Error(`Expert ${id} must own exactly one domain layer`);
-    const layerId = agent.ownedLayers[0],
-      layer = config.layers[layerId];
+    if (agent.ownedLayers?.length)
+      throw Error(
+        `Expert ${id} owns layers (${agent.ownedLayers.join(', ')}); a Warden reads its knowledge from the composition view: list the sources in agents.${id}.domainKnowledge and drop ownedLayers`,
+      );
     if (
-      !layer ||
-      layer.id !== layerId ||
-      !identity(layerId) ||
-      layer.domain !== agent.domain ||
-      layer.segment === 'thread-knowledge' ||
-      layerId === 'thread-state' ||
-      isThreadKnowledgeLayerId(layerId)
+      agent.domainKnowledge !== undefined &&
+      (!Array.isArray(agent.domainKnowledge) ||
+        agent.domainKnowledge.some((source) => typeof source !== 'string' || !source))
     )
-      throw Error(`Expert ${id} has an invalid domain layer mapping`);
+      throw Error(`Expert ${id} domainKnowledge must be source ids`);
+    const unknown = (agent.domainKnowledge ?? []).filter((source) => !config.sources[source]);
+    if (unknown.length)
+      throw Error(`Expert ${id} domainKnowledge names unknown sources: ${unknown.join(', ')}`);
+    const disabled = (agent.domainKnowledge ?? []).filter(
+      (source) => !config.sources[source]!.enabled,
+    );
+    if (disabled.length)
+      throw Error(`Expert ${id} domainKnowledge names disabled sources: ${disabled.join(', ')}`);
+    // Instruction files reach a Warden through its own role in the composition view, with its own
+    // picks and audience; an instructions source here would compose the main thread's instead.
+    const composed = (agent.domainKnowledge ?? []).filter(
+      (source) => config.sources[source]!.type === 'instructions',
+    );
+    if (composed.length)
+      throw Error(
+        `Expert ${id} domainKnowledge names instructions sources (${composed.join(', ')}); pick instruction files with composition.roles.${id}.domainKnowledge.general`,
+      );
     if (domains.has(agent.domain)) throw Error(`Duplicate expert domain: ${agent.domain}`);
-    if (owners.has(layerId)) throw Error(`Duplicate expert layer writer: ${layerId}`);
     domains.set(agent.domain, id);
-    owners.set(layerId, id);
-    if (
-      layer.writers !== undefined &&
-      (!Array.isArray(layer.writers) || layer.writers.length !== 1 || layer.writers[0] !== id)
-    )
-      throw Error(`Conflicting writers for expert layer: ${layerId}`);
-    if (
-      Object.entries(config.agents).some(
-        ([otherId, other]) =>
-          otherId !== id && other.enabled && other.ownedLayers?.includes(layerId),
-      )
-    )
-      throw Error(`Conflicting agent writer for expert layer: ${layerId}`);
-    if (
-      Object.entries(config.layers).some(
-        ([otherId, other]) => otherId !== layerId && other.enabled && other.writers?.includes(id),
-      )
-    )
-      throw Error(`Expert ${id} is declared writer of multiple layers`);
-    if (typeof layer.enabled !== 'boolean')
-      throw Error(`Invalid expert layer enablement: ${layerId}`);
-    if (!layer.enabled) continue;
     if (typeof agent.prompt !== 'string' || !agent.prompt.trim())
       throw Error(`Expert ${id} requires explicit instructions`);
     if (
@@ -100,7 +90,7 @@ export function configuredExperts(config: FoundryConfig): {
       agent.peers.length ||
       agent.invocation === 'conditional' ||
       agent.condition !== undefined ||
-      agent.visibleLayers.some((layer) => layer !== layerId && layer !== 'thread-state')
+      agent.visibleLayers.some((layer) => layer !== 'thread-state')
     )
       throw Error(`Unsupported configured expert tools, delegation or context policy: ${id}`);
     if (agent.timeout !== undefined && (!Number.isSafeInteger(agent.timeout) || agent.timeout < 1))
@@ -119,18 +109,22 @@ export function configuredExperts(config: FoundryConfig): {
         ...(agent.thinking !== undefined ? { thinking: agent.thinking } : {}),
       },
     });
-    experts.push({ agentId: id, domain: agent.domain, layerId, agent: structuredClone(agent) });
+    experts.push({ agentId: id, domain: agent.domain, agent: structuredClone(agent) });
   }
-  return { experts, claimedDomains, claimedLayers };
+  return { experts, claimedDomains };
 }
 
-/** The enabled Cartographer's configured instructions; absent means the built-in ones. */
-export function cartographerInstructions(config: FoundryConfig): string | undefined {
-  const agent = Object.values(config.agents).find((a) => a.enabled && a.kind === 'cartographer');
-  return agent?.prompt?.trim() ? agent.prompt : undefined;
+/** The Cartographer's role in the composition view: the enabled cartographer agent's id, else "cartographer". */
+export function cartographerRoleId(config: FoundryConfig): string {
+  return (
+    Object.values(config.agents).find((a) => a.enabled && a.kind === 'cartographer')?.id ??
+    'cartographer'
+  );
 }
 
-export interface ResolvedThreadDomain extends ThreadDomainConfig {
+export interface ResolvedThreadDomain extends Omit<ThreadDomainConfig, 'layerId'> {
+  /** Programmatic domains only: the stack layer it reads. A configured Warden reads its role's view. */
+  layerId?: string;
   expert?: { agentId: string; source: 'configured' };
   adviseProvider?: LLMProvider;
   adviseOpts?: CompletionOpts;
@@ -142,7 +136,10 @@ export function resolveThreadDomains(
   config: FoundryConfig,
   available: ReadonlyMap<string, Pick<ContextLayer, 'definition' | 'segment'>>,
   options: {
-    legacy: readonly ThreadDomainConfig[];
+    /** Domain defaults by name (guard triggers, programmatic guard) for configured Wardens without their own. */
+    policy: readonly ThreadDomainConfig[];
+    /** Wardens registered in code over a stack layer (tests, research runs); never from settings. */
+    programmatic: readonly ThreadDomainConfig[];
     llm: LLMProvider;
     providers?: ReadonlyMap<string, LLMProvider>;
     learning?: LearningConfig;
@@ -150,7 +147,7 @@ export function resolveThreadDomains(
     warn?: (line: string) => void;
   },
 ): ResolvedThreadDomain[] {
-  const { experts, claimedDomains, claimedLayers } = configuredExperts(config);
+  const { experts, claimedDomains } = configuredExperts(config);
   const diagnostics = new Set<string>();
   const providers = new Map([
     [options.llm.id, options.llm],
@@ -182,11 +179,7 @@ export function resolveThreadDomains(
         'Native expert cache/temperature setting cannot be enforced by the current adapter',
       );
   };
-  const result: ResolvedThreadDomain[] = experts.map(({ agentId, domain, layerId, agent }) => {
-    if (!available.has(layerId))
-      throw Error(`Configured expert layer absent from this thread: ${layerId}`);
-    if (available.get(layerId)!.segment === 'thread-knowledge')
-      throw Error(`Configured expert cache is generated thread knowledge: ${layerId}`);
+  const result: ResolvedThreadDomain[] = experts.map(({ agentId, domain, agent }) => {
     const provider = providerFor(agent.provider || config.defaults.provider);
     const model = agent.model || config.defaults.model;
     if (!model?.trim()) throw Error(`Configured expert model unavailable: ${agentId}`);
@@ -223,16 +216,16 @@ export function resolveThreadDomains(
       ];
       if (changed.length)
         diagnostics.add(
-          `[expert-review-profile-override] domain=${diagnosticLabel(domain)} layer=${diagnosticLabel(layerId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this expert's profile; these are requested settings, not native acknowledgment.`,
+          `[expert-review-profile-override] domain=${diagnosticLabel(domain)} agent=${diagnosticLabel(agentId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this expert's profile; these are requested settings, not native acknowledgment.`,
         );
     }
-    const legacyPolicy = options.legacy.find((d) => d.domain === domain);
+    const policy = options.policy.find((d) => d.domain === domain);
     return {
       domain,
-      layerId,
       expert: { agentId, source: 'configured' },
-      guardTriggers: [...(agent.guardTriggers ?? legacyPolicy?.guardTriggers ?? [])],
-      programmaticGuard: legacyPolicy?.programmaticGuard,
+      budget: roleComposition(config.composition, agentId).budget,
+      guardTriggers: [...(agent.guardTriggers ?? policy?.guardTriggers ?? [])],
+      programmaticGuard: policy?.programmaticGuard,
       adviseProvider: provider,
       adviseOpts: { ...opts, maxTokens: 512 },
       reviewProvider,
@@ -243,45 +236,26 @@ export function resolveThreadDomains(
       reviewPrompt: agent.prompt,
     };
   });
-  // Legacy/manual registrations remain available only where configuration has
-  // not declared another owner or explicitly disabled/remapped that domain.
-  for (const dc of options.legacy) {
-    const layer = config.layers[dc.layerId];
+  // Wardens registered in code read the stack layer they name, where no configured Warden holds the domain.
+  for (const dc of options.programmatic) {
     const instance = available.get(dc.layerId);
-    if (
-      claimedDomains.has(dc.domain) ||
-      claimedLayers.has(dc.layerId) ||
-      layer?.enabled === false ||
-      layer?.segment === 'thread-knowledge' ||
-      instance?.segment === 'thread-knowledge' ||
-      !instance
-    )
+    if (claimedDomains.has(dc.domain) || !instance || instance.segment === 'thread-knowledge')
       continue;
-    const metadata = [
-      ...(layer?.domain !== undefined || instance.definition?.domain !== undefined
-        ? ['domain']
-        : []),
-      ...(layer?.writers !== undefined || instance.definition?.writers !== undefined
-        ? ['writers']
-        : []),
-    ];
-    if (metadata.length) {
-      diagnostics.add(
-        `[legacy-expert-suppressed] domain=${diagnosticLabel(dc.domain)} layer=${diagnosticLabel(dc.layerId)}: passive metadata=${metadata.join(',')} suppresses the legacy expert. Knowledge remains passive. To run an expert, configure an enabled domain-advising agent with matching domain and ownedLayers; remove this metadata only if legacy registration is intended.`,
-      );
-      continue;
-    }
     result.push({ ...dc, guardTriggers: [...dc.guardTriggers] });
   }
   const seenDomains = new Set<string>(),
     seenLayers = new Set<string>();
   for (const dc of result) {
-    if (!identity(dc.domain) || seenDomains.has(dc.domain) || seenLayers.has(dc.layerId))
+    if (
+      !identity(dc.domain) ||
+      seenDomains.has(dc.domain) ||
+      (dc.layerId !== undefined && seenLayers.has(dc.layerId))
+    )
       throw Error(`Ambiguous runtime expert ownership: ${dc.domain}`);
     if (available.has(threadKnowledgeLayerId(dc.domain)))
       throw Error(`Generated expert layer already exists: ${dc.domain}`);
     seenDomains.add(dc.domain);
-    seenLayers.add(dc.layerId);
+    if (dc.layerId !== undefined) seenLayers.add(dc.layerId);
   }
   for (const diagnostic of diagnostics) options.warn?.(diagnostic);
   return result;

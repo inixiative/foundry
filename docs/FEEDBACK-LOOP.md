@@ -246,6 +246,36 @@ interface FeedbackApplyRecord {        // phase: feedback-apply / feedback-rever
 - **Edits made outside any turn** (a viewer edit, an undo from the panel) are journalled on the item's origin thread with `turnId: null`. `appendPhase` already allows that.
 - **Kingdom stores nothing.** Sharing an item set across Foundries stays open (open question 5, below).
 
+### L-slice. What the first slice builds (2026-10-12)
+
+The first slice is on `feat/feedback-lifecycle`.
+
+**Built:**
+
+- Capture through foundry-core's detector and classify contract, with one item per rule.
+- Matching and recurrence.
+- Cartographer routing to Warden roles, falling back to `main`.
+- The tuning prompt: `ask` by default, `block`, or `blockOn`. A blocking hold runs while the turn is still queued. A stop withdraws it, and `blockTimeoutMs` bounds it.
+- Answers validated through `POST /api/feedback/:id/answer`. An edit replaces the rule's lines.
+- `POST /api/feedback/:id/tune` raises a prompt again. `undo` reverts a change.
+- Personal-rung role files, invalidated through `invalidateComposition()`.
+- Exposure counting, from composed segments only.
+- The Feedback view (L7), the `feedback` stream, and the ACP card, ask and `/feedback`.
+
+The rungs follow the thread. The project rung is the configured project directory when the thread's cwd is inside it; otherwise it is the cwd's repository. The org rung is the directory above the project. The composer walks from the filesystem root to the cwd, so those personal files are read from worktrees beneath the project too.
+
+**Next slice:**
+
+- Oracle recurrence wiring: `foundry feedback export`, plus `oracle mine` on the shared detector.
+- Committed rungs as PRs.
+- `reroute` as an answer. Today, an edit with `roles` reroutes.
+- `tell` and the ACP `allow_always` answer (open question 2).
+- The advise and guard citation line (open question 6).
+- Exposure for rules routed to `main`. The executor's input is not a participant row, so for now those rules never reach "holding".
+- Conversation chips.
+
+An item without a crisp rule gets a `choice` prompt, and its Edit carries the rule, rather than an `input` prompt.
+
 ### L-tests. Test cases
 
 Tests follow the repo conventions: `bun test`, cassette replays for the decision calls, browser tests for the viewer, plus one live cassette.

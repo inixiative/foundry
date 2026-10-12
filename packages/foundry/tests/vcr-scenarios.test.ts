@@ -9,16 +9,20 @@ import { join } from 'node:path';
 import { CodexPrimedSessions } from '@inixiative/agent-session';
 import {
   ActionQueue,
+  ContextLayer,
   ContextStack,
+  SignalBus,
   type StandingPart,
   standingPart,
   Thread,
 } from '@inixiative/foundry-core';
+import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import { classifyCorrection, lintStatement } from '../src/feedback/sharpen';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   CODEX_HARNESS_INSTRUCTIONS_OFF,
+  composeRoleView,
 } from '../src/prompts/instruction-stack';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
 import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
@@ -409,6 +413,163 @@ test(
       receipts: [
         { valid: true, settled: true, prime: 'cold' },
         { valid: true, settled: true, prime: 'warm' },
+      ],
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'claude composed Warden: the composition view is the primed prefix, forked per call, re-primed when it changes',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'composed', async () => {
+      // A fixed path, so the composed text (which names its files) is the same on every replay.
+      const base = join(tmpdir(), 'foundry-vcr-composition');
+      rmSync(base, { recursive: true, force: true });
+      // Not named "home": a cassette must never carry a path that looks like a home directory.
+      const home = join(base, 'account'),
+        org = join(base, 'org'),
+        repo = join(org, 'repo');
+      const put = (path: string, text: string) => {
+        mkdirSync(join(path, '..'), { recursive: true });
+        writeFileSync(path, text);
+      };
+      mkdirSync(join(repo, '.git'), { recursive: true });
+      put(join(home, '.claude', 'CLAUDE.md'), 'Answer briefly.');
+      put(join(org, 'CLAUDE.md'), '# Org\n\nSettings toggles are features, not bugs.');
+      const roleFile = join(repo, '.foundry', 'roles', 'settings-warden', 'domainKnowledge.md');
+      put(roleFile, '- Settings UI lives under src/settings.');
+      const compose = () =>
+        composeRoleView({
+          cwd: repo,
+          harness: 'claude',
+          home,
+          claudeConfigDir: join(home, '.claude'),
+          codexHome: join(home, '.codex'),
+          managedPath: join(base, 'managed', 'CLAUDE.md'),
+          role: 'settings-warden',
+          picks: { domainKnowledge: { general: ['org'] } },
+        });
+      const transport = recordedClaudeTransport(
+        {
+          status: ['subscribed'],
+          // Primer, fork, spare (the second decision), a spare dropped by the re-prime, the second
+          // primer and its fork. The spare started after that races shutdown and has no cassette.
+          decision: Array.from({ length: 6 }, (_, i) => `composed-${i + 1}`),
+        },
+        vcr,
+      );
+      const directory = root(),
+        receipts = join(directory, 'receipts');
+      mkdirSync(receipts, { mode: 0o700 });
+      const decisionSource = source('claude', directory);
+      const primed = createPrimedDecisionHost({
+        source: decisionSource,
+        directory: receipts,
+        model: LIVE.claudeObservedModel,
+        effort: 'low',
+        maxConcurrent: 2,
+        callTimeoutMs: 30_000,
+        spawn: transport.spawn,
+        statusSpawn: () => transport.statusSpawn('unused'),
+      });
+      const decisions = buildSubscriptionDecisions(
+        {
+          directory: receipts,
+          source: decisionSource,
+          model: LIVE.claudeObservedModel,
+          maxCalls: 6,
+          maxQueued: 2,
+          maxConcurrent: 2,
+          callTimeoutMs: 30_000,
+        },
+        primed.createRun,
+      );
+      const instructions = new ContextLayer({ id: 'role:settings-warden:instructions' });
+      const knowledge = new ContextLayer({ id: 'role:settings-warden:domainKnowledge' });
+      const load = async () => {
+        const view = await compose();
+        instructions.set(
+          `You are the settings Warden. Advise only on the settings area.\n\n${view.slots.instructions.text}`,
+        );
+        knowledge.set(view.slots.domainKnowledge.text);
+      };
+      const warden = new DomainLibrarian({
+        domain: 'settings',
+        cache: knowledge,
+        instructions,
+        role: 'settings-warden',
+        signals: new SignalBus(),
+        llm: decisions.provider,
+        llmOpts: { threadId: 'T:aux:domain:settings', maxTokens: 512, temperature: 0 },
+      });
+      try {
+        await load();
+        const first = await warden.advise('Where do settings toggles live?');
+        const second = await warden.advise('Is a disabled toggle a bug?');
+        // Its warm spare starts before the composition changes, live and in replay alike, so every
+        // launch takes the same cassette in both.
+        for (let waited = 0; transport.launches.length < 4 && waited < 10_000; waited += 10)
+          await Bun.sleep(10);
+        put(roleFile, '- Settings UI lives under src/settings; toggles persist per project.');
+        await load();
+        const third = await warden.advise('Do toggles persist?');
+        const used = transport.launches.filter((launch) => launch.stdin);
+        const inputs = used.map((launch) =>
+          launch.stdin
+            .split('\n')
+            .filter(Boolean)
+            .map(
+              (line) => JSON.parse(line) as { message?: { content: string | { text?: string }[] } },
+            )
+            // User turns only: a spare's control lines carry no message.
+            .flatMap(({ message }) =>
+              !message
+                ? []
+                : typeof message.content === 'string'
+                  ? [message.content]
+                  : [message.content.map((block) => block.text ?? '').join('')],
+            )
+            .join('\n'),
+        );
+        const primers = inputs.filter((input) => input.startsWith('## Domain cache (settings)'));
+        return {
+          advised: [first, second, third].map((advice) => advice.error === undefined),
+          primers: primers.length,
+          primersCarriedComposition: primers.every(
+            (input) => input.includes('toggles are features') && input.includes('src/settings'),
+          ),
+          secondPrimerChanged: primers[1]?.includes('persist per project') ?? false,
+          cyclesSentOnlyTheTurn: inputs
+            .filter((input) => !input.startsWith('## Domain cache'))
+            .every(
+              (input) => !input.includes('toggles are features') && input.includes('## Message'),
+            ),
+          receipts: readFileSync(primed.receiptsPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => {
+              const r = JSON.parse(line);
+              return { valid: r.valid, settled: r.settled, prime: r.prime };
+            }),
+        };
+      } finally {
+        await decisions.shutdown();
+        await primed.close();
+        rmSync(base, { recursive: true, force: true });
+      }
+    });
+    expect(out).toEqual({
+      advised: [true, true, true],
+      primers: 2,
+      primersCarriedComposition: true,
+      secondPrimerChanged: true,
+      cyclesSentOnlyTheTurn: true,
+      receipts: [
+        { valid: true, settled: true, prime: 'cold' },
+        { valid: true, settled: true, prime: 'warm' },
+        { valid: true, settled: true, prime: 'cold' },
       ],
     });
   },

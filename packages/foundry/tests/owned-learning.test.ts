@@ -59,7 +59,7 @@ function fixture(
     log: () => {},
     warn: () => {},
     learning: { timeoutMs: 5, hardTimeoutMs: 200, ...learning },
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [], budget: 40_000 }],
     llm: {
       id: 'controlled',
       complete: async (messages, opts = {}) => {
@@ -471,7 +471,7 @@ test('a foreign dispatch envelope is diagnosed without admitting or retaining it
   expect(JSON.stringify(f.runtime.learningState)).not.toContain('FOREIGN-PRIVATE');
 });
 
-test('unavailable native budgets stay unenforced and configured knowledge is never silently clipped', async () => {
+test('unavailable native budgets stay unenforced and over-budget knowledge is a reported error, never clipped', async () => {
   let sends = 0;
   const f = fixture(() => '{"decision":"abstain"}', {
     reviewProvider: {
@@ -483,11 +483,19 @@ test('unavailable native budgets stay unenforced and configured knowledge is nev
     },
     reviewOpts: { thinking: 'high' },
   });
-  f.runtime.domainLibrarians.get('security')!.cache.set('C'.repeat(40001));
+  const cache = f.runtime.domainLibrarians.get('security')!.cache;
+  cache.set('C'.repeat(40001));
   await f.thread.dispatch('worker', 'Work');
   await f.runtime.learningSettled();
   expect(sends).toBe(0);
-  expect(f.knowledge.history.at(-1)?.decision).toBe('invalid');
+  expect(f.knowledge.history.at(-1)?.decision).toBe('error');
+  expect(f.knowledge.history.at(-1)?.reason).toContain('exceed its budget of 40000');
+  expect(f.knowledge.history.at(-1)?.reason).toContain('Nothing was sent or truncated');
+  // The review lane stays open: once the knowledge fits, the next review is admitted.
+  cache.set('Configured domain knowledge');
+  await f.thread.dispatch('worker', 'Work again');
+  await f.runtime.learningSettled();
+  expect(sends).toBe(1);
   expect(f.runtime.learningState.domains.security.job!.budgets).toMatchObject({
     nativeTokens: 'requested-unenforced',
     nativeEffort: 'requested-unenforced',

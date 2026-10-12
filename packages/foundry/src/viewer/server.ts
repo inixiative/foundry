@@ -1,4 +1,3 @@
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -14,9 +13,11 @@ import type {
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
+import { invalidateComposition } from '../agents/role-layers';
 import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
+import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
@@ -339,15 +340,13 @@ export function createViewer(config: ViewerConfig) {
           classify: (input) => classifyCorrection(feedbackProvider, input),
           match: (statement, candidates, priority) =>
             matchExisting(feedbackProvider, statement, candidates, priority),
+          // Role files compose on their next prepare; main's instructions are a stack layer of the thread.
           invalidate: (role, threadId) => {
+            invalidateComposition();
             if (role === MAIN_ROLE)
               directory.get(threadId)?.stack.getLayer('instructions')?.invalidate();
           },
-          roots: (thread) => {
-            const projectId = thread.meta.projectId;
-            const path = projectId ? configStore.config.projects[projectId]?.path : undefined;
-            return { home: homedir(), ...(path ? { project: path } : {}) };
-          },
+          roots: (thread) => feedbackRoots(thread, configStore.config),
           changed: (item) => streams.feedbackChanged(item),
           log: (message) => log.warn(message),
         })

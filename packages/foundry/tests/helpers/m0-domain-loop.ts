@@ -211,7 +211,8 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         const toolReply = messages.findLast(
           (m) => m.role === 'user' && m.content.startsWith('[Tool Result '),
         );
-        if (user === 'Perform the migration' && !toolReply)
+        // Wardens that chimed in follow the user's text in the same message.
+        if (user.split('\n\n---\n\n')[0] === 'Perform the migration' && !toolReply)
           return {
             model: 'controlled',
             content: '',

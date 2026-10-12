@@ -91,7 +91,6 @@ export function developmentTeam(options: DevelopmentTeamOptions): FoundryConfig 
       throw Error(`Invalid ${domain} snapshot`);
     const enabled = snapshot !== undefined || ['architecture', 'testing'].includes(domain);
     const agentId = crypto.randomUUID(),
-      layerId = crypto.randomUUID(),
       sourceId = crypto.randomUUID();
     const content = snapshot
       ? `Source: ${snapshot.reference}\nCaptured: ${snapshot.capturedAt}\nSHA-256: ${createHash('sha256').update(snapshot.content).digest('hex')}\n\n${snapshot.content}`
@@ -107,8 +106,8 @@ export function developmentTeam(options: DevelopmentTeamOptions): FoundryConfig 
       ...options.decision,
       tools: false,
       temperature: 0,
-      visibleLayers: [layerId],
-      ownedLayers: [layerId],
+      visibleLayers: [],
+      domainKnowledge: [sourceId],
       peers: [],
       maxDepth: 1,
       enabled,
@@ -118,16 +117,6 @@ export function developmentTeam(options: DevelopmentTeamOptions): FoundryConfig 
           : ['features', 'primitives', 'architecture'].includes(domain)
             ? ['Write', 'Edit', 'file_write']
             : [],
-    };
-    config.layers[layerId] = {
-      id: layerId,
-      domain,
-      segment: 'domain-knowledge',
-      prompt: `${domain} evidence`,
-      writers: [agentId],
-      sourceIds: [sourceId],
-      staleness: 0,
-      enabled,
     };
     config.sources[sourceId] = {
       id: sourceId,

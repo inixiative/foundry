@@ -6,8 +6,38 @@ import type {
 } from '@inixiative/foundry-core';
 import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 
-/** Standing instruction files (`instructions` in settings); see docs/usage-and-context.md. */
-export interface InstructionSettings {
+/** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
+export const COMPOSITION_SLOTS = ['instructions', 'domainKnowledge'] as const;
+export type CompositionSlot = (typeof COMPOSITION_SLOTS)[number];
+
+/** The main thread's role id in the composition view. */
+export const MAIN_ROLE = 'main';
+
+/**
+ * Default budget for a middleware role's composed instructions plus domain knowledge, in characters:
+ * under the decision input cap (DECISION_INPUT_CAP, 100,000 serialized), leaving room for thread
+ * knowledge, thread state and the turn, so an overflow is this budget's named error, not the cap's.
+ */
+export const DEFAULT_ROLE_BUDGET = 80_000;
+
+/** How narrow an audience is: one sees every tier its rank or above. */
+const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {
+  personal_private: 0,
+  personal_public: 1,
+  team: 2,
+  org: 3,
+};
+
+export interface CompositionDedupe {
+  content?: boolean;
+  sections?: boolean;
+}
+
+/**
+ * The composition view (`composition` in settings; see docs/usage-and-context.md): one ladder
+ * composes every slot for every role, the main thread and each middleware role alike.
+ */
+export interface CompositionSettings {
   /**
    * Whether the native harness also loads instruction files itself. "suppress" leaves Foundry's
    * `instructions` source as the only path; "load" lets the harness load them too. Absent: suppress
@@ -19,7 +49,37 @@ export interface InstructionSettings {
   /** Registered nodes by id. A preset id replaces that node; `enabled: false` removes it. */
   nodes?: Record<string, InstructionNodeConfig>;
   /** Remove repeated files and sections, keeping the most specific copy. Both default on. */
-  dedupe?: { content?: boolean; sections?: boolean };
+  dedupe?: CompositionDedupe;
+  /** What each role picks from the ladder, by role id (`main`, or a middleware agent's id). */
+  roles?: Record<string, RoleComposition>;
+}
+
+/** One slot's pick from the ladder: everything that applies, minus `exclude`. */
+export interface SlotSelection {
+  /** Nodes left out of this slot entirely: their general files and their role files. */
+  exclude?: string[];
+  /**
+   * Nodes whose general files (unslotted: CLAUDE.md, AGENTS.md, rules, auto memory) compose into
+   * this slot; role files compose either way. Default: "all" for instructions, none for domain
+   * knowledge.
+   */
+  general?: 'all' | string[];
+}
+
+/** A role's picks. Everything that applies is on by default. */
+export interface RoleComposition {
+  /** `false` leaves the slot's ladder part out entirely. */
+  instructions?: SlotSelection | false;
+  domainKnowledge?: SlotSelection | false;
+  /** Who the composition is for: a file reaches it only if its tier is visible there. Default personal_private. */
+  audience?: CorpusTier;
+  /** Overrides `composition.dedupe` for this role. */
+  dedupe?: CompositionDedupe;
+  /**
+   * Characters allowed for instructions plus domain knowledge. Over it, the role's phase reports an
+   * error and does not run. Default: none for main, DEFAULT_ROLE_BUDGET for middleware roles.
+   */
+  budget?: number;
 }
 
 /** One rung of the instruction hierarchy. */
@@ -34,7 +94,11 @@ export interface InstructionNodeConfig {
   label?: string;
   /** Applies only where the parent applies, and orders after it. */
   parent?: string;
-  /** When the node applies: cwd inside `paths`, the thread's `projects`, its Kingdom `owners`, the `harness`. */
+  /**
+   * When the node applies: cwd inside `paths`, the thread's `projects`, its Kingdom `owners`, the
+   * `harness`, the `roles` composed for and the `slots` composed. A node and source naming no slot
+   * compose the instructions slot (unless a role names the node in another slot's `general`).
+   */
   when?: HierarchyMatch;
   /** The directory the node is about (`{anchor}` in paths). Default: the matched `when.paths` entry. */
   anchor?: string;
@@ -65,6 +129,17 @@ const DIRECTORY_FILES: readonly HierarchyFileSource[] = [
   { path: '.claude/AGENTS.md' },
 ];
 
+/** Each place's role files: `.foundry/roles/<role>/<slot>.md`, for every role and both slots. */
+const ROLE_FILE: HierarchyFileSource = {
+  path: '.foundry/roles/{role}/{slot}.md',
+  when: { slots: [...COMPOSITION_SLOTS] },
+};
+/** A personal role file beside it, like CLAUDE.local.md. */
+const LOCAL_ROLE_FILE: HierarchyFileSource = {
+  path: '.foundry/roles/{role}/{slot}.local.md',
+  when: { slots: [...COMPOSITION_SLOTS] },
+};
+
 /** Source id of the harness's personal global file, left out when the harness reads it itself. */
 export const HARNESS_GLOBAL_SOURCE = 'harness-global';
 
@@ -89,7 +164,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     scope: 'computer',
     personal: true,
     imports: 'anywhere',
-    owns: { within: ['{claudeConfigDir}', '{codexHome}'], dirs: ['{home}'] },
+    owns: { within: ['{claudeConfigDir}', '{codexHome}', '{home}/.foundry'], dirs: ['{home}'] },
     sources: [
       {
         id: HARNESS_GLOBAL_SOURCE,
@@ -108,6 +183,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
         path: ['{codexHome}/AGENTS.override.md', '{codexHome}/AGENTS.md'],
       },
       { walk: [{ path: 'CLAUDE.md' }, { path: 'AGENTS.md' }], span: { only: ['{home}'] } },
+      { path: '{home}/.foundry/roles/{role}/{slot}.md', when: { slots: [...COMPOSITION_SLOTS] } },
     ],
   },
   {
@@ -116,7 +192,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     personal: false,
     sources: [
       {
-        walk: DIRECTORY_FILES,
+        walk: [...DIRECTORY_FILES, ROLE_FILE],
         span: { outside: ['{project}', '{repository}'], except: ['{home}'] },
       },
     ],
@@ -128,7 +204,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     owns: { within: ['{project}', '{repository}'] },
     sources: [
       {
-        walk: DIRECTORY_FILES,
+        walk: [...DIRECTORY_FILES, ROLE_FILE],
         span: { within: ['{project}', '{repository}'], except: ['{home}'] },
       },
     ],
@@ -137,8 +213,10 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     id: 'local',
     scope: 'project',
     personal: true,
-    owns: { names: ['CLAUDE.local.md'] },
-    sources: [{ walk: [{ path: 'CLAUDE.local.md' }] }],
+    owns: {
+      names: ['CLAUDE.local.md', ...COMPOSITION_SLOTS.map((slot) => `${slot}.local.md`)],
+    },
+    sources: [{ walk: [{ path: 'CLAUDE.local.md' }, LOCAL_ROLE_FILE] }],
   },
   {
     id: 'memory',
@@ -157,11 +235,11 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
 ] satisfies InstructionNodeSettings[]);
 
 /**
- * The registered ladder: the preset (`instructions.preset`: "claude-code", the default, or "none"), with `instructions.nodes` merged over it by id. A node with `enabled: false` is removed;
+ * The registered ladder: the preset (`composition.preset`: "claude-code", the default, or "none"), with `composition.nodes` merged over it by id. A node with `enabled: false` is removed;
  * a new id is added after the preset's nodes, placed in the tree by its `parent`.
  */
 export function resolveInstructionLadder(
-  settings: InstructionSettings | undefined,
+  settings: CompositionSettings | undefined,
 ): InstructionNodeSettings[] {
   const base = settings?.preset === 'none' ? [] : DEFAULT_INSTRUCTION_LADDER;
   const nodes = new Map(base.map((node) => [node.id, node]));
@@ -175,13 +253,21 @@ export function resolveInstructionLadder(
 const isStrings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
 
+const MATCH_KEYS = ['paths', 'projects', 'owners', 'harness', 'roles', 'slots'];
+
 function checkMatch(where: string, when: unknown): void {
   if (when === undefined) return;
   if (!when || typeof when !== 'object') throw Error(`${where}: when must be an object`);
   for (const [key, value] of Object.entries(when)) {
-    if (!['paths', 'projects', 'owners', 'harness'].includes(key))
-      throw Error(`${where}: when.${key} is not one of paths, projects, owners, harness`);
+    if (!MATCH_KEYS.includes(key))
+      throw Error(`${where}: when.${key} is not one of ${MATCH_KEYS.join(', ')}`);
     if (!isStrings(value)) throw Error(`${where}: when.${key} must be a list of strings`);
+    if (key === 'slots')
+      for (const slot of value)
+        if (!(COMPOSITION_SLOTS as readonly string[]).includes(slot))
+          throw Error(
+            `${where}: when.slots names ${slot}; slots are ${COMPOSITION_SLOTS.join(', ')}`,
+          );
   }
 }
 
@@ -222,26 +308,33 @@ function checkSpan(where: string, span: HierarchySpan | undefined): void {
   }
 }
 
-/** Validates `instructions` against the ladder it resolves to. */
-export function validateInstructionSettings(
-  settings: InstructionSettings | undefined,
+function checkDedupe(where: string, dedupe: unknown): void {
+  if (dedupe === undefined) return;
+  if (!dedupe || typeof dedupe !== 'object' || Array.isArray(dedupe))
+    throw Error(`${where} must be an object`);
+  for (const [key, value] of Object.entries(dedupe))
+    if (!['content', 'sections'].includes(key) || typeof value !== 'boolean')
+      throw Error(`${where} takes boolean content and sections`);
+}
+
+/** Validates `composition` against the ladder it resolves to. */
+export function validateCompositionSettings(
+  settings: CompositionSettings | undefined,
   ladder: readonly InstructionNodeSettings[],
 ): void {
   if (!settings) return;
   const loading = settings.harnessLoading;
   if (loading !== undefined && loading !== 'suppress' && loading !== 'load')
-    throw Error('instructions.harnessLoading must be "suppress" or "load"');
+    throw Error('composition.harnessLoading must be "suppress" or "load"');
   if (
     settings.preset !== undefined &&
     settings.preset !== 'claude-code' &&
     settings.preset !== 'none'
   )
-    throw Error('instructions.preset must be "claude-code" or "none"');
-  for (const [key, value] of Object.entries(settings.dedupe ?? {}))
-    if (!['content', 'sections'].includes(key) || typeof value !== 'boolean')
-      throw Error('instructions.dedupe takes boolean content and sections');
+    throw Error('composition.preset must be "claude-code" or "none"');
+  checkDedupe('composition.dedupe', settings.dedupe);
   for (const [id, node] of Object.entries(settings.nodes ?? {})) {
-    const where = `instructions.nodes.${id}`;
+    const where = `composition.nodes.${id}`;
     if (!node || typeof node !== 'object') throw Error(`${where} must be an object`);
     if (node.enabled === false) continue;
     if (typeof node.scope !== 'string' || !node.scope) throw Error(`${where}: scope is required`);
@@ -289,12 +382,65 @@ export function validateInstructionSettings(
   for (const node of ladder) {
     if (node.parent !== undefined && !ids.has(node.parent))
       throw Error(
-        `instructions.nodes.${node.id}: parent ${JSON.stringify(node.parent)} is not a node`,
+        `composition.nodes.${node.id}: parent ${JSON.stringify(node.parent)} is not a node`,
       );
     const path = new Set<string>([node.id]);
     for (let up = node.parent; up !== undefined; up = parents.get(up)) {
-      if (path.has(up)) throw Error(`instructions.nodes.${node.id}: parent cycle through ${up}`);
+      if (path.has(up)) throw Error(`composition.nodes.${node.id}: parent cycle through ${up}`);
       path.add(up);
     }
   }
+  for (const [role, picks] of Object.entries(settings.roles ?? {})) {
+    const where = `composition.roles.${role}`;
+    if (!picks || typeof picks !== 'object' || Array.isArray(picks))
+      throw Error(`${where} must be an object`);
+    for (const key of Object.keys(picks))
+      if (![...COMPOSITION_SLOTS, 'audience', 'dedupe', 'budget'].includes(key))
+        throw Error(`${where}: unknown field ${key}`);
+    for (const slot of COMPOSITION_SLOTS) {
+      const pick = picks[slot];
+      if (pick === undefined || pick === false) continue;
+      if (!pick || typeof pick !== 'object' || Array.isArray(pick))
+        throw Error(`${where}.${slot} is false or { exclude, general }`);
+      for (const [key, value] of Object.entries(pick)) {
+        if (key !== 'exclude' && key !== 'general')
+          throw Error(`${where}.${slot}: unknown field ${key}`);
+        if (key === 'general' && value === 'all') continue;
+        if (!(Array.isArray(value) && value.every((id) => typeof id === 'string' && id)))
+          throw Error(
+            `${where}.${slot}.${key} must be a list of node ids${key === 'general' ? ' or "all"' : ''}`,
+          );
+        const unknown = value.filter((id) => !ids.has(id));
+        if (unknown.length)
+          throw Error(`${where}.${slot}.${key} names unknown nodes: ${unknown.join(', ')}`);
+      }
+    }
+    if (picks.audience !== undefined && !CORPUS_TIERS.includes(picks.audience))
+      throw Error(`${where}.audience must be one of ${CORPUS_TIERS.join(', ')}`);
+    checkDedupe(`${where}.dedupe`, picks.dedupe);
+    if (
+      picks.budget !== undefined &&
+      !(Number.isSafeInteger(picks.budget) && (picks.budget as number) > 0)
+    )
+      throw Error(`${where}.budget must be a positive whole number of characters`);
+  }
+}
+
+/**
+ * A role's picks with its defaults: budget none for main, DEFAULT_ROLE_BUDGET otherwise. A middleware
+ * role's output reaches the main thread (a Warden chiming in), so its audience is never wider in what
+ * it may read than main's: a team main thread makes every role team.
+ */
+export function roleComposition(
+  settings: CompositionSettings | undefined,
+  role: string,
+): RoleComposition & { audience: CorpusTier; budget: number } {
+  const picks = settings?.roles?.[role] ?? {};
+  const main = settings?.roles?.[MAIN_ROLE]?.audience ?? 'personal_private';
+  const own = picks.audience ?? 'personal_private';
+  return {
+    ...picks,
+    audience: role === MAIN_ROLE || AUDIENCE_RANK[own] >= AUDIENCE_RANK[main] ? own : main,
+    budget: picks.budget ?? (role === MAIN_ROLE ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
+  };
 }

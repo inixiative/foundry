@@ -16,6 +16,10 @@ import {
  * each shared or personal), composed for one working location into one ordered list of files, with
  * duplicates removed. Harness-agnostic: which files a node reads, its tier and its position are data.
  * Tiers are opaque labels here; the caller ranks them and decides who may see each.
+ *
+ * The same ladder composes every slot (e.g. instructions, domain knowledge) for every role (the main
+ * thread, each middleware role): a location names the role and slot it composes for, nodes and
+ * sources say which roles and slots they serve, and paths take `{role}` and `{slot}`.
  */
 
 /** When a node or source applies. Every listed key must hold; within a key, any value. */
@@ -28,6 +32,10 @@ export interface HierarchyMatch {
   readonly owners?: readonly string[];
   /** The harness the composed prompt is for. */
   readonly harness?: readonly string[];
+  /** The role composed for (e.g. "main", a Warden's agent id). */
+  readonly roles?: readonly string[];
+  /** The slot composed (e.g. "instructions", "domainKnowledge"). */
+  readonly slots?: readonly string[];
 }
 
 /** Which directories of the root-to-cwd walk a walk source visits. */
@@ -109,6 +117,15 @@ export interface HierarchyLocation {
   readonly harness?: string;
   /** Source ids the harness loads natively; those sources are left out. */
   readonly harnessLoads?: readonly string[];
+  /** The role composed for; also `{role}` in paths. */
+  readonly role?: string;
+  /** The slot composed; also `{slot}` in paths. */
+  readonly slot?: string;
+  /**
+   * With a `slot`: which nodes' unslotted sources (no `slots` on the source, its walk or its node)
+   * compose into it. "all" (the default) or these node ids. Slotted sources follow `slots` only.
+   */
+  readonly unslotted?: 'all' | readonly string[];
 }
 
 export interface HierarchyFile extends InstructionFile {
@@ -178,14 +195,31 @@ function matches(when: HierarchyMatch | undefined, location: HierarchyLocation):
   if (when.projects && !(location.projectId && when.projects.includes(location.projectId)))
     return false;
   if (when.owners && !(location.owner && when.owners.includes(location.owner))) return false;
+  if (when.roles && !(location.role && when.roles.includes(location.role))) return false;
+  if (when.slots && !(location.slot && when.slots.includes(location.slot))) return false;
   if (when.paths && !matchedPath(when.paths, location)) return false;
   return true;
 }
 
+/** Location variables plus `{role}` and `{slot}`. */
+const locationVars = (location: HierarchyLocation) => ({
+  ...location.vars,
+  ...(location.role !== undefined ? { role: location.role } : {}),
+  ...(location.slot !== undefined ? { slot: location.slot } : {}),
+});
+
+/** Whether a source no `when` along its chain assigns to a slot composes into the location's slot. */
+function unslottedApplies(node: HierarchyNode, location: HierarchyLocation): boolean {
+  if (location.slot === undefined) return true;
+  const unslotted = location.unslotted ?? 'all';
+  return unslotted === 'all' || unslotted.includes(node.id);
+}
+
 function matchedPath(paths: readonly string[], location: HierarchyLocation): string | undefined {
   const cwd = resolve(location.cwd);
+  const vars = locationVars(location);
   return paths
-    .map((path) => expandHierarchyPath(path, location.vars, location.home))
+    .map((path) => expandHierarchyPath(path, vars, location.home))
     .filter((path): path is string => !!path)
     .map((path) => resolve(path))
     .find((path) => withinAny([path])(cwd));
@@ -221,7 +255,7 @@ export function selectHierarchyNodes(
     // A node with no anchor of its own sits with its parent (org personal beside its org).
     const own =
       node.anchor !== undefined
-        ? expandHierarchyPath(node.anchor, location.vars, location.home)
+        ? expandHierarchyPath(node.anchor, locationVars(location), location.home)
         : node.when?.paths
           ? matchedPath(node.when.paths, location)
           : undefined;
@@ -329,7 +363,7 @@ export async function discoverHierarchy(
     }
   };
   const varsFor = (entry: SelectedHierarchyNode, dir?: string) => ({
-    ...location.vars,
+    ...locationVars(location),
     ...(entry.anchor ? { anchor: entry.anchor } : {}),
     ...(dir ? { dir } : {}),
   });
@@ -348,8 +382,10 @@ export async function discoverHierarchy(
     position: number,
     base: string | undefined,
     vars: Readonly<Record<string, string | undefined>>,
+    slotted: boolean,
   ) => {
     if (!matches(source.when, location) || (source.id && loadedNatively.has(source.id))) return;
+    if (!slotted && !source.when?.slots && !unslottedApplies(entry.node, location)) return;
     const place = (path: string) => (isAbsolute(path) ? path : base ? join(base, path) : undefined);
     const literal = (template: string) => {
       const expanded = expandHierarchyPath(template, vars, location.home);
@@ -386,6 +422,7 @@ export async function discoverHierarchy(
   };
 
   for (const entry of selected) {
+    const nodeSlotted = !!entry.node.when?.slots;
     for (const source of entry.node.sources) {
       if ('walk' in source) {
         if (!matches(source.when, location) || (source.id && loadedNatively.has(source.id)))
@@ -394,10 +431,17 @@ export async function discoverHierarchy(
         for (const dir of chain) {
           if (!inSpan(dir, source.span, (paths) => expandAll(paths, spanVars))) continue;
           for (const file of source.walk)
-            await plan(entry, file, depth(dir), dir, varsFor(entry, dir));
+            await plan(
+              entry,
+              file,
+              depth(dir),
+              dir,
+              varsFor(entry, dir),
+              nodeSlotted || !!source.when?.slots,
+            );
         }
       } else {
-        await plan(entry, source, depth(entry.anchor), entry.anchor, varsFor(entry));
+        await plan(entry, source, depth(entry.anchor), entry.anchor, varsFor(entry), nodeSlotted);
       }
     }
   }
@@ -705,4 +749,50 @@ export function dedupeHierarchy<F extends HierarchyFile>(
     out = keep;
   }
   return { files: out, duplicates: duplicates.reverse() };
+}
+
+/** A duplicate removed while deduping slots together: which slot lost the copy and which kept it. */
+export interface HierarchySlotDuplicate extends HierarchyDuplicate {
+  readonly slot: number;
+  readonly keptSlot: number;
+}
+
+/**
+ * Dedupe one role's slots together (each an ordered stack, general first), in slot order: a file or
+ * section repeated in a later slot is kept there and cut from the earlier one, so a role never reads
+ * the same text twice. Filter by audience first, as for `dedupeHierarchy`.
+ */
+export function dedupeHierarchySlots<F extends HierarchyFile>(
+  slots: readonly (readonly F[])[],
+  options: HierarchyDedupeOptions = {},
+): { slots: F[][]; duplicates: HierarchySlotDuplicate[] } {
+  // The slot rides on the node id through dedupe (a cut file is a spread copy) and is split off after.
+  const SEP = '\u0000';
+  const tagged = slots.flatMap((files, slot) =>
+    files.map((file) => ({ ...file, node: `${slot}${SEP}${file.node}` })),
+  );
+  const split = (node: string) => {
+    const at = node.indexOf(SEP);
+    return { slot: Number(node.slice(0, at)), node: node.slice(at + 1) };
+  };
+  const { files, duplicates } = dedupeHierarchy(tagged, options);
+  const out: F[][] = slots.map(() => []);
+  for (const file of files) {
+    const { slot, node } = split(file.node);
+    out[slot]!.push({ ...file, node } as F);
+  }
+  return {
+    slots: out,
+    duplicates: duplicates.map((duplicate) => {
+      const lost = split(duplicate.node);
+      const kept = split(duplicate.keptNode);
+      return {
+        ...duplicate,
+        node: lost.node,
+        keptNode: kept.node,
+        slot: lost.slot,
+        keptSlot: kept.slot,
+      };
+    }),
+  };
 }

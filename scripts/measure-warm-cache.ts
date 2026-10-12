@@ -17,8 +17,7 @@ import { join, resolve } from 'node:path';
 import { computeHash } from '../packages/core/src';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
-  composeInstructionStack,
-  discoverInstructionStack,
+  composeRoleView,
 } from '../packages/foundry/src/prompts/instruction-stack';
 import {
   ClaudeCodeSessionAdapter,
@@ -52,9 +51,8 @@ type Mode = 'a' | 'b' | 'c';
 
 const EXECUTOR_PROMPT =
   'You are the Artificer, the executor for this Foundry thread. Answer the user directly.';
-const instructions = composeInstructionStack(
-  await discoverInstructionStack({ cwd, harness: 'claude' }),
-).text;
+const instructions = (await composeRoleView({ cwd, harness: 'claude', role: 'main' })).slots
+  .instructions.text;
 
 /** One thread's layers at a turn: stable instructions, slow learning and thread-state. */
 function layers(turn: number): Array<{ id: string; kind: 'stable' | 'slow'; text: string }> {

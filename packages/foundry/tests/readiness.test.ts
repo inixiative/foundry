@@ -42,8 +42,7 @@ function team() {
     provider: 'openai',
     model: 'configured-model',
     tools: false,
-    visibleLayers: ['docs'],
-    ownedLayers: ['docs'],
+    visibleLayers: [],
     peers: [],
     maxDepth: 1,
     enabled: true,
@@ -79,7 +78,7 @@ test('the team example loads through production configuration with four separate
       'security',
       'testing',
     ]);
-    expect(new Set(experts.map((profile) => profile.layerId)).size).toBe(4);
+    expect(new Set(experts.map((profile) => profile.agentId)).size).toBe(4);
     const effective = resolveProjectView(config, projectId)!.config;
     for (const layer of Object.values(effective.layers)) {
       for (const source of layer.sourceIds) expect(effective.sources[source]?.enabled).toBe(true);
@@ -127,7 +126,6 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
       provider: 'openai',
       model: 'configured-model',
       domain: 'docs',
-      layerId: 'docs',
     });
     expect(JSON.stringify(report)).not.toContain('PRIVATE_');
     expect(JSON.stringify(config)).toBe(before);
@@ -138,12 +136,12 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
 });
 test('readiness refuses project expert ownership errors and catches unavailable providers', async () => {
   const config = team();
-  config.projects.P!.layers = { docs: { writers: { replace: ['wrong-owner'] } } };
+  config.projects.P!.agents = { expert: { extends: 'expert', domainKnowledge: ['missing'] } };
   let report = await inspectReadiness(config, local);
   expect(report.configurationReady).toBe(false);
   // Validation now runs each project's expert checks, so the settings are refused outright.
   expect(report.issues.some((item) => item.code === 'invalid-configuration')).toBe(true);
-  delete config.projects.P!.layers;
+  delete config.projects.P!.agents;
   config.agents.expert!.provider = 'anthropic';
   report = await inspectReadiness(config, {
     ...local,

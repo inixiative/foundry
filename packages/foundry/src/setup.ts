@@ -12,7 +12,6 @@
 import { localArchive } from '@inixiative/archive/remote';
 import { existsSync, mkdirSync } from 'fs';
 import { basename } from 'path';
-import { CORPUS_TIERS } from './agents/corpus-compiler';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import {
@@ -717,10 +716,6 @@ const sourceEditor: ItemEditor<any> = {
       }
     }
 
-    if (type === 'instructions') {
-      const audience = CORPUS_TIERS[await choose('Audience?', [...CORPUS_TIERS])];
-      return [id, { id, type, label, uri, audience, enabled: true }];
-    }
     return [id, { id, type, label, uri, enabled: true }];
   },
   async edit(id, item, _config) {

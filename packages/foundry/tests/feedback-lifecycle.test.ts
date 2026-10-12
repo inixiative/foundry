@@ -1,10 +1,16 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ActionQueue, ContextStack, Thread } from '@inixiative/foundry-core';
 import type { RouteResult } from '../src/agents/cartographer';
-import { applyChange, guardPersonalFile, revertChange, roleFilePath } from '../src/feedback/apply';
+import {
+  applyChange,
+  feedbackRoots,
+  guardPersonalFile,
+  revertChange,
+  roleFilePath,
+} from '../src/feedback/apply';
 import { FeedbackLifecycle } from '../src/feedback/lifecycle';
 import { routeFeedback } from '../src/feedback/routing';
 import { type ClassifyCorrection, FeedbackService } from '../src/feedback/service';
@@ -35,8 +41,7 @@ const warden = (domain: string): AgentSettingsConfig => ({
   provider: 'expert',
   model: 'haiku',
   tools: false,
-  visibleLayers: [`${domain}-reference`],
-  ownedLayers: [`${domain}-reference`],
+  visibleLayers: [],
   peers: [],
   maxDepth: 1,
   enabled: true,
@@ -44,18 +49,6 @@ const warden = (domain: string): AgentSettingsConfig => ({
 function config(feedback?: FoundryConfig['feedback']): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = { 'convention-warden': warden('convention') };
-  c.layers = {
-    'convention-reference': {
-      id: 'convention-reference',
-      domain: 'convention',
-      segment: 'domain-knowledge',
-      prompt: 'Conventions',
-      sourceIds: [],
-      writers: ['convention-warden'],
-      staleness: 0,
-      enabled: true,
-    },
-  };
   if (feedback) c.feedback = feedback;
   return c;
 }
@@ -562,4 +555,22 @@ test('assessment: an applied rule that recurs needs attention; an unsharp one do
     stage: 'captured',
     attention: 'needs attention',
   });
+});
+
+test('rungs follow the thread: a worktree under the project writes to the project; elsewhere, to its repository', () => {
+  const root = tempDir('feedback-roots-');
+  const project = join(root, 'repo');
+  const worktree = join(project, '.worktrees', 'w');
+  const elsewhere = join(root, 'other');
+  mkdirSync(worktree, { recursive: true });
+  mkdirSync(elsewhere);
+  git(elsewhere, 'init', '-q');
+  const projects = { P: { path: project } };
+  expect(feedbackRoots({ meta: { projectId: 'P', cwd: worktree } }, { projects })).toMatchObject({
+    project,
+    org: root,
+  });
+  const other = feedbackRoots({ meta: { projectId: 'P', cwd: elsewhere } }, { projects });
+  expect(realpathSync(other.project!)).toBe(realpathSync(elsewhere));
+  expect(feedbackRoots({ meta: {} }, { projects })).not.toHaveProperty('project');
 });

@@ -247,8 +247,7 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": ["domain-docs"],
-          "ownedLayers": ["domain-docs"],
+          "visibleLayers": [],
           "peers": [],
           "maxDepth": 1,
           "enabled": true
@@ -262,8 +261,7 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": ["domain-architecture"],
-          "ownedLayers": ["domain-architecture"],
+          "visibleLayers": [],
           "peers": [],
           "maxDepth": 1,
           "enabled": true
@@ -277,8 +275,7 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": ["domain-security"],
-          "ownedLayers": ["domain-security"],
+          "visibleLayers": [],
           "peers": [],
           "maxDepth": 1,
           "enabled": true
@@ -292,8 +289,7 @@
           "provider": "subscription-decisions",
           "model": "claude-haiku-5-5",
           "tools": false,
-          "visibleLayers": ["domain-testing"],
-          "ownedLayers": ["domain-testing"],
+          "visibleLayers": [],
           "peers": [],
           "maxDepth": 1,
           "enabled": true
@@ -325,62 +321,6 @@
             "replace": ["memory-src"]
           },
           "staleness": 30000,
-          "enabled": true
-        },
-        "domain-docs": {
-          "id": "domain-docs",
-          "domain": "docs",
-          "segment": "domain-knowledge",
-          "prompt": "Track the project documentation and decisions. Cite the relevant project evidence. Distinguish verified behavior from plans and stale notes.",
-          "writers": {
-            "replace": ["expert-docs"]
-          },
-          "sourceIds": {
-            "replace": []
-          },
-          "staleness": 0,
-          "enabled": true
-        },
-        "domain-architecture": {
-          "id": "domain-architecture",
-          "domain": "architecture",
-          "segment": "domain-knowledge",
-          "prompt": "Review module boundaries, ownership and existing project patterns. Prefer the smallest compatible change. Retain accepted architectural decisions and their reasons.",
-          "writers": {
-            "replace": ["expert-architecture"]
-          },
-          "sourceIds": {
-            "replace": []
-          },
-          "staleness": 0,
-          "enabled": true
-        },
-        "domain-security": {
-          "id": "domain-security",
-          "domain": "security",
-          "segment": "domain-knowledge",
-          "prompt": "Review tenant boundaries, credential custody, authorization and sensitive data handling. Never infer access from tags or pool membership. Ground findings in the actual code path.",
-          "writers": {
-            "replace": ["expert-security"]
-          },
-          "sourceIds": {
-            "replace": []
-          },
-          "staleness": 0,
-          "enabled": true
-        },
-        "domain-testing": {
-          "id": "domain-testing",
-          "domain": "testing",
-          "segment": "domain-knowledge",
-          "prompt": "Review behavioral coverage and failure recovery. Require meaningful evidence for regressions and preserve failed observations. Distinguish controlled tests from live-provider results.",
-          "writers": {
-            "replace": ["expert-testing"]
-          },
-          "sourceIds": {
-            "replace": []
-          },
-          "staleness": 0,
           "enabled": true
         }
       },
