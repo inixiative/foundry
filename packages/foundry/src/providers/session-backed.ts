@@ -838,6 +838,12 @@ export class SessionBackedProvider implements LLMProvider {
         const observations = new Map<string, NativeObservation>();
         this._observations.set(session, observations);
         session.onEvent?.((event) => {
+          // Thinking is live display for the executor's own turn, never evidence.
+          if (event.kind === 'thinking') {
+            if (!requested.textOnly && event.admissionId && event.text)
+              observations.get(event.admissionId)?.thought?.(event.text);
+            return;
+          }
           const evidence = this._ownedProjection(session, event);
           if (!evidence.admissionId || !evidence.kind) return;
           const observer = observations.get(evidence.admissionId);

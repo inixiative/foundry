@@ -2,7 +2,8 @@ import { type NativeEvidence, sameNativeOwner } from '@inixiative/foundry-core';
 
 export interface LiveActivity {
   id: string;
-  kind: 'text' | 'tool';
+  /** `thought`: the executor's public thinking, live only (never journalled). */
+  kind: 'text' | 'tool' | 'thought';
   text?: string;
   phase?: string;
   toolName?: string;
@@ -66,6 +67,7 @@ export class StreamBuffer {
   private _admissions = new Map<string, NativeEvidence>();
   private _native = new Map<string, NativeEvidence>();
   private _notificationFailed = false;
+  private _thoughts = 0;
   notificationFailed() {
     this._notificationFailed = true;
   }
@@ -225,6 +227,28 @@ export class StreamBuffer {
         ? (e.text ?? '').slice((old?.text ?? '').length)
         : undefined;
     this.changed({ kind: 'activity', row, ...(appended !== undefined ? { appended } : {}) });
+  }
+  /** Thinking text from the executor: one row per run of thinking, extended until other activity. */
+  thought(text: string) {
+    if (this.done || !text) return;
+    const last = this._activity.at(-1);
+    const extend = last?.kind === 'thought';
+    const row: LiveActivity = {
+      id: extend ? last.id : `thought:${this._thoughts++}`,
+      kind: 'thought',
+      admissionId: extend ? last.admissionId : '',
+      text: this.bound(`${extend ? (last.text ?? '') : ''}${text}`, 4096),
+    };
+    if (extend) this._activity[this._activity.length - 1] = row;
+    else this._activity.push(row);
+    if (this._activity.length > 64) {
+      this._activity.shift();
+      this._truncated = true;
+      this.touch();
+      return;
+    }
+    this._status = 'running';
+    this.changed({ kind: 'activity', row, appended: text });
   }
   complete(terminal?: Record<string, unknown>) {
     if (this.done) return;

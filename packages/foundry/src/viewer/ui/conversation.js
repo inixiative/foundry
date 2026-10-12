@@ -13,7 +13,7 @@ import {
 } from './conversation-state.js';
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
-import { liveThreadStatus, liveWorkLabel } from './live-state.js';
+import { liveExecutionStatus, liveThreadStatus, liveWorkLabel } from './live-state.js';
 import {
   activeThreadId,
   allThreads,
@@ -31,6 +31,7 @@ import {
   sending,
   sendMessage,
   showToast,
+  stopTurn,
   threadContextTokens,
   threadData,
   tokenUsage,
@@ -557,13 +558,20 @@ function AgentMessage({ msg, index, onTraceClick }) {
       ${
         msg.live
           ? html`<section class="live-work" aria-label="Work activity">
-        <div class="live-work-status">${liveWorkLabel(msg)}</div>
+        <div class="live-work-status">${liveWorkLabel(msg)}${
+          ['queued', 'running'].includes(liveExecutionStatus(msg))
+            ? html` <button class="live-work-stop" title="Stop this turn"
+                onClick=${() => stopTurn(msg.live.threadId, msg.live.messageId)}>Stop</button>`
+            : null
+        }</div>
         ${!msg.live.activity.length ? html`<div>Public native detail ${msg.live.nativeDetail === 'unavailable' ? 'unavailable' : 'not yet received'}.</div>` : null}
         ${msg.live.native ? html`<div>Observed native ${msg.live.native.outcome} · RPC ${msg.live.native.rpc}. Cleanup is separate.</div>` : null}
         <div class="live-work-activity">${msg.live.activity.map((a) =>
-          a.kind === 'text'
-            ? html`<div class="live-work-progress">${a.phase === 'final_answer' ? html`<small>Final answer preview</small><br/>` : a.phase === 'unavailable' ? html`<small>Public text · phase unavailable</small><br/>` : null}${a.text}</div>`
-            : html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`,
+          a.kind === 'thought'
+            ? html`<div class="live-work-thought"><small>Thinking</small><br/>${a.text}</div>`
+            : a.kind === 'text'
+              ? html`<div class="live-work-progress">${a.phase === 'final_answer' ? html`<small>Final answer preview</small><br/>` : a.phase === 'unavailable' ? html`<small>Public text · phase unavailable</small><br/>` : null}${a.text}</div>`
+              : html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`,
         )}</div>
         ${msg.live.truncated ? html`<div>Partial activity window; complete recorded evidence is in inspection.</div>` : null}
       </section>`

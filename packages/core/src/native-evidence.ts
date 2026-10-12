@@ -196,6 +196,11 @@ export interface NativeObservation {
   observe(evidence: NativeEvidence): void | Promise<void>;
   /** Receives the stop for this owner's registered admission, where the runtime acknowledges stops. */
   interruptible?(interrupt: NativeInterrupt): void;
+  /**
+   * The executor's public thinking text, for live display only. It never becomes evidence:
+   * nothing here is journalled, traced or projected (reasoning stays out of NativeEvidence).
+   */
+  thought?(text: string): void;
 }
 /** `acknowledged`: the runtime confirmed the stop and the turn reached its native terminal. */
 export type NativeInterruptOutcome = 'acknowledged' | 'no-turn' | 'unacknowledged';

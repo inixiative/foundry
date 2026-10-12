@@ -1538,6 +1538,27 @@ export async function executeAction(kind, target, payload) {
   }
 }
 
+/** Stop a queued or running turn through the interrupt route; its terminal still arrives on the thread stream. */
+export async function stopTurn(threadId, turnId) {
+  try {
+    const res = await authFetch(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/interrupt`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    showToast(
+      body.outcome === 'unsupported'
+        ? 'This runtime cannot stop a turn; it runs to its end'
+        : 'Stop requested',
+      body.outcome === 'unsupported' ? 'error' : 'ok',
+    );
+    return body.outcome;
+  } catch (err) {
+    showToast(`Stop failed: ${err.message}`, 'error');
+  }
+}
+
 export async function submitIntervention(threadId, traceId, spanId, correction, reason) {
   try {
     const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/interventions`, {

@@ -325,6 +325,46 @@ test('live tool rows carry bounded input and output; text rows carry exactly the
   }
 });
 
+test('executor thinking streams as live thought rows and is never journalled', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-thoughts-'));
+  const f = await liveWatchFixture(dir);
+  try {
+    const turn = f.send('thoughts');
+    await until(() => f.attempts.length === 1, 'admission');
+    const a = f.attempts[0];
+    a.emit({ kind: 'thinking', text: 'Checking the parser ' });
+    a.emit({ kind: 'thinking', text: 'first.' });
+    a.emit({ kind: 'text_delta', itemId: 'answer', text: 'Done' });
+    a.emit({ kind: 'thinking', text: 'Second thought' });
+    await until(
+      () =>
+        turn.client
+          .data(`thread:${f.thread.id}`)
+          .filter(
+            (frame) => frame.payload.kind === 'activity' && frame.payload.row.kind === 'thought',
+          ).length === 3,
+      'thought rows delivered',
+    );
+    const thoughts = turn.client
+      .data(`thread:${f.thread.id}`)
+      .filter((frame) => frame.payload.kind === 'activity' && frame.payload.row.kind === 'thought')
+      .map((frame) => frame.payload);
+    expect(thoughts.map((p) => p.appended)).toEqual([
+      'Checking the parser ',
+      'first.',
+      'Second thought',
+    ]);
+    expect(thoughts[1]!.row).toMatchObject({ id: 'thought:0', text: 'Checking the parser first.' });
+    expect(thoughts[2]!.row.id).toBe('thought:1');
+    a.finish();
+    await turn.done;
+    const detail = f.viewer.localStore!.turnDetail(f.thread.id, 'thoughts')!;
+    expect(JSON.stringify(detail)).not.toContain('Checking the parser');
+  } finally {
+    await f.close();
+  }
+});
+
 test('host instruction wrappers reach the executor verbatim; the journal and dispatch observation see only the user words', async () => {
   const v = heldViewer();
   const observed: string[] = [];

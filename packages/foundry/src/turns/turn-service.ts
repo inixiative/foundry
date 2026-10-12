@@ -403,7 +403,7 @@ export class TurnService {
     return source;
   }
 
-  private nativeObservation(thread: Thread, state: LiveTurn) {
+  private nativeObservation(thread: Thread, state: LiveTurn, turnId: string) {
     const { threadFactory, localStore, streams } = this.deps;
     return {
       generation: threadFactory?.runtime?.get(thread.id)?.generation ?? this.generation,
@@ -438,6 +438,7 @@ export class TurnService {
         state.interrupt = interrupt;
         if (state.cancelRequested) void this.stop(state);
       },
+      thought: (text: string) => streams.turns.get(turnId)?.thought(text),
     };
   }
 
@@ -656,7 +657,7 @@ export class TurnService {
       const result = await harness.send(
         { id: turnId, payload },
         {
-          nativeObservation: this.nativeObservation(thread, state),
+          nativeObservation: this.nativeObservation(thread, state, turnId),
           ...(executorPayload ? { executorPayload } : {}),
           onDelta: (text) => buffer.append(text),
           onTrace: (trace) => {
