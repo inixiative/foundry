@@ -20,7 +20,11 @@ import {
   WARDEN_CHARTER,
   WARDEN_CHARTER_VERSION,
 } from '../../packages/foundry/src/agents/warden-charter';
-import { type EvalWarden, runCharterEval } from '../../packages/foundry/src/feedback/charter-eval';
+import {
+  type EvalWarden,
+  markEvalRun,
+  runCharterEval,
+} from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
 
 const { values } = parseArgs({
@@ -109,13 +113,16 @@ const wardensFor = (probe: WardenProbe): EvalWarden[] => {
 };
 
 const concurrency = Number(values.concurrency ?? 16);
+// An eval run, not work: Archive and the repeat report leave its sessions out.
+const state = privateDirectory(join(homedir(), '.foundry', 'evals'));
+markEvalRun(state);
 const wardens = decisionHost(
   'claude-haiku-5-5',
   'claude',
   concurrency,
   join(homedir(), '.foundry', 'evals'),
 );
-const judges = decisionHost('claude-opus-5-5', 'claude', 4, join(homedir(), '.foundry', 'evals'));
+const judges = decisionHost('claude-opus-5-5', 'claude', 4, state);
 const started = Date.now();
 let done = 0;
 try {

@@ -3,6 +3,7 @@
 // charter composed above each Warden's instructions); no thread, no writes. Scoring and the probe
 // contract live in foundry-core (`feedback/warden-probes`), so Oracle scores runs the same way.
 
+import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   ContextLayer,
   type LLMProvider,
@@ -15,6 +16,12 @@ import {
   wardenJudgeMessage,
 } from '@inixiative/foundry-core';
 import { DomainLibrarian } from '../agents/domain-librarian';
+
+/** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
+export function markEvalRun(state: string): void {
+  process.env[RUN_ENV] = 'oracle';
+  stampRunDirectory(state, 'oracle');
+}
 
 /** One Warden as the eval composes it: its own instructions and domain knowledge. */
 export interface EvalWarden {
