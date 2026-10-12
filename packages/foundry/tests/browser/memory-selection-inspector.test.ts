@@ -53,6 +53,44 @@ const layer = {
   },
 };
 
+const instructionsLayer = {
+  id: 'instructions',
+  included: true,
+  content: 'Contents of /repo/.worktrees/x/CLAUDE.md (project instructions)',
+  selection: {
+    sources: [
+      {
+        sourceId: 'instructions',
+        report: {
+          subject: 'instructions',
+          selected: [
+            {
+              id: '/repo/.worktrees/x/CLAUDE.md',
+              reason: 'project instructions',
+              chars: 40,
+              kind: 'project',
+            },
+          ],
+          omitted: [
+            { id: '/repo/CLAUDE.local.md', reason: 'not visible to team', chars: 9, kind: 'local' },
+            {
+              id: '/repo/CLAUDE.md',
+              reason: 'identical content to a more specific file',
+              chars: 40,
+              kind: 'project',
+              duplicateOf: '/repo/.worktrees/x/CLAUDE.md (project)',
+            },
+          ],
+          considered: 3,
+          retained: { count: 3, chars: 89 },
+          budget: { chars: 0, used: 60, exceeded: false },
+          conflicts: [],
+        },
+      },
+    ],
+  },
+};
+
 type Fixture = Awaited<ReturnType<typeof completionFixture>>;
 
 async function run(
@@ -137,10 +175,12 @@ test('viewer page loads the edited drawer and runs selectionSummary in the brows
     const result = await page.evaluate(
       async ({
         snapshot,
+        instructionsSnapshot,
         drawer,
         inspector,
       }: {
         snapshot: unknown;
+        instructionsSnapshot: unknown;
         drawer: string;
         inspector: string;
       }) => {
@@ -148,10 +188,16 @@ test('viewer page loads the edited drawer and runs selectionSummary in the brows
         const { selectionSummary } = await import(inspector);
         return {
           summary: selectionSummary(snapshot),
+          instructions: selectionSummary(instructionsSnapshot),
           nullFor: selectionSummary({ id: 'system', included: true, content: 'x' }),
         };
       },
-      { snapshot: layer, drawer: '/ui/detail-drawer.js', inspector: '/ui/inspector-data.js' },
+      {
+        snapshot: layer,
+        instructionsSnapshot: instructionsLayer,
+        drawer: '/ui/detail-drawer.js',
+        inspector: '/ui/inspector-data.js',
+      },
     );
     expect(result.nullFor).toBeNull();
     expect(result.summary.selected.map((s: any) => s.id)).toEqual(['conv', 'old']);
@@ -161,6 +207,10 @@ test('viewer page loads the edited drawer and runs selectionSummary in the brows
     ]);
     expect(result.summary.notice).toContain('prepared');
     expect(result.summary.notice).not.toContain('delivered');
+    expect(result.instructions.subject).toBe('instructions');
+    expect(result.instructions.duplicates.map((d: any) => d.keptIn)).toEqual([
+      '/repo/.worktrees/x/CLAUDE.md (project)',
+    ]);
   });
   expect(report.cleanupFailures).toEqual([]);
 }, 60_000);

@@ -73,14 +73,25 @@ cache writes.
 
 Foundry composes a session's instruction files itself, for any harness: an
 `instructions` source (type `instructions`, on the default `instructions` layer)
-discovers them for the thread's cwd (its worktree or project) on each warm. The
-code is `prompts/instruction-stack.ts`; `@path` imports are resolved by core's
+composes them for the thread's location (its cwd, worktree or project, and the
+project's Kingdom owner) on each warm. What it reads is a **registered
+hierarchy**: a ladder or tree of nodes, each a level (`computer`, `org`,
+`project`, or any other name), shared or personal, with its files and corpus
+tier. Core's `discoverHierarchy` / `dedupeHierarchy`
+(`adapters/markdown-hierarchy.ts`) are the generic composer; Foundry's presets,
+settings and prompt format are `prompts/instruction-settings.ts` and
+`prompts/instruction-stack.ts`. `@path` imports are resolved by core's
 `readInstructionFile`, which `claudemdSource` also uses.
 
-| Level | Files | Tier |
+### The default ladder
+
+With nothing configured, the ladder is the `claude-code` preset: Claude Code's
+own discovery, unchanged.
+
+| Node | Files | Tier |
 |---|---|---|
 | managed | `/Library/Application Support/ClaudeCode/CLAUDE.md` (`/etc/claude-code/` on Linux) | org |
-| global | Claude: `~/.claude/CLAUDE.md` and path-free `~/.claude/rules/**`. Codex: `$CODEX_HOME/AGENTS.override.md`, else `AGENTS.md` | personal_private |
+| global | Claude: `~/.claude/CLAUDE.md` and path-free `~/.claude/rules/**`. Codex: `$CODEX_HOME/AGENTS.override.md`, else `AGENTS.md`. Also the home directory's own `CLAUDE.md` / `AGENTS.md` | personal_private |
 | org | the files below, in directories above the repository (e.g. `~/code/inixiative/CLAUDE.md`) | org |
 | project | per directory from the repository root to the cwd: `CLAUDE.md`, `.claude/CLAUDE.md`, path-free `.claude/rules/**`, `AGENTS.md`, `.claude/AGENTS.md` | team |
 | local | `CLAUDE.local.md` in any of those directories | personal_private |
@@ -90,12 +101,101 @@ The order matches what Claude Code 2.1.296 loads (checked live): managed, global
 then the root-to-cwd walk, then auto memory, each file followed by its imports.
 A worktree's main checkout counts as the same repository, and auto memory is
 keyed by it. The home directory's own files are personal (global level), and its
-`.claude` is read only as the running harness's global level. Each file loads
-once however it is reached, and an import keeps the narrower of its importer's
-tier and its own location's (a `CLAUDE.local.md` imported by `CLAUDE.md` stays
-personal). The source's `audience` (default `personal_private`) filters by tier
-through the corpus `VISIBLE_TO` rules, so personal files never reach a `team` or
-`org` audience.
+`.claude` is read only as the running harness's global level.
+
+### Registering levels
+
+`instructions.nodes` registers more nodes, merged over the preset by id (a
+preset id replaces that node; `enabled: false` removes it; `preset: "none"`
+starts empty). Example: computer personal, the inixiative org and its personal
+file, a project and its personal file.
+
+```json
+"instructions": {
+  "nodes": {
+    "inixiative": {
+      "scope": "org", "personal": false,
+      "when": { "paths": ["~/code/inixiative"] },
+      "sources": [{ "path": "{anchor}/docs/org/*.md" }]
+    },
+    "inixiative-personal": {
+      "scope": "org", "personal": true, "parent": "inixiative",
+      "sources": [{ "path": "~/.foundry/instructions/inixiative.md" }]
+    },
+    "foundry": {
+      "scope": "project", "personal": false, "parent": "inixiative",
+      "when": { "projects": ["foundry"] }, "anchor": "{projectPath}",
+      "sources": [{ "path": "docs/claude/*.md" }]
+    },
+    "foundry-personal": {
+      "scope": "project", "personal": true, "parent": "foundry",
+      "sources": [{ "path": "~/.foundry/instructions/foundry.md" }]
+    }
+  }
+}
+```
+
+The preset's `global` node is the computer-personal level, and its `org`,
+`project` and `local` nodes still read every `CLAUDE.md` / `CLAUDE.local.md` on
+the walk. A node's fields:
+
+- `scope`, `personal`; `tier` defaults to personal_private when personal, team
+  for a shared project node, org otherwise. A personal node's tier is always
+  personal.
+- `when`: applies when the cwd is inside one of `paths`, the thread's project is
+  one of `projects`, the project's Kingdom owner key (`defaults.kingdomOwnerKey`,
+  per project or global) is one of `owners`, and the harness is one of
+  `harness`; every key listed must hold. `parent`: a child applies only where its
+  parent applies.
+- `sources`: `{ "path": ... }` is a file, a glob (expanded in path order) or a
+  list whose first existing file loads; `{ "walk": [...], "span": {...} }` looks
+  the files up in each directory from the filesystem root to the cwd, limited by
+  `span` (`within`, `outside`, `only`, `except`). `rules: true` is rule-file
+  handling (frontmatter stripped, `paths:` rules skipped); `raw`, `maxLines`,
+  `maxBytes` read a file as is and cut it.
+- Paths take `~/` and variables: `{home}`, `{cwd}`, `{project}` (the working
+  tree root), `{repository}` (the main checkout), `{projectId}`, `{projectPath}`
+  (the configured project), `{claudeConfigDir}`, `{codexHome}`, `{managed}`,
+  `{claudeProjectKey}`, `{anchor}`, and `{dir}` inside a walk. A path naming an
+  absent variable is skipped. Relative paths resolve against the anchor.
+- `anchor`: the directory the node is about, which places it in the order.
+  Default: the matched `when.paths` entry, else the parent's anchor; none means
+  computer level.
+- `imports` (`"anywhere"` or a list of roots, `{dir}` for the importing file's
+  directory; default the repository or the file's own directory) and `owns`
+  (`names`, `within`, `dirs`: paths that keep this node's tier when another
+  file imports them).
+
+**Order.** Computer-level nodes first, then each directory from the filesystem
+root down to the cwd (a node sits at its anchor; walk files at their
+directory); at one place, shared nodes before personal ones, each in ladder
+order (a depth-first walk of the tree, preset first); within a node, its sources
+in order. So: computer personal, org, org personal, project, project personal.
+
+### Tiers and dedupe
+
+Each file loads once however it is reached, and an import keeps the narrower of
+its importer's tier and the tier of any node that owns its path (a
+`CLAUDE.local.md` imported by `CLAUDE.md` stays personal). The source's
+`audience` (default `personal_private`) filters by tier through the corpus
+`VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
+
+Then repeats are removed, keeping the most specific copy (the later one in the
+order). Dedupe runs after the audience filter, so a personal copy never hides
+the shared one from a team.
+
+- **Same file** (real path): a second reach, a symlink, a file imported twice.
+  The first reach is kept, as Claude Code does.
+- **Identical content** (whitespace-insensitive hash): e.g. a worktree's
+  `CLAUDE.md` and its main checkout's. The worktree's copy is kept.
+- **Identical sections** (normalized heading and body, subsections included,
+  headings in code fences ignored): the section is cut from the more general
+  file; a file left empty is dropped.
+
+`instructions.dedupe` (`content`, `sections`, both default true) turns the last
+two off. Every removal is reported with the copy kept in its place: the layer's
+**Selection** panel in the viewer lists the composed files, the files hidden from
+the audience, and each duplicate with where it was kept.
 
 Imports follow Claude Code: `@path` at a line start or after whitespace, relative
 to the importing file, `~/` for home, absolute paths allowed, `\ ` for a space,
@@ -103,9 +203,11 @@ four hops at most, not inside code spans or fenced blocks, text files only.
 Block-level HTML comments are stripped. Claude Code asks once before loading a
 project file's import from outside the project. Foundry has no dialog, so a
 project, org or local file imports only inside the repository or its own
-directory tree, checked on the symlink target too; global files import from
-anywhere. Dotfiles (`.env`), key files and credential directories (`.ssh`,
-`.aws`, ...) never import, unlike Claude Code. `claudemdSource` (a `markdown`
+directory tree, checked on the symlink target too; managed and global files
+(`imports: "anywhere"`) import from anywhere, and a registered node sets its own
+`imports`. Dotfiles (`.env`), key files and credential directories (`.ssh`,
+`.aws`, ...) never import, unlike Claude Code, and a node's configured paths
+never read them either. `claudemdSource` (a `markdown`
 source naming one file) imports only within that file's directory.
 
 Not composed: subdirectory files and path-scoped rules, which Claude Code loads

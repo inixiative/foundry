@@ -104,6 +104,19 @@ registry.register(docs.asAdapter());  // system: "markdown"
 const files = await docs.list();
 ```
 
+### Markdown hierarchy
+
+`discoverHierarchy(nodes, location, { tierRank })` composes a registered ladder or
+tree of instruction nodes (computer, org, project; shared or personal) for one
+working location: it selects the nodes that apply (`when` paths, projects,
+owners, harness; a child only under its parent), reads their files (paths,
+globs, first-existing lists, or a root-to-cwd `walk`) with `@path` imports, and
+orders them by place (computer level, then each directory down to the cwd),
+shared before personal, then ladder order. `dedupeHierarchy(files)` removes
+identical files and identical sections, keeping the most specific copy and
+naming it. Tiers are opaque labels; the caller ranks and filters them. Foundry's
+`instructions` source is built on it (docs/usage-and-context.md).
+
 ### HttpMemory
 
 Generic REST adapter. Talks to any API.

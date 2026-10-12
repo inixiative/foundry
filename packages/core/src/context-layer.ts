@@ -53,6 +53,8 @@ export interface SourceLoadHint {
  * automatic selection, never a substitute for the retained log.
  */
 export interface SourceSelectionReport {
+  /** What the records are. Absent: memory records. */
+  readonly subject?: 'memory' | 'instructions';
   readonly selected: Array<{
     readonly id: string;
     readonly reason: string;
@@ -69,6 +71,8 @@ export interface SourceSelectionReport {
     readonly chars: number;
     readonly kind?: string;
     readonly excludedFor?: LogicalMessageIdentity;
+    /** The copy kept in its place, for a record left out as a duplicate. */
+    readonly duplicateOf?: string;
   }>;
   /** Records the reader was allowed to see. */
   readonly considered: number;

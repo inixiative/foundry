@@ -1,28 +1,39 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import {
   type ContextSource,
-  type InstructionFile,
+  dedupeHierarchy,
+  discoverHierarchy,
+  type HierarchyDedupeOptions,
+  type HierarchyDuplicate,
+  type HierarchyFile,
+  type HierarchyNode,
   type OwnershipScope,
-  readInstructionFile,
-  withinAny,
-  withinPath,
+  type SourceSelectionReport,
 } from '@inixiative/foundry-core';
 import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
 import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
+import {
+  DEFAULT_INSTRUCTION_LADDER,
+  HARNESS_GLOBAL_SOURCE,
+  type InstructionNodeSettings,
+} from './instruction-settings';
 
 /**
- * Standing context: the instruction files a coding agent reads before any message. Foundry
- * discovers them the way Claude Code does (docs/usage-and-context.md) and composes them for any
- * harness, so a Codex session gets CLAUDE.md and a Claude session gets AGENTS.md.
+ * Standing context: the instruction files a coding agent reads before any message. Foundry composes
+ * them for any harness from a registered hierarchy (core `discoverHierarchy`): a ladder or tree of
+ * nodes (computer, org, project; shared or personal), each naming its files and corpus tier. The
+ * default ladder is Claude Code's own discovery (docs/usage-and-context.md), so a Codex session gets
+ * CLAUDE.md and a Claude session gets AGENTS.md; `instructions.nodes` registers more.
  */
-export type InstructionLevel = 'managed' | 'global' | 'org' | 'project' | 'local' | 'memory';
 export type InstructionHarness = 'claude' | 'codex';
+/** The default ladder's nodes. */
+export type InstructionLevel = 'managed' | 'global' | 'org' | 'project' | 'local' | 'memory';
 
-/** Each level's corpus tier: personal files stay personal_private, committed ones are team, files above the repo are org. */
+/** Each default level's corpus tier: personal files stay personal_private, committed ones are team, files above the repo are org. */
 export const INSTRUCTION_LEVEL_TIER: Readonly<Record<InstructionLevel, CorpusTier>> = {
   managed: 'org',
   global: 'personal_private',
@@ -45,13 +56,18 @@ const LEVEL_LABEL: Readonly<Record<InstructionLevel, string>> = {
 const PREAMBLE =
   'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.';
 
-/** Claude Code loads the first 200 lines or 25KB of MEMORY.md, whichever is smaller. */
-const MEMORY_LINES = 200;
-const MEMORY_BYTES = 25 * 1024;
-
-export interface InstructionStackFile extends InstructionFile {
-  readonly level: InstructionLevel;
+export interface InstructionStackFile extends HierarchyFile {
+  /** The node the file belongs to: a default level, or a registered node's id. */
+  readonly level: string;
   readonly tier: CorpusTier;
+}
+
+export interface InstructionStack {
+  readonly files: InstructionStackFile[];
+  /** Files reached a second time; the first reach was kept. */
+  readonly duplicates: HierarchyDuplicate[];
+  /** Labels of the nodes that were registered, by id. */
+  readonly labels: Readonly<Record<string, string>>;
 }
 
 export interface InstructionStackOptions {
@@ -66,11 +82,16 @@ export interface InstructionStackOptions {
   codexHome?: string;
   /** Default: the platform's Claude Code managed CLAUDE.md. */
   managedPath?: string;
-  /** Leave out the global level: the harness reads that same file itself and cannot be told not to. */
+  /** Leave out the global file: the harness reads that same file itself and cannot be told not to. */
   harnessLoadsGlobal?: boolean;
+  /** The ladder (`resolveInstructionLadder`). Default: the default ladder. */
+  ladder?: readonly InstructionNodeSettings[];
+  /** The thread's project and owner, for nodes registered by project or owner. */
+  projectId?: string;
+  projectPath?: string;
+  owner?: string;
 }
 
-const within = withinPath;
 const TIER_RANK: Readonly<Record<CorpusTier, number>> = {
   personal_private: 0,
   personal_public: 1,
@@ -113,171 +134,223 @@ export function claudeProjectDirName(path: string): string {
   return path.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+/** A node's tier when its settings name none: personal is personal_private, shared project is team, the rest org. */
+export function defaultNodeTier(
+  node: Pick<InstructionNodeSettings, 'scope' | 'personal'>,
+): CorpusTier {
+  if (node.personal) return 'personal_private';
+  return node.scope === 'project' ? 'team' : 'org';
+}
 
-/** A rule's text without its frontmatter. */
-const ruleBody = (text: string) => text.replace(FRONTMATTER, '');
+/** Default imports for a node: personal computer-level files import from anywhere, others stay inside the repository or their own directory. */
+const BOUNDED_IMPORTS = ['{project}', '{repository}', '{dir}'] as const;
 
-/** Rules that load at launch; a rule with `paths` frontmatter loads only beside matching files. */
-async function ruleFiles(dir: string): Promise<string[]> {
-  if (!existsSync(dir)) return [];
-  const found: string[] = [];
-  for await (const rel of new Bun.Glob('**/*.md').scan({ cwd: dir, followSymlinks: true })) {
-    const path = join(dir, rel);
-    let frontmatter: string | undefined;
-    try {
-      frontmatter = FRONTMATTER.exec(readFileSync(path, 'utf8'))?.[1];
-    } catch {
-      continue; // unreadable: Claude Code skips it too
-    }
-    if (!frontmatter || !/^paths\s*:/m.test(frontmatter)) found.push(path);
-  }
-  return found.sort();
+function toHierarchyNode(node: InstructionNodeSettings): HierarchyNode {
+  return {
+    id: node.id,
+    scope: node.scope,
+    personal: node.personal,
+    tier: node.tier ?? defaultNodeTier(node),
+    ...(node.label ? { label: node.label } : {}),
+    ...(node.parent ? { parent: node.parent } : {}),
+    ...(node.when ? { when: node.when } : {}),
+    ...(node.anchor ? { anchor: node.anchor } : {}),
+    sources: node.sources,
+    imports: node.imports ?? BOUNDED_IMPORTS,
+    ...(node.owns ? { owns: node.owns } : {}),
+  };
+}
+
+/** A node's label in the composed prompt. */
+export function instructionNodeLabel(node: InstructionNodeSettings): string {
+  if (node.label) return node.label;
+  if (node.id in LEVEL_LABEL) return LEVEL_LABEL[node.id as InstructionLevel];
+  return `${node.personal ? "user's private " : ''}${node.scope} instructions (${node.id})`;
 }
 
 /**
- * Every standing instruction file for a session at `cwd`, in the order Claude Code loads them
- * (verified against Claude Code 2.1.296): managed policy, the personal global file and its rules,
- * then each directory from the filesystem root down to the cwd (CLAUDE.md, .claude/CLAUDE.md,
- * .claude/rules, AGENTS.md, .claude/AGENTS.md, then CLAUDE.local.md), and auto memory last. Each
- * file is followed by its `@path` imports. Directories above the repository are the org level.
- * Subdirectory files and path-scoped rules, which Claude Code loads on demand, are not included.
+ * Every standing instruction file for a session at `cwd`, in composition order: computer-level
+ * nodes, then each directory from the filesystem root down to the cwd, ladder order within a place.
+ * Each file is followed by its `@path` imports. With the default ladder this is Claude Code's own
+ * load order. Subdirectory files and path-scoped rules, which Claude Code loads on demand, are not included.
  */
 export async function discoverInstructionStack(
   options: InstructionStackOptions,
-): Promise<InstructionStackFile[]> {
+): Promise<InstructionStack> {
   const home = options.home ?? homedir();
   const cwd = resolve(options.cwd);
-  const root = projectRoot(cwd);
   // A worktree's main checkout is the same repository, not the organization above it.
   const repository = memoryRoot(cwd);
   const claudeDir =
     options.claudeConfigDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(home, '.claude');
-  const codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(home, '.codex');
-  const seen = new Set<string>();
-  const stack: InstructionStackFile[] = [];
-
-  const personalDirs = withinAny([claudeDir, codexHome]);
-  /** Where a file sits says how private it is, whoever imported it. */
-  const located = (path: string): InstructionLevel | undefined => {
-    if (basename(path) === 'CLAUDE.local.md') return 'local';
-    if (personalDirs(path) || dirname(path) === home) return 'global';
-    if (within(path, root) || within(path, repository)) return 'project';
-    return undefined;
-  };
-
-  const add = async (path: string, level: InstructionLevel, body?: (text: string) => string) => {
-    const personal = level === 'global' || level === 'managed';
-    // Claude Code asks once before loading a project file's import from outside the project.
-    // Foundry has no dialog: an import loads inside the project or the importing file's own tree.
-    const allows = personal ? undefined : withinAny([root, repository, dirname(path)]);
-    for (const file of await readInstructionFile(path, { home, seen, allows })) {
-      const content = file.depth === 0 && body ? body(file.content) : file.content;
-      // An import never widens: it keeps the narrower of its importer's tier and its own location's.
-      const own = file.importedBy ? located(file.path) : undefined;
-      const final =
-        own && TIER_RANK[INSTRUCTION_LEVEL_TIER[own]] < TIER_RANK[INSTRUCTION_LEVEL_TIER[level]]
-          ? own
-          : level;
-      stack.push({ ...file, content, level: final, tier: INSTRUCTION_LEVEL_TIER[final] });
-    }
-  };
-
-  await add(
-    options.managedPath ??
-      (process.platform === 'darwin'
-        ? '/Library/Application Support/ClaudeCode/CLAUDE.md'
-        : '/etc/claude-code/CLAUDE.md'),
-    'managed',
+  const ladder = options.ladder ?? DEFAULT_INSTRUCTION_LADDER;
+  const stack = await discoverHierarchy(
+    ladder.map(toHierarchyNode),
+    {
+      cwd,
+      home,
+      harness: options.harness,
+      ...(options.harnessLoadsGlobal ? { harnessLoads: [HARNESS_GLOBAL_SOURCE] } : {}),
+      ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(options.owner ? { owner: options.owner } : {}),
+      vars: {
+        home: resolve(home),
+        cwd,
+        project: projectRoot(cwd),
+        repository,
+        claudeConfigDir: claudeDir,
+        codexHome: options.codexHome ?? process.env.CODEX_HOME ?? join(home, '.codex'),
+        managed:
+          options.managedPath ??
+          (process.platform === 'darwin'
+            ? '/Library/Application Support/ClaudeCode/CLAUDE.md'
+            : '/etc/claude-code/CLAUDE.md'),
+        claudeProjectKey: claudeProjectDirName(repository),
+        projectId: options.projectId,
+        projectPath: options.projectPath,
+      },
+    },
+    { tierRank: (tier) => TIER_RANK[tier as CorpusTier] },
   );
-  if (options.harnessLoadsGlobal) {
-    // The harness reads the personal global file itself.
-  } else if (options.harness === 'claude') {
-    await add(join(claudeDir, 'CLAUDE.md'), 'global');
-    for (const rule of await ruleFiles(join(claudeDir, 'rules')))
-      await add(rule, 'global', ruleBody);
-  } else {
-    const override = join(codexHome, 'AGENTS.override.md');
-    await add(isFile(override) ? override : join(codexHome, 'AGENTS.md'), 'global');
-  }
-
-  const dirs: string[] = [];
-  for (let dir = cwd; dirname(dir) !== dir; dir = dirname(dir)) dirs.unshift(dir);
-  for (const dir of dirs) {
-    // The home directory is personal, and its .claude is the global level's (per harness), never org.
-    const isHome = dir === resolve(home);
-    const level: InstructionLevel = isHome
-      ? 'global'
-      : within(dir, root) || within(dir, repository)
-        ? 'project'
-        : 'org';
-    await add(join(dir, 'CLAUDE.md'), level);
-    if (!isHome) {
-      await add(join(dir, '.claude', 'CLAUDE.md'), level);
-      for (const rule of await ruleFiles(join(dir, '.claude', 'rules')))
-        await add(rule, level, ruleBody);
-    }
-    await add(join(dir, 'AGENTS.md'), level);
-    if (!isHome) await add(join(dir, '.claude', 'AGENTS.md'), level);
-    await add(join(dir, 'CLAUDE.local.md'), 'local');
-  }
-
-  const memory = join(
-    claudeDir,
-    'projects',
-    claudeProjectDirName(repository),
-    'memory',
-    'MEMORY.md',
-  );
-  if (isFile(memory) && !seen.has(realpathSync(memory))) {
-    const lines = readFileSync(memory, 'utf8').split('\n').slice(0, MEMORY_LINES).join('\n');
-    const content = Buffer.from(lines).subarray(0, MEMORY_BYTES).toString('utf8');
-    stack.push({ path: memory, content, depth: 0, level: 'memory', tier: 'personal_private' });
-  }
-  return stack;
+  return {
+    files: stack.files.map((file) => ({
+      ...file,
+      level: file.node,
+      tier: file.tier as CorpusTier,
+    })),
+    duplicates: stack.duplicates,
+    labels: Object.fromEntries(ladder.map((node) => [node.id, instructionNodeLabel(node)])),
+  };
 }
 
-/** The stack as one block for `audience`: a file reaches it only if its tier is visible there. */
-export function composeInstructionStack(
-  files: readonly InstructionStackFile[],
-  audience: CorpusTier = 'personal_private',
-): string {
-  const sections = files
-    .filter((file) => file.content.trim() && visibleTo(file.tier, audience))
-    .map(
-      (file) => `Contents of ${file.path} (${LEVEL_LABEL[file.level]}):\n\n${file.content.trim()}`,
-    );
-  return sections.length ? [PREAMBLE, ...sections].join('\n\n') : '';
-}
-
-export interface InstructionStackSourceOptions extends Omit<InstructionStackOptions, 'cwd'> {
-  audience?: CorpusTier;
-  /** Where a thread with no cwd works: its project's directory. */
-  projectPath?: (projectId: string) => string | undefined;
+export interface ComposedInstructions {
+  readonly text: string;
+  /** The files composed, after audience filtering and dedupe. */
+  readonly files: InstructionStackFile[];
+  /** Files the audience may not see. */
+  readonly hidden: InstructionStackFile[];
+  /** Everything removed as a duplicate: second reaches, identical files, identical sections. */
+  readonly duplicates: HierarchyDuplicate[];
 }
 
 /**
- * A layer source composing the stack for the session's cwd. Bound to a thread, it follows the
- * thread's cwd (its worktree or project); unbound, it reads from the Foundry process's cwd.
+ * The stack as one block for `audience`: a file reaches it only if its tier is visible there, then
+ * repeated files and sections are removed, keeping the most specific copy.
+ */
+export function composeInstructionStack(
+  stack: InstructionStack,
+  options: { audience?: CorpusTier; dedupe?: HierarchyDedupeOptions } = {},
+): ComposedInstructions {
+  const audience = options.audience ?? 'personal_private';
+  const visible = stack.files.filter((file) => visibleTo(file.tier, audience));
+  const hidden = stack.files.filter((file) => !visibleTo(file.tier, audience));
+  const deduped = dedupeHierarchy(visible, options.dedupe);
+  const files = deduped.files.filter((file) => file.content.trim());
+  const sections = files.map(
+    (file) =>
+      `Contents of ${file.path} (${stack.labels[file.level] ?? file.level}):\n\n${file.content.trim()}`,
+  );
+  return {
+    text: sections.length ? [PREAMBLE, ...sections].join('\n\n') : '',
+    files,
+    hidden,
+    duplicates: [...stack.duplicates, ...deduped.duplicates],
+  };
+}
+
+const DUPLICATE_REASON: Readonly<Record<HierarchyDuplicate['kind'], string>> = {
+  path: 'same file reached again',
+  content: 'identical content to a more specific file',
+  section: 'identical section in a more specific file',
+};
+
+/** The composition as a selection report, so the viewer's Selection panel shows what was deduped. */
+export function instructionStackReport(
+  stack: InstructionStack,
+  composed: ComposedInstructions,
+  audience: CorpusTier,
+): SourceSelectionReport {
+  const chars = stack.files.reduce((sum, file) => sum + file.content.length, 0);
+  return {
+    subject: 'instructions',
+    selected: composed.files.map((file) => ({
+      id: file.path,
+      reason: stack.labels[file.level] ?? file.level,
+      chars: file.content.length,
+      kind: file.level,
+    })),
+    omitted: [
+      ...composed.hidden.map((file) => ({
+        id: file.path,
+        reason: `not visible to ${audience}`,
+        chars: file.content.length,
+        kind: file.level,
+      })),
+      ...composed.duplicates.map((duplicate) => ({
+        id: duplicate.heading ? `${duplicate.path} § ${duplicate.heading}` : duplicate.path,
+        reason: DUPLICATE_REASON[duplicate.kind],
+        chars: duplicate.chars,
+        kind: duplicate.node,
+        duplicateOf: `${duplicate.keptPath} (${duplicate.keptNode})`,
+      })),
+    ],
+    considered: stack.files.length,
+    retained: { count: stack.files.length, chars },
+    budget: { chars: 0, used: composed.text.length, exceeded: false },
+    conflicts: [],
+  };
+}
+
+export interface InstructionStackSourceOptions
+  extends Omit<InstructionStackOptions, 'cwd' | 'projectId' | 'projectPath' | 'owner'> {
+  audience?: CorpusTier;
+  dedupe?: HierarchyDedupeOptions;
+  /** Where a thread with no cwd works: its project's directory. */
+  projectPath?: (projectId: string) => string | undefined;
+  /** The thread project's owner, for nodes registered by owner. */
+  owner?: (projectId: string | undefined) => string | undefined;
+}
+
+/**
+ * A layer source composing the stack for the session's location. Bound to a thread, it follows the
+ * thread's cwd (its worktree or project) and project; unbound, it reads from the process's cwd.
  */
 export function instructionStackSource(
   id: string,
   options: InstructionStackSourceOptions,
   scope?: OwnershipScope,
 ): ContextSource {
+  let last: SourceSelectionReport | undefined;
   return {
     id,
     bind: (next) => instructionStackSource(id, options, next),
     async load() {
-      const files = await discoverInstructionStack({
-        ...options,
-        cwd:
-          scope?.cwd ??
-          (scope?.projectId ? options.projectPath?.(scope.projectId) : undefined) ??
-          process.cwd(),
+      const projectId = scope?.projectId;
+      const projectPath = projectId ? options.projectPath?.(projectId) : undefined;
+      const owner = options.owner?.(projectId);
+      const {
+        projectPath: _path,
+        owner: _owner,
+        audience: _audience,
+        dedupe,
+        ...discover
+      } = options;
+      const stack = await discoverInstructionStack({
+        ...discover,
+        cwd: scope?.cwd ?? projectPath ?? process.cwd(),
+        ...(projectId ? { projectId } : {}),
+        ...(projectPath ? { projectPath } : {}),
+        ...(owner ? { owner } : {}),
       });
-      return composeInstructionStack(files, options.audience);
+      const audience = options.audience ?? 'personal_private';
+      const composed = composeInstructionStack(stack, {
+        audience,
+        ...(dedupe ? { dedupe } : {}),
+      });
+      last = instructionStackReport(stack, composed, audience);
+      return composed.text;
     },
+    report: () => last,
   };
 }
 

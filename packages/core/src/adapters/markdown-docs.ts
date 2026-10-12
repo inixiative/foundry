@@ -221,6 +221,8 @@ export interface InstructionReadOptions {
   seen?: Set<string>;
   /** Whether an import target may load; Claude Code asks before loading imports outside the project. */
   allows?: (path: string) => boolean;
+  /** Called when a file is reached again after it already loaded (`seen`); it is not loaded twice. */
+  onDuplicate?: (reach: { path: string; real: string; importedBy?: string }) => void;
 }
 
 /**
@@ -244,7 +246,7 @@ const TEXT_EXTENSIONS = new Set(
  * directories. Claude Code would import some of these; Foundry refuses because a committed file
  * must not be able to pull a secret into a shared context.
  */
-function secretPath(path: string): boolean {
+export function secretInstructionPath(path: string): boolean {
   const name = basename(path);
   return (
     name.startsWith('.') ||
@@ -259,7 +261,7 @@ const INSTRUCTION_FILE_LIMIT = 4 * 1024 * 1024;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /** Splits markdown into prose and fenced-code segments, in order. */
-function fenceSegments(text: string): Array<{ code: boolean; text: string }> {
+export function fenceSegments(text: string): Array<{ code: boolean; text: string }> {
   const segments: Array<{ code: boolean; text: string }> = [];
   let fence: string | undefined;
   let lines: string[] = [];
@@ -343,12 +345,17 @@ export async function readInstructionFile(
     try {
       real = await realpath(file);
       const info = await stat(real);
-      if (!info.isFile() || info.size > INSTRUCTION_FILE_LIMIT || seen.has(real)) return;
+      if (!info.isFile() || info.size > INSTRUCTION_FILE_LIMIT) return;
     } catch {
       return;
     }
+    if (seen.has(real)) {
+      options.onDuplicate?.({ path: file, real, ...(importedBy ? { importedBy } : {}) });
+      return;
+    }
     // An import is judged on where it resolves and where its symlinks lead.
-    if (importedBy && (secretPath(real) || (options.allows && !options.allows(real)))) return;
+    if (importedBy && (secretInstructionPath(real) || (options.allows && !options.allows(real))))
+      return;
     seen.add(real);
     const content = stripInstructionComments(await Bun.file(real).text());
     files.push({ path: file, content, depth, ...(importedBy ? { importedBy } : {}) });
@@ -356,7 +363,7 @@ export async function readInstructionFile(
     for (const target of instructionImports(content)) {
       const next = resolveInstructionImport(target, file, options.home);
       const ext = extname(next).toLowerCase();
-      if ((ext && !TEXT_EXTENSIONS.has(ext)) || secretPath(next)) continue;
+      if ((ext && !TEXT_EXTENSIONS.has(ext)) || secretInstructionPath(next)) continue;
       if (!options.allows || options.allows(next)) await visit(next, depth + 1, file);
     }
   };

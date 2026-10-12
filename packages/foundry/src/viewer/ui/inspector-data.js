@@ -156,11 +156,20 @@ export function selectionSummary(layer) {
     (r.conflicts || []).map((c) => `${c.kind}: ${(c.ids || []).join(', ')}`),
   );
   const omittedCount = omitted.reduce((n, o) => n + o.count, 0);
-  const notice =
-    layer.included === false
+  // Instruction files: what was composed, and each duplicate with the copy kept in its place.
+  const instructions = reports.length > 0 && reports.every((r) => r.subject === 'instructions');
+  const duplicates = reports.flatMap((r) =>
+    (r.omitted || [])
+      .filter((o) => o.duplicateOf)
+      .map((o) => ({ id: o.id, reason: o.reason, keptIn: o.duplicateOf })),
+  );
+  const notice = instructions
+    ? `${selected.length} instruction files were composed for this layer; ${omittedCount} were left out (hidden from this audience or duplicates). Preparation is not acknowledgment of what the model retained.`
+    : layer.included === false
       ? `This layer was not included in the prepared input for this turn. ${selected.length} of ${retained.count} retained records had been selected; the full owned log stays searchable with the memory tool.`
       : `${selected.length} of ${retained.count} owned records were prepared as model input; ${omittedCount} were left out for the reasons below. Preparation is not acknowledgment of what the model retained. The full owned log stays searchable with the memory tool.`;
   return {
+    subject: instructions ? 'instructions' : 'memory',
     selected,
     omitted,
     budget,
@@ -170,6 +179,7 @@ export function selectionSummary(layer) {
     notice,
     currentMessages,
     exclusions,
+    duplicates,
   };
 }
 

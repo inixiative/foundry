@@ -6,12 +6,18 @@ import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
 import {
+  DEFAULT_INSTRUCTION_LADDER,
+  type InstructionSettings,
+  resolveInstructionLadder,
+} from '../src/prompts/instruction-settings';
+import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   claudeProjectDirName,
   composeInstructionStack,
   discoverInstructionStack,
   harnessLoadsInstructions,
   type InstructionStackOptions,
+  instructionStackSource,
 } from '../src/prompts/instruction-stack';
 import { nativeTextEnvironment } from '../src/providers/native-text-environment';
 import {
@@ -23,6 +29,7 @@ import {
   defaultProjectSources,
   type FoundryConfig,
   starterConfig,
+  validateConfig,
 } from '../src/viewer/config';
 
 let root: string;
@@ -75,7 +82,7 @@ test('discovery walks root to cwd in Claude Code order and maps every level onto
   write(memoryPath(repo), Array.from({ length: 250 }, (_, i) => `memory ${i}`).join('\n'));
 
   const stack = await discoverInstructionStack(options(join(repo, 'pkg')));
-  expect(stack.map((file) => [file.path.slice(root.length), file.level, file.tier])).toEqual([
+  expect(stack.files.map((file) => [file.path.slice(root.length), file.level, file.tier])).toEqual([
     ['/managed/CLAUDE.md', 'managed', 'org'],
     ['/home/.claude/CLAUDE.md', 'global', 'personal_private'],
     ['/home/.claude/RTK.md', 'global', 'personal_private'],
@@ -90,9 +97,9 @@ test('discovery walks root to cwd in Claude Code order and maps every level onto
     ['/org/repo/pkg/CLAUDE.md', 'project', 'team'],
     [memoryPath(repo).slice(root.length), 'memory', 'personal_private'],
   ]);
-  expect(stack.find((file) => file.path.endsWith('always.md'))!.content).toBe('project rule');
+  expect(stack.files.find((file) => file.path.endsWith('always.md'))!.content).toBe('project rule');
   // Claude Code loads the first 200 lines of MEMORY.md.
-  expect(stack.at(-1)!.content.split('\n')).toHaveLength(200);
+  expect(stack.files.at(-1)!.content.split('\n')).toHaveLength(200);
 });
 
 test('a Codex session gets its own global AGENTS.md (the override first) and the same project stack', async () => {
@@ -100,7 +107,7 @@ test('a Codex session gets its own global AGENTS.md (the override first) and the
   write(join(codexHome, 'AGENTS.md'), 'codex global');
   write(join(repo, 'CLAUDE.md'), 'project');
   const levels = async () =>
-    (await discoverInstructionStack(options(repo, 'codex'))).map((file) => file.content);
+    (await discoverInstructionStack(options(repo, 'codex'))).files.map((file) => file.content);
   expect(await levels()).toEqual(['codex global', 'project']);
   write(join(codexHome, 'AGENTS.override.md'), 'codex override');
   expect(await levels()).toEqual(['codex override', 'project']);
@@ -116,7 +123,7 @@ test("a worktree's main checkout is the same repository: project level, one shar
   write(join(worktree, 'CLAUDE.md'), 'worktree');
   write(memoryPath(repo), 'shared memory');
   const stack = await discoverInstructionStack(options(worktree));
-  expect(stack.map((file) => [file.content, file.level])).toEqual([
+  expect(stack.files.map((file) => [file.content, file.level])).toEqual([
     ['main checkout', 'project'],
     ['worktree', 'project'],
     ['shared memory', 'memory'],
@@ -132,13 +139,13 @@ test('personal files never reach a team audience; org reaches every audience', a
   const stack = await discoverInstructionStack(options(repo));
   const personal = ['PERSONAL_GLOBAL', 'PERSONAL_LOCAL', 'PERSONAL_MEMORY'];
 
-  const own = composeInstructionStack(stack);
+  const own = composeInstructionStack(stack).text;
   for (const text of [...personal, 'ORG_RULES', 'TEAM_RULES']) expect(own).toContain(text);
-  const team = composeInstructionStack(stack, 'team');
+  const team = composeInstructionStack(stack, { audience: 'team' }).text;
   for (const text of personal) expect(team).not.toContain(text);
   expect(team).toContain('TEAM_RULES');
   expect(team).toContain('ORG_RULES');
-  const orgOnly = composeInstructionStack(stack, 'org');
+  const orgOnly = composeInstructionStack(stack, { audience: 'org' }).text;
   expect(orgOnly).toContain('ORG_RULES');
   expect(orgOnly).not.toContain('TEAM_RULES');
   expect(own).toContain(`Contents of ${join(repo, 'CLAUDE.md')} (project instructions`);
@@ -156,11 +163,11 @@ test('with home above the repository, home files stay personal and its .claude b
   write(join(nestedRepo, 'CLAUDE.md'), 'TEAM_RULES');
   for (const harness of ['claude', 'codex'] as const) {
     const stack = await discoverInstructionStack(options(nestedRepo, harness));
-    const team = composeInstructionStack(stack, 'team');
+    const team = composeInstructionStack(stack, { audience: 'team' }).text;
     for (const text of ['HOME_FILE', 'CLAUDE_GLOBAL', 'CODEX_GLOBAL'])
       expect(team).not.toContain(text);
     expect(team).toContain('ORG_RULES');
-    const own = composeInstructionStack(stack);
+    const own = composeInstructionStack(stack).text;
     expect(own).toContain(harness === 'claude' ? 'CLAUDE_GLOBAL' : 'CODEX_GLOBAL');
     expect(own).not.toContain(harness === 'claude' ? 'CODEX_GLOBAL' : 'CLAUDE_GLOBAL');
   }
@@ -170,11 +177,11 @@ test('an import keeps the narrower tier: a committed file importing CLAUDE.local
   write(join(repo, 'CLAUDE.md'), 'TEAM_RULES @CLAUDE.local.md');
   write(join(repo, 'CLAUDE.local.md'), 'LOCAL_SECRET');
   const stack = await discoverInstructionStack(options(repo));
-  expect(stack.find((file) => file.content === 'LOCAL_SECRET')).toMatchObject({
+  expect(stack.files.find((file) => file.content === 'LOCAL_SECRET')).toMatchObject({
     level: 'local',
     tier: 'personal_private',
   });
-  expect(composeInstructionStack(stack, 'team')).not.toContain('LOCAL_SECRET');
+  expect(composeInstructionStack(stack, { audience: 'team' }).text).not.toContain('LOCAL_SECRET');
 });
 
 test('the Codex global file is left to Codex when it runs on that same CODEX_HOME', async () => {
@@ -184,7 +191,7 @@ test('the Codex global file is left to Codex when it runs on that same CODEX_HOM
     ...options(repo, 'codex'),
     harnessLoadsGlobal: true,
   });
-  expect(stack.map((file) => file.content)).toEqual(['TEAM_RULES']);
+  expect(stack.files.map((file) => file.content)).toEqual(['TEAM_RULES']);
 });
 
 test('an unreadable rule is skipped, not fatal', async () => {
@@ -192,7 +199,7 @@ test('an unreadable rule is skipped, not fatal', async () => {
   write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
   chmodSync(join(repo, '.claude', 'rules', 'locked.md'), 0o000);
   const stack = await discoverInstructionStack(options(repo));
-  expect(stack.map((file) => file.content)).toEqual(['TEAM_RULES']);
+  expect(stack.files.map((file) => file.content)).toEqual(['TEAM_RULES']);
 });
 
 test('each file reaches the stack once, however many ways it is reached', async () => {
@@ -200,7 +207,7 @@ test('each file reaches the stack once, however many ways it is reached', async 
   write(join(repo, 'CLAUDE.local.md'), 'mine @shared.md');
   write(join(repo, 'AGENTS.md'), 'AGENTS_ONCE');
   write(join(repo, 'shared.md'), 'SHARED_ONCE');
-  const composed = composeInstructionStack(await discoverInstructionStack(options(repo)));
+  const composed = composeInstructionStack(await discoverInstructionStack(options(repo))).text;
   expect(composed.split('AGENTS_ONCE')).toHaveLength(2);
   expect(composed.split('SHARED_ONCE')).toHaveLength(2);
 });
@@ -211,12 +218,12 @@ test('a project file imports inside the repository only; personal files import f
   write(join(org, 'CLAUDE.md'), '@sibling.md');
   write(join(repo, 'CLAUDE.md'), `@${join(root, 'elsewhere', 'outside.md')} @docs/inside.md`);
   write(join(repo, 'docs', 'inside.md'), 'INSIDE');
-  const project = composeInstructionStack(await discoverInstructionStack(options(repo)));
+  const project = composeInstructionStack(await discoverInstructionStack(options(repo))).text;
   expect(project).toContain('INSIDE');
   expect(project).toContain('ORG_SIBLING');
   expect(project).not.toContain('OUTSIDE');
   write(join(claudeDir, 'CLAUDE.md'), `@${join(root, 'elsewhere', 'outside.md')}`);
-  expect(composeInstructionStack(await discoverInstructionStack(options(repo)))).toContain(
+  expect(composeInstructionStack(await discoverInstructionStack(options(repo))).text).toContain(
     'OUTSIDE',
   );
 });
@@ -315,4 +322,215 @@ test('the Claude off switch reaches the native process through the subscription 
     session.kill();
   }
   expect(launches.map((env) => env.CLAUDE_CODE_DISABLE_CLAUDE_MDS)).toEqual(['1', undefined]);
+});
+
+/** Aron's ladder over the default preset: org and org personal, a project and project personal. */
+const aronSettings = (): InstructionSettings => ({
+  nodes: {
+    inixiative: {
+      scope: 'org',
+      personal: false,
+      when: { paths: [org] },
+      sources: [{ path: '{anchor}/docs/org/*.md' }],
+    },
+    'inixiative-personal': {
+      scope: 'org',
+      personal: true,
+      parent: 'inixiative',
+      sources: [{ path: '~/.foundry/instructions/inixiative.md' }],
+    },
+    app: {
+      scope: 'project',
+      personal: false,
+      parent: 'inixiative',
+      when: { projects: ['app'] },
+      anchor: '{projectPath}',
+      sources: [{ path: 'docs/agents/*.md' }],
+    },
+    'app-personal': {
+      scope: 'project',
+      personal: true,
+      parent: 'app',
+      sources: [{ path: '~/.foundry/instructions/app.md' }],
+    },
+  },
+});
+
+test('the default ladder is the preset when nothing is configured; nodes merge over it by id', () => {
+  expect(resolveInstructionLadder(undefined)).toEqual([...DEFAULT_INSTRUCTION_LADDER]);
+  expect(resolveInstructionLadder({ harnessLoading: 'load' })).toEqual([
+    ...DEFAULT_INSTRUCTION_LADDER,
+  ]);
+  const ids = resolveInstructionLadder({
+    nodes: {
+      memory: { scope: 'project', personal: true, enabled: false, sources: [] },
+      org: { scope: 'org', personal: false, label: 'mine', sources: [{ path: 'x.md' }] },
+      extra: { scope: 'computer', personal: true, sources: [{ path: '~/x.md' }] },
+    },
+  });
+  expect(ids.map((node) => node.id)).toEqual([
+    'managed',
+    'global',
+    'org',
+    'project',
+    'local',
+    'extra',
+  ]);
+  expect(ids.find((node) => node.id === 'org')!.label).toBe('mine');
+  expect(resolveInstructionLadder({ preset: 'none', ...aronSettings() }).map((n) => n.id)).toEqual([
+    'inixiative',
+    'inixiative-personal',
+    'app',
+    'app-personal',
+  ]);
+});
+
+test('instruction settings are validated: tiers, parents, cycles, sources', () => {
+  const config = (instructions: unknown) =>
+    ({ ...starterConfig(), instructions }) as unknown as FoundryConfig;
+  expect(() => validateConfig(config(aronSettings()))).not.toThrow();
+  const node = { scope: 'org', personal: false, sources: [{ path: 'x.md' }] };
+  for (const [instructions, message] of [
+    [{ nodes: { a: { ...node, parent: 'missing' } } }, 'is not a node'],
+    [{ nodes: { a: { ...node, parent: 'b' }, b: { ...node, parent: 'a' } } }, 'parent cycle'],
+    [{ nodes: { a: { ...node, personal: true, tier: 'team' } } }, "personal node's tier"],
+    [{ nodes: { a: { ...node, tier: 'public' } } }, 'tier must be one of'],
+    [{ nodes: { a: { ...node, sources: [] } } }, 'at least one source'],
+    [{ nodes: { a: { ...node, sources: [{ walk: [] }] } } }, 'walk must list'],
+    [{ nodes: { a: { ...node, when: { cwd: ['x'] } } } }, 'when.cwd'],
+    [{ preset: 'cursor' }, 'instructions.preset'],
+    [{ dedupe: { lines: true } }, 'instructions.dedupe'],
+  ] as const)
+    expect(() => validateConfig(config(instructions))).toThrow(message);
+});
+
+test("a registered ladder composes every applicable level, in order, for the thread's location", async () => {
+  const app = join(org, 'app');
+  mkdirSync(join(app, '.git'), { recursive: true });
+  write(join(org, 'CLAUDE.md'), 'ORG_CLAUDE');
+  write(join(org, 'docs', 'org', 'policy.md'), 'ORG_POLICY');
+  write(join(home, '.foundry', 'instructions', 'inixiative.md'), 'ORG_PERSONAL');
+  write(join(app, 'CLAUDE.md'), 'APP_CLAUDE');
+  write(join(app, 'docs', 'agents', 'style.md'), 'APP_STYLE');
+  write(join(app, 'CLAUDE.local.md'), 'APP_LOCAL');
+  write(join(home, '.foundry', 'instructions', 'app.md'), 'APP_PERSONAL');
+  write(join(claudeDir, 'CLAUDE.md'), 'COMPUTER_PERSONAL');
+  const ladder = resolveInstructionLadder(aronSettings());
+  const discover = (cwd: string, projectId?: string) =>
+    discoverInstructionStack({
+      ...options(cwd),
+      ladder,
+      ...(projectId ? { projectId, projectPath: app } : {}),
+    });
+
+  const project = await discover(app, 'app');
+  expect(project.files.map((file) => [file.content, file.level, file.tier])).toEqual([
+    ['COMPUTER_PERSONAL', 'global', 'personal_private'],
+    ['ORG_CLAUDE', 'org', 'org'],
+    ['ORG_POLICY', 'inixiative', 'org'],
+    ['ORG_PERSONAL', 'inixiative-personal', 'personal_private'],
+    ['APP_CLAUDE', 'project', 'team'],
+    ['APP_STYLE', 'app', 'team'],
+    ['APP_LOCAL', 'local', 'personal_private'],
+    ['APP_PERSONAL', 'app-personal', 'personal_private'],
+  ]);
+  // Org only: no project thread, so neither project node applies.
+  const orgOnly = await discover(org);
+  expect(orgOnly.files.map((file) => file.content)).toEqual([
+    'COMPUTER_PERSONAL',
+    'ORG_CLAUDE',
+    'ORG_POLICY',
+    'ORG_PERSONAL',
+  ]);
+  // A team audience never sees a personal level.
+  const team = composeInstructionStack(project, { audience: 'team' }).text;
+  for (const text of ['COMPUTER_PERSONAL', 'ORG_PERSONAL', 'APP_LOCAL', 'APP_PERSONAL'])
+    expect(team).not.toContain(text);
+  for (const text of ['ORG_CLAUDE', 'ORG_POLICY', 'APP_CLAUDE', 'APP_STYLE'])
+    expect(team).toContain(text);
+  expect(composeInstructionStack(project).text).toContain(
+    `Contents of ${join(app, 'docs', 'agents', 'style.md')} (project instructions (app))`,
+  );
+});
+
+test('dedupe runs after the audience filter: a personal copy never hides the shared one from a team', async () => {
+  const section = '## Merging\n\nMerge once green.';
+  write(join(org, 'CLAUDE.md'), `# Org\n\n${section}\n\n## Ports\n\nFrom the registry.`);
+  write(join(repo, 'CLAUDE.local.md'), `# Mine\n\n${section}`);
+  const stack = await discoverInstructionStack(options(repo));
+  const own = composeInstructionStack(stack);
+  expect(own.text.split('Merge once green.')).toHaveLength(2);
+  expect(own.duplicates).toEqual([
+    {
+      kind: 'section',
+      path: join(org, 'CLAUDE.md'),
+      node: 'org',
+      heading: 'Merging',
+      chars: section.length + 1, // the section runs to the next heading
+      keptPath: join(repo, 'CLAUDE.local.md'),
+      keptNode: 'local',
+    },
+  ]);
+  const team = composeInstructionStack(stack, { audience: 'team' });
+  expect(team.text).toContain('Merge once green.');
+  expect(team.duplicates).toEqual([]);
+});
+
+test('a worktree and its main checkout with the same CLAUDE.md compose it once, from the worktree', async () => {
+  const worktree = join(repo, '.worktrees', 'feature');
+  rmSync(join(repo, '.git'), { recursive: true });
+  mkdirSync(join(repo, '.git', 'worktrees', 'feature'), { recursive: true });
+  writeFileSync(join(repo, '.git', 'worktrees', 'feature', 'commondir'), '../..\n');
+  write(join(worktree, '.git'), `gitdir: ${join(repo, '.git', 'worktrees', 'feature')}\n`);
+  write(join(repo, 'CLAUDE.md'), '# Foundry\n\nSAME_RULES');
+  write(join(worktree, 'CLAUDE.md'), '# Foundry\n\nSAME_RULES\n');
+  const composed = composeInstructionStack(await discoverInstructionStack(options(worktree)));
+  expect(composed.text.split('SAME_RULES')).toHaveLength(2);
+  expect(composed.files.map((file) => file.path)).toEqual([join(worktree, 'CLAUDE.md')]);
+  expect(composed.duplicates.map((d) => [d.kind, d.path])).toEqual([
+    ['content', join(repo, 'CLAUDE.md')],
+  ]);
+  // Dedupe off: today's discovery, both copies.
+  const raw = composeInstructionStack(await discoverInstructionStack(options(worktree)), {
+    dedupe: { content: false, sections: false },
+  });
+  expect(raw.text.split('SAME_RULES')).toHaveLength(3);
+});
+
+test('the source reports what it composed and what it deduped, for the Selection panel', async () => {
+  write(join(repo, 'CLAUDE.md'), 'TEAM @AGENTS.md');
+  write(join(repo, 'AGENTS.md'), 'AGENTS');
+  write(join(repo, 'CLAUDE.local.md'), 'MINE');
+  const previous = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = claudeDir;
+  try {
+    const source = instructionStackSource('instructions', {
+      harness: 'claude',
+      audience: 'team',
+      managedPath: join(root, 'managed', 'CLAUDE.md'),
+    }).bind!({ threadId: 't', cwd: repo });
+    const text = await source.load();
+    expect(text).toContain('AGENTS');
+    const report = source.report!()!;
+    expect(report.subject).toBe('instructions');
+    expect(report.selected.map((s) => [s.id, s.kind])).toEqual([
+      [join(repo, 'CLAUDE.md'), 'project'],
+      [join(repo, 'AGENTS.md'), 'project'],
+    ]);
+    expect(report.omitted).toEqual([
+      { id: join(repo, 'CLAUDE.local.md'), reason: 'not visible to team', chars: 4, kind: 'local' },
+      {
+        id: join(repo, 'AGENTS.md'),
+        reason: 'same file reached again',
+        chars: 0,
+        kind: 'project',
+        duplicateOf: `${join(repo, 'AGENTS.md')} (project)`,
+      },
+    ]);
+  } finally {
+    for (const [key, value] of Object.entries(previous))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
 });

@@ -134,3 +134,59 @@ test('selectionSummary is null for layers that do not select, and marks an exclu
   const excluded = selectionSummary({ ...layer, included: false });
   expect(excluded!.notice).toContain('not included');
 });
+
+const instructionsLayer = {
+  id: 'instructions',
+  included: true,
+  content: 'Contents of /repo/.worktrees/x/CLAUDE.md (project instructions)',
+  selection: {
+    sources: [
+      {
+        sourceId: 'instructions',
+        report: {
+          subject: 'instructions',
+          selected: [
+            {
+              id: '/repo/.worktrees/x/CLAUDE.md',
+              reason: 'project instructions',
+              chars: 40,
+              kind: 'project',
+            },
+          ],
+          omitted: [
+            { id: '/repo/CLAUDE.local.md', reason: 'not visible to team', chars: 9, kind: 'local' },
+            {
+              id: '/repo/CLAUDE.md',
+              reason: 'identical content to a more specific file',
+              chars: 40,
+              kind: 'project',
+              duplicateOf: '/repo/.worktrees/x/CLAUDE.md (project)',
+            },
+          ],
+          considered: 3,
+          retained: { count: 3, chars: 89 },
+          budget: { chars: 0, used: 60, exceeded: false },
+          conflicts: [],
+        },
+      },
+    ],
+  },
+};
+
+test('an instruction layer names what was composed and each duplicate with the copy kept', () => {
+  const summary = selectionSummary(instructionsLayer)!;
+  expect(summary.subject).toBe('instructions');
+  expect(summary.notice).toContain('1 instruction files were composed');
+  expect(summary.notice).not.toContain('memory tool');
+  expect(summary.duplicates).toEqual([
+    {
+      id: '/repo/CLAUDE.md',
+      reason: 'identical content to a more specific file',
+      keptIn: '/repo/.worktrees/x/CLAUDE.md (project)',
+    },
+  ]);
+  expect(summary.omitted.map((o: { reason: string }) => o.reason)).toEqual([
+    'not visible to team',
+    'identical content to a more specific file',
+  ]);
+});

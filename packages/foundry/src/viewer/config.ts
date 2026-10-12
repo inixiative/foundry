@@ -22,6 +22,11 @@ import {
   providerConfigsFromRegistry,
   subscriptionWorker,
 } from '../models/registry';
+import {
+  type InstructionSettings,
+  resolveInstructionLadder,
+  validateInstructionSettings,
+} from '../prompts/instruction-settings';
 import type { ClaudeContextBudget } from '../providers/claude-context-budget';
 import { DECISION_MODEL } from '../providers/decision-provider';
 import {
@@ -136,15 +141,6 @@ export interface FoundryConfig {
 
   /** Whether the initial setup wizard has been completed. */
   setupComplete?: boolean;
-}
-
-export interface InstructionSettings {
-  /**
-   * Whether the native harness also loads instruction files itself. "suppress" leaves Foundry's
-   * `instructions` source as the only path; "load" lets the harness load them too. Absent: suppress
-   * exactly when an enabled layer reads an enabled `instructions` source. Applies on restart.
-   */
-  harnessLoading?: 'suppress' | 'load';
 }
 
 /**
@@ -955,9 +951,7 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
-  const harnessLoading = config.instructions?.harnessLoading;
-  if (harnessLoading !== undefined && harnessLoading !== 'suppress' && harnessLoading !== 'load')
-    throw Error('instructions.harnessLoading must be "suppress" or "load"');
+  validateInstructionSettings(config.instructions, resolveInstructionLadder(config.instructions));
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))

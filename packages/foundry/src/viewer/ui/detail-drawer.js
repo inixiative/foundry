@@ -407,8 +407,12 @@ function SelectionSection({ layer }) {
   return html`
     <${Section} title="Selection" open=${false}>
       <p class="selection-notice">${summary.notice}</p>
-      <div class="def-field"><label>Budget</label><span>${summary.budget.used} / ${summary.budget.chars} chars${summary.budget.exceeded ? ' (exceeded by pinned records)' : ''}</span></div>
-      <div class="def-field"><label>Retained</label><span>${summary.retained.count} records, ${summary.retained.chars} chars in the owned log</span></div>
+      ${
+        summary.subject === 'instructions'
+          ? html`<div class="def-field"><label>Composed</label><span>${summary.budget.used} chars from ${summary.retained.count} files found</span></div>`
+          : html`<div class="def-field"><label>Budget</label><span>${summary.budget.used} / ${summary.budget.chars} chars${summary.budget.exceeded ? ' (exceeded by pinned records)' : ''}</span></div>
+      <div class="def-field"><label>Retained</label><span>${summary.retained.count} records, ${summary.retained.chars} chars in the owned log</span></div>`
+      }
       ${summary.focus ? html`<div class="def-field"><label>Focus</label><span>${summary.focus}</span></div>` : null}
       ${summary.currentMessages.map((identity) => html`<div class="def-field"><label>Selection request</label><span>${identity}</span></div>`)}
       ${summary.conflicts.length ? html`<div class="def-field"><label>Conflicts</label><span>${summary.conflicts.join('; ')}</span></div>` : null}
@@ -420,6 +424,12 @@ function SelectionSection({ layer }) {
       <ul class="selection-list">
         ${summary.omitted.map((o) => html`<li key=${o.reason}>${o.reason}: ${o.count} records, ${o.chars} chars (${o.kinds})</li>`)}
       </ul>
+      ${
+        summary.duplicates.length
+          ? html`<div class="def-field"><label>Deduplicated (${summary.duplicates.length})</label></div>
+        <ul class="selection-list">${summary.duplicates.map((d, i) => html`<li key=${`${d.id}#${i}`}><code>${d.id}</code> ${d.reason}; kept <code>${d.keptIn}</code></li>`)}</ul>`
+          : null
+      }
       ${
         summary.exclusions.length
           ? html`<div class="def-field"><label>Current-message audit exclusions</label></div>

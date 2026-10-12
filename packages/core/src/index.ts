@@ -42,10 +42,32 @@ export {
   MarkdownDocs,
   readInstructionFile,
   resolveInstructionImport,
+  secretInstructionPath,
   stripInstructionComments,
   withinAny,
   withinPath,
 } from './adapters/markdown-docs';
+export {
+  dedupeHierarchy,
+  discoverHierarchy,
+  expandHierarchyPath,
+  type HierarchyDedupeOptions,
+  type HierarchyDiscoverOptions,
+  type HierarchyDuplicate,
+  type HierarchyDuplicateKind,
+  type HierarchyFile,
+  type HierarchyFileSource,
+  type HierarchyLocation,
+  type HierarchyMatch,
+  type HierarchyNode,
+  type HierarchySource,
+  type HierarchySpan,
+  type HierarchyStack,
+  type HierarchyWalkSource,
+  markdownSections,
+  type SelectedHierarchyNode,
+  selectHierarchyNodes,
+} from './adapters/markdown-hierarchy';
 export { type SqliteEntry, SqliteMemory } from './adapters/sqlite-memory';
 // Agent primitives
 export {

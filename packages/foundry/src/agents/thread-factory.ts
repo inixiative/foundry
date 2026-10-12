@@ -30,6 +30,7 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
+import { resolveInstructionLadder } from '../prompts/instruction-settings';
 import { codexReadsUserHome, instructionStackSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -75,12 +76,17 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
       case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
       case 'instructions':
-        // CLAUDE.md, AGENTS.md and auto memory for the thread's cwd; the personal global file follows the harness.
+        // The registered instruction ladder for the thread's cwd, project and owner; the global file follows the harness.
         return instructionStackSource(srcCfg.id, {
           harness: cfg.defaults.provider === 'codex' ? 'codex' : 'claude',
           harnessLoadsGlobal: codexReadsUserHome(cfg),
           audience: srcCfg.audience,
+          ladder: resolveInstructionLadder(cfg.instructions),
+          ...(cfg.instructions?.dedupe ? { dedupe: cfg.instructions.dedupe } : {}),
           projectPath: (projectId) => cfg.projects[projectId]?.path,
+          owner: (projectId) =>
+            (projectId ? cfg.projects[projectId]?.defaults?.kingdomOwnerKey : undefined) ??
+            cfg.defaults.kingdomOwnerKey,
         });
       case 'file':
         // Bounded selection by default: the owned log stays complete and
