@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readPrivateJson, writePrivateJson } from './private-file';
@@ -79,4 +80,14 @@ export function readAcpLaunch(path: string): AcpLaunch {
     pid: typeof record.pid === 'number' ? record.pid : 0,
     createdAt: typeof record.createdAt === 'number' ? record.createdAt : 0,
   };
+}
+
+/** Remove the launch file at shutdown, only while it is still this daemon's (a newer one keeps its own). */
+export function removeAcpLaunch(path: string, pid: number): void {
+  try {
+    if (readAcpLaunch(path).pid !== pid) return;
+    unlinkSync(path);
+  } catch {
+    // Already gone or unreadable: nothing of ours to remove.
+  }
 }

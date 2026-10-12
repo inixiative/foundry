@@ -68,8 +68,10 @@ interface Session {
   holding: { streams: DataStreamClient; ready: Promise<void> } | null;
   /** What this host chose (mode, model, effort, MCP servers), re-applied to a restarted daemon. */
   launch: ThreadLaunchPatch;
-  /** The daemon socket the launch was last applied through. */
+  /** The daemon socket the launch was last applied through; null once that daemon may have lost it. */
   launchedOn: DataStreamClient | null;
+  /** Prompts still connecting (daemon start, stream hold): a cancel marks them so they never send. */
+  readonly connecting: Set<{ cancelled: boolean }>;
 }
 
 const PERMISSION_OPTIONS: PermissionOption[] = [
@@ -100,7 +102,16 @@ type ThreadPayload =
   | { kind: 'event' }
   | { kind: 'done' | 'error'; turnId: string; result: Record<string, unknown> };
 
-const isNetworkFailure = (error: unknown) => !(error instanceof FoundryHttpError);
+/** Whether a process exists (a permission error still means it does). */
+function processAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
 
 /**
  * Foundry as an ACP v1 agent. Every ACP session is a Foundry thread (`sessionId` = thread id),
@@ -136,19 +147,32 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
 
   const attach = async (): Promise<Daemon> => {
     const launch = readAcpLaunch(launchPath);
+    // A launch file whose daemon is gone is stale: whatever listens on its port now is not Foundry's daemon.
+    if (!processAlive(launch.pid))
+      throw Error(`stale launch file: daemon process ${launch.pid} is not running`);
     const http = new FoundryClient(launch);
-    await http.health().catch((error) => {
-      // An unhealthy daemon still answers; only an unreachable one is down.
-      if (isNetworkFailure(error)) throw error;
-    });
-    // Same daemon origin: the socket re-reads the bearer whenever it reconnects.
-    if (daemon && daemon.launch.endpoint === launch.endpoint) {
+    // Identify the listener before any request carries the bearer.
+    const pid = await http.daemonPid();
+    if (pid !== launch.pid)
+      throw Error(
+        `the process on ${launch.endpoint} is not the daemon that wrote the launch file (pid ${pid ?? 'unknown'}, expected ${launch.pid})`,
+      );
+    // The same daemon instance: the socket re-reads the bearer whenever it reconnects.
+    if (
+      daemon &&
+      daemon.launch.endpoint === launch.endpoint &&
+      daemon.launch.pid === launch.pid &&
+      daemon.launch.createdAt === launch.createdAt
+    ) {
       daemon.launch = launch;
       daemon.http = http;
       return daemon;
     }
+    // A new daemon instance (a restart, even on the same port) holds none of this host's launch settings.
     daemon?.streams.dispose();
+    for (const session of sessions.values()) session.launchedOn = null;
     let lostTimer: ReturnType<typeof setTimeout> | undefined;
+    let dropped = false;
     const streams = new DataStreamClient({
       endpoint: launch.endpoint,
       capability: launch.capability,
@@ -163,7 +187,17 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         if (state === 'open') {
           clearTimeout(lostTimer);
           lostTimer = undefined;
+          // Reconnected: the daemon may have restarted on the same port and lost every launch.
+          if (dropped && daemon?.streams === streams) {
+            dropped = false;
+            const current = daemon;
+            for (const session of sessions.values()) {
+              session.launchedOn = null;
+              void relaunch(session, current);
+            }
+          }
         } else if (state === 'closed' && daemon?.streams === streams) {
+          dropped = true;
           log('daemon socket dropped; reconnecting');
           // Only the socket in use can lose turns; a replaced one is disposed and ignored.
           lostTimer ??= setTimeout(() => {
@@ -340,7 +374,10 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
   };
 
   // Outstanding `session/request_permission` calls by prompt id; aborted when someone else answers.
-  const asking = new Map<string, { controller: AbortController; threadId: string }>();
+  const asking = new Map<
+    string,
+    { controller: AbortController; threadId: string; turnId: string | undefined }
+  >();
   const permission = (prompt: ActionPrompt) => {
     const session = sessions.get(prompt.threadId);
     // Only the tool gate's approval asks belong to the host.
@@ -353,8 +390,12 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     const foundry = daemon;
     if (asking.has(prompt.id) || !target || !foundry) return;
     const controller = new AbortController();
-    asking.set(prompt.id, { controller, threadId: session.threadId });
     const meta = prompt.meta ?? {};
+    asking.set(prompt.id, {
+      controller,
+      threadId: session.threadId,
+      turnId: typeof meta.turnId === 'string' ? meta.turnId : undefined,
+    });
     const toolName = typeof meta.toolName === 'string' ? meta.toolName : 'Tool';
     const rawInput = meta.toolInput as Record<string, unknown> | undefined;
     const callId = typeof meta.callId === 'string' ? meta.callId : undefined;
@@ -456,18 +497,49 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       holding: null,
       launch: {},
       launchedOn: null,
+      connecting: new Set(),
     };
     session.cwd = cwd;
     sessions.set(thread.threadId, session);
     await hold(session, foundry);
-    // Asks raised before this host bound the session (a host restart mid-turn) still reach it.
-    void foundry.http
-      .prompts(thread.threadId)
-      .then(({ prompts }) => {
-        for (const prompt of prompts) if (prompt.status === 'pending') permission(prompt);
-      })
-      .catch((error) => log(`pending prompts unavailable: ${(error as Error).message}`));
     return session;
+  };
+
+  /**
+   * Asks raised before this host bound the session (a host restart mid-turn) still reach it, after
+   * the session response (and a load's replayed history), so the host knows the session first.
+   */
+  const forwardPending = (session: Session, foundry: Daemon) =>
+    setTimeout(() => {
+      void session.outbox
+        .then(() => foundry.http.prompts(session.threadId))
+        .then(({ prompts }) => {
+          for (const prompt of prompts) if (prompt.status === 'pending') permission(prompt);
+        })
+        .catch((error) => log(`pending prompts unavailable: ${(error as Error).message}`));
+    }, 0);
+
+  /** This host's own unsettled turns on the session are interrupted, and only their asks withdrawn. */
+  const cancelSession = async (session: Session, foundry: Daemon) => {
+    const own = new Set(
+      [...session.turns.values()].filter((turn) => !turn.isSettled).map((turn) => turn.turnId),
+    );
+    for (const [promptId, { controller, threadId, turnId }] of asking) {
+      if (threadId !== session.threadId || !turnId || !own.has(turnId)) continue;
+      controller.abort();
+      void foundry.http.resolvePrompt(promptId, 'rejected').catch(() => {});
+    }
+    await Promise.all(
+      [...session.turns.values()]
+        .filter((turn) => !turn.isSettled)
+        .map((turn) => {
+          turn.cancelRequested = true;
+          if (!turn.accepted) return undefined;
+          return foundry.http
+            .interrupt(session.threadId, turn.turnId)
+            .catch((error) => log(`interrupt ${turn.turnId}: ${(error as Error).message}`));
+        }),
+    );
   };
 
   const sessionFor = (sessionId: string): Session => {
@@ -500,7 +572,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         agentInfo: { name: 'foundry', title: 'Foundry', version: options.version ?? '0.1.0' },
         agentCapabilities: {
           loadSession: true,
-          sessionCapabilities: { resume: {} },
+          sessionCapabilities: { resume: {}, close: {} },
           promptCapabilities: { image: false, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
         },
@@ -544,12 +616,13 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         },
         thread,
       ).catch(httpError);
-      // The history goes out before the response.
+      // The history goes out before the response, and pending asks after both.
       for (const update of await replayHistory(foundry.http, thread.threadId, ctx.params.cwd).catch(
         httpError,
       ))
         send(session, update);
       await session.outbox;
+      forwardPending(session, foundry);
       return setup;
     })
     .onRequest('session/resume', async (ctx) => {
@@ -560,7 +633,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           .updateThread(thread.threadId, { worktreePath: ctx.params.cwd })
           .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
-      return sessionSetup(
+      const setup = await sessionSetup(
         session,
         foundry,
         {
@@ -568,6 +641,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         },
         thread,
       ).catch(httpError);
+      forwardPending(session, foundry);
+      return setup;
     })
     .onRequest('session/set_mode', async (ctx) => {
       const session = sessionFor(ctx.params.sessionId);
@@ -615,8 +690,19 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     })
     .onRequest('session/prompt', async (ctx): Promise<{ stopReason: StopReason }> => {
       const session = sessionFor(ctx.params.sessionId);
-      const foundry = await ensureDaemon().catch(httpError);
-      await hold(session, foundry).catch(httpError);
+      // Registered before the first await, so a cancel while the daemon starts or streams re-open counts.
+      const pending = { cancelled: false };
+      session.connecting.add(pending);
+      let foundry: Daemon;
+      try {
+        foundry = await ensureDaemon().catch(httpError);
+        await hold(session, foundry).catch(httpError);
+        // A restarted daemon lost this host's mode, model, effort and MCP servers: apply them first.
+        await relaunch(session, foundry);
+      } finally {
+        session.connecting.delete(pending);
+      }
+      if (pending.cancelled) return { stopReason: 'cancelled' };
       const text = promptText(ctx.params.prompt);
       const correction = /^\/correction(?:\s+([\s\S]*))?$/.exec(text.trim());
       if (correction) {
@@ -673,24 +759,37 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     })
     .onNotification('session/cancel', async (ctx) => {
       const session = sessions.get(ctx.params.sessionId);
-      if (!session || !daemon) return;
+      if (!session) return;
+      for (const pending of session.connecting) pending.cancelled = true;
+      if (!daemon) return;
+      await cancelSession(session, daemon);
+    })
+    .onRequest('session/close', async (ctx) => {
+      const session = sessions.get(ctx.params.sessionId);
+      if (!session) return {};
+      for (const pending of session.connecting) pending.cancelled = true;
+      sessions.delete(session.threadId);
       const foundry = daemon;
-      // A cancelled turn's open asks are withdrawn and their prompts rejected.
-      for (const [promptId, { controller, threadId }] of asking) {
-        if (threadId !== session.threadId) continue;
-        controller.abort();
-        void foundry.http.resolvePrompt(promptId, 'rejected').catch(() => {});
+      if (!foundry) return {};
+      await cancelSession(session, foundry);
+      if (session.holding?.streams === foundry.streams) {
+        foundry.streams.close(`thread:${session.threadId}`);
+        foundry.streams.close(`flow:${session.threadId}`);
       }
-      await Promise.all(
-        [...session.turns.values()]
-          .filter((turn) => !turn.isSettled)
-          .map((turn) => {
-            turn.cancelRequested = true;
-            if (!turn.accepted) return undefined;
-            return foundry.http
-              .interrupt(session.threadId, turn.turnId)
-              .catch((error) => log(`interrupt ${turn.turnId}: ${(error as Error).message}`));
-          }),
-      );
+      session.holding = null;
+      // A probe (a host that opened a session and never prompted) leaves no thread behind.
+      const [thread, history] = await Promise.all([
+        foundry.http.thread(session.threadId),
+        foundry.http.history(session.threadId),
+      ]).catch(() => [null, null] as const);
+      if (
+        thread?.meta.tags.includes('acp') &&
+        thread.meta.status !== 'active' &&
+        history?.messages.length === 0
+      )
+        await foundry.http
+          .archiveThread(session.threadId)
+          .catch((error) => log(`archive ${session.threadId}: ${(error as Error).message}`));
+      return {};
     });
 }

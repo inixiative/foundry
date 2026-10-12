@@ -139,8 +139,19 @@ export function permissionLevel(
   capability: Capability,
   ctx?: Partial<GateContext>,
 ): PermissionLevel {
-  // Explicit capability override
   const explicit = policy.capabilities[capability];
+
+  // Protected paths always hold: an explicit allow for the capability never switches them off.
+  if (
+    explicit !== 'deny' &&
+    (capability === 'file:write' || capability === 'file:delete') &&
+    policy.protectedPaths?.length &&
+    typeof ctx?.meta?.path === 'string'
+  ) {
+    const path = ctx.meta.path;
+    if (policy.protectedPaths.some((p) => path.includes(p))) return 'prompt';
+  }
+
   if (explicit) return explicit;
 
   // Cost threshold check for LLM calls
@@ -150,18 +161,6 @@ export function permissionLevel(
     ctx?.meta?.estimatedCost != null
   ) {
     if ((ctx.meta.estimatedCost as number) > policy.costThreshold) {
-      return 'prompt';
-    }
-  }
-
-  // Protected paths check for file ops
-  if (
-    (capability === 'file:write' || capability === 'file:delete') &&
-    policy.protectedPaths?.length &&
-    ctx?.meta?.path
-  ) {
-    const path = ctx.meta.path as string;
-    if (policy.protectedPaths.some((p) => path.includes(p))) {
       return 'prompt';
     }
   }

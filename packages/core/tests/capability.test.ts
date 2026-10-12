@@ -4,6 +4,7 @@ import {
   CapabilityDeniedError,
   CapabilityGate,
   type PermissionPolicy,
+  permissionLevel,
   RESTRICTED_POLICY,
 } from '../src/capability';
 
@@ -217,6 +218,23 @@ describe('CapabilityGate', () => {
 
       const r2 = await promise;
       expect(r2.action).toBe('approved');
+    });
+
+    test('an explicit allow never switches protected paths off; an explicit deny still denies', () => {
+      const policy = (level: 'allow' | 'deny') => ({
+        defaults: 'allow' as const,
+        capabilities: { 'file:write': level },
+        protectedPaths: ['.env'],
+      });
+      expect(permissionLevel(policy('allow'), 'file:write', { meta: { path: '/r/.env' } })).toBe(
+        'prompt',
+      );
+      expect(permissionLevel(policy('allow'), 'file:write', { meta: { path: '/r/a.ts' } })).toBe(
+        'allow',
+      );
+      expect(permissionLevel(policy('deny'), 'file:write', { meta: { path: '/r/.env' } })).toBe(
+        'deny',
+      );
     });
 
     test('custom capability strings work', async () => {

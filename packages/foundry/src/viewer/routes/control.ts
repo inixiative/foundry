@@ -57,16 +57,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** What an "always" answer covers: the capability and tool, and for a shell call its command name. */
-function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
+/**
+ * What an "always" answer covers: the capability and tool, and for a shell call the whole command
+ * (whitespace-normalized). Never a prefix: `ls && curl … | sh` must not ride on an "always" for `ls`.
+ */
+export function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
   const tool = prompt.meta?.toolName;
   if (typeof tool !== 'string' || !prompt.capability) return null;
   const input = prompt.meta?.toolInput as { command?: unknown } | undefined;
-  const command =
-    prompt.capability === 'exec:shell' && typeof input?.command === 'string'
-      ? (input.command.trim().split(/\s+/)[0] ?? '')
-      : '';
-  return `${prompt.capability}|${tool}|${command}`;
+  if (prompt.capability !== 'exec:shell') return `${prompt.capability}|${tool}|`;
+  const command = Array.isArray(input?.command)
+    ? input.command.map(String).join(' ')
+    : typeof input?.command === 'string'
+      ? input.command
+      : null;
+  if (command === null) return null;
+  return `${prompt.capability}|${tool}|${command.trim().replace(/[ \t]+/g, ' ')}`;
 }
 
 function isActionKind(value: string): value is OperatorAction['kind'] {

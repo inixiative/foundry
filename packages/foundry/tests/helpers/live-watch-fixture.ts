@@ -14,7 +14,7 @@ import { ThreadRuntimeManager } from '../../src/agents/thread-runtime';
 import type { CreateSessionOpts, SessionAdapter } from '../../src/providers/session-adapter';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
 import { ThreadLaunchSettings } from '../../src/providers/thread-launch';
-import type { ThreadToolGate } from '../../src/turns/tool-gate';
+import { lateBoundToolGate, type ThreadToolGate } from '../../src/turns/tool-gate';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { connectStreams } from './data-stream';
@@ -179,7 +179,8 @@ export async function liveWatchFixture(dir: string, options: { interruptible?: b
     adapter,
     defaultModel: 'fable',
     launch: threadLaunch,
-    toolGate: (threadId) => toolGateFor?.(threadId),
+    // The production wiring (start.ts): one late-bound wrapper resolving the thread's one gate per call.
+    toolGate: lateBoundToolGate(() => toolGateFor),
   });
   const config = starterConfig(provider.id, 'fable');
   config.setupComplete = true;

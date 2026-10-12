@@ -116,7 +116,12 @@ export interface ToolGateDeps {
     turnId: string | null,
     record: Record<string, unknown>,
   ) => void;
+  /** How long an ask waits for an answer before it is rejected; default ASK_TIMEOUT_MS. */
+  askTimeoutMs?: number;
 }
+
+/** An unanswered ask is rejected after this long, so a thread never waits on no one forever. */
+export const ASK_TIMEOUT_MS = 15 * 60_000;
 
 const bounded = (input: Readonly<Record<string, unknown>>) => {
   const text = JSON.stringify(input);
@@ -164,11 +169,10 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       );
     if (request.stage === 'permission' && request.callId && approved.has(request.callId))
       return outcome({ behavior: 'allow' }, 'pre-use approval');
-    // A pre-use call the rules allow is the runtime's own mode's to decide.
+    // A pre-use call the rules allow is the runtime's own mode's to decide. A native ask goes to the
+    // user: Codex never asks about edits inside the workspace, so in acceptEdits the file changes it
+    // does ask about are escalations (outside it, a grant root), which Claude's acceptEdits asks too.
     if (level === 'allow' && request.stage === 'pre-use')
-      return outcome({ behavior: 'allow' }, 'mode');
-    // Codex asks about file changes in acceptEdits; that mode accepts them (Claude decides its own).
-    if (level === 'allow' && deps.mode() === 'acceptEdits' && request.toolName === 'apply_patch')
       return outcome({ behavior: 'allow' }, 'mode');
     if (!deps.queue)
       return outcome(
@@ -182,6 +186,7 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       threadId: deps.threadId,
       capability,
       urgency: capability === 'exec:shell' ? 'high' : 'normal',
+      timeoutMs: deps.askTimeoutMs ?? ASK_TIMEOUT_MS,
       ...(request.signal ? { signal: request.signal } : {}),
       meta: {
         // A structural ask is the user's own rule: never answered by an "always" policy.
@@ -204,7 +209,9 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
         message:
           resolution.by === 'human'
             ? `The user rejected ${request.toolName}.`
-            : `${request.toolName} was not approved (${resolution.by}).`,
+            : resolution.by === 'timeout'
+              ? `No one answered the permission request for ${request.toolName} within ${Math.round((deps.askTimeoutMs ?? ASK_TIMEOUT_MS) / 1000)}s, so it did not run.`
+              : `${request.toolName} was not approved (${resolution.by}).`,
       },
       resolution.by,
     );
@@ -245,3 +252,16 @@ export const UNBOUND_GATE: ToolGate = () => ({
   message:
     "Foundry cannot check this tool call yet (the thread's tool gate is not bound); it did not run.",
 });
+
+/**
+ * A provider's view of the threads' gates before the viewer exists: each call resolves the
+ * thread's one gate at call time, and fails closed until it can.
+ */
+export function lateBoundToolGate(
+  resolve: () => ((threadId: string) => ThreadToolGate) | undefined,
+): (threadId: string) => ThreadToolGate {
+  return (threadId) => ({
+    gate: (request) => (resolve()?.(threadId).gate ?? UNBOUND_GATE)(request),
+    hasRules: () => resolve()?.(threadId).hasRules() ?? true,
+  });
+}

@@ -34,7 +34,7 @@ import {
   TokenTracker,
 } from './agents';
 import { resolveLearningSettings } from './agents/learning-config';
-import { acpLaunchPath, newAcpCapability, writeAcpLaunch } from './client/launch';
+import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -61,7 +61,7 @@ import { BunScript } from './tools/bun-script';
 import { registerKingdomAccess } from './tools/kingdom-access';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
-import { type ThreadToolGate, UNBOUND_GATE } from './turns/tool-gate';
+import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
   createProject,
@@ -219,10 +219,7 @@ let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
 const hostSettings = {
   launch: threadLaunch,
   // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
-  toolGate: (threadId: string): ThreadToolGate => ({
-    gate: (request) => (toolGateFor?.(threadId).gate ?? UNBOUND_GATE)(request),
-    hasRules: () => toolGateFor?.(threadId).hasRules() ?? true,
-  }),
+  toolGate: lateBoundToolGate(() => toolGateFor),
 };
 
 function createProvider(config: FoundryConfig): {
@@ -817,8 +814,10 @@ console.log('Ready. Send messages through the harness API or viewer.');
 // Keep alive
 // ---------------------------------------------------------------------------
 
-process.on('SIGINT', async () => {
+const shutdown = async () => {
   console.log('\nShutting down...');
+  // A launch file outliving its daemon would point ACP proxies (and their bearer) at whatever binds the port next.
+  if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
     Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown()]),
@@ -830,4 +829,6 @@ process.on('SIGINT', async () => {
   await shutdownWorker();
   await viewer.analyticsStore?.flush();
   process.exit(0);
-});
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

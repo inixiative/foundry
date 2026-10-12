@@ -934,19 +934,25 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Snapshot pending reviews without waiting. A later turn uses the latest
       // committed revision; this turn's historical preparation stays immutable.
       const barrier = await this._awaitPendingLearning();
-      // Newly resolved project experts must read their actual owned sources on
-      // the first pre-hook, not abstain because only the global template warmed.
-      // No model/review wait is introduced. Failure blocks this work preparation.
-      await Promise.all(
-        domains.filter((d) => d.expert).map((d) => domainLibrarians.get(d.domain)!.warm()),
+      // Newly resolved project experts read their actual owned sources on the first pre-hook, not
+      // only the global template. Wardens never block: a warm that is late or fails is recorded and
+      // the turn goes on (that Warden advises from what it holds, or abstains).
+      const warmShortfalls = await flow.warmWithin(
+        domains
+          .filter((d) => d.expert)
+          .map((d) => ({ id: d.domain, warm: () => domainLibrarians.get(d.domain)!.warm() })),
       );
+      for (const shortfall of warmShortfalls)
+        warn(
+          `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
+        );
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
         plan = await flow.preMessage(message, identity);
       } catch (error) {
         failure = error as Error;
       }
-      return { barrier, plan, failure };
+      return { barrier, plan, failure, warmShortfalls };
     };
     const early = new Map<
       string,
@@ -995,6 +1001,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           barrier,
           plan: preparedPlan,
           failure,
+          warmShortfalls,
         } = await (started && started.message === ctx.payload
           ? started.preparation
           : prepare(ctx.payload, identityOf(ctx)));
@@ -1047,6 +1054,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
               cacheHash: c.provenance.cacheHash,
             })),
+            ...(warmShortfalls.length || prepared.warmShortfalls.length
+              ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
+              : {}),
           });
           ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
           const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');

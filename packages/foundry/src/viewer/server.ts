@@ -348,6 +348,10 @@ export function createViewer(config: ViewerConfig) {
   const db = config.db ?? null;
 
   const threadLaunch = config.threadLaunch ?? new ThreadLaunchSettings();
+  // Access follows the host: an ACP thread whose host mode is unknown (lost to a daemon restart)
+  // asks, never runs at the runtime's full-access default. Viewer threads keep their full access.
+  threadLaunch.fallbackMode = (threadId) =>
+    directory.get(threadId)?.meta.tags?.includes('acp') ? 'default' : undefined;
   // Settled prompts (each with its bounded tool input) leave the queue after an hour.
   if (config.actionQueue) {
     const queue = config.actionQueue;
@@ -517,10 +521,30 @@ export function createViewer(config: ViewerConfig) {
     return socket.accept(req, server);
   };
 
+  // One gate per thread: an approval at pre-use must answer the native ask for the same call.
+  const gates = new Map<string, ThreadToolGate>();
+  const watched = new WeakSet<object>();
+  // A disposed thread drops its gate and what hosts chose for it (client MCP env/headers are secrets).
+  const forgetOnDispose = (thread: { id: string; onDispose(fn: () => void): () => void }) => {
+    if (watched.has(thread)) return;
+    watched.add(thread);
+    thread.onDispose(() => {
+      gates.delete(thread.id);
+      threadLaunch.clear(thread.id);
+    });
+  };
+  threadLaunch.onChange((threadId) => {
+    const thread = directory.get(threadId);
+    if (thread?.disposed) threadLaunch.clear(threadId);
+    else if (thread) forgetOnDispose(thread);
+  });
+
   /** A thread's tool gate: structural rules, then asks to whoever answers first (viewer, ACP host). */
   const toolGate = (threadId: string): ThreadToolGate => {
     const thread = directory.get(threadId);
-    if (!thread) return { gate: UNBOUND_GATE, hasRules: () => true };
+    if (!thread || thread.disposed) return { gate: UNBOUND_GATE, hasRules: () => true };
+    const existing = gates.get(threadId);
+    if (existing) return existing;
     const rules = () => {
       const settings = configStore.config;
       const projectId = thread.meta.projectId;
@@ -532,7 +556,7 @@ export function createViewer(config: ViewerConfig) {
     const gate = createToolGate({
       threadId,
       rules,
-      mode: () => threadLaunch.get(threadId).permissionMode,
+      mode: () => threadLaunch.forLaunch(threadId).permissionMode,
       queue: config.actionQueue ?? null,
       turnId: () => turns.runningTurn(threadId),
       journal: (id, phase, turnId, record) => {
@@ -551,7 +575,10 @@ export function createViewer(config: ViewerConfig) {
         }
       },
     });
-    return { gate, hasRules: () => enforces(rules()) };
+    const bound: ThreadToolGate = { gate, hasRules: () => enforces(rules()) };
+    gates.set(threadId, bound);
+    forgetOnDispose(thread);
+    return bound;
   };
 
   return {

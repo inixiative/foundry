@@ -69,6 +69,8 @@ export interface NativeSessionProfile {
   readonly requestedModel: string;
   /** The host launch revision (ThreadLaunchSettings) this session was launched at; 0 for none. */
   readonly launchRevision?: number;
+  /** Whether the thread had structural tool rules (deny, prompt, protected paths) at launch. */
+  readonly structuralRules?: boolean;
   readonly textOnly: boolean;
   readonly maxTurns?: number | null;
   /**
@@ -409,7 +411,7 @@ export class SessionBackedProvider implements LLMProvider {
     const cwd = opts?.cwd ?? this._defaultCwd;
     const textOnly = threadId.includes(':aux:') || opts?.tools === false;
     // A host's choice applies to the thread's executor session only.
-    const host = textOnly ? undefined : this._launch?.get(threadId);
+    const host = textOnly ? undefined : this._launch?.forLaunch(threadId);
     const requestedModel = host?.model ?? opts?.model ?? this._defaultModel;
     const observation = opts?.nativeObservation
       ? {
@@ -443,6 +445,7 @@ export class SessionBackedProvider implements LLMProvider {
         textOnly,
         maxTurns,
         launchRevision: host?.revision ?? 0,
+        structuralRules: !textOnly && (this._toolGate?.(threadId)?.hasRules() ?? false),
         ...(source
           ? {
               bridgeKey: source.key,
@@ -775,6 +778,8 @@ export class SessionBackedProvider implements LLMProvider {
       textOnly: boolean;
       maxTurns?: number | null;
       launchRevision: number;
+      /** The thread's structural rules can deny or ask; a change relaunches the session. */
+      structuralRules: boolean;
       bridgeKey?: string;
       toolPolicyIdentity?: string;
     },
@@ -791,14 +796,19 @@ export class SessionBackedProvider implements LLMProvider {
         'textOnly',
         'maxTurns',
         'launchRevision',
+        'structuralRules',
         'bridgeKey',
         'toolPolicyIdentity',
       ] as const;
       const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
-      // A host changed this thread's launch settings: relaunch the idle session, resuming its binding.
+      // A host changed this thread's launch settings, or its structural rules appeared or went:
+      // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
+      // (Codex) refuses on the next turn instead of running warm past the new rules.
       if (
-        changed.includes('launchRevision') &&
-        changed.every((field) => field === 'launchRevision' || field === 'requestedModel') &&
+        (changed.includes('launchRevision') || changed.includes('structuralRules')) &&
+        changed.every((field) =>
+          ['launchRevision', 'structuralRules', 'requestedModel'].includes(field),
+        ) &&
         this._bridgeSources.get(key) === source
       )
         return this._relaunch(key, existing, () =>
@@ -853,7 +863,7 @@ export class SessionBackedProvider implements LLMProvider {
         if (source) bridge = await source.acquire();
         if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity)
           throw Error('Owned fixture policy changed during acquisition');
-        const host = requested.textOnly ? undefined : this._launch?.get(threadId);
+        const host = requested.textOnly ? undefined : this._launch?.forLaunch(threadId);
         const gate = requested.textOnly ? undefined : this._toolGate?.(threadId);
         const session = await this._adapter.createSession({
           threadId,
@@ -869,7 +879,7 @@ export class SessionBackedProvider implements LLMProvider {
           ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
           ...(host?.effort ? { effort: host.effort } : {}),
           ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
-          ...(gate ? { toolGate: gate.gate, structuralRules: gate.hasRules() } : {}),
+          ...(gate ? { toolGate: gate.gate, structuralRules: requested.structuralRules } : {}),
         });
         if (!requested.textOnly) this._bases.set(session, base?.parts ?? []);
         if (bridge) this._bridges.set(session, bridge);

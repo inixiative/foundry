@@ -23,6 +23,8 @@ interface Held {
   handlers: StreamHandlers;
   /** Seq of the last frame received, when the server numbers frames. */
   seq?: number;
+  /** Between an open (first, after a reconnect, or a resync) and its snapshot: appends are dropped. */
+  awaitingSnapshot: boolean;
   waiters: Array<{ resolve(): void; reject(error: Error): void }>;
 }
 
@@ -94,6 +96,11 @@ export class DataStreamClient {
           reject(Error('Data-stream socket closed before it opened'));
           return;
         }
+        // Every held stream re-opens on reconnect; until its snapshot, nothing applies.
+        for (const held of this.held.values()) {
+          held.seq = undefined;
+          held.awaitingSnapshot = true;
+        }
         this.options.onStatus?.('closed');
         if (!this.disposed) this.reconnect();
       };
@@ -137,15 +144,21 @@ export class DataStreamClient {
     if (frame.category !== 'data') return;
     if (frame.action === 'snapshot') {
       held.seq = frame.seq;
+      held.awaitingSnapshot = false;
       held.handlers.snapshot(frame.payload);
       for (const waiter of held.waiters.splice(0)) waiter.resolve();
       return;
     }
     if (frame.action !== 'append') return;
+    // Appends before the (new) snapshot are already in it, or precede it.
+    if (held.awaitingSnapshot) return;
     if (typeof frame.seq === 'number' && typeof held.seq === 'number') {
-      if (frame.seq !== held.seq + 1) {
+      // Already applied (in the snapshot, or a resent frame): drop it.
+      if (frame.seq <= held.seq) return;
+      if (frame.seq > held.seq + 1) {
         // A frame was lost: resync from a fresh snapshot.
         held.seq = undefined;
+        held.awaitingSnapshot = true;
         this.send({ action: 'open', stream });
         return;
       }
@@ -157,7 +170,7 @@ export class DataStreamClient {
   /** Hold a stream; resolves once its first snapshot has been delivered. */
   async open(stream: string, handlers: StreamHandlers): Promise<void> {
     await this.connect();
-    const held: Held = { handlers, waiters: [] };
+    const held: Held = { handlers, waiters: [], awaitingSnapshot: true };
     this.held.set(stream, held);
     const ready = new Promise<void>((resolve, reject) => held.waiters.push({ resolve, reject }));
     this.send({ action: 'open', stream });
