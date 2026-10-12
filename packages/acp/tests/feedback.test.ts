@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { InitializeRequest } from '@agentclientprotocol/sdk';
+import type { CompletionResult, LLMProvider } from '@inixiative/foundry-core';
 import { liveWatchFixture } from '../../foundry/tests/helpers/live-watch-fixture';
 import { serveDaemon, spawnFoundryAcp, until } from './helpers/acp-host';
 
@@ -16,10 +17,10 @@ const INITIALIZE: InitializeRequest = {
   clientInfo: { name: 'Paseo', version: 'dev' },
 };
 
-async function session() {
+async function session(feedbackProvider?: LLMProvider) {
   await mkdir(resolve('.foundry/qa'), { recursive: true });
   const dir = await mkdtemp(resolve('.foundry/qa/acp-feedback-'));
-  const f = await liveWatchFixture(dir);
+  const f = await liveWatchFixture(dir, feedbackProvider ? { feedbackProvider } : {});
   const daemon = serveDaemon(f.viewer);
   const h = spawnFoundryAcp(daemon.launchPath);
   cleanup.push(async () => {
@@ -113,4 +114,48 @@ test('a blocking feedback prompt asks the host: Apply / Not a rule / Later', asy
         .some((u) => u.sessionUpdate === 'tool_call_update' && u.status === 'failed'),
     'card settled as not a rule',
   );
+});
+
+test('/feedback answers with the items that need attention, and a count of the rest', async () => {
+  // A correction with no crisp rule needs attention: the person has to write the rule.
+  const provider = {
+    id: 'decisions',
+    async complete(): Promise<CompletionResult> {
+      return {
+        content: JSON.stringify({
+          isCorrection: true,
+          category: 'other',
+          statements: [],
+          sharp: false,
+        }),
+      } as CompletionResult;
+    },
+  } as LLMProvider;
+  const { f, h, sessionId } = await session(provider);
+  const response = await f.viewer.app.request(`/api/threads/${sessionId}/interventions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ traceId: 't', spanId: 's', correction: "That's not how we do it." }),
+  });
+  expect(response.status).toBe(201);
+  await until(() => f.actionQueue.pending().some((p) => p.meta?.feedback), 'captured');
+  await h.agent.request('session/prompt', {
+    sessionId,
+    prompt: [{ type: 'text', text: '/feedback' }],
+  });
+  await until(
+    () =>
+      h
+        .updates(sessionId)
+        .some(
+          (u) =>
+            u.sessionUpdate === 'agent_message_chunk' &&
+            JSON.stringify(u).includes('1 need attention'),
+        ),
+    '/feedback summary',
+  );
+  const reply = JSON.stringify(
+    h.updates(sessionId).filter((u) => u.sessionUpdate === 'agent_message_chunk'),
+  );
+  expect(reply).toContain('Not yet a crisp rule');
 });

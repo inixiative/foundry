@@ -101,17 +101,55 @@ function Stage({ label, children, empty }) {
   </div>`;
 }
 
+const STAGES = ['captured', 'routed', 'tuned', 'applied', 'in use', 'holding'];
+const ATTENTION = ['needs attention', 'in progress', 'healthy'];
+const attentionRank = (item) => ATTENTION.indexOf(item.attention);
+const byAttention = (a, b) => attentionRank(a) - attentionRank(b) || b.updatedAt - a.updatedAt;
+
+/** The cycle as a strip: every stage up to the item's, the item's own one marked. */
+function StageStrip({ stage }) {
+  const end = stage === 'recurred' ? 'recurred' : stage === 'dismissed' ? 'dismissed' : null;
+  const reached = end ? STAGES.indexOf('applied') : STAGES.indexOf(stage);
+  const stages = end ? [...STAGES.slice(0, reached + 1), end] : STAGES;
+  return html`<ol class="feedback-stages" aria-label=${`Stage: ${stage}`}>
+    ${stages.map(
+      (name, i) => html`<li key=${name}
+        class="feedback-stage-step ${name === stage ? 'current' : i <= reached || name === end ? 'done' : ''}"
+        data-stage=${name}>${name}</li>`,
+    )}
+  </ol>`;
+}
+
+function Confidence({ item }) {
+  const value = item.confidence.value;
+  return html`<div class="feedback-confidence"
+    title="Exposure-based: how often the rule was in front of its Warden with no recurrence since it was applied. Oracle's recurrence measurement replaces this when it lands.">
+    <span class="feedback-stage-label">Confidence it works</span>
+    <span>${value === null ? 'n/a (not applied)' : `${Math.round(value * 100)}%`}</span>
+    <span class="feedback-dim">exposure-based · ${item.exposures} exposure${item.exposures === 1 ? '' : 's'} · ↻ ${item.recurredSince} since applied</span>
+  </div>`;
+}
+
 function FeedbackRow({ item }) {
   const route = item.route;
   const active = item.changes.filter((change) => !change.revertedAt);
-  return html`<li class="feedback-row" data-status=${item.status} data-item=${item.id}>
-    <${Stage} label="Feedback">
+  const origin = item.origin;
+  return html`<li class="feedback-row" data-attention=${item.attention} data-stage=${item.stage} data-item=${item.id}>
+    <div class="feedback-row-head">
+      <span class="feedback-attention" data-attention=${item.attention}>${item.attention}</span>
+      <${StageStrip} stage=${item.stage} />
+      <span class="feedback-dim">${item.reason}</span>
+    </div>
+    <${Stage} label="Rule">
       <div class="feedback-statement">${item.statement}</div>
-      <div class="feedback-dim">“${item.quote}”</div>
+      <div class="feedback-dim">
+        “${item.quote}”
+        ${origin.turnId ? html` <button class="feedback-link" onClick=${() => openTurnDetail(origin.threadId, origin.turnId)}>open turn</button>` : null}
+      </div>
       <div class="feedback-tags">
+        <span class="feedback-chip">${item.id}</span>
         <span class="feedback-chip">${item.category}</span>
         ${item.detection ? html`<span class="feedback-chip">${item.detection.kind}</span>` : null}
-        <span class="feedback-chip feedback-status">${item.status}</span>
       </div>
     <//>
     <${Stage} label="Routed to" empty="not routed">
@@ -127,9 +165,10 @@ function FeedbackRow({ item }) {
         active.length
           ? active.map(
               (change) => html`<div class="feedback-change">
-                <code title=${change.path}>${change.line}</code>
-                <div class="feedback-dim">${change.role} · ${change.level} · ${when(change.appliedAt)}
-                  <button class="feedback-link" onClick=${() => undo(item.id, change.changeId)}>undo</button></div>
+                <code>${change.line}</code>
+                <div class="feedback-dim" title=${change.path}>${change.role} · ${change.level} · ${when(change.appliedAt)}</div>
+                <div class="feedback-dim feedback-path">${change.path}</div>
+                <button class="feedback-link" onClick=${() => undo(item.id, change.changeId)}>undo</button>
               </div>`,
             )
           : null
@@ -148,34 +187,35 @@ function FeedbackRow({ item }) {
           : null
       }
     <//>
-    <${Stage} label="Recurrence">
-      <div class=${item.recurrence.sinceChange ? 'feedback-recurred' : ''}>
-        ↻ ${item.recurrence.total}${active.length ? ` (${item.recurrence.sinceChange} since the change)` : ''}
-      </div>
-      ${item.recurrence.whileExposed ? html`<div class="feedback-dim">${item.recurrence.whileExposed} while the Warden had it</div>` : null}
+    <${Stage} label="Evidence">
+      <${Confidence} item=${item} />
+      <div class=${item.recurrence.sinceChange ? 'feedback-recurred' : ''}>↻ ${item.recurrence.total} total</div>
     <//>
   </li>`;
 }
 
-/** Center view: every feedback item in scope, newest first. */
+/** The feedback cycle, first-class: everything you've said, needs-attention first. */
 export function FeedbackPanel() {
   const items = useFeedbackStream(scopeProjectId());
   const [filter, setFilter] = useState('all');
-  const shown = filter === 'all' ? items : items.filter((item) => item.status === filter);
+  const shown = (filter === 'all' ? items : items.filter((item) => item.attention === filter))
+    .slice()
+    .sort(byAttention);
+  const count = (attention) => items.filter((item) => item.attention === attention).length;
   return html`<div class="feedback-panel">
     <div class="graph-header">
       <div class="graph-tabs" role="tablist" aria-label="Feedback filter">
-        ${['all', 'open', 'applied', 'deferred', 'dismissed'].map(
+        ${['all', ...ATTENTION].map(
           (id) => html`<button key=${id} role="tab" aria-selected=${filter === id}
             class="graph-tab ${filter === id ? 'graph-tab--active' : ''}"
-            onClick=${() => setFilter(id)}>${id}</button>`,
+            onClick=${() => setFilter(id)}>${id}${id === 'all' ? ` (${items.length})` : ` (${count(id)})`}</button>`,
         )}
       </div>
     </div>
     ${
       shown.length
         ? html`<ol class="feedback-list">${shown.map((item) => html`<${FeedbackRow} key=${item.id} item=${item} />`)}</ol>`
-        : html`<div class="graph-empty">No feedback yet. Corrections you give while working show up here.</div>`
+        : html`<div class="graph-empty">No feedback here. Corrections you give while working show up in this view.</div>`
     }
   </div>`;
 }

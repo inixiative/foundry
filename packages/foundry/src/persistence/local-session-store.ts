@@ -520,12 +520,12 @@ export class LocalSessionStore {
     return JSON.parse(row.record);
   }
 
-  /** Append one phase record. Idempotent for the same id and bytes; a different record under a known id is a conflict. */
-  appendPhase(thread: Pick<Thread, 'id' | 'meta'>, input: PhaseRecordInput): void {
+  /** Append one phase record; returns when it was stored. Idempotent for the same id and bytes; a different record under a known id is a conflict. */
+  appendPhase(thread: Pick<Thread, 'id' | 'meta'>, input: PhaseRecordInput): number {
     if (!input.id || !input.phase) throw Error('Phase record requires id and phase');
     const record = JSON.stringify(input.record);
     if (Buffer.byteLength(record) > 200_000) throw Error('Phase record exceeds size limit');
-    this.db.transaction(() => {
+    return this.db.transaction((): number => {
       this.saveThread(thread);
       // Idempotent only for an exact replay: the same thread, turn, dispatch, phase and bytes. Any contradiction
       // is refused without touching the original row.
@@ -535,9 +535,10 @@ export class LocalSessionStore {
         dispatch_id: string | null;
         phase: string;
         record: string;
+        stored_at: number;
       };
       const prior = this.query(
-        'SELECT thread_id, turn_id, dispatch_id, phase, record FROM session_phase WHERE id=?',
+        'SELECT thread_id, turn_id, dispatch_id, phase, record, stored_at FROM session_phase WHERE id=?',
       ).get(input.id) as PriorPhase | null;
       if (prior) {
         const same =
@@ -547,8 +548,9 @@ export class LocalSessionStore {
           prior.phase === input.phase &&
           prior.record === record;
         if (!same) throw Error('Phase record identity conflict');
-        return;
+        return prior.stored_at;
       }
+      const storedAt = Date.now();
       this.query(
         'INSERT INTO session_phase(id, thread_id, turn_id, dispatch_id, phase, record, checksum, stored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(
@@ -559,8 +561,9 @@ export class LocalSessionStore {
         input.phase,
         record,
         checksum(record),
-        Date.now(),
+        storedAt,
       );
+      return storedAt;
     })();
   }
 

@@ -1,5 +1,5 @@
 import type { ActionPrompt } from '@inixiative/foundry-core';
-import type { FeedbackView } from '../feedback/service';
+import type { FeedbackView } from '../feedback/view';
 import type { MessageSummary } from '../persistence/local-session-store';
 import type { ThreadLaunchPatch } from '../providers/thread-launch';
 import type { threadToJSON } from '../viewer/http-helpers';

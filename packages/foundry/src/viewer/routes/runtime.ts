@@ -7,7 +7,8 @@ import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
-import { type FeedbackService, feedbackView } from '../../feedback/service';
+import type { FeedbackService } from '../../feedback/service';
+import { byAttention, feedbackView } from '../../feedback/view';
 import { listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer } from '../../models/registry';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
@@ -294,7 +295,12 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const projectId = c.req.query('projectId');
     const items =
       projectId === undefined ? feedback.lifecycle.items : feedback.lifecycle.forProject(projectId);
-    return c.json({ items: items.map((item) => feedbackView(feedback, item)) });
+    const attention = c.req.query('attention');
+    const views = items
+      .map((item) => feedbackView(feedback, item))
+      .filter((view) => !attention || view.attention === attention)
+      .sort(byAttention);
+    return c.json({ items: views });
   });
   app.get('/api/feedback/:itemId', (c) => {
     const feedback = deps.feedback;

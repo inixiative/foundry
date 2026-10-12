@@ -108,6 +108,9 @@ test('a correction typed in a turn reaches the lifecycle view: captured, routed,
   expect(item).toMatchObject({
     statement: RULE,
     route: { roles: ['main'], level: 'org-personal' },
+    stage: 'applied',
+    attention: 'in progress',
+    confidence: { value: 0, basis: 'exposure' },
   });
   // org-personal: the project's parent directory, a personal role file for the main thread.
   expect(item!.changes[0]!.path).toBe(join(dir, '.foundry/roles/main/instructions.local.md'));

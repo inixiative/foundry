@@ -168,13 +168,13 @@ export class FeedbackService {
       phase: entry.phase,
       record: entry.record as unknown as Record<string, unknown>,
     };
-    this.deps.store.appendPhase(thread, row);
+    const storedAt = this.deps.store.appendPhase(thread, row);
     const item = this.lifecycle.apply({
       threadId: thread.id,
       turnId,
       phase: entry.phase,
       record: row.record,
-      storedAt: Date.now(),
+      storedAt,
       projectId: thread.meta.projectId ?? null,
     });
     if (item) this.deps.changed?.(item);
@@ -513,19 +513,3 @@ function parseEdit(input: string | undefined): FeedbackTuneRecord['edited'] {
   }
   return edited;
 }
-
-/** An item as the lifecycle view shows it: feedback → routed → change → uses → recurrence. */
-export function feedbackView(service: FeedbackService, item: FeedbackItem) {
-  const uses = service.uses(item.id);
-  const since = activeChanges(item)[0]?.appliedAt;
-  return {
-    ...item,
-    uses: { exposures: uses.length, lastAt: uses.at(-1)?.at ?? null, recent: uses.slice(-5) },
-    recurrence: {
-      total: item.recurrences.length,
-      sinceChange: since === undefined ? 0 : item.recurrences.filter((r) => r.at >= since).length,
-      whileExposed: item.recurrences.filter((r) => r.exposedAtTurn).length,
-    },
-  };
-}
-export type FeedbackView = ReturnType<typeof feedbackView>;

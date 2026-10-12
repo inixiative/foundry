@@ -90,7 +90,7 @@ const COMMANDS = [
     name: 'feedback',
     description:
       'Your feedback and where it went; apply, edit or dismiss one: /feedback apply <id>',
-    input: { hint: 'list | apply <id> | dismiss <id> | later <id> | edit <id> <rule>' },
+    input: { hint: 'all | apply <id> | dismiss <id> | later <id> | edit <id> <rule>' },
   },
 ];
 
@@ -555,21 +555,29 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     body: string,
   ): Promise<string> => {
     const [verb = 'list', itemId, ...rest] = body.split(/\s+/).filter(Boolean);
-    if (verb === 'list') {
+    if (verb === 'list' || verb === 'all') {
       const thread = await foundry.http.thread(session.threadId).catch(() => undefined);
       const { items } = await foundry.http.feedback(thread?.meta.projectId ?? undefined);
       if (!items.length) return 'No feedback captured yet.';
-      return items
-        .slice(0, 10)
-        .map((item) => {
+      const count = (attention: string) =>
+        items.filter((item) => item.attention === attention).length;
+      const shown =
+        verb === 'all' ? items : items.filter((item) => item.attention === 'needs attention');
+      return [
+        `Feedback: ${count('needs attention')} need attention, ${count('in progress')} in progress, ${count('healthy')} healthy.`,
+        ...shown.slice(0, 10).map((item) => {
           const roles = item.route?.roles.join(', ') ?? 'unrouted';
-          const changes = item.changes.filter((change) => !change.revertedAt).length;
-          return `${item.id} [${item.status}] ${item.statement}\n  → ${roles}${changes ? `; applied, used ${item.uses.exposures}×` : ''}; ↻ ${item.recurrence.total}`;
-        })
-        .join('\n');
+          const confidence =
+            item.confidence.value === null
+              ? ''
+              : `, confidence ${Math.round(item.confidence.value * 100)}% (exposure-based)`;
+          return `- ${item.id} [${item.stage}] ${item.statement}\n  → ${roles}${confidence}. ${item.reason}`;
+        }),
+        ...(verb === 'all' ? [] : ['/feedback all lists everything.']),
+      ].join('\n');
     }
     if (!['apply', 'dismiss', 'later', 'edit'].includes(verb) || !itemId)
-      return 'Usage: /feedback [list] | apply <id> | dismiss <id> | later <id> | edit <id> <rule>';
+      return 'Usage: /feedback [all] | apply <id> | dismiss <id> | later <id> | edit <id> <rule>';
     const { prompts } = await foundry.http.prompts(session.threadId);
     const prompt = prompts.find(
       (candidate) => candidate.status === 'pending' && feedbackMeta(candidate)?.itemId === itemId,

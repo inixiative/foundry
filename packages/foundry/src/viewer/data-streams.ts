@@ -6,7 +6,8 @@ import type {
   Thread,
 } from '@inixiative/foundry-core';
 import type { FeedbackItem } from '../feedback/lifecycle';
-import { type FeedbackService, feedbackView } from '../feedback/service';
+import type { FeedbackService } from '../feedback/service';
+import { feedbackView } from '../feedback/view';
 import type { StreamFamily } from '../ws/types';
 import { threadToJSON } from './http-helpers';
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from './stream-buffer';

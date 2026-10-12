@@ -10,6 +10,7 @@ import { routeFeedback } from '../src/feedback/routing';
 import { type ClassifyCorrection, FeedbackService } from '../src/feedback/service';
 import { lintStatement, parseMatch, ruleMarker } from '../src/feedback/sharpen';
 import { validateFeedbackSettings } from '../src/feedback/types';
+import { assess } from '../src/feedback/view';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
@@ -474,4 +475,90 @@ test('an explicit /correction is captured without the detector', async () => {
   const { service, thread } = setup();
   const items = await service.intervention(thread, 'Merge it yourself once green.');
   expect(items[0]).toMatchObject({ originKind: 'intervention', statement: RULE });
+});
+
+test('assessment: stage, attention and exposure-based confidence come from the journal evidence', async () => {
+  const { service, thread, queue, store } = setup();
+  service.turnAccepted(thread, 'turn-1', 'From now on merge it yourself.');
+  await settle();
+  const id = service.lifecycle.items[0]!.id;
+  const view = () => {
+    const item = service.lifecycle.get(id)!;
+    return assess(item, service.uses(id));
+  };
+  expect(view()).toMatchObject({
+    stage: 'routed',
+    attention: 'in progress',
+    confidence: { value: null },
+  });
+  queue.resolve(queue.pending()[0]!.id, 'apply');
+  await settle();
+  expect(view()).toMatchObject({ stage: 'applied', confidence: { value: 0, basis: 'exposure' } });
+  const path = service.lifecycle.get(id)!.changes[0]!.path;
+  for (const n of [1, 2, 3])
+    store.appendPhase(thread, {
+      id: `advice-${n}`,
+      turnId: `turn-${n + 1}`,
+      dispatchId: null,
+      phase: 'advice',
+      record: {
+        participants: [
+          { domain: 'convention', segments: { instructions: readFileSync(path, 'utf8') } },
+        ],
+      },
+    });
+  expect(view()).toMatchObject({
+    stage: 'holding',
+    attention: 'healthy',
+    confidence: { value: 0.5 },
+  });
+});
+
+test('assessment: an applied rule that recurs needs attention; an unsharp one does too', () => {
+  const lifecycle = new FeedbackLifecycle();
+  const capture = (itemId: string, at: number, sharp = true) =>
+    lifecycle.apply({
+      threadId: 't',
+      turnId: `turn-${at}`,
+      phase: 'feedback-capture',
+      storedAt: at,
+      record: {
+        itemId,
+        statement: RULE,
+        sharp,
+        category: 'approach',
+        tags: [],
+        quote: 'q',
+        before: '',
+        origin: 'detected',
+      },
+    });
+  capture('fb_a', 1);
+  lifecycle.apply({
+    threadId: 't',
+    turnId: null,
+    phase: 'feedback-apply',
+    storedAt: 2,
+    record: {
+      itemId: 'fb_a',
+      changeId: 'c',
+      role: 'main',
+      slot: 'instructions',
+      level: 'computer',
+      path: '/x',
+      line: 'l',
+    },
+  });
+  capture('fb_a', 3);
+  expect(assess(lifecycle.get('fb_a')!, [])).toMatchObject({
+    stage: 'recurred',
+    attention: 'needs attention',
+    recurredSince: 1,
+    confidence: { value: 0.25 },
+  });
+  capture('fb_b', 4, false);
+  expect(assess(lifecycle.get('fb_b')!, [])).toMatchObject({
+    stage: 'captured',
+    attention: 'needs attention',
+  });
 });

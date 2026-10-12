@@ -175,14 +175,27 @@ A rule that has many exposures and no citations is dead weight in that Warden's 
 - **In Foundry, live.** A capture whose `match` points at an applied item journals `feedback-capture` with `recurred: true` and `{ exposedAtTurn: boolean }`, meaning whether the previous turn's segments for the routed Warden contained the rule. A recurrence while the rule was exposed is the important failure: text did not change behavior (H2). It raises a tuning prompt that offers sharpen, reroute, move to main, or guard.
 - **In Oracle** (next slice unless cheap). `foundry feedback export` writes items, events and changes to disk as JSON. Oracle reads the export to compute recurrences per 100 exposed turns, before and after each change, using `trends` (`oracle:src/store.ts:271-315`). `oracle mine` switches to `detectCorrection` and to the same export shape, so mined corrections join items by `match` instead of sitting in `.oracle/corrections.jsonl`, which only its own dedupe reads (`oracle:src/cli.ts:213-226`, `oracle:src/session-miner.ts:495-518`). Phases also reach Archive through capture (`pf:archives/capture.ts:163`), so a hosted Oracle can read them there.
 
-### L7. The visible lifecycle view
+### L7. The visible lifecycle view: the Feedback view
 
-- **Viewer, project Feedback panel** (`pf:viewer/ui/feedback.js`), fed by a new data stream `feedback:<projectId>` with snapshot `{ items }` and append `{ item }` (`pf:viewer/data-streams.ts`). Each item is one row that reads left to right as the lifecycle: **feedback** (quote, statement, tags) → **routed to** (Warden chips, slot, level) → **change** (file, line, applied at, by whom, undo) → **uses** (exposures · citations, with links to the citing turns) → **recurrence** (↻ count since the change, split into exposed and not exposed). Filters: open, tuning, applied, dismissed.
-- **In the conversation:** a chip on the user message that produced the item: "feedback captured → convention Warden", or "↻ recurred ×3". On an assistant turn where a Warden cited a rule: "convention Warden used fb_x".
-- **ACP hosts:**
-  - After an apply, a one-line `tool_call` card: "Foundry: feedback fb_x → convention Warden instructions (project personal)".
-  - On the first citation of a rule, a short card: "convention Warden used fb_x".
-  - `/feedback` gives the same rows as text.
+> Aron (2026-10-12): "You should be able to see your feedback cycle as one of the things in Foundry. Here's all the feedback you've left, where it is in the cycle, what it's polished, how confident we are that it's working, or whether it needs to go back to the drawing board, or whether it doesn't need attention."
+
+- **Where it lives.** **Feedback** is a center view beside Chat and Graph (`pf:viewer/ui/feedback.js`). It is a first-class place, not something buried in a thread. A data stream feeds it: `feedback` for everything, `feedback:<projectId>` for one project. The stream sends a snapshot `{ items }`, then an append `{ item }` whenever an item changes. It also re-sends an applied item's counts after each journalled turn. The same data is at `GET /api/feedback?projectId=&attention=`, sorted.
+- **Each item shows:**
+  - The original text, with a link to its turn.
+  - Its **stage**: captured → routed → tuned → applied → in use → holding, or recurred, or dismissed. Routing comes before the tuning answer in Foundry, because the prompt has to say where the rule would go.
+  - The polished rule (`statement`, plus any edit).
+  - The routed Warden(s) and the change made, with provenance: the file, the exact line, the rung, when it was applied, and undo.
+  - Its uses, linked to the turns.
+  - The evidence (next bullet).
+- **Confidence that the rule works.** In this slice, confidence is **exposure-based**, and the UI labels it that way. With no recurrence since the change, confidence is `exposures / (exposures + 3)`. With r recurrences since the change, it is `0.25 / r`. An item that is not applied has none. Oracle's recurrence measurement (L6) replaces this formula when it is wired in.
+- **Status (`attention`):**
+  - `needs attention`: the rule recurred after it was applied, so it goes back to the drawing board. This also covers a correction with no crisp rule yet, because the person has to write it.
+  - `in progress`: captured, routed, tuned, applied or in use.
+  - `healthy`: the rule is holding (at least 3 exposures and no recurrence since the change), or it was dismissed. A dismissed item needs no attention.
+- **Order and filters.** Everything is listed, needs-attention first, then in progress, then healthy, and newest first within each group. The filters are all, needs attention, in progress and healthy, each with a count.
+- **The tuning card** in Chat shows the same three lines (what happened, what we did, what we intend). Edit lets the person rewrite the rule and pick the rung before it is applied.
+- **ACP hosts.** `/feedback` replies with one summary line ("N need attention, M in progress, K healthy"), then the items that need attention, each with its stage, routed Wardens, confidence and the reason. `/feedback all` lists everything. Each tuning prompt is a "Foundry: feedback" card that settles when it is answered.
+- **Not in this slice:** chips on conversation messages ("feedback captured → convention Warden", "convention Warden used fb_x"), and the first-citation card. Both need citation (open question 6).
 
 ### L-data. Data model: journal phases, no parallel store
 
@@ -229,7 +242,7 @@ interface FeedbackApplyRecord {        // phase: feedback-apply / feedback-rever
 }
 ```
 
-- **Index.** `FeedbackIndex` (`pf:feedback/index.ts`) folds these per project. On start it is rebuilt from one new store query, `feedbackPhases({ projectId?, since? })`, which reads `session_phase WHERE phase LIKE 'feedback-%'` joined to the thread's project. After that it updates on each append. Uses (L5) are counted with a second query over `advice` and `guard-request` rows stored after the change's `appliedAt` whose record contains `(fb_<id>)`.
+- **Index.** `FeedbackLifecycle` (`pf:feedback/lifecycle.ts`) folds these. On start it is rebuilt from one new store query, `feedbackPhases({ projectId? })`, which reads `session_phase WHERE phase LIKE 'feedback-%'` joined to the thread's project. After that it updates on each append. Uses (L5) are counted with a second query (`phasesContaining`) over `advice` and `guard-request` rows stored after the change's `appliedAt` whose record contains `(fb_<id>)`.
 - **Edits made outside any turn** (a viewer edit, an undo from the panel) are journalled on the item's origin thread with `turnId: null`. `appendPhase` already allows that.
 - **Kingdom stores nothing.** Sharing an item set across Foundries stays open (open question 5, below).
 
@@ -249,7 +262,7 @@ Tests follow the repo conventions: `bun test`, cassette replays for the decision
 10. **Undo.** It removes exactly the added line, even after other lines were appended. It journals `feedback-revert`, and later advice segments no longer contain the rule.
 11. **Recurrence while exposed.** A rule is applied and exposed, and the same correction comes back. Expect `recurred: true, exposedAtTurn: true`, a tuning prompt that offers sharpen, reroute or guard, and ↻1 in the view.
 12. **Citation.** A Warden's advice snippet contains `fb_id`. The view counts one citation and links the turn. The ACP host gets the "used" card once.
-13. **Fold and restart.** Restart the daemon: `FeedbackIndex` rebuilds identical state from the journal, and the stream snapshot matches.
+13. **Fold and restart.** Restart the daemon: `FeedbackLifecycle` rebuilds identical state from the journal, and the stream snapshot matches.
 14. **Archive.** An archived thread carries its `feedback-*` phases.
 15. **Live cassette.** A real Claude Haiku sharpening call plus the Cartographer route for case 1.
 
@@ -257,7 +270,7 @@ Tests follow the repo conventions: `bun test`, cassette replays for the decision
 
 The detector, from the repeat-report work, must land first. The composition view (role × slot × ladder) must be on main before step 4.
 
-1. Add `FeedbackPhase` to `PhaseRecordInput`, and add `feedbackPhases()` to the store. Build `FeedbackIndex` (`pf:feedback/index.ts`) as a fold, with its tests.
+1. Add `FeedbackPhase` to `PhaseRecordInput`, and add `feedbackPhases()` to the store. Build `FeedbackLifecycle` (`pf:feedback/lifecycle.ts`) as a fold, with its tests.
 2. Capture: `pf:feedback/capture.ts`, with the hook in `TurnService.accept` and in the interventions route, the sharpener prompt and parser, and the lint.
 3. Routing: `pf:feedback/routing.ts` over `Cartographer.route`, plus the slot and level defaults.
 4. Apply: `pf:feedback/apply.ts`, covering the role-file append, the gitignore guard, undo, and layer invalidation.
