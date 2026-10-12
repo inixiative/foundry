@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { NativeAuthenticationSource } from './native-authentication';
 
 export type NativeProfileSource = Extract<NativeAuthenticationSource, { mode: 'native-profile' }>;
@@ -38,11 +38,15 @@ export function defaultProfileSource(runtime: Runtime): NativeProfileSource {
 }
 
 export function isDefaultProfile(directory: string, runtime: Runtime): boolean {
-  try {
-    return realpathSync(directory) === realpathSync(defaultProfileDirectory(runtime));
-  } catch {
-    return false;
-  }
+  // A login not created yet is still the default location; selecting it explicitly changes Claude's credential entry.
+  const real = (path: string) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return resolve(path);
+    }
+  };
+  return real(directory) === real(defaultProfileDirectory(runtime));
 }
 
 /** Child environment selecting a profile. The default location is selected by omission:
