@@ -1,3 +1,4 @@
+import '../helpers/isolate-archive';
 import { expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

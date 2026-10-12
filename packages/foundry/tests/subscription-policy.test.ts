@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
   existsSync,
@@ -295,6 +296,8 @@ test('full subscription startup reaches viewer with no API provider requests or 
         ...env,
         VIEWER_PORT: '0',
         FOUNDRY_STARTUP_SELF_TEST: '0',
+        ARCHIVE_URL: process.env.ARCHIVE_URL,
+        ARCHIVE_TOKEN: process.env.ARCHIVE_TOKEN,
         OPENAI_API_KEY: 'synthetic-never-send',
         ANTHROPIC_API_KEY: 'synthetic-never-send',
       },

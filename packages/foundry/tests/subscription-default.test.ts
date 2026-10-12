@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
   chmodSync,

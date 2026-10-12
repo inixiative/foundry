@@ -1,3 +1,4 @@
+import './isolate-archive';
 import { createViewerStreams } from '../../src/viewer/data-streams';
 import type { RuntimeRoutesDeps } from '../../src/viewer/routes/runtime';
 import type { createViewer } from '../../src/viewer/server';

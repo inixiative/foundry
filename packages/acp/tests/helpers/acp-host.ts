@@ -1,3 +1,4 @@
+import '../../../foundry/tests/helpers/isolate-archive';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

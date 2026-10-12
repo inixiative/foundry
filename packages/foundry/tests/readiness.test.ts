@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { expect, spyOn, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

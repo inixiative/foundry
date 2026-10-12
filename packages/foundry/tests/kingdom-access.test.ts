@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { expect, test } from 'bun:test';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
