@@ -557,7 +557,7 @@ describe('production runtime delivery', () => {
     ).toBe(true);
 
     const ledger = runtime.get('delivered')!.librarian.state.injectedLayers;
-    expect(ledger.map((r) => [r.id, r.hash])).toContainEqual(['security', layer.hash]);
+    expect(ledger.map((r) => [r.id, r.hash])).toContainEqual(['security', layerPart(layer).hash]);
   });
 
   test('a failure before send leaves the delivery ledger empty', async () => {
@@ -604,7 +604,7 @@ describe('production runtime delivery', () => {
     });
     expect(delivery.committed).toContain('security');
     const ledger = runtime.get('drift')!.librarian.state.injectedLayers;
-    expect(ledger.find((r) => r.id === 'security')!.hash).toBe(layer.hash);
+    expect(ledger.find((r) => r.id === 'security')!.hash).toBe(layerPart(layer).hash);
   });
 
   test('a stalled router does not block production delivery and is recorded on the artifact', async () => {
