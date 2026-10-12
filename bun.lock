@@ -6,7 +6,7 @@
       "name": "@inixiative/foundry-monorepo",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
-        "@inixiative/config": "^0.5.72",
+        "@inixiative/config": "^0.5.73",
         "@prisma/client": "6",
         "@types/bun": "1.4.2",
         "lefthook": "2.1.9",
@@ -116,7 +116,7 @@
 
     "@inixiative/archive": ["@inixiative/archive@0.14.0", "", { "dependencies": { "@inixiative/signet": "^0.3.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-8KHHR8k4/KUYPJrrCYVoJDO71Cq6CulAD2ICykxNWk26XlwTwNX9kkIOHXhcwJovuGEAOBhY9OxtVXWW8rOiJA=="],
 
-    "@inixiative/config": ["@inixiative/config@0.5.72", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-cjqg9oT18vB/AvGqjbq5xJLFZD8CbWafYkGTK1YtY2TOfemjtzCSWSF9pVqMgIbJbk/M5sDaQwXuoWXvkj2ptw=="],
+    "@inixiative/config": ["@inixiative/config@0.5.73", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-FVoMytH96i30V+6X5CWLyXCtvhkjELMBSlhAebXTe/Wq8BPMSgoV6hgKM0b7cfHAaE3RU88N76DUy/pmjxHKLQ=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
 
