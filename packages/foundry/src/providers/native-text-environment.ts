@@ -15,6 +15,8 @@ export function nativeTextEnvironment(input: Record<string, string | undefined>)
     // Native compaction policy set by claude-context-budget; not credentials.
     'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
     'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
+    // Foundry composes instruction files itself (prompts/instruction-stack.ts); not credentials.
+    'CLAUDE_CODE_DISABLE_CLAUDE_MDS',
   ];
   return Object.fromEntries(
     keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]!]),

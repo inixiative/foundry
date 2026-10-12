@@ -71,6 +71,7 @@ export class ViewerThreadDirectory {
           const stack = this.main.stack.clone({
             threadId: record.id,
             projectId: record.meta.projectId,
+            cwd: record.meta.cwd,
           });
           thread = new Thread(record.id, stack, record.meta);
           for (const agent of this.main.agents.values()) thread.register(agent.withStack(stack));

@@ -1,0 +1,16 @@
+{
+  "version": "0.155.1",
+  "status": 200,
+  "body": {
+    "native": "tangerine-lighthouse-42",
+    "off": "NONE",
+    "launches": 2
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-12T02:03:23.837Z",
+    "agentSession": "0.5.2",
+    "environment": "terminal"
+  }
+}

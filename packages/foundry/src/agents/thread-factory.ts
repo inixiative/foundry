@@ -30,6 +30,7 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
+import { instructionStackSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from '../viewer/config';
@@ -73,6 +74,12 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
         return new ArchiveContextSource(srcCfg.id, archiveContextSchema.parse(srcCfg.archive));
       case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
+      case 'instructions':
+        // CLAUDE.md, AGENTS.md and auto memory for the thread's cwd; the personal global file follows the harness.
+        return instructionStackSource(srcCfg.id, {
+          harness: cfg.defaults.provider === 'codex' ? 'codex' : 'claude',
+          audience: srcCfg.audience,
+        });
       case 'file':
         // Bounded selection by default: the owned log stays complete and
         // searchable, the automatic input is a deterministic, reported subset.
@@ -378,6 +385,9 @@ export class ThreadFactory {
         get projectId() {
           return thread.meta.projectId;
         },
+        get cwd() {
+          return thread.meta.cwd;
+        },
       };
       for (const id of new Set([...Object.keys(before.layers), ...Object.keys(after.layers)])) {
         const prior = before.layers[id],
@@ -439,6 +449,9 @@ export class ThreadFactory {
       threadId: id,
       get projectId() {
         return thread?.meta.projectId ?? opts?.projectId;
+      },
+      get cwd() {
+        return thread ? thread.meta.cwd : opts?.cwd;
       },
     };
     const base = this._configuration;

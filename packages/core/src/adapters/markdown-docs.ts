@@ -1,4 +1,6 @@
-import { basename, extname, join, relative } from 'node:path';
+import { realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { ContextSource } from '../context-layer';
 import type { ContextRef, HydrationAdapter } from '../hydrator';
 
@@ -198,16 +200,162 @@ function extractHeadings(
   return { title, headings };
 }
 
+/** One instruction file as loaded: the file itself or a file it imports with `@path`. */
+export interface InstructionFile {
+  readonly path: string;
+  /** Text with block-level HTML comments removed, as Claude Code injects it. */
+  readonly content: string;
+  /** Import hops from the file the chain started at (0 for that file). */
+  readonly depth: number;
+  /** The file whose `@path` loaded this one. */
+  readonly importedBy?: string;
+}
+
+export interface InstructionReadOptions {
+  /** Home directory for `@~/` imports. Default: the process home. */
+  home?: string;
+  /** Import hops followed from the first file. Claude Code follows four. */
+  maxDepth?: number;
+  /** Real paths already loaded. Shared across a stack, it loads each file once and ends cycles. */
+  seen?: Set<string>;
+  /** Whether an import target may load; Claude Code asks before loading imports outside the project. */
+  allows?: (path: string) => boolean;
+}
+
 /**
- * Convenience: create a ContextSource from a single CLAUDE.md or similar file.
+ * Claude Code imports a file with no extension or a text extension, and skips the rest (`.png`, an
+ * unknown extension, or `notes.md.` with trailing punctuation). Its own list is longer; this covers
+ * the text formats an instruction file plausibly imports.
  */
+const TEXT_EXTENSIONS = new Set(
+  (
+    'md mdx markdown txt text rst adoc org json jsonc json5 yaml yml toml ini cfg conf env xml csv tsv ' +
+    'html htm css scss sass less ts tsx mts cts js jsx mjs cjs py pyi rb go rs java kt kts swift c h cc ' +
+    'cpp hpp cs php sh bash zsh fish ps1 bat sql graphql gql proto prisma tf hcl lua r scala ex exs erl ' +
+    'hs ml clj dart pl vue svelte astro gradle lock log diff patch'
+  )
+    .split(' ')
+    .map((ext) => `.${ext}`),
+);
+
+/** Claude Code skips an instruction file larger than this. */
+const INSTRUCTION_FILE_LIMIT = 4 * 1024 * 1024;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** Splits markdown into prose and fenced-code segments, in order. */
+function fenceSegments(text: string): Array<{ code: boolean; text: string }> {
+  const segments: Array<{ code: boolean; text: string }> = [];
+  let fence: string | undefined;
+  let lines: string[] = [];
+  const flush = (code: boolean) => {
+    if (lines.length) segments.push({ code, text: lines.join('\n') });
+    lines = [];
+  };
+  for (const line of text.split('\n')) {
+    const marker = FENCE.exec(line)?.[1];
+    if (!fence && marker) {
+      flush(false);
+      fence = marker;
+      lines.push(line);
+    } else if (
+      fence &&
+      marker &&
+      marker[0] === fence[0] &&
+      marker.length >= fence.length &&
+      !line.trim().slice(marker.length).trim()
+    ) {
+      lines.push(line);
+      flush(true);
+      fence = undefined;
+    } else lines.push(line);
+  }
+  flush(fence !== undefined);
+  return segments;
+}
+
+/** Removes block-level HTML comments outside fenced code, as Claude Code does before injecting. */
+export function stripInstructionComments(text: string): string {
+  return fenceSegments(text)
+    .map((segment) =>
+      segment.code ? segment.text : segment.text.replace(/^[ \t]*<!--[\s\S]*?-->[ \t]*\n?/gm, ''),
+    )
+    .join('\n');
+}
+
+/**
+ * `@path` imports in document order. An import starts at a line start or after whitespace, so
+ * `"@x"` and `a@x` are not imports; `\ ` escapes a space; code spans and fenced blocks are skipped.
+ */
+export function instructionImports(text: string): string[] {
+  const imports: string[] = [];
+  for (const segment of fenceSegments(text)) {
+    if (segment.code) continue;
+    const prose = segment.text.replace(/(`+)[\s\S]*?[^`]\1(?!`)|(`+)\2/g, ' ');
+    for (const match of prose.matchAll(/(?:^|\s)@((?:\\ |[^\s])+)/g))
+      imports.push(match[1]!.replace(/\\ /g, ' '));
+  }
+  return imports;
+}
+
+/** Where an import points: `~/` is the home directory, a relative path is relative to the importing file. */
+export function resolveInstructionImport(target: string, importer: string, home = homedir()) {
+  if (target === '~' || target.startsWith('~/')) return resolve(home, target.slice(2));
+  return isAbsolute(target) ? resolve(target) : resolve(dirname(importer), target);
+}
+
+/**
+ * Read an instruction file and what it imports, the way Claude Code loads CLAUDE.md: the file,
+ * then each import depth-first in document order, up to four hops. A missing, non-file, non-text,
+ * oversized or already-loaded target is skipped, so a cycle ends and a file shared by two importers
+ * loads once.
+ */
+export async function readInstructionFile(
+  path: string,
+  options: InstructionReadOptions = {},
+): Promise<InstructionFile[]> {
+  const seen = options.seen ?? new Set<string>();
+  const maxDepth = options.maxDepth ?? 4;
+  const files: InstructionFile[] = [];
+  const visit = async (file: string, depth: number, importedBy?: string) => {
+    let real: string;
+    try {
+      real = await realpath(file);
+      const info = await stat(real);
+      if (!info.isFile() || info.size > INSTRUCTION_FILE_LIMIT || seen.has(real)) return;
+    } catch {
+      return;
+    }
+    seen.add(real);
+    const content = stripInstructionComments(await Bun.file(real).text());
+    files.push({ path: file, content, depth, ...(importedBy ? { importedBy } : {}) });
+    if (depth >= maxDepth) return;
+    for (const target of instructionImports(content)) {
+      const next = resolveInstructionImport(target, file, options.home);
+      const ext = extname(next).toLowerCase();
+      if (ext && !TEXT_EXTENSIONS.has(ext)) continue;
+      if (!options.allows || options.allows(next)) await visit(next, depth + 1, file);
+    }
+  };
+  await visit(resolve(path), 0);
+  return files;
+}
+
+/** One file, then each file it imports under its own `Contents of` heading. */
+export function formatInstructionFiles(files: readonly InstructionFile[]): string {
+  return files
+    .filter((file) => file.content.trim())
+    .map((file) =>
+      file.importedBy ? `Contents of ${file.path}:\n\n${file.content.trim()}` : file.content.trim(),
+    )
+    .join('\n\n');
+}
+
+/** A ContextSource for one CLAUDE.md or similar file, with its `@path` imports resolved. */
 export function claudemdSource(id: string, path: string): ContextSource {
   return {
     id,
     async load() {
-      const file = Bun.file(path);
-      if (!(await file.exists())) return '';
-      return file.text();
+      return formatInstructionFiles(await readInstructionFile(path));
     },
   };
 }

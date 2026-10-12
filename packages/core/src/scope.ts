@@ -9,6 +9,8 @@
 export interface OwnershipScope {
   readonly threadId?: string;
   readonly projectId?: string;
+  /** Where the thread's native session runs. Not ownership: sources that read the workspace resolve against it. */
+  readonly cwd?: string;
 }
 
 /** Copy a scope, dropping undefined fields so equality checks are stable. */

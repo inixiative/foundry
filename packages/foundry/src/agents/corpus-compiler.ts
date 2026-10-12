@@ -89,6 +89,13 @@ const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
   org: ['personal_private', 'personal_public', 'team', 'org'],
 };
 
+export const CORPUS_TIERS = Object.keys(VISIBLE_TO) as readonly CorpusTier[];
+
+/** Whether content at `tier` may reach `audience`. */
+export function visibleTo(tier: CorpusTier, audience: CorpusTier): boolean {
+  return VISIBLE_TO[tier].includes(audience);
+}
+
 function generateId(prefix: string): string {
   return newId(prefix);
 }
@@ -268,7 +275,7 @@ export class CorpusCompiler {
       (d) =>
         d.state === 'active' &&
         d.confidence >= this._minConfidence &&
-        VISIBLE_TO[d.tier ?? 'personal_private'].includes(audience),
+        visibleTo(d.tier ?? 'personal_private', audience),
     );
 
     // Sort by confidence descending; id breaks ties so the snapshot is deterministic

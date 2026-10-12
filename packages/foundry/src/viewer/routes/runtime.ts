@@ -461,7 +461,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       // No factory: still never share the main thread's stack or agent
       // instances, and rebind scope-aware sources (memory) to the new thread
       // so main's private captures never reach it.
-      const stack = harness.thread.stack.clone({ threadId: id, projectId: project?.id });
+      const stack = harness.thread.stack.clone({ threadId: id, projectId: project?.id, cwd });
       thread = new Thread(id, stack, {
         description,
         tags,
@@ -604,6 +604,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       const stack = harness.thread.stack.clone({
         threadId: forkedThreadId,
         projectId: sourceThread.meta.projectId,
+        cwd: newOpts.cwd,
       });
       newThread = new Thread(forkedThreadId, stack, {
         ...newOpts,

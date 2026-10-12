@@ -37,6 +37,11 @@ import {
 import { resolveLearningSettings } from './agents/learning-config';
 import { acpLaunchPath, newAcpCapability, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
+import {
+  CLAUDE_HARNESS_INSTRUCTIONS_OFF,
+  CODEX_HARNESS_INSTRUCTIONS_OFF,
+  harnessLoadsInstructions,
+} from './prompts/instruction-stack';
 import type { LLMProvider } from './providers';
 import {
   AnthropicProvider,
@@ -273,6 +278,8 @@ function createProvider(config: FoundryConfig): {
           }),
       }
     : {};
+  // Foundry's `instructions` source composes CLAUDE.md / AGENTS.md / memory; the harness must not load them again.
+  const suppressInstructions = !harnessLoadsInstructions(config);
   switch (providerId) {
     case 'claude-code': {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
@@ -281,6 +288,7 @@ function createProvider(config: FoundryConfig): {
         authentication,
         defaults: {
           model: config.defaults.model,
+          ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
           ...subscriptionSpawn,
         },
       });
@@ -299,6 +307,7 @@ function createProvider(config: FoundryConfig): {
         authentication,
         // Codex CLI 0.155 dropped `codex mcp-server`; the app-server is the native session protocol.
         engine: config.defaults.codexEngine ?? 'app-server',
+        ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
           model: config.defaults.model,
           effort: config.defaults.codexEffort,

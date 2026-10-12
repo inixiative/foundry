@@ -13,6 +13,7 @@ import {
   validateMemorySelection,
 } from '@inixiative/foundry-core';
 import { configuredExperts } from '../agents/configured-experts';
+import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import {
@@ -79,6 +80,8 @@ export interface FoundryConfig {
   nativeAuthenticationSelections?: Record<string, string>;
   /** Background domain review phase; does not override classifier/router or executor profiles. */
   learning?: LearningSettings;
+  /** Standing instruction files (CLAUDE.md, AGENTS.md, auto memory); see docs/usage-and-context.md. */
+  instructions?: InstructionSettings;
   /** Global defaults — executor provider/model + classifier provider/model. */
   defaults: {
     provider: string;
@@ -130,6 +133,15 @@ export interface FoundryConfig {
 
   /** Whether the initial setup wizard has been completed. */
   setupComplete?: boolean;
+}
+
+export interface InstructionSettings {
+  /**
+   * Whether the native harness also loads instruction files itself. "suppress" leaves Foundry's
+   * `instructions` source as the only path; "load" lets the harness load them too. Absent: suppress
+   * exactly when an enabled layer reads an enabled `instructions` source. Applies on restart.
+   */
+  harnessLoading?: 'suppress' | 'load';
 }
 
 /**
@@ -504,7 +516,14 @@ export interface DataSourceConfig {
     | 'markdown'
     | 'inline'
     | 'supermemory'
-    | 'archive';
+    | 'archive'
+    | 'instructions';
+  /**
+   * Instruction sources only (`uri` is unused): who the composed CLAUDE.md / AGENTS.md / memory
+   * stack is for. A file reaches the audience only if its tier is visible there, so personal files
+   * never reach a team or org audience. Default "personal_private": the owner's own sessions.
+   */
+  audience?: CorpusTier;
   /** Searches the local Archive for this project; `uri` is unused. */
   archive?: {
     projectId: string;
@@ -703,6 +722,14 @@ export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
       staleness: 0,
       enabled: true,
     },
+    instructions: {
+      id: 'instructions',
+      prompt:
+        'Standing instructions: personal, organization and project instruction files, and auto memory.',
+      sourceIds: ['instructions'],
+      staleness: 60_000,
+      enabled: true,
+    },
     conventions: {
       id: 'conventions',
       prompt: 'Project conventions and coding standards.',
@@ -754,6 +781,13 @@ export function defaultProjectSources(projectPath: string): Record<string, DataS
       type: 'inline',
       label: 'System prompt',
       uri: 'You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.',
+      enabled: true,
+    },
+    instructions: {
+      id: 'instructions',
+      type: 'instructions',
+      label: 'Instruction files (CLAUDE.md, AGENTS.md, auto memory)',
+      uri: '',
       enabled: true,
     },
     'conventions-src': {
@@ -916,6 +950,9 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
+  const harnessLoading = config.instructions?.harnessLoading;
+  if (harnessLoading !== undefined && harnessLoading !== 'suppress' && harnessLoading !== 'load')
+    throw Error('instructions.harnessLoading must be "suppress" or "load"');
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
@@ -936,6 +973,10 @@ export function validateConfig(config: FoundryConfig): void {
   }
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
+      if (src?.audience !== undefined && !CORPUS_TIERS.includes(src.audience))
+        throw new Error(
+          `invalid source ${JSON.stringify(id)} in ${owner}: audience must be one of ${CORPUS_TIERS.join(', ')}`,
+        );
       if (!src || src.selection === undefined || src.selection === false) continue;
       try {
         validateMemorySelection(src.selection);
@@ -1176,6 +1217,8 @@ export class ConfigStore {
         next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
       } else if (section === 'learning') {
         next.learning = { ...next.learning, ...patch } as LearningSettings;
+      } else if (section === 'instructions') {
+        next.instructions = { ...next.instructions, ...patch } as InstructionSettings;
       } else if (section === 'subscriptionOnly') {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
       } else if (section === 'apiTokens') {

@@ -92,7 +92,8 @@ layer.addSource(docs.asSource("project-docs"));
 // Load a single file
 layer.addSource(docs.fileSource("arch", "architecture.md"));
 
-// Or just a CLAUDE.md
+// Or just a CLAUDE.md; its @path imports are resolved the way Claude Code does
+// (readInstructionFile), each under its own "Contents of <path>:" heading
 layer.addSource(claudemdSource("claude", "./CLAUDE.md"));
 
 // Wire to hydration (locator = relative path)

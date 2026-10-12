@@ -68,3 +68,55 @@ This policy is independent of Foundry's per-layer context caches and its
 cumulative token/spend budgets. Compaction can cause a new cache prefix to be
 written; the telemetry makes that cost visible rather than promising to eliminate
 cache writes.
+
+## Standing instructions
+
+Foundry composes a session's instruction files itself, for any harness: an
+`instructions` source (type `instructions`, on the default `instructions` layer)
+discovers them for the thread's cwd (its worktree or project) on each warm. The
+code is `prompts/instruction-stack.ts`; `@path` imports are resolved by core's
+`readInstructionFile`, which `claudemdSource` also uses.
+
+| Level | Files | Tier |
+|---|---|---|
+| managed | `/Library/Application Support/ClaudeCode/CLAUDE.md` (`/etc/claude-code/` on Linux) | org |
+| global | Claude: `~/.claude/CLAUDE.md` and path-free `~/.claude/rules/**`. Codex: `$CODEX_HOME/AGENTS.override.md`, else `AGENTS.md` | personal_private |
+| org | the files below, in directories above the repository (e.g. `~/code/inixiative/CLAUDE.md`) | org |
+| project | per directory from the repository root to the cwd: `CLAUDE.md`, `.claude/CLAUDE.md`, path-free `.claude/rules/**`, `AGENTS.md`, `.claude/AGENTS.md` | team |
+| local | `CLAUDE.local.md` in any of those directories | personal_private |
+| memory | `~/.claude/projects/<repo>/memory/MEMORY.md`, first 200 lines or 25KB | personal_private |
+
+The order matches what Claude Code 2.1.296 loads (checked live): managed, global,
+then the root-to-cwd walk, then auto memory, each file followed by its imports.
+A worktree's main checkout counts as the same repository, and auto memory is
+keyed by it. Each file loads once however it is reached. The source's `audience`
+(default `personal_private`) filters by tier through the corpus `VISIBLE_TO`
+rules, so personal files never reach a `team` or `org` audience.
+
+Imports follow Claude Code: `@path` at a line start or after whitespace, relative
+to the importing file, `~/` for home, absolute paths allowed, `\ ` for a space,
+four hops at most, not inside code spans or fenced blocks, text files only.
+Block-level HTML comments are stripped. Claude Code asks once before loading a
+project file's import from outside the project. Foundry has no dialog, so a
+project, org or local file imports only inside the repository or its own
+directory tree; global files import from anywhere.
+
+Not composed: subdirectory files and path-scoped rules, which Claude Code loads
+on demand as it touches files.
+
+**One injection path.** `instructions.harnessLoading` decides whether the
+harness loads these files too. Absent, it is `suppress` exactly when an enabled
+layer reads an enabled `instructions` source, and `load` otherwise. It applies on
+restart.
+
+- Claude Code: `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on the worker. It drops every
+  CLAUDE.md, rule, AGENTS.md and auto memory file, at launch and on demand.
+  `--setting-sources ''` (the subscription worker's isolation) already drops the
+  CLAUDE.md files but not auto memory, so `load` on that worker keeps only memory.
+- Codex app-server: thread config `project_doc_max_bytes: 0` drops project
+  AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting; the
+  subscription worker's private CODEX_HOME never has one. The legacy MCP engine
+  takes no thread config, so suppression does not reach it.
+
+A settings file that still lists CLAUDE.md as a `markdown` source next to an
+`instructions` source injects that file twice. Remove the `markdown` source.

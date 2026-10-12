@@ -9,6 +9,10 @@ import { join } from 'node:path';
 import { CodexPrimedSessions } from '@inixiative/agent-session';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
+import {
+  CLAUDE_HARNESS_INSTRUCTIONS_OFF,
+  CODEX_HARNESS_INSTRUCTIONS_OFF,
+} from '../src/prompts/instruction-stack';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
 import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
 import {
@@ -513,6 +517,99 @@ test(
       statusChecks: 1,
       sameSession: true,
     });
+  },
+  LIVE_TIMEOUT,
+);
+
+/** A project instruction file only the harness's own loading could reveal to the session. */
+const CODEWORD = 'tangerine-lighthouse-42';
+const codewordPrompt = () =>
+  'Do not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.';
+
+test(
+  'instruction files: Claude Code loads a project CLAUDE.md itself, and the Foundry off switch stops it',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'instructions-off', async () => {
+      vcr.queue('worker', 'instructions-native');
+      vcr.queue('worker', 'instructions-off');
+      const worker = new ProcessCassettes(vcr, 'worker');
+      const cwd = join(root(), 'project');
+      mkdirSync(cwd);
+      writeFileSync(join(cwd, 'CLAUDE.md'), `The project codeword is ${CODEWORD}.\n`);
+      const ask = async (env?: Record<string, string>) => {
+        const adapter = new ClaudeCodeSessionAdapter({
+          store: new InMemoryExternalSessionStore(),
+          defaults: { spawn: worker.spawn, ...(env ? { env } : {}) },
+        });
+        const provider = new SessionBackedProvider({
+          id: 'worker',
+          adapter,
+          defaultModel: LIVE.claudeModel,
+          defaultCwd: cwd,
+        });
+        try {
+          const result = await provider.complete([{ role: 'user', content: codewordPrompt() }], {
+            threadId: 'main',
+            cwd,
+          });
+          return result.content.trim();
+        } finally {
+          await adapter.releaseAll();
+        }
+      };
+      return {
+        native: await ask(),
+        off: await ask({ ...CLAUDE_HARNESS_INSTRUCTIONS_OFF }),
+        launches: worker.launches.length,
+      };
+    });
+    expect(out).toEqual({ native: CODEWORD, off: 'NONE', launches: 2 });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'instruction files: Codex app-server loads a project AGENTS.md itself, and the Foundry off switch stops it',
+  async () => {
+    const vcr = codexVcr();
+    const out = await scenario(vcr, 'instructions-off', async () => {
+      vcr.queue('app-server', 'instructions-native');
+      vcr.queue('app-server', 'instructions-off');
+      const server = new ProcessCassettes(vcr, 'app-server', { model: LIVE.codexModel });
+      const cwd = join(root(), 'project');
+      mkdirSync(cwd);
+      writeFileSync(join(cwd, 'AGENTS.md'), `The project codeword is ${CODEWORD}.\n`);
+      const ask = async (appServerConfig?: Readonly<Record<string, unknown>>) => {
+        const adapter = new CodexSessionAdapter({
+          engine: 'app-server',
+          store: new InMemoryExternalSessionStore(),
+          ...(appServerConfig ? { appServerConfig } : {}),
+          defaults: { spawn: server.spawn, effort: 'low' },
+        });
+        const provider = new SessionBackedProvider({
+          id: 'app-server',
+          adapter,
+          defaultModel: LIVE.codexModel,
+          defaultCwd: cwd,
+        });
+        try {
+          const result = await provider.complete([{ role: 'user', content: codewordPrompt() }], {
+            threadId: 'main',
+            cwd,
+          });
+          return result.content.trim();
+        } finally {
+          await adapter.releaseAll();
+        }
+      };
+      return {
+        native: await ask(),
+        off: await ask(CODEX_HARNESS_INSTRUCTIONS_OFF),
+        launches: server.launches.length,
+      };
+    });
+    expect(out).toEqual({ native: CODEWORD, off: 'NONE', launches: 2 });
   },
   LIVE_TIMEOUT,
 );

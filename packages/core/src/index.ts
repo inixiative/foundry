@@ -33,7 +33,17 @@ export {
   validateMemorySelection,
 } from './adapters/file-memory';
 export { HttpMemory } from './adapters/http-memory';
-export { claudemdSource, MarkdownDocs } from './adapters/markdown-docs';
+export {
+  claudemdSource,
+  formatInstructionFiles,
+  type InstructionFile,
+  type InstructionReadOptions,
+  instructionImports,
+  MarkdownDocs,
+  readInstructionFile,
+  resolveInstructionImport,
+  stripInstructionComments,
+} from './adapters/markdown-docs';
 export { type SqliteEntry, SqliteMemory } from './adapters/sqlite-memory';
 // Agent primitives
 export {

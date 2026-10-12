@@ -12,6 +12,7 @@
 import { localArchive } from '@inixiative/archive/remote';
 import { existsSync, mkdirSync } from 'fs';
 import { basename } from 'path';
+import { CORPUS_TIERS } from './agents/corpus-compiler';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import {
@@ -657,6 +658,7 @@ const SOURCE_TYPES = [
   'markdown',
   'inline',
   'supermemory',
+  'instructions',
 ] as const;
 
 const sourceEditor: ItemEditor<any> = {
@@ -671,6 +673,7 @@ const sourceEditor: ItemEditor<any> = {
       'Type?',
       SOURCE_TYPES.map((t) => {
         if (t === 'supermemory') return 'supermemory (hosted memory + RAG)';
+        if (t === 'instructions') return 'instructions (CLAUDE.md, AGENTS.md, auto memory)';
         return t;
       }),
     );
@@ -714,6 +717,10 @@ const sourceEditor: ItemEditor<any> = {
       }
     }
 
+    if (type === 'instructions') {
+      const audience = CORPUS_TIERS[await choose('Audience?', [...CORPUS_TIERS])];
+      return [id, { id, type, label, uri, audience, enabled: true }];
+    }
     return [id, { id, type, label, uri, enabled: true }];
   },
   async edit(id, item, _config) {

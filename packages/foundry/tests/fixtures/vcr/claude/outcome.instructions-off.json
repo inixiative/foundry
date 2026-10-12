@@ -1,0 +1,16 @@
+{
+  "version": "2.1.296",
+  "status": 200,
+  "body": {
+    "native": "tangerine-lighthouse-42",
+    "off": "NONE",
+    "launches": 2
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-12T02:03:14.946Z",
+    "agentSession": "0.5.2",
+    "environment": "terminal"
+  }
+}
