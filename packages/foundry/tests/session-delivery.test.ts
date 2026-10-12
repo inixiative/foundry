@@ -12,6 +12,7 @@ import {
   type InjectionArtifact,
   newId,
   type SessionDelivery,
+  type SessionDeliveryReport,
   standingPart,
   standingParts,
 } from '@inixiative/foundry-core';
@@ -421,4 +422,161 @@ test('two layers sharing an id stay two standing parts with their own ledger rec
     ['instructions', 'B'],
     ['thread-state#2', 'prompt\n\nC'],
   ]);
+});
+
+/** Sessions that resume the thread's native binding once it exists, and release when idle. */
+class ResumingAdapter extends RecordingAdapter {
+  binding: string | null = null;
+  released: RecordingSession[] = [];
+  override async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
+    const session = (await super.createSession(opts)) as RecordingSession;
+    session.externalSessionId = this.binding ?? undefined;
+    this.binding ??= 'native-1';
+    return session;
+  }
+  override async getExternalSessionId(): Promise<string | null> {
+    return this.binding;
+  }
+  async releaseIdleSession(session: HarnessSession): Promise<'released'> {
+    this.released.push(session as RecordingSession);
+    session.kill();
+    return 'released';
+  }
+}
+
+/** The ledger a thread keeps from each turn's report (thread-runtime's commit, deduplicated). */
+const nextLedger = (
+  report: SessionDeliveryReport,
+  previous: Record<string, string>,
+): Record<string, string> => {
+  const next = report.session === 'started' ? {} : { ...previous };
+  for (const part of [...(report.session === 'started' ? report.base : []), ...report.sent])
+    next[part.id] = part.hash;
+  return next;
+};
+const conventions = (v: string) => standingPart('conventions', `CONV_${v}`);
+const standingOf =
+  (...parts: ReturnType<typeof standingPart>[]) =>
+  (held: Record<string, string>) =>
+    ({ standing: parts, turn: '', held }) satisfies SessionDelivery;
+
+describe('one native session per thread', () => {
+  test('a thread that moves to another cwd retires its session there; moving back starts afresh', async () => {
+    const adapter = new ResumingAdapter();
+    const provider = new SessionBackedProvider({ id: 'claude-code', adapter, defaultModel: 'm' });
+    let ledger: Record<string, string> = {};
+    const turn = async (cwd: string, version: string) => {
+      const result = await provider.complete(user, {
+        threadId: 'T',
+        cwd,
+        delivery: standingOf(instructionsPart, conventions(version))(ledger),
+      });
+      ledger = nextLedger(result.delivery!, ledger);
+      return result;
+    };
+    await turn('/A', 'v1');
+    await turn('/B', 'v2');
+    // The session in /A was released before /B's started: never two processes on one conversation.
+    expect(adapter.released).toEqual([adapter.sessions[0]]);
+    const back = await turn('/A', 'v2');
+    expect(adapter.sessions).toHaveLength(3);
+    expect(adapter.released).toEqual([adapter.sessions[0], adapter.sessions[1]]);
+    // The review's repro: the old /A session used to be reused, held, and never sent CONV_v2.
+    expect(back.delivery!.session).toBe('started');
+    expect(adapter.created[2].baseContext).toContain('CONV_v2');
+    expect(adapter.sessions.filter((session) => session.alive)).toHaveLength(1);
+  });
+
+  test('a move while the old session still works is refused, and nothing is sent', async () => {
+    const adapter = new ResumingAdapter();
+    const provider = new SessionBackedProvider({ id: 'claude-code', adapter, defaultModel: 'm' });
+    await provider.complete(user, { threadId: 'T', cwd: '/A', delivery: delivery() });
+    let release!: () => void;
+    adapter.sessions[0].during = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const working = provider.complete(user, { threadId: 'T', cwd: '/A', delivery: delivery() });
+    await Bun.sleep(5);
+    await expect(
+      provider.complete(user, { threadId: 'T', cwd: '/B', delivery: delivery() }),
+    ).rejects.toThrow('has unsettled work; nothing was sent');
+    expect(adapter.sessions).toHaveLength(1);
+    release();
+    await working;
+  });
+});
+
+describe('a relaunch in this process honors the ledger', () => {
+  test('a host launch change re-sends only what changed, with a byte-identical system prompt', async () => {
+    const adapter = new ResumingAdapter();
+    let launch = { revision: 1 };
+    const provider = new SessionBackedProvider({
+      id: 'claude-code',
+      adapter,
+      defaultModel: 'm',
+      launch: { get: () => launch } as never,
+    });
+    adapter.releaseIdleSession = async () => 'released';
+    let ledger: Record<string, string> = {};
+    const turn = async (...parts: ReturnType<typeof standingPart>[]) => {
+      const result = await provider.complete(user, {
+        threadId: 'T',
+        cwd: '/A',
+        delivery: standingOf(...parts)(ledger),
+      });
+      ledger = nextLedger(result.delivery!, ledger);
+      return result;
+    };
+    await turn(instructionsPart, conventions('v1'));
+    await turn(instructionsPart, conventions('v2'));
+    launch = { revision: 2 };
+    const relaunched = await turn(instructionsPart, conventions('v2'));
+    expect(adapter.sessions).toHaveLength(2);
+    // The ledger proves the conversation holds both parts at their current hashes: nothing is re-sent.
+    expect(relaunched.delivery).toMatchObject({ session: 'started', sent: [] });
+    expect(adapter.sessions[1].sent[0]).not.toContain('STANDING_INSTRUCTIONS');
+    launch = { revision: 3 };
+    const changed = await turn(instructionsPart, conventions('v3'));
+    expect(changed.delivery!.sent.map((part) => part.id)).toEqual(['conventions']);
+    // Unchanged standing context gives an unchanged system prompt, so the cached prefix survives.
+    expect(adapter.created[1].baseContext).toBe(
+      baseContextOf(standingOf(instructionsPart, conventions('v2'))({})),
+    );
+  });
+
+  test('a resume from another process still re-sends every part once', async () => {
+    const adapter = new ResumingAdapter();
+    adapter.binding = 'native-from-yesterday';
+    const provider = new SessionBackedProvider({ id: 'claude-code', adapter, defaultModel: 'm' });
+    const held = Object.fromEntries(base.map((part) => [part.id, part.hash]));
+    const result = await provider.complete(user, {
+      threadId: 'T',
+      delivery: delivery(learningV1, held),
+    });
+    expect(ids(result.delivery!.sent)).toEqual(['instructions', 'learning', 'agent:worker']);
+  });
+});
+
+test('a thread keeps its thread state out of the system prompt and commits each part once', async () => {
+  const adapter = new RecordingAdapter();
+  const f = await m0Scenario({
+    session: () => adapter,
+    review: (call) => learned(call.thread, call.domain!),
+  });
+  try {
+    const turn = await f.send('a', 's1');
+    if (turn.status !== 200) throw Error(JSON.stringify(turn.body).slice(0, 2000));
+    const meta = (turn.body as Body).meta;
+    const created = adapter.created.find((c) => !c.threadId.includes(':aux:'))!;
+    expect(created.baseContext).not.toContain('## Context: thread-state');
+    expect(meta.delivery.session!.base.map((part) => part.id)).not.toContain('thread-state');
+    // Each part is recorded once, never twice for a started session.
+    expect(new Set(meta.delivery.committed).size).toBe(meta.delivery.committed.length);
+    const session = adapter.sessions.find((s) => s.sent.length > 0)!;
+    expect(session.sent[0]).toContain('"messageCount"');
+    expect(session.sent[0]).not.toContain('injectedLayers');
+  } finally {
+    await f.close();
+  }
 });

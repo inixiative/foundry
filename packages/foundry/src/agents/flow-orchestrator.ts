@@ -945,6 +945,40 @@ export class FlowOrchestrator {
     return committed;
   }
 
+  /**
+   * Re-warm every layer on the thread's stack that has gone stale (an instruction or role file
+   * edited since it loaded, a staleness window passed), so the executor assembles current content
+   * and the change reaches the session as a delta. Fail-open and bounded: a layer that fails or
+   * outlasts `deadlineMs` keeps its last content (a stale standing layer still assembles) and
+   * finishes warming in the background. Returns the ids re-warmed in time.
+   */
+  async refreshStale(deadlineMs = 5_000): Promise<string[]> {
+    const stale = this._stack.layers.filter(
+      (layer) => layer.checkStaleness() === 'stale' && layer.lastWarmed !== null,
+    );
+    if (!stale.length) return [];
+    const warmed: string[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all(
+        stale.map((layer) =>
+          layer.warm().then(
+            () => {
+              warmed.push(layer.id);
+            },
+            () => undefined,
+          ),
+        ),
+      ),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, deadlineMs);
+        (timer as { unref?: () => void }).unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+    return warmed;
+  }
+
   // -----------------------------------------------------------------------
   // Post-action flow — correctness checking
   // -----------------------------------------------------------------------
@@ -1081,6 +1115,10 @@ export class FlowOrchestrator {
   // -----------------------------------------------------------------------
 
   private _handleInvalidation(signal: Signal): void {
+    // A compaction clears the delivery ledger whether or not a plan exists: a turn can deliver
+    // (and commit) without one when pre-message failed, and what it delivered may be summarized away.
+    const cleared =
+      signal.kind === 'session_compacted' ? this._librarian.clearInjectionLedger() : [];
     if (!this._lastPlan) return; // no plan to invalidate
 
     let event: InvalidationEvent | null = null;
@@ -1118,8 +1156,7 @@ export class FlowOrchestrator {
         // The underlying agent session was compacted (Claude Code auto-compact,
         // Codex session restart). Whatever layers we told the Librarian were
         // delivered may have been summarized away. Clear the ledger so the
-        // next turn re-delivers from scratch, and invalidate the plan.
-        const cleared = this._librarian.clearInjectionLedger();
+        // next turn re-delivers from scratch (cleared above), and invalidate the plan.
         event = {
           reason: 'compaction',
           affectedLayers: cleared,

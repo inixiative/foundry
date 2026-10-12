@@ -7,6 +7,7 @@ import {
   ContextStack,
   claudemdSource,
   FileMemory,
+  Harness,
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
@@ -20,6 +21,7 @@ import {
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import type { RoleComposition } from '../src/prompts/instruction-settings';
 import {
+  claudeProjectDirName,
   composeRoleView,
   compositionSource,
   instructionStackReport,
@@ -254,7 +256,11 @@ function config(picks?: RoleComposition): FoundryConfig {
   return c;
 }
 
-function setup(c: FoundryConfig, advice: { snippets: string[] } = { snippets: [] }) {
+function setup(
+  c: FoundryConfig,
+  advice: { snippets: string[] } = { snippets: [] },
+  routeLayers: string[] = [],
+) {
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
     id,
@@ -272,7 +278,7 @@ function setup(c: FoundryConfig, advice: { snippets: string[] } = { snippets: []
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
       const content =
         phase === 'route'
-          ? JSON.stringify({ layers: [], domains: ['conventions'], confidence: 1 })
+          ? JSON.stringify({ layers: routeLayers, domains: ['conventions'], confidence: 1 })
           : phase === 'advise'
             ? JSON.stringify({ layers: [], snippets: advice.snippets, confidence: 1 })
             : phase === 'guard'
@@ -536,4 +542,95 @@ test('Warden knowledge sources are refused when disabled or when they compose in
   expect(() => validateConfig(c)).toThrow('disabled sources: notes');
   c.agents[WARDEN]!.domainKnowledge = ['instructions'];
   expect(() => validateConfig(c)).toThrow(`composition.roles.${WARDEN}.domainKnowledge.general`);
+});
+
+test('an edited CLAUDE.md, a new MEMORY.md and an edited role file reach a running thread and its Warden on the next turn', async () => {
+  ladderFiles();
+  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V1');
+  const f = setup(config());
+  const primed = () => {
+    const call = f.last('advise');
+    return primedRequest(call.messages, call.opts, 'domain:conventions');
+  };
+  try {
+    await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
+    const first = primed();
+    expect(JSON.stringify(f.last('central').messages)).toContain('PROJECT_RULES');
+    // Nobody calls invalidateComposition(): the edits are found by the slots' own file check.
+    write(join(repo, 'CLAUDE.md'), '# Project\n\nPROJECT_RULES_V2');
+    write(
+      join(claudeDir, 'projects', claudeProjectDirName(repo), 'memory', 'MEMORY.md'),
+      'REMEMBERED_FACT',
+    );
+    write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V2');
+    await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
+    const central = JSON.stringify(f.last('central').messages);
+    expect(central).toContain('PROJECT_RULES_V2');
+    expect(central).toContain('REMEMBERED_FACT');
+    const second = primed();
+    expect(second.spec.instructions).toContain('PROJECT_RULES_V2');
+    expect(second.spec.context).toContain('KNOWLEDGE_V2');
+    expect(second.spec.hash).not.toBe(first.spec.hash);
+    // Nothing changed: the next turn neither re-composes into a new hash nor re-primes.
+    await f.thread.dispatch('worker', 'Third', undefined, { messageId: 'm3' });
+    expect(primed().spec.hash).toBe(second.spec.hash);
+  } finally {
+    await f.close();
+  }
+});
+
+test("invalidateComposition() also refreshes the main thread's instructions slot", async () => {
+  ladderFiles();
+  const f = setup(config());
+  try {
+    await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
+    const layer = f.thread.stack.getLayer('instructions')!;
+    expect(layer.checkStaleness()).toBe('warm');
+    invalidateComposition();
+    expect(layer.checkStaleness()).toBe('stale');
+    // A stale standing layer keeps its last content in assembly until it re-warms.
+    expect(f.thread.stack.assemble().text).toContain('PROJECT_RULES');
+  } finally {
+    await f.close();
+  }
+});
+
+test('an on-demand layer the Cartographer routes to reaches the executor; one it does not, never does', async () => {
+  ladderFiles();
+  const c = config();
+  c.layers.playbook = {
+    id: 'playbook',
+    prompt: 'On-demand playbook.',
+    sourceIds: ['playbook'],
+    staleness: 0,
+    activation: 'on-demand',
+    enabled: true,
+  };
+  c.sources.playbook = {
+    id: 'playbook',
+    type: 'inline',
+    label: 'Playbook',
+    uri: 'ON_DEMAND_PLAYBOOK',
+    enabled: true,
+  };
+  // The turn path: a Harness applies each layer's activation (turn-service.ts).
+  const send = async (f: ReturnType<typeof setup>) => {
+    const harness = new Harness(f.thread);
+    harness.setDefaultExecutor('worker');
+    harness.loadModes(c.agents, c.layers);
+    await harness.send({ id: 'm1', payload: 'First' });
+    return JSON.stringify(f.last('central').messages);
+  };
+  const quiet = setup(c);
+  try {
+    expect(await send(quiet)).not.toContain('ON_DEMAND_PLAYBOOK');
+  } finally {
+    await quiet.close();
+  }
+  const routed = setup(c, { snippets: [] }, ['playbook']);
+  try {
+    expect(await send(routed)).toContain('ON_DEMAND_PLAYBOOK');
+  } finally {
+    await routed.close();
+  }
 });

@@ -244,3 +244,20 @@ test('settings reject a configured thread-knowledge layer, which would collide w
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("settings reject a layer with the Librarian's thread-state id or a role slot's id", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'g6-config-thread-state-'));
+  try {
+    const store = new ConfigStore(dir);
+    await store.save(starterConfig('controlled', 'controlled'));
+    // It used to sit on the stack beside the Librarian's layer as a second "thread-state" part.
+    await expect(
+      store.patch('layers', { 'thread-state': layer(undefined, 'thread-state') }),
+    ).rejects.toThrow("is the Librarian's generated layer");
+    await expect(
+      store.patch('layers', { 'role:x:instructions': layer(undefined, 'role:x:instructions') }),
+    ).rejects.toThrow('composition slots');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

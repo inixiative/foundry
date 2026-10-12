@@ -142,6 +142,7 @@ export function withIsolatedFixture(argv: readonly string[], bridge: NativeBridg
     '--max-turns',
     '--permission-mode',
     '--append-system-prompt',
+    '--append-system-prompt-file',
     '--setting-sources',
   ]);
   const switches = new Set(['--print', '--verbose', '--include-hook-events']);

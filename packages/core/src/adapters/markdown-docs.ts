@@ -223,6 +223,10 @@ export interface InstructionReadOptions {
   allows?: (path: string) => boolean;
   /** Called when a file is reached again after it already loaded (`seen`); it is not loaded twice. */
   onDuplicate?: (reach: { path: string; real: string; importedBy?: string }) => void;
+  /** Called with every path consulted, found or not, so a caller can tell when any of them changes. */
+  onProbe?: (path: string) => void;
+  /** Instruction homes judged only below themselves by the secret check (`secretInstructionPath`). */
+  trusted?: readonly string[];
 }
 
 /**
@@ -241,18 +245,45 @@ const TEXT_EXTENSIONS = new Set(
     .map((ext) => `.${ext}`),
 );
 
+/** Directories that hold credentials and tokens (`~/.config/gh/hosts.yml`, `~/.local/share/*`, `.git/config`). */
+const CREDENTIAL_DIRECTORIES = new Set([
+  '.ssh',
+  '.aws',
+  '.gnupg',
+  '.kube',
+  '.docker',
+  '.config',
+  '.local',
+  '.git',
+  '.azure',
+  '.gcloud',
+  '.oci',
+  '.password-store',
+  '.terraform.d',
+  '.cargo',
+  '.gem',
+  '.npm',
+  '.pki',
+  '.vault',
+  'Keychains',
+]);
+
 /**
- * Never imported, whatever a file asks: dotfiles (`.env`, `.npmrc`), key material and credential
- * directories. Claude Code would import some of these; Foundry refuses because a committed file
- * must not be able to pull a secret into a shared context.
+ * Never loaded, whatever a file asks or a symlink points at: dotfiles (`.env`, `.npmrc`), key
+ * material and anything under a credential directory. Claude Code would import some of these;
+ * Foundry refuses because a committed file must not be able to pull a secret into a shared context.
+ * Within a `trusted` root (an instruction home such as a CLAUDE_CONFIG_DIR under `~/.config`) only
+ * the part below the root is judged.
  */
-export function secretInstructionPath(path: string): boolean {
+export function secretInstructionPath(path: string, trusted: readonly string[] = []): boolean {
+  const root = trusted.find((dir) => withinPath(path, dir));
+  const rest = root ? relative(root, path) : path;
   const name = basename(path);
   return (
     name.startsWith('.') ||
     /^id_[a-z0-9]+/i.test(name) ||
     /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ||
-    path.split(sep).some((part) => ['.ssh', '.aws', '.gnupg', '.kube', '.docker'].includes(part))
+    rest.split(sep).some((part) => CREDENTIAL_DIRECTORIES.has(part))
   );
 }
 
@@ -341,6 +372,7 @@ export async function readInstructionFile(
   const maxDepth = options.maxDepth ?? 4;
   const files: InstructionFile[] = [];
   const visit = async (file: string, depth: number, importedBy?: string) => {
+    options.onProbe?.(file);
     let real: string;
     try {
       real = await realpath(file);
@@ -350,7 +382,10 @@ export async function readInstructionFile(
       return;
     }
     // An import is judged on where it resolves and where its symlinks lead.
-    if (importedBy && (secretInstructionPath(real) || (options.allows && !options.allows(real))))
+    if (
+      importedBy &&
+      (secretInstructionPath(real, options.trusted) || (options.allows && !options.allows(real)))
+    )
       return;
     if (seen.has(real)) {
       options.onDuplicate?.({ path: file, real, ...(importedBy ? { importedBy } : {}) });
@@ -363,7 +398,8 @@ export async function readInstructionFile(
     for (const target of instructionImports(content)) {
       const next = resolveInstructionImport(target, file, options.home);
       const ext = extname(next).toLowerCase();
-      if ((ext && !TEXT_EXTENSIONS.has(ext)) || secretInstructionPath(next)) continue;
+      if ((ext && !TEXT_EXTENSIONS.has(ext)) || secretInstructionPath(next, options.trusted))
+        continue;
       if (!options.allows || options.allows(next)) await visit(next, depth + 1, file);
     }
   };

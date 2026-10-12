@@ -1,0 +1,42 @@
+{
+  "version": "2.1.296",
+  "status": 200,
+  "body": {
+    "answers": [
+      "tangerine-lighthouse-42",
+      "violet-anchor-7",
+      "violet-anchor-7",
+      "tangerine-lighthouse-42"
+    ],
+    "sessions": [
+      "started",
+      "held",
+      "started",
+      "started"
+    ],
+    "sent": [
+      [],
+      [
+        "learning"
+      ],
+      [],
+      []
+    ],
+    "launches": 3,
+    "resumes": [
+      false,
+      true,
+      true
+    ],
+    "stateInSystemPrompt": false,
+    "relaunchPromptsIdentical": true,
+    "relaunchReadsCache": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-12T05:24:36.306Z",
+    "agentSession": "0.6.0",
+    "environment": "terminal"
+  }
+}

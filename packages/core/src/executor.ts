@@ -126,10 +126,13 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
       ),
     });
     // The same context split for session providers: standing parts (the assembled layers) and the
-    // per-turn decoration. `heldLayers` is the thread's delivery ledger, set by the flow middleware.
+    // per-turn text (per-turn layers, then the decoration). `heldLayers` is the thread's delivery
+    // ledger, set by the flow middleware.
     const delivery: SessionDelivery = {
-      standing: standingParts(base.blocks),
-      turn: contextual.map((block) => block.text).join('\n\n'),
+      standing: standingParts(base.blocks.filter((block) => !block.perTurn)),
+      turn: [...base.blocks.filter((block) => block.perTurn), ...contextual]
+        .map((block) => block.text)
+        .join('\n\n'),
       held: { ...((meta?.annotations?.heldLayers as Record<string, string> | undefined) ?? {}) },
     };
     let providerMessages: LLMMessage[] | undefined;

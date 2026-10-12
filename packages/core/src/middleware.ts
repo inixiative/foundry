@@ -18,6 +18,11 @@ export interface DispatchContext<TPayload = unknown> {
   readonly messageId?: string;
   /** Identity of this dispatch; tool observations for it carry the same id. */
   readonly dispatchId?: string;
+  /**
+   * Include an on-demand layer in this dispatch's context (the routing plan asked for it). Present
+   * when a Harness stage dispatched it; layers of other activation modes are unaffected.
+   */
+  readonly requestLayer?: (layerId: string) => void;
 }
 
 export interface DispatchOutcome<TResult = unknown> {

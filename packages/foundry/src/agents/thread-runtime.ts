@@ -1004,6 +1004,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           if (failure || !preparedPlan) throw failure ?? Error('pre-message produced no plan');
           const plan = preparedPlan;
           prepared = await flow.hydrateDelta(plan);
+          // The plan's layers are what routing and the Wardens asked for: on-demand ones join this assembly.
+          for (const id of plan.layers) ctx.requestLayer?.(id);
           ctx.annotations.injectionPlan = plan;
           ctx.annotations.decoration = prepared.decoration;
           // Durable at seal, before the central call: the routing request and every expert's advice request
@@ -1057,6 +1059,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           warn(`  [flow:${thread.id}] pre-message failed: ${(err as Error).message}`);
         }
 
+        // Whatever went stale since the last turn (an edited CLAUDE.md, MEMORY.md or role file, a
+        // passed staleness window) re-warms before assembly, whether or not pre-message succeeded,
+        // so the change reaches the session as a delta this turn.
+        await flow.refreshStale();
+
         // The delivery ledger: what this thread's native session holds, so a session provider sends
         // only standing context the session lacks (Executor → SessionDelivery.held).
         ctx.annotations.heldLayers = Object.fromEntries(
@@ -1093,12 +1100,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // system prompt (base) is still held for certain.
           const compacted = this.librarian.ledgerEpoch !== ledgerEpoch;
           if (session.session === 'started') this.librarian.clearInjectionLedger();
-          return flow.commitDelivery({
-            layers: [
+          // One record per part: what was sent this turn supersedes the same part in the base.
+          const parts = new Map(
+            [
               ...(session.session === 'started' ? session.base : []),
               ...(compacted ? [] : session.sent),
-            ],
-          });
+            ].map((part) => [part.id, part] as const),
+          );
+          return flow.commitDelivery({ layers: [...parts.values()] });
         };
         if (prepared && plan && artifact?.providerMessages && artifact.layers) {
           // What each participant assessed, per layer it owns: the configured cache by hash, and its own

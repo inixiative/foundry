@@ -663,6 +663,7 @@ export class Harness {
         // classifier/router/enricher output isn't user-visible content.
         const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, {
           onDelta: stage.role === 'execute' ? opts?.onDelta : undefined,
+          requestLayer: (layerId) => requestedLayers.add(layerId),
           role: stage.role,
           messageId: message.id,
           invocation: stage.invocation,

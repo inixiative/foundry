@@ -26,6 +26,7 @@ import {
   discoverInstructionStack,
   harnessLoadsInstructions,
   type InstructionStackOptions,
+  instructionStackReport,
   instructionStackSource,
 } from '../src/prompts/instruction-stack';
 import { nativeTextEnvironment } from '../src/providers/native-text-environment';
@@ -734,4 +735,54 @@ test('a symlink never widens a personal file: ownership is judged on where it le
     expect(team).not.toContain('PERSONAL_GLOBAL');
     expect(team).not.toContain('PERSONAL_LOCAL');
   }
+});
+
+test('a committed CLAUDE.md symlinked to a credential file or out of the repository never loads', async () => {
+  write(join(home, '.config', 'gh', 'hosts.yml'), 'oauth_token: gho_FAKE_SECRET');
+  write(join(root, 'elsewhere', 'NOTES.md'), 'OUTSIDE_NOTES');
+  write(join(repo, 'AI', 'ENTRYPOINT.md'), 'IN_REPO_ENTRY');
+  symlinkSync(join(home, '.config', 'gh', 'hosts.yml'), join(repo, 'CLAUDE.md'));
+  symlinkSync(join(root, 'elsewhere', 'NOTES.md'), join(repo, 'AGENTS.md'));
+  mkdirSync(join(repo, '.claude'), { recursive: true });
+  // A symlink that stays inside the repository (Kingdom's CLAUDE.md -> AI/ENTRYPOINT.md) is fine.
+  symlinkSync(join(repo, 'AI', 'ENTRYPOINT.md'), join(repo, '.claude', 'CLAUDE.md'));
+  const stack = await discoverInstructionStack(options(repo));
+  expect(stack.files.map((file) => file.content)).toEqual(['IN_REPO_ENTRY']);
+  expect(stack.refused.map((refusal) => [refusal.path.slice(repo.length), refusal.reason])).toEqual(
+    [
+      ['/CLAUDE.md', 'secret'],
+      ['/AGENTS.md', 'outside-boundary'],
+    ],
+  );
+  for (const audience of ['team', 'personal_private'] as const) {
+    const text = (await compose(options(repo), audience)).text;
+    expect(text).not.toContain('gho_FAKE_SECRET');
+    expect(text).not.toContain('OUTSIDE_NOTES');
+  }
+  // The refusal is reported in the Selection panel, never silently dropped.
+  const view = await composeRoleView({ ...options(repo), role: 'main' });
+  const report = instructionStackReport(view, 'instructions', 'personal_private');
+  expect(report.omitted.map((omitted) => omitted.reason)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining('credential directory'),
+      expect.stringContaining('outside its level'),
+    ]),
+  );
+});
+
+test('every credential directory is refused, but a harness home under ~/.config still loads', async () => {
+  for (const dir of ['.config/gh', '.local/share/archive', '.git', '.azure', '.cargo']) {
+    // The global file may import from anywhere: only the credential check stands between it and the token.
+    write(join(home, dir, 'token.md'), `SECRET in ${dir}`);
+    write(join(claudeDir, 'CLAUDE.md'), `GLOBAL @~/${dir}/token.md`);
+    const text = (await compose(options(repo))).text;
+    expect(text).toContain('GLOBAL');
+    expect(text).not.toContain('SECRET');
+  }
+  const xdgClaude = join(home, '.config', 'claude');
+  write(join(xdgClaude, 'CLAUDE.md'), 'XDG_GLOBAL @rules-extra.md');
+  write(join(xdgClaude, 'rules-extra.md'), 'XDG_IMPORT');
+  const text = (await compose({ ...options(repo), claudeConfigDir: xdgClaude })).text;
+  expect(text).toContain('XDG_GLOBAL');
+  expect(text).toContain('XDG_IMPORT');
 });

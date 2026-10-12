@@ -126,6 +126,11 @@ export interface HierarchyLocation {
    * compose into it. "all" (the default) or these node ids. Slotted sources follow `slots` only.
    */
   readonly unslotted?: 'all' | readonly string[];
+  /**
+   * Instruction homes (a CLAUDE_CONFIG_DIR, a CODEX_HOME) judged only below themselves by the
+   * secret check, so one under `~/.config` still loads.
+   */
+  readonly trusted?: readonly string[];
 }
 
 export interface HierarchyFile extends InstructionFile {
@@ -148,10 +153,26 @@ export interface HierarchyDuplicate {
   readonly keptNode: string;
 }
 
+/** A file the walk or a configured path reached but refused to load. */
+export interface HierarchyRefusal {
+  readonly path: string;
+  readonly node: string;
+  /** Where its symlinks lead. */
+  readonly real: string;
+  readonly reason: 'secret' | 'outside-boundary';
+}
+
 export interface HierarchyStack {
   readonly files: HierarchyFile[];
   /** Files reached a second time (the same real path); the first reach is kept. */
   readonly duplicates: HierarchyDuplicate[];
+  /** Files refused: a secret where they are or where they lead, or a real path outside the node's boundary. */
+  readonly refused: HierarchyRefusal[];
+  /**
+   * Every path consulted, found or not (candidate files, glob directories, imports). When none of
+   * them changed (`hierarchyFingerprint`), discovery would return the same stack.
+   */
+  readonly probes: readonly string[];
 }
 
 export interface HierarchyDiscoverOptions {
@@ -283,8 +304,13 @@ interface Unit {
 }
 
 /** Files under `base` matching `pattern`, in path order. Glob characters in `base` are literal. */
-async function expandGlob(base: string, pattern: string): Promise<string[]> {
+async function expandGlob(
+  base: string,
+  pattern: string,
+  probe: (path: string) => void,
+): Promise<string[]> {
   const found: string[] = [];
+  probe(base);
   try {
     if (!statSync(base).isDirectory()) return [];
     for await (const rel of new Bun.Glob(pattern).scan({ cwd: base, followSymlinks: true }))
@@ -292,7 +318,26 @@ async function expandGlob(base: string, pattern: string): Promise<string[]> {
   } catch {
     return [];
   }
+  // A file added or removed changes its directory: every directory holding a match is consulted.
+  for (const dir of new Set(found.map((path) => dirname(path)))) probe(dir);
   return found.sort();
+}
+
+/**
+ * The state of `probes` (each path's identity, size and modification time, or its absence). Equal
+ * fingerprints mean no consulted file or directory changed since. Cheap: one stat per path.
+ */
+export function hierarchyFingerprint(probes: readonly string[]): string {
+  return probes
+    .map((path) => {
+      try {
+        const info = statSync(path);
+        return `${path}\0${info.ino}:${info.size}:${info.mtimeMs}`;
+      } catch {
+        return `${path}\0-`;
+      }
+    })
+    .join('\n');
 }
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -354,6 +399,13 @@ export async function discoverHierarchy(
   const loadedNatively = new Set(location.harnessLoads ?? []);
   const units: Unit[] = [];
   let seq = 0;
+  const probes = new Set<string>();
+  const probe = (path: string) => {
+    probes.add(path);
+  };
+  const trusted = location.trusted ?? [];
+  const secret = (path: string) => secretInstructionPath(path, trusted);
+  const refused: HierarchyRefusal[] = [];
 
   const realOf = (path: string) => {
     try {
@@ -396,7 +448,10 @@ export async function discoverHierarchy(
       const first = source.path
         .map(literal)
         .filter((path): path is string => !!path)
-        .find(isFile);
+        .find((path) => {
+          probe(path);
+          return isFile(path);
+        });
       paths = first ? [first] : [];
     } else {
       // Glob characters count only where the template has them, never in a directory a variable names.
@@ -404,18 +459,21 @@ export async function discoverHierarchy(
       const globAt = segments.findIndex((segment) => GLOB.test(segment));
       if (globAt < 0) {
         const path = literal(source.path);
+        if (path) probe(path);
         paths = path ? [path] : [];
       } else {
         const root = segments.slice(0, globAt).join('/');
         const dir =
           root === '' && source.path.startsWith('/') ? '/' : root ? literal(root) : place('.');
-        paths = dir ? await expandGlob(resolve(dir), segments.slice(globAt).join('/')) : [];
+        paths = dir ? await expandGlob(resolve(dir), segments.slice(globAt).join('/'), probe) : [];
       }
     }
     // A configured path is held to the import rule too, on where it resolves: no dotfiles, keys or credentials.
-    paths = paths.filter(
-      (path) => !secretInstructionPath(path) && !secretInstructionPath(realOf(path)),
-    );
+    paths = paths.filter((path) => {
+      if (!isFile(path) || (!secret(path) && !secret(realOf(path)))) return true;
+      refused.push({ path, node: entry.node.id, real: realOf(path), reason: 'secret' });
+      return false;
+    });
     if (source.rules) paths = paths.filter(launchRule);
     for (const path of paths)
       units.push({ position, rank: entry.rank, seq: seq++, selected: entry, source, path });
@@ -513,6 +571,7 @@ export async function discoverHierarchy(
   const duplicates: HierarchyDuplicate[] = [];
   for (const unit of units) {
     const { node } = unit.selected;
+    probe(unit.path);
     if (unit.source.raw) {
       if (!isFile(unit.path)) continue;
       const real = realOf(unit.path);
@@ -546,9 +605,18 @@ export async function discoverHierarchy(
               )
               .filter((root): root is string => !!root),
           );
+    // The file itself is held to its node's import boundary on where it resolves, like an import:
+    // a committed CLAUDE.md symlinked out of the repository never loads as the repository's.
+    const real = realOf(unit.path);
+    if (allowed && isFile(unit.path) && !allowed(real)) {
+      refused.push({ path: unit.path, node: node.id, real, reason: 'outside-boundary' });
+      continue;
+    }
     const read = await readInstructionFile(unit.path, {
       home: location.home,
       seen,
+      trusted,
+      onProbe: probe,
       ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
       ...(allowed ? { allows: allowed } : {}),
       onDuplicate: ({ path, real }) => reachedAgain(path, real, node),
@@ -562,7 +630,7 @@ export async function discoverHierarchy(
       files.push({ ...file, content, node: final.id, tier: final.tier });
     }
   }
-  return { files, duplicates };
+  return { files, duplicates, refused, probes: [...probes] };
 }
 
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');

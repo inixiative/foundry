@@ -16,6 +16,8 @@ import { configuredExperts } from '../agents/configured-experts';
 import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
+import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
+import { isRoleLayerId } from '../agents/role-layers';
 import {
   type ModelCapability,
   type ProviderType,
@@ -846,6 +848,15 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
   if (isThreadKnowledgeLayerId(id))
     throw new Error(
       `invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`,
+    );
+  // A configured layer with the Librarian's id was a second, unrelated "thread-state" on the stack.
+  if (id === THREAD_STATE_LAYER_ID)
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: "${THREAD_STATE_LAYER_ID}" is the Librarian's generated layer, never configured; remove it (and its source) from settings`,
+    );
+  if (isRoleLayerId(id))
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: "role:" layers are a role's generated composition slots, never configured`,
     );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')

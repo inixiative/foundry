@@ -533,3 +533,66 @@ describe('FlowOrchestrator', () => {
     });
   });
 });
+
+describe('compaction before any plan', () => {
+  it('clears the delivery ledger even when no pre-message plan ever succeeded', async () => {
+    const signals = new SignalBus();
+    const stack = new ContextStack();
+    const librarian = new Librarian({ signals, stack });
+    const cartographer = new Cartographer({ stack, signals, llm: mockLLM({}) });
+    const flow = new FlowOrchestrator({
+      cartographer,
+      domainLibrarians: new Map(),
+      librarian,
+      stack,
+      signals,
+    });
+    // A turn delivered and committed although pre-message failed (no plan).
+    await flow.commitDelivery({ layers: [{ id: 'conventions', hash: 'H2' }] });
+    expect(librarian.state.injectedLayers.map((record) => record.id)).toEqual(['conventions']);
+    await signals.emit({
+      id: 'compact-1',
+      kind: 'session_compacted',
+      source: 'session-adapter:fake',
+      content: {},
+      timestamp: Date.now(),
+    });
+    // What rode in a message may be summarized away: the next turn sends it again.
+    expect(librarian.state.injectedLayers).toEqual([]);
+  });
+
+  it('re-warms stale layers before assembly and leaves fresh ones alone', async () => {
+    const signals = new SignalBus();
+    let text = 'RULE v1';
+    let reads = 0;
+    const instructions = new ContextLayer({
+      id: 'instructions',
+      sources: [
+        {
+          id: 'src',
+          load: async () => {
+            reads++;
+            return text;
+          },
+          changed: () => reads > 0 && text !== 'RULE v1',
+        },
+      ],
+    });
+    const stack = new ContextStack([instructions]);
+    const librarian = new Librarian({ signals, stack });
+    const cartographer = new Cartographer({ stack, signals, llm: mockLLM({}) });
+    const flow = new FlowOrchestrator({
+      cartographer,
+      domainLibrarians: new Map(),
+      librarian,
+      stack,
+      signals,
+    });
+    await instructions.warm();
+    expect(await flow.refreshStale()).toEqual([]);
+    text = 'RULE v2';
+    expect(await flow.refreshStale()).toEqual(['instructions']);
+    expect(instructions.content).toBe('RULE v2');
+    expect(reads).toBe(2);
+  });
+});
