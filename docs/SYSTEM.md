@@ -288,24 +288,9 @@ const messages = assembledToMessages(assembled, "What should I build?");
 const { system, turns } = splitSystemMessage(messages);
 ```
 
-### Runtime Adapters
+### Native sessions
 
-Wrap agent runtimes (Claude Code, Codex, Cursor) with inject/teardown lifecycle.
-
-```ts
-interface RuntimeAdapter {
-  prepareInjection(assembled: AssembledContext): ContextInjection;
-  inject(injection: ContextInjection): Promise<() => Promise<void>>;
-  onEvent(handler: RuntimeEventHandler): () => void;
-}
-```
-
-**Implementations:**
-- `ClaudeCodeRuntime` — injects via `.foundry-context.md`, generates hook scripts
-- `CodexRuntime` — injects via `.foundry-instructions.md`
-- `CursorRuntime` — injects via `.cursorrules`
-
-All extend `BaseRuntime` which handles shared event emission, path safety (`safePath()`), and inject/teardown.
+Agent runtimes (Claude Code, Codex) run as persistent native sessions from `@inixiative/agent-session`, created per thread by a `SessionAdapter` (`providers/session-adapter.ts`) and driven by `SessionBackedProvider`. Context reaches them as the executor's prompt, never through files or vendor hooks; tool calls are decided by the thread's tool gate (`turns/tool-gate.ts`).
 
 ---
 
@@ -514,7 +499,6 @@ Operator commands executed via `/api/actions`:
 - `thread:inspect` — returns full thread state
 - `layer:warm` / `layer:invalidate`
 - `agent:dispatch` — manually trigger an agent
-- `runtime:command` — passthrough to runtime adapters
 - `system:snapshot` — full system state dump
 
 ---

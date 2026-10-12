@@ -37,7 +37,7 @@ cannot overwrite each other; a call that crosses a token budget is still saved.
 
 ## Native compaction
 
-Both `ClaudeCodeSessionAdapter` and `ClaudeCodeProvider` default to:
+`ClaudeCodeSessionAdapter` defaults to:
 
 ```ts
 contextBudget: { maxTokens: 200_000, compactAt: 0.8 }
