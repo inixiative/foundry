@@ -221,7 +221,7 @@ export async function runSetup(args: string[]): Promise<number> {
   }
 
   // 3. Hosts.
-  const paseoPath = join(homedir(), '.paseo', 'config.json');
+  const paseoPath = join(process.env.PASEO_HOME ?? join(homedir(), '.paseo'), 'config.json');
   const block = { agents: { providers: { foundry: paseoProvider(acpCommand) } } };
   console.log(`\nPaseo (${paseoPath}):\n${JSON.stringify(block, null, 2)}`);
   let existing: unknown;

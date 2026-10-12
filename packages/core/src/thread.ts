@@ -131,6 +131,8 @@ export interface DispatchOptions {
    * everything that learns from the message sees only the user's words.
    */
   agentPayload?: unknown;
+  /** Lets this dispatch's middleware include an on-demand layer in its assembly (`RequestContext.requestLayer`). */
+  requestLayer?: (layerId: string) => void;
 }
 
 /**
@@ -361,6 +363,7 @@ export class Thread {
       stack: this._createStackView(),
       projectId: this.meta.projectId,
       messageId: opts?.messageId,
+      ...(opts?.requestLayer ? { requestLayer: opts.requestLayer } : {}),
     };
 
     const start = performance.now();
@@ -560,11 +563,11 @@ export class Thread {
     return {
       hasLayer: (id) => {
         const l = stack.getLayer(id);
-        return l ? l.isWarm : false;
+        return l ? l.assemblable : false;
       },
       getContent: (id) => {
         const l = stack.getLayer(id);
-        return l?.isWarm ? l.content : '';
+        return l?.assemblable ? l.content : '';
       },
       getState: (id) => stack.getLayer(id)?.state,
       get layerIds() {

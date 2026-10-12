@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { ClaudeCodeSessionConfig, CodexSessionConfig } from '@inixiative/agent-session';
+import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { type Signal, SignalBus } from '@inixiative/foundry-core';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
@@ -11,11 +11,11 @@ import {
   FileExternalSessionStore,
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
+import { appServerTransport } from './helpers/subscription-transport';
 
 // The structural subprocess type the `spawn` override returns — derived from the
 // package's config rather than importing an internal symbol (mirrors bench).
 type PipedSubprocess = ReturnType<NonNullable<ClaudeCodeSessionConfig['spawn']>>;
-type CodexPipedSubprocess = ReturnType<NonNullable<CodexSessionConfig['spawn']>>;
 
 // ---------------------------------------------------------------------------
 // Shared fake subprocess — same wire format as claude-code-session tests
@@ -152,7 +152,6 @@ test('text-only Claude sessions disable tools and customizations without strippi
 test('Codex refuses to start a thread whose structural tool rules it cannot hold', async () => {
   const adapter = new CodexSessionAdapter({
     store: new InMemoryExternalSessionStore(),
-    engine: 'app-server',
   });
   await expect(
     adapter.createSession({
@@ -165,24 +164,7 @@ test('Codex refuses to start a thread whose structural tool rules it cannot hold
   ).rejects.toThrow('no pre-use stage');
 });
 
-test("Codex's MCP engine refuses a host mode or MCP servers it cannot honour", async () => {
-  const adapter = new CodexSessionAdapter({
-    store: new InMemoryExternalSessionStore(),
-    engine: 'mcp',
-  });
-  await expect(
-    adapter.createSession({ threadId: 't', cwd: '/tmp', permissionMode: 'default' }),
-  ).rejects.toThrow('full access only');
-  await expect(
-    adapter.createSession({
-      threadId: 't',
-      cwd: '/tmp',
-      mcpServers: [{ name: 'x', command: 'x', args: [], env: [] }],
-    }),
-  ).rejects.toThrow('app-server');
-});
-
-test('Codex MCP adapter refuses a text-only profile it cannot enforce', async () => {
+test('Codex adapter refuses a text-only profile it cannot enforce', async () => {
   const adapter = new CodexSessionAdapter({ store: new InMemoryExternalSessionStore() });
   await expect(
     adapter.createSession({ threadId: 'decision', cwd: '/tmp', tools: false }),
@@ -226,91 +208,6 @@ test('restricted auxiliary policy preserves but does not resume contaminated leg
     resumed.kill();
   }
 });
-
-function makeCodexSpawnCapture(sessionId: string = 'codex-thread-1') {
-  const spawnCalls: Array<{ cmd: string[]; stdin: string[] }> = [];
-  const spawn = (cmd: string[]) => {
-    const stdinLines: string[] = [];
-    let stdoutCtrl: ReadableStreamDefaultController<Uint8Array>;
-    const stdout = new ReadableStream<Uint8Array>({
-      start(c) {
-        stdoutCtrl = c;
-      },
-    });
-    const stderr = new ReadableStream<Uint8Array>({ start() {} });
-    let exitResolve: (code: number) => void;
-    const exited = new Promise<number>((r) => {
-      exitResolve = r;
-    });
-    const emit = (j: Record<string, unknown>) =>
-      stdoutCtrl.enqueue(new TextEncoder().encode(JSON.stringify(j) + '\n'));
-
-    const proc: CodexPipedSubprocess = {
-      stdin: {
-        write(data: string) {
-          for (const line of data.split('\n')) {
-            if (!line.trim()) continue;
-            stdinLines.push(line);
-            const msg = JSON.parse(line) as {
-              id?: number;
-              method?: string;
-              params?: Record<string, unknown>;
-            };
-            if (typeof msg.id !== 'number') continue;
-            queueMicrotask(() => {
-              if (msg.method === 'initialize') {
-                emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: { protocolVersion: '2025-06-18', capabilities: {} },
-                });
-              } else if (msg.method === 'tools/list') {
-                emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: {
-                    tools: [
-                      { name: 'codex', inputSchema: {} },
-                      { name: 'codex-reply', inputSchema: {} },
-                    ],
-                  },
-                });
-              } else if (msg.method === 'tools/call') {
-                emit({
-                  jsonrpc: '2.0',
-                  id: msg.id,
-                  result: {
-                    structuredContent: {
-                      threadId: sessionId,
-                      content: 'ok',
-                      usage: { input_tokens: 1, output_tokens: 1 },
-                    },
-                    content: [{ type: 'text', text: 'ok' }],
-                  },
-                });
-              }
-            });
-          }
-        },
-        flush() {},
-        end() {},
-      },
-      stdout,
-      stderr,
-      exited,
-      kill: () => {
-        try {
-          stdoutCtrl.close();
-        } catch {}
-        exitResolve(143);
-      },
-    };
-
-    spawnCalls.push({ cmd, stdin: stdinLines });
-    return proc;
-  };
-  return { spawnCalls, spawn };
-}
 
 // ---------------------------------------------------------------------------
 // InMemoryExternalSessionStore
@@ -900,76 +797,71 @@ describe('ClaudeCodeSessionAdapter', () => {
 // ---------------------------------------------------------------------------
 
 describe('CodexSessionAdapter', () => {
-  test('createSession for a fresh thread starts codex mcp-server without resume state', async () => {
+  test('createSession for a fresh thread starts codex app-server without resume state', async () => {
     const store = new InMemoryExternalSessionStore();
-    const { spawnCalls, spawn } = makeCodexSpawnCapture();
+    const server = appServerTransport();
     const adapter = new CodexSessionAdapter({
       store,
-      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn },
+      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn: server.spawn },
     });
 
     const session = await adapter.createSession({ threadId: 't1', cwd: '/tmp' });
-    await session.start();
+    try {
+      await session.start();
 
-    expect(spawnCalls).toHaveLength(1);
-    expect(spawnCalls[0].cmd).toContain('mcp-server');
-    expect(session.externalSessionId).toBeUndefined();
+      expect(adapter.runtime).toBe('codex-app-server');
+      expect(server.launches).toHaveLength(1);
+      expect(server.launches[0].argv).toEqual(['codex', 'app-server', '--listen', 'stdio://']);
+      expect(session.externalSessionId).toBeUndefined();
+    } finally {
+      await adapter.releaseIdleSession(session);
+    }
   });
 
-  test('persists Codex native thread ID after send result', async () => {
+  test('persists the Codex native thread ID before the first turn', async () => {
     const store = new InMemoryExternalSessionStore();
-    const { spawn, spawnCalls } = makeCodexSpawnCapture('codex-native-xyz');
+    const server = appServerTransport({ threadId: 'codex-native-xyz' });
     const adapter = new CodexSessionAdapter({
       store,
-      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn },
+      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn: server.spawn },
     });
 
     const session = await adapter.createSession({ threadId: 't1', cwd: '/tmp' });
-    await session.start();
-    const result = await session.send('hello');
-    await new Promise((r) => setTimeout(r, 5));
+    try {
+      await session.start();
+      const result = await session.send('hello');
 
-    expect(result.externalSessionId).toBe('codex-native-xyz');
-    expect(await store.load('t1', 'codex')).toBe('codex-native-xyz');
-
-    const toolCall = spawnCalls[0].stdin
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            method?: string;
-            params?: { name?: string; arguments?: Record<string, unknown> };
-          },
-      )
-      .find((msg) => msg.method === 'tools/call');
-    expect(toolCall?.params?.name).toBe('codex');
-    expect(toolCall?.params?.arguments?.model).toBe('gpt-6-astra');
+      expect(result.externalSessionId).toBe('codex-native-xyz');
+      expect(await store.load('t1', 'codex-app-server')).toBe('codex-native-xyz');
+      const start = server.requests.find((request) => request.method === 'thread/start');
+      expect(start?.params.model).toBe('gpt-6-astra');
+      expect(server.requests.map((request) => request.method)).not.toContain('thread/resume');
+    } finally {
+      await adapter.releaseIdleSession(session);
+    }
   });
 
-  test('resumes persisted Codex native thread with codex-reply', async () => {
+  test('resumes a persisted Codex native thread with thread/resume', async () => {
     const store = new InMemoryExternalSessionStore();
-    await store.save('t1', 'codex', 'codex-persisted');
-    const { spawn, spawnCalls } = makeCodexSpawnCapture('codex-persisted');
+    await store.save('t1', 'codex-app-server', 'codex-persisted');
+    const server = appServerTransport();
     const adapter = new CodexSessionAdapter({
       store,
-      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn },
+      defaults: { bin: 'codex', model: 'gpt-6-astra', spawn: server.spawn },
     });
 
     const session = await adapter.createSession({ threadId: 't1', cwd: '/tmp' });
-    expect(session.externalSessionId).toBe('codex-persisted');
-    await session.start();
-    await session.send('continue');
+    try {
+      expect(session.externalSessionId).toBe('codex-persisted');
+      await session.start();
+      await session.send('continue');
 
-    const toolCall = spawnCalls[0].stdin
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            method?: string;
-            params?: { name?: string; arguments?: Record<string, unknown> };
-          },
-      )
-      .find((msg) => msg.method === 'tools/call');
-    expect(toolCall?.params?.name).toBe('codex-reply');
-    expect(toolCall?.params?.arguments?.threadId).toBe('codex-persisted');
+      const resume = server.requests.find((request) => request.method === 'thread/resume');
+      expect(resume?.params.threadId).toBe('codex-persisted');
+      expect(server.requests.map((request) => request.method)).not.toContain('thread/start');
+    } finally {
+      await adapter.releaseIdleSession(session);
+    }
   });
 });
 
@@ -982,7 +874,7 @@ describe('Native authentication adapter integration', () => {
     process.env[variable] = 'synthetic-adapter-token';
     const source = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
@@ -1030,7 +922,7 @@ describe('Native authentication adapter integration', () => {
     const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-codex-'));
     const source = {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'codex' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
@@ -1042,7 +934,7 @@ describe('Native authentication adapter integration', () => {
       sources: [source, next],
       defaultSourceId: source.id,
     });
-    const capture = makeCodexSpawnCapture();
+    const server = appServerTransport();
     let selectedHome = '';
     const adapter = new CodexSessionAdapter({
       store: new InMemoryExternalSessionStore(),
@@ -1050,7 +942,7 @@ describe('Native authentication adapter integration', () => {
       defaults: {
         spawn: (cmd, options) => {
           selectedHome = options.env.CODEX_HOME!;
-          return capture.spawn(cmd);
+          return server.spawn(cmd, options);
         },
       },
     });
@@ -1076,7 +968,7 @@ test('revocation during admission prevents current and queued native writes', as
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-queue-'));
   const source = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',
@@ -1124,7 +1016,7 @@ test('authentication cleanup failure prevents reporting a fully released process
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-cleanup-'));
   const source = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',

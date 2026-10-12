@@ -9,6 +9,8 @@ import {
   type HierarchyDuplicate,
   type HierarchyFile,
   type HierarchyNode,
+  type HierarchyRefusal,
+  hierarchyFingerprint,
   type OwnershipScope,
   type SourceSelectionReport,
 } from '@inixiative/foundry-core';
@@ -72,6 +74,10 @@ export interface InstructionStack {
   readonly files: InstructionStackFile[];
   /** Files reached a second time; the first reach was kept. */
   readonly duplicates: HierarchyDuplicate[];
+  /** Files refused: a secret, or a real path outside their node's boundary. */
+  readonly refused: readonly HierarchyRefusal[];
+  /** Every path discovery consulted, found or not (`hierarchyFingerprint`). */
+  readonly probes: readonly string[];
   /** Labels of the nodes that were registered, by id. */
   readonly labels: Readonly<Record<string, string>>;
 }
@@ -195,6 +201,7 @@ export async function discoverInstructionStack(
   const repository = memoryRoot(cwd);
   const claudeDir =
     options.claudeConfigDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(home, '.claude');
+  const codexHome = options.codexHome ?? process.env.CODEX_HOME ?? join(home, '.codex');
   const ladder = options.ladder ?? DEFAULT_INSTRUCTION_LADDER;
   const stack = await discoverHierarchy(
     ladder.map(toHierarchyNode),
@@ -209,13 +216,15 @@ export async function discoverInstructionStack(
       ...(options.harnessLoadsGlobal ? { harnessLoads: [HARNESS_GLOBAL_SOURCE] } : {}),
       ...(options.projectId ? { projectId: options.projectId } : {}),
       ...(options.owner ? { owner: options.owner } : {}),
+      // The harness homes may sit under a credential directory (CLAUDE_CONFIG_DIR=~/.config/claude).
+      trusted: [resolve(claudeDir), resolve(codexHome)],
       vars: {
         home: resolve(home),
         cwd,
         project: projectRoot(cwd),
         repository,
         claudeConfigDir: claudeDir,
-        codexHome: options.codexHome ?? process.env.CODEX_HOME ?? join(home, '.codex'),
+        codexHome,
         managed:
           options.managedPath ??
           (process.platform === 'darwin'
@@ -235,6 +244,8 @@ export async function discoverInstructionStack(
       tier: file.tier as CorpusTier,
     })),
     duplicates: stack.duplicates,
+    refused: stack.refused,
+    probes: stack.probes,
     labels: Object.fromEntries(ladder.map((node) => [node.id, instructionNodeLabel(node)])),
   };
 }
@@ -261,9 +272,42 @@ export interface RoleView {
   readonly slots: Readonly<Record<CompositionSlot, ComposedInstructions>>;
   /** Nodes whose general files the role pulled into a slot they do not compose by default. */
   readonly included: Readonly<Record<CompositionSlot, readonly string[]>>;
+  /** Every path both slots consulted. */
+  readonly probes: readonly string[];
+  /** Their state when composed; empty when one changed while it was read (`roleViewChanged`). */
+  readonly fingerprint: string;
 }
 
-const EMPTY_STACK: InstructionStack = { files: [], duplicates: [], labels: {} };
+const EMPTY_STACK: InstructionStack = {
+  files: [],
+  duplicates: [],
+  refused: [],
+  probes: [],
+  labels: {},
+};
+
+/**
+ * Whether any file or directory a view consulted changed since it was composed: an edited, added,
+ * removed or re-pointed CLAUDE.md, rule, role file or memory. One stat per consulted path.
+ */
+export function roleViewChanged(view: RoleView): boolean {
+  return !view.fingerprint || hierarchyFingerprint(view.probes) !== view.fingerprint;
+}
+
+/** A view's fingerprint, or none when a consulted path was modified once reading began. */
+function viewFingerprint(probes: readonly string[], startedAt: number): string {
+  const now = Date.now();
+  for (const path of probes) {
+    try {
+      const modified = statSync(path).mtimeMs;
+      // A future timestamp (clock skew) is not a write during the read.
+      if (modified >= startedAt && modified <= now + 1_000) return '';
+    } catch {
+      /* absent: part of the fingerprint */
+    }
+  }
+  return hierarchyFingerprint(probes);
+}
 
 /** A slot's files as one block. Instructions carry Claude Code's preamble; domain knowledge does not. */
 function renderSlot(
@@ -296,6 +340,7 @@ export async function composeRoleView(
   },
 ): Promise<RoleView> {
   const { picks = {}, dedupe, ...discover } = options;
+  const startedAt = Date.now() - 1;
   const audience = picks.audience ?? 'personal_private';
   const stacks = {} as Record<CompositionSlot, InstructionStack>;
   const included = {} as Record<CompositionSlot, readonly string[]>;
@@ -344,13 +389,26 @@ export async function composeRoleView(
       ],
     };
   });
-  return { role: options.role, stacks, slots, included };
+  const probes = [...new Set(COMPOSITION_SLOTS.flatMap((slot) => stacks[slot].probes))];
+  return {
+    role: options.role,
+    stacks,
+    slots,
+    included,
+    probes,
+    fingerprint: viewFingerprint(probes, startedAt),
+  };
 }
 
 const DUPLICATE_REASON: Readonly<Record<HierarchyDuplicate['kind'], string>> = {
   path: 'same file reached again',
   content: 'identical content to a more specific file',
   section: 'identical section in a more specific file',
+};
+
+const REFUSAL_REASON: Readonly<Record<HierarchyRefusal['reason'], string>> = {
+  secret: 'refused: a dotfile, key or credential directory, as written or where it leads',
+  'outside-boundary': "refused: it resolves outside its level's boundary",
 };
 
 /** One slot of a role view as a selection report, so the viewer's Selection panel shows what was picked and why. */
@@ -386,6 +444,12 @@ export function instructionStackReport(
         chars: file.content.length,
         kind: file.level,
       })),
+      ...stack.refused.map((refusal) => ({
+        id: refusal.path,
+        reason: REFUSAL_REASON[refusal.reason],
+        chars: 0,
+        kind: refusal.node,
+      })),
       ...composed.duplicates.map((duplicate) => ({
         id: duplicate.heading ? `${duplicate.path} § ${duplicate.heading}` : duplicate.path,
         reason: DUPLICATE_REASON[duplicate.kind],
@@ -403,10 +467,13 @@ export function instructionStackReport(
 
 /** A role's two slots warm together: one composition serves both. */
 const SHARED_VIEW_MS = 250;
-const sharedViews = new Map<string, { at: number; view: Promise<RoleView> }>();
-/** Drop shared compositions, so the next load reads the files again. */
+const sharedViews = new Map<string, { at: number; view: Promise<RoleView>; settled?: RoleView }>();
+/** Advances whenever a caller says the files changed (`invalidateComposition`). */
+let generation = 0;
+/** Drop shared compositions and mark every composed slot changed, so the next load reads the files again. */
 export function forgetSharedRoleViews(): void {
   sharedViews.clear();
+  generation++;
 }
 
 function sharedRoleView(options: Parameters<typeof composeRoleView>[0]): Promise<RoleView> {
@@ -414,10 +481,19 @@ function sharedRoleView(options: Parameters<typeof composeRoleView>[0]): Promise
   const now = Date.now();
   for (const [k, entry] of sharedViews) if (now - entry.at > SHARED_VIEW_MS) sharedViews.delete(k);
   const hit = sharedViews.get(key);
-  if (hit) return hit.view;
+  // A shared view is reused only while nothing it read has changed.
+  if (hit && !(hit.settled && roleViewChanged(hit.settled))) return hit.view;
   const view = composeRoleView(options);
-  sharedViews.set(key, { at: now, view });
-  view.catch(() => sharedViews.delete(key));
+  const entry: { at: number; view: Promise<RoleView>; settled?: RoleView } = { at: now, view };
+  sharedViews.set(key, entry);
+  view.then(
+    (settled) => {
+      entry.settled = settled;
+    },
+    () => {
+      if (sharedViews.get(key) === entry) sharedViews.delete(key);
+    },
+  );
   return view;
 }
 
@@ -450,13 +526,32 @@ export function instructionStackSource(
   scope?: OwnershipScope,
 ): ContextSource {
   let last: SourceSelectionReport | undefined;
+  let loaded: { view: RoleView; generation: number; where: string } | undefined;
+  /** Where the slot composes for now: the thread's cwd (its worktree or project), project and owner. */
+  const location = () => {
+    const projectId = scope?.projectId;
+    const projectPath = projectId ? options.projectPath?.(projectId) : undefined;
+    const owner = options.owner?.(projectId);
+    return {
+      cwd: scope?.cwd ?? projectPath ?? process.cwd(),
+      ...(projectId ? { projectId } : {}),
+      ...(projectPath ? { projectPath } : {}),
+      ...(owner ? { owner } : {}),
+    };
+  };
   return {
     id,
     bind: (next) => instructionStackSource(id, options, next),
+    // Checked before every assembly: an edited, added or removed instruction or role file, a moved
+    // cwd or project, or an `invalidateComposition()` makes the slot re-read on the next turn.
+    changed: () =>
+      !!loaded &&
+      (loaded.generation !== generation ||
+        loaded.where !== JSON.stringify(location()) ||
+        roleViewChanged(loaded.view)),
     async load() {
-      const projectId = scope?.projectId;
-      const projectPath = projectId ? options.projectPath?.(projectId) : undefined;
-      const owner = options.owner?.(projectId);
+      const at = generation;
+      const where = location();
       const {
         projectPath: _path,
         owner: _owner,
@@ -471,12 +566,10 @@ export function instructionStackSource(
         role,
         ...(picks ? { picks } : {}),
         ...(dedupe ? { dedupe } : {}),
-        cwd: scope?.cwd ?? projectPath ?? process.cwd(),
-        ...(projectId ? { projectId } : {}),
-        ...(projectPath ? { projectPath } : {}),
-        ...(owner ? { owner } : {}),
+        ...where,
       });
       last = instructionStackReport(view, slot, picks?.audience ?? 'personal_private');
+      loaded = { view, generation: at, where: JSON.stringify(where) };
       return view.slots[slot].text;
     },
     report: () => last,

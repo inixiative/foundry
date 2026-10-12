@@ -101,8 +101,10 @@ export function roleSources(
 const live = new Set<WeakRef<ContextLayer>>();
 
 /**
- * Mark every live role slot stale, so the next turn re-reads the composition view instead of waiting
- * out its staleness: call it after writing a role or instruction file. Returns how many were marked.
+ * Mark every live role slot stale, and every composed slot (the main thread's `instructions` too)
+ * changed, so the next turn re-reads the composition view: call it after writing a role or
+ * instruction file. Edits made any other way are found by the slots' own file check before each
+ * turn. Returns how many role slots were marked.
  */
 export function invalidateComposition(): number {
   forgetSharedRoleViews();
@@ -172,6 +174,7 @@ export function chunkSource(
   return {
     id,
     focusable: sources.some((source) => source.focusable),
+    changed: () => sources.some((source) => source.changed?.() ?? false),
     bind: (scope) =>
       chunkSource(
         id,

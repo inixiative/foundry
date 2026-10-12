@@ -83,7 +83,7 @@ function source(runtime: 'claude' | 'codex', directory: string) {
   mkdirSync(profileDirectory, { mode: 0o700 });
   return {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime,
     mode: 'native-profile' as const,
     profileDirectory,
@@ -929,6 +929,100 @@ test(
 );
 
 test(
+  'warm cache: a relaunch honors the ledger, keeps a byte-identical system prompt, and per-turn state never joins it',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'warm-relaunch', async () => {
+      for (const n of [1, 2, 3]) vcr.queue('worker', `warm-relaunch-${n}`);
+      const worker = new ProcessCassettes(vcr, 'worker');
+      const cwd = join(root(), 'project');
+      mkdirSync(cwd);
+      const adapter = new ClaudeCodeSessionAdapter({
+        store: new InMemoryExternalSessionStore(),
+        defaults: { spawn: worker.spawn, env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } },
+      });
+      const launch = new ThreadLaunchSettings();
+      const provider = new SessionBackedProvider({
+        id: 'worker',
+        adapter,
+        defaultModel: LIVE.claudeModel,
+        defaultCwd: cwd,
+        launch,
+      });
+      const standing = standingPart('instructions', `The standing codeword is ${CODEWORD}.`);
+      const learning = (word: string) =>
+        standingPart('learning', `The learned codeword is ${word}.`);
+      let held: Record<string, string> = {};
+      let turn = 0;
+      const ask = async (question: string, part: StandingPart) => {
+        turn++;
+        const result = await provider.complete(
+          [
+            {
+              role: 'user',
+              content: `Do not use any tools. Reply with exactly the ${question} codeword and nothing else.`,
+            },
+          ],
+          {
+            threadId: 'main',
+            cwd,
+            // The thread state changes every turn: it rides with the turn, never in the system prompt.
+            delivery: { standing: [standing, part], turn: `Thread state: message ${turn}.`, held },
+          },
+        );
+        const report = result.delivery!;
+        const next = report.session === 'started' ? {} : { ...held };
+        for (const p of [...(report.session === 'started' ? report.base : []), ...report.sent])
+          next[p.id] = p.hash;
+        held = next;
+        return result;
+      };
+      const systemPrompt = (n: number) => {
+        const argv = worker.launches[n]!.argv;
+        const at = argv.findIndex((arg) => arg.startsWith('--append-system-prompt'));
+        return argv[at] === '--append-system-prompt'
+          ? argv[at + 1]
+          : readFileSync(argv[at + 1]!, 'utf8');
+      };
+      try {
+        const first = await ask('standing', learning('NONE'));
+        const second = await ask('learned', learning('violet-anchor-7'));
+        launch.update('main', { permissionMode: 'acceptEdits' });
+        const relaunched = await ask('learned', learning('violet-anchor-7'));
+        launch.update('main', { permissionMode: 'default' });
+        const again = await ask('standing', learning('violet-anchor-7'));
+        return {
+          answers: [first, second, relaunched, again].map((r) => r.content.trim()),
+          sessions: [first, second, relaunched, again].map((r) => r.delivery!.session),
+          sent: [first, second, relaunched, again].map((r) =>
+            r.delivery!.sent.map((part) => part.id),
+          ),
+          launches: worker.launches.length,
+          resumes: worker.launches.map((l) => l.argv.includes('--resume')),
+          stateInSystemPrompt: [0, 1, 2].some((n) => systemPrompt(n)?.includes('Thread state')),
+          relaunchPromptsIdentical: systemPrompt(1) === systemPrompt(2),
+          relaunchReadsCache: (again.tokens?.cacheRead ?? 0) > 0,
+        };
+      } finally {
+        await adapter.releaseAll();
+      }
+    });
+    expect(out).toEqual({
+      answers: [CODEWORD, 'violet-anchor-7', 'violet-anchor-7', CODEWORD],
+      sessions: ['started', 'held', 'started', 'started'],
+      // The review's repro re-sent every part on a relaunch; the ledger proves nothing is missing.
+      sent: [[], ['learning'], [], []],
+      launches: 3,
+      resumes: [false, true, true],
+      stateInSystemPrompt: false,
+      relaunchPromptsIdentical: true,
+      relaunchReadsCache: true,
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
   'instruction files: Codex app-server loads a project AGENTS.md itself, and the Foundry off switch stops it',
   async () => {
     const vcr = codexVcr();
@@ -941,7 +1035,6 @@ test(
       writeFileSync(join(cwd, 'AGENTS.md'), `The project codeword is ${CODEWORD}.\n`);
       const ask = async (appServerConfig?: Readonly<Record<string, unknown>>) => {
         const adapter = new CodexSessionAdapter({
-          engine: 'app-server',
           store: new InMemoryExternalSessionStore(),
           ...(appServerConfig ? { appServerConfig } : {}),
           defaults: { spawn: server.spawn, effort: 'low' },
@@ -985,7 +1078,6 @@ test(
         cwd = join(directory, 'project');
       mkdirSync(cwd);
       const adapter = new CodexSessionAdapter({
-        engine: 'app-server',
         store: new InMemoryExternalSessionStore(),
         defaults: { spawn: server.spawn },
       });
@@ -1042,7 +1134,6 @@ test(
         status.statusSpawn,
       );
       const adapter = new CodexSessionAdapter({
-        engine: 'app-server',
         authentication: auth,
         store: new InMemoryExternalSessionStore(),
         defaults: { spawn: worker.spawn },

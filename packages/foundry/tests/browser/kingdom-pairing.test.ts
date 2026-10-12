@@ -46,7 +46,7 @@ test('the Kingdom page pairs through the review code and shows the connection on
     await page.locator('#kingdom-installation-name').fill('Browser Foundry');
     await page.getByRole('button', { name: 'Connect to Kingdom' }).click();
 
-    const code = page.locator('.kingdom-connection strong');
+    const code = page.locator('.kingdom-pairing strong');
     await code.waitFor();
     const reviewCode = await code.textContent();
     expect(

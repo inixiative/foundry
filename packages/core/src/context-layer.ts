@@ -103,6 +103,12 @@ export interface ContextSource {
   readonly focusable?: boolean;
   /** The selection report of the last load, when this source selects rather than dumps. */
   report?(): SourceSelectionReport | undefined;
+  /**
+   * True when what the last load read has changed since (an edited or added file). The owning warm
+   * layer then turns stale on its next staleness check, without waiting out its staleness window.
+   * Must be cheap: it runs before every assembly.
+   */
+  changed?(): boolean;
 }
 
 /** Selection provenance carried on a layer instance for inspection. */
@@ -269,6 +275,11 @@ export interface ContextLayerConfig {
   prompt?: string;
   /** Semantic segment of the content; overrides the definition's segment when given. */
   segment?: LayerSegment;
+  /**
+   * Content that changes nearly every turn (the Librarian's thread state). A session provider
+   * sends it with each turn and never holds it in a session's standing context.
+   */
+  perTurn?: boolean;
 }
 
 export type LayerState = 'cold' | 'warming' | 'warm' | 'stale' | 'compressing';
@@ -304,6 +315,9 @@ export class ContextLayer {
    * recorded by snapshotInstance(), never rewritten by restoreInstance().
    */
   readonly segment: LayerSegment | undefined;
+
+  /** Sent with each turn, never part of a session's standing context (`ContextLayerConfig.perTurn`). */
+  readonly perTurn: boolean;
 
   private _content: string = '';
   private _state: LayerState = 'cold';
@@ -342,6 +356,7 @@ export class ContextLayer {
     if (segment !== undefined && !isLayerSegment(segment))
       throw new Error(`Unknown layer segment "${String(segment)}" for layer "${config.id}"`);
     this.segment = segment;
+    this.perTurn = config.perTurn ?? false;
   }
 
   // -- Factory --
@@ -401,6 +416,7 @@ export class ContextLayer {
       maxTokens: this._maxTokens,
       prompt: this._prompt,
       segment: this.segment,
+      perTurn: this.perTurn,
     });
     copy._focus = this._focus;
     copy._currentMessage = this._currentMessage;
@@ -489,17 +505,35 @@ export class ContextLayer {
     return this._state;
   }
 
-  /** Check if this layer has become stale. Triggers state transition if so. */
+  /**
+   * Check if this layer has become stale: its staleness window passed, or a source reports that
+   * what it read has changed. Triggers the state transition if so.
+   */
   checkStaleness(): LayerState {
     if (
       this._state === 'warm' &&
-      this._staleness !== undefined &&
-      this._lastWarmed !== null &&
-      Date.now() - this._lastWarmed > this._staleness
+      ((this._staleness !== undefined &&
+        this._lastWarmed !== null &&
+        Date.now() - this._lastWarmed > this._staleness) ||
+        this._sources.some((source) => source.changed?.()))
     ) {
       this._setState('stale');
     }
     return this._state;
+  }
+
+  /**
+   * Whether assembly includes this layer: warm, or stale or re-warming with content that does not
+   * depend on the message (no focusable source). A standing layer keeps its last content until a
+   * re-warm completes, so it never drops out of context while one is slow or in flight.
+   */
+  get assemblable(): boolean {
+    return (
+      this._state === 'warm' ||
+      ((this._state === 'stale' || this._state === 'warming') &&
+        this._lastWarmed !== null &&
+        !this._sources.some((source) => source.focusable))
+    );
   }
 
   get hash(): string {

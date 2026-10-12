@@ -42,14 +42,21 @@ export function sessionTurn(
      * messages; the first turn re-sends every part so the conversation's latest version is current.
      */
     readonly resumed: boolean;
+    /**
+     * The resumed conversation is the one the thread's ledger describes (a relaunch in this
+     * process): the ledger is honored, so only parts whose latest delivered version is not current
+     * are sent. Unknown (a resume from another process): every part is sent.
+     */
+    readonly ledgerHeld?: boolean;
   },
 ): SessionTurn {
   const base = new Map(session.base.map((part) => [part.id, part.hash]));
-  const ledger = session.started ? {} : delivery.held;
+  const ledger = session.started && !session.ledgerHeld ? {} : delivery.held;
+  const unknownHistory = session.started && session.resumed && !session.ledgerHeld;
   const holds = (part: StandingPart) =>
     Object.hasOwn(ledger, part.id)
       ? ledger[part.id] === part.hash
-      : !(session.started && session.resumed) && base.get(part.id) === part.hash;
+      : !unknownHistory && base.get(part.id) === part.hash;
   const sent = delivery.standing.filter((part) => !holds(part));
   const system = [
     ...sent.map((part) => block(part, true)),
@@ -64,6 +71,7 @@ export function sessionTurn(
       session: session.started ? 'started' : 'held',
       base: session.base.map(({ id, hash }) => ({ id, hash })),
       sent: sent.map(({ id, hash }) => ({ id, hash })),
+      ...(session.started && session.ledgerHeld ? { ledgerKept: true as const } : {}),
     },
   };
 }

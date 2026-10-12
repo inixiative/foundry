@@ -2,7 +2,7 @@
 
 This is the same row-by-row inventory used for the Paseo and T3 Code dissections, applied to inixiative's own stack.
 
-**Snapshot.** Read-only, from `origin/main` on 2026-10-11:
+**Snapshot of 2026-10-11** — see [Updated since this snapshot](#updated-since-this-snapshot-2026-10-12) first. Read-only, from `origin/main` on 2026-10-11:
 
 | Repo | Commit |
 |---|---|
@@ -26,7 +26,30 @@ This is the same row-by-row inventory used for the Paseo and T3 Code dissections
 - **stub:** code exists but isn't wired, or it throws.
 - **doc-only:** described in docs, absent from code.
 
-> **`docs/SYSTEM-MAP.md` (dated 2026-09-30) is stale in many places.** Each drift is flagged where it applies, and they are all listed again in §5.
+> **`docs/SYSTEM-MAP.md` was rewritten on 2026-10-12**; the SYSTEM-MAP drifts this snapshot flags (§5) are fixed there.
+
+---
+
+## Updated since this snapshot (2026-10-12)
+
+This document is a **snapshot of 2026-10-11**. The builds that landed since then (ACP slices 1 and 2, the composition view, warm-cache delivery) make several of its claims the opposite of the code. Where a row below and the body disagree, this section wins. Basis: Foundry `569a881`, agent-session `d03b443` (0.6.0 on npm, 0.5.2 blessed).
+
+| Topic | The snapshot says | Now |
+|---|---|---|
+| Stop | No stop | Stop exists: viewer route `POST /api/threads/:threadId/turns/:turnId/interrupt` (`pf/viewer/routes/runtime.ts:222`) → `TurnService.interrupt` (`pf/turns/turn-service.ts:304`); the viewer's Stop button (`pf/viewer/ui/conversation.js:564`); ACP `session/cancel` (`foundry/packages/acp/src/agent.ts:823`). |
+| WS seq | No seq, by the 9/23 design | Superseded 2026-10-11: data-stream frames carry a per-stream `seq`; the client drops stale appends and re-opens for a snapshot on a gap. Foundry keeps it per connection (3cbbe92); Kingdom and template use a Redis counter. No replay. |
+| Pre-tool gate and approvals | No gate; ActionQueue has no producer; `permissionMiddleware` unwired | `permissionMiddleware` was deleted (f4f27c7). The structural tool gate (`pf/turns/tool-gate.ts`, core `permissionLevel`) decides each tool request; asks go through the ActionQueue. Claude permission prompts (`toolGate`), Codex approvals (`onToolRequest`) and ACP `session/request_permission` all route to it. |
+| Queued turns | Accepted turns are `active` | `queued` is its own turn status (`pf/persistence/local-session-store.ts:40,773`); a queued turn at restart is recorded failed / never sent. |
+| Instruction hierarchy | Not built | Built: global → org → project → personal ladder with `@path` imports (`pf/prompts/instruction-stack.ts`, `pc/adapters/markdown-hierarchy.ts`), and the composition view composes every role's slots from it. |
+| Corrections | Viewer interventions only | The feedback lifecycle's first slice landed (569a881): every accepted turn runs foundry-core's detector (`pc/feedback/correction.ts`) through `pf/feedback/service.ts`; tuning prompts, Cartographer routing to Warden roles, personal-rung role-file changes with provenance and undo, and the Feedback view (`/api/feedback*`, ACP `/feedback`). ACP also has `/correction` (`foundry/packages/acp/src/agent.ts:530`). Oracle recurrence is the next slice ([FEEDBACK-LOOP.md](../FEEDBACK-LOOP.md)). |
+| Removed code | `RuntimeAdapter`, `ClaudeCodeProvider`, `permissionMiddleware` | Deleted (f4f27c7). Native sessions run through agent-session. |
+| ACP | Foundry is not an ACP agent | Foundry is an ACP v1 agent (`foundry/packages/acp`, `@inixiative/foundry-acp` 0.1.0, unpublished). Host sessions that use it get the full middleware. Spec: [FOUNDRY-ACP.md](FOUNDRY-ACP.md). |
+| Full-context resend | Every turn re-sends the whole context | Fixed: standing parts go in the system prompt once, then only changed layers (`pf/providers/session-delivery.ts`). |
+| `demo.ts` | A todo to delete it | Deleted (d925bcc). |
+| Codex transport | agent-session defaults to `codex mcp-server`; app-server is "experimental" | Codex CLI 0.155 dropped `mcp-server`, so app-server is the only Codex path. `CodexMcpSession` and the `codex-mcp` transport are being deleted, with app-server as the default `CodexSession` (agent-session branch `fix/codex-app-server-default`, not on main yet). |
+| Runner features | Diffs, terminal and worktrees listed as gaps | Left to the hosts by decision (CLAUDE.md, 2026-10-11): the viewer grows no runner features. |
+
+Still true from the snapshot: `oracle-worker` cannot boot; the pairing Signet has `operations: []`; the memory guard is an LLM call; the Herald is unwired; revert and fork return 501.
 
 ---
 
@@ -124,7 +147,7 @@ This is the same row-by-row inventory used for the Paseo and T3 Code dissections
 |---|---|---|---|
 | Claude Code driver | `as/claude-code-session.ts:231` `ClaudeCodeSession` | One persistent `claude --print --input-format stream-json --output-format stream-json` process. Native resume and fork (`--resume <id> --fork-session`). Interrupt via the stdio control channel. | solid, verified live |
 | Codex driver (app-server) | `as/codex-session.ts:1099` `CodexAppServerSession` | JSON-RPC: thread/start, thread/resume, turn/start. `turn/interrupt`. `push()` → `turn/steer`. Every server request gets -32601. `fork()` throws (`:1267-1271`). | solid (no fork) |
-| Codex driver (mcp-server) | `as/codex-session.ts:830` | `codex mcp-server`. Still the default `CodexSession` export (`as/index.ts:30`). Foundry says Codex 0.155 dropped it (`pf/start.ts:299`) and defaults to app-server; agent-session AS-004 says it was verified on 0.155.1. **The repos disagree.** | solid / disputed |
+| Codex driver (mcp-server) | `as/codex-session.ts:830` | `codex mcp-server`. Codex CLI 0.155.1 has no `mcp-server`; Foundry runs only the app-server driver, and agent-session is removing this one. | removed |
 | Claude Agent SDK driver | `as/claude-agent-sdk-session.ts:271` | Caller supplies the SDK `query`. Has `canUseTool` per-call approval (`:37-47`). Not used by Foundry. | solid, unused |
 | ACP (Gemini CLI), API transports | `as/transports.ts:47-69` | Throw `TransportUnavailableError` | stub |
 | Transport capability descriptors | `as/transport.ts:26-48` `TRANSPORTS` | Each transport declares resume, fork, rollback, interrupt, push, approvals, usage, limits, primed and billing, so callers can branch on capabilities | solid |
@@ -439,7 +462,7 @@ Not needed from the foreign runner: model choice for decisions, auth for decisio
 11. **No subscription harness for Google, Meta or xAI.** ACP and API transports are stubs (`as/transports.ts:47-69`).
 12. **Foundry ignores agent-session's `SubscriptionPool`, routing and limit probes** and keeps its own account handling. Kingdom-supplied subscription accounts are wired nowhere.
 13. **Dead code.** `ClaudeCodeProvider` (`pf/providers/claude-code.ts`) and `RuntimeAdapter` implementations (`pf/providers/runtime.ts`).
-14. **The repos disagree on Codex mcp-server.** agent-session still defaults to it (`as/index.ts:30`); Foundry says Codex 0.155 dropped it (`pf/start.ts:299`).
+14. **Resolved: Codex mcp-server.** Codex CLI 0.155.1 has no `mcp-server`; the app-server is Foundry's only Codex engine and agent-session is removing `CodexMcpSession`.
 
 ### Kingdom, Oracle, Archive
 15. **The Foundry pairing Signet grants no operations** (`k/packages/access/src/catalog.ts:228-234`). Agent integration access goes through hand-issued static tokens in files (`docs/kingdom-access.md`), not "everything through the paired Signet".

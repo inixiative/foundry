@@ -353,7 +353,7 @@ describe('FileMemory.asSource with selection', () => {
     await view.write({
       id: 'fact',
       kind: 'dispatch',
-      content: 'The sentinel file lives in fixtures/harness-qa/native.',
+      content: 'The sentinel file lives in fixtures/native.',
       timestamp: 1,
     });
     for (let i = 0; i < 40; i++)

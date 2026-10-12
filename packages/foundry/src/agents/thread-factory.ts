@@ -584,7 +584,8 @@ function buildAgent(
             return {
               value: {
                 destination: parsed.destination as string,
-                contextSlice: (parsed.contextSlice as string[]) || Object.keys(config.layers),
+                // No slice named: no on-demand layer is requested.
+                contextSlice: (parsed.contextSlice as string[] | undefined) ?? [],
                 priority: (parsed.priority as number) ?? 5,
               },
               confidence: 0.9,

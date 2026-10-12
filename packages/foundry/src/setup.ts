@@ -15,6 +15,7 @@ import { basename } from 'path';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import {
+  DECISION_PROVIDER,
   MODEL_REGISTRY,
   mainThreadLab,
   mainThreadRequirement,
@@ -809,7 +810,7 @@ async function pickProvider(
   // An API worker opts this install in to API tokens; say what that main thread needs.
   if (!subscriptionWorker(provider.id))
     console.log(
-      `\n  ${mainThreadRequirement(provider.id, false)}.\n  Setup opts in to API tokens; decisions then need OPENAI_API_KEY.`,
+      `\n  ${mainThreadRequirement(provider.id, false)}.\n  Setup opts in to API tokens; decisions then need ${MODEL_REGISTRY[DECISION_PROVIDER]?.envKey}.`,
     );
   if (provider.envKey) {
     const existingKey = detected.find((d) => d.id === provider.id);

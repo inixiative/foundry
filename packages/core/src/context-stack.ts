@@ -41,6 +41,8 @@ export interface PromptBlock {
    * in the context (a Warden chiming in). Default: in the context.
    */
   readonly placement?: 'after-message';
+  /** From a per-turn layer: sent with each turn, never held as standing context. */
+  readonly perTurn?: true;
 }
 
 /** Structured prompt assembled from agent prompt + layer prompts + layer content. */
@@ -146,7 +148,7 @@ export class ContextStack {
   merge(filter?: LayerFilter): string {
     const layers = filter ? this._layers.filter(filter) : this._layers;
     return layers
-      .filter((l) => l.isWarm && l.content.length > 0)
+      .filter((l) => l.assemblable && l.content.length > 0)
       .map((l) => l.content)
       .join('\n\n');
   }
@@ -176,11 +178,12 @@ export class ContextStack {
     const layers = filter ? this._layers.filter(filter) : this._layers;
 
     for (const layer of layers) {
-      if (!layer.isWarm || layer.content.length === 0) continue;
+      if (!layer.assemblable || layer.content.length === 0) continue;
+      const perTurn = layer.perTurn ? { perTurn: true as const } : {};
 
       if (layer.prompt) {
         // A layer prompt is always an instruction; it never inherits the content segment.
-        blocks.push({ role: 'layer', id: layer.id, text: layer.prompt });
+        blocks.push({ role: 'layer', id: layer.id, text: layer.prompt, ...perTurn });
       }
       // The content block carries the layer's declared segment when it has one; legacy
       // layers leave it unset and the artifact builder falls back to its id heuristic.
@@ -189,6 +192,7 @@ export class ContextStack {
         id: layer.id,
         text: layer.content,
         ...(layer.segment ? { segment: layer.segment } : {}),
+        ...perTurn,
       });
     }
 
@@ -202,7 +206,7 @@ export class ContextStack {
     const content = this.merge();
     const layerHashes: Record<string, string> = {};
     for (const layer of this._layers) {
-      if (layer.isWarm) {
+      if (layer.assemblable) {
         layerHashes[layer.id] = layer.hash;
       }
     }

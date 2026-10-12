@@ -157,7 +157,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         transport: runtime === 'codex' ? 'codex-app-server' : 'claude-cli',
         mode: config.spawn ? 'controlled-transport' : 'native-subscription',
         sourceId: source.id,
-        connectionId: source.connectionId,
+        integrationId: source.integrationId,
         model: config.model,
         maxConcurrent: config.maxConcurrent,
         startedAt: Date.now(),

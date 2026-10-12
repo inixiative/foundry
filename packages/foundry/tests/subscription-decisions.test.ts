@@ -53,7 +53,7 @@ function fixture<T extends Transport>(
     directory,
     source: {
       id: crypto.randomUUID(),
-      connectionId: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory,

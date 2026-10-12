@@ -22,7 +22,7 @@ import {
 export type NativeAuthenticationSource = {
   /** Local identities, never provider account names or secrets. */
   id: string;
-  connectionId: string;
+  integrationId: string;
   runtime: 'claude' | 'codex';
 } & (
   | { mode: 'native-profile'; profileDirectory: string }
@@ -40,7 +40,11 @@ export type NativeAuthenticationSource = {
     }
 );
 
-const identity = { id: z.string(), connectionId: z.string(), runtime: z.enum(['claude', 'codex']) };
+const identity = {
+  id: z.string(),
+  integrationId: z.string(),
+  runtime: z.enum(['claude', 'codex']),
+};
 const sourceSchema = z.discriminatedUnion('mode', [
   z
     .object({ ...identity, mode: z.literal('native-profile'), profileDirectory: z.string() })
@@ -68,7 +72,7 @@ const sourceSchema = z.discriminatedUnion('mode', [
 export interface NativeAuthenticationLaunch {
   readonly bindingId: string;
   readonly sourceId: string;
-  readonly connectionId: string;
+  readonly integrationId: string;
   readonly model?: string;
   readonly effort?: string;
   readonly capacityId?: string;
@@ -126,7 +130,7 @@ export class NativeAuthentication {
     for (const source of parsed.data) {
       if (
         !uuid.test(source.id) ||
-        !uuid.test(source.connectionId) ||
+        !uuid.test(source.integrationId) ||
         !['claude', 'codex'].includes(source.runtime)
       )
         throw Error('Invalid native authentication identity');
@@ -261,7 +265,7 @@ export class NativeAuthentication {
     return Object.freeze({
       bindingId,
       sourceId: source.id,
-      connectionId: source.connectionId,
+      integrationId: source.integrationId,
       mode: source.mode,
       check,
       launch: (argv: string[], inherited: Record<string, string | undefined>) => {

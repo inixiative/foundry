@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import type { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';

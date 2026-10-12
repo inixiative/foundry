@@ -96,6 +96,9 @@ function describeContent(content: unknown, max = 80): string {
 // Librarian
 // ---------------------------------------------------------------------------
 
+/** The Librarian's thread-state layer. The id is reserved: settings never define a layer with it. */
+export const THREAD_STATE_LAYER_ID = 'thread-state';
+
 export interface LibrarianConfig {
   /** The thread's signal bus to subscribe to. */
   signals: SignalBus;
@@ -116,13 +119,15 @@ export class Librarian {
     this._stack = config.stack;
 
     // Create the thread-state layer — always warm
-    const layerId = config.layerId ?? 'thread-state';
+    const layerId = config.layerId ?? THREAD_STATE_LAYER_ID;
     this._layer = new ContextLayer({
       id: layerId,
       prompt:
         'Current thread state. Use this to determine what the thread is working on, what context is loaded, and what flags are active.',
       // Generated per-thread state, whatever id the configuration chose for it.
       segment: 'thread-knowledge',
+      // It changes nearly every turn: sent with the turn, never held in a session's standing context.
+      perTurn: true,
     });
 
     // Set initial content
@@ -397,8 +402,12 @@ export class Librarian {
   }
 
   /** Serialize state to JSON and write to the layer. */
+  /**
+   * The layer is what agents read: the delivery ledger (hashes) and the update time are
+   * bookkeeping that would change the text on every commit, so they stay in `state` only.
+   */
   private _writeLayer(): void {
-    const json = JSON.stringify(this._state, null, 2);
-    this._layer.set(json);
+    const { injectedLayers: _ledger, lastUpdated: _updated, ...visible } = this._state;
+    this._layer.set(JSON.stringify(visible, null, 2));
   }
 }

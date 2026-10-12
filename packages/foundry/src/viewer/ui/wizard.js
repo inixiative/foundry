@@ -27,15 +27,15 @@ const FALLBACK_PROVIDERS = [
     envKey: '',
     models: [
       { id: 'fable', label: 'Fable 5.1', tier: 'powerful' },
-      { id: 'opus', label: 'Opus 5', tier: 'powerful' },
-      { id: 'sonnet', label: 'Sonnet 5', tier: 'standard' },
+      { id: 'opus', label: 'Opus 5.5', tier: 'powerful' },
+      { id: 'sonnet', label: 'Sonnet 5.5', tier: 'standard' },
       { id: 'haiku', label: 'Haiku 5.5', tier: 'fast' },
       { id: 'claude-haiku-5-5', label: 'Haiku 5.5', tier: 'fast' },
     ],
   },
   {
     id: 'codex',
-    label: 'Codex CLI (recommended)',
+    label: 'Codex CLI',
     desc: 'Native Codex harness — use Astra through your authenticated Codex session',
     envKey: '',
     models: [
@@ -47,7 +47,7 @@ const FALLBACK_PROVIDERS = [
   },
   {
     id: 'gemini',
-    label: 'Google Gemini (recommended)',
+    label: 'Google Gemini',
     desc: 'Fast, affordable API access — best for high-volume agent work',
     envKey: 'GEMINI_API_KEY',
     models: [
@@ -380,7 +380,7 @@ export function Wizard() {
   // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=classifier model, 5=done
   const [step, setStep] = useState(0);
   const [providers, setProviders] = useState(FALLBACK_PROVIDERS);
-  const [enabledProviders, setEnabledProviders] = useState(['claude-code', 'codex']);
+  const [enabledProviders, setEnabledProviders] = useState(['claude-code']);
   const [defaultProvider, setDefaultProvider] = useState('claude-code');
   const [executorModel, setExecutorModel] = useState('fable');
   const [classifierProvider, setClassifierProvider] = useState('');

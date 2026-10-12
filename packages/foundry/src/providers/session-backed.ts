@@ -57,18 +57,19 @@ export interface NativeSessionProfile {
   readonly transportMode?: 'controlled-fixture';
   readonly authentication?: Readonly<{
     sourceId: string;
-    connectionId: string;
+    integrationId: string;
     mode: string;
     model?: string;
     effort?: string;
     capacityId?: string;
   }>;
-  readonly engine?: 'mcp' | 'app-server';
   readonly requestedEffort?: string;
   readonly bridgeKey?: string;
   readonly requestedModel: string;
   /** The host launch revision (ThreadLaunchSettings) this session was launched at; 0 for none. */
   readonly launchRevision?: number;
+  /** Whether the thread had structural tool rules (deny, prompt, protected paths) at launch. */
+  readonly structuralRules?: boolean;
   readonly textOnly: boolean;
   readonly maxTurns?: number | null;
   /**
@@ -128,6 +129,12 @@ export class SessionBackedProvider implements LLMProvider {
   private _bases = new WeakMap<HarnessSession, readonly DeliveredPart[]>();
   /** Sessions that completed a delivered turn; until then the thread's ledger belongs to an earlier session. */
   private _delivered = new WeakSet<HarnessSession>();
+  /**
+   * The native conversation each thread's delivery ledger describes: the binding of its last
+   * delivered turn in this process. A relaunch that resumes it (a host launch change, a cwd move)
+   * honors the ledger instead of re-sending everything; a resume from another process does not.
+   */
+  private _ledgerBindings = new Map<string, string>();
   private _notAdmitted = new WeakSet<object>();
   private _attempted = new WeakSet<object>();
   private _observations = new WeakMap<HarnessSession, Map<string, NativeObservation>>();
@@ -409,7 +416,7 @@ export class SessionBackedProvider implements LLMProvider {
     const cwd = opts?.cwd ?? this._defaultCwd;
     const textOnly = threadId.includes(':aux:') || opts?.tools === false;
     // A host's choice applies to the thread's executor session only.
-    const host = textOnly ? undefined : this._launch?.get(threadId);
+    const host = textOnly ? undefined : this._launch?.forLaunch(threadId);
     const requestedModel = host?.model ?? opts?.model ?? this._defaultModel;
     const observation = opts?.nativeObservation
       ? {
@@ -443,6 +450,9 @@ export class SessionBackedProvider implements LLMProvider {
         textOnly,
         maxTurns,
         launchRevision: host?.revision ?? 0,
+        ...(this._adapter.structuralRulesAtLaunch && !textOnly
+          ? { structuralRules: this._toolGate?.(threadId)?.hasRules() ?? false }
+          : {}),
         ...(source
           ? {
               bridgeKey: source.key,
@@ -481,11 +491,14 @@ export class SessionBackedProvider implements LLMProvider {
     bridge?.check();
     // Warm-cache delivery: standing context lives in the session's system prompt; a turn carries only
     // what the session does not hold, plus the per-turn context.
+    const resumedBinding = this.warmProfile(threadId, cwd)?.resumedBinding ?? null;
     const turn: SessionTurn | undefined = delivery
       ? sessionTurn(delivery, messages, {
           base: this._bases.get(session) ?? [],
           started: !this._delivered.has(session),
-          resumed: (this.warmProfile(threadId, cwd)?.resumedBinding ?? null) !== null,
+          resumed: resumedBinding !== null,
+          ledgerHeld:
+            resumedBinding !== null && this._ledgerBindings.get(threadId) === resumedBinding,
         })
       : undefined;
     const prompt = formatMessagesForNativeSession(turn?.messages ?? messages);
@@ -663,7 +676,6 @@ export class SessionBackedProvider implements LLMProvider {
         observedModel: nativeModel,
         requestedMaxTurns: maxTurns,
         ...(profile?.transportMode ? { transportMode: profile.transportMode } : {}),
-        ...(profile?.engine ? { engine: profile.engine } : {}),
         ...(profile?.requestedEffort ? { requestedEffort: profile.requestedEffort } : {}),
         ...(observedEffort !== undefined ? { observedEffort } : {}),
         ...(history ? { history } : {}),
@@ -708,7 +720,10 @@ export class SessionBackedProvider implements LLMProvider {
         },
       },
     };
-    if (turn) this._delivered.add(session);
+    if (turn) {
+      this._delivered.add(session);
+      if (result.externalSessionId) this._ledgerBindings.set(threadId, result.externalSessionId);
+    }
     if (ownTerminal || native.nativeOutcome !== 'unknown') this._settled.add(completion);
     if (native.dispatch === 'attempted') this._attempted.add(completion);
     return completion;
@@ -767,6 +782,35 @@ export class SessionBackedProvider implements LLMProvider {
     });
   }
 
+  /**
+   * Retire a thread's executor session in another cwd: released when idle and settled, or simply
+   * dropped when its process is already gone (no work can still be running there).
+   */
+  private async _retireElsewhere(
+    threadId: string,
+    cwd: string,
+  ): Promise<'released' | 'unknown' | 'unavailable'> {
+    const key = JSON.stringify([cwd, threadId]);
+    const pending = this._sessions.get(key);
+    const session = pending ? await pending.catch(() => undefined) : undefined;
+    if (
+      pending &&
+      this._sessions.get(key) === pending &&
+      !this._activeCalls.get(key) &&
+      !this._releasing.has(key) &&
+      (!session || !session.alive)
+    ) {
+      if (session) this._released.add(session);
+      this._sessions.delete(key);
+      this._profiles.delete(key);
+      this._bridgeSources.delete(key);
+      this._idle.delete(key);
+      this._uncertain.delete(key);
+      return 'released';
+    }
+    return this._releaseIdle({ threadId, cwd }, true);
+  }
+
   private _getSession(
     threadId: string,
     cwd: string,
@@ -775,6 +819,8 @@ export class SessionBackedProvider implements LLMProvider {
       textOnly: boolean;
       maxTurns?: number | null;
       launchRevision: number;
+      /** For an adapter that checks them at launch: the thread has structural rules. */
+      structuralRules?: boolean;
       bridgeKey?: string;
       toolPolicyIdentity?: string;
     },
@@ -791,14 +837,19 @@ export class SessionBackedProvider implements LLMProvider {
         'textOnly',
         'maxTurns',
         'launchRevision',
+        'structuralRules',
         'bridgeKey',
         'toolPolicyIdentity',
       ] as const;
       const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
-      // A host changed this thread's launch settings: relaunch the idle session, resuming its binding.
+      // A host changed this thread's launch settings, or its structural rules appeared or went:
+      // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
+      // (Codex) refuses on the next turn instead of running warm past the new rules.
       if (
-        changed.includes('launchRevision') &&
-        changed.every((field) => field === 'launchRevision' || field === 'requestedModel') &&
+        (changed.includes('launchRevision') || changed.includes('structuralRules')) &&
+        changed.every((field) =>
+          ['launchRevision', 'structuralRules', 'requestedModel'].includes(field),
+        ) &&
         this._bridgeSources.get(key) === source
       )
         return this._relaunch(key, existing, () =>
@@ -820,6 +871,29 @@ export class SessionBackedProvider implements LLMProvider {
         );
       }
       return existing;
+    }
+
+    // One native session per thread: a thread that moved to another cwd retires its session there
+    // first, so two processes never resume one conversation and the thread's delivery ledger always
+    // describes the one session that runs. Unsettled work there refuses the move; nothing is sent.
+    if (!requested.textOnly) {
+      const elsewhere = [...this._sessions.keys()]
+        .map((other) => JSON.parse(other) as [string, string])
+        .filter(([otherCwd, otherThread]) => otherThread === threadId && otherCwd !== cwd);
+      if (elsewhere.length)
+        return Promise.all(
+          elsewhere.map(([otherCwd]) => this._retireElsewhere(threadId, otherCwd)),
+        ).then((statuses) => {
+          if (statuses.some((status) => status !== 'released')) {
+            const error = Error(
+              `Thread ${threadId} moved to ${cwd}, but its native session in ${elsewhere.map(([c]) => c).join(', ')} still has unsettled work; nothing was sent. Retry once that turn settles, or end the thread's native session there.`,
+            );
+            this._notAdmitted.add(error);
+            this._settled.add(error);
+            throw error;
+          }
+          return this._getSession(threadId, cwd, requested, source, base);
+        });
     }
 
     // The preliminary lookup is diagnostic only: it gates pending/failed states and is
@@ -853,7 +927,7 @@ export class SessionBackedProvider implements LLMProvider {
         if (source) bridge = await source.acquire();
         if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity)
           throw Error('Owned fixture policy changed during acquisition');
-        const host = requested.textOnly ? undefined : this._launch?.get(threadId);
+        const host = requested.textOnly ? undefined : this._launch?.forLaunch(threadId);
         const gate = requested.textOnly ? undefined : this._toolGate?.(threadId);
         const session = await this._adapter.createSession({
           threadId,
@@ -927,7 +1001,6 @@ export class SessionBackedProvider implements LLMProvider {
                   bindingId: constructed.bindingId,
                   transportMode: constructed.transportMode,
                   authentication: constructed.authentication,
-                  engine: constructed.engine,
                   requestedEffort: constructed.requestedEffort,
                 }
               : {}),
@@ -976,10 +1049,8 @@ export class SessionBackedProvider implements LLMProvider {
 }
 
 /**
- * Native model acknowledgment from supported configuration envelopes only, and only
- * when the envelope names this session's own native binding:
- *  - Claude stream-json `system`/`init` with `session_id` and `model`
- *  - Codex `session_configured` with `thread_id`/`session_id` and `model`
+ * Native model acknowledgment, for an adapter with no owned configuration evidence, from Claude
+ * stream-json `system`/`init` naming this session's own native binding (`session_id`) and `model`.
  * Anything else (tool events, unknown types, foreign bindings, missing binding) is
  * not evidence and leaves acknowledgment undefined.
  */
@@ -993,10 +1064,7 @@ function acknowledgedModel(
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
     if (typeof r.model !== 'string' || !r.model) continue;
-    const claudeInit = r.type === 'system' && r.subtype === 'init' && r.session_id === binding;
-    const codexConfigured =
-      r.type === 'session_configured' && (r.thread_id === binding || r.session_id === binding);
-    if (claudeInit || codexConfigured) return r.model;
+    if (r.type === 'system' && r.subtype === 'init' && r.session_id === binding) return r.model;
   }
   return undefined;
 }

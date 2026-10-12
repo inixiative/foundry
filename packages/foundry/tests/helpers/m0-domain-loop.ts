@@ -1,3 +1,4 @@
+import './isolate-archive';
 import { Database } from 'bun:sqlite';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';

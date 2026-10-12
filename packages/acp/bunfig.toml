@@ -1,0 +1,3 @@
+[test]
+# Same fake Archive as the root preload, for `bun test` run from this package.
+preload = ["../foundry/tests/helpers/archive-preload.ts"]

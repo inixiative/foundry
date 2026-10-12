@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';

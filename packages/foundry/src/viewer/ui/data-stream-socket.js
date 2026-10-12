@@ -28,7 +28,8 @@ export function createDataStreamSocket(
   { onData, onStatus, onReconnect, onRejected, reconnectDelayMs },
 ) {
   const streams = new Map();
-  // Per stream, send times of opens not yet answered by a snapshot, oldest first (the server answers in order).
+  // Per stream, opens not yet answered by a snapshot, oldest first (the server answers in order):
+  // when each left this client, and whether a close since made its answer stale.
   const requested = new Map();
   // Streams whose open this connection has acknowledged, and callers waiting for that.
   const acked = new Set();
@@ -44,14 +45,14 @@ export function createDataStreamSocket(
 
   const sendOpen = (stream) => {
     if (socket.status() !== 'open') return;
-    requested.set(stream, [...(requested.get(stream) ?? []), Date.now()]);
+    requested.set(stream, [...(requested.get(stream) ?? []), { at: Date.now(), stale: false }]);
     socket.send({ action: 'open', stream });
   };
 
   // Until the awaited snapshot arrives, appends on the wire are already in it.
   const resyncStream = (stream) => {
     lastSeqs.delete(stream);
-    if (!requested.get(stream)?.length) sendOpen(stream);
+    if (!requested.get(stream)?.some((open) => !open.stale)) sendOpen(stream);
   };
 
   const admitAppend = (frame) => {
@@ -69,9 +70,9 @@ export function createDataStreamSocket(
   // Opens are answered in order, by a snapshot or an error; either settles the oldest.
   const answerOpen = (stream) => {
     const queue = requested.get(stream) ?? [];
-    const requestedAt = queue.shift() ?? 0;
+    const open = queue.shift();
     if (!queue.length) requested.delete(stream);
-    return requestedAt;
+    return open ?? { at: 0, stale: false };
   };
 
   const replayStreams = () => {
@@ -125,7 +126,12 @@ export function createDataStreamSocket(
           return;
       }
       if (frame.category !== 'data') return;
-      if (frame.action === 'snapshot') frame.requestedAt = answerOpen(frame.stream);
+      if (frame.action === 'snapshot') {
+        const open = answerOpen(frame.stream);
+        // The answer to an open made before a close: the stream's current open answers next.
+        if (open.stale) return;
+        frame.requestedAt = open.at;
+      }
       // Frames for a stream this client no longer holds are in flight from before its close.
       if (!streams.has(frame.stream)) return;
       if (frame.action === 'snapshot') lastSeqs.set(frame.stream, frame.seq);
@@ -176,7 +182,8 @@ export function createDataStreamSocket(
       if (refs === 0) return;
       if (refs > 1) return void streams.set(stream, refs - 1);
       streams.delete(stream);
-      requested.delete(stream);
+      // Unanswered opens stay queued, marked stale, so later answers still match their opens.
+      for (const open of requested.get(stream) ?? []) open.stale = true;
       acked.delete(stream);
       lastSeqs.delete(stream);
       settleWaiters(stream);

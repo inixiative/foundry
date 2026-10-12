@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
   existsSync,
@@ -48,7 +49,7 @@ function fixture() {
   const c = defaultConfig();
   const worker = {
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     runtime: 'claude' as 'claude' | 'codex',
     mode: 'native-profile' as const,
     profileDirectory: profile('worker'),
@@ -56,7 +57,7 @@ function fixture() {
   const decision = {
     ...worker,
     id: crypto.randomUUID(),
-    connectionId: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
     profileDirectory: profile('decision'),
   };
   c.nativeAuthentication = [worker, decision];
@@ -120,7 +121,7 @@ for (const change of [
       case 'gateway':
         f.c.nativeAuthentication![1] = {
           id: f.decision.id,
-          connectionId: f.decision.connectionId,
+          integrationId: f.decision.integrationId,
           runtime: 'claude',
           mode: 'gateway',
           baseUrl: 'https://example.com',
@@ -295,6 +296,8 @@ test('full subscription startup reaches viewer with no API provider requests or 
         ...env,
         VIEWER_PORT: '0',
         FOUNDRY_STARTUP_SELF_TEST: '0',
+        ARCHIVE_URL: process.env.ARCHIVE_URL,
+        ARCHIVE_TOKEN: process.env.ARCHIVE_TOKEN,
         OPENAI_API_KEY: 'synthetic-never-send',
         ANTHROPIC_API_KEY: 'synthetic-never-send',
       },

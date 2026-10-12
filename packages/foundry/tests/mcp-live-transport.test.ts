@@ -210,7 +210,7 @@ const initializeBody = JSON.stringify({
   },
 });
 
-test('launch artifacts: 0700 directory, 0600 file, loopback endpoint, capability only in the file, descriptors for both engines', async () => {
+test('launch artifacts: 0700 directory, 0600 file, loopback endpoint, capability only in the file, Claude descriptor', async () => {
   const f = await fixture();
   expect(f.bridge.endpoint).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
   expect(statSync(f.bridge.launchDir).mode & 0o777).toBe(0o700);
@@ -224,9 +224,6 @@ test('launch artifacts: 0700 directory, 0600 file, loopback endpoint, capability
     command: 'bun',
     args: [PROXY, f.bridge.launchFile],
   });
-  expect(d.codex.configOverrides.some((o) => o.startsWith('mcp_servers.foundry.command='))).toBe(
-    true,
-  );
   expect(JSON.stringify({ stats: f.bridge.stats(), inv: f.bridge.invocations() })).not.toContain(
     f.capability,
   );

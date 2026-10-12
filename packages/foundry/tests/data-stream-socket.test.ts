@@ -293,3 +293,34 @@ describe('sequence numbers', () => {
     expect(applied(data)).toEqual([[], 'a', ['a', 'b'], 'c']);
   });
 });
+
+test('a close then re-open while the first open is unanswered: its stale snapshot is dropped and the fresh one keeps its own requestedAt', async () => {
+  const { api, data, ws } = socket();
+  open(ws());
+  api.open('thread:a');
+  await Bun.sleep(5);
+  api.close('thread:a');
+  const reopenedAt = Date.now();
+  api.open('thread:a');
+  receive(ws(), { type: 'opened', stream: 'thread:a' });
+  receive(ws(), {
+    category: 'data',
+    action: 'snapshot',
+    stream: 'thread:a',
+    seq: 7,
+    payload: 'stale-from-open-1',
+  });
+  receive(ws(), { type: 'opened', stream: 'thread:a' });
+  receive(ws(), {
+    category: 'data',
+    action: 'snapshot',
+    stream: 'thread:a',
+    seq: 0,
+    payload: 'fresh-from-open-2',
+  });
+  expect(data.map((frame) => frame.payload)).toEqual(['fresh-from-open-2']);
+  expect(data[0].requestedAt).toBeGreaterThanOrEqual(reopenedAt);
+  // Appends follow the fresh snapshot's seq.
+  receive(ws(), { category: 'data', action: 'append', stream: 'thread:a', seq: 1, payload: 'a1' });
+  expect(data.map((frame) => frame.payload)).toEqual(['fresh-from-open-2', 'a1']);
+});

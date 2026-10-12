@@ -416,7 +416,7 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
         toolPolicy,
         fixtureCwd: cwd,
         configurationHash: sha(bridge.launch.claude.mcpConfigJson),
-        launch: { claudeJson: bridge.launch.claude.mcpConfigJson, codexOverrides: [] },
+        launch: { claudeJson: bridge.launch.claude.mcpConfigJson },
         check() {
           check();
           if (bridge.closed) throw Error('Fixture bridge closed');

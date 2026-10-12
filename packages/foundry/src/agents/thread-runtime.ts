@@ -936,19 +936,25 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Snapshot pending reviews without waiting. A later turn uses the latest
       // committed revision; this turn's historical preparation stays immutable.
       const barrier = await this._awaitPendingLearning();
-      // Newly resolved project experts must read their actual owned sources on
-      // the first pre-hook, not abstain because only the global template warmed.
-      // No model/review wait is introduced. Failure blocks this work preparation.
-      await Promise.all(
-        domains.filter((d) => d.expert).map((d) => domainLibrarians.get(d.domain)!.warm()),
+      // Newly resolved project experts read their actual owned sources on the first pre-hook, not
+      // only the global template. Wardens never block: a warm that is late or fails is recorded and
+      // the turn goes on (that Warden advises from what it holds, or abstains).
+      const warmShortfalls = await flow.warmWithin(
+        domains
+          .filter((d) => d.expert)
+          .map((d) => ({ id: d.domain, warm: () => domainLibrarians.get(d.domain)!.warm() })),
       );
+      for (const shortfall of warmShortfalls)
+        warn(
+          `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
+        );
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
         plan = await flow.preMessage(message, identity);
       } catch (error) {
         failure = error as Error;
       }
-      return { barrier, plan, failure };
+      return { barrier, plan, failure, warmShortfalls };
     };
     const early = new Map<
       string,
@@ -997,6 +1003,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           barrier,
           plan: preparedPlan,
           failure,
+          warmShortfalls,
         } = await (started && started.message === ctx.payload
           ? started.preparation
           : prepare(ctx.payload, identityOf(ctx)));
@@ -1006,6 +1013,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           if (failure || !preparedPlan) throw failure ?? Error('pre-message produced no plan');
           const plan = preparedPlan;
           prepared = await flow.hydrateDelta(plan);
+          // The plan's layers are what routing and the Wardens asked for: on-demand ones join this assembly.
+          for (const id of plan.layers) ctx.requestLayer?.(id);
           ctx.annotations.injectionPlan = plan;
           ctx.annotations.decoration = prepared.decoration;
           // Durable at seal, before the central call: the routing request and every expert's advice request
@@ -1049,6 +1058,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
               cacheHash: c.provenance.cacheHash,
             })),
+            ...(warmShortfalls.length || prepared.warmShortfalls.length
+              ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
+              : {}),
           });
           ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
           const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');
@@ -1058,6 +1070,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         } catch (err) {
           warn(`  [flow:${thread.id}] pre-message failed: ${(err as Error).message}`);
         }
+
+        // Whatever went stale since the last turn (an edited CLAUDE.md, MEMORY.md or role file, a
+        // passed staleness window) re-warms before assembly, whether or not pre-message succeeded,
+        // so the change reaches the session as a delta this turn.
+        await flow.refreshStale();
 
         // The delivery ledger: what this thread's native session holds, so a session provider sends
         // only standing context the session lacks (Executor → SessionDelivery.held).
@@ -1094,13 +1111,17 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // Compacted while the turn ran: what rode in its message may be summarized away. Only the
           // system prompt (base) is still held for certain.
           const compacted = this.librarian.ledgerEpoch !== ledgerEpoch;
-          if (session.session === 'started') this.librarian.clearInjectionLedger();
-          return flow.commitDelivery({
-            layers: [
+          // A relaunch that resumed the ledger's own conversation keeps it (a Codex base is empty).
+          if (session.session === 'started' && !session.ledgerKept)
+            this.librarian.clearInjectionLedger();
+          // One record per part: what was sent this turn supersedes the same part in the base.
+          const parts = new Map(
+            [
               ...(session.session === 'started' ? session.base : []),
               ...(compacted ? [] : session.sent),
-            ],
-          });
+            ].map((part) => [part.id, part] as const),
+          );
+          return flow.commitDelivery({ layers: [...parts.values()] });
         };
         if (prepared && plan && artifact?.providerMessages && artifact.layers) {
           // What each participant assessed, per layer it owns: the configured cache by hash, and its own
