@@ -309,7 +309,7 @@ out, per slot:
       "domainKnowledge": { "general": ["<node id>"], "exclude": ["<node id>"] },
       "audience": "personal_private",                     // who the composition is for
       "dedupe": { "content": true, "sections": true },    // overrides composition.dedupe
-      "budget": 200000                                    // characters, instructions + domain knowledge
+      "budget": 80000                                     // characters, instructions + domain knowledge
     }
   }
 }
@@ -327,37 +327,59 @@ domain knowledge.
 
 **Tiers, per role.** A file reaches a role only if its tier is visible to the
 role's `audience`, in both slots, whether it was found, imported or opted in.
-So a personal node never reaches a `team` or `org` audience.
+So a personal node never reaches a `team` or `org` audience. A middleware
+role's output reaches the main thread (a Warden chiming in), so a role's
+audience is never wider in what it reads than `main`'s. If main is `team`,
+every role is at least `team`. Instruction files reach a Warden only through
+its own role: a Warden's `domainKnowledge` sources may not be `instructions`
+sources (use `general`). They must also be enabled. Role files under
+`~/.foundry` belong to the personal computer node wherever a symlink places
+them.
 
-**Dedupe, per role.** After the audience filter, the role's two slots dedupe
-together in slot order (instructions, then domain knowledge), keeping the later
-copy. A file a role pulls into domain knowledge therefore leaves its
+**Dedupe, per role.** After the audience filter, the slots the role receives
+dedupe together in slot order (instructions, then domain knowledge), keeping
+the later copy. A file a role pulls into domain knowledge therefore leaves its
 instructions: a role never reads the same text twice. Every removal is
-reported, with `duplicateOf` naming the slot that kept it.
+reported, with `duplicateOf` naming the slot that kept it. A slot the role does
+not receive is not composed, so dedupe never moves text into it:
+
+- the Cartographer receives instructions only, since its domain knowledge is
+  the map it builds;
+- the main thread receives the slots its enabled `instructions` sources name.
 
 **Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
-characters. The default is none for `main` and 200,000 for middleware roles,
-which fits a whole personal + org + project stack. Over budget, the phase does
+characters. The default is none for `main` and 80,000 for middleware roles. A
+decision call refuses more than 100,000 serialized characters
+(`DECISION_INPUT_CAP`), so the default leaves room for thread knowledge,
+thread state and the turn, and an overflow is reported as this budget's named
+error. Aron's stacks compose to 30,000–56,000 characters per role. Over budget, the phase does
 not run and nothing is truncated:
 
 - advice reports `error`;
 - guard reports `not-admitted`;
-- review records `error` and the review lane stays open;
+- review records `error` instead of being admitted, and the review lane stays open;
 - routing reports `error`.
 
 The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "conventions Warden (role
-librarian-convention): instructions 4010 + domain knowledge 236182 = 240192 chars exceed its
-budget of 200000 (composition.roles.librarian-convention.budget); largest:
-.../CLAUDE.md (domainKnowledge, 150000 chars, opted in)".
+librarian-convention): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
+budget of 80000 (composition.roles.librarian-convention.budget); largest:
+.../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to
 the thread's cwd and project and are never on the thread's stack, so the
 executor never receives them. Each records its selection report. Advice,
 guard and review record the exact composed text as the participant's
-`segments`. They re-read after 60 seconds, at once after a settings edit, or on
-`invalidateComposition()` (call it after writing a role file). A Warden owns no
+`segments`, which grows each turn's journal by roughly one composed role per
+Warden. They re-read:
+
+- after 60 seconds;
+- at once after a settings edit, including a `composition` edit, which also
+  reaches the main thread's `instructions` layer;
+- on `invalidateComposition()`. Call it after writing a role file. It covers
+  the middleware roles' slots; the main thread's layer follows its own
+  staleness. A Warden owns no
 configured layer. Its only written layer is its generated
 `thread-knowledge:<domain>`, owned by the thread, its project and the domain,
 and written by its post-work review. The Librarian alone writes thread-state.
@@ -366,8 +388,10 @@ and written by its post-work review. The Librarian alone writes thread-state.
 **Priming.** Wardens are fresh each call, never a continuing conversation. A
 Warden's primed decision session is its composed instructions (system) plus its
 composed domain knowledge (the leading `## Domain cache` part of the message,
-`stablePrefix`). Advice, guard and review all lead with the same prefix. Each
-call forks the primed session, so every cycle starts from that state. The
+`stablePrefix`). Advice and guard share that primed prefix. Review leads with
+the same composed parts under its own header, on its own session key, so it
+primes its own session. Each call forks the primed session, so every cycle
+starts from that state. The
 per-call input is the Warden's own thread knowledge, the thread state and the
 turn. A changed composition is a new prime hash, and the next call re-primes
 (agent-session `ClaudePrimedSessions`).

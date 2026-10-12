@@ -54,6 +54,20 @@ export function configuredExperts(config: FoundryConfig): {
     const unknown = (agent.domainKnowledge ?? []).filter((source) => !config.sources[source]);
     if (unknown.length)
       throw Error(`Expert ${id} domainKnowledge names unknown sources: ${unknown.join(', ')}`);
+    const disabled = (agent.domainKnowledge ?? []).filter(
+      (source) => !config.sources[source]!.enabled,
+    );
+    if (disabled.length)
+      throw Error(`Expert ${id} domainKnowledge names disabled sources: ${disabled.join(', ')}`);
+    // Instruction files reach a Warden through its own role in the composition view, with its own
+    // picks and audience; an instructions source here would compose the main thread's instead.
+    const composed = (agent.domainKnowledge ?? []).filter(
+      (source) => config.sources[source]!.type === 'instructions',
+    );
+    if (composed.length)
+      throw Error(
+        `Expert ${id} domainKnowledge names instructions sources (${composed.join(', ')}); pick instruction files with composition.roles.${id}.domainKnowledge.general`,
+      );
     if (domains.has(agent.domain)) throw Error(`Duplicate expert domain: ${agent.domain}`);
     domains.set(agent.domain, id);
     if (typeof agent.prompt !== 'string' || !agent.prompt.trim())

@@ -30,7 +30,7 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
-import { MAIN_ROLE } from '../prompts/instruction-settings';
+import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings';
 import { compositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -77,7 +77,13 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
         return inlineSource(srcCfg.id, srcCfg.uri);
       case 'instructions':
         // The main thread's slot of the composition view, for the thread's cwd, project and owner.
-        return compositionSource(cfg, srcCfg.id, MAIN_ROLE, srcCfg.slot ?? 'instructions');
+        return compositionSource(
+          cfg,
+          srcCfg.id,
+          MAIN_ROLE,
+          srcCfg.slot ?? 'instructions',
+          mainSlots(cfg),
+        );
       case 'file':
         // Bounded selection by default: the owned log stays complete and
         // searchable, the automatic input is a deterministic, reported subset.
@@ -105,6 +111,17 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
         return inlineSource(srcCfg.id, `[${srcCfg.type} source: ${srcCfg.uri}]`);
     }
   };
+}
+
+/** The main thread's delivered slots: those an enabled `instructions` source returns. */
+function mainSlots(cfg: FoundryConfig): CompositionSlot[] {
+  return [
+    ...new Set(
+      Object.values(cfg.sources)
+        .filter((source) => source.enabled && source.type === 'instructions')
+        .map((source) => source.slot ?? 'instructions'),
+    ),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -344,8 +361,13 @@ export class ThreadFactory {
         const prior = before.layers[id],
           next = after.layers[id];
         const sourceIds = new Set([...(prior?.sourceIds ?? []), ...(next?.sourceIds ?? [])]);
+        // A composition edit (nodes, picks, dedupe) re-sources every layer that composes.
+        const composes = [...sourceIds].some(
+          (sourceId) => after.sources[sourceId]?.type === 'instructions',
+        );
         if (
           !changed(prior, next) &&
+          !(composes && changed(before.composition, after.composition)) &&
           ![...sourceIds].some((sourceId) =>
             changed(before.sources[sourceId], after.sources[sourceId]),
           )

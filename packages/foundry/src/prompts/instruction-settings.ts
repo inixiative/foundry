@@ -13,8 +13,20 @@ export type CompositionSlot = (typeof COMPOSITION_SLOTS)[number];
 /** The main thread's role id in the composition view. */
 export const MAIN_ROLE = 'main';
 
-/** Default budget for a middleware role's composed instructions plus domain knowledge, in characters. */
-export const DEFAULT_ROLE_BUDGET = 200_000;
+/**
+ * Default budget for a middleware role's composed instructions plus domain knowledge, in characters:
+ * under the decision input cap (DECISION_INPUT_CAP, 100,000 serialized), leaving room for thread
+ * knowledge, thread state and the turn, so an overflow is this budget's named error, not the cap's.
+ */
+export const DEFAULT_ROLE_BUDGET = 80_000;
+
+/** How narrow an audience is: one sees every tier its rank or above. */
+const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {
+  personal_private: 0,
+  personal_public: 1,
+  team: 2,
+  org: 3,
+};
 
 export interface CompositionDedupe {
   content?: boolean;
@@ -152,7 +164,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     scope: 'computer',
     personal: true,
     imports: 'anywhere',
-    owns: { within: ['{claudeConfigDir}', '{codexHome}'], dirs: ['{home}'] },
+    owns: { within: ['{claudeConfigDir}', '{codexHome}', '{home}/.foundry'], dirs: ['{home}'] },
     sources: [
       {
         id: HARNESS_GLOBAL_SOURCE,
@@ -414,15 +426,21 @@ export function validateCompositionSettings(
   }
 }
 
-/** A role's picks with its defaults: budget none for main, DEFAULT_ROLE_BUDGET otherwise. */
+/**
+ * A role's picks with its defaults: budget none for main, DEFAULT_ROLE_BUDGET otherwise. A middleware
+ * role's output reaches the main thread (a Warden chiming in), so its audience is never wider in what
+ * it may read than main's: a team main thread makes every role team.
+ */
 export function roleComposition(
   settings: CompositionSettings | undefined,
   role: string,
 ): RoleComposition & { audience: CorpusTier; budget: number } {
   const picks = settings?.roles?.[role] ?? {};
+  const main = settings?.roles?.[MAIN_ROLE]?.audience ?? 'personal_private';
+  const own = picks.audience ?? 'personal_private';
   return {
     ...picks,
-    audience: picks.audience ?? 'personal_private',
+    audience: role === MAIN_ROLE || AUDIENCE_RANK[own] >= AUDIENCE_RANK[main] ? own : main,
     budget: picks.budget ?? (role === MAIN_ROLE ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
   };
 }

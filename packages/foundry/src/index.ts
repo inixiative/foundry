@@ -79,6 +79,7 @@ export {
   type HookTokenTracker,
   type InjectionPlan,
   type InvalidationEvent,
+  invalidateComposition,
   keywordClassify,
   keywordRoute,
   type LayerInheritance,

@@ -220,11 +220,6 @@ export class Cartographer {
     this._budget = budget;
   }
 
-  /** Settings edits apply on the next route. */
-  setRoutePrompt(prompt: string | undefined): void {
-    this._routePrompt = prompt ?? DEFAULT_ROUTE_INSTRUCTIONS;
-  }
-
   /** The current topology map. */
   get map(): Readonly<TopologyMap> {
     return this._map;

@@ -11,6 +11,7 @@ import {
   sameNativeOwner,
   type TokenCounts,
 } from '@inixiative/foundry-core';
+import { DECISION_INPUT_CAP } from './decision-budget';
 import { withProfile } from './default-profiles';
 import { NativeAuthentication, type NativeAuthenticationSource } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
@@ -189,7 +190,8 @@ export function buildNativeTextProvider(
           (!Number.isSafeInteger(opts.timeout) || opts.timeout < 100 || opts.timeout > timeout))
       )
         throw Error('Native text scope or model override refused');
-      if (JSON.stringify(messages).length > 100_000) throw Error('Native text input cap exceeded');
+      if (JSON.stringify(messages).length > DECISION_INPUT_CAP)
+        throw Error('Native text input cap exceeded');
       busy = true;
       const id = crypto.randomUUID(),
         threadId = `native-text:${config.runId}:${id}`;

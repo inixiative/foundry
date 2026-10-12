@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -19,9 +19,18 @@ import {
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import type { RoleComposition } from '../src/prompts/instruction-settings';
-import { composeRoleView, instructionStackReport } from '../src/prompts/instruction-stack';
+import {
+  composeRoleView,
+  compositionSource,
+  instructionStackReport,
+} from '../src/prompts/instruction-stack';
 import { primedRequest } from '../src/providers/primed-decisions';
-import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
+import {
+  type AgentSettingsConfig,
+  type FoundryConfig,
+  starterConfig,
+  validateConfig,
+} from '../src/viewer/config';
 
 /**
  * The composition view (docs/usage-and-context.md, "Composition view"): one ladder composes the
@@ -298,6 +307,7 @@ function setup(c: FoundryConfig, advice: { snippets: string[] } = { snippets: []
   const runtime = manager.get('t')!;
   const last = (phase: Call['phase']) => calls.filter((call) => call.phase === phase).at(-1)!;
   return {
+    factory,
     thread,
     runtime,
     calls,
@@ -456,4 +466,74 @@ test("the Convention Warden's knowledge is unchanged under the default config: o
   } finally {
     await f.close();
   }
+});
+
+test("a role never reads more personal files than the main thread's audience allows", async () => {
+  ladderFiles();
+  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE');
+  // The Warden's notes reach main's message, so a team main thread makes the Warden team too.
+  const c = config();
+  c.composition = { roles: { main: { audience: 'team' } } };
+  const f = setup(c);
+  try {
+    await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
+    const advise = JSON.stringify(f.last('advise').messages);
+    expect(advise).toContain('ORG_RULES');
+    expect(advise).not.toContain('PERSONAL_GLOBAL');
+    expect(advise).not.toContain('PROJECT_PERSONAL');
+  } finally {
+    await f.close();
+  }
+});
+
+test('a home role file symlinked into the repository stays personal', async () => {
+  write(join(home, '.foundry', 'roles', 'main', 'instructions.md'), 'HOME_ROLE_SECRET');
+  mkdirSync(join(repo, '.foundry', 'roles', 'main'), { recursive: true });
+  symlinkSync(
+    join(home, '.foundry', 'roles', 'main', 'instructions.md'),
+    roleFile(repo, 'main', 'instructions'),
+  );
+  const team = await view('main', { audience: 'team' });
+  expect(team.slots.instructions.text).not.toContain('HOME_ROLE_SECRET');
+  expect((await view('main')).slots.instructions.text).toContain('HOME_ROLE_SECRET');
+});
+
+test('a slot the role does not receive is not composed, so dedupe never moves text into it', async () => {
+  write(join(repo, 'CLAUDE.md'), '# Project\n\n## Rules\n\nKEEP_ME');
+  write(roleFile(repo, 'main', 'domainKnowledge'), '# Project\n\n## Rules\n\nKEEP_ME');
+  const c = config();
+  // The main thread receives instructions only (its one instructions source).
+  const source = compositionSource(c, 'main-instructions', 'main', 'instructions', ['instructions'])
+    .bind!({ threadId: 't', cwd: repo });
+  expect(await source.load()).toContain('KEEP_ME');
+  // A role receiving both slots reads it once, in domain knowledge.
+  const both = await view('main');
+  expect(both.slots.instructions.text).not.toContain('KEEP_ME');
+  expect(both.slots.domainKnowledge.text).toContain('KEEP_ME');
+});
+
+test('a composition edit reaches the main thread on its next turn', async () => {
+  ladderFiles();
+  const c = config();
+  const f = setup(c);
+  try {
+    await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
+    expect(JSON.stringify(f.last('central').messages)).toContain('PERSONAL_GLOBAL');
+    const next = structuredClone(c);
+    next.composition = { roles: { main: { instructions: { exclude: ['global'] } } } };
+    await f.factory.reconfigure(next);
+    await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
+    expect(JSON.stringify(f.last('central').messages)).not.toContain('PERSONAL_GLOBAL');
+  } finally {
+    await f.close();
+  }
+});
+
+test('Warden knowledge sources are refused when disabled or when they compose instructions', () => {
+  const c = config();
+  c.sources.notes = { id: 'notes', type: 'inline', label: 'N', uri: 'x', enabled: false };
+  c.agents[WARDEN]!.domainKnowledge = ['notes'];
+  expect(() => validateConfig(c)).toThrow('disabled sources: notes');
+  c.agents[WARDEN]!.domainKnowledge = ['instructions'];
+  expect(() => validateConfig(c)).toThrow(`composition.roles.${WARDEN}.domainKnowledge.general`);
 });

@@ -22,35 +22,46 @@ export interface RoleLayers {
 export const roleLayerId = (role: string, slot: CompositionSlot): string => `role:${role}:${slot}`;
 export const isRoleLayerId = (id: string): boolean => id.startsWith('role:');
 
+export interface RoleLayerOptions {
+  resolveSource?: ResolveSource;
+  /** Instructions to use when the role's settings carry none. */
+  builtIn?: string;
+  scope?: OwnershipScope;
+}
+
 /**
- * One middleware role's slots from the composition view (docs/usage-and-context.md, "Composition
- * view"). Instructions: the role's settings instructions (`builtIn` when it has none), then the
- * ladder's files for it. Domain knowledge: each of its `domainKnowledge` sources under its label,
- * then the ladder's files. Bound to `scope`, they follow the thread's cwd and project.
+ * A Warden's slots from the composition view (docs/usage-and-context.md, "Composition view").
+ * Instructions: the role's settings instructions (`builtIn` when it has none), then the ladder's
+ * files for it. Domain knowledge: each of its `domainKnowledge` sources under its label, then the
+ * ladder's files. Bound to `scope`, they follow the thread's cwd and project.
  */
 export function buildRoleLayers(
   config: FoundryConfig,
   role: string,
-  options: {
-    resolveSource?: ResolveSource;
-    /** Instructions to use when the role's settings carry none. */
-    builtIn?: string;
-    scope?: OwnershipScope;
-  } = {},
+  options: RoleLayerOptions = {},
 ): RoleLayers {
   return {
-    instructions: roleLayer(
-      roleLayerId(role, 'instructions'),
-      roleSources(config, role, 'instructions', options),
-      options.scope,
-    ),
-    domainKnowledge: roleLayer(
-      roleLayerId(role, 'domainKnowledge'),
-      roleSources(config, role, 'domainKnowledge', options),
-      options.scope,
-      'domain-knowledge',
-    ),
+    instructions: buildRoleLayer(config, role, 'instructions', BOTH, options),
+    domainKnowledge: buildRoleLayer(config, role, 'domainKnowledge', BOTH, options),
   };
+}
+
+const BOTH: readonly CompositionSlot[] = ['instructions', 'domainKnowledge'];
+
+/** One slot of a role that receives `delivered` (the Cartographer: instructions only). */
+export function buildRoleLayer(
+  config: FoundryConfig,
+  role: string,
+  slot: CompositionSlot,
+  delivered: readonly CompositionSlot[],
+  options: RoleLayerOptions = {},
+): ContextLayer {
+  return roleLayer(
+    roleLayerId(role, slot),
+    roleSources(config, role, slot, delivered, options),
+    options.scope,
+    slot === 'domainKnowledge' ? 'domain-knowledge' : undefined,
+  );
 }
 
 /** The sources of one role slot, unbound. */
@@ -58,10 +69,17 @@ export function roleSources(
   config: FoundryConfig,
   role: string,
   slot: CompositionSlot,
+  delivered: readonly CompositionSlot[],
   options: { resolveSource?: ResolveSource; builtIn?: string } = {},
 ): ContextSource[] {
   const agent = config.agents[role];
-  const ladder = compositionSource(config, `${roleLayerId(role, slot)}#composition`, role, slot);
+  const ladder = compositionSource(
+    config,
+    `${roleLayerId(role, slot)}#composition`,
+    role,
+    slot,
+    delivered,
+  );
   if (slot === 'instructions') {
     const own = agent?.prompt?.trim() ? agent.prompt : options.builtIn;
     return [...(own ? [inlineSource(`${roleLayerId(role, slot)}#settings`, own)] : []), ladder];
@@ -114,6 +132,8 @@ function roleLayer(
     staleness: 60_000,
     sources: [bound(chunkSource(`${id}#slot`, undefined, sources), scope)],
   });
+  // Threads come and go: drop collected entries as the set grows.
+  if (live.size >= 256) for (const ref of live) if (!ref.deref()) live.delete(ref);
   live.add(new WeakRef(layer));
   return layer;
 }
@@ -121,7 +141,10 @@ function roleLayer(
 const bound = (source: ContextSource, scope: OwnershipScope | undefined) =>
   scope && source.bind ? source.bind(scope) : source;
 
-/** Swap a live role layer's sources for `fresh`'s (a settings edit), bound to `scope`. */
+/**
+ * Swap a live role layer's sources for `fresh`'s (a settings edit), bound to `scope`. A load in
+ * flight finishes with the old sources and marks the layer warm, so it is marked stale again after.
+ */
 export function replaceRoleSources(
   layer: ContextLayer,
   fresh: readonly ContextSource[],
@@ -129,6 +152,11 @@ export function replaceRoleSources(
 ): void {
   for (const source of [...layer.sources]) layer.removeSource(source.id);
   layer.addSource(bound(chunkSource(`${layer.id}#slot`, undefined, [...fresh]), scope));
+  if (layer.state === 'warming')
+    void layer
+      .warm()
+      .catch(() => undefined)
+      .finally(() => layer.invalidate());
   layer.invalidate();
 }
 

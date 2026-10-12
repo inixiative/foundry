@@ -982,8 +982,6 @@ export class DomainLibrarian {
         facts: [],
         reason: `thread knowledge exceeds its ${this._threadKnowledge.maxChars} character bound; nothing was sent or truncated`,
       };
-    const over = this.budgetError(context.instructions, context.domainKnowledge);
-    if (over) return { decision: 'error', facts: [], reason: over };
     const clip = (text: string, max: number) =>
       text.length > max ? `${text.slice(0, max)}… [truncated ${text.length - max} chars]` : text;
     // Each tool is evidence: identity, outcome, and the observed result or
@@ -1006,7 +1004,8 @@ export class DomainLibrarian {
       return lines.join('\n');
     });
     // Domain knowledge heads the message and changes only when the composition does: a stable,
-    // primable prefix, so a review forks the same primed session as advice and guard.
+    // primable prefix. Review primes its own session (its own key and header); the budget is checked
+    // where the runtime admits the review.
     const domainKnowledge = job?.segments.domainKnowledge ?? this._cache.content;
     const stablePrefix = `## Configured domain knowledge (distinct from generated thread knowledge)\n${domainKnowledge}\n`;
     const messages: LLMMessage[] = [

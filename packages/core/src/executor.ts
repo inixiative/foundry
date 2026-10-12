@@ -87,8 +87,14 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     const plan = meta?.annotations?.injectionPlan;
     const base = this.assembleContext(filterOverride);
     // Notes placed after the message (Wardens chiming in) end the user's turn; the rest is context.
-    const contextual = (decoration?.blocks ?? []).filter((b) => b.placement !== 'after-message');
-    const notes = (decoration?.blocks ?? []).filter((b) => b.placement === 'after-message');
+    // A payload that is not text has no end to append to; its notes stay in the context.
+    const appendable = typeof payload === 'string';
+    const contextual = (decoration?.blocks ?? []).filter(
+      (b) => !appendable || b.placement !== 'after-message',
+    );
+    const notes = appendable
+      ? (decoration?.blocks ?? []).filter((b) => b.placement === 'after-message')
+      : [];
     const blocks = contextual.length ? [...base.blocks, ...contextual] : base.blocks;
     const assembled: AssembledContext = contextual.length
       ? { blocks, text: blocks.map((block) => block.text).join('\n\n') }

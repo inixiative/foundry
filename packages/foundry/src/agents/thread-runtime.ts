@@ -46,6 +46,7 @@ import {
 import { Librarian } from './librarian';
 import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
 import {
+  buildRoleLayer,
   buildRoleLayers,
   type ResolveSource,
   type RoleLayers,
@@ -796,10 +797,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._resolveSource = deps.resolveSource;
     const cartographerRole = cartographerRoleId(deps.config);
     this._cartographerRole = cartographerRole;
-    this._cartographerInstructions = buildRoleLayers(deps.config, cartographerRole, {
-      builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
-      scope: this._scope,
-    }).instructions;
+    // The Cartographer receives instructions only; its domain knowledge is the map it builds.
+    this._cartographerInstructions = buildRoleLayer(
+      deps.config,
+      cartographerRole,
+      'instructions',
+      ['instructions'],
+      { builtIn: DEFAULT_ROUTE_INSTRUCTIONS, scope: this._scope },
+    );
     const cartographerId = auxiliarySessionId(thread.id, 'cartographer');
     this.auxiliarySessionIds.push(cartographerId);
     this.cartographer = new Cartographer({
@@ -2667,16 +2672,18 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     if (this._disposed) return [];
     const deferred: string[] = [];
     const next = new Set<string>();
+    // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
+    const swaps: Array<() => void> = [];
     const cartographerRole = cartographerRoleId(config);
     if (cartographerRole === this._cartographerRole) {
-      replaceRoleSources(
-        this._cartographerInstructions,
-        roleSources(config, cartographerRole, 'instructions', {
-          builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
-        }),
-        this._scope,
-      );
-      this.cartographer.setBudget(roleComposition(config.composition, cartographerRole).budget);
+      const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {
+        builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
+      });
+      const budget = roleComposition(config.composition, cartographerRole).budget;
+      swaps.push(() => {
+        replaceRoleSources(this._cartographerInstructions, fresh, this._scope);
+        this.cartographer.setBudget(budget);
+      });
     } else deferred.push('Cartographer role change applies to new threads');
     for (const dc of domains) {
       next.add(dc.domain);
@@ -2689,17 +2696,24 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         deferred.push(`Warden ${dc.domain} applies to new threads`);
         continue;
       }
-      if (held) {
-        // Settings edits reach the composed slots on the next turn's warm.
-        for (const slot of ['instructions', 'domainKnowledge'] as const)
-          replaceRoleSources(
-            held[slot],
-            roleSources(config, held.role, slot, { resolveSource: this._resolveSource }),
-            this._scope,
-          );
-      }
-      lib.reconfigure(dc);
+      // Settings edits reach the composed slots on the next turn's warm.
+      const fresh = held
+        ? (['instructions', 'domainKnowledge'] as const).map(
+            (slot) =>
+              [
+                held[slot],
+                roleSources(config, held.role, slot, ['instructions', 'domainKnowledge'], {
+                  resolveSource: this._resolveSource,
+                }),
+              ] as const,
+          )
+        : [];
+      swaps.push(() => {
+        for (const [layer, sources] of fresh) replaceRoleSources(layer, sources, this._scope);
+        lib.reconfigure(dc);
+      });
     }
+    for (const swap of swaps) swap();
     for (const domain of this.domainLibrarians.keys())
       if (!next.has(domain)) deferred.push(`Warden ${domain} stays until the thread is replaced`);
     return deferred;

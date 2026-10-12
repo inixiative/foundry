@@ -241,6 +241,14 @@ export {
   type ReactiveMiddlewareConfig,
   rewarmOnAgentRule,
 } from './reactive';
+// Composition view — each middleware role's composed slots
+export {
+  buildRoleLayer,
+  buildRoleLayers,
+  invalidateComposition,
+  type RoleLayers,
+  roleLayerId,
+} from './role-layers';
 // Sessions
 export {
   type LayerInheritance,

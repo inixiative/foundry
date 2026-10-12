@@ -18,6 +18,7 @@ import {
   type LLMProvider,
   type NativeEvidence,
 } from '@inixiative/foundry-core';
+import { DECISION_INPUT_CAP } from './decision-budget';
 import { type NativeProfileSource, withProfile } from './default-profiles';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
@@ -403,7 +404,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             (!Number.isSafeInteger(opts.timeout) || opts.timeout < 100 || opts.timeout > timeout))
         )
           throw Error('Decision scope or model override refused');
-        if (JSON.stringify(messages).length > 100_000) throw Error('Decision input cap exceeded');
+        if (JSON.stringify(messages).length > DECISION_INPUT_CAP)
+          throw Error('Decision input cap exceeded');
         const id = crypto.randomUUID(),
           fallbackThread = `primed:${hostId}:${id}`;
         const owner = freezeEvidence({

@@ -25,6 +25,7 @@ import {
   MAIN_ROLE,
   type RoleComposition,
   resolveInstructionLadder,
+  roleComposition,
 } from './instruction-settings';
 
 /**
@@ -32,7 +33,7 @@ import {
  * them for any harness from a registered hierarchy (core `discoverHierarchy`): a ladder or tree of
  * nodes (computer, org, project; shared or personal), each naming its files and corpus tier. The
  * default ladder is Claude Code's own discovery (docs/usage-and-context.md), so a Codex session gets
- * CLAUDE.md and a Claude session gets AGENTS.md; `instructions.nodes` registers more.
+ * CLAUDE.md and a Claude session gets AGENTS.md; `composition.nodes` registers more.
  */
 export type InstructionHarness = 'claude' | 'codex';
 /** The default ladder's nodes. */
@@ -485,22 +486,26 @@ export function instructionStackSource(
 /**
  * The source for one role's slot under `config`: the registered ladder, the role's picks and the
  * harness the global file follows. The main thread's `instructions` source and every middleware
- * role's slots are this one source.
+ * role's slots are this one source. `delivered` names the slots the role actually receives: a slot
+ * nobody delivers is not composed, so dedupe never moves text into it.
  */
 export function compositionSource(
   config: FoundryConfig,
   id: string,
   role: string,
   slot: CompositionSlot,
+  delivered: readonly CompositionSlot[],
 ): ContextSource {
   const settings = config.composition;
+  const { budget: _budget, ...picks } = roleComposition(settings, role);
+  for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
   return instructionStackSource(id, {
     harness: config.defaults.provider === 'codex' ? 'codex' : 'claude',
     harnessLoadsGlobal: codexReadsUserHome(config),
     role,
     slot,
     ladder: resolveInstructionLadder(settings),
-    ...(settings?.roles?.[role] ? { picks: settings.roles[role] } : {}),
+    picks,
     ...(settings?.dedupe ? { dedupe: settings.dedupe } : {}),
     projectPath: (projectId) => config.projects[projectId]?.path,
     owner: (projectId) =>
