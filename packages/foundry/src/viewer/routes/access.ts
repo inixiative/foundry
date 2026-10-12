@@ -1,11 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readPrivateJson } from '@inixiative/signet';
+import { readPrivateJson, SignetHttpError, signetCredentialSchema } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import {
-  accessCredentialSchema,
   KingdomAccessClient,
-  KingdomAccessHttpError,
   kingdomAccessSourceSchema,
 } from '../../providers/kingdom-access-client';
 import { ConfigRevisionError, type ConfigStore, type FoundryConfig } from '../config';
@@ -33,7 +31,7 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
         (config.kingdomAccess ?? []).map(async (source) => {
           let credentialStatus: 'available' | 'unavailable' = 'available';
           try {
-            accessCredentialSchema.parse(await readPrivateJson(source.credentialFile));
+            signetCredentialSchema.parse(await readPrivateJson(source.credentialFile));
           } catch {
             credentialStatus = 'unavailable';
           }
@@ -132,7 +130,7 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
       });
     } catch (error) {
       const status =
-        error instanceof KingdomAccessHttpError && error.status === 401
+        error instanceof SignetHttpError && error.status === 401
           ? 'needs-authentication'
           : 'unavailable';
       return c.json({
@@ -140,7 +138,7 @@ export function registerAccessRoutes(app: Hono, store: ConfigStore): void {
         checkedAt: new Date().toISOString(),
         message:
           status === 'needs-authentication'
-            ? 'Kingdom rejected this access token. Issue a valid token for this Signet and replace the private file.'
+            ? 'Kingdom rejected this Signet credential. Re-pair this Foundry or grant the Signet again so its Installation connection enrolls a fresh key.'
             : 'Access could not be verified. Check the private file, integration, Signet permissions and Kingdom availability.',
       });
     }
