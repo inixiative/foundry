@@ -54,7 +54,7 @@ const EXECUTOR_PROMPT =
   'You are the Artificer, the executor for this Foundry thread. Answer the user directly.';
 const instructions = composeInstructionStack(
   await discoverInstructionStack({ cwd, harness: 'claude' }),
-);
+).text;
 
 /** One thread's layers at a turn: stable instructions, slow learning and thread-state. */
 function layers(turn: number): Array<{ id: string; kind: 'stable' | 'slow'; text: string }> {
