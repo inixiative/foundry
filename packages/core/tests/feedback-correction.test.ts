@@ -174,6 +174,13 @@ describe('scrubSecrets', () => {
     expect(text).toContain('RAILWAY_TOKEN=[REDACTED:value]');
   });
 
+  test('lowercase and JSON-quoted secret keys are scrubbed too', () => {
+    const { text } = scrubSecrets('{"api_key": "abcd1234efgh"} and password=hunter2hunter2');
+    expect(text).not.toContain('abcd1234efgh');
+    expect(text).not.toContain('hunter2hunter2');
+    expect(text).toContain('"api_key": [REDACTED:value]');
+  });
+
   test('a key cut by truncation is still scrubbed', () => {
     const { corrections } = extractCorrections('s1', [
       user(`never paste keys like ${'x'.repeat(3990)} sk-ant-abcdefghijklmnopqrst`),

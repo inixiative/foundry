@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -84,6 +91,12 @@ async function stablePackageDir(packageDir: string, yes: boolean): Promise<strin
   return globalDir;
 }
 
+/** A bun path that survives upgrades (Homebrew's Cellar path does not): bun's own, else the one on PATH. */
+function stableBun(): string {
+  const own = join(process.env.BUN_INSTALL ?? join(homedir(), '.bun'), 'bin', 'bun');
+  return existsSync(own) ? own : (Bun.which('bun') ?? process.execPath);
+}
+
 /** Where `@inixiative/foundry` resolves from the given foundry-acp install. */
 function foundryDir(acpDir: string): string {
   return dirname(dirname(Bun.resolveSync('@inixiative/foundry', acpDir)));
@@ -109,13 +122,26 @@ export function paseoProvider(command: string[]) {
   return { extends: 'acp', label: 'Foundry', command };
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+/** The Foundry provider already in a Paseo config, if any. */
+function paseoFoundry(config: unknown): unknown {
+  return isRecord(config) && isRecord(config.agents) && isRecord(config.agents.providers)
+    ? config.agents.providers.foundry
+    : undefined;
+}
+
+/** Paseo's config with the Foundry provider set; refuses shapes it would have to overwrite. */
 export function mergePaseoConfig(existing: unknown, command: string[]) {
-  const config =
-    existing && typeof existing === 'object'
-      ? structuredClone(existing as Record<string, unknown>)
-      : {};
-  const agents = (config.agents ?? {}) as Record<string, unknown>;
-  const providers = (agents.providers ?? {}) as Record<string, unknown>;
+  if (existing !== undefined && !isRecord(existing))
+    throw Error('The Paseo config is not a JSON object; add the block by hand');
+  const config: Record<string, unknown> = structuredClone(existing ?? {});
+  const agents = config.agents ?? {};
+  if (!isRecord(agents)) throw Error('Paseo `agents` is not an object; add the block by hand');
+  const providers = agents.providers ?? {};
+  if (!isRecord(providers))
+    throw Error('Paseo `agents.providers` is not an object; add the block by hand');
   config.agents = { ...agents, providers: { ...providers, foundry: paseoProvider(command) } };
   return config;
 }
@@ -138,7 +164,7 @@ export async function runSetup(args: string[]): Promise<number> {
   }
   const yes = Boolean(values.yes);
   const packageDir = resolve(import.meta.dir, '..');
-  const bun = process.execPath;
+  const bun = stableBun();
 
   // 1. A stable install: the checkout in development, else the global bun install.
   const checkout = checkoutRoot(packageDir);
@@ -154,13 +180,26 @@ export async function runSetup(args: string[]): Promise<number> {
   } else {
     const workingDirectory = checkout ?? join(homedir(), '.foundry', 'home');
     const installed = installedDaemon();
+    const program = checkout
+      ? undefined
+      : [bun, 'run', join(foundryDir(acpDir), 'src', 'start.ts')];
     const elsewhere =
-      installed?.workingDirectory &&
-      resolve(installed.workingDirectory) !== resolve(workingDirectory);
+      installed &&
+      (!installed.readable || resolve(installed.workingDirectory) !== resolve(workingDirectory));
+    const current =
+      installed?.readable &&
+      !elsewhere &&
+      (!program || installed.program.join('\0') === program.join('\0')) &&
+      (await daemonLoaded());
     if (elsewhere && !values.reinstall) {
-      ok(`a Foundry daemon is already installed, running from ${installed.workingDirectory}`);
+      ok(
+        `a Foundry daemon is already installed${installed.readable ? `, running from ${installed.workingDirectory}` : ` (${installed.plistPath})`}`,
+      );
       info('foundry-acp connects to whichever daemon is running; pass --reinstall to replace it');
       if (!(await daemonLoaded())) await startDaemon();
+    } else if (current && !values.reinstall) {
+      // Reinstalling restarts the daemon and ends its live sessions: only on request.
+      ok('the Foundry daemon is installed and running; pass --reinstall to restart it');
     } else {
       if (!checkout && (await ensureStarterSettings(workingDirectory)))
         ok(`wrote starter settings in ${join(workingDirectory, '.foundry')}`);
@@ -171,7 +210,7 @@ export async function runSetup(args: string[]): Promise<number> {
         );
       await installDaemon({
         workingDirectory,
-        ...(checkout ? {} : { program: [bun, 'run', join(foundryDir(acpDir), 'src', 'start.ts')] }),
+        ...(program ? { program } : {}),
         port: PORT,
         log: info,
       });
@@ -185,24 +224,29 @@ export async function runSetup(args: string[]): Promise<number> {
   const paseoPath = join(homedir(), '.paseo', 'config.json');
   const block = { agents: { providers: { foundry: paseoProvider(acpCommand) } } };
   console.log(`\nPaseo (${paseoPath}):\n${JSON.stringify(block, null, 2)}`);
-  if (values.write || (await ask(`Add this provider to ${paseoPath}?`, yes))) {
-    let existing: unknown = {};
+  let existing: unknown;
+  if (existsSync(paseoPath)) {
+    try {
+      existing = JSON.parse(readFileSync(paseoPath, 'utf8'));
+    } catch {
+      throw Error(`${paseoPath} is not valid JSON; add the block above by hand`);
+    }
+  }
+  const previous = paseoFoundry(existing);
+  if (previous && JSON.stringify(previous) !== JSON.stringify(paseoProvider(acpCommand)))
+    warn(
+      `${paseoPath} already has a different Foundry provider:\n${JSON.stringify(previous, null, 2)}`,
+    );
+  if (values.write || (await ask(`Write this provider to ${paseoPath}?`, yes))) {
+    const merged = mergePaseoConfig(existing, acpCommand);
+    let backup: string | undefined;
     if (existsSync(paseoPath)) {
-      try {
-        existing = JSON.parse(readFileSync(paseoPath, 'utf8'));
-      } catch {
-        throw Error(`${paseoPath} is not valid JSON; add the block above by hand`);
-      }
-      writeFileSync(`${paseoPath}.bak`, readFileSync(paseoPath));
+      backup = `${paseoPath}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      copyFileSync(paseoPath, backup);
     }
     mkdirSync(dirname(paseoPath), { recursive: true });
-    writeFileSync(
-      paseoPath,
-      `${JSON.stringify(mergePaseoConfig(existing, acpCommand), null, 2)}\n`,
-    );
-    ok(
-      `wrote ${paseoPath}${existsSync(`${paseoPath}.bak`) ? ` (previous copy: ${paseoPath}.bak)` : ''}`,
-    );
+    writeFileSync(paseoPath, `${JSON.stringify(merged, null, 2)}\n`);
+    ok(`wrote ${paseoPath}${backup ? ` (previous copy: ${backup})` : ''}`);
   } else info('not written; paste the block above, or rerun with --write');
   console.log(
     [

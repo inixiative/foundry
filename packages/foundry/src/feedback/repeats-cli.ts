@@ -1,9 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { localArchive } from '@inixiative/archive/remote';
-import type { CorrectionClassification } from '@inixiative/foundry-core';
+import {
+  type CorrectionClassification,
+  SUBSCRIPTION_DECISION_MODELS,
+} from '@inixiative/foundry-core';
 import { createSubscriptionDecisions } from '../providers/subscription-decisions';
 import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import { starterConfig } from '../viewer/config';
@@ -34,9 +37,11 @@ and Codex sessions. Everything runs on this machine; the share outputs hold rule
   --limit N            rules to show (default 25)
   --no-archive         read only the harness files, not this machine's Archive
   --no-history         skip ~/.claude/history.jsonl
-  --no-cache           reclassify every candidate`;
+  --no-cache           classify every candidate again (answers are still recorded)`;
 
 const STATE = join(homedir(), '.foundry', 'repeats');
+/** The heavier decision models subscription-decisions.md names for roles that need them. */
+const POLISH_MODELS = { claude: 'claude-opus-5-5', codex: 'gpt-6-astra' } as const;
 const CACHE = join(STATE, 'classifications.jsonl');
 
 function privateDirectory(path: string) {
@@ -79,9 +84,9 @@ async function reachableArchive() {
   }
 }
 
-function loadCache(enabled: boolean) {
+function loadCache() {
   const cache = new Map<string, CorrectionClassification>();
-  if (!enabled || !existsSync(CACHE)) return cache;
+  if (!existsSync(CACHE)) return cache;
   for (const line of readFileSync(CACHE, 'utf8').split('\n')) {
     if (!line) continue;
     try {
@@ -92,13 +97,16 @@ function loadCache(enabled: boolean) {
   return cache;
 }
 
+/** Written whole to a temporary file and renamed, so an interrupted run never truncates it. */
 function saveCache(cache: Map<string, CorrectionClassification>) {
   privateDirectory(STATE);
+  const temporary = `${CACHE}.${process.pid}.tmp`;
   writeFileSync(
-    CACHE,
+    temporary,
     [...cache].map(([key, value]) => JSON.stringify({ key, value })).join('\n'),
     { mode: 0o600 },
   );
+  renameSync(temporary, CACHE);
 }
 
 const positive = (value: string | undefined, fallback: number, name: string) => {
@@ -140,13 +148,15 @@ export async function runRepeats(args: string[]) {
   if (values.share && values.share !== 'text' && values.share !== 'markdown')
     throw Error('--share is text or markdown');
   const concurrency = Math.min(32, Math.floor(positive(values.concurrency, 8, 'concurrency')));
-  const scanModel =
-    values['scan-model'] ?? (runtime === 'claude' ? 'claude-haiku-5-5' : 'gpt-6-luna');
-  const polishModel =
-    values['polish-model'] ?? (runtime === 'claude' ? 'claude-opus-5-5' : 'gpt-6-astra');
+  const minScore = values['min-score'] === undefined ? 0.4 : Number(values['min-score']);
+  if (!Number.isFinite(minScore) || minScore < 0 || minScore > 1)
+    throw Error('--min-score is a number from 0 to 1');
+  // The scan runs on the runtime's decision model; polish on a stronger model of the same runtime.
+  const scanModel = values['scan-model'] ?? SUBSCRIPTION_DECISION_MODELS[runtime];
+  const polishModel = values['polish-model'] ?? POLISH_MODELS[runtime];
   const scanHost = decisionHost(scanModel, runtime, concurrency);
   const polishHost = polishModel === scanModel ? scanHost : decisionHost(polishModel, runtime, 1);
-  const cache = loadCache(!values['no-cache']);
+  const cache = loadCache();
   const archive = values['no-archive'] ? undefined : await reachableArchive();
   const progress = process.stderr.isTTY
     ? (line: string) => process.stderr.write(`\r\x1b[2K${line}`)
@@ -154,7 +164,7 @@ export async function runRepeats(args: string[]) {
   try {
     const report = await repeatReport({
       days: positive(values.days, 30, 'days'),
-      minScore: values['min-score'] === undefined ? 0.4 : Number(values['min-score']),
+      minScore,
       claudeProjects: join(homedir(), '.claude', 'projects'),
       codexSessions: join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions'),
       ...(values['no-history'] ? {} : { history: join(homedir(), '.claude', 'history.jsonl') }),
@@ -171,6 +181,7 @@ export async function runRepeats(args: string[]) {
         batch: Math.floor(positive(values['polish-batch'], 40, 'polish-batch')),
       },
       cache,
+      refresh: Boolean(values['no-cache']),
       progress,
     });
     if (progress) process.stderr.write('\r\x1b[2K');

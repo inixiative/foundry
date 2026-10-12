@@ -225,6 +225,10 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
     /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD)[A-Z0-9_]*\s*[=:]\s*)["']?[^\s"']{8,}["']?/g,
     '$1[REDACTED:value]',
   ],
+  [
+    /(["']?)\b(password|passwd|api[_-]?key|secret|(?:access|auth|refresh)?[_-]?token)\1(\s*[:=]\s*)["']?[^\s"',}]{8,}["']?/gi,
+    '$1$2$1$3[REDACTED:value]',
+  ],
 ];
 
 /** Replace credential-shaped substrings. Transcripts are exactly where leaked keys live. */

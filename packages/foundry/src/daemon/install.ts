@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -19,23 +19,33 @@ export interface DaemonInstallOptions {
   log?: (message: string) => void;
 }
 
-/** The installed LaunchAgent's working directory and program, if one is installed. */
+/**
+ * The installed LaunchAgent's working directory and program (read with `plutil`), or `readable: false`
+ * when one exists that can't be read: callers treat it as someone else's daemon.
+ */
 export function installedDaemon(home = homedir()) {
-  const path = daemonPlistPath(home);
-  if (!existsSync(path)) return undefined;
-  const plist = readFileSync(path, 'utf8');
-  const strings = (key: string) =>
-    plist
-      .match(
-        new RegExp(`<key>${key}</key>\\s*<(?:string|array)>([\\s\\S]*?)</(?:string|array)>`),
-      )?.[1]
-      ?.match(/<string>([^<]*)<\/string>|^([^<]+)$/g)
-      ?.map((item) => item.replace(/<\/?string>/g, '')) ?? [];
-  return {
-    plistPath: path,
-    workingDirectory: strings('WorkingDirectory')[0],
-    program: strings('ProgramArguments'),
-  };
+  const plistPath = daemonPlistPath(home);
+  if (!existsSync(plistPath)) return undefined;
+  const read = Bun.spawnSync(['plutil', '-convert', 'json', '-o', '-', plistPath], {
+    stderr: 'ignore',
+  });
+  try {
+    const plist = JSON.parse(read.stdout.toString()) as {
+      WorkingDirectory?: unknown;
+      ProgramArguments?: unknown;
+    };
+    if (read.exitCode !== 0 || typeof plist.WorkingDirectory !== 'string') throw Error();
+    return {
+      plistPath,
+      readable: true as const,
+      workingDirectory: plist.WorkingDirectory,
+      program: Array.isArray(plist.ProgramArguments)
+        ? plist.ProgramArguments.filter((item): item is string => typeof item === 'string')
+        : [],
+    };
+  } catch {
+    return { plistPath, readable: false as const };
+  }
 }
 
 export const daemonLoaded = async () =>

@@ -10,6 +10,7 @@ import {
   renderShareText,
   repeatReport,
   reportItems,
+  shareable,
 } from '../src/feedback/repeats';
 
 const NOW = Date.parse('2026-10-12T12:00:00Z');
@@ -258,11 +259,45 @@ describe('repeatReport', () => {
     expect(reportItems(report)[0]).toMatchObject({ count: 3, tags: ['reuse', 'overbuild'] });
   });
 
+  test("share text redacts paths, links, emails and this run's project names", async () => {
+    const { report } = await run();
+    expect(
+      shareable(
+        report,
+        'In app, never edit ~/code/app/x.ts or /w/app/y.ts; see https://a.b/c or ask a@b.co',
+      ),
+    ).toBe('In [project], never edit [path] or [path]; see [link] or ask [email]');
+  });
+
+  test('the same message in two sources counts once; again later, it counts again', async () => {
+    const { report } = await run();
+    // The history row duplicating session b's message is dropped; the later history row is its own message.
+    expect(report.sources.history).toBe(1);
+    const late = join(root, 'history-late.jsonl');
+    writeFileSync(
+      late,
+      [at(9, 1), at(9, 30)]
+        .map((time) =>
+          JSON.stringify({
+            display: 'again, you should use the existing helper',
+            timestamp: Date.parse(time),
+            project: '/w/app',
+          }),
+        )
+        .join('\n'),
+    );
+    const { report: again } = await run({ history: late });
+    expect(again.sources.history).toBe(1);
+    expect(again.rules[0]!.count).toBe(4);
+  });
+
   test('a cached classification skips the scan model', async () => {
     const cache = new Map();
     await run({ cache });
     const { seen } = await run({ cache });
     expect(seen.scan).toEqual([]);
+    const { seen: refreshed } = await run({ cache, refresh: true });
+    expect(refreshed.scan.length).toBeGreaterThan(0);
   });
 
   test('Archive is read first; a harness file only fills what it lacks or has moved past', async () => {

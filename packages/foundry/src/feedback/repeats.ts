@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
 import type { ArchiveSnapshot } from '@inixiative/archive';
+import { sessionMetadata, transcriptFiles } from '@inixiative/archive/collector';
 import { typedPrompt } from '@inixiative/archive/import';
 import { importTranscriptFile } from '@inixiative/archive/import-file';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import {
   CORRECTION_CLASSIFY_PREFIX,
+  CORRECTION_CLASSIFY_PROMPT,
   type CorrectionCategory,
   type CorrectionClassification,
   type CorrectionEvent,
@@ -108,8 +109,10 @@ export interface RepeatOptions {
   scan: { provider: LLMProvider; model: string; batch: number; concurrency: number };
   /** Stronger model: groups statements into rules and sharpens them. */
   polish: { provider: LLMProvider; model: string; batch: number };
-  /** Classifications by candidate id from earlier runs; updated in place. */
+  /** Classifications from earlier runs; updated in place. */
   cache?: Map<string, CorrectionClassification>;
+  /** Classify every candidate again (the cache still records the answers). */
+  refresh?: boolean;
   progress?: (line: string) => void;
 }
 
@@ -118,46 +121,32 @@ const tilde = (path: string) => (path.startsWith(HOME) ? `~${path.slice(HOME.len
 const ARCHIVE_SOURCE_ID = '00000000-0000-4000-8000-000000000000';
 const MARKER = /^\s*\[Request interrupted by user/;
 
-/** Session files touched since `since`: Claude Code projects (not subagents) and Codex sessions. */
+/** Session files touched since `since` (Archive's collector walk): no subagent or Foundry decision sessions. */
 export function sessionFiles(
   options: Pick<RepeatOptions, 'claudeProjects' | 'codexSessions'>,
   since: number,
 ): { harness: 'claude-code' | 'codex'; file: string }[] {
   const found: { harness: 'claude-code' | 'codex'; file: string }[] = [];
-  const walk = (harness: 'claude-code' | 'codex', path: string) => {
-    if (!existsSync(path)) return;
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) {
-      const name = basename(path);
-      // Subagent transcripts are written by agents; Foundry's primed decision sessions are its own.
-      if (name === 'subagents' || name.includes('decision-receipts')) return;
-      for (const entry of readdirSync(path).sort()) walk(harness, join(path, entry));
-    } else if (stat.isFile() && path.endsWith('.jsonl') && stat.mtimeMs >= since)
-      found.push({ harness, file: path });
-  };
-  if (options.claudeProjects) walk('claude-code', options.claudeProjects);
-  if (options.codexSessions) walk('codex', options.codexSessions);
+  for (const [harness, directory] of [
+    ['claude-code', options.claudeProjects],
+    ['codex', options.codexSessions],
+  ] as const) {
+    if (!directory || !existsSync(directory)) continue;
+    for (const file of transcriptFiles(directory))
+      if (
+        !/[/\\](?:subagents[/\\]|[^/\\]*decision-receipts)/.test(file) &&
+        lstatSync(file).mtimeMs >= since
+      )
+        found.push({ harness, file });
+  }
   return found;
 }
 
-/** A short project label: the Claude Code project directory, or the Codex session's working directory. */
-function projectOf(harness: 'claude-code' | 'codex', file: string): string {
-  if (harness === 'claude-code')
-    return basename(dirname(file)).replace(HOME.replace(/[/.]/g, '-'), '~');
-  const buffer = Buffer.alloc(Math.min(lstatSync(file).size, 64_000));
-  const fd = openSync(file, 'r');
-  try {
-    readSync(fd, buffer, 0, buffer.length, 0);
-  } finally {
-    closeSync(fd);
-  }
-  try {
-    const meta = JSON.parse(buffer.toString('utf8').split('\n')[0] ?? '');
-    if (typeof meta?.payload?.cwd === 'string') return tilde(meta.payload.cwd);
-  } catch {}
-  return 'codex';
-}
+/** The session's working directory, as Archive's collector reads it. */
+const projectOf = (harness: 'claude-code' | 'codex', file: string) => {
+  const cwd = sessionMetadata(file, harness)?.cwd;
+  return cwd ? tilde(cwd) : harness;
+};
 
 /** The transcript as turns: what the person typed, the agent's prose, and interruptions. */
 export function snapshotTurns(snapshot: ArchiveSnapshot): TranscriptTurn[] {
@@ -176,7 +165,10 @@ export function snapshotTurns(snapshot: ArchiveSnapshot): TranscriptTurn[] {
   return turns;
 }
 
-const normalized = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);
+const normalized = (text: string) =>
+  scrubSecrets(text).text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);
+/** The same message reaches us twice when two sources hold it (Archive and a file, history, a Foundry thread). */
+const SAME_MESSAGE_MS = 120_000;
 
 interface Candidate {
   event: CorrectionEvent;
@@ -186,14 +178,26 @@ interface Candidate {
 }
 
 /** Candidates from Archive, the harness files it lacks, and prompt history, deduplicated, in the window. */
-export async function collectCandidates(options: RepeatOptions, since: number) {
+export async function collectCandidates(options: RepeatOptions, since: number, until: number) {
   const sources: Record<Harness, number> = { 'claude-code': 0, codex: 0, foundry: 0, history: 0 };
   let failedSources = 0;
   let fromArchive = 0;
   let messages = 0;
-  const typed = new Set<string>();
   const candidates: Candidate[] = [];
-  const inWindow = (event: CorrectionEvent) => Date.parse(event.timestamp) >= since;
+  const inWindow = (at: number) => at >= since && at <= until;
+  const seen = new Map<string, { at: number; session: string }[]>();
+  /** True when another session already gave this message within two minutes; records it otherwise. */
+  const repeatOf = (text: string, at: number, session: string) => {
+    const key = normalized(text);
+    const earlier = seen.get(key) ?? [];
+    if (
+      earlier.some((item) => item.session !== session && Math.abs(item.at - at) <= SAME_MESSAGE_MS)
+    )
+      return true;
+    earlier.push({ at, session });
+    seen.set(key, earlier);
+    return false;
+  };
   const take = (
     snapshot: ArchiveSnapshot,
     harness: Exclude<Harness, 'history'>,
@@ -201,24 +205,35 @@ export async function collectCandidates(options: RepeatOptions, since: number) {
     project: string,
   ) => {
     const turns = snapshotTurns(snapshot);
-    const typedTurns = turns.filter(
-      (turn) => turn.role === 'user' && turn.text && Date.parse(turn.timestamp) >= since,
-    );
+    const session = `${harness}:${snapshot.sessionId}`;
+    const copies = new Set<string>();
+    const typedTurns = turns.filter((turn) => {
+      if (turn.role !== 'user' || !turn.text || !inWindow(Date.parse(turn.timestamp))) return false;
+      if (!repeatOf(turn.text, Date.parse(turn.timestamp), session)) return true;
+      if (turn.id) copies.add(turn.id);
+      return false;
+    });
     if (!typedTurns.length) return 0;
     sources[harness]++;
     messages += typedTurns.length;
-    for (const turn of typedTurns) typed.add(normalized(turn.text));
     const { corrections } = extractCorrections(snapshot.sessionId, turns, {
       minScore: options.minScore,
     });
-    for (const event of corrections.filter(inWindow))
-      candidates.push({ event, harness, file, project });
+    for (const event of corrections)
+      if (inWindow(Date.parse(event.timestamp)) && !copies.has(event.messageId ?? ''))
+        candidates.push({ event, harness, file, project });
     return typedTurns.length;
   };
   // Archive first: it keeps sessions after the harness deletes them. When to capture is the collector's call.
   const archived = new Map<string, { capturedAt: number; messages: number }>();
+  const listings = options.archive
+    ? await options.archive.list().catch(() => {
+        failedSources++;
+        return [];
+      })
+    : [];
   if (options.archive) {
-    for (const listing of await options.archive.list()) {
+    for (const listing of listings) {
       if (listing.capturedAt < since || listing.sessionId.includes('/agent-')) continue;
       if (
         listing.source !== 'claude-code' &&
@@ -284,10 +299,9 @@ export async function collectCandidates(options: RepeatOptions, since: number) {
         continue;
       }
       if (typeof row.display !== 'string' || typeof row.timestamp !== 'number') continue;
-      if (row.timestamp < since || row.display.startsWith('/')) continue;
+      if (!inWindow(row.timestamp) || row.display.startsWith('/')) continue;
       const text = expandPastes(row.display, row.pastedContents);
-      if (!text.trim() || typed.has(normalized(text))) continue;
-      typed.add(normalized(text));
+      if (!text.trim() || repeatOf(text, row.timestamp, 'history')) continue;
       const project = typeof row.project === 'string' ? tilde(row.project) : 'history';
       const turns = byProject.get(project) ?? [];
       turns.push({
@@ -348,8 +362,14 @@ async function pool<T>(items: T[], concurrency: number, run: (item: T) => Promis
   );
 }
 
-export const classificationKey = (id: string) =>
-  `${id}#${createHash('sha256').update(CORRECTION_CLASSIFY_PREFIX).digest('hex').slice(0, 8)}`;
+/** A classification is reused only for the same message, prompt and model. */
+export const classificationKey = (event: CorrectionEvent, model: string) =>
+  `${event.id}#${createHash('sha256')
+    .update(
+      `${CORRECTION_CLASSIFY_PROMPT}\0${CORRECTION_CLASSIFY_PREFIX}\0${model}\0${event.before}\0${event.correction}`,
+    )
+    .digest('hex')
+    .slice(0, 16)}`;
 
 /** The scan stage: classify candidates in batches on the cheap model. */
 async function scan(
@@ -361,7 +381,9 @@ async function scan(
   const results = new Map<string, CorrectionClassification>();
   const pending: Candidate[] = [];
   for (const candidate of candidates) {
-    const cached = options.cache?.get(classificationKey(candidate.event.id));
+    const cached = options.refresh
+      ? undefined
+      : options.cache?.get(classificationKey(candidate.event, options.scan.model));
     if (cached) results.set(candidate.event.id, cached);
     else pending.push(candidate);
   }
@@ -369,7 +391,16 @@ async function scan(
   for (let i = 0; i < pending.length; i += options.scan.batch)
     batches.push(pending.slice(i, i + options.scan.batch));
   let done = 0;
+  // A run of failed calls means the login is limited or down: stop asking.
+  let failedInARow = 0;
+  const STOP_AFTER = 6;
+  const split = async (batch: Candidate[]) => {
+    if (batch.length > 1)
+      for (const half of [batch.slice(0, batch.length >> 1), batch.slice(batch.length >> 1)])
+        await classify(half);
+  };
   const classify = async (batch: Candidate[]): Promise<void> => {
+    if (failedInARow >= STOP_AFTER) return;
     usage.calls++;
     try {
       const messages = correctionClassifyMessages(batch.map((candidate) => candidate.event));
@@ -387,21 +418,27 @@ async function scan(
         const classification = parsed[index];
         if (!classification) return;
         results.set(candidate.event.id, classification);
-        options.cache?.set(classificationKey(candidate.event.id), classification);
+        options.cache?.set(classificationKey(candidate.event, options.scan.model), classification);
       });
+      if (missing.length === batch.length) {
+        failedInARow++;
+        failure(usage, 'unparseable answer');
+        await split(batch);
+        return;
+      }
+      failedInARow = 0;
       // A partial answer re-asks only what it missed, one at a time.
-      if (missing.length && missing.length < batch.length)
-        for (const candidate of missing) await classify([candidate]);
-      else if (missing.length) failure(usage, 'unparseable answer');
+      for (const candidate of missing) await classify([candidate]);
     } catch (error) {
+      failedInARow++;
       failure(usage, error);
-      if (batch.length > 1)
-        for (const half of [batch.slice(0, batch.length >> 1), batch.slice(batch.length >> 1)])
-          await classify(half);
+      await split(batch);
     }
   };
   await pool(batches, options.scan.concurrency, async (batch) => {
     await classify(batch);
+    if (failedInARow >= STOP_AFTER && !usage.errors['stopped after repeated failures'])
+      failure(usage, 'stopped after repeated failures');
     done += batch.length;
     options.progress?.(`scan ${done}/${pending.length} candidates`);
   });
@@ -451,6 +488,9 @@ function firstJson(content: string): Record<string, unknown> | undefined {
   }
 }
 
+const MAX_RULES_SHOWN = 200;
+const SHARPEN_SLICE = 40;
+
 /** The polish stage: group statements into rules, then merge and sharpen the rules that repeat. */
 async function polish(
   statements: { text: string; candidate: Candidate; classification: CorrectionClassification }[],
@@ -476,9 +516,13 @@ async function polish(
     if (result.tokens) tokens.push(result.tokens);
     return firstJson(result.content);
   };
-  for (let i = 0; i < statements.length; i += options.polish.batch) {
-    const batch = statements.slice(i, i + options.polish.batch);
-    const rules = drafts.map((draft, index) => `R${index + 1}: ${draft.statement}`).join('\n');
+  /** One grouping call; a failed batch is split and asked again, and a lone statement keeps its own rule. */
+  const group = async (batch: typeof statements): Promise<void> => {
+    // The rules so far, largest first and bounded, so a long window can't outgrow the decision deadline.
+    const shown = [...drafts]
+      .sort((a, b) => messageCount(b) - messageCount(a))
+      .slice(0, MAX_RULES_SHOWN);
+    const rules = shown.map((draft, index) => `R${index + 1}: ${draft.statement}`).join('\n');
     const input = batch.map((item, index) => `S${index + 1}: ${item.text}`).join('\n');
     let answer: Record<string, unknown> | undefined;
     try {
@@ -490,6 +534,11 @@ async function polish(
     } catch (error) {
       failure(usage, error);
     }
+    if (!answer && batch.length > 1) {
+      for (const half of [batch.slice(0, batch.length >> 1), batch.slice(batch.length >> 1)])
+        await group(half);
+      return;
+    }
     const assign = (answer?.assign ?? {}) as Record<string, unknown>;
     const created = (answer?.new ?? {}) as Record<string, { statement?: unknown; tags?: unknown }>;
     const newIds = new Map<string, Draft>();
@@ -497,7 +546,7 @@ async function polish(
       const target = assign[`S${index + 1}`];
       let draft: Draft | undefined;
       if (typeof target === 'string' && /^R\d+$/.test(target))
-        draft = drafts[Number(target.slice(1)) - 1];
+        draft = shown[Number(target.slice(1)) - 1];
       else if (typeof target === 'string' && created[target]) {
         draft = newIds.get(target);
         if (!draft) {
@@ -517,14 +566,15 @@ async function polish(
       }
       draft.members.push({ candidate: item.candidate, classification: item.classification });
     });
+  };
+  for (let i = 0; i < statements.length; i += options.polish.batch) {
+    await group(statements.slice(i, i + options.polish.batch));
     options.progress?.(
       `polish ${Math.min(i + options.polish.batch, statements.length)}/${statements.length} statements`,
     );
   }
-  // Merge and sharpen the rules given more than once (the ones the report shows).
-  const repeated = drafts.filter((draft) => messageCount(draft) >= 2);
-  for (let i = 0; i < repeated.length; i += 80) {
-    const slice = repeated.slice(i, i + 80);
+  /** Merge and sharpen rules given more than once (the ones the report shows); a failed slice is split. */
+  const sharpen = async (slice: Draft[]): Promise<void> => {
     let answer: Record<string, unknown> | undefined;
     try {
       answer = await call(
@@ -535,12 +585,14 @@ async function polish(
       );
     } catch (error) {
       failure(usage, error);
-      continue;
     }
     const merged = Array.isArray(answer?.rules) ? answer.rules : undefined;
     if (!merged) {
-      failure(usage, 'unparseable answer');
-      continue;
+      if (answer) failure(usage, 'unparseable answer');
+      if (slice.length > 2)
+        for (const half of [slice.slice(0, slice.length >> 1), slice.slice(slice.length >> 1)])
+          await sharpen(half);
+      return;
     }
     const used = new Set<number>();
     for (const rule of merged as { ids?: unknown; statement?: unknown; tags?: unknown }[]) {
@@ -559,7 +611,12 @@ async function polish(
         other.members = [];
       }
     }
-  }
+  };
+  const repeatedDrafts = drafts
+    .filter((draft) => messageCount(draft) >= 2)
+    .sort((a, b) => messageCount(b) - messageCount(a));
+  for (let i = 0; i < repeatedDrafts.length; i += SHARPEN_SLICE)
+    await sharpen(repeatedDrafts.slice(i, i + SHARPEN_SLICE));
   return drafts.filter((draft) => draft.members.length);
 }
 
@@ -576,7 +633,7 @@ export async function repeatReport(options: RepeatOptions): Promise<RepeatReport
   const until = options.now ?? Date.now();
   const since = until - options.days * 86_400_000;
   options.progress?.('reading sessions');
-  const collected = await collectCandidates(options, since);
+  const collected = await collectCandidates(options, since, until);
   options.progress?.(
     `${collected.messages} typed messages, ${collected.candidates.length} candidates`,
   );
@@ -609,8 +666,10 @@ export async function repeatReport(options: RepeatOptions): Promise<RepeatReport
     const classification = classified.get(candidate.event.id);
     if (!classification?.isCorrection) continue;
     corrections++;
-    for (const text of classification.statements)
-      statements.push({ text, candidate, classification });
+    for (const statement of classification.statements) {
+      const text = sentence(statement);
+      if (text) statements.push({ text, candidate, classification });
+    }
   }
   const drafts = await polish(statements, options, polishUsage, polishTokens);
   scanUsage.tokens = sumTokenCounts(scanTokens);
@@ -685,7 +744,7 @@ export function renderReport(
   const sessions = report.sources['claude-code'] + report.sources.codex + report.sources.foundry;
   const lines = [
     `Last ${report.days} days · ${thousands(sessions)} sessions (Claude Code ${report.sources['claude-code']}, Codex ${report.sources.codex}${report.sources.foundry ? `, Foundry ${report.sources.foundry}` : ''}; ${report.fromArchive} from Archive)${report.sources.history ? ` + ${thousands(report.sources.history)} history prompts` : ''} · ${thousands(report.messages)} messages you typed`,
-    `${repeated(report).reduce((sum, rule) => sum + rule.count, 0)} corrections you gave more than once, in ${repeated(report).length} rules`,
+    `${new Set(repeated(report).flatMap((rule) => rule.evidence.map((item) => item.id))).size} corrections you gave more than once, in ${repeated(report).length} rules`,
     '',
   ];
   if (!shown.length) lines.push('No correction repeated in this window.');
@@ -721,6 +780,32 @@ export function renderReport(
   return lines.join('\n');
 }
 
+/**
+ * Rule text fit to share: no paths, URLs, emails or credentials, and none of this run's project or
+ * repository names. The model writes the rules, so the share outputs never trust them as written.
+ */
+export function shareable(report: RepeatReport, statement: string): string {
+  const names = new Set<string>();
+  for (const rule of report.rules)
+    for (const project of rule.projects)
+      for (const part of project.split(/[/\\]/).slice(-2))
+        if (
+          part.length >= 3 &&
+          !/^(?:~|code|src|users?|home|projects?|claude|codex|foundry|history)$/i.test(part)
+        )
+          names.add(part.replace(/^-+/, ''));
+  let text = scrubSecrets(statement)
+    .text.replace(/\bhttps?:\/\/\S+/gi, '[link]')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[email]')
+    .replace(/(?:~|\.{1,2})?\/(?:[\w.@-]+\/)+[\w.@-]*/g, '[path]');
+  for (const name of [...names].sort((a, b) => b.length - a.length))
+    text = text.replace(
+      new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'),
+      '[project]',
+    );
+  return text;
+}
+
 /** The top five as plain text, fit for a screenshot: rule text and counts only. */
 export function renderShareText(report: RepeatReport) {
   const top = repeated(report).slice(0, 5);
@@ -729,7 +814,8 @@ export function renderShareText(report: RepeatReport) {
     `What I kept telling my coding agents (last ${report.days} days)`,
     '',
     ...top.map(
-      (rule, index) => `${index + 1}. ×${String(rule.count).padEnd(width)}  ${rule.statement}`,
+      (rule, index) =>
+        `${index + 1}. ×${String(rule.count).padEnd(width)}  ${shareable(report, rule.statement)}`,
     ),
     '',
     'Counted locally from my Claude Code and Codex sessions with `foundry repeats`.',
@@ -745,14 +831,15 @@ export function renderShareMarkdown(report: RepeatReport) {
     '| | Correction | Times |',
     '|---|---|---|',
     ...top.map(
-      (rule, index) => `| ${index + 1} | ${rule.statement.replace(/\|/g, '\\|')} | ${rule.count} |`,
+      (rule, index) =>
+        `| ${index + 1} | ${shareable(report, rule.statement).replace(/\|/g, '\\|')} | ${rule.count} |`,
     ),
     '',
     '_Counted locally from my Claude Code and Codex sessions with `foundry repeats`._',
   ].join('\n');
 }
 
-/** Rules for `foundry feedback import`: statement, tags, category, count and quotes (local only). */
+/** The repeated rules as data, to seed feedback items: statement, tags, category, count, quotes and refs (local only). */
 export function reportItems(report: RepeatReport) {
   return repeated(report).map((rule) => ({
     statement: rule.statement,
