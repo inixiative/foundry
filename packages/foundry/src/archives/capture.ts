@@ -5,6 +5,7 @@ import {
   type ArchiveSnapshot,
   archiveSnapshotSchema,
 } from '@inixiative/archive';
+import { stampedRun } from '@inixiative/archive/exemption';
 import {
   configuredModel,
   type EventStream,
@@ -64,6 +65,7 @@ export function captureThread(
   const entries: ArchiveEntry[] = [];
   const records = journal.archiveRecords(threadId);
   const actor = localActor();
+  const run = stampedRun();
   // What each native call ran on, by admission, and what the central executor ran on, by turn.
   const byAdmission = new Map<string, ServedModel>();
   const byTurn = new Map<string, ServedModel>();
@@ -189,7 +191,8 @@ export function captureThread(
     title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
     ...(actor ? { actor } : {}),
-    tags: thread.meta.tags,
+    // A test or eval harness running this Foundry stamps its threads (ARCHIVE_RUN).
+    tags: [...new Set([...(run ? [run] : []), ...thread.meta.tags])],
     capturedAt: Date.now(),
     coverage: {
       reasoning: 'unavailable',

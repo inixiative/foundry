@@ -352,6 +352,8 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
   });
   try {
     const snapshot = captureThread(journal, archive.sourceId, t.id);
+    // The test preload stamps this process a test run (ARCHIVE_RUN), so its threads are exempt.
+    expect(snapshot.tags).toEqual(['run:test', 'explicit']);
     const entry = (sourceRef: string) => {
       const found = snapshot.entries.find((e) => e.sourceRef === sourceRef);
       if (!found) throw Error(`missing ${sourceRef}`);
