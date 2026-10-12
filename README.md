@@ -1,6 +1,6 @@
 # Foundry
 
-Agent orchestration framework. Context layers, capability gating, multi-thread pipelines, real-time operator dashboard.
+Agent orchestration framework and harness. It wraps native Claude Code (and, as a setting, Codex) sessions with context layers, middleware (Wardens), a structural tool gate, multi-thread pipelines and a real-time operator dashboard. Host apps (Paseo, T3 Code, Zed) can drive it over ACP.
 
 ```
 bun install
@@ -8,7 +8,7 @@ bun run setup
 bun run start
 ```
 
-Open http://localhost:4500.
+Open http://localhost:4500, or point an ACP host at `foundry-acp` ([setup](docs/reference/FOUNDRY-ACP.md)).
 
 For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
 
@@ -20,8 +20,8 @@ Foundry is a framework for building agent systems where you control the context,
 
 - **Context layers** — stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Classify → Route → Execute pipeline** — incoming messages are classified, routed to the right executor with the right context slice, and traced end-to-end.
-- **Capability gate** — agents request permission before dangerous operations. Policies map each capability to allow, prompt or deny. Prompts surface in the viewer for human approval.
-- **Multi-thread hierarchy** — spawn child threads with inherited or isolated context. Herald observes across threads and detects duplication, contradiction, convergence.
+- **Tool gate** — structural tool rules decide each native tool request (allow, ask or deny); asks surface in the viewer, or go to the ACP host, for approval. Core's capability gate is the underlying primitive.
+- **Multi-thread hierarchy** — spawn child threads with inherited or isolated context.
 - **Viewer dashboard** — three-panel operator UI. Thread tree with prompt badges, live event stream, trace inspector, layer bands, intervention corrections. Not a log viewer — a control surface.
 
 ## Structure
@@ -30,15 +30,16 @@ Foundry is a framework for building agent systems where you control the context,
 packages/
   core/     @inixiative/foundry-core   — engine primitives, zero external deps
   foundry/  @inixiative/foundry        — framework, providers, viewer, adapters
+  acp/      @inixiative/foundry-acp    — ACP agent for host apps (Paseo, T3 Code, Zed)
 ```
 
 Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, hooks, and lightweight adapters (file, sqlite, http, markdown).
 
-Foundry adds opinions: session management, LLM providers (Anthropic, OpenAI, Gemini, Claude Code), the viewer, heavy-infra adapters (Postgres, Redis), and higher-order agents (Planner, Herald, Corpus Compiler).
+Foundry adds opinions: native Claude Code and Codex sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, Redis), and higher-order agents (Cartographer, Wardens, Librarian).
 
 ## Setup
 
-Requires [Bun](https://bun.sh) (v1.0+).
+Requires [Bun](https://bun.sh) 1.4.2 (the version in `packageManager`).
 
 ```bash
 git clone https://github.com/inixiative/foundry.git
@@ -47,9 +48,9 @@ bun install
 bun run setup
 ```
 
-Setup is interactive — picks your LLM provider and model, creates `.foundry/settings.json`, writes `.env.local` with your API key, and scaffolds a starter config (3 context layers, classifier → router → executor pipeline, file-based memory).
+Setup is interactive — picks your worker and model, creates `.foundry/settings.json`, and scaffolds a starter config (3 context layers, classifier → router → executor pipeline, file-based memory). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
 
-Provider choices come from the shared registry: Anthropic, OpenAI, Google Gemini, Claude Code CLI and Codex.
+Provider choices come from the shared registry. All Claude for now (Claude Code through the subscription); Codex and API-key providers are settings.
 
 Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker or Codex decisions). API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
 
@@ -75,7 +76,7 @@ Local ports come from the `@inixiative/config` port registry (Foundry is block 5
 bun run doctor       # Inspect existing setup without starting agents or making provider calls
 bun run start        # Production — loads config, starts viewer + harness
 bun run setup        # Reconfigure (additive — edit agents, layers, sources, projects)
-bun run demo         # Demo mode with sample data
+bun run acp          # ACP agent on stdio (what hosts launch)
 ```
 
 Send messages through the viewer chat or the API:
@@ -97,10 +98,13 @@ A boot of stable that fails on changed settings sets them aside as `.foundry/set
 ## Testing
 
 ```bash
+bun run check          # The full check: typecheck (5 targets) + lint + test
 bun run test           # Core + Foundry tests
 bun run test:core      # Core engine tests
 bun run test:foundry   # Framework tests
-bun run test:db        # Postgres tests (requires DATABASE_URL)
+bun run test:acp       # foundry-acp tests
+bun run test:browser   # Viewer browser suite (needs `bunx playwright install chromium`)
+bun run test:db        # Postgres tests (localhost:5932, the compose Postgres)
 ```
 
 ## Key concepts
@@ -168,6 +172,7 @@ Keyboard shortcuts: `1-3` switch panels, `?` help, `s` settings, `a` analytics.
 ## License
 
 - `packages/core/` — [MIT](./LICENSE-MIT)
+- `packages/acp/` — [MIT](./LICENSE-MIT)
 - `packages/foundry/` — [BSL 1.1](./LICENSE-BSL) (converts to MIT on 2030-04-06)
 
 See [LICENSE](./LICENSE) for details.

@@ -57,7 +57,7 @@ graph TB
 
 **Foundry treats corpus as the parameters to optimize — and provides the infrastructure to do it systematically.**
 
-Under the hood, Foundry uses three isolated agents — a subject who holds domain knowledge, an implementer who does the work using only the corpus being tested, and an oracle who scores the output against a golden reference. Physical isolation via git branches ensures honest evaluation. Five scoring rubrics (prompt efficiency, completion, demerits, craft, questioning) produce a composite score with attribution to specific corpus entries. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full architecture.
+Under the hood, Foundry uses three isolated agents — a subject who holds domain knowledge, an implementer who does the work using only the corpus being tested, and an oracle who scores the output against a golden reference. Physical isolation via git branches ensures honest evaluation. Five scoring rubrics (prompt efficiency, completion, demerits, craft, questioning) produce a composite score with attribution to specific corpus entries. This evaluation machinery is Oracle's (`inixiative/oracle`); see [the system map](./docs/SYSTEM-MAP.md).
 
 **Foundry is model-agnostic and infrastructure-agnostic.** Bring your own models, bring your own infrastructure. The recursion pattern works regardless of which LLM you're optimizing for or where your work lives — git, a CRM, a help desk. Foundry provides the harness; adapters connect it to your stack.
 
