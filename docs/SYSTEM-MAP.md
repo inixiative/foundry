@@ -1,6 +1,6 @@
 # System map
 
-How the five apps fit together, what each one owns, where the code still crosses those lines, and how far the end-to-end journey works. Evidence is from `origin/main` of each repo on 2026-10-12: Foundry `f040582`, Kingdom `6542437a`, Oracle `6656362`, Archive `cdbb8ac`, agent-session `fbd3207`, config `b4db22e`. `path:line` refers to that repo's `origin/main`.
+How the five apps fit together, what each one owns, where the code still crosses those lines, and how far the end-to-end journey works. Evidence is from `origin/main` of each repo on 2026-10-12: Foundry `569a881`, Kingdom `6542437a`, Oracle `6656362`, Archive `cdbb8ac`, agent-session `d03b443`, config `b4db22e`. `path:line` refers to that repo's `origin/main`.
 
 ## 1. Big picture
 
@@ -55,7 +55,7 @@ Versions: the `agentic` lane of the `@inixiative/config` train blesses the versi
 
 ### agent-session (`inixiative/agent-session`, `@inixiative/agent-session` 0.6.0 on npm, 0.5.2 blessed, MIT)
 - **Owns:** persistent native sessions (Claude CLI, Claude Agent SDK, Codex), the normalized event stream, primed decision sessions (`ClaudePrimedSessions`, `CodexPrimedSessions`), subscription pools, deterministic routing (`./routing`), limit polling, and continuity between accounts.
-- **Transports** (`src/transports.ts:38-92`): `claude-cli`, `claude-agent-sdk`, `codex-app-server`, `codex-mcp`; `acp` and `api` are stubs. Codex CLI 0.155 dropped `codex mcp-server`, so `codex-mcp` no longer runs; its removal and the app-server default are in flight.
+- **Transports:** `claude-cli`, `claude-agent-sdk` and `codex-app-server`; `acp` and `api` are stubs. Codex runs on app-server only: Codex CLI 0.155 dropped `codex mcp-server`, and the `codex-mcp` transport and `CodexMcpSession` are being deleted with no compatibility path (agent-session branch `fix/codex-app-server-default`; still in `src/transports.ts:38-92` on main `d03b443` until it lands).
 - **Not its job:** context and middleware (Foundry), identity, ownership and credential policy (Kingdom decides which accounts may be used), evaluation (Oracle).
 - **Interfaces:** npm library (`.` and `./routing`). It spawns the agent CLIs.
 - **Release:** base of the `agentic` lane.
@@ -72,7 +72,7 @@ Three packages: `@inixiative/foundry-core` 0.4.0 (MIT, `packages/core`), `@inixi
   - Being hosted.
 - **Interfaces:**
   - CLI: `start`, `setup`, `doctor`, `kingdom pair|status|disconnect`, `archive …`, `signet …`, `daemon:*`, `acp`.
-  - HTTP and WebSocket viewer on `VIEWER_PORT || 4500` (`packages/foundry/src/start.ts:749`, `viewer/server.ts:586`); data streams carry a per-connection `seq` with resync by snapshot.
+  - HTTP and WebSocket viewer on `VIEWER_PORT || 4500` (`packages/foundry/src/start.ts:749`, `viewer/server.ts:619`); data streams carry a per-connection `seq` with resync by snapshot.
   - MCP server `foundry` with seven tools: `foundry_device`, `foundry_query`, `foundry_conventions`, `foundry_memory`, `foundry_access`, `foundry_threads`, `foundry_signal` (`packages/foundry/src/mcp/server.ts:305-650`).
   - ACP: the `foundry-acp` bin (`packages/acp/src/cli.ts`); spec in [FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md).
   - npm subpaths of `@inixiative/foundry`: `./client` (daemon client for foundry-acp and other local drivers), `./runtime` (`KingdomInstallationConnection` plus a re-export of `@inixiative/signet`'s `SignetClient`), `./kingdom` (`KingdomAuthentication`, `KingdomAccessTool`), and `./adapters`, `./jobs`, `./providers`, `./tools`, `./viewer`.
@@ -148,14 +148,14 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 | 5 | Hosted Archive set up from Kingdom | works | — |
 | 6 | Provider connectors (Claude, Codex/OpenAI, Grok, Meta Muse, Gemini, …) | partial | agent-session, Kingdom, Archive |
 | 7 | Middleware layers configurable, working, testable | partial | Foundry |
-| 8 | Process feedback captured into a middleware layer | mostly missing | Foundry, Oracle |
+| 8 | Process feedback captured into a middleware layer | partial (first slice built) | Foundry, Oracle |
 | 9 | Oracle verifies that layer changes improve outcomes | partial | Oracle, Foundry |
 
 **1. Run Foundry locally: works.**
 - `bun run start` serves the viewer on `VIEWER_PORT || 4500` (`packages/foundry/src/start.ts:749`).
 - `bun run daemon:install|start` runs it under launchd from `.foundry/releases/<sha>` (`scripts/daemon/supervisor.ts:15`, `update.ts:46-48`).
 - `foundry-acp` lets an ACP host (Paseo, T3 Code, Zed) drive Foundry threads; it starts the daemon when needed ([FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md) §10).
-- It is subscription-only by default, with `apiTokens` as the opt-in (`viewer/config.ts:78`).
+- It is subscription-only by default, with `apiTokens` as the opt-in (`viewer/config.ts:79`).
 
 **2. Local Archive: works.**
 - One local Archive per machine runs in Docker Compose on Postgres (`archive up`, loopback :4700); `bun run archive setup` starts it. The viewer captures into it over HTTP and retries while it is down.
@@ -166,7 +166,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 
 **4. Pair Foundry with Kingdom: works (Installation pairing).**
 - Foundry pairs as an Installation through `@inixiative/signet` `pairInstallation`: `providers/kingdom-pairing.ts`, `bun run kingdom pair`, Settings → Kingdom. A person approves the review code in Kingdom; Foundry collects the Signet of the owner's new `foundry` Integration.
-- Many-to-many: `kingdomIntegrations` (`viewer/config.ts:142`) holds one entry per Kingdom + owner.
+- Many-to-many: `kingdomIntegrations` (`viewer/config.ts:145`) holds one entry per Kingdom + owner.
 - Liveness and grants ride the Installation socket (`providers/kingdom-installation-connection.ts`): snapshots enroll later grants and drop revoked Signets; the viewer locks when no paired Kingdom lists this Foundry's Signet.
 
 **5. Hosted Archive set up from Kingdom: works.**
@@ -192,12 +192,11 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 - **Testing:** there are unit tests, but you cannot test your own layer. There is no test or dry-run command. Inspection is limited to `GET /api/projects/:id/resolved/layers` (`viewer/routes/control.ts:488`), the resolved-agents route and `bun run doctor`.
 - **Gap (Foundry):** a `layer test` command that runs a layer's decision role against recorded inputs with expected outcomes. The pattern already exists in `scripts/jev-catalog.ts --cases`.
 
-**8. Process feedback captured into a middleware layer: mostly missing.** Spec: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md).
-- **What exists:**
-  - `POST /api/threads/:threadId/interventions` (`viewer/routes/runtime.ts:287`) and the ACP `/correction` command emit a `correction` signal on the thread's bus. It becomes an audit-only memory record owned by the thread: captured, never injected.
-  - foundry-core's correction detector (`packages/core/src/feedback/correction.ts`) is built and tested but has no caller yet.
-- **What is not wired:** `RuleCompiler`'s `recompileOn` is declared but never used (`agents/domain-librarian.ts:628`); `CorpusCompiler.ingestFromSignalBus` (`agents/corpus-compiler.ts:146`) is never called.
-- **Where standing feedback lives today:** hand-maintained `CLAUDE.md` and memory files. `oracle mine` extracts corrections from transcripts into `.oracle/corrections.jsonl` and dedupes them, but nothing turns them into a layer.
+**8. Process feedback captured into a middleware layer: partial (first slice built).** Spec: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md), Lifecycle.
+- **Built** (569a881): every accepted turn runs foundry-core's correction detector (`packages/core/src/feedback/correction.ts`) through `packages/foundry/src/feedback/service.ts`. A detected rule is sharpened, shown to the user as a tuning prompt (ask by default; blocking is a setting), routed to Warden roles by the Cartographer (falling back to `main`), and written into personal-rung role files with provenance and undo. Exposure is counted from composed segments. The Feedback view, the `feedback` stream, `/api/feedback*` (`viewer/routes/runtime.ts:292-342`) and the ACP `/feedback` command show each item's stage.
+- **Also:** `POST /api/threads/:threadId/interventions` (`viewer/routes/runtime.ts:358`) and the ACP `/correction` command record a correction against the last turn.
+- **Not built:** Oracle recurrence wiring (`foundry feedback export`, `oracle mine` on the shared detector), committed rungs as PRs, and exposure for rules routed to `main`. `RuleCompiler`'s `recompileOn` (`agents/domain-librarian.ts:628`) and `CorpusCompiler.ingestFromSignalBus` (`agents/corpus-compiler.ts:146`) still have no caller.
+- `oracle mine` extracts corrections from transcripts into `.oracle/corrections.jsonl` and dedupes them; nothing consumes them yet.
 
 **9. Oracle verifies that layer changes improve outcomes: partial.**
 - **What exists:** extract/mine → run/capture → score → `compare`, which exits non-zero on regression.
@@ -219,12 +218,12 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 
 **Foundry**
 1. Add a `layer test` command with recorded cases (goal 7).
-2. Build the feedback lifecycle (capture → tune → route → change with provenance → show use → recurrence) on the existing detector (goal 8).
+2. Finish the feedback lifecycle: Oracle recurrence, committed rungs, exposure for `main` (goal 8).
 3. Emit Oracle artifacts per thread (goal 9).
 4. Move Oracle material out: `PROPOSAL.md`, the Oracle LICENSE section, the Oracle-oriented docs, and the fixture bridge if Oracle owns it.
 
 **agent-session**
-1. Make Codex app-server the only Codex transport.
+1. Land Codex app-server as the only Codex transport (`fix/codex-app-server-default`).
 2. Add native transports for Gemini (ACP), Grok and Meta Muse where they have CLIs, and let pools take accounts supplied by Kingdom (goal 6).
 
 **Archive**
@@ -233,5 +232,5 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 **Oracle**
 1. Delete or rebuild the worker and delegation subsystem on Installations and Signets; depend on `@inixiative/signet` instead of Foundry.
 2. Execute on subscription capacity through Foundry and agent-session instead of API keys (goal 9).
-3. Run baseline versus candidate-layer experiments and attach the evidence to layer proposals. Feed mined corrections into goal 8.
+3. Run baseline versus candidate-layer experiments and attach the evidence to layer proposals. Measure recurrence for goal 8 on the shared detector.
 4. Stop importing Kingdom source in its fixtures. Add CI.

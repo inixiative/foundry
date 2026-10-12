@@ -103,7 +103,7 @@ These are the agents we've named so far. Each implements one or more roles. The 
 |------|----------|-------|
 | **Context routing** | Cartographer | Reads everything, owns the topology map, routes slices. |
 | **Domain advising** | Wardens (formerly called Domain Librarians) — Docs Warden, Convention Warden, Security Warden, Architecture Warden, Memory Warden | Each maintains a warm cache for its domain. Advise mode: "what context does this message need from my domain?" |
-| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the class exists (`agents/herald.ts`) but no runtime constructs it (`viewer/config.ts:296`). |
+| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the class exists (`agents/herald.ts`) but no runtime constructs it (`viewer/config.ts:301`). |
 | **Execution** | Artificer (the native Claude Code or Codex session running under the harness) | The real work. Full tool access, capable model. |
 | **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode: "did this action violate anything in my domain?" |
 | **Signal reconciliation** | Librarian (singular — distinct from the plural Wardens) | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
@@ -848,7 +848,7 @@ Every branching point in the system, who decides, and how.
 - **Push of critical findings** into a running session.
 - **`Thread.fromSession`** store replay.
 - **Writeback pipeline** — post-execution signal processing into the corpus pipeline (VISION.md §7): map rebuilds, memory entries, convention proposals queued for review. `CorpusCompiler.ingestFromSignalBus` (`agents/corpus-compiler.ts:146`) and `recompileOn` (`agents/domain-librarian.ts:628`) exist with no caller.
-- **Feedback lifecycle** — see [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md).
+- **Feedback lifecycle, beyond its first slice** — Oracle recurrence and committed rungs; see [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md). The first slice (capture, tuning, routing, role-file changes, the Feedback view) is built in `packages/foundry/src/feedback/`.
 
 ---
 
