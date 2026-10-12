@@ -677,8 +677,20 @@ export type ProcessingStrategy =
 export interface DomainLibrarianConfig {
   /** Domain identifier (e.g., "docs", "convention", "security"). */
   domain: string;
-  /** The warm cache layer for this domain. */
+  /** Its domain knowledge: a configured Warden's composed `domainKnowledge` slot (a private layer). */
   cache: ContextLayer;
+  /**
+   * Its composed `instructions` slot (a private layer): the system prompt of every phase when
+   * present and warm. Absent (a Warden registered in code), the phase prompts below are used.
+   */
+  instructions?: ContextLayer;
+  /** Its role in the composition view, named in budget errors. */
+  role?: string;
+  /**
+   * Characters its instructions plus domain knowledge may take. Over it, a phase reports an error
+   * and sends nothing. Default: unbounded.
+   */
+  budget?: number;
   /** Signal bus to emit findings and observations into. */
   signals: SignalBus;
   /** Fast LLM for advise/guard decisions. */
@@ -724,6 +736,9 @@ export interface DomainLibrarianConfig {
 export class DomainLibrarian {
   readonly domain: string;
   private _cache: ContextLayer;
+  private _instructions: ContextLayer | undefined;
+  private _role: string;
+  private _budget: number;
   private _signals: SignalBus;
   private _llm: LLMProvider;
   private _llmOpts: CompletionOpts;
@@ -742,6 +757,9 @@ export class DomainLibrarian {
   constructor(config: DomainLibrarianConfig) {
     this.domain = config.domain;
     this._cache = config.cache;
+    this._instructions = config.instructions;
+    this._role = config.role ?? config.domain;
+    this._budget = config.budget ?? Number.POSITIVE_INFINITY;
     this._signals = config.signals;
     this._llm = config.llm;
     this._llmOpts = config.llmOpts ?? { maxTokens: 512, temperature: 0 };
@@ -778,14 +796,15 @@ export class DomainLibrarian {
     this.reconfigure(config);
   }
 
-  /** Instructions and guard triggers from settings. Applies from the next advise, guard or review. */
+  /** Instructions, guard triggers and budget from settings. Applies from the next advise, guard or review. */
   reconfigure(
     config: Pick<
       DomainLibrarianConfig,
-      'advisePrompt' | 'guardPrompt' | 'reviewPrompt' | 'guardTriggers'
+      'advisePrompt' | 'guardPrompt' | 'reviewPrompt' | 'guardTriggers' | 'budget'
     >,
   ): void {
     this._guardTriggers = new Set(config.guardTriggers ?? []);
+    if (config.budget !== undefined) this._budget = config.budget;
     this._advisePrompt =
       config.advisePrompt ??
       `You are a ${this.domain} domain advisor. Given a user message and your domain's warm cache, decide what context from your domain the message needs.`;
@@ -800,6 +819,45 @@ export class DomainLibrarian {
   /** The underlying warm cache layer. */
   get cache(): ContextLayer {
     return this._cache;
+  }
+
+  /** The composed instructions layer, when this Warden is configured. */
+  get instructionsLayer(): ContextLayer | undefined {
+    return this._instructions;
+  }
+
+  /** Warm whichever of its composed slots is not warm. */
+  async warm(): Promise<void> {
+    await Promise.all(
+      [this._instructions, this._cache]
+        .filter((layer): layer is ContextLayer => !!layer && layer.checkStaleness() !== 'warm')
+        .map((layer) => layer.warm()),
+    );
+  }
+
+  /** A phase's system prompt: the composed instructions when warm, else the phase prompt. */
+  private _system(phasePrompt: string): string {
+    return this._instructions?.content || phasePrompt;
+  }
+
+  /**
+   * Why instructions plus domain knowledge do not fit this role's budget, naming the largest
+   * contributions and the ones a role opted in; undefined when they fit.
+   */
+  budgetError(instructions: string, domainKnowledge: string): string | undefined {
+    const total = instructions.length + domainKnowledge.length;
+    if (total <= this._budget) return undefined;
+    const largest = [
+      ...contributions('instructions', this._instructions),
+      ...contributions('domainKnowledge', this._cache),
+    ]
+      .sort((a, b) => b.chars - a.chars)
+      .slice(0, 3)
+      .map(
+        (c) =>
+          `${c.id} (${c.slot}, ${c.chars} chars${c.reason.includes('[included') ? ', opted in' : ''})`,
+      );
+    return `${this.domain} Warden (role ${this._role}): instructions ${instructions.length} + domain knowledge ${domainKnowledge.length} = ${total} chars exceed its budget of ${this._budget} (composition.roles.${this._role}.budget)${largest.length ? `; largest: ${largest.join('; ')}` : ''}. Nothing was sent or truncated.`;
   }
 
   /** Processing strategy for advise calls. */
@@ -825,12 +883,17 @@ export class DomainLibrarian {
 
   /** The stable role instructions this domain advises with. */
   get advisePrompt(): string {
-    return this._advisePrompt;
+    return this._system(this._advisePrompt);
+  }
+
+  /** The stable role instructions this domain guards with. */
+  get guardPrompt(): string {
+    return this._system(this._guardPrompt);
   }
 
   /** The stable role instructions this domain reviews completed work with. */
   get reviewPrompt(): string {
-    return this._reviewPrompt;
+    return this._system(this._reviewPrompt);
   }
 
   /** This domain's versioned understanding of the thread it belongs to. */
@@ -850,7 +913,7 @@ export class DomainLibrarian {
    */
   reviewContext() {
     return {
-      instructions: this._reviewPrompt,
+      instructions: this.reviewPrompt,
       domainKnowledge: this._cache.content,
       threadKnowledge: this._threadKnowledge.content,
     };
@@ -913,16 +976,14 @@ export class DomainLibrarian {
     observe?: (request: PhaseRequestEvidence) => void,
   ): Promise<ReviewResult> {
     const context = job?.segments ?? this.reviewContext();
-    if (
-      context.threadKnowledge.length > this._threadKnowledge.maxChars ||
-      context.domainKnowledge.length + context.instructions.length > 40_000
-    ) {
+    if (context.threadKnowledge.length > this._threadKnowledge.maxChars)
       return {
         decision: 'invalid',
         facts: [],
-        reason: 'mandatory review context exceeds its bound; nothing was sent or truncated',
+        reason: `thread knowledge exceeds its ${this._threadKnowledge.maxChars} character bound; nothing was sent or truncated`,
       };
-    }
+    const over = this.budgetError(context.instructions, context.domainKnowledge);
+    if (over) return { decision: 'error', facts: [], reason: over };
     const clip = (text: string, max: number) =>
       text.length > max ? `${text.slice(0, max)}… [truncated ${text.length - max} chars]` : text;
     // Each tool is evidence: identity, outcome, and the observed result or
@@ -944,11 +1005,17 @@ export class DomainLibrarian {
       }
       return lines.join('\n');
     });
+    // Domain knowledge heads the message and changes only when the composition does: a stable,
+    // primable prefix, so a review forks the same primed session as advice and guard.
+    const domainKnowledge = job?.segments.domainKnowledge ?? this._cache.content;
+    const stablePrefix = `## Configured domain knowledge (distinct from generated thread knowledge)\n${domainKnowledge}\n`;
     const messages: LLMMessage[] = [
-      { role: 'system', content: job?.segments.instructions ?? this._reviewPrompt },
+      { role: 'system', content: job?.segments.instructions ?? this.reviewPrompt },
       {
         role: 'user',
         content: [
+          `## Configured domain knowledge (distinct from generated thread knowledge)`,
+          domainKnowledge,
           `## Completed work`,
           ...(job
             ? [
@@ -974,8 +1041,6 @@ export class DomainLibrarian {
           ...(input.toolObservations.length > MAX_REVIEW_TOOLS
             ? [`[omitted ${input.toolObservations.length - MAX_REVIEW_TOOLS} tool observations]`]
             : []),
-          `## Configured domain knowledge (distinct from generated thread knowledge)`,
-          job?.segments.domainKnowledge ?? this._cache.content,
           `## Your current understanding of this thread (revision ${job?.base.revision ?? this._threadKnowledge.revision})`,
           (job?.segments.threadKnowledge ?? this._threadKnowledge.content) || '(nothing yet)',
           `\n${reviewResponseProtocol(this._threadKnowledge.maxChars)}`,
@@ -992,6 +1057,7 @@ export class DomainLibrarian {
     try {
       const result = await this._reviewLlm.complete(messages, {
         ...this.reviewOptions,
+        stablePrefix,
         priority: DECISION_PRIORITY.review,
         ...(nativeObservation && this._reviewLlm.nativeOwnership === 'required-prewrite'
           ? { nativeObservation }
@@ -1107,6 +1173,9 @@ export class DomainLibrarian {
     if (!cacheContent) {
       return { layers: [], snippets: [], confidence: 0, abstain: true, reason: 'cold-cache' };
     }
+    const system = this.advisePrompt;
+    const over = this.budgetError(system, cacheContent);
+    if (over) return { layers: [], snippets: [], confidence: 0, error: over };
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
@@ -1114,7 +1183,7 @@ export class DomainLibrarian {
     // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
     const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
     const messages: LLMMessage[] = [
-      { role: 'system', content: this._advisePrompt },
+      { role: 'system', content: system },
       {
         role: 'user',
         content: [
@@ -1217,6 +1286,17 @@ export class DomainLibrarian {
     // frozen understanding of the thread (never another domain's), the shared thread state, the
     // observation, and the guard phase's response protocol supplied by this phase, not by the
     // instructions.
+    const system = this.guardPrompt;
+    const over = this.budgetError(system, cacheContent);
+    if (over)
+      return {
+        findings: [],
+        ran: true,
+        status: 'not-admitted',
+        error: over,
+        admission: 'not-admitted',
+        request: { status: 'not-sent', phase: 'guard', reason: over },
+      };
     const understanding = opts?.threadKnowledge ?? this._threadKnowledge.content;
     const revision =
       opts?.threadKnowledge !== undefined
@@ -1224,7 +1304,7 @@ export class DomainLibrarian {
         : this._threadKnowledge.revision;
     const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
     const messages: LLMMessage[] = [
-      { role: 'system', content: this._guardPrompt },
+      { role: 'system', content: system },
       {
         role: 'user',
         content: [
@@ -1322,6 +1402,21 @@ export class DomainLibrarian {
       });
     }
   }
+}
+
+/** A composed layer's selected files, largest first, for a budget error. */
+function contributions(
+  slot: string,
+  layer: ContextLayer | undefined,
+): Array<{ id: string; slot: string; chars: number; reason: string }> {
+  return (layer?.selection?.sources ?? []).flatMap((source) =>
+    source.report.selected.map((entry) => ({
+      id: entry.id,
+      slot,
+      chars: entry.chars,
+      reason: entry.reason,
+    })),
+  );
 }
 
 // ---------------------------------------------------------------------------

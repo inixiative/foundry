@@ -303,7 +303,6 @@ function emitConfigSnippet(
     prompt: 'Project documentation. The docs warden routes reads against this cache.',
     sourceIds: [sourceId],
     staleness: 60_000,
-    writers: [agentId],
     enabled: true,
     activation: 'conditional',
     condition: {
@@ -319,8 +318,8 @@ function emitConfigSnippet(
     prompt: DOCS_ADVISE_PROMPT,
     temperature: 0,
     tools: false,
-    visibleLayers: [layerId],
-    ownedLayers: [layerId],
+    visibleLayers: [],
+    domainKnowledge: [sourceId],
     peers: [],
     maxDepth: 1,
     invocation: 'on-demand',

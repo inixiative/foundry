@@ -459,7 +459,8 @@ A thread's context has three parts, and each reaches a native session (Claude Co
 |---|---|---|
 | Stable | composed instructions (`instructions` layer), conventions, the executor's own prompt | once, in the session's base context |
 | Slowly changing | Warden thread knowledge, memory; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
-| Per turn | Cartographer routing, Warden advice (the decoration) | every turn, with the user message |
+| Per turn | Cartographer routing (the decoration) | every turn, with the user message |
+| Warden notes | each Warden that chimed in: `The <domain> Warden chimed in:` and its points | every turn, appended to the end of the user's message (`placement: "after-message"`) |
 | Thread-state | the Librarian's layer, which carries timestamps and the ledger itself | as a delta on nearly every turn, because its hash changes nearly every turn |
 
 **The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions as one `agent` part) at its current hash, and the latest version in its context is the current one. Each part is labelled `## Context: <id>`, in the system prompt and in a delta. The mechanics:

@@ -104,20 +104,10 @@ for (const d of DOMAINS) {
     provider: 'subscription-decisions',
     model,
     tools: false,
-    visibleLayers: [`${d}-reference`],
-    ownedLayers: [`${d}-reference`],
+    visibleLayers: [],
+    domainKnowledge: [`${d}-source`],
     peers: [],
     maxDepth: 1,
-    enabled: true,
-  };
-  settings.layers[`${d}-reference`] = {
-    id: `${d}-reference`,
-    domain: d,
-    segment: 'domain-knowledge',
-    prompt: `${d} knowledge`,
-    sourceIds: [`${d}-source`],
-    writers: [`${d}-expert`],
-    staleness: 0,
     enabled: true,
   };
   settings.sources[`${d}-source`] = {

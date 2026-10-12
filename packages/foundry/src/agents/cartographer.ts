@@ -134,8 +134,17 @@ export interface CartographerConfig {
    * If not provided, the Cartographer infers domains from layer IDs.
    */
   domainMap?: Record<string, string[]>;
-  /** Custom system prompt for routing decisions. */
+  /** Custom system prompt for routing decisions, when no composed `instructions` layer is given. */
   routePrompt?: string;
+  /**
+   * Its composed `instructions` slot (a private layer, warmed before each route): the routing
+   * system prompt. Its domain knowledge is the topology map it builds itself.
+   */
+  instructions?: ContextLayer;
+  /** Its role in the composition view, named in budget errors. */
+  role?: string;
+  /** Characters its instructions plus topology map may take. Over it, routing errors. Default: unbounded. */
+  budget?: number;
   /**
    * Repo root of an atlas-mapped project (has `.atlas/` and/or `MAP.md`).
    * When set, `loadAtlas()` pulls the concept graph into the topology map so
@@ -163,6 +172,9 @@ export class Cartographer {
   private _llmOpts: CompletionOpts;
   private _domainMap: Record<string, string[]>;
   private _routePrompt: string;
+  private _instructions: ContextLayer | undefined;
+  private _role: string;
+  private _budget: number;
   private _map: TopologyMap;
   private _mapLayer: ContextLayer;
   private _unsubscribe: (() => void) | null = null;
@@ -179,6 +191,9 @@ export class Cartographer {
     this._map = { entries: [], lastBuilt: 0, mapTokens: 0 };
 
     this._routePrompt = config.routePrompt ?? DEFAULT_ROUTE_INSTRUCTIONS;
+    this._instructions = config.instructions;
+    this._role = config.role ?? 'cartographer';
+    this._budget = config.budget ?? Number.POSITIVE_INFINITY;
 
     // Create the map layer — always warm, holds the serialized topology map
     this._mapLayer = new ContextLayer({
@@ -195,9 +210,14 @@ export class Cartographer {
     });
   }
 
-  /** The routing instructions (configured or default); the response protocol is supplied per call. */
+  /** The routing instructions (composed, configured or default); the response protocol is supplied per call. */
   get routePrompt(): string {
-    return this._routePrompt;
+    return this._instructions?.content || this._routePrompt;
+  }
+
+  /** Settings edits apply on the next route. */
+  setBudget(budget: number): void {
+    this._budget = budget;
   }
 
   /** Settings edits apply on the next route. */
@@ -391,13 +411,21 @@ export class Cartographer {
       };
     }
 
+    if (this._instructions && this._instructions.checkStaleness() !== 'warm')
+      await this._instructions.warm();
+    const system = this.routePrompt;
     const mapContent = JSON.stringify(this._map.entries, null, 2);
     const atlasSection = this._atlasSection();
+    const knowledge = mapContent.length + (atlasSection?.length ?? 0);
+    if (system.length + knowledge > this._budget)
+      throw Error(
+        `Cartographer (role ${this._role}): instructions ${system.length} + topology map ${knowledge} = ${system.length + knowledge} chars exceed its budget of ${this._budget} (composition.roles.${this._role}.budget). Nothing was sent or truncated.`,
+      );
 
     // The topology map and atlas change only when layers or the atlas change: a stable, primable prefix.
     const stablePrefix = `## Available context (topology map)\n${mapContent}\n${atlasSection ? `\n## Codebase concepts (atlas)\n${atlasSection}\n` : ''}`;
     const messages: LLMMessage[] = [
-      { role: 'system', content: this._routePrompt },
+      { role: 'system', content: system },
       {
         role: 'user',
         content: [

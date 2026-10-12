@@ -25,13 +25,21 @@ test('a saved custom expert participates and learns without a hard-coded runtime
         sourceIds: ['compatibility-source'],
         staleness: 0,
         enabled: true,
-        writers: ['compatibility-expert'],
       },
       'passive-reference': {
         id: 'passive-reference',
         prompt: 'Shared factual evidence',
         sourceIds: [],
         staleness: 0,
+        enabled: true,
+      },
+    };
+    config.sources = {
+      'compatibility-source': {
+        id: 'compatibility-source',
+        type: 'inline',
+        label: 'Compatibility',
+        uri: 'Old schema readers must continue to work',
         enabled: true,
       },
     };
@@ -55,8 +63,8 @@ test('a saved custom expert participates and learns without a hard-coded runtime
         prompt: 'Assess compatibility evidence for this message',
         provider: 'controlled',
         model: 'controlled',
-        visibleLayers: ['compatibility-reference'],
-        ownedLayers: ['compatibility-reference'],
+        visibleLayers: [],
+        domainKnowledge: ['compatibility-source'],
         peers: [],
         maxDepth: 1,
         enabled: true,

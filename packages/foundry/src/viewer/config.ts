@@ -23,9 +23,11 @@ import {
   subscriptionWorker,
 } from '../models/registry';
 import {
-  type InstructionSettings,
+  COMPOSITION_SLOTS,
+  type CompositionSettings,
+  type CompositionSlot,
   resolveInstructionLadder,
-  validateInstructionSettings,
+  validateCompositionSettings,
 } from '../prompts/instruction-settings';
 import type { ClaudeContextBudget } from '../providers/claude-context-budget';
 import { DECISION_MODEL } from '../providers/decision-provider';
@@ -88,8 +90,11 @@ export interface FoundryConfig {
   nativeAuthenticationSelections?: Record<string, string>;
   /** Background domain review phase; does not override classifier/router or executor profiles. */
   learning?: LearningSettings;
-  /** Standing instruction files (CLAUDE.md, AGENTS.md, auto memory); see docs/usage-and-context.md. */
-  instructions?: InstructionSettings;
+  /**
+   * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
+   * instructions and domain knowledge of every role; see docs/usage-and-context.md.
+   */
+  composition?: CompositionSettings;
   /** Global defaults — executor provider/model + classifier provider/model. */
   defaults: {
     provider: string;
@@ -326,10 +331,16 @@ export interface AgentSettingsConfig {
    */
   visibleLayers: string[];
   /**
-   * Which layers this agent can WRITE (empty = none).
-   * Domain librarians own their domain layer. The Librarian owns thread-state.
+   * Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns
+   * no configured layer: it writes only its generated thread-knowledge layer, and reads its
+   * knowledge from the composition view.
    */
   ownedLayers?: string[];
+  /**
+   * Warden: source ids its domain knowledge composes from, before the composition view's files
+   * (docs/usage-and-context.md, "Composition view"). A project extension appends its own.
+   */
+  domainKnowledge?: string[];
   /** Tool names that trigger this configured Warden's post-action guard. [] disables guards. */
   guardTriggers?: string[];
   /** Peer agent IDs for delegation. */
@@ -443,11 +454,6 @@ export interface LayerSettingsConfig {
   /** Instruction prompt for this layer. */
   prompt: string;
   /**
-   * Set by project resolution, never saved: the layer's sources grouped under headings, when a
-   * project Warden composes its domain knowledge with its parent's.
-   */
-  chunks?: LayerChunk[];
-  /**
    * Semantic segment of the layer's CONTENT in the reading view. Optional: a
    * configured layer without it keeps the legacy id-based classification. Only
    * "domain-knowledge" (configured/published cache) or "thread-knowledge"
@@ -473,15 +479,8 @@ export interface LayerSettingsConfig {
   condition?: InvocationCondition;
 }
 
-/** One heading-labelled group of a composed layer's sources. */
-export interface LayerChunk {
-  readonly origin: 'global' | 'project';
-  readonly heading: string;
-  readonly sourceIds: string[];
-}
-
 export interface LayerSettingsOverride
-  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition' | 'chunks'> {
+  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
   sourceIds?: ListPatch<string>;
   writers?: ListPatch<string>;
   condition?: InvocationConditionOverride | null;
@@ -520,11 +519,10 @@ export interface DataSourceConfig {
     | 'archive'
     | 'instructions';
   /**
-   * Instruction sources only (`uri` is unused): who the composed CLAUDE.md / AGENTS.md / memory
-   * stack is for. A file reaches the audience only if its tier is visible there, so personal files
-   * never reach a team or org audience. Default "personal_private": the owner's own sessions.
+   * Instruction sources only (`uri` is unused): which of the main role's slots the source returns.
+   * Default "instructions". Who it is for is `composition.roles.main.audience`.
    */
-  audience?: CorpusTier;
+  slot?: CompositionSlot;
   /** Searches the local Archive for this project; `uri` is unused. */
   archive?: {
     projectId: string;
@@ -849,10 +847,6 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
     throw new Error(
       `invalid layer ${JSON.stringify(id)} in ${owner}: thread-knowledge layers are generated per thread, never configured`,
     );
-  if ((layer as { chunks?: unknown } | null | undefined)?.chunks !== undefined)
-    throw new Error(
-      `invalid layer ${JSON.stringify(id)} in ${owner}: chunks come from project resolution, never settings`,
-    );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')
     throw new Error(
@@ -951,7 +945,11 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
-  validateInstructionSettings(config.instructions, resolveInstructionLadder(config.instructions));
+  if ('instructions' in config)
+    throw Error(
+      'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
+    );
+  validateCompositionSettings(config.composition, resolveInstructionLadder(config.composition));
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
@@ -972,9 +970,13 @@ export function validateConfig(config: FoundryConfig): void {
   }
   const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
     for (const [id, src] of Object.entries(sources ?? {})) {
-      if (src?.audience !== undefined && !CORPUS_TIERS.includes(src.audience))
+      if ('audience' in (src ?? {}))
         throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: audience must be one of ${CORPUS_TIERS.join(', ')}`,
+          `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
+        );
+      if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
+        throw new Error(
+          `invalid source ${JSON.stringify(id)} in ${owner}: slot must be one of ${COMPOSITION_SLOTS.join(', ')}`,
         );
       if (!src || src.selection === undefined || src.selection === false) continue;
       try {
@@ -1216,8 +1218,8 @@ export class ConfigStore {
         next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
       } else if (section === 'learning') {
         next.learning = { ...next.learning, ...patch } as LearningSettings;
-      } else if (section === 'instructions') {
-        next.instructions = { ...next.instructions, ...patch } as InstructionSettings;
+      } else if (section === 'composition') {
+        next.composition = { ...next.composition, ...patch } as CompositionSettings;
       } else if (section === 'subscriptionOnly') {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
       } else if (section === 'toolRules') {

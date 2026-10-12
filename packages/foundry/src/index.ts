@@ -292,7 +292,6 @@ export {
   type FoundryConfig,
   type InvocationConditionOverride,
   isAgentExtension,
-  type LayerChunk,
   type LayerSettingsConfig,
   type LayerSettingsOverride,
   type ListPatch,

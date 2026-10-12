@@ -19,11 +19,12 @@ import {
   type Thread,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
+import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
-import { Cartographer } from './cartographer';
-import { cartographerInstructions, resolveThreadDomains } from './configured-experts';
+import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
+import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
   DomainLibrarian,
   isThreadKnowledgeLayerId,
@@ -44,6 +45,13 @@ import {
 } from './flow-orchestrator';
 import { Librarian } from './librarian';
 import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
+import {
+  buildRoleLayers,
+  type ResolveSource,
+  type RoleLayers,
+  replaceRoleSources,
+  roleSources,
+} from './role-layers';
 
 // ---------------------------------------------------------------------------
 // Session identity
@@ -153,7 +161,10 @@ export type SignalSink = (signal: Signal, owner: OwnershipScope) => void | Promi
 // Config
 // ---------------------------------------------------------------------------
 
-/** One Warden domain: which layer it caches and which tool calls it guards. */
+/**
+ * A Warden registered in code (tests, research runs): which stack layer it reads and which tool calls
+ * it guards. Configured Wardens read their composition view instead (`configured-experts.ts`).
+ */
 export interface ThreadDomainConfig {
   domain: string;
   layerId: string;
@@ -163,9 +174,15 @@ export interface ThreadDomainConfig {
   reviewPrompt?: string;
   reviewOpts?: CompletionOpts;
   programmaticGuard?: boolean;
+  /** Characters its instructions plus domain knowledge may take. Default: unbounded. */
+  budget?: number;
 }
 
-/** Built-in Warden domains. A domain is only instantiated when its layer exists on the thread. */
+/**
+ * Built-in domain policy: the guard triggers (and programmatic guard) a configured Warden of that
+ * domain uses when its settings name none. Passed as `domains`, they also register code Wardens over
+ * layers of those names.
+ */
 export const DEFAULT_THREAD_DOMAINS: ThreadDomainConfig[] = [
   { domain: 'docs', layerId: 'docs', guardTriggers: ['file_write', 'Write'] },
   { domain: 'conventions', layerId: 'conventions', guardTriggers: ['file_write', 'Write', 'Edit'] },
@@ -187,11 +204,10 @@ export interface ThreadRuntimeDeps {
   eventStream?: EventStream;
   /** Atlas-mapped repo root. Loaded asynchronously per thread; failures are logged, never thrown. */
   atlasRoot?: string;
-  /** Programmatic domain defaults. Explicit saved expert ownership wins; when
-   * absent, legacyDomains or DEFAULT_THREAD_DOMAINS provide legacy behavior. */
+  /** Wardens registered in code over stack layers. A configured Warden of the same domain wins. Default none. */
   domains?: ThreadDomainConfig[];
-  /** Legacy defaults only; explicit configured ownership takes precedence. */
-  legacyDomains?: ThreadDomainConfig[];
+  /** Resolves configured source ids (a Warden's `domainKnowledge`); the factory passes its own on attach. */
+  resolveSource?: ResolveSource;
   /** Already constructed phase providers, including explicit expert selections. */
   providers?: ReadonlyMap<string, LLMProvider>;
   /** Threshold for the built-in low-confidence reaction rule. Default 0.5. */
@@ -499,7 +515,11 @@ export class ThreadRuntimeManager {
    * Wire a thread. Returns the existing runtime for the same Thread object;
    * throws if a different Thread object already holds this id live.
    */
-  attach(thread: Thread, configuration?: FoundryConfig): ThreadRuntime {
+  attach(
+    thread: Thread,
+    configuration?: FoundryConfig,
+    resolveSource?: ResolveSource,
+  ): ThreadRuntime {
     if (thread.disposed) {
       throw new Error(
         `Thread "${thread.id}" is disposed; restore by creating a new thread, not by reattaching this object`,
@@ -526,7 +546,8 @@ export class ThreadRuntimeManager {
       config,
       new Map(thread.stack.layers.map((l) => [l.id, l])),
       {
-        legacy: this._deps.domains ?? this._deps.legacyDomains ?? DEFAULT_THREAD_DOMAINS,
+        policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
+        programmatic: this._deps.domains ?? [],
         llm: this._deps.llm,
         providers: this._deps.providers,
         learning: this._deps.learning,
@@ -535,7 +556,7 @@ export class ThreadRuntimeManager {
     );
     const runtime: ThreadRuntimeImpl = new ThreadRuntimeImpl(
       thread,
-      { ...this._deps, config },
+      { ...this._deps, config, resolveSource: resolveSource ?? this._deps.resolveSource },
       domains,
       (job, candidate, signal) =>
         this._knowledgeCommitter
@@ -606,7 +627,6 @@ export class ThreadRuntimeManager {
       const view = structuredClone(
         (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config,
       );
-      runtime.cartographer.setRoutePrompt(cartographerInstructions(view));
       try {
         const domains = resolveThreadDomains(
           view,
@@ -616,7 +636,8 @@ export class ThreadRuntimeManager {
               .map((l) => [l.id, l]),
           ),
           {
-            legacy: this._deps.domains ?? this._deps.legacyDomains ?? DEFAULT_THREAD_DOMAINS,
+            policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
+            programmatic: this._deps.domains ?? [],
             llm: this._deps.llm,
             providers: this._deps.providers,
             learning: this._deps.learning,
@@ -673,6 +694,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _eventStream: EventStream | undefined;
   private _onDisposed: () => void;
   private _knowledgeLayers: ContextLayer[] = [];
+  private _scope!: OwnershipScope;
+  private _resolveSource: ResolveSource | undefined;
+  private _cartographerRole!: string;
+  private _cartographerInstructions!: ContextLayer;
+  /** Each configured Warden's composed slots, by domain. */
+  private _roleLayers = new Map<string, { role: string } & RoleLayers>();
   private _learningTimeoutMs = 10_000;
   private _hardTimeoutMs = 60_000;
   private _epoch = 0;
@@ -755,6 +782,24 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     );
     this._unsubs.push(() => factualSignals.clearHistory());
 
+    // Every model-backed middleware role composes its slots from the composition view, bound to
+    // this thread's cwd and project. Private layers: never on the stack, never sent to the executor.
+    this._scope = {
+      threadId: thread.id,
+      get projectId() {
+        return thread.meta.projectId as string | undefined;
+      },
+      get cwd() {
+        return thread.meta.cwd;
+      },
+    };
+    this._resolveSource = deps.resolveSource;
+    const cartographerRole = cartographerRoleId(deps.config);
+    this._cartographerRole = cartographerRole;
+    this._cartographerInstructions = buildRoleLayers(deps.config, cartographerRole, {
+      builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
+      scope: this._scope,
+    }).instructions;
     const cartographerId = auxiliarySessionId(thread.id, 'cartographer');
     this.auxiliarySessionIds.push(cartographerId);
     this.cartographer = new Cartographer({
@@ -762,7 +807,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       signals,
       llm: scopedProvider(deps.llm, { threadId: cartographerId, cwd }),
       llmOpts: { maxTokens: 256, temperature: 0 },
-      routePrompt: cartographerInstructions(deps.config),
+      instructions: this._cartographerInstructions,
+      role: cartographerRole,
+      budget: roleComposition(deps.config.composition, cartographerRole).budget,
       atlasRoot: deps.atlasRoot,
     });
     this.cartographer.buildMap();
@@ -777,7 +824,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       60_000,
     );
     for (const dc of domains) {
-      const cache = stack.getLayer(dc.layerId);
+      const role = dc.expert?.agentId;
+      const slots = role
+        ? buildRoleLayers(deps.config, role, {
+            resolveSource: deps.resolveSource,
+            scope: this._scope,
+          })
+        : undefined;
+      if (role && slots) this._roleLayers.set(dc.domain, { role, ...slots });
+      const cache = slots?.domainKnowledge ?? (dc.layerId ? stack.getLayer(dc.layerId) : undefined);
       if (!cache) continue;
       const domainId = auxiliarySessionId(thread.id, `domain:${dc.domain}`);
       this.auxiliarySessionIds.push(domainId);
@@ -809,6 +864,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         new DomainLibrarian({
           domain: dc.domain,
           cache,
+          ...(slots ? { instructions: slots.instructions, role } : {}),
+          ...(dc.budget !== undefined ? { budget: dc.budget } : {}),
           signals,
           llm: scopedProvider(dc.adviseProvider ?? deps.llm, { threadId: domainId, cwd }),
           llmOpts: dc.adviseOpts ?? { maxTokens: 512, temperature: 0 },
@@ -876,12 +933,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // the first pre-hook, not abstain because only the global template warmed.
       // No model/review wait is introduced. Failure blocks this work preparation.
       await Promise.all(
-        domains
-          .filter((d) => d.expert)
-          .map((d) => {
-            const cache = domainLibrarians.get(d.domain)!.cache;
-            return cache.checkStaleness() === 'warm' ? undefined : cache.warm();
-          }),
+        domains.filter((d) => d.expert).map((d) => domainLibrarians.get(d.domain)!.warm()),
       );
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
@@ -1952,6 +2004,17 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       this._deferReview(domain, input, lease.reason ?? 'review admission closed');
       return;
     }
+    // A composition over the role's budget is a configuration error, reported per review; the lane
+    // stays open so a settings change (a raised budget, an opt-out) takes effect on the next one.
+    const segments = lib.reviewContext();
+    const over = lib.budgetError(segments.instructions, segments.domainKnowledge);
+    if (over) {
+      await this._emitLearning(
+        domain,
+        knowledge.record({ decision: 'error', reason: over, evidence: input.evidence, author }),
+      );
+      return;
+    }
     const admittedAt = Date.now();
     const job: ReviewJob = freezeOwned({
       id: newId('review'),
@@ -1963,7 +2026,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       base: knowledge.snapshot(this._owner()),
       admittedAt,
       eligibleUntil: admittedAt + this._hardTimeoutMs,
-      segments: lib.reviewContext(),
+      segments,
       requested: lib.reviewOptions,
       providerId: lib.reviewProviderId,
       budgets: {
@@ -2604,12 +2667,36 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     if (this._disposed) return [];
     const deferred: string[] = [];
     const next = new Set<string>();
+    const cartographerRole = cartographerRoleId(config);
+    if (cartographerRole === this._cartographerRole) {
+      replaceRoleSources(
+        this._cartographerInstructions,
+        roleSources(config, cartographerRole, 'instructions', {
+          builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
+        }),
+        this._scope,
+      );
+      this.cartographer.setBudget(roleComposition(config.composition, cartographerRole).budget);
+    } else deferred.push('Cartographer role change applies to new threads');
     for (const dc of domains) {
       next.add(dc.domain);
       const lib = this.domainLibrarians.get(dc.domain);
-      if (!lib || lib.cache !== this.thread.stack.getLayer(dc.layerId)) {
+      const held = this._roleLayers.get(dc.domain);
+      const same = dc.expert
+        ? held?.role === dc.expert.agentId
+        : !!dc.layerId && lib?.cache === this.thread.stack.getLayer(dc.layerId);
+      if (!lib || !same) {
         deferred.push(`Warden ${dc.domain} applies to new threads`);
         continue;
+      }
+      if (held) {
+        // Settings edits reach the composed slots on the next turn's warm.
+        for (const slot of ['instructions', 'domainKnowledge'] as const)
+          replaceRoleSources(
+            held[slot],
+            roleSources(config, held.role, slot, { resolveSource: this._resolveSource }),
+            this._scope,
+          );
       }
       lib.reconfigure(dc);
     }

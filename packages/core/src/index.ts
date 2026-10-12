@@ -49,6 +49,7 @@ export {
 } from './adapters/markdown-docs';
 export {
   dedupeHierarchy,
+  dedupeHierarchySlots,
   discoverHierarchy,
   expandHierarchyPath,
   type HierarchyDedupeOptions,
@@ -60,6 +61,7 @@ export {
   type HierarchyLocation,
   type HierarchyMatch,
   type HierarchyNode,
+  type HierarchySlotDuplicate,
   type HierarchySource,
   type HierarchySpan,
   type HierarchyStack,

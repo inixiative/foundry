@@ -86,8 +86,11 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     const decoration = meta?.annotations?.decoration as MessageDecoration | undefined;
     const plan = meta?.annotations?.injectionPlan;
     const base = this.assembleContext(filterOverride);
-    const blocks = decoration?.blocks.length ? [...base.blocks, ...decoration.blocks] : base.blocks;
-    const assembled: AssembledContext = decoration?.blocks.length
+    // Notes placed after the message (Wardens chiming in) end the user's turn; the rest is context.
+    const contextual = (decoration?.blocks ?? []).filter((b) => b.placement !== 'after-message');
+    const notes = (decoration?.blocks ?? []).filter((b) => b.placement === 'after-message');
+    const blocks = contextual.length ? [...base.blocks, ...contextual] : base.blocks;
+    const assembled: AssembledContext = contextual.length
       ? { blocks, text: blocks.map((block) => block.text).join('\n\n') }
       : base;
     const context = assembled.text;
@@ -120,7 +123,7 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     // per-turn decoration. `heldLayers` is the thread's delivery ledger, set by the flow middleware.
     const delivery: SessionDelivery = {
       standing: standingParts(base.blocks),
-      turn: (decoration?.blocks ?? []).map((block) => block.text).join('\n\n'),
+      turn: contextual.map((block) => block.text).join('\n\n'),
       held: { ...((meta?.annotations?.heldLayers as Record<string, string> | undefined) ?? {}) },
     };
     let providerMessages: LLMMessage[] | undefined;
@@ -199,7 +202,12 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     let native: NativeEvidence | undefined;
     let recording = true;
     try {
-      output = await this._handler(context, payload, {
+      const sent = (
+        notes.length && typeof payload === 'string'
+          ? `${payload}\n\n---\n\n${notes.map((note) => note.text).join('\n\n')}`
+          : payload
+      ) as TPayload;
+      output = await this._handler(context, sent, {
         ...meta,
         delivery,
         recordDelivery: (report) => {

@@ -105,13 +105,13 @@ keyed by it. The home directory's own files are personal (global level), and its
 
 ### Registering levels
 
-`instructions.nodes` registers more nodes, merged over the preset by id (a
+`composition.nodes` registers more nodes, merged over the preset by id (a
 preset id replaces that node; `enabled: false` removes it; `preset: "none"`
 starts empty). Example: computer personal, the inixiative org and its personal
 file, a project and its personal file.
 
 ```json
-"instructions": {
+"composition": {
   "nodes": {
     "inixiative": {
       "scope": "org", "personal": false,
@@ -183,8 +183,8 @@ owns its path (as spelled or where its symlinks lead), whether a node found it
 or a file imported it (a
 `CLAUDE.local.md` imported by `CLAUDE.md`, or matched by a shared node's glob,
 stays personal). A configured path, like an import, never reads a dotfile, key
-or credential file, judged on where its symlinks lead. The source's
-`audience` (default `personal_private`) filters by tier through the corpus
+or credential file, judged on where its symlinks lead. The role's
+`composition.roles.<role>.audience` (default `personal_private`) filters by tier through the corpus
 `VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
 
 Then repeats are removed, keeping the most specific copy (the later one in the
@@ -204,7 +204,7 @@ the shared one from a team.
   fences and frontmatter are not sections. The section is cut from the more
   general file, nothing else in it changes, and a file left empty is dropped.
 
-`instructions.dedupe` (`content`, `sections`, both default true) turns the last
+`composition.dedupe` (`content`, `sections`, both default true; per role `composition.roles.<role>.dedupe`) turns the last
 two off. Every removal is reported with the copy kept in its place: the layer's
 **Selection** panel in the viewer lists the composed files, the files hidden from
 the audience, and each duplicate with where it was kept.
@@ -225,7 +225,7 @@ source naming one file) imports only within that file's directory.
 Not composed: subdirectory files and path-scoped rules, which Claude Code loads
 on demand as it touches files.
 
-**One injection path.** `instructions.harnessLoading` decides whether the
+**One injection path.** `composition.harnessLoading` decides whether the
 harness loads these files too. Absent, it is `suppress` when every view (global
 and each enabled project) has an enabled layer reading an enabled `instructions`
 source, and `load` otherwise, so no thread is left with neither. It applies on
@@ -246,3 +246,174 @@ restart.
 
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
 `instructions` source injects that file twice. Remove the `markdown` source.
+
+## Composition view
+
+Aron, 2026-10-12: "It's the same composition where you have five or six
+different things and they should all be at each level... Each of these
+compositions is, by default, all on but you should be able to opt out of
+certain things that really need to be separated. That view needs to be
+formalized because that's how the whole system is working."
+
+**The model: roles × slots × ladder nodes.** One ladder (the nodes above:
+computer, org, org personal, project, project personal) composes every slot of
+every role.
+
+- **Roles.** `main` is the thread's executor. Every model-backed middleware
+  role is its agent id: each Warden (`flowRole: "domain-advising"`) and the
+  Cartographer (its agent id, or `cartographer`). The Librarian makes no model
+  call and has nothing to compose. Classifier and router agents still use their
+  settings prompt and visible layers.
+- **Slots.** `instructions` is the system prompt. `domainKnowledge` is the
+  context the role primes with. Thread knowledge is not a slot: each Warden
+  computes it per call, from its own review history.
+- **Nodes.** A node and each of its sources may name `when.roles` and
+  `when.slots`, and paths take `{role}` and `{slot}`. A source that names no
+  slot (on itself, its walk or its node), such as CLAUDE.md, composes the
+  `instructions` slot. A source that names no role serves every role. The
+  `claude-code` preset adds a role file at every rung, for every role and
+  both slots:
+
+| Rung | Role file | Tier |
+|---|---|---|
+| computer | `~/.foundry/roles/<role>/<slot>.md` | personal_private |
+| org | `.foundry/roles/<role>/<slot>.md` in a directory above the repository | org |
+| project | `.foundry/roles/<role>/<slot>.md` in the repository, root to cwd | team |
+| org or project personal | `.foundry/roles/<role>/<slot>.local.md` in any of those directories | personal_private |
+
+  So "the org's Warden instructions for this project" is a file, for example
+  `~/code/inixiative/.foundry/roles/librarian-convention/instructions.md`.
+  A registered node with `"when": {"roles": [...], "slots": [...]}` can
+  read from anywhere else.
+
+**What a role reads.** Each slot is the role's settings part, then its ladder
+part:
+
+| Slot | Settings part | Ladder part |
+|---|---|---|
+| instructions | the agent's `prompt` (a project `extends` entry appends its own under a heading, or `override`s it) | every file that applies, CLAUDE.md included |
+| domainKnowledge | each source in the agent's `domainKnowledge` (source ids, any type; a project extension appends, or `override`s), under the source's label | the role's slotted files, plus the general files of any node the role names in `general` |
+
+The main thread's `instructions` source (type `instructions`; `slot` picks the
+slot, default `instructions`) is the `main` role's ladder part. Its own agent
+prompt stays the executor's `agent` part.
+
+**Selection.** Everything that applies is on. `composition.roles.<role>` opts
+out, per slot:
+
+```jsonc
+"composition": {
+  "roles": {
+    "<role>": {
+      "instructions": { "exclude": ["<node id>"], "general": "all" },  // or false: no ladder part
+      "domainKnowledge": { "general": ["<node id>"], "exclude": ["<node id>"] },
+      "audience": "personal_private",                     // who the composition is for
+      "dedupe": { "content": true, "sections": true },    // overrides composition.dedupe
+      "budget": 200000                                    // characters, instructions + domain knowledge
+    }
+  }
+}
+```
+
+`exclude` leaves a node out of that slot whole, its role files included.
+`general` names the nodes whose general files (unslotted: CLAUDE.md, AGENTS.md,
+rules, auto memory) compose into the slot. The default is `"all"` for
+instructions and none for domain knowledge, and role files compose either way.
+So a narrow Warden sets `"instructions": {"general": ["global"]}`: it keeps its
+role files at every rung and reads only the personal global CLAUDE.md, not the
+whole org and project stack. The Convention Warden sets `"domainKnowledge":
+{"general": ["org", "project"]}`, so the org and project CLAUDE.md are its
+domain knowledge.
+
+**Tiers, per role.** A file reaches a role only if its tier is visible to the
+role's `audience`, in both slots, whether it was found, imported or opted in.
+So a personal node never reaches a `team` or `org` audience.
+
+**Dedupe, per role.** After the audience filter, the role's two slots dedupe
+together in slot order (instructions, then domain knowledge), keeping the later
+copy. A file a role pulls into domain knowledge therefore leaves its
+instructions: a role never reads the same text twice. Every removal is
+reported, with `duplicateOf` naming the slot that kept it.
+
+**Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
+characters. The default is none for `main` and 200,000 for middleware roles,
+which fits a whole personal + org + project stack. Over budget, the phase does
+not run and nothing is truncated:
+
+- advice reports `error`;
+- guard reports `not-admitted`;
+- review records `error` and the review lane stays open;
+- routing reports `error`.
+
+The message names the role, the sizes, the setting and the three largest
+files, and marks those a role opted in. For example: "conventions Warden (role
+librarian-convention): instructions 4010 + domain knowledge 236182 = 240192 chars exceed its
+budget of 200000 (composition.roles.librarian-convention.budget); largest:
+.../CLAUDE.md (domainKnowledge, 150000 chars, opted in)".
+
+**Where the slots live.** A middleware role's slots are private layers,
+`role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to
+the thread's cwd and project and are never on the thread's stack, so the
+executor never receives them. Each records its selection report. Advice,
+guard and review record the exact composed text as the participant's
+`segments`. They re-read after 60 seconds, at once after a settings edit, or on
+`invalidateComposition()` (call it after writing a role file). A Warden owns no
+configured layer. Its only written layer is its generated
+`thread-knowledge:<domain>`, owned by the thread, its project and the domain,
+and written by its post-work review. The Librarian alone writes thread-state.
+`ownedLayers` on a Warden is refused.
+
+**Priming.** Wardens are fresh each call, never a continuing conversation. A
+Warden's primed decision session is its composed instructions (system) plus its
+composed domain knowledge (the leading `## Domain cache` part of the message,
+`stablePrefix`). Advice, guard and review all lead with the same prefix. Each
+call forks the primed session, so every cycle starts from that state. The
+per-call input is the Warden's own thread knowledge, the thread state and the
+turn. A changed composition is a new prime hash, and the next call re-primes
+(agent-session `ClaudePrimedSessions`).
+
+**Chiming in.** A Warden's advice is appended to the end of the user's message:
+`The <domain> Warden chimed in:` followed by its points. It is placed after the
+message (`PromptBlock.placement: "after-message"`), not in the context. Routing
+stays in the per-turn context, and a contribution of layers only adds context.
+
+**Aron's setup.** Main plus the Convention Warden, across computer, org, org
+personal, project and project personal:
+
+```jsonc
+"agents": {
+  "librarian-convention": {
+    "id": "librarian-convention", "kind": "domain-librarian",
+    "flowRole": "domain-advising", "domain": "conventions",
+    "prompt": "...", "visibleLayers": [], "peers": [], "maxDepth": 1, "enabled": true
+    // no ownedLayers; no domainKnowledge sources: its knowledge is the ladder's
+  }
+},
+"composition": {
+  "harnessLoading": "suppress",
+  "roles": {
+    "librarian-convention": { "domainKnowledge": { "general": ["org", "project"] } }
+  }
+}
+```
+
+| Rung | main: instructions | Convention Warden: instructions | Convention Warden: domain knowledge |
+|---|---|---|---|
+| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.claude/CLAUDE.md`, `~/.foundry/roles/librarian-convention/instructions.md` | `~/.foundry/roles/librarian-convention/domainKnowledge.md` |
+| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there (the org CLAUDE.md moved to domain knowledge) | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/librarian-convention/domainKnowledge.md` there |
+| org personal | `~/code/inixiative/CLAUDE.local.md` | the same | `.foundry/roles/librarian-convention/domainKnowledge.local.md` there |
+| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | role file only (project CLAUDE.md moved to domain knowledge) | `<repo>/CLAUDE.md` and the rest of the project node |
+| project personal | `<repo>/CLAUDE.local.md`, auto memory | the same | `.foundry/roles/librarian-convention/domainKnowledge.local.md` |
+
+**Test cases** (`tests/composition-view.test.ts`, core
+`markdown-hierarchy.test.ts`):
+
+- per-role selection, with defaults on and opt-outs;
+- role and slot templating;
+- dedupe across one role's slots;
+- a personal node never reaching a team audience;
+- a budget overflow reported in every phase, Cartographer included;
+- re-priming only on a composition change;
+- the chimed-in append;
+- the Convention Warden's knowledge unchanged under the default config.
+

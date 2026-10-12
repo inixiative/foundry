@@ -12,16 +12,17 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
+import type { CorpusTier } from '../src/agents/corpus-compiler';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
 import {
+  type CompositionSettings,
   DEFAULT_INSTRUCTION_LADDER,
-  type InstructionSettings,
   resolveInstructionLadder,
 } from '../src/prompts/instruction-settings';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   claudeProjectDirName,
-  composeInstructionStack,
+  composeRoleView,
   discoverInstructionStack,
   harnessLoadsInstructions,
   type InstructionStackOptions,
@@ -70,6 +71,20 @@ const options = (cwd: string, harness: 'claude' | 'codex' = 'claude'): Instructi
   codexHome,
   managedPath: join(root, 'managed', 'CLAUDE.md'),
 });
+/** The main thread's instructions slot for `opts`, as one audience sees it. */
+const compose = async (
+  opts: InstructionStackOptions,
+  audience?: CorpusTier,
+  dedupe?: { content?: boolean; sections?: boolean },
+) =>
+  (
+    await composeRoleView({
+      ...opts,
+      role: 'main',
+      picks: audience ? { audience } : {},
+      ...(dedupe ? { dedupe } : {}),
+    })
+  ).slots.instructions;
 const memoryPath = (project: string) =>
   join(claudeDir, 'projects', claudeProjectDirName(project), 'memory', 'MEMORY.md');
 
@@ -144,16 +159,15 @@ test('personal files never reach a team audience; org reaches every audience', a
   write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
   write(join(repo, 'CLAUDE.local.md'), 'PERSONAL_LOCAL');
   write(memoryPath(repo), 'PERSONAL_MEMORY');
-  const stack = await discoverInstructionStack(options(repo));
   const personal = ['PERSONAL_GLOBAL', 'PERSONAL_LOCAL', 'PERSONAL_MEMORY'];
 
-  const own = composeInstructionStack(stack).text;
+  const own = (await compose(options(repo))).text;
   for (const text of [...personal, 'ORG_RULES', 'TEAM_RULES']) expect(own).toContain(text);
-  const team = composeInstructionStack(stack, { audience: 'team' }).text;
+  const team = (await compose(options(repo), 'team')).text;
   for (const text of personal) expect(team).not.toContain(text);
   expect(team).toContain('TEAM_RULES');
   expect(team).toContain('ORG_RULES');
-  const orgOnly = composeInstructionStack(stack, { audience: 'org' }).text;
+  const orgOnly = (await compose(options(repo), 'org')).text;
   expect(orgOnly).toContain('ORG_RULES');
   expect(orgOnly).not.toContain('TEAM_RULES');
   expect(own).toContain(`Contents of ${join(repo, 'CLAUDE.md')} (project instructions`);
@@ -170,12 +184,11 @@ test('with home above the repository, home files stay personal and its .claude b
   write(join(nestedOrg, 'CLAUDE.md'), 'ORG_RULES');
   write(join(nestedRepo, 'CLAUDE.md'), 'TEAM_RULES');
   for (const harness of ['claude', 'codex'] as const) {
-    const stack = await discoverInstructionStack(options(nestedRepo, harness));
-    const team = composeInstructionStack(stack, { audience: 'team' }).text;
+    const team = (await compose(options(nestedRepo, harness), 'team')).text;
     for (const text of ['HOME_FILE', 'CLAUDE_GLOBAL', 'CODEX_GLOBAL'])
       expect(team).not.toContain(text);
     expect(team).toContain('ORG_RULES');
-    const own = composeInstructionStack(stack).text;
+    const own = (await compose(options(nestedRepo, harness))).text;
     expect(own).toContain(harness === 'claude' ? 'CLAUDE_GLOBAL' : 'CODEX_GLOBAL');
     expect(own).not.toContain(harness === 'claude' ? 'CODEX_GLOBAL' : 'CLAUDE_GLOBAL');
   }
@@ -189,7 +202,7 @@ test('an import keeps the narrower tier: a committed file importing CLAUDE.local
     level: 'local',
     tier: 'personal_private',
   });
-  expect(composeInstructionStack(stack, { audience: 'team' }).text).not.toContain('LOCAL_SECRET');
+  expect((await compose(options(repo), 'team')).text).not.toContain('LOCAL_SECRET');
 });
 
 test('the Codex global file is left to Codex when it runs on that same CODEX_HOME', async () => {
@@ -215,7 +228,7 @@ test('each file reaches the stack once, however many ways it is reached', async 
   write(join(repo, 'CLAUDE.local.md'), 'mine @shared.md');
   write(join(repo, 'AGENTS.md'), 'AGENTS_ONCE');
   write(join(repo, 'shared.md'), 'SHARED_ONCE');
-  const composed = composeInstructionStack(await discoverInstructionStack(options(repo))).text;
+  const composed = (await compose(options(repo))).text;
   expect(composed.split('AGENTS_ONCE')).toHaveLength(2);
   expect(composed.split('SHARED_ONCE')).toHaveLength(2);
 });
@@ -226,14 +239,12 @@ test('a project file imports inside the repository only; personal files import f
   write(join(org, 'CLAUDE.md'), '@sibling.md');
   write(join(repo, 'CLAUDE.md'), `@${join(root, 'elsewhere', 'outside.md')} @docs/inside.md`);
   write(join(repo, 'docs', 'inside.md'), 'INSIDE');
-  const project = composeInstructionStack(await discoverInstructionStack(options(repo))).text;
+  const project = (await compose(options(repo))).text;
   expect(project).toContain('INSIDE');
   expect(project).toContain('ORG_SIBLING');
   expect(project).not.toContain('OUTSIDE');
   write(join(claudeDir, 'CLAUDE.md'), `@${join(root, 'elsewhere', 'outside.md')}`);
-  expect(composeInstructionStack(await discoverInstructionStack(options(repo))).text).toContain(
-    'OUTSIDE',
-  );
+  expect((await compose(options(repo))).text).toContain('OUTSIDE');
 });
 
 test('the instructions layer composes the stack for the thread cwd it is bound to', async () => {
@@ -279,7 +290,7 @@ test('harness loading is suppressed exactly when Foundry composes the stack, unl
   const legacy: FoundryConfig = structuredClone(composing);
   delete legacy.sources.instructions;
   expect(harnessLoadsInstructions(legacy)).toBe(true);
-  legacy.instructions = { harnessLoading: 'suppress' };
+  legacy.composition = { harnessLoading: 'suppress' };
   expect(harnessLoadsInstructions(legacy)).toBe(false);
 
   const disabled: FoundryConfig = structuredClone(composing);
@@ -295,7 +306,7 @@ test('harness loading is suppressed exactly when Foundry composes the stack, unl
   };
   expect(harnessLoadsInstructions(mixed)).toBe(true);
 
-  composing.instructions = { harnessLoading: 'load' };
+  composing.composition = { harnessLoading: 'load' };
   expect(harnessLoadsInstructions(composing)).toBe(true);
 });
 
@@ -333,7 +344,7 @@ test('the Claude off switch reaches the native process through the subscription 
 });
 
 /** Aron's ladder over the default preset: org and org personal, a project and project personal. */
-const aronSettings = (): InstructionSettings => ({
+const aronSettings = (): CompositionSettings => ({
   nodes: {
     inixiative: {
       scope: 'org',
@@ -394,8 +405,8 @@ test('the default ladder is the preset when nothing is configured; nodes merge o
 });
 
 test('instruction settings are validated: tiers, parents, cycles, sources', () => {
-  const config = (instructions: unknown) =>
-    ({ ...starterConfig(), instructions }) as unknown as FoundryConfig;
+  const config = (composition: unknown) =>
+    ({ ...starterConfig(), composition }) as unknown as FoundryConfig;
   expect(() => validateConfig(config(aronSettings()))).not.toThrow();
   const node = { scope: 'org', personal: false, sources: [{ path: 'x.md' }] };
   for (const [instructions, message] of [
@@ -406,10 +417,18 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
     [{ nodes: { a: { ...node, sources: [] } } }, 'at least one source'],
     [{ nodes: { a: { ...node, sources: [{ walk: [] }] } } }, 'walk must list'],
     [{ nodes: { a: { ...node, when: { cwd: ['x'] } } } }, 'when.cwd'],
-    [{ preset: 'cursor' }, 'instructions.preset'],
-    [{ dedupe: { lines: true } }, 'instructions.dedupe'],
+    [{ preset: 'cursor' }, 'composition.preset'],
+    [{ dedupe: { lines: true } }, 'composition.dedupe'],
+    [{ nodes: { a: { ...node, when: { slots: ['thread'] } } } }, 'when.slots names thread'],
+    [{ roles: { main: { instructions: { exclude: ['nope'] } } } }, 'unknown nodes: nope'],
+    [{ roles: { main: { budget: 0 } } }, 'budget must be a positive'],
+    [{ roles: { main: { audience: 'public' } } }, 'audience must be one of'],
+    [{ roles: { main: { slots: {} } } }, 'unknown field slots'],
   ] as const)
     expect(() => validateConfig(config(instructions))).toThrow(message);
+  expect(() =>
+    validateConfig({ ...starterConfig(), instructions: {} } as unknown as FoundryConfig),
+  ).toThrow('is now "composition"');
 });
 
 test("a registered ladder composes every applicable level, in order, for the thread's location", async () => {
@@ -451,12 +470,13 @@ test("a registered ladder composes every applicable level, in order, for the thr
     'ORG_PERSONAL',
   ]);
   // A team audience never sees a personal level.
-  const team = composeInstructionStack(project, { audience: 'team' }).text;
+  const appOptions = { ...options(app), ladder, projectId: 'app', projectPath: app };
+  const team = (await compose(appOptions, 'team')).text;
   for (const text of ['COMPUTER_PERSONAL', 'ORG_PERSONAL', 'APP_LOCAL', 'APP_PERSONAL'])
     expect(team).not.toContain(text);
   for (const text of ['ORG_CLAUDE', 'ORG_POLICY', 'APP_CLAUDE', 'APP_STYLE'])
     expect(team).toContain(text);
-  expect(composeInstructionStack(project).text).toContain(
+  expect((await compose(appOptions)).text).toContain(
     `Contents of ${join(app, 'docs', 'agents', 'style.md')} (project instructions (app))`,
   );
 });
@@ -465,8 +485,7 @@ test('dedupe runs after the audience filter: a personal copy never hides the sha
   const section = '## Merging\n\nMerge once green.';
   write(join(org, 'CLAUDE.md'), `# Rules\n\n${section}\n\n## Ports\n\nFrom the registry.`);
   write(join(repo, 'CLAUDE.local.md'), `# Rules\n\n${section}`);
-  const stack = await discoverInstructionStack(options(repo));
-  const own = composeInstructionStack(stack);
+  const own = await compose(options(repo));
   expect(own.text.split('Merge once green.')).toHaveLength(2);
   expect(own.duplicates).toEqual([
     {
@@ -479,7 +498,7 @@ test('dedupe runs after the audience filter: a personal copy never hides the sha
       keptNode: 'local',
     },
   ]);
-  const team = composeInstructionStack(stack, { audience: 'team' });
+  const team = await compose(options(repo), 'team');
   expect(team.text).toContain('Merge once green.');
   expect(team.duplicates).toEqual([]);
 });
@@ -492,16 +511,14 @@ test('a worktree and its main checkout with the same CLAUDE.md compose it once, 
   write(join(worktree, '.git'), `gitdir: ${join(repo, '.git', 'worktrees', 'feature')}\n`);
   write(join(repo, 'CLAUDE.md'), '# Foundry\n\nSAME_RULES');
   write(join(worktree, 'CLAUDE.md'), '# Foundry\n\nSAME_RULES\n');
-  const composed = composeInstructionStack(await discoverInstructionStack(options(worktree)));
+  const composed = await compose(options(worktree));
   expect(composed.text.split('SAME_RULES')).toHaveLength(2);
   expect(composed.files.map((file) => file.path)).toEqual([join(worktree, 'CLAUDE.md')]);
   expect(composed.duplicates.map((d) => [d.kind, d.path])).toEqual([
     ['content', join(repo, 'CLAUDE.md')],
   ]);
   // Dedupe off: today's discovery, both copies.
-  const raw = composeInstructionStack(await discoverInstructionStack(options(worktree)), {
-    dedupe: { content: false, sections: false },
-  });
+  const raw = await compose(options(worktree), undefined, { content: false, sections: false });
   expect(raw.text.split('SAME_RULES')).toHaveLength(3);
 });
 
@@ -515,7 +532,7 @@ test('the source reports what it composed and what it deduped, for the Selection
   try {
     const source = instructionStackSource('instructions', {
       harness: 'claude',
-      audience: 'team',
+      picks: { audience: 'team' },
       managedPath: join(root, 'managed', 'CLAUDE.md'),
     }).bind!({ threadId: 't', cwd: repo });
     const text = await source.load();
@@ -641,7 +658,7 @@ test("a shared node's glob never publishes a file a personal node owns", async (
     level: 'local',
     tier: 'personal_private',
   });
-  const team = composeInstructionStack(stack, { audience: 'team' }).text;
+  const team = (await compose({ ...options(repo), ladder }, 'team')).text;
   expect(team).toContain('TEAM_NOTES');
   expect(team).not.toContain('SECRET_LOCAL');
 });
@@ -651,7 +668,7 @@ test('a shared file first reached through a personal import still reaches the te
   write(join(org, 'CLAUDE.md'), 'ORG_RULES');
   write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
   const stack = await discoverInstructionStack(options(repo));
-  const team = composeInstructionStack(stack, { audience: 'team' }).text;
+  const team = (await compose(options(repo), 'team')).text;
   expect(team).toContain('ORG_RULES');
   expect(team).toContain('TEAM_RULES');
   expect(stack.duplicates.map((d) => d.kind)).toEqual(['path', 'path']);
@@ -691,7 +708,7 @@ test('fail closed: an unresolvable exclusion, anchor or symlinked secret loads n
 
 test('settings that would crash a warm are refused when saved', () => {
   const config = (nodes: unknown) =>
-    ({ ...starterConfig(), instructions: { nodes } }) as unknown as FoundryConfig;
+    ({ ...starterConfig(), composition: { nodes } }) as unknown as FoundryConfig;
   const node = { scope: 'org', personal: false, sources: [{ path: 'x.md' }] };
   for (const [nodes, message] of [
     [{ a: { ...node, owns: { within: '~/x' } } }, 'owns.within'],
@@ -713,8 +730,7 @@ test('a symlink never widens a personal file: ownership is judged on where it le
   write(join(repo, 'CLAUDE.local.md'), 'PERSONAL_LOCAL');
   symlinkSync(join(repo, 'CLAUDE.local.md'), join(repo, 'AGENTS.md'));
   for (const harnessLoadsGlobal of [false, true]) {
-    const stack = await discoverInstructionStack({ ...options(repo), harnessLoadsGlobal });
-    const team = composeInstructionStack(stack, { audience: 'team' }).text;
+    const team = (await compose({ ...options(repo), harnessLoadsGlobal }, 'team')).text;
     expect(team).not.toContain('PERSONAL_GLOBAL');
     expect(team).not.toContain('PERSONAL_LOCAL');
   }
