@@ -1,6 +1,6 @@
 # Feedback loop
 
-**Status: hypotheses, not a settled design.** This document covers journey goal 8 in the [system map](SYSTEM-MAP.md) ("process feedback captured into a middleware layer") and the measuring half of goal 9. Treat what follows as working hypotheses and the experiments that would test them, not as decisions.
+**Status: hypotheses, not a settled design. The [Lifecycle](#lifecycle-proposal-2026-10-12-awaiting-arons-yes) section is a PROPOSAL awaiting Aron.** This document covers journey goal 8 in the [system map](SYSTEM-MAP.md) ("process feedback captured into a middleware layer") and the measuring half of goal 9. Treat what follows as working hypotheses and the experiments that would test them, not as decisions.
 
 Code references point at `origin/main` as of 2026-09-30:
 
@@ -54,6 +54,228 @@ flowchart LR
   A -- "linked resolution" --> F
   F -- "export" --> O["Oracle: did recurrence<br/>change after the resolution?"]
 ```
+
+## Lifecycle: PROPOSAL (2026-10-12, awaiting Aron's yes)
+
+This section turns sections 1–3 into one lifecycle that the user can see. Where it differs from the hypotheses below, it replaces them. Those places are marked "superseded by Lifecycle".
+
+> Aron (2026-10-12): "The feedback works when it's sharp. … In the beginning as you get feedback, there should be a phase where it's trying to tune it with you. It can pop up even as the main thread is working: 'This is what happened,' 'This is what we did,' or 'This is what we're intending on doing here.' Maybe blocking, maybe not blocking. … As things get dialed in, see: your feedback, then what warden or wardens did this get routed to? What was the change to their instructions and/or domain knowledge? How are we using that? The life cycle needs to be there in front of the user so that they feel like they're getting value off of it."
+
+The chorus is why the change lands on a Warden and not on the main thread. Each Warden stays small and sharp because it holds only its own domain. So a piece of feedback becomes one crisp line in the instructions or domain knowledge of the one or two Wardens it belongs to. It never becomes another paragraph in the main thread's instructions.
+
+Code references in this section are to Foundry `origin/main` `a83756e` and Oracle `origin/main` `6656362`. `pf:` means `packages/foundry/src/`, `pc:` means `packages/core/src/`, and `pa:` means `packages/acp/src/`.
+
+```mermaid
+flowchart LR
+  U["User turn · /correction ·<br/>viewer Correction"] --> D{"detectCorrection<br/>(core, deterministic)"}
+  D -- hit / explicit --> K["Sharpen: one decision call →<br/>crisp rule, class, tags, match"]
+  K -- "matches an item" --> R2["recurred event<br/>(+ was the change injected?)"]
+  K -- new --> RT["Route: Cartographer.route(rule)<br/>→ Warden roles + slot + level"]
+  RT --> T["Tune: 'what happened / what we did /<br/>what we intend' (viewer card + ACP)"]
+  T -- apply / edit --> C["Change: append rule to<br/>.foundry/roles/&lt;role&gt;/&lt;slot&gt;(.local).md"]
+  T -- dismiss --> X["dismissed (kept, counted)"]
+  C --> UZ["Use: rule text in the Warden's composed<br/>segments; Warden cites (fb_id) when it chimes in"]
+  UZ --> R2
+  R2 --> V["Lifecycle view (viewer) +<br/>summary card (ACP) + export → Oracle"]
+  C --> V
+```
+
+### L1. Capture: detect, then sharpen
+
+**Detect.** There is one detector, `detectCorrection(text, prevAssistant?)` in `pc/feedback/detect.ts`. Its patterns are exported data (`CORRECTION_PATTERNS`). It is owned and landed by the repeat-report work, and it replaces the miner's `CORRECTIVE_OPENERS` (`oracle:src/session-miner.ts:223-224`). Live capture, the repeat report and Oracle's backfill all use this same filter. It returns `{ hit, kind: interrupt | opener | explicit | repeat, phrase, score }`. Its inputs:
+
+- **Typed turns.** In `TurnService.accept` (`pf:turns/turn-service.ts:183`), after durable acceptance (`:206`), the capture reads `payload`. That text has already had host wrappers stripped by `splitHostInstructions` (`:187-189`), so a host's instructions never count as the user's words. Non-blocking capture is fire-and-forget at this point, the same way `ThreadNamer` hangs off `:690` (`pf:agents/thread-namer.ts:84`). The previous assistant message comes from the local journal.
+- **Explicit corrections.** These come from `/correction` over ACP (`pa:agent.ts:427-447`) and the viewer's Correction form (`pf:viewer/ui/detail-drawer.js:856-880`). Both post to `POST /api/threads/:threadId/interventions` (`pf:viewer/routes/runtime.ts:287`). That route calls the capture directly with `origin: "intervention"` and skips the prefilter. `InterventionLog.intervene` still emits its `correction` signal, which is audit-only (`pc:adapters/file-memory.ts:75`).
+
+**Sharpen.** A detector hit becomes a feedback item only after one decision call, `FeedbackSharpener` (`pf:feedback/capture.ts`). It runs on the decision provider (`flowLlm`, `pf:start.ts:770`, Haiku 5.5) at review priority, like the namer.
+
+- **Inputs:** the user text, the previous assistant message (bounded), and the open items in scope (statement + id only).
+- **Output:** `{ feedback: none|process|convention|taste|fact, statement, sharp, tags, match: {itemId, confidence} | null, level, slot }`.
+
+"Sharp" is checked twice:
+
+- **The model** must write `statement` as one imperative rule, at most 160 characters, that says when it applies: "When X, do Y", "Never X", or "Always X". If it cannot, it returns `sharp: false`.
+- **A deterministic lint** rejects a statement that is too long, has more than one sentence, uses hedges ("try to", "be careful", "maybe", "consider"), or merely restates the request.
+
+An item that is not sharp is never applied. Its tuning card asks the user for the rule in their own words (an `input` prompt). It does not guess.
+
+**Dedupe.** `match` with confidence ≥ 0.7 makes this capture a `recurred` event on the existing item and never a new item. Lower confidence creates a new item that carries `candidateDuplicateOf` (open question 4, below).
+
+### L2. Tuning: the user sees what happened, what we did, what we intend
+
+Each new item, and each recurrence of an applied item, produces one tuning prompt on the existing `ActionQueue` (`pc:action-prompt.ts:83`). The prompt reaches the viewer through the `prompts` stream (`pf:viewer/data-streams.ts:152-165`, card at `pf:viewer/ui/conversation.js:695`) and reaches ACP hosts through `pa:agent.ts`. The first answer wins, as with tool-gate asks. The prompt's `message` has three parts:
+
+- **What happened:** the quote, plus one line on the assistant turn it reacted to.
+- **What we did:** "Captured as rule *fb_x*: «statement» (process · tags). Routed to: convention Warden (instructions)."
+- **What we intend:** "Append to the convention Warden's instructions at *project personal* (`<repo>/.foundry/roles/librarian-convention/instructions.local.md`)." For a recurrence of an applied rule it says: "This rule was in the Warden's context on that turn and the mistake recurred. Sharpen it, move it to the main thread, or escalate to a guard?"
+
+`kind: "choice"`, options `apply` · `edit` (opens an input with the statement, role(s), slot and level prefilled) · `reroute` · `dismiss` · `later`. `meta.feedback = { itemId, blocking }`.
+
+**Blocking is a setting, with a per-item override:**
+
+| `feedback.tuning` | Behavior |
+|---|---|
+| `"ask"` (default) | The prompt is raised. The turn does not wait for it. On `apply`, the change takes effect from the next turn on. |
+| `"block"` | Capture runs in `TurnService.run` before `harness.send` (`pf:turns/turn-service.ts:664`). The turn waits for the answer, up to `feedback.blockTimeoutMs` (default 120 s, then `later`). An `apply` invalidates the role's composed layers, so the Warden already has the rule on *this* turn. |
+| `"tell"` | Dialed-in mode. A sharp, matched-routing item with confidence ≥ `feedback.tellConfidence` is applied directly. A non-blocking card then shows what was done, with an **Undo**. Anything less sharp falls back to `ask`. This is the first automatic resolution, so it is gated on H3 (below). The viewer shows the revert/edit rate so the user can decide when to switch. |
+| `"off"` | Capture and the lifecycle view still run. No prompts are raised and nothing is applied. |
+
+`feedback.tuning.blockOn: ("repeat" \| "explicit")[]` (default `[]`) escalates single items to blocking. An example is "how many times do I have to say this", detector kind `repeat`. Projects override this with `projects[id].feedback`, the same way `toolRules` does (`pf:viewer/server.ts:524-530`).
+
+**ACP.** Today `permission()` forwards only tool-gate approvals (`pa:agent.ts:344-349`). That stays unchanged for those. Feedback prompts are added:
+
+- **Blocking:** `session/request_permission` with a synthetic `tool_call` (kind `think`, title "Foundry: feedback"). The options use the ACP kinds with feedback names: `allow_once` "Apply", `reject_once` "Not a rule", `allow_always` "Apply and stop asking for this project" (sets `tuning: "tell"` for the project). `_meta.foundry = { promptId, feedbackItemId }`.
+- **Non-blocking:** a `tool_call` card only, with `status: "pending"`, the same kind of card as the Warden guard comments (`pa:guard.ts`). It changes to `completed` or `failed` when someone answers in the viewer or through `/feedback`. Non-blocking prompts never open a permission dialog, because some hosts treat an open dialog as a stalled session.
+- **Commands:** a `/feedback` command next to `/correction` (`pa:agent.ts:82`). `/feedback` lists recent items. `/feedback apply|dismiss <id>` and `/feedback edit <id> <rule>` resolve one.
+
+### L3. Routing to Wardens (the Cartographer)
+
+Routing reuses `Cartographer.route` (`pf:agents/cartographer.ts:377`), with the sharpened statement as the message. It does not add a router. `RouteResult.domains` maps to Warden roles, because each Warden is a `DomainLibrarian` per domain built from settings (`pf:agents/configured-experts.ts`).
+
+- **Several domains** means the rule goes to each matching Warden. Aron: "what warden or wardens".
+- **No domain**, or `source: "keyword-fallback"`, routes the rule to role `main` (the thread's own instructions slot). The card says that routing was weak.
+- **Subagent roles** (`subagent-<kind>`, SUBAGENTS.md §5) are routing targets on the same footing as Wardens. They enter the topology map as soon as they exist.
+
+**Slot.** `fact` goes to `domainKnowledge`. `process`, `convention` and `taste` go to `instructions`.
+
+**Level** comes from the composition view's ladder (CLAUDE.md, "One composition view"). The sharpener suggests a level and the user decides in the card:
+
+| Level | File (composition-view preset) | Written by this lifecycle | Default for |
+|---|---|---|---|
+| computer | `~/.foundry/roles/<role>/<slot>.md` | yes | taste |
+| org | `<org dir>/.foundry/roles/<role>/<slot>.md` (in git) | no, it needs a PR (L4) | — |
+| org personal | `<org dir>/.foundry/roles/<role>/<slot>.local.md` | yes | process |
+| project | `<repo>/.foundry/roles/<role>/<slot>.md` (in git) | no, it needs a PR (L4) | — |
+| project personal | `<repo>/.foundry/roles/<role>/<slot>.local.md` | yes | convention, fact |
+
+The org dir is the owner's directory that the composer already walks, for example `~/code/inixiative`.
+
+### L4. The change, with provenance
+
+`apply` appends one line to the chosen file: `- <statement> (fb_<id>)`. If the file is new, a heading for the role and slot goes first. The id stays in the text for two reasons. It is how use and citation are measured (L5), and it is how a person reading the file finds where a rule came from (`foundry feedback show fb_<id>`).
+
+- **Personal levels only, written directly.** Before writing into a repo checkout, the writer requires `git check-ignore` to report the path as ignored. If it is not, it adds the pattern to that repo's `.git/info/exclude`, which is local and never committed. It never touches a tracked file in a shared checkout.
+- **Committed levels (org, project):** these produce a `repo` change. It is a patch that the user opens as a PR from a worktree, which is the existing "commit to the repo" destination in section 3. That arrives in the next slice. The card offers committed levels only once that exists.
+- **Recorded.** Every write journals a `feedback-apply` phase (L-data) carrying `{ path, level, role, slot, line, beforeHash, afterHash }`.
+- **Undo and revert** remove exactly that line and journal `feedback-revert`. `edit` after an apply is a revert plus a new apply, linked by `changeId`.
+- **Taking effect.** After a write, `invalidateComposition()` (`pf:agents/role-layers.ts`, composition view) marks every live `role:<role>:<slot>` layer stale, so they do not wait out the 60 s staleness. For role `main`, the thread's `instructions` stack layer is also invalidated (`thread.stack.getLayer('instructions')?.invalidate()`). Composed layers re-read on the next prepare, and a primed decision session re-primes when its composed hash changes.
+- **Not a write path:** Warden *thread knowledge* (`domain-librarian.ts` `review`, `:884`). It is thread-private, generated per thread, and rewritten each review. Feedback is cross-thread, so it goes into the configured slots. The review keeps doing what it does.
+
+### L5. Use: was the change in front of the Warden, and did it act on it?
+
+This needs no new recording on the turn path. Every advice call already journals the exact composed `segments.instructions` and `segments.domainKnowledge` of each participant, together with its `decision` (`pf:agents/thread-runtime.ts:981-993`, `ContributionDecision` at `pf:agents/flow-orchestrator.ts:69-81`). Guard calls journal the same fields on `guard-request` rows. Two counts are derived from that:
+
+- **Exposure:** an `advice` or `guard-request` row after the apply whose participant segments contain `(fb_<id>)`. This is the denominator: the rule was in front of the Warden on that turn.
+- **Citation:** that participant contributed (`decision: "contribute"`), and its snippets or guard notes contain `fb_<id>`. One response-protocol line is added to advise and guard: "When a numbered rule (fb_…) drives what you say, cite its id." This is the "this Warden chimed in with…" evidence, and the lifecycle view links the turn.
+
+A rule that has many exposures and no citations is dead weight in that Warden's context. The view flags it for a retire decision (section 3, "Supersede, revoke, retire").
+
+### L6. Recurrence
+
+- **In Foundry, live.** A capture whose `match` points at an applied item journals `feedback-capture` with `recurred: true` and `{ exposedAtTurn: boolean }`, meaning whether the previous turn's segments for the routed Warden contained the rule. A recurrence while the rule was exposed is the important failure: text did not change behavior (H2). It raises a tuning prompt that offers sharpen, reroute, move to main, or guard.
+- **In Oracle** (next slice unless cheap). `foundry feedback export` writes items, events and changes to disk as JSON. Oracle reads the export to compute recurrences per 100 exposed turns, before and after each change, using `trends` (`oracle:src/store.ts:271-315`). `oracle mine` switches to `detectCorrection` and to the same export shape, so mined corrections join items by `match` instead of sitting in `.oracle/corrections.jsonl`, which only its own dedupe reads (`oracle:src/cli.ts:213-226`, `oracle:src/session-miner.ts:495-518`). Phases also reach Archive through capture (`pf:archives/capture.ts:163`), so a hosted Oracle can read them there.
+
+### L7. The visible lifecycle view
+
+- **Viewer, project Feedback panel** (`pf:viewer/ui/feedback.js`), fed by a new data stream `feedback:<projectId>` with snapshot `{ items }` and append `{ item }` (`pf:viewer/data-streams.ts`). Each item is one row that reads left to right as the lifecycle: **feedback** (quote, statement, tags) → **routed to** (Warden chips, slot, level) → **change** (file, line, applied at, by whom, undo) → **uses** (exposures · citations, with links to the citing turns) → **recurrence** (↻ count since the change, split into exposed and not exposed). Filters: open, tuning, applied, dismissed.
+- **In the conversation:** a chip on the user message that produced the item: "feedback captured → convention Warden", or "↻ recurred ×3". On an assistant turn where a Warden cited a rule: "convention Warden used fb_x".
+- **ACP hosts:**
+  - After an apply, a one-line `tool_call` card: "Foundry: feedback fb_x → convention Warden instructions (project personal)".
+  - On the first citation of a rule, a short card: "convention Warden used fb_x".
+  - `/feedback` gives the same rows as text.
+
+### L-data. Data model: journal phases, no parallel store
+
+Every lifecycle fact is an immutable phase record in the local journal: `session_phase` through `LocalSessionStore.appendPhase` (`pf:persistence/local-session-store.ts:524`). It is attached to the thread where it happened. That journal already reaches Archive (`archiveRecords`, `:814`; `pf:archives/capture.ts:163`). An item's current state is a fold over its records. This **supersedes §1.4 and §6** (feedback as audit-only memory records). There is no second store and no `feedback_item` memory kind. `PhaseRecordInput.phase` (`pf:agents/thread-runtime.ts:327-340`) gains:
+
+```ts
+type FeedbackPhase = 'feedback-capture' | 'feedback-route' | 'feedback-tune' | 'feedback-apply' | 'feedback-revert';
+
+interface FeedbackCaptureRecord {      // phase: feedback-capture (turnId = the user turn)
+  itemId: string;                      // newId('fb'); a recurrence carries the matched item's id
+  recurred: boolean;
+  exposedAtTurn?: boolean;             // recurrence only: was the rule in the routed Warden's segments last turn
+  origin: 'detected' | 'intervention' | 'seed' | 'mined';
+  detection?: { kind: 'interrupt' | 'opener' | 'explicit' | 'repeat'; phrase: string; score: number };
+  quote: string; before: string;       // bounded, scrubbed
+  statement: string; sharp: boolean;
+  class: 'process' | 'convention' | 'taste' | 'fact';
+  tags: string[];                      // FEEDBACK-LOG tags + process
+  match: { itemId: string; confidence: number } | null;
+  candidateDuplicateOf?: string;
+  classifier: { providerId: string; requestHash: string };
+}
+interface FeedbackRouteRecord {        // phase: feedback-route
+  itemId: string;
+  roles: string[];                     // Warden/agent ids, or 'main'
+  slot: 'instructions' | 'domainKnowledge';
+  level: 'computer' | 'org' | 'org-personal' | 'project' | 'project-personal';
+  route: { domains: string[]; source: 'model' | 'keyword-fallback' | 'empty-map'; confidence: number };
+}
+interface FeedbackTuneRecord {         // phase: feedback-tune
+  itemId: string; promptId: string;
+  mode: 'ask' | 'block' | 'tell';
+  shown: { happened: string; did: string; intend: string };
+  answer: 'apply' | 'edit' | 'reroute' | 'dismiss' | 'later' | 'timeout' | 'undo';
+  by: 'human' | 'policy' | 'timeout';
+  surface?: 'viewer' | `acp:${string}`;
+  edited?: { statement?: string; roles?: string[]; slot?: string; level?: string };
+}
+interface FeedbackApplyRecord {        // phase: feedback-apply / feedback-revert
+  itemId: string; changeId: string;    // a revert names the changeId it undoes
+  role: string; slot: string; level: string;
+  path: string; line: string;          // the exact line added or removed
+  beforeHash: string; afterHash: string;
+}
+```
+
+- **Index.** `FeedbackIndex` (`pf:feedback/index.ts`) folds these per project. On start it is rebuilt from one new store query, `feedbackPhases({ projectId?, since? })`, which reads `session_phase WHERE phase LIKE 'feedback-%'` joined to the thread's project. After that it updates on each append. Uses (L5) are counted with a second query over `advice` and `guard-request` rows stored after the change's `appliedAt` whose record contains `(fb_<id>)`.
+- **Edits made outside any turn** (a viewer edit, an undo from the panel) are journalled on the item's origin thread with `turnId: null`. `appendPhase` already allows that.
+- **Kingdom stores nothing.** Sharing an item set across Foundries stays open (open question 5, below).
+
+### L-tests. Test cases
+
+Tests follow the repo conventions: `bun test`, cassette replays for the decision calls, browser tests for the viewer, plus one live cassette.
+
+1. **Detect → sharpen → item.** "No, merge it yourself once green, I told you" after an agent turn that asked to merge. Expect a `feedback-capture` with detection kind `repeat`, a sharp statement, class `process`, and `match: null`.
+2. **Not sharp.** "hmm that feels off" gives `sharp: false`. The tuning prompt is an `input` asking for the rule. No route and no apply until the user answers.
+3. **Lint.** "Try to be more careful with tests" is rejected even when the model returns `sharp: true`.
+4. **Host wrapper.** A T3-wrapped prompt whose `<t3_code_instructions>` contains "never" does not trigger capture. Only the `<user_request>` body is read.
+5. **Routing.** A statement about naming routes to the convention Warden's `instructions`. A fact ("Signets hold no secrets") routes to `domainKnowledge`. An unroutable statement goes to `main`, and the card says routing was weak.
+6. **Non-blocking (`ask`).** The turn completes while the prompt is pending. `apply` after the turn writes the line. The next turn's `advice` row for that Warden has `(fb_id)` in `segments.instructions`.
+7. **Blocking (`block`).** The turn does not reach `harness.send` until the prompt resolves. After `apply`, *that* turn's advice segments contain the rule. On timeout the turn proceeds and the item is `later`.
+8. **ACP.** In blocking mode `request_permission` arrives with "Apply" / "Not a rule" and `_meta.foundry.feedbackItemId`, and the answer resolves the prompt. In non-blocking mode only a `tool_call` card arrives, and an answer in the viewer settles it. `/feedback apply <id>` works.
+9. **Gitignore guard.** Applying to `project-personal` in a repo where `.local.md` is not ignored adds the pattern to `.git/info/exclude`. `git status` stays clean. A tracked target path is refused.
+10. **Undo.** It removes exactly the added line, even after other lines were appended. It journals `feedback-revert`, and later advice segments no longer contain the rule.
+11. **Recurrence while exposed.** A rule is applied and exposed, and the same correction comes back. Expect `recurred: true, exposedAtTurn: true`, a tuning prompt that offers sharpen, reroute or guard, and ↻1 in the view.
+12. **Citation.** A Warden's advice snippet contains `fb_id`. The view counts one citation and links the turn. The ACP host gets the "used" card once.
+13. **Fold and restart.** Restart the daemon: `FeedbackIndex` rebuilds identical state from the journal, and the stream snapshot matches.
+14. **Archive.** An archived thread carries its `feedback-*` phases.
+15. **Live cassette.** A real Claude Haiku sharpening call plus the Cartographer route for case 1.
+
+### L-build. Build order
+
+The detector, from the repeat-report work, must land first. The composition view (role × slot × ladder) must be on main before step 4.
+
+1. Add `FeedbackPhase` to `PhaseRecordInput`, and add `feedbackPhases()` to the store. Build `FeedbackIndex` (`pf:feedback/index.ts`) as a fold, with its tests.
+2. Capture: `pf:feedback/capture.ts`, with the hook in `TurnService.accept` and in the interventions route, the sharpener prompt and parser, and the lint.
+3. Routing: `pf:feedback/routing.ts` over `Cartographer.route`, plus the slot and level defaults.
+4. Apply: `pf:feedback/apply.ts`, covering the role-file append, the gitignore guard, undo, and layer invalidation.
+5. Tuning: `pf:feedback/tuning.ts`, covering ActionQueue prompts, the `feedback` settings (`ask`, `block`, `tell` gated off), and the blocking hook in `TurnService.run`.
+6. Viewer: the `feedback:<projectId>` stream, `feedback.js` panel, message chips, and PromptCard sections for happened/did/intend.
+7. ACP: widen `permission()` for blocking feedback prompts, add the non-blocking card and `/feedback`.
+8. Use: the citation line in the advise/guard protocol, plus exposure and citation counting.
+9. Next slice: `foundry feedback export|import`, the Oracle reader, `oracle mine` on the shared detector, committed-level changes as PRs, and `tell` once H3 has data.
+
+### L-open. Open questions for Aron
+
+1. **Default tuning mode.** `ask` (non-blocking) by default, with `block` for repeat markers as an opt-in. Or should repeat markers ("again", "how many times") block by default?
+2. **`tell` (auto-apply with undo).** This is the first automatic resolution, which this doc has held back (H3). Should it ship off by default and be switched on per project once the revert/edit rate is low, or should the threshold be automatic?
+3. **Default levels.** Process feedback goes to org personal, conventions to project personal, taste to computer. Should process feedback default to computer instead, so that it follows you across orgs?
+4. **Committed levels.** Should org and project changes be offered as a PR from the card in the next slice, or are personal levels enough until the evidence says a rule should be committed?
+5. **Delete versus dismiss.** On rules you said: "If you delete a rule you should delete all the historical alerts of that rule too … we can have a disabled flag". The journal is immutable, so this proposes **dismiss** (disabled, kept, still counted) plus **revert** for a change. A true delete would need a journal tombstone. Is dismiss enough?
+6. **Citation protocol.** Is one line in the advise and guard protocols ("cite fb_ ids that drive what you say") acceptable, given the cost to every Warden's context?
+7. **When the rule goes to the main thread.** When routing is weak, or a rule keeps recurring while exposed, should it ever go into the main thread's instructions, or always to a Warden? The chorus argument says main is the last resort.
 
 ## 1. Capture (always on)
 
@@ -109,7 +331,7 @@ flowchart LR
 - Counts are derived from events, so every count links to the messages behind it.
 - The viewer gets a manual merge action for duplicates.
 
-### 1.4 Store with provenance, without injecting
+### 1.4 Store with provenance, without injecting (superseded by Lifecycle L-data: journal phases, not memory records)
 
 **What exists:**
 
@@ -148,7 +370,7 @@ global
 
 Some feedback belongs in the repo, for example a project convention that CI could enforce. Some is personal or about process and belongs in memory. Which destination fits which kind of feedback is an open question (section 6).
 
-## 3. Resolution (separate, explicit, reversible)
+## 3. Resolution (separate, explicit, reversible; the tuning card in Lifecycle L2 is its first surface)
 
 Resolution starts from a queue in the viewer. The queue shows items ranked by recurrence, along with their routing labels and the messages behind them. A person, or later possibly an agent with a person approving, chooses an action. Each action is recorded as a `resolution` linked to the item and can be undone.
 
@@ -194,7 +416,7 @@ Measurement turns the hypotheses below into evidence. It reads Foundry's exporte
 | H5 | Recurrence depends on model and effort | Split recurrence by the model and effort recorded in Archive |
 | H6 | Automatic escalation (for example, two recurrences turn an injected rule into a guarded one) helps more than it hurts | Only after H2. Escalate a test set by hand and measure false-positive guard findings against recurrence prevented |
 
-## 6. Data model
+## 6. Data model (superseded by Lifecycle L-data)
 
 Capture and resolution use separate records. All of them are audit-only memory records, so none of them is ever injected.
 
