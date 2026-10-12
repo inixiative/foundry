@@ -358,6 +358,7 @@ test('blocking tuning holds the turn until answered, and times out to deferred',
 
   service.turnAccepted(thread, 'turn-2', 'Again, never do that.');
   await service.held('turn-2');
+  await settle();
   expect(service.lifecycle.items.some((item) => item.status === 'deferred')).toBe(true);
 }, 5_000);
 

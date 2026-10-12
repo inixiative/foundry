@@ -162,10 +162,16 @@ export class FoundryClient {
     });
   }
 
-  /** Answer a choice prompt with one of its option ids (a feedback tuning prompt: apply, edit, dismiss, later). */
-  answerPrompt(promptId: string, action: string, input?: string): Promise<{ ok: boolean }> {
-    return this.request('POST', `/api/prompts/${encodeURIComponent(promptId)}/resolve`, {
+  /** Answer a feedback item's open tuning prompt: apply, edit (with the rule), dismiss or later. */
+  answerFeedback(
+    itemId: string,
+    action: string,
+    surface: string,
+    input?: string,
+  ): Promise<{ ok: boolean }> {
+    return this.request('POST', `/api/feedback/${encodeURIComponent(itemId)}/answer`, {
       action,
+      surface,
       ...(input !== undefined ? { input } : {}),
     });
   }

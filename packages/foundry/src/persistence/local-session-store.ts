@@ -282,6 +282,7 @@ export class LocalSessionStore {
       );
       CREATE INDEX IF NOT EXISTS session_phase_turn ON session_phase(thread_id, turn_id, seq);
       CREATE INDEX IF NOT EXISTS session_phase_dispatch ON session_phase(thread_id, dispatch_id, seq);
+      CREATE INDEX IF NOT EXISTS session_phase_kind ON session_phase(phase, stored_at);
       PRAGMA user_version = 3;
     `);
     } catch (error) {
@@ -673,27 +674,36 @@ export class LocalSessionStore {
       record: string;
       stored_at: number;
     }>;
-    return rows.reverse().map((row) => {
-      const record = JSON.parse(row.record) as {
-        domain?: string;
-        participants?: Array<{ domain?: string; segments?: unknown }>;
-      };
-      const roles =
-        row.phase === 'guard-request'
-          ? record.domain
-            ? [record.domain]
-            : []
-          : (record.participants ?? [])
-              .filter((p) => p.domain && JSON.stringify(p.segments ?? '').includes(marker))
-              .map((p) => p.domain as string);
-      return {
-        threadId: row.thread_id,
-        turnId: row.turn_id,
-        phase: row.phase,
-        roles,
-        storedAt: row.stored_at,
-      };
-    });
+    // Only the composed input counts: a participant's segments, or a guard call's system instructions.
+    // The marker elsewhere (an observed tool input that read the role file) is not exposure.
+    return rows
+      .reverse()
+      .map((row) => {
+        const record = JSON.parse(row.record) as {
+          domain?: string;
+          request?: { messages?: Array<{ role?: string; content?: unknown }> };
+          participants?: Array<{ domain?: string; segments?: unknown }>;
+        };
+        const roles =
+          row.phase === 'guard-request'
+            ? record.domain &&
+              (record.request?.messages ?? []).some(
+                (m) => m.role === 'system' && JSON.stringify(m.content ?? '').includes(marker),
+              )
+              ? [record.domain]
+              : []
+            : (record.participants ?? [])
+                .filter((p) => p.domain && JSON.stringify(p.segments ?? '').includes(marker))
+                .map((p) => p.domain as string);
+        return {
+          threadId: row.thread_id,
+          turnId: row.turn_id,
+          phase: row.phase,
+          roles,
+          storedAt: row.stored_at,
+        };
+      })
+      .filter((row) => row.roles.length > 0);
   }
 
   learningHistory(threadId: string, limit = 100): StoredLearning[] {

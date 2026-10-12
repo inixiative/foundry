@@ -61,6 +61,8 @@ function git(cwd: string, args: string[]): { code: number; out: string } {
 }
 
 export const PERSONAL_ROLE_PATTERN = '.foundry/roles/**/*.local.md';
+/** On the computer rung the files are not `.local`; a home directory under git keeps them out too. */
+const COMPUTER_ROLE_PATTERN = '.foundry/roles/';
 
 /**
  * A personal role file inside a git checkout must stay out of git: refuse a tracked path, and add the
@@ -83,7 +85,7 @@ export function guardPersonalFile(path: string): void {
   const current = read(excludePath);
   appendFileSync(
     excludePath,
-    `${current && !current.endsWith('\n') ? '\n' : ''}# Foundry personal role files\n${PERSONAL_ROLE_PATTERN}\n`,
+    `${current && !current.endsWith('\n') ? '\n' : ''}# Foundry personal role files\n${rel.endsWith('.local.md') ? PERSONAL_ROLE_PATTERN : COMPUTER_ROLE_PATTERN}\n`,
   );
   if (git(top.out, ['check-ignore', '-q', '--no-index', rel]).code !== 0)
     throw Error(`Could not keep ${rel} out of git`);
@@ -104,7 +106,7 @@ export function applyChange(change: ApplyChange): FeedbackApplyRecord {
   if (!WRITABLE_LEVELS.includes(change.level))
     throw Error(`${change.level} is committed; it changes through a pull request, not here`);
   const path = roleFilePath(change.level, change.role, change.slot, change.roots);
-  if (change.level !== 'computer') guardPersonalFile(path);
+  guardPersonalFile(path);
   const before = read(path);
   const line = `- ${change.statement.trim()} ${ruleMarker(change.itemId)}`;
   const heading = before

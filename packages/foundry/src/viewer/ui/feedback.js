@@ -5,7 +5,7 @@
  */
 
 import { html, useEffect, useState } from './lib.js';
-import { holdStream, openTurnDetail, resolvePrompt, scopeProjectId, showToast } from './store.js';
+import { holdStream, openTurnDetail, scopeProjectId, showToast } from './store.js';
 
 const LEVELS = [
   ['project-personal', 'project (personal)'],
@@ -25,8 +25,12 @@ export function FeedbackPrompt({ prompt }) {
   const [busy, setBusy] = useState(false);
   const act = async (action, input) => {
     setBusy(true);
-    await resolvePrompt(prompt.id, action, input);
+    const ok = await post(`/api/feedback/${encodeURIComponent(meta.itemId)}/answer`, {
+      action,
+      input,
+    });
     setBusy(false);
+    if (ok && action === 'edit') setEditing(false);
   };
   const options = prompt.options ?? [];
   return html`<div class="prompt-card feedback-prompt ${prompt.urgency === 'high' ? 'prompt-high' : ''}"
@@ -84,14 +88,30 @@ function useFeedbackStream(projectId) {
   return items;
 }
 
+/** POST to a feedback route; the server's refusal (an invalid edit, an answered prompt) is shown. */
+async function post(path, body) {
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (res.ok) return true;
+    showToast((await res.json()).error || 'Feedback request failed', 'error');
+  } catch (error) {
+    showToast(`Feedback request failed: ${error.message}`, 'error');
+  }
+  return false;
+}
+
 async function undo(itemId, changeId) {
-  const res = await fetch(`/api/feedback/${encodeURIComponent(itemId)}/undo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ changeId }),
-  });
-  if (!res.ok) showToast((await res.json()).error || 'Undo failed', 'error');
-  else showToast('Change reverted', 'ok');
+  if (await post(`/api/feedback/${encodeURIComponent(itemId)}/undo`, { changeId }))
+    showToast('Change reverted', 'ok');
+}
+
+async function tune(itemId) {
+  if (await post(`/api/feedback/${encodeURIComponent(itemId)}/tune`))
+    showToast('Tuning prompt raised in its thread', 'ok');
 }
 
 function Stage({ label, children, empty }) {
@@ -139,6 +159,11 @@ function FeedbackRow({ item }) {
       <span class="feedback-attention" data-attention=${item.attention}>${item.attention}</span>
       <${StageStrip} stage=${item.stage} />
       <span class="feedback-dim">${item.reason}</span>
+      ${
+        ['captured', 'routed', 'tuned', 'recurred', 'dismissed'].includes(item.stage)
+          ? html`<button class="feedback-link" onClick=${() => tune(item.id)}>tune</button>`
+          : null
+      }
     </div>
     <${Stage} label="Rule">
       <div class="feedback-statement">${item.statement}</div>

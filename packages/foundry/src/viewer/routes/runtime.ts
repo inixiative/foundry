@@ -308,6 +308,37 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     if (!feedback || !item) return c.json({ error: 'feedback item not found' }, 404);
     return c.json({ item: feedbackView(feedback, item), uses: feedback.uses(item.id) });
   });
+  // Answer an item's open tuning prompt; validated before it settles (an invalid edit is refused here).
+  app.post('/api/feedback/:itemId/answer', async (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);
+    const body = await c.req
+      .json<{ action?: unknown; input?: unknown; surface?: unknown }>()
+      .catch(() => ({}) as { action?: unknown; input?: unknown; surface?: unknown });
+    if (typeof body.action !== 'string') return c.json({ error: 'action is required' }, 400);
+    try {
+      feedback.submit(
+        c.req.param('itemId'),
+        body.action,
+        typeof body.input === 'string' ? body.input : undefined,
+        typeof body.surface === 'string' ? body.surface.slice(0, 80) : 'viewer',
+      );
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+  });
+  // Raise an item's tuning prompt again (after later, a timeout or a restart).
+  app.post('/api/feedback/:itemId/tune', (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);
+    try {
+      feedback.retune(c.req.param('itemId'));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+  });
   app.post('/api/feedback/:itemId/undo', async (c) => {
     const feedback = deps.feedback;
     if (!feedback) return c.json({ error: 'feedback lifecycle unavailable' }, 503);

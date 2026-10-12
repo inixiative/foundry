@@ -432,12 +432,12 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       .then((response) => {
         const outcome = (response as RequestPermissionResponse).outcome;
         const option = outcome.outcome === 'selected' ? outcome.optionId : 'later';
-        return foundry.http.answerPrompt(prompt.id, option);
+        return foundry.http.answerFeedback(meta.itemId, option, `acp:${clientName}`);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
         log(`feedback ${prompt.id}: ${(error as Error).message}`);
-        void foundry.http.answerPrompt(prompt.id, 'later').catch(() => {});
+        void foundry.http.answerFeedback(meta.itemId, 'later', `acp:${clientName}`).catch(() => {});
       })
       .finally(() => asking.delete(prompt.id));
   };
@@ -578,14 +578,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     }
     if (!['apply', 'dismiss', 'later', 'edit'].includes(verb) || !itemId)
       return 'Usage: /feedback [all] | apply <id> | dismiss <id> | later <id> | edit <id> <rule>';
-    const { prompts } = await foundry.http.prompts(session.threadId);
-    const prompt = prompts.find(
-      (candidate) => candidate.status === 'pending' && feedbackMeta(candidate)?.itemId === itemId,
-    );
-    if (!prompt) return `No open feedback prompt for ${itemId} in this session.`;
     const rule = rest.join(' ').trim();
     if (verb === 'edit' && !rule) return 'Usage: /feedback edit <id> <the rule, in one line>';
-    await foundry.http.answerPrompt(prompt.id, verb, verb === 'edit' ? rule : undefined);
+    await foundry.http.answerFeedback(
+      itemId,
+      verb,
+      `acp:${clientName}`,
+      verb === 'edit' ? rule : undefined,
+    );
     return `${itemId}: ${verb === 'edit' ? 'edited and applied' : verb}.`;
   };
 

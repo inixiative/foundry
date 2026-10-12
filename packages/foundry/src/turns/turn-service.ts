@@ -268,6 +268,8 @@ export class TurnService {
     const thread = queue;
     void thread
       .run(async () => {
+        // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
+        await this.deps.feedback?.held(turnId);
         // A queued turn cancelled while it waited has already settled.
         if (state.phase !== 'settled')
           resolveSettled(
@@ -312,6 +314,7 @@ export class TurnService {
     if (state.phase === 'queued') {
       state.phase = 'settled';
       this.live.delete(turnId);
+      this.deps.feedback?.release(turnId);
       state.cancelQueued();
       return { ok: true, outcome: 'cancelled' };
     }
@@ -667,8 +670,6 @@ export class TurnService {
     const threadId = thread.id;
     let attemptTrace: Trace | undefined;
     try {
-      // A blocking tuning prompt holds the turn until it is answered or times out.
-      await this.deps.feedback?.held(turnId);
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       state.phase = 'running';
       const result = await harness.send(

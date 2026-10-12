@@ -26,7 +26,7 @@ export function lintStatement(statement: string): { ok: true } | { ok: false; re
   if (!text) return { ok: false, reason: 'empty' };
   if (text.length > MAX_STATEMENT)
     return { ok: false, reason: `longer than ${MAX_STATEMENT} characters` };
-  if (/\n/.test(text)) return { ok: false, reason: 'more than one line' };
+  if (/[\n\r\u2028\u2029]/.test(text)) return { ok: false, reason: 'more than one line' };
   if (/[.!?]\s+\S/.test(text)) return { ok: false, reason: 'more than one sentence' };
   const hedge = HEDGES.exec(text);
   if (hedge) return { ok: false, reason: `hedged ("${hedge[0]}")` };

@@ -78,6 +78,13 @@ const ANSWERS = [
   { id: 'later', label: 'Later' },
 ] as const;
 
+interface OpenPrompt {
+  readonly promptId: string;
+  readonly controller: AbortController;
+  readonly options: readonly string[];
+  surface?: string;
+}
+
 interface CaptureInput {
   thread: Thread;
   turnId: string | null;
@@ -93,6 +100,10 @@ interface CaptureInput {
 export class FeedbackService {
   readonly lifecycle: FeedbackLifecycle;
   private readonly _held = new Map<string, Promise<void>>();
+  /** Tuning prompts awaiting an answer, by item: one at a time per item. */
+  private readonly _open = new Map<string, OpenPrompt>();
+  /** Turns held on tuning, so a stop can withdraw their prompt. */
+  private readonly _holds = new Map<string, AbortController>();
 
   constructor(private readonly deps: FeedbackServiceDeps) {
     this.lifecycle = new FeedbackLifecycle(deps.store.feedbackPhases());
@@ -122,17 +133,36 @@ export class FeedbackService {
       (settings.tuning === 'ask' &&
         !!detection.signal &&
         (settings.blockOn as string[]).includes(detection.signal));
+    const hold = blocking ? new AbortController() : undefined;
     const work = this.capture(
       { thread, turnId, text, origin: 'detected' },
-      { before, detection, blocking },
+      { before, detection, blocking, ...(hold ? { signal: hold.signal } : {}) },
     ).then(
       () => undefined,
       (error) => this.deps.log?.(`[Feedback] capture failed: ${(error as Error).message}`),
     );
-    if (blocking) {
-      this._held.set(turnId, work);
-      void work.finally(() => this._held.delete(turnId));
-    }
+    if (!hold) return;
+    // The whole hold (classify, match, route, the prompt) is bounded: past it the turn proceeds.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bounded = Promise.race([
+      work,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, settings.blockTimeoutMs);
+        hold.signal.addEventListener('abort', () => resolve(), { once: true });
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+      hold.abort();
+      this._held.delete(turnId);
+      this._holds.delete(turnId);
+    });
+    this._held.set(turnId, bounded);
+    this._holds.set(turnId, hold);
+  }
+
+  /** A held turn was stopped: withdraw its tuning prompt and release the hold now. */
+  release(turnId: string): void {
+    this._holds.get(turnId)?.abort();
   }
 
   /** What a blocking turn waits on before it is sent; resolved immediately otherwise. */
@@ -183,7 +213,12 @@ export class FeedbackService {
 
   private async capture(
     input: CaptureInput,
-    opts: { before: string; detection?: CorrectionDetection; blocking: boolean },
+    opts: {
+      before: string;
+      detection?: CorrectionDetection;
+      blocking: boolean;
+      signal?: AbortSignal;
+    },
   ): Promise<FeedbackItem[]> {
     const priority = opts.blocking ? DECISION_PRIORITY.turn : DECISION_PRIORITY.review;
     const quote = scrubSecrets(input.text).text;
@@ -199,6 +234,7 @@ export class FeedbackService {
     const statements = sharp.length ? sharp : [null];
     const items: FeedbackItem[] = [];
     for (const statement of statements) {
+      if (opts.signal?.aborted) break;
       const item = await this.captureOne(input, opts, {
         quote,
         before,
@@ -214,7 +250,7 @@ export class FeedbackService {
 
   private async captureOne(
     input: CaptureInput,
-    opts: { detection?: CorrectionDetection; blocking: boolean },
+    opts: { detection?: CorrectionDetection; blocking: boolean; signal?: AbortSignal },
     found: {
       quote: string;
       before: string;
@@ -228,7 +264,7 @@ export class FeedbackService {
     const projectId = thread.meta.projectId ?? null;
     const candidates = this.lifecycle
       .forProject(projectId)
-      .filter((item) => item.status !== 'dismissed' && item.sharp)
+      .filter((item) => item.sharp)
       .map((item) => ({ id: item.id, statement: item.statement }));
     const matched = found.statement
       ? await this.deps.match(found.statement, candidates, found.priority)
@@ -240,7 +276,9 @@ export class FeedbackService {
     const record: FeedbackCaptureRecord = {
       itemId,
       recurred: !!recurring,
-      ...(recurring ? { exposedAtTurn: this.exposedLastTurn(thread.id, recurring) } : {}),
+      ...(recurring
+        ? { exposedAtTurn: this.exposedLastTurn(thread.id, input.turnId, recurring) }
+        : {}),
       origin: input.origin,
       ...(opts.detection?.signal
         ? {
@@ -275,6 +313,7 @@ export class FeedbackService {
             statement: record.statement,
             category: record.category,
             hasProject: !!projectId,
+            timeoutMs: opts.blocking ? this.settings(thread).blockTimeoutMs : 30_000,
           })
         : {
             itemId,
@@ -285,20 +324,35 @@ export class FeedbackService {
           };
       this.journal(thread, input.turnId, { phase: 'feedback-route', record: route });
     }
-    await this.tune(thread, input.turnId, item, opts.blocking);
+    if (opts.signal?.aborted) return item;
+    await this.tune(thread, input.turnId, item, opts.blocking, opts.signal);
     return item;
   }
 
-  /** Whether the item's rule was in the routed Warden's composed input on this thread's last advised turn. */
-  private exposedLastTurn(threadId: string, item: FeedbackItem): boolean {
+  /**
+   * Whether the rule was in front of one of its routed Wardens on this thread's last advised turn before
+   * `turnId` (the turn the correction reacted to).
+   */
+  private exposedLastTurn(threadId: string, turnId: string | null, item: FeedbackItem): boolean {
     const since = activeChanges(item)[0]?.appliedAt;
     if (since === undefined) return false;
+    const domains = new Set(
+      [...wardenRoles(this.deps.config())]
+        .filter(([, role]) => item.route?.roles.includes(role))
+        .map(([domain]) => domain),
+    );
     const last = this.deps.store
-      .phaseHistory(threadId, { limit: 50 })
-      .filter((p) => p.phase === 'advice')
+      .phaseHistory(threadId, { limit: 200 })
+      .filter((p) => p.phase === 'advice' && p.turnId !== turnId)
       .at(-1);
-    return (
-      !!last && JSON.stringify(last.record).includes(ruleMarker(item.id)) && last.storedAt >= since
+    if (!last || last.storedAt < since) return false;
+    const marker = ruleMarker(item.id);
+    const participants =
+      (last.record as { participants?: Array<{ domain?: string; segments?: unknown }> })
+        .participants ?? [];
+    return participants.some(
+      (p) =>
+        !!p.domain && domains.has(p.domain) && JSON.stringify(p.segments ?? '').includes(marker),
     );
   }
 
@@ -333,23 +387,27 @@ export class FeedbackService {
     turnId: string | null,
     item: FeedbackItem,
     blocking: boolean,
+    signal?: AbortSignal,
   ): Promise<void> {
     const settings = this.settings(thread);
     const queue = this.deps.queue;
-    if (!queue || settings.tuning === 'off') return;
+    if (!queue || settings.tuning === 'off' || this._open.has(item.id)) return;
     const shown = this.describe(item);
+    const controller = new AbortController();
+    signal?.addEventListener('abort', () => controller.abort(), { once: true });
+    const options = (item.sharp ? ANSWERS : ANSWERS.filter((a) => a.id !== 'apply')).map((a) => ({
+      id: a.id,
+      label: a.label,
+    }));
     const ask = queue.prompt({
       kind: 'choice',
       threadId: thread.id,
       agentId: 'feedback',
       capability: 'feedback',
       message: `${shown.happened}\n${shown.did}\n${shown.intend}`,
-      options: (item.sharp ? ANSWERS : ANSWERS.filter((a) => a.id !== 'apply')).map((a) => ({
-        id: a.id,
-        label: a.label,
-      })),
+      options,
       urgency: item.detection?.kind === 'repeat' || item.recurrences.length ? 'high' : 'normal',
-      ...(blocking ? { timeoutMs: settings.blockTimeoutMs } : {}),
+      signal: controller.signal,
       meta: {
         feedback: {
           itemId: item.id,
@@ -360,12 +418,28 @@ export class FeedbackService {
         },
       },
     });
-    const settle = ask.then((resolution) =>
-      this.answer(thread, turnId, item.id, resolution, {
-        mode: blocking ? 'block' : 'ask',
-        shown,
-      }),
-    );
+    // The queue registers a prompt before its first await, so it is findable now.
+    const promptId =
+      queue.pending().find((p) => (p.meta?.feedback as { itemId?: string })?.itemId === item.id)
+        ?.id ?? null;
+    const open: OpenPrompt = {
+      promptId: promptId ?? '',
+      controller,
+      options: options.map((o) => o.id),
+    };
+    if (promptId) this._open.set(item.id, open);
+    const settle = ask
+      .then((resolution) =>
+        this.answer(thread, turnId, item.id, resolution, {
+          mode: blocking ? 'block' : 'ask',
+          shown,
+          promptId,
+          ...(open.surface ? { surface: open.surface } : {}),
+        }),
+      )
+      .finally(() => {
+        if (this._open.get(item.id) === open) this._open.delete(item.id);
+      });
     if (blocking) await settle;
     else
       void settle.catch((error) =>
@@ -373,71 +447,117 @@ export class FeedbackService {
       );
   }
 
-  /** Apply a prompt's answer. `edit` carries the new statement (and optionally roles/level) as input. */
-  async answer(
+  /** Raise the tuning prompt again for an item with none open (after later, a timeout or a restart). */
+  retune(itemId: string): void {
+    const item = this.lifecycle.get(itemId);
+    if (!item) throw Error('feedback item not found');
+    if (this._open.has(itemId)) throw Error('a tuning prompt for this item is already open');
+    const thread = this.deps.thread(item.origin.threadId);
+    if (!thread) throw Error('the item’s thread is not available');
+    void this.tune(thread, null, item, false).catch((error) =>
+      this.deps.log?.(`[Feedback] tuning failed: ${(error as Error).message}`),
+    );
+  }
+
+  /**
+   * Answer an item's open tuning prompt, validated first: an option the prompt offers, and for `edit` a
+   * sharp rule, known roles and a writable level. Only a valid answer settles the prompt.
+   */
+  submit(itemId: string, action: string, input?: string, surface?: string): void {
+    const item = this.lifecycle.get(itemId);
+    const open = this._open.get(itemId);
+    if (!item || !open) throw Error('no open tuning prompt for this item');
+    if (!open.options.includes(action))
+      throw Error(`${action} is not an answer this prompt offers`);
+    if (action === 'edit') this.target(item, this.parseEdit(input));
+    if (surface) open.surface = surface;
+    if (!this.deps.queue?.resolve(open.promptId, action, { by: 'human', input }))
+      throw Error('the tuning prompt was already answered');
+  }
+
+  /** The validated edit, or a throw naming what is wrong. */
+  private parseEdit(input: string | undefined): NonNullable<FeedbackTuneRecord['edited']> {
+    const edited = parseEdit(input);
+    if (edited.statement !== undefined) {
+      edited.statement = scrubSecrets(edited.statement).text;
+      const lint = lintStatement(edited.statement);
+      if (!lint.ok) throw Error(`The rule is not sharp: ${lint.reason}`);
+    }
+    return edited;
+  }
+
+  /** Where an answer writes, every role known before anything is written. */
+  private target(item: FeedbackItem, edited?: FeedbackTuneRecord['edited']) {
+    const roles = edited?.roles ?? item.route?.roles ?? [MAIN_ROLE];
+    const known = new Set([MAIN_ROLE, ...wardenRoles(this.deps.config()).values()]);
+    const unknown = roles.filter((role) => !known.has(role));
+    if (unknown.length) throw Error(`Unknown role ${unknown.join(', ')}`);
+    if (!roles.length) throw Error('No role to apply the rule to');
+    if (!(edited?.statement ?? (item.sharp ? item.statement : '')))
+      throw Error('Write the rule before applying it');
+    return {
+      roles,
+      slot: (edited?.slot ?? item.route?.slot ?? 'instructions') as FeedbackSlot,
+      level: (edited?.level ?? item.route?.level ?? 'project-personal') as FeedbackLevel,
+    };
+  }
+
+  /** Record a prompt's answer and carry it out: apply writes the rule; edit replaces it. */
+  private async answer(
     thread: Thread,
     turnId: string | null,
     itemId: string,
     resolution: ActionResolution,
-    context: { mode: 'ask' | 'block'; shown: FeedbackTuneRecord['shown']; promptId?: string },
+    context: {
+      mode: 'ask' | 'block';
+      shown: FeedbackTuneRecord['shown'];
+      promptId: string | null;
+      surface?: string;
+    },
   ): Promise<void> {
     const item = this.lifecycle.get(itemId);
     if (!item) return;
+    // A timeout is its own answer; a withdrawn prompt (a stopped turn, a released hold) is "later".
     const answer: TuneAnswer =
       resolution.by === 'timeout'
         ? 'timeout'
-        : resolution.action === 'approved'
-          ? 'apply'
-          : resolution.action === 'rejected'
-            ? 'dismiss'
-            : (resolution.action as TuneAnswer);
-    const edited = answer === 'edit' ? parseEdit(resolution.input) : undefined;
-    if (edited?.statement) {
-      const lint = lintStatement(edited.statement);
-      if (!lint.ok) throw Error(`Rule is not sharp: ${lint.reason}`);
-    }
+        : resolution.by === 'policy'
+          ? 'later'
+          : (resolution.action as TuneAnswer);
+    const edited = answer === 'edit' ? this.parseEdit(resolution.input) : undefined;
+    const target = answer === 'apply' || answer === 'edit' ? this.target(item, edited) : undefined;
     this.journal(thread, turnId, {
       phase: 'feedback-tune',
       record: {
         itemId,
-        promptId: context.promptId ?? null,
+        promptId: context.promptId,
         mode: context.mode,
         shown: context.shown,
         answer,
         by: resolution.by,
+        ...(context.surface ? { surface: context.surface } : {}),
         ...(edited ? { edited } : {}),
       },
     });
-    if ((answer === 'apply' && item.sharp) || (answer === 'edit' && item.sharp)) {
-      const route = item.route;
-      const roles = edited?.roles ?? route?.roles ?? [MAIN_ROLE];
-      const slot: FeedbackSlot = edited?.slot ?? route?.slot ?? 'instructions';
-      const level: FeedbackLevel = edited?.level ?? route?.level ?? 'project-personal';
-      this.apply(thread, turnId, item, roles, slot, level);
-    }
-  }
-
-  private apply(
-    thread: Thread,
-    turnId: string | null,
-    item: FeedbackItem,
-    roles: string[],
-    slot: FeedbackSlot,
-    level: FeedbackLevel,
-  ): void {
-    const known = new Set([MAIN_ROLE, ...wardenRoles(this.deps.config()).values()]);
+    if (!target) return;
+    // An edit replaces the rule: its old lines come out before the new one goes in.
+    if (answer === 'edit')
+      for (const change of activeChanges(item)) this.undo(itemId, change.changeId);
     const roots = this.deps.roots(thread);
-    for (const role of roles) {
-      if (!known.has(role)) throw Error(`Unknown role ${role}`);
-      if (activeChanges(item).some((c) => c.role === role && c.slot === slot && c.level === level))
+    for (const role of target.roles) {
+      if (
+        activeChanges(item).some(
+          (c) => c.role === role && c.slot === target.slot && c.level === target.level,
+        )
+      )
         continue;
       const record = applyChange({
         itemId: item.id,
         changeId: newId('chg'),
         statement: item.statement,
         role,
-        slot,
-        level,
+        slot: target.slot,
+        level: target.level,
         roots,
       });
       this.journal(thread, turnId, { phase: 'feedback-apply', record });
@@ -492,11 +612,16 @@ export class FeedbackService {
   }
 }
 
-function parseEdit(input: string | undefined): FeedbackTuneRecord['edited'] {
+function parseEdit(input: string | undefined): NonNullable<FeedbackTuneRecord['edited']> {
   const text = (input ?? '').trim();
   if (!text) throw Error('edit needs the rule');
   if (!text.startsWith('{')) return { statement: text };
-  const parsed = JSON.parse(text) as Record<string, unknown>;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw Error('edit input is not valid JSON');
+  }
   const edited: NonNullable<FeedbackTuneRecord['edited']> = {};
   if (typeof parsed.statement === 'string') edited.statement = parsed.statement.trim();
   if (Array.isArray(parsed.roles) && parsed.roles.every((r) => typeof r === 'string'))
