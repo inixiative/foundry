@@ -147,7 +147,7 @@ export class KnowledgePersistence {
           runtime.thread.id,
           `Review ${job.id} committed; publication failed: ${String(error).slice(0, 1000)}`,
         );
-        // The journal is authoritative: the next reconstruction publishes it without another review.
+        this.republish(runtime);
       },
     );
     const detachSignals = manager.addSignalSink((signal, owner) => {
@@ -164,11 +164,13 @@ export class KnowledgePersistence {
         const bundle = runtime.knowledgeSnapshot();
         this.validate(runtime, bundle);
         store.saveKnowledge(runtime.thread, bundle, signal);
-        if (content?.decision === 'reconciliation-needed')
+        if (content?.decision === 'reconciliation-needed') {
           this.reconciliation.set(
             owner.threadId,
             content.reason ?? 'Durable knowledge needs publication reconciliation',
           );
+          this.republish(runtime);
+        }
       } catch (error) {
         this.quarantine(runtime.thread, error);
       }
@@ -198,6 +200,28 @@ export class KnowledgePersistence {
       if (!Number.isSafeInteger(snapshot.revision) || snapshot.evidence.length > 200)
         throw new Error(`Invalid knowledge revision or evidence bound: ${domain}`);
     }
+  }
+
+  /**
+   * The journal is authoritative: after a committed revision failed to publish, publish the journal's
+   * knowledge into the live runtime once the failing call has returned. Failing again leaves the
+   * reconciliation recorded; the next reconstruction publishes it.
+   */
+  private republish(runtime: ThreadRuntime): void {
+    setTimeout(() => {
+      if (runtime.disposed || this.errors.has(runtime.thread.id)) return;
+      try {
+        const bundle = this.store.knowledge(runtime.thread.id);
+        if (!bundle) return;
+        this.validate(runtime, bundle);
+        runtime.restoreKnowledge(bundle);
+        this.reconciliation.delete(runtime.thread.id);
+      } catch (error) {
+        console.error(
+          `[Recovery] ${runtime.thread.id}: committed knowledge still not published: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }, 0);
   }
 
   /** Withhold the thread's learning from here on; the thread keeps working. The first reason stands. */

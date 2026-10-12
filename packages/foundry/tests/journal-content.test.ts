@@ -71,3 +71,41 @@ test('a record over its row limit after references spills its bulk and reads bac
   const { $journal: _note, ...back } = decodeRecord<Record<string, unknown>>(text, store);
   expect(back).toEqual(record);
 });
+
+test('spilling keeps the root fields the store reads in SQL inline', () => {
+  const store = memoryStore();
+  const big = (tag: string) =>
+    Array.from({ length: 400 }, (_, i) => ({ tag, i, note: `short note ${i}` }));
+  const record = {
+    kind: 'domain_learning',
+    content: {
+      domain: 'docs',
+      capacity: 'settled',
+      request: big('request'),
+      native: big('native'),
+    },
+  };
+  const text = encodeRecord(record, store, {
+    bytes: 20_000,
+    spillKey: '$journal',
+    reason: 'test',
+    keep: ['content'],
+  });
+  const raw = JSON.parse(text);
+  expect(raw.content.domain).toBe('docs');
+  expect(raw.content.capacity).toBe('settled');
+  expect(Buffer.byteLength(text)).toBeLessThan(20_000);
+  const { $journal: _note, ...back } = decodeRecord<Record<string, unknown>>(text, store);
+  expect(back).toEqual(record);
+});
+
+test('encoding matches JSON.stringify for toJSON keys and boxed primitives', () => {
+  const store = memoryStore();
+  const record = {
+    when: { toJSON: (key: string) => `key:${key}` },
+    boxed: [new String('hi'), new Number(2), new Boolean(true)],
+  };
+  expect(decodeRecord(encodeRecord(record, store), store)).toEqual(
+    JSON.parse(JSON.stringify(record)),
+  );
+});

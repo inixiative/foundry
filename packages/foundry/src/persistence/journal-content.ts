@@ -44,11 +44,21 @@ export interface SpillNote {
   readonly paths: string[];
 }
 
-/** Where content lives: `put` stores text and returns its hash, `get` returns the text for a hash. */
+/**
+ * Where content lives: `put` stores text (with the hashes it references, for a section list or a
+ * nested record) and returns its hash; `get` returns the text for a hash.
+ */
 export interface ContentStore {
-  put(text: string): string;
+  put(text: string, references?: readonly string[]): string;
   get(hash: string): string;
 }
+
+const REFERENCE = /"\$(?:content|chunks|json)":"([0-9a-f]{64})"/g;
+
+/** The hashes a stored JSON text references directly. */
+export const referencedHashes = (json: string): string[] => [
+  ...new Set([...json.matchAll(REFERENCE)].map((match) => match[1]!)),
+];
 
 export const contentHash = (text: string): string =>
   createHash('sha256').update(text).digest('hex');
@@ -97,11 +107,7 @@ export function chunkText(text: string): string[] {
  * its largest remaining subtrees out by reference until it fits and records why under `spillKey`; a
  * record is never refused for its size.
  */
-export function encodeRecord(
-  value: unknown,
-  content: ContentStore,
-  limit?: { bytes: number; spillKey: string; reason: string },
-): string {
+export function encodeRecord(value: unknown, content: ContentStore, limit?: SpillLimit): string {
   const referenced = reference(value, content, 0);
   const text = JSON.stringify(referenced);
   if (!limit || Buffer.byteLength(text) <= limit.bytes) return text;
@@ -125,34 +131,36 @@ function text(value: string, content: ContentStore): ContentRef | ChunksRef {
   const chunks = chunkText(value);
   if (chunks.length === 1) return { $content: content.put(value), chars: value.length };
   const hashes = chunks.map((chunk) => content.put(chunk));
-  return { $chunks: content.put(JSON.stringify(hashes)), chars: value.length };
+  return { $chunks: content.put(JSON.stringify(hashes), hashes), chars: value.length };
 }
 
 const jsonRef = (json: string, content: ContentStore): JsonRef => ({
-  $json: content.put(json),
+  $json: content.put(json, referencedHashes(json)),
   bytes: Buffer.byteLength(json),
 });
 
 /** Bottom-up: children are referenced before their parent's own size is judged. */
-function reference(value: unknown, content: ContentStore, depth: number): unknown {
+function reference(value: unknown, content: ContentStore, depth: number, key = ''): unknown {
   if (typeof value === 'string')
     return value.length >= CONTENT_REF_MIN ? text(value, content) : value;
   if (!value || typeof value !== 'object') return value;
-  // Honor toJSON (Dates, class instances) exactly as JSON.stringify would.
-  const toJSON = (value as { toJSON?: () => unknown }).toJSON;
-  if (typeof toJSON === 'function') return reference(toJSON.call(value), content, depth);
+  // Honor toJSON (Dates, class instances) and boxed primitives exactly as JSON.stringify would.
+  const toJSON = (value as { toJSON?: (key: string) => unknown }).toJSON;
+  if (typeof toJSON === 'function') return reference(toJSON.call(value, key), content, depth, key);
+  if (value instanceof String || value instanceof Number || value instanceof Boolean)
+    return reference(value.valueOf(), content, depth, key);
   let node: unknown;
   if (Array.isArray(value))
-    node = value.map((item) =>
+    node = value.map((item, index) =>
       item === undefined || typeof item === 'function' || typeof item === 'symbol'
         ? null
-        : reference(item, content, depth + 1),
+        : reference(item, content, depth + 1, String(index)),
     );
   else {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
       if (item === undefined || typeof item === 'function' || typeof item === 'symbol') continue;
-      out[key] = reference(item, content, depth + 1);
+      out[key] = reference(item, content, depth + 1, key);
     }
     node = out;
   }
@@ -163,13 +171,29 @@ function reference(value: unknown, content: ContentStore, depth: number): unknow
 
 type Container = Record<string, unknown> | unknown[];
 
+/** A record's row limit: why it spilled, under which key, and root children never moved whole. */
+export interface SpillLimit {
+  bytes: number;
+  spillKey: string;
+  reason: string;
+  /** Root children the store reads in SQL (`$.content.domain`): only what is below them moves. */
+  keep?: readonly string[];
+}
+
+const MIN_SPILL = 256;
+
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
 /** The largest object or array directly under `node` that is not already a reference. */
-function largestChild(node: Container): { key: string | number; size: number } | undefined {
+function largestChild(
+  node: Container,
+  skip: ReadonlySet<string> = new Set(),
+): { key: string | number; size: number } | undefined {
   let best: { key: string | number; size: number } | undefined;
   for (const [key, item] of Object.entries(node)) {
     if (!item || typeof item !== 'object' || isAnyRef(item)) continue;
+    // A kept child is only skipped when nothing larger sits under it worth moving.
+    if (skip.has(key) && !largestChild(item as Container)) continue;
     const bytes = size(item);
     if (!best || bytes > best.size)
       best = { key: Array.isArray(node) ? Number(key) : key, size: bytes };
@@ -180,38 +204,46 @@ function largestChild(node: Container): { key: string | number; size: number } |
 /**
  * Move subtrees out until the row fits. Each round walks down from the root through the child that
  * holds most of its parent and moves out the node where no single child dominates: the bulk leaves
- * while the small fields beside it (owners, domains, decisions, ids) stay inline and queryable.
+ * while the small fields beside it (owners, domains, decisions, ids) stay inline and queryable. A
+ * direct child of the root never moves out whole (the store's SQL reads `$.content.domain`,
+ * `$.summary`); the walk always goes at least one level below it.
  */
-function spill(
-  record: unknown,
-  text: string,
-  content: ContentStore,
-  limit: { bytes: number; spillKey: string; reason: string },
-): string {
+function spill(record: unknown, text: string, content: ContentStore, limit: SpillLimit): string {
   const bytes = Buffer.byteLength(text);
   const root = (
     record && typeof record === 'object' && !Array.isArray(record) ? record : { value: record }
   ) as Record<string, unknown>;
+  const keep = new Set(limit.keep ?? []);
   const reserve = 1024; // room for the note itself
   const paths: string[] = [];
   while (size(root) + reserve > limit.bytes) {
     let parent: Container = root;
     let path = '$';
-    let pick = largestChild(parent);
+    let pick = largestChild(parent, keep);
     if (!pick) break;
     for (;;) {
       const node = (parent as Record<string | number, unknown>)[pick.key] as Container;
       const child = largestChild(node);
-      if (!child || child.size * 2 < pick.size) break;
+      // A kept root child is never moved whole: the walk goes below it.
+      const mustDescend = parent === root && keep.has(String(pick.key));
+      if (!child || (!mustDescend && child.size * 2 < pick.size)) break;
       path += Array.isArray(parent) ? `[${pick.key}]` : `.${pick.key}`;
       parent = node;
       pick = child;
     }
+    if (parent === root && keep.has(String(pick.key))) break; // nothing movable below it
+    // Moving out something smaller than its reference only grows the row.
+    if (pick.size <= MIN_SPILL) break;
     path += Array.isArray(parent) ? `[${pick.key}]` : `.${pick.key}`;
     const slot = parent as Record<string | number, unknown>;
     slot[pick.key] = jsonRef(JSON.stringify(slot[pick.key]), content);
     paths.push(path);
   }
-  const note: SpillNote = { reason: limit.reason, limit: limit.bytes, bytes, paths };
+  const note: SpillNote = {
+    reason: limit.reason,
+    limit: limit.bytes,
+    bytes,
+    paths: paths.length > 20 ? [...paths.slice(0, 20), `… ${paths.length - 20} more`] : paths,
+  };
   return JSON.stringify({ ...root, [limit.spillKey]: note });
 }

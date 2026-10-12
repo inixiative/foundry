@@ -385,3 +385,39 @@ test('feedback exposure finds a rule marker inside referenced composed input', a
   expect(store.phasesContaining(marker, since).map((row) => row.roles)).toEqual([['conventions']]);
   expect(store.phasesContaining('<!-- feedback:absent -->', since)).toEqual([]);
 });
+
+test('feedback exposure after a rule is re-applied still finds composed input stored before it', async () => {
+  const dir = await tempDir('foundry-journal-reapply-');
+  const { LocalSessionStore } = await import('../src/persistence/local-session-store');
+  const store = new LocalSessionStore(join(dir, 'sessions.sqlite'));
+  cleanup.push(() => store.close());
+  const thread = {
+    id: 't',
+    meta: { description: '', tags: [], status: 'idle' as const, createdAt: 1, lastActiveAt: 1 },
+  };
+  const marker = '<!-- feedback:item-2 -->';
+  const instructions = `# Rules\n${'Keep it simple. '.repeat(200)}\n## Applied\n${marker} Never pad.\n`;
+  const advice = (id: string) =>
+    store.appendPhase(thread, {
+      id,
+      turnId: id,
+      dispatchId: null,
+      phase: 'advice',
+      record: {
+        participants: [
+          {
+            domain: 'conventions',
+            segments: { instructions, domainKnowledge: '', threadKnowledge: '' },
+          },
+        ],
+      },
+    });
+  advice('first-apply');
+  // Reverted, then re-applied: the same composed text, already stored long before `since`.
+  await Bun.sleep(5);
+  const reapplied = Date.now() + 1;
+  await Bun.sleep(5);
+  advice('after-reapply');
+  const rows = store.phasesContaining(marker, reapplied);
+  expect(rows.map((row) => row.turnId)).toEqual(['after-reapply']);
+});

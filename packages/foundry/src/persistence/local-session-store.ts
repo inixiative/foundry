@@ -16,7 +16,13 @@ import {
 import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
 import { type CheckpointImport, checkpointSpans } from './checkpoint-import';
-import { type ContentStore, contentHash, decodeRecord, encodeRecord } from './journal-content';
+import {
+  type ContentStore,
+  contentHash,
+  decodeRecord,
+  encodeRecord,
+  referencedHashes,
+} from './journal-content';
 import type { PersistedTraceRecord } from './trace-record';
 
 export interface StoredMessage {
@@ -172,17 +178,23 @@ export class LocalSessionStore {
   private closed = false;
   private readonly volatileTools = new Map<string, NativeToolEvidence>();
   private readonly evictedToolEvidence = new Map<string, number>();
-  /** Verified content by hash; content is immutable, so a hit never needs re-reading. */
+  /** Verified content by hash, bounded by total chars; content is immutable, so a hit never needs re-reading. */
   private readonly contentCache = new Map<string, string>();
+  private contentCacheChars = 0;
 
   /** Long text referenced by journal records (`journal-content.ts`), stored once by hash. */
   private readonly content: ContentStore = {
-    put: (text) => {
+    put: (text, references = []) => {
       // Always written (idempotent): a cached hash may belong to a write that later rolled back.
       const hash = contentHash(text);
-      this.query(
+      const inserted = this.query(
         'INSERT INTO session_content(hash, text, stored_at) VALUES (?, ?, ?) ON CONFLICT(hash) DO NOTHING',
       ).run(hash, text, Date.now());
+      if (inserted.changes)
+        for (const child of references)
+          this.query(
+            'INSERT INTO session_content_ref(parent, child) VALUES (?, ?) ON CONFLICT DO NOTHING',
+          ).run(hash, child);
       return hash;
     },
     get: (hash) => {
@@ -199,8 +211,12 @@ export class LocalSessionStore {
       if (contentHash(row.text) !== hash)
         throw new Error(`Journal content checksum mismatch: ${hash}`);
       this.contentCache.set(hash, row.text);
-      if (this.contentCache.size > 512)
-        this.contentCache.delete(this.contentCache.keys().next().value!);
+      this.contentCacheChars += row.text.length;
+      while (this.contentCacheChars > CONTENT_CACHE_CHARS && this.contentCache.size > 1) {
+        const [oldest, text] = this.contentCache.entries().next().value!;
+        this.contentCache.delete(oldest);
+        this.contentCacheChars -= text.length;
+      }
       return row.text;
     },
   };
@@ -215,6 +231,7 @@ export class LocalSessionStore {
         limit && {
           bytes: limit.bytes,
           spillKey: JOURNAL_SPILL_KEY,
+          keep: SQL_READ_KEYS,
           reason: `${limit.what} exceeded ${limit.bytes} bytes after text references; its largest parts are stored by reference`,
         },
       ),
@@ -226,25 +243,40 @@ export class LocalSessionStore {
   }
 
   /**
-   * Hashes of content stored since `since` that holds `needle`, and of every section list or nested
-   * record referencing one of them. Content that refers to it was stored no earlier than it.
+   * Hashes of content holding `needle`, and of every section list or nested record that references
+   * one of them, walked up the reference index.
    */
-  private contentHolding(needle: string, since: number): Set<string> {
-    const found = new Set<string>();
-    let frontier = [needle];
-    for (let depth = 0; frontier.length && depth < 8; depth++) {
+  private contentHolding(needle: string): Set<string> {
+    const found = new Set(
+      (
+        this.query('SELECT hash FROM session_content WHERE instr(text, ?) > 0').all(
+          needle,
+        ) as Array<{
+          hash: string;
+        }>
+      ).map((row) => row.hash),
+    );
+    let frontier = [...found];
+    while (frontier.length) {
       const next: string[] = [];
-      for (const term of frontier)
-        for (const row of this.query(
-          'SELECT hash FROM session_content WHERE stored_at >= ? AND instr(text, ?) > 0',
-        ).all(since - 60_000, term) as Array<{ hash: string }>)
-          if (!found.has(row.hash)) {
-            found.add(row.hash);
-            next.push(row.hash);
+      for (const child of frontier)
+        for (const row of this.query('SELECT parent FROM session_content_ref WHERE child=?').all(
+          child,
+        ) as Array<{ parent: string }>)
+          if (!found.has(row.parent)) {
+            found.add(row.parent);
+            next.push(row.parent);
           }
       frontier = next;
     }
     return found;
+  }
+
+  /** The stored record is the same record as `value` (`encoded`), whichever store version wrote it. */
+  private sameRecord(stored: string, encoded: string, value: unknown): boolean {
+    return (
+      stored === encoded || JSON.stringify(this.decode(stored)) === JSON.stringify(value ?? null)
+    );
   }
 
   // Own a bounded cache: Bun 1.3.14 does not finalize statements created after
@@ -361,6 +393,10 @@ export class LocalSessionStore {
       CREATE TABLE IF NOT EXISTS session_content (
         hash TEXT PRIMARY KEY, text TEXT NOT NULL, stored_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS session_content_ref (
+        parent TEXT NOT NULL, child TEXT NOT NULL, PRIMARY KEY(parent, child)
+      );
+      CREATE INDEX IF NOT EXISTS session_content_ref_child ON session_content_ref(child);
       PRAGMA user_version = 4;
     `);
     } catch (error) {
@@ -447,8 +483,8 @@ export class LocalSessionStore {
       content.owner.projectId !== thread.meta.projectId
     )
       throw Error('Learning audit owner mismatch');
-    const record = this.encode(signal, { bytes: LEARNING_RECORD_LIMIT, what: 'learning audit' });
     this.db.transaction(() => {
+      const record = this.encode(signal, { bytes: LEARNING_RECORD_LIMIT, what: 'learning audit' });
       const priorOwner = this.query('SELECT meta FROM session_threads WHERE id=?').get(
         thread.id,
       ) as { meta: string } | null;
@@ -459,7 +495,7 @@ export class LocalSessionStore {
         'SELECT thread_id, record FROM session_learning WHERE signal_id=?',
       ).get(signal.id) as { thread_id: string; record: string } | null;
       if (prior) {
-        if (prior.thread_id !== thread.id || prior.record !== record)
+        if (prior.thread_id !== thread.id || !this.sameRecord(prior.record, record, signal))
           throw Error('Learning audit identity conflict');
         return;
       }
@@ -507,9 +543,9 @@ export class LocalSessionStore {
     const record = JSON.stringify(bundle);
     if (Buffer.byteLength(record) > 2_000_000)
       throw new Error('Knowledge journal record exceeds size limit');
-    const event = this.encode(signal, { bytes: LEARNING_RECORD_LIMIT, what: 'learning event' });
     try {
       return this.db.transaction(() => {
+        const event = this.encode(signal, { bytes: LEARNING_RECORD_LIMIT, what: 'learning event' });
         if (
           expected &&
           (!expected.eligible() ||
@@ -528,7 +564,10 @@ export class LocalSessionStore {
           'SELECT thread_id, record FROM session_learning WHERE signal_id=?',
         ).get(signal.id) as { thread_id: string; record: string } | null;
         if (previousEvent) {
-          if (previousEvent.thread_id !== thread.id || previousEvent.record !== event)
+          if (
+            previousEvent.thread_id !== thread.id ||
+            !this.sameRecord(previousEvent.record, event, signal)
+          )
             throw new Error('Learning event identity conflict');
           return 'duplicate' as const;
         }
@@ -601,11 +640,11 @@ export class LocalSessionStore {
   /** Append one phase record; returns when it was stored. Idempotent for the same id and bytes; a different record under a known id is a conflict. */
   appendPhase(thread: Pick<Thread, 'id' | 'meta'>, input: PhaseRecordInput): number {
     if (!input.id || !input.phase) throw Error('Phase record requires id and phase');
-    const record = this.encode(input.record, {
-      bytes: PHASE_RECORD_LIMIT,
-      what: `${input.phase} phase record`,
-    });
     return this.db.transaction((): number => {
+      const record = this.encode(input.record, {
+        bytes: PHASE_RECORD_LIMIT,
+        what: `${input.phase} phase record`,
+      });
       this.saveThread(thread);
       // Idempotent only for an exact replay: the same thread, turn, dispatch, phase and bytes. Any contradiction
       // is refused without touching the original row.
@@ -626,7 +665,7 @@ export class LocalSessionStore {
           (prior.turn_id ?? null) === (input.turnId ?? null) &&
           (prior.dispatch_id ?? null) === (input.dispatchId ?? null) &&
           prior.phase === input.phase &&
-          prior.record === record;
+          this.sameRecord(prior.record, record, input.record);
         if (!same) throw Error('Phase record identity conflict');
         return prior.stored_at;
       }
@@ -744,24 +783,25 @@ export class LocalSessionStore {
   }> {
     // Composed input is stored by reference: a row matches when it holds the marker inline, or a
     // reference that leads, through section lists and nested records, to content holding it.
-    const holding = this.contentHolding(marker, since);
-    const rows = (
-      this.query(
-        `SELECT thread_id, turn_id, phase, record, stored_at FROM session_phase
+    const holding = this.contentHolding(marker);
+    const rows: Array<{
+      thread_id: string;
+      turn_id: string | null;
+      phase: string;
+      record: string;
+      stored_at: number;
+    }> = [];
+    for (const row of this.query(
+      `SELECT thread_id, turn_id, phase, record, stored_at FROM session_phase
         WHERE phase IN ('advice', 'guard-request') AND stored_at >= ? ORDER BY seq DESC`,
-      ).all(since) as Array<{
-        thread_id: string;
-        turn_id: string | null;
-        phase: string;
-        record: string;
-        stored_at: number;
-      }>
-    )
-      .filter(
-        (row) =>
-          row.record.includes(marker) || [...holding].some((hash) => row.record.includes(hash)),
+    ).iterate(since) as Iterable<(typeof rows)[number]>) {
+      if (
+        row.record.includes(marker) ||
+        referencedHashes(row.record).some((hash) => holding.has(hash))
       )
-      .slice(0, limit);
+        rows.push(row);
+      if (rows.length >= limit) break;
+    }
     // Only the composed input counts: a participant's segments, or a guard call's system instructions.
     // The marker elsewhere (an observed tool input that read the role file) is not exposure.
     return rows
@@ -1036,7 +1076,12 @@ export class LocalSessionStore {
     }));
     return {
       messages: records<StoredMessage>('session_messages'),
-      native: records<NativeEvidence>('session_native'),
+      // Native evidence is stored raw, never encoded.
+      native: (
+        this.query('SELECT record FROM session_native WHERE thread_id=? ORDER BY seq').all(
+          threadId,
+        ) as { record: string }[]
+      ).map((row) => JSON.parse(row.record) as NativeEvidence),
       tools: this.nativeTools(threadId),
       phases,
       turns,
@@ -1129,6 +1174,7 @@ export class LocalSessionStore {
         const value = row[`meta_${key}`];
         if (value === null || value === undefined) continue;
         if (typeof value === 'string' && value.length > SUMMARY_SCALAR_MAX) continue; // outside the contract: stays in detail
+        if (typeof value === 'string' && value.startsWith('{"$')) continue; // a journal reference: the value stays in detail
         meta[key] = value;
       }
       if (
@@ -1557,9 +1603,11 @@ export class LocalSessionStore {
   /** The message's own text stays inline (the index reads it in SQL); its metadata references long text. */
   private insertMessage(message: StoredMessage): void {
     const { meta, ...rest } = message;
-    const record = meta
-      ? `${JSON.stringify(rest).slice(0, -1)},"meta":${this.encode(meta)}}`
-      : JSON.stringify(rest);
+    // `rest` always holds the message's identity, so its JSON is a non-empty object to extend.
+    const record =
+      meta !== undefined
+        ? `${JSON.stringify(rest).slice(0, -1)},"meta":${this.encode(meta)}}`
+        : JSON.stringify(rest);
     this.query(
       'INSERT INTO session_messages(id, thread_id, turn_id, actor, record) VALUES (?, ?, ?, ?, ?)',
     ).run(message.id, message.threadId, message.turnId, message.actor, record);
@@ -1610,6 +1658,9 @@ export class LocalSessionStore {
 const PHASE_RECORD_LIMIT = 200_000;
 const LEARNING_RECORD_LIMIT = 100_000;
 const TRACE_RECORD_LIMIT = 200_000;
+/** Root keys the store reads in SQL (`$.content.domain`, `$.summary`); spilling moves only what is below them. */
+const SQL_READ_KEYS = ['content', 'summary', 'meta'];
+const CONTENT_CACHE_CHARS = 16_000_000;
 /** Key on a record whose bulk spilled: why, at what size, and which paths moved out (`SpillNote`). */
 export const JOURNAL_SPILL_KEY = '$journal';
 

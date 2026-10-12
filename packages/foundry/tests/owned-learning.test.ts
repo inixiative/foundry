@@ -278,6 +278,25 @@ test('durable success followed by publication failure is reconciliation-needed, 
   expect(f.inputs).toHaveLength(1);
 });
 
+test('a publication that fails once is republished from the journal without disposing the thread', async () => {
+  const held = deferred<string>();
+  const f = fixture(() => held.promise);
+  await f.thread.dispatch('worker', 'Work');
+  const set = f.knowledge.layer.set.bind(f.knowledge.layer);
+  let failures = 1;
+  f.knowledge.layer.set = (...args: Parameters<typeof set>) => {
+    if (failures-- > 0) throw Error('publication observer failed once');
+    return set(...args);
+  };
+  held.resolve(answer());
+  await f.runtime.learningSettled();
+  await tick();
+  await Bun.sleep(5);
+  expect(f.runtime.disposed).toBe(false);
+  expect(f.knowledge.content).toBe(fact);
+  expect(f.persistence.inspect('owned')).toMatchObject({ status: 'durable' });
+});
+
 test('terminal at the hard boundary latches closed before candidate validation and never drains queued work', async () => {
   let now = 0;
   const held = deferred<string>();
