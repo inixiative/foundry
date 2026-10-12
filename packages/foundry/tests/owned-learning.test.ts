@@ -253,8 +253,14 @@ test('real SQL failure rolls back candidate/event and preserves completed output
       .learningHistory('owned')
       .some((row) => (row.signal.content as any).decision === 'write-failed'),
   ).toBe(true);
-  const replacement = f.factory.create('owned', { projectId: 'P' });
-  expect(replacement.disposed).toBe(true); // replacement is not an implicit storage repair/retry
+  // Learning is withheld; the thread keeps working and nothing new commits.
+  expect(f.runtime.disposed).toBe(false);
+  expect((await f.thread.dispatch('worker', 'Keep working')).output).toBe(
+    'Completed verified work',
+  );
+  await f.runtime.learningSettled();
+  expect(f.store.knowledge('owned')).toBeUndefined();
+  expect(f.knowledge.revision).toBe(0);
 });
 
 test('durable success followed by publication failure is reconciliation-needed, never unsaved or replayed', async () => {
@@ -426,7 +432,7 @@ test('a real layer mutation observer failure preserves durable commit and record
     'original mutation observer error',
   );
   expect(f.inputs).toHaveLength(1);
-  expect(f.runtime.disposed).toBe(true);
+  expect(f.runtime.disposed).toBe(false);
 });
 
 test('a foreign owner change during review cannot commit and does not adopt the old queue', async () => {

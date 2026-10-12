@@ -255,6 +255,11 @@ restart.
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
 `instructions` source injects that file twice. Remove the `markdown` source.
 
+A `markdown` source with a relative `uri` (`docs/`) names a path in the reading
+thread's project, or its working directory when it has no project. It never
+resolves against the daemon's own directory: unbound (the startup template) or
+where the project has no such path, it reads nothing.
+
 ## Composition view
 
 Aron, 2026-10-12: "It's the same composition where you have five or six

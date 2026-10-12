@@ -6,7 +6,11 @@ import type {
 } from '../agents/thread-runtime';
 import type { LocalSessionStore } from './local-session-store';
 
-/** Connect the existing runtime's owned learning lifecycle to the local journal. */
+/**
+ * Connect the existing runtime's owned learning lifecycle to the local journal. A durability failure
+ * withholds the thread's learning (nothing new commits or publishes, and stored knowledge is not
+ * restored); it never disposes the thread. Wardens are a chorus: they never end a turn or a thread.
+ */
 export class KnowledgePersistence {
   private readonly errors = new Map<string, string>();
   private readonly reconciliation = new Map<string, string>();
@@ -101,6 +105,11 @@ export class KnowledgePersistence {
       if (content.decision === 'learned' && content.job) return;
       const turnId =
         (signal.content as { evidence?: { messageId?: string } }).evidence?.messageId ?? null;
+      // A withheld thread admits no new review: refusing its "requested" record closes admission.
+      // Outcome records (why a review failed or closed) are still kept.
+      const withheld = this.errors.get(runtime.thread.id);
+      if (withheld && (content as { decision?: string }).decision === 'requested')
+        throw Error(withheld);
       try {
         store.appendLearning(runtime.thread, signal);
       } catch (error) {
@@ -121,6 +130,8 @@ export class KnowledgePersistence {
         const eligible = () =>
           manager.get(runtime.thread.id) === runtime && runtime.reviewEligible(job);
         if (!eligible()) return 'stale';
+        const withheld = this.errors.get(runtime.thread.id);
+        if (withheld) throw Error(withheld);
         try {
           const bundle = { ...runtime.knowledgeSnapshot(), domains: { [job.domain]: candidate } };
           this.validate(runtime, bundle);
@@ -136,9 +147,7 @@ export class KnowledgePersistence {
           runtime.thread.id,
           `Review ${job.id} committed; publication failed: ${String(error).slice(0, 1000)}`,
         );
-        runtime.thread.meta.status = 'waiting';
-        // The journal is authoritative. Reconstruction can publish it without another review.
-        runtime.dispose();
+        // The journal is authoritative: the next reconstruction publishes it without another review.
       },
     );
     const detachSignals = manager.addSignalSink((signal, owner) => {
@@ -155,14 +164,11 @@ export class KnowledgePersistence {
         const bundle = runtime.knowledgeSnapshot();
         this.validate(runtime, bundle);
         store.saveKnowledge(runtime.thread, bundle, signal);
-        if (content?.decision === 'reconciliation-needed') {
+        if (content?.decision === 'reconciliation-needed')
           this.reconciliation.set(
             owner.threadId,
             content.reason ?? 'Durable knowledge needs publication reconciliation',
           );
-          runtime.thread.meta.status = 'waiting';
-          runtime.dispose();
-        }
       } catch (error) {
         this.quarantine(runtime.thread, error);
       }
@@ -194,16 +200,16 @@ export class KnowledgePersistence {
     }
   }
 
+  /** Withhold the thread's learning from here on; the thread keeps working. The first reason stands. */
   private quarantine(thread: Thread, error: unknown): void {
+    if (this.errors.has(thread.id)) return;
     const message = `Knowledge durability failure for ${thread.id}: ${error instanceof Error ? error.message : String(error)}`;
     this.errors.set(thread.id, message);
-    thread.meta.status = 'waiting';
-    thread.dispose();
     this.events.pushError(`knowledge:${thread.id}`, message);
-    console.error(`[Recovery] ${message}`);
+    console.error(`[Recovery] ${message}; learning withheld, the thread continues`);
   }
 
-  /** Why this thread's learning is quarantined, if it is. */
+  /** Why this thread's learning is withheld, if it is. */
   blocked(threadId: string): string | undefined {
     return this.errors.get(threadId);
   }

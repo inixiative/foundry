@@ -195,7 +195,7 @@ test('Zephyr causal fact reconstructs from the real journal and reaches the next
   await reconstructed.runtime.get('main')!.learningSettled();
 });
 
-test('failed knowledge writes quarantine the owning thread instead of continuing with uncommitted state', async () => {
+test('failed knowledge writes withhold learning without committing it, and the thread keeps working', async () => {
   const { make } = setup();
   const viewer = await make();
   viewer.localStore!.saveKnowledge = () => {
@@ -204,18 +204,20 @@ test('failed knowledge writes quarantine the owning thread instead of continuing
   expect((await send(viewer, 'main', 'work-before-disk-error')).status).toBe(200);
   // The successful work result is separate from its asynchronous learning outcome.
   await Bun.sleep(10);
-  expect(viewer.main.disposed).toBe(true);
+  expect(viewer.main.disposed).toBe(false);
   const state = (await (
     await viewer.app.request('/api/threads/main/knowledge')
   ).json()) as KnowledgeBody;
   expect(state.status).toBe('blocked');
   expect(state.error).toContain('simulated disk full');
-  expect((await send(viewer, 'main', 'must-not-run')).status).toBe(409);
-  expect(viewer.inputs).toHaveLength(1);
+  // The uncommitted knowledge never reaches the next turn.
+  expect((await send(viewer, 'main', 'keeps-working')).status).toBe(200);
+  expect(viewer.inputs).toHaveLength(2);
+  expect(viewer.inputs[1]).not.toContain('DURABLE-PRIVATE-SENTINEL');
 });
 
 for (const corruption of ['checksum', 'owner'] as const) {
-  test(`invalid saved knowledge (${corruption}) is retained for inspection but cannot reach execution`, async () => {
+  test(`invalid saved knowledge (${corruption}) is retained for inspection, never reaches execution, and the thread keeps working`, async () => {
     const { make, dir } = setup();
     const first = await make();
     expect((await send(first, 'main', 'learn-before-corruption')).status).toBe(200);
@@ -240,14 +242,17 @@ for (const corruption of ['checksum', 'owner'] as const) {
       await second.app.request('/api/threads/main/knowledge')
     ).json()) as KnowledgeBody;
     expect(state.status).toBe('blocked');
-    expect(second.main.disposed).toBe(true);
-    expect((await send(second, 'main', 'cannot-use-corruption')).status).toBe(409);
-    expect(second.inputs).toHaveLength(0);
+    expect(second.main.disposed).toBe(false);
+    expect((await send(second, 'main', 'runs-without-corruption')).status).toBe(200);
+    expect(second.inputs).toHaveLength(1);
+    expect(second.inputs[0]).not.toContain('DURABLE-PRIVATE-SENTINEL');
     // The durable "requested" review record (phase history) is not an outcome; count outcome records only.
-    expect(
-      second
-        .localStore!.learningHistory('main')
-        .filter((row) => (row.signal.content as { decision?: string }).decision !== 'requested'),
-    ).toHaveLength(1);
+    // The new turn's review is not admitted while learning is withheld, and says why.
+    const outcomes = second
+      .localStore!.learningHistory('main')
+      .map((row) => row.signal.content as { decision?: string; reason?: string })
+      .filter((content) => content.decision !== 'requested');
+    expect(outcomes.map((content) => content.decision)).toEqual(['learned', 'deferred']);
+    expect(outcomes[1]!.reason).toContain('not admitted');
   });
 }

@@ -329,7 +329,10 @@ test('M4: real SQLite commit failure preserves completed central output and the 
         .localStore!.learningHistory('a')
         .some((r) => (r.signal.content as any).decision === 'write-failed'),
     ).toBe(true);
-    expect(runtime.disposed).toBe(true);
+    // A Warden's storage failure withholds learning; the thread keeps working.
+    expect(runtime.disposed).toBe(false);
+    expect((await f.send('a', 'after-learning-storage-failure')).status).toBe(200);
+    expect(f.current.localStore!.knowledge('a')).toEqual(before);
     await f.checkpoint(
       'atomic knowledge failure preserves successful central completion and old knowledge',
     );

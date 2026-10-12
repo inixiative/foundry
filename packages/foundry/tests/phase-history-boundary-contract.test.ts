@@ -7,7 +7,7 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
 import { abstain, m0Scenario } from './helpers/m0-domain-loop';
 
-test('a configured request-journal failure must quarantine before admitting any reviewer', async () => {
+test('a configured request-journal failure withholds learning before admitting any reviewer and keeps the thread', async () => {
   const f = await m0Scenario({ review: () => abstain });
   const runtime = f.current.manager.get('a')!;
   const store = f.current.localStore!;
@@ -20,7 +20,7 @@ test('a configured request-journal failure must quarantine before admitting any 
     `);
     await f.send('a', 'write-failure', 'Continue');
     await runtime.learningSettled();
-    expect(runtime.disposed).toBe(true);
+    expect(runtime.disposed).toBe(false);
     expect(f.calls.filter((call) => call.phase === 'post')).toHaveLength(0);
     expect(
       store
