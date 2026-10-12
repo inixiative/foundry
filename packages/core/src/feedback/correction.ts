@@ -50,53 +50,88 @@ export interface CorrectionDetection {
   score: number;
 }
 
-/** Strongest first. Data, so every caller filters with exactly these. */
+/** Data, so every caller filters with exactly these. Tuned on a 19.8k-message scan against an Opus read. */
 export const CORRECTION_PATTERNS: Readonly<
   Record<Exclude<CorrectionSignal, 'interruption'>, RegExp>
 > = {
-  /** The person says this already failed: the strongest sign of a repeat. */
+  /** The person says this already failed. A bare "again" is handled by `AGAIN_CORRECTION`, not here. */
   repeat:
-    /\b(?:again|i thought we|didn'?t we|did(?:n'?t| not) (?:i|we) (?:say|tell|ask|agree|decide)|i (?:already )?(?:told|asked) you|once and for all|how many times|(?:keeps?|kept) (?:doing|adding|making|asking|forgetting|happening)|i keep (?:saying|telling|having|asking)|same (?:mistake|thing|lessons?|problem)|as i said|like i said|we(?:'ve| have) (?:talked|been over|discussed|decided)|over and over|who keeps|still (?:seeing|doing|not|using|adding))\b/i,
-  /** A standing instruction or a challenge to what the agent did. */
+    /\b(?:i thought we|didn'?t we|did(?:n'?t| not) (?:i|we) (?:say|tell|ask|agree|decide)|i (?:already )?(?:told|asked) you|once and for all|how many times|(?:keeps?|kept) (?:doing|adding|making|asking|forgetting|happening)|i keep (?:saying|telling|having|asking)|same (?:mistake|lessons?)|as i said|like i said|we(?:'ve| have) (?:talked|been over|discussed|decided)|over and over|who keeps|still (?:seeing|doing|using|adding)|gentle reminder|reminder:)/i,
+  /** A standing instruction, a challenge, a reuse hint or a verdict on what the agent did. */
   explicit:
-    /\b(?:from now on|going forward|in the future|always|never|remember (?:that|to|this)|make sure (?:you|to|that)|stop \w+ing|do not|don'?t (?:ever|make|add|do|use|ask|touch|create|build|write|need|be|put|bother)|please don'?t|you (?:should|shouldn'?t|need to|have to|must|can (?:just|always)|don'?t (?:need|have) to)|we (?:should(?:n'?t)?|don'?t|never|always)|should (?:just|not|never|always|be)|shouldn'?t|no need to|just (?:merge|use|do|call|fix|throw|delete|go|run|ship)|stop asking|why (?:would|did|are|do) you|why not just)\b/i,
+    /\b(?:from now on|going forward|in the future|always|never|remember (?:that|to|this)|make sure (?:you|to|that)|stop \w+ing|do not|don'?t (?:ever|make|add|do|use|ask|touch|create|build|write|need|be|put|bother)|please (?:don'?t|use|run|just)|you (?:should|shouldn'?t|need to|have to|must|can (?:just|always)|don'?t (?:need|have) to)|we (?:should(?:n'?t)?|don'?t|never|always)|should (?:just|not|never|always)|shouldn'?t|no need to|just (?:merge|use|do|call|fix|throw|delete|go|run|ship)|stop asking|why (?:would|did|are|do) (?:you|u)|why not just|why can'?t we just|get rid of|(?:is|are)n'?t needed|(?:does|do)n'?t make sense|i (?:really )?don'?t like|weird pattern|we (?:already )?have (?:a |an |the )?(?:native |existing |shared )?\w+(?: \w+)? (?:for|that|utils?|helpers?)|isn'?t there (?:already )?a|already (?:exists|have|has)|use (?:the )?(?:existing|internal|shared)|follow (?:what|how) \w+ (?:is doing|does)|are (?:you|u) assuming|did (?:you|u) (?:actually|read|check|test|run|verify)|i don'?t trust|have (?:you|u) (?:restarted|tested|run|checked|verified)|in both repos|backport|backprop|use (?:the )?logger)\b/i,
   /** A message that opens by pushing back (the Prospector's corrective openers). */
   opener:
-    /^\s*(?:no\b|no,|nope|don'?t|dont\b|stop\b|wait\b|wrong\b|not what|that'?s not|thats not|actually,?\s|instead\b|undo\b|revert\b|why (?:did|would|are|is|do) you|why not|what the (?:fuck|hell)|wtf|that'?s wrong|you'?re wrong|i said)/i,
+    /^\s*(?:no\b|no,|nope|don'?t|dont\b|stop\b|wait\b|wrong\b|not what|that'?s not|thats not|actually,?\s|instead\b|undo\b|revert\b|why (?:did|would|are|is|do) (?:you|u)|why not|what the (?:fuck|hell)|wtf|that'?s wrong|you'?re wrong|i said)/i,
 };
 
+/**
+ * "Again" marks a repeat only beside a negation or a challenge in the same sentence ("again, we
+ * shouldn't…", "not again"). Retries ("try it again", "run again") and filler don't count.
+ */
+export const AGAIN_CORRECTION = {
+  word: /\bagain\b/i,
+  retry:
+    /\b(?:try|run|do|check|show|send|ask|say|test|start|restart|look|read|load|open|build|deploy|push|pull|merge|call|post|go)(?: (?:it|that|this|them|me|the \w+))? again\b|^\W*again\W*$/i,
+  context:
+    /\b(?:don'?t|do not|not|never|shouldn'?t|stop|why|wrong|told|said|no longer|keep|still|same|we'?re|you'?re|you)\b/i,
+} as const;
+
+/** Measured precision per signal: openers hold best, interruptions worst. */
 const WEIGHT: Record<CorrectionSignal, number> = {
-  repeat: 0.9,
-  explicit: 0.7,
-  interruption: 0.6,
-  opener: 0.5,
+  opener: 0.8,
+  repeat: 0.7,
+  explicit: 0.6,
+  interruption: 0.5,
 };
 /** The agent ended on a question, so a bare "no" answers it rather than corrects it. */
 const ASKED = /\?\s*[)*`]*\s*$/;
 const INTERRUPTED = /^\s*\[Request interrupted by user/;
 const INTERRUPTED_MARKER = /^\s*\[Request interrupted by user[^\]]*\]\s*/;
 
+/** The person's own prose: pasted code, quotes and log lines are someone else's words. */
+export function proseOf(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(?:```|$)/g, ' ')
+    .split('\n')
+    .filter(
+      (line) =>
+        !/^\s*>/.test(line) &&
+        !/^\s*(?:\[?\d{4}-\d{2}-\d{2}[T ]\d|\d{1,2}:\d{2}(?::\d{2})?\s|[\w.-]+:\d+(?::\d+)?\s)/.test(
+          line,
+        ),
+    )
+    .join('\n');
+}
+
+function againPhrase(prose: string): string | undefined {
+  for (const sentence of prose.split(/(?<=[.!?\n])\s+/)) {
+    if (!AGAIN_CORRECTION.word.test(sentence) || AGAIN_CORRECTION.retry.test(sentence)) continue;
+    if (AGAIN_CORRECTION.context.test(sentence.replace(AGAIN_CORRECTION.word, ''))) return 'again';
+  }
+  return undefined;
+}
+
 export function detectCorrection(
   text: string,
   before = '',
   options: { interrupted?: boolean } = {},
 ): CorrectionDetection {
-  const signals: CorrectionSignal[] = [];
-  let phrase: string | undefined;
-  for (const signal of ['repeat', 'explicit', 'interruption', 'opener'] as const) {
-    if (signal === 'interruption') {
-      if (options.interrupted) signals.push(signal);
-      continue;
-    }
-    const match = CORRECTION_PATTERNS[signal].exec(text);
-    if (!match) continue;
-    signals.push(signal);
-    phrase ??= match[0].trim();
+  const prose = proseOf(text);
+  const found = new Map<CorrectionSignal, string | undefined>();
+  for (const signal of ['opener', 'repeat', 'explicit'] as const) {
+    const match = CORRECTION_PATTERNS[signal].exec(prose);
+    if (match) found.set(signal, match[0].trim());
   }
+  const again = againPhrase(prose);
+  if (again && !found.has('repeat')) found.set('repeat', again);
+  if (options.interrupted) found.set('interruption', undefined);
+  const signals = [...found.keys()].sort((a, b) => WEIGHT[b] - WEIGHT[a]);
   const [strongest] = signals;
   if (!strongest) return { hit: false, signals, score: 0 };
   let score = WEIGHT[strongest] + 0.1 * (signals.length - 1);
-  if (signals.length === 1 && strongest === 'opener' && ASKED.test(before)) score -= 0.3;
+  if (signals.length === 1 && strongest === 'opener' && ASKED.test(before)) score -= 0.4;
+  const phrase = found.get(strongest) ?? signals.map((signal) => found.get(signal)).find(Boolean);
   return {
     hit: true,
     signal: strongest,
@@ -129,6 +164,8 @@ export function extractCorrections(
   let before = '';
   let pendingInterruption = false;
   let secretsScrubbed = 0;
+  // An identical message resent within ten minutes is one correction, not a repeat.
+  const recent = new Map<string, number>();
   for (const turn of turns) {
     if (turn.role === 'assistant') {
       if (turn.text.trim()) before = turn.text;
@@ -139,6 +176,11 @@ export function extractCorrections(
     if (!text.trim()) continue;
     const detection = detectCorrection(text, before, { interrupted: pendingInterruption });
     pendingInterruption = false;
+    const key = text.toLowerCase().replace(/\s+/g, ' ').trim();
+    const at = Date.parse(turn.timestamp);
+    const sent = recent.get(key);
+    recent.set(key, at);
+    if (sent !== undefined && Number.isFinite(at) && at - sent < 600_000) continue;
     if (!detection.hit || !detection.signal || detection.score < minScore) continue;
     // Scrub before truncating, so a cut can't leave part of a secret unmatched.
     const scrubbedBefore = scrubSecrets(before);

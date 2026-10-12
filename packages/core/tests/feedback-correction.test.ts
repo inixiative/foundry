@@ -22,18 +22,30 @@ const agent = (text: string): TranscriptTurn => ({
 });
 
 describe('detectCorrection', () => {
-  test('a repeat marker outranks an instruction', () => {
+  test('"again" beside a negation is a repeat and outranks an instruction', () => {
     const result = detectCorrection("Again, don't make me track approvals. Just merge it.");
-    expect(result).toMatchObject({ hit: true, signal: 'repeat', phrase: 'Again' });
+    expect(result).toMatchObject({ hit: true, signal: 'repeat', phrase: 'again' });
     expect(result.signals).toEqual(['repeat', 'explicit']);
-    expect(result.score).toBe(1);
+    expect(result.score).toBe(0.8);
   });
 
-  test('standing instructions and challenges are explicit', () => {
+  test('a retry or filler "again" is not a repeat', () => {
+    expect(detectCorrection('Can you try it again?').hit).toBe(false);
+    expect(detectCorrection('ok again').hit).toBe(false);
+    expect(detectCorrection('Again we should not be doing composers').signals).toContain('repeat');
+  });
+
+  test('standing instructions, challenges and reuse hints are explicit', () => {
     expect(detectCorrection('From now on run the full check').signal).toBe('explicit');
-    expect(detectCorrection('Why would you add an approver id? The audit log has it').signal).toBe(
-      'explicit',
-    );
+    expect(detectCorrection('Ok. Why would you add an approver id?').signal).toBe('explicit');
+    expect(detectCorrection('we have native db utils for this').signal).toBe('explicit');
+    expect(detectCorrection('get rid of the wrapper').signal).toBe('explicit');
+  });
+
+  test('pasted code, quotes and log lines are not the person speaking', () => {
+    expect(detectCorrection('see this:\n```\n// never do this\n```').hit).toBe(false);
+    expect(detectCorrection('> you should always X\nthoughts?').hit).toBe(false);
+    expect(detectCorrection('2026-10-01T10:00:00 never retried\nwhat happened?').hit).toBe(false);
   });
 
   test('an opener counts only at the start', () => {
@@ -70,6 +82,16 @@ describe('extractCorrections', () => {
       correction: 'use a named export not default',
     });
     expect(corrections[0]!.before).toContain('util.ts');
+  });
+
+  test('an identical resend within ten minutes counts once', () => {
+    const at = (minute: number) => `2026-06-12T10:${String(minute).padStart(2, '0')}:00Z`;
+    const { corrections } = extractCorrections('s1', [
+      user('never push to main', { timestamp: at(0) }),
+      user('never push to main', { timestamp: at(5) }),
+      user('never push to main', { timestamp: at(30) }),
+    ]);
+    expect(corrections).toHaveLength(2);
   });
 
   test('a separate interruption record carries over to the next message', () => {
