@@ -157,6 +157,24 @@ export {
 // Observability
 export { EventStream, type SessionEvent, type StreamEvent } from './event-stream';
 export { type ExecuteHandler, type ExecuteMeta, Executor, type ExecutorConfig } from './executor';
+// Feedback: correction detection (the Prospector's), shared by Oracle, live capture and `foundry repeats`
+export {
+  CORRECTION_CATEGORIES,
+  CORRECTION_CLASSIFY_PROMPT,
+  CORRECTION_PATTERNS,
+  type CorrectionCategory,
+  type CorrectionClassification,
+  type CorrectionDetection,
+  type CorrectionEvent,
+  type CorrectionSignal,
+  correctionClassifyMessages,
+  correctionId,
+  detectCorrection,
+  extractCorrections,
+  parseCorrectionClassification,
+  scrubSecrets,
+  type TranscriptTurn,
+} from './feedback/correction';
 export {
   type FlowConfig,
   type FlowStage,
