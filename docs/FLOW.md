@@ -451,6 +451,28 @@ The middleware LLM sees this compact index + the message and says "pull auth-con
 
 When the router says "pull auth-api-docs," that layer gets hydrated (file I/O, not LLM) and injected into the context file.
 
+### Delivery: what a native session receives each turn
+
+A thread's context has three parts, and each reaches a native session (Claude Code, Codex) differently:
+
+| Part | Examples | Delivered |
+|---|---|---|
+| Stable | composed instructions (`instructions` layer), conventions, the executor's own prompt | once, in the session's base context |
+| Slowly changing | Warden thread knowledge, memory, thread-state; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
+| Per turn | Cartographer routing, Warden advice (the decoration) | every turn, with the user message |
+
+**The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions) at its current hash. It never receives the same revision twice in its conversation. The mechanics:
+
+- **Session start.** The provider starts the session with every standing part as its base context. On Claude this is `--append-system-prompt`, a system prompt Claude re-sends and caches on every request. On Codex the base is prepended to the first turn. The turn's report says `started`, and the delivery ledger is reset to exactly the base.
+- **Later turns.** The executor passes the ledger (`SessionDelivery.held`). The provider sends only the parts whose hash the session does not hold, each headed "current version; it replaces any earlier version", plus the per-turn text. The report lists what was `sent`, and `commitDelivery` records exactly that.
+- **Compaction** (`session_compacted`) clears the ledger. What lived only in the conversation is sent again. A Claude system prompt survives compaction, so base parts whose hash is unchanged are not re-sent. A Codex first-turn base does not survive it, so everything is sent again.
+- **Reset, resume, relaunch.** Any new native session process (a new thread, a daemon restart that resumes the binding, a host launch change) starts again from the current layers. It reports `started`, and the ledger follows.
+- **Layer change.** A changed layer (a settings edit, an edited CLAUDE.md, a learned interpretation) is a new hash, and it is delivered once as a delta.
+
+The provider (`providers/session-delivery.ts`) decides what to send, the Librarian's ledger is the record, and the turn's `DeliveryRecord.session` and `InjectionArtifact.sessionDelivery` show what was delivered. `providerMessages` stays what the executor handed the provider. Stateless API providers still receive every warm layer on every turn.
+
+**Measured** (`scripts/measure-warm-cache.ts`: Claude subscription, 10 turns, a 49KB composed instruction stack, a learning update before turn 5). Re-sending everything every turn (the old delivery) wrote 194k to 215k cache tokens and reached the 160k compaction threshold by turn 7. Delivering once with deltas wrote 11k to 43k tokens, most of it on the first turn, and context grew about 1k tokens a turn.
+
 ---
 
 ## Loop 2: Mid-Session Bridge (MCP)

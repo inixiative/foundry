@@ -271,6 +271,12 @@ export interface SessionAdapter {
   /** Recheck the owned source before every send; never silently rebind a warm process. */
   checkAuthentication?(session: HarnessSession): void;
   readonly runtime: string;
+  /**
+   * Where a session's base context lives. "system-prompt" (Claude `--append-system-prompt`) is
+   * re-sent with every request and survives compaction; "first-turn" is prepended to the first
+   * message and can be compacted away. Absent: "first-turn".
+   */
+  readonly baseContextPlacement?: 'system-prompt' | 'first-turn';
 
   /** Bind native lifecycle events to a thread; returned disposer releases ownership. */
   bindSignals?(threadId: string, signals: SignalBus): () => void;
@@ -530,6 +536,7 @@ export interface ClaudeCodeSessionAdapterConfig {
 
 export class ClaudeCodeSessionAdapter implements SessionAdapter {
   readonly runtime = 'claude-code';
+  readonly baseContextPlacement = 'system-prompt' as const;
   private _store: ExternalSessionStore;
   private _authentication?: NativeAuthenticationProvider;
   private _authLaunches = new WeakMap<HarnessSession, NativeAuthenticationLaunch>();

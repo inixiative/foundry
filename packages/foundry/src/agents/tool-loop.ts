@@ -92,13 +92,17 @@ export async function toolUseLoop(
   const conversation: LLMMessage[] = [...messages];
   let totalTokens: TokenCounts | undefined;
   let sequence = 0;
+  // A session provider's context split describes the first request only; followups carry the conversation.
+  let delivery: CompletionResult['delivery'];
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const result = await provider.complete(conversation, {
       ...opts,
+      ...(iteration > 0 ? { delivery: undefined } : {}),
       tools: true,
       toolDefinitions,
     });
+    if (iteration === 0) delivery = result.delivery;
 
     // Accumulate tokens
     if (result.tokens) {
@@ -110,6 +114,7 @@ export async function toolUseLoop(
       return {
         ...result,
         tokens: totalTokens,
+        ...(delivery ? { delivery } : {}),
       };
     }
 

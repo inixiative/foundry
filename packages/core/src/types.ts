@@ -114,6 +114,12 @@ export interface CompletionOpts {
    * cached prefix; others ignore it. Messages are sent unchanged either way.
    */
   stablePrefix?: string;
+  /**
+   * The executor's context split into standing parts and per-turn text. A provider that keeps a
+   * native session delivers standing parts once and then only what changed (session-delivery.ts);
+   * others ignore it and send the messages unchanged.
+   */
+  delivery?: import('./session-delivery').SessionDelivery;
 }
 
 export interface CompletionResult {
@@ -125,6 +131,8 @@ export interface CompletionResult {
   /** Tool calls requested by the LLM (present when finishReason is "tool_use"). */
   readonly toolCalls?: ToolCall[];
   readonly raw?: unknown;
+  /** What a session provider delivered when it used `CompletionOpts.delivery`. */
+  readonly delivery?: import('./session-delivery').SessionDeliveryReport;
 }
 
 export interface EmbeddingResult {

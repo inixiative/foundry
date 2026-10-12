@@ -110,6 +110,8 @@ export interface DeliveryRecord {
   }>;
   /** Layer ids committed to the delivery ledger. */
   readonly committed: string[];
+  /** What a session provider delivered (its base context and this turn's sent parts), when one ran. */
+  readonly session?: import('./session-delivery').SessionDeliveryReport;
   /**
    * How the turn treated learning still pending from earlier work:
    * `pending` means preparation continued immediately with committed knowledge.
@@ -143,6 +145,8 @@ export interface InjectionArtifact {
   readonly executorContext?: string;
   /** Initial provider messages, before native-runtime wrapping or tool followups. */
   readonly providerMessages?: LLMMessage[];
+  /** What a session provider delivered: its system prompt parts and the parts sent with this turn. */
+  readonly sessionDelivery?: import('./session-delivery').SessionDeliveryReport;
   readonly layers?: Array<
     LayerInstanceState & {
       id: string;

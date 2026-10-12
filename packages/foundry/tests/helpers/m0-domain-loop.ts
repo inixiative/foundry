@@ -19,6 +19,8 @@ import {
 import { ProjectRegistry } from '../../src/agents/project';
 import { buildAgents, ThreadFactory } from '../../src/agents/thread-factory';
 import { type LearningConfig, ThreadRuntimeManager } from '../../src/agents/thread-runtime';
+import type { SessionAdapter } from '../../src/providers/session-adapter';
+import { SessionBackedProvider } from '../../src/providers/session-backed';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 
@@ -89,6 +91,8 @@ export interface ScenarioOptions {
   learning?: LearningConfig;
   review?: (call: Call) => string | Promise<string>;
   failExecutor?: boolean;
+  /** Run the executor on a native session through this adapter (warm-cache delivery) instead of the controlled provider. */
+  session?: () => SessionAdapter;
 }
 
 /** No model calls. Production factory, tool loop, HTTP dispatch, runtime and SQLite;
@@ -198,7 +202,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
       calls.push(call);
       return call;
     };
-    const provider: LLMProvider = {
+    const controlled: LLMProvider = {
       id: 'controlled',
       async complete(messages, opts = {}) {
         const call = copyCall('central', messages, opts);
@@ -224,6 +228,13 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         return { model: 'controlled', content: result };
       },
     };
+    const provider: LLMProvider = options.session
+      ? new SessionBackedProvider({
+          id: 'controlled',
+          adapter: options.session(),
+          defaultModel: 'controlled',
+        })
+      : controlled;
     const llm: LLMProvider = {
       id: 'controlled-domain',
       async complete(messages, opts = {}) {

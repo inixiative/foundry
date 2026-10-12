@@ -167,7 +167,6 @@ export {
   type PipelineStep,
   type RequestContext,
 } from './harness';
-
 // Lifecycle Hooks (registry only — built-in hooks in @inixiative/foundry)
 export {
   type HookContext,
@@ -248,6 +247,15 @@ export { type RetryConfig, retryMiddleware } from './retry';
 export { type Route, type RouteHandler, Router, type RouterConfig } from './router';
 // Ownership scope — which thread/project owns a source read or tool call
 export { normalizeScope, type OwnershipScope } from './scope';
+export {
+  type DeliveredPart,
+  layerPart,
+  type SessionDelivery,
+  type SessionDeliveryReport,
+  type StandingPart,
+  standingPart,
+  standingParts,
+} from './session-delivery';
 // Signals
 export { type Signal, SignalBus, type SignalHandler, type SignalKind } from './signal';
 // Orchestration

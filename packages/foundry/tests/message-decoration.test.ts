@@ -6,6 +6,7 @@ import {
   Executor,
   type LLMMessage,
   type LLMProvider,
+  layerPart,
   type MessageDecoration,
   SignalBus,
 } from '@inixiative/foundry-core';
@@ -251,7 +252,7 @@ describe('parallel message decoration', () => {
     });
     const plan = await flow.preMessage('Prepare');
     const prepared = await flow.hydrateDelta(plan);
-    expect(prepared.pending).toEqual([{ id: 'security', hash: layers[0].hash }]);
+    expect(prepared.pending).toEqual([{ id: 'security', hash: layerPart(layers[0]).hash }]);
     expect(loaded).toEqual([]);
     expect(librarian.state.injectedLayers).toEqual([]);
 
@@ -259,7 +260,7 @@ describe('parallel message decoration', () => {
     await sleep(0);
     expect(loaded).toEqual(['security']);
     expect(librarian.state.injectedLayers.map((r) => [r.id, r.hash])).toEqual([
-      ['security', layers[0].hash],
+      ['security', layerPart(layers[0]).hash],
     ]);
   });
 });
@@ -469,7 +470,7 @@ describe('bounded routing and whole-plan deadlines', () => {
       deliveredCacheHash: layers[0].hash,
       revisionDrift: true,
     });
-    expect(prepared.pending).toEqual([{ id: 'security', hash: layers[0].hash }]);
+    expect(prepared.pending).toEqual([{ id: 'security', hash: layerPart(layers[0]).hash }]);
   });
 });
 

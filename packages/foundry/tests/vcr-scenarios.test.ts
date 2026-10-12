@@ -7,7 +7,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexPrimedSessions } from '@inixiative/agent-session';
-import { ActionQueue, ContextStack, Thread } from '@inixiative/foundry-core';
+import {
+  ActionQueue,
+  ContextStack,
+  type StandingPart,
+  standingPart,
+  Thread,
+} from '@inixiative/foundry-core';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -637,6 +643,77 @@ test(
       };
     });
     expect(out).toEqual({ native: CODEWORD, off: 'NONE', launches: 2 });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'warm cache: Claude starts with the standing context as its system prompt, then receives only a changed layer',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'warm-cache', async () => {
+      vcr.queue('worker', 'warm-cache');
+      const worker = new ProcessCassettes(vcr, 'worker');
+      const cwd = join(root(), 'project');
+      mkdirSync(cwd);
+      const adapter = new ClaudeCodeSessionAdapter({
+        store: new InMemoryExternalSessionStore(),
+        defaults: { spawn: worker.spawn, env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } },
+      });
+      const provider = new SessionBackedProvider({
+        id: 'worker',
+        adapter,
+        defaultModel: LIVE.claudeModel,
+        defaultCwd: cwd,
+      });
+      const standing = standingPart('instructions', `The standing codeword is ${CODEWORD}.`);
+      const learning = (word: string) =>
+        standingPart('learning', `The learned codeword is ${word}.`);
+      const ask = (question: string, part: StandingPart, held: Record<string, string>) =>
+        provider.complete(
+          [
+            { role: 'system', content: 'unused by a session provider given a delivery' },
+            {
+              role: 'user',
+              content: `Do not use any tools. Reply with exactly the ${question} codeword and nothing else.`,
+            },
+          ],
+          {
+            threadId: 'main',
+            cwd,
+            delivery: { standing: [standing, part], turn: 'Per-turn routing note.', held },
+          },
+        );
+      try {
+        const first = await ask('standing', learning('NONE'), {});
+        const held = Object.fromEntries(
+          first.delivery!.base.map((part) => [part.id, part.hash] as const),
+        );
+        const second = await ask('learned', learning('violet-anchor-7'), held);
+        held.learning = learning('violet-anchor-7').hash;
+        const third = await ask('standing', learning('violet-anchor-7'), held);
+        return {
+          answers: [first, second, third].map((r) => r.content.trim()),
+          sessions: [first, second, third].map((r) => r.delivery!.session),
+          sent: [first, second, third].map((r) => r.delivery!.sent.map((part) => part.id)),
+          systemPrompt: worker.launches[0]!.argv.includes('--append-system-prompt'),
+          standingResent: worker.launches[0]!.stdin.includes('The standing codeword'),
+          thirdReadsCache: (third.tokens?.cacheRead ?? 0) > 0,
+          launches: worker.launches.length,
+        };
+      } finally {
+        await adapter.releaseAll();
+      }
+    });
+    expect(out).toEqual({
+      answers: [CODEWORD, 'violet-anchor-7', CODEWORD],
+      sessions: ['started', 'held', 'held'],
+      sent: [[], ['learning'], []],
+      systemPrompt: true,
+      standingResent: false,
+      thirdReadsCache: true,
+      launches: 1,
+    });
   },
   LIVE_TIMEOUT,
 );

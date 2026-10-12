@@ -3,6 +3,11 @@ import { computeHash, REQUIRED_CONTEXT_BLOCKED } from './context-layer';
 import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';
 import { buildInjectionArtifact, type InjectionArtifact, type MessageDecoration } from './messages';
 import type { NativeEvidence, NativeObservation } from './native-evidence';
+import {
+  type SessionDelivery,
+  type SessionDeliveryReport,
+  standingParts,
+} from './session-delivery';
 import type { ToolCallObservation } from './tools';
 import type { LLMMessage } from './types';
 
@@ -39,6 +44,10 @@ export interface ExecuteMeta {
   recordProviderInput?: (messages: LLMMessage[]) => void;
   /** Capture prepared input even on failure; this is not delivery acknowledgment. */
   recordInjection?: (artifact: InjectionArtifact) => void;
+  /** The context split for a session provider; set by the executor for its handler. */
+  delivery?: SessionDelivery;
+  /** The handler reports what a session provider delivered (CompletionResult.delivery). */
+  recordDelivery?: (report: SessionDeliveryReport) => void;
 }
 
 export type ExecuteHandler<TPayload, TResult> = (
@@ -107,7 +116,15 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
         ]),
       ),
     });
+    // The same context split for session providers: standing parts (the assembled layers) and the
+    // per-turn decoration. `heldLayers` is the thread's delivery ledger, set by the flow middleware.
+    const delivery: SessionDelivery = {
+      standing: standingParts(base.blocks),
+      turn: (decoration?.blocks ?? []).map((block) => block.text).join('\n\n'),
+      held: { ...((meta?.annotations?.heldLayers as Record<string, string> | undefined) ?? {}) },
+    };
     let providerMessages: LLMMessage[] | undefined;
+    let sessionDelivery: SessionDeliveryReport | undefined;
     let providerBoundary: ProviderBoundaryReceipt | undefined;
     const capture = (): InjectionArtifact => ({
       ...injection,
@@ -118,6 +135,7 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
       providerBoundary,
       executorContext: context,
       providerMessages,
+      ...(sessionDelivery ? { sessionDelivery } : {}),
       layers,
       ...(plan !== undefined ? { plan } : {}),
     });
@@ -182,6 +200,10 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     try {
       output = await this._handler(context, payload, {
         ...meta,
+        delivery,
+        recordDelivery: (report) => {
+          sessionDelivery = structuredClone(report);
+        },
         recordNative: (evidence) => {
           if (recording) {
             native = evidence;

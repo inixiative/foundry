@@ -219,7 +219,7 @@ Nothing is ACP-specific: every point applies equally to viewer turns, because th
 
 ### 5.1 Pre-turn injection
 
-Unchanged. `flow.prepare` starts early, in parallel with classify and route (`thread-runtime.ts:905-915`); `preMessage` → `hydrateDelta` follows (`pf/agents/flow-orchestrator.ts:441,846`); the decoration and every warm layer go into the native turn as `# System Context` text (`pf/providers/session-backed.ts:885-899`); `commitDelivery` is gated on `providerMessages`; a pre-message failure is non-fatal.
+Unchanged. `flow.prepare` starts early, in parallel with classify and route (`thread-runtime.ts:905-915`); `preMessage` → `hydrateDelta` follows (`pf/agents/flow-orchestrator.ts:441,846`); the native session holds the standing layers in its base context, and each turn carries the decoration plus only the layers whose hash changed, as `# System Context` text (FLOW.md "Delivery", `pf/providers/session-delivery.ts`); `commitDelivery` records what the provider reports it delivered; a pre-message failure is non-fatal.
 
 **Host instruction wrappers (slice 2).** T3 wraps prompts for ACP agents as `<t3_code_instructions>…</t3_code_instructions>\n\n<user_request>…</user_request>` (`t3:packages/provider-core/src/server/orchestrationInstructions.ts:93`). The prompt reaches the native agent verbatim. Before feedback capture and classification, known wrappers are stripped into turn metadata, so a host's instructions never count as Aron's words.
 

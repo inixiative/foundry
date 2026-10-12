@@ -2,6 +2,7 @@ import type { HarnessSession } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
+  type DeliveredPart,
   freezeEvidence,
   type LLMMessage,
   type LLMProvider,
@@ -17,6 +18,7 @@ import {
 import type { ThreadToolGate } from '../turns/tool-gate';
 import { projectNative } from './native-evidence';
 import type { ConstructionBinding, SessionAdapter } from './session-adapter';
+import { baseContextOf, type SessionTurn, sessionTurn } from './session-delivery';
 import type { ThreadLaunchSettings } from './thread-launch';
 
 export const DECISION_CONTEXT =
@@ -122,6 +124,10 @@ export class SessionBackedProvider implements LLMProvider {
   private _uninspectable = new WeakSet<HarnessSession>();
   private _released = new WeakSet<HarnessSession>();
   private _settled = new WeakSet<object>();
+  /** The standing parts each executor session's base context carries (its system prompt for Claude). */
+  private _bases = new WeakMap<HarnessSession, readonly DeliveredPart[]>();
+  /** Sessions that completed a delivered turn; until then the thread's ledger belongs to an earlier session. */
+  private _delivered = new WeakSet<HarnessSession>();
   private _notAdmitted = new WeakSet<object>();
   private _attempted = new WeakSet<object>();
   private _observations = new WeakMap<HarnessSession, Map<string, NativeObservation>>();
@@ -425,6 +431,7 @@ export class SessionBackedProvider implements LLMProvider {
       }
       throw error;
     }
+    const delivery = textOnly ? undefined : opts?.delivery;
     const maxTurns = textOnly ? 1 : (opts?.maxTurns ?? null);
     if (maxTurns !== null && (!Number.isSafeInteger(maxTurns) || maxTurns <= 0))
       throw Error('maxTurns must be a positive safe integer or null');
@@ -446,6 +453,12 @@ export class SessionBackedProvider implements LLMProvider {
           : {}),
       },
       source,
+      delivery
+        ? {
+            text: baseContextOf(delivery),
+            parts: delivery.standing.map(({ id, hash }) => ({ id, hash })),
+          }
+        : undefined,
     );
     try {
       this._adapter.checkAuthentication?.(session);
@@ -465,7 +478,16 @@ export class SessionBackedProvider implements LLMProvider {
     calls.add(call);
     const bridge = this._bridges.get(session);
     bridge?.check();
-    const prompt = formatMessagesForNativeSession(messages);
+    // Warm-cache delivery: standing context lives in the session's base context; a turn carries only
+    // what the session does not hold, plus the per-turn context.
+    const turn: SessionTurn | undefined = delivery
+      ? sessionTurn(delivery, messages, {
+          base: this._bases.get(session) ?? [],
+          started: !this._delivered.has(session),
+          placement: this._adapter.baseContextPlacement ?? 'first-turn',
+        })
+      : undefined;
+    const prompt = formatMessagesForNativeSession(turn?.messages ?? messages);
     // Native work can outlive a ten-minute observation window. Zero disables
     // the session engine's implicit deadline; auxiliaries remain bounded.
     const protocol = session as HarnessSession & { admissionProtocol?: string };
@@ -655,6 +677,7 @@ export class SessionBackedProvider implements LLMProvider {
     });
     const completion: CompletionResult = {
       native: completionNative,
+      ...(turn ? { delivery: turn.report } : {}),
       content: result.content,
       // The model Foundry requested for this session. Native acknowledgment, when
       // the engine emitted one, is reported separately as raw.nativeModel.
@@ -684,6 +707,7 @@ export class SessionBackedProvider implements LLMProvider {
         },
       },
     };
+    if (turn) this._delivered.add(session);
     if (ownTerminal || native.nativeOutcome !== 'unknown') this._settled.add(completion);
     if (native.dispatch === 'attempted') this._attempted.add(completion);
     return completion;
@@ -754,6 +778,8 @@ export class SessionBackedProvider implements LLMProvider {
       toolPolicyIdentity?: string;
     },
     source?: NativeBridgeSource,
+    /** The executor's base context, used only when this call starts the session. */
+    base?: { text: string; parts: readonly DeliveredPart[] },
   ): Promise<HarnessSession> {
     const key = JSON.stringify([cwd, threadId]);
     const existing = this._sessions.get(key);
@@ -775,7 +801,7 @@ export class SessionBackedProvider implements LLMProvider {
         this._bridgeSources.get(key) === source
       )
         return this._relaunch(key, existing, () =>
-          this._getSession(threadId, cwd, requested, source),
+          this._getSession(threadId, cwd, requested, source, base),
         );
       const differences = fields
         .filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0))
@@ -834,12 +860,17 @@ export class SessionBackedProvider implements LLMProvider {
           model: requested.requestedModel,
           ...(bridge ? { nativeBridge: bridge } : {}),
           ...(requested.maxTurns !== undefined ? { maxTurns: requested.maxTurns } : {}),
-          ...(requested.textOnly ? { tools: false, baseContext: DECISION_CONTEXT } : {}),
+          ...(requested.textOnly
+            ? { tools: false, baseContext: DECISION_CONTEXT }
+            : base?.text
+              ? { baseContext: base.text }
+              : {}),
           ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
           ...(host?.effort ? { effort: host.effort } : {}),
           ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
           ...(gate ? { toolGate: gate.gate, structuralRules: gate.hasRules() } : {}),
         });
+        if (!requested.textOnly) this._bases.set(session, base?.parts ?? []);
         if (bridge) this._bridges.set(session, bridge);
         const observations = new Map<string, NativeObservation>();
         this._observations.set(session, observations);

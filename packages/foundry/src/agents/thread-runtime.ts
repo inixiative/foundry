@@ -1000,6 +1000,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           warn(`  [flow:${thread.id}] pre-message failed: ${(err as Error).message}`);
         }
 
+        // The delivery ledger: what this thread's native session holds, so a session provider sends
+        // only standing context the session lacks (Executor → SessionDelivery.held).
+        ctx.annotations.heldLayers = Object.fromEntries(
+          this.librarian.state.injectedLayers.map((record) => [record.id, record.hash]),
+        );
         const result = await next();
 
         // Historical phase record carried on the turn's own result meta (the journalled agent message):
@@ -1021,6 +1026,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         // the plan keeps what was assessed, and drift between them is explicit.
         const artifact = result.meta?.injection as InjectionArtifact | undefined;
         const plan = ctx.annotations.injectionPlan as InjectionPlan | undefined;
+        // A session provider reports what it delivered: a session that started holds its base
+        // context and nothing from an earlier session; otherwise it now also holds what was sent.
+        const session = artifact?.providerMessages ? artifact.sessionDelivery : undefined;
+        const commitSession = async () => {
+          if (!session) return undefined;
+          if (session.session === 'started') this.librarian.clearInjectionLedger();
+          return flow.commitDelivery({
+            layers: [...(session.session === 'started' ? session.base : []), ...session.sent],
+          });
+        };
         if (prepared && plan && artifact?.providerMessages && artifact.layers) {
           // What each participant assessed, per layer it owns: the configured cache by hash, and its own
           // thread understanding by hash AND revision. The delivered side comes from the layer's own version
@@ -1071,19 +1086,30 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               };
             });
           const committed =
-            layers.length > 0
+            (await commitSession()) ??
+            (layers.length > 0
               ? await flow.commitDelivery({
                   layers: layers.map((l) => ({ id: l.id, hash: l.deliveredHash })),
                 })
-              : [];
-          const delivery: DeliveryRecord = { layers, committed, learningBarrier: barrier };
+              : []);
+          const delivery: DeliveryRecord = {
+            layers,
+            committed,
+            ...(session ? { session } : {}),
+            learningBarrier: barrier,
+          };
           return { ...result, meta: { ...(result.meta ?? {}), delivery, phases: phases() } };
         }
         return {
           ...result,
           meta: {
             ...(result.meta ?? {}),
-            delivery: { layers: [], committed: [], learningBarrier: barrier },
+            delivery: {
+              layers: [],
+              committed: (await commitSession()) ?? [],
+              ...(session ? { session } : {}),
+              learningBarrier: barrier,
+            },
             phases: phases(),
           },
         };

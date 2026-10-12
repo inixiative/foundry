@@ -22,6 +22,7 @@ import {
   type Route,
   Router,
   type SourceSelectionReport,
+  standingPart,
   Thread,
   type ThreadConfig,
   type TokenTracker,
@@ -664,6 +665,16 @@ function buildAgent(
             { role: 'user', content: payload },
           ];
           meta?.recordProviderInput?.(messages);
+          // For session providers: the layers and this agent's own instructions are standing parts.
+          const delivery = meta?.delivery
+            ? {
+                ...meta.delivery,
+                standing: [
+                  ...meta.delivery.standing,
+                  standingPart(`agent:${id}`, systemParts.slice(1).join('\n\n')),
+                ],
+              }
+            : undefined;
           // Owned public native tool events feed the dispatch's ordinary tool observation channel
           // (the same one the local tool loop uses), so post-review input sees what the native
           // engine ran. The raw journal write comes first and is independent of this projection.
@@ -713,6 +724,7 @@ function buildAgent(
                 dispatchId: meta?.dispatchId,
                 onToolObservation: meta?.observeTool,
                 maxIterations: 10,
+                ...(delivery ? { delivery } : {}),
                 onToolCall: (name, input, resultStr) => {
                   console.log(
                     `    [${id}] tool: ${name}(${Object.values(input)
@@ -731,6 +743,7 @@ function buildAgent(
                 });
               }
               if (result.native) meta?.recordNative?.(result.native);
+              if (result.delivery) meta?.recordDelivery?.(result.delivery);
               return result.content;
             } else if (meta?.onDelta && typeof deps.provider.stream === 'function') {
               // Streaming path — forward text deltas to the sink, accumulate
@@ -767,8 +780,10 @@ function buildAgent(
                 nativeObservation,
                 cwd: meta?.cwd,
                 threadId: meta?.threadId,
+                ...(delivery ? { delivery } : {}),
               });
               if (result.native) meta?.recordNative?.(result.native);
+              if (result.delivery) meta?.recordDelivery?.(result.delivery);
               return result.content;
             }
           } catch (err) {

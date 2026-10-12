@@ -16,13 +16,13 @@
 //                  versus delivered revisions separately
 //   5. Commit    — commitDelivery records what the executor actually received
 //
-// Delivery model (read this before changing hydration):
-//   The executor assembles every warm layer on every turn. The ledger's
-//   `skipped` classification is therefore informational for stateless
-//   providers, which need the full context re-sent, and only becomes an
-//   omission instruction once a stateful native session path can prove the
-//   session still holds that revision. Do not drop layers from the executor
-//   context on the strength of the ledger alone.
+// Delivery model (read this before changing hydration; FLOW.md "Delivery"):
+//   A native session holds its context. It starts with every standing part (warm layers and the
+//   executor's instructions) in its base context, Claude's system prompt; after that a turn carries
+//   only the parts whose hash the session does not hold, keyed by the ledger, plus the per-turn
+//   decoration. The session provider reports what it delivered and the ledger commits exactly
+//   that; a started session resets it, compaction clears it. Stateless providers still receive
+//   every warm layer on every turn, so for them `skipped` stays informational.
 //
 // Timeouts are not cancellations. A timed-out route or assessment is still
 // running against its provider; the plan records it as outstanding and the
@@ -39,6 +39,7 @@ import {
   copyMessageIdentity,
   type LayerState,
   type LogicalMessageIdentity,
+  layerPart,
   type MessageDecoration,
   newId,
   type ParticipantRequest,
@@ -888,14 +889,16 @@ export class FlowOrchestrator {
       });
 
       const prev = ledgerMap.get(id);
+      // The ledger keys a layer by the hash of the part the executor assembles (prompt + content).
+      const part = layerPart(layer);
 
-      if (prev && prev.hash === layer.hash) {
+      if (prev && prev.hash === part.hash) {
         skipped.push(id);
         continue;
       }
 
       parts.push(layer.content);
-      pending.push({ id, hash: layer.hash });
+      pending.push({ id, hash: part.hash });
 
       if (prev) {
         reinjected.push(id);
