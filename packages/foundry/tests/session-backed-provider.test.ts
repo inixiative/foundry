@@ -10,6 +10,7 @@ import type {
 import limitTerminal from '../../../fixtures/harness-qa/native/claude-limit-terminal.json';
 import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
+import { ThreadLaunchSettings } from '../src/providers/thread-launch';
 
 class FakeSession implements HarnessSession {
   alive = false;
@@ -237,4 +238,67 @@ test('warm native authentication refusal is classified as not admitted without a
   expect(error).toBeInstanceOf(Error);
   expect(adapter.sessions[0].sent).toHaveLength(1);
   expect(provider.completionLifecycle.admission?.({ error })).toBe('not-admitted');
+});
+
+test("a host's launch change relaunches the idle executor session on the next turn, auxiliaries untouched", async () => {
+  const adapter = new FakeAdapter() as FakeAdapter & {
+    releaseIdleSession(session: HarnessSession): Promise<'released'>;
+  };
+  const create = adapter.createSession.bind(adapter);
+  // Each turn reaches its native terminal, so the session is idle between turns.
+  adapter.createSession = async (opts) => {
+    const session = (await create(opts)) as FakeSession;
+    const send = session.send.bind(session);
+    session.send = async (message, options) => ({
+      ...(await send(message, options)),
+      nativeOutcome: 'completed',
+    });
+    return session;
+  };
+  const released: HarnessSession[] = [];
+  adapter.releaseIdleSession = async (session) => {
+    released.push(session);
+    session.kill();
+    return 'released';
+  };
+  const launch = new ThreadLaunchSettings();
+  const gate = () => ({ behavior: 'allow' as const });
+  const provider = new SessionBackedProvider({
+    id: 'claude-code',
+    adapter,
+    defaultModel: 'fable',
+    launch,
+    toolGate: (threadId) => (threadId === 'thread' ? gate : undefined),
+  });
+  await provider.complete([{ role: 'user', content: 'first' }], { threadId: 'thread' });
+  expect(adapter.created[0]).toMatchObject({ model: 'fable', toolGate: gate });
+  expect(adapter.created[0].permissionMode).toBeUndefined();
+
+  launch.update('thread', {
+    permissionMode: 'default',
+    model: 'claude-opus-5-5',
+    effort: 'high',
+    mcpServers: [{ name: 'paseo', command: 'paseo', args: ['mcp'], env: [] }],
+  });
+  await provider.complete([{ role: 'user', content: 'second' }], { threadId: 'thread' });
+  expect(released).toEqual([adapter.sessions[0]]);
+  expect(adapter.created[1]).toMatchObject({
+    model: 'claude-opus-5-5',
+    permissionMode: 'default',
+    effort: 'high',
+    mcpServers: [{ name: 'paseo', command: 'paseo', args: ['mcp'], env: [] }],
+    toolGate: gate,
+  });
+  expect(adapter.sessions[1].sent).toHaveLength(1);
+  expect(provider.warmProfile('thread')).toMatchObject({
+    requestedModel: 'claude-opus-5-5',
+    launchRevision: 1,
+  });
+
+  // An unchanged launch reuses the warm session; an auxiliary never gets the host's settings or gate.
+  await provider.complete([{ role: 'user', content: 'third' }], { threadId: 'thread' });
+  expect(adapter.created).toHaveLength(2);
+  await provider.complete([{ role: 'user', content: 'decide' }], { threadId: 'thread:aux:route' });
+  expect(adapter.created[2].permissionMode).toBeUndefined();
+  expect(adapter.created[2].toolGate).toBeUndefined();
 });

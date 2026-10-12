@@ -733,11 +733,24 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       return c.json({ error: 'action is required' }, 400);
     }
 
+    const prompt = actionQueue.get(id);
     const ok = actionQueue.resolve(id, body.action, {
       by: 'human',
       input: typeof body.input === 'string' ? body.input : undefined,
     });
-    if (!ok) return c.json({ error: 'Prompt not found or already resolved.' }, 404);
+    if (!ok || !prompt) return c.json({ error: 'Prompt not found or already resolved.' }, 404);
+    // "Always": the same answer for this tool in this thread from now on (a thread-scoped policy).
+    if (body.always === true) {
+      const action = body.action;
+      const tool = prompt.meta?.toolName;
+      actionQueue.addPolicy((next) =>
+        next.threadId === prompt.threadId &&
+        next.capability === prompt.capability &&
+        next.meta?.toolName === tool
+          ? { by: 'policy', action, timestamp: Date.now() }
+          : null,
+      );
+    }
 
     return c.json({ ok: true, promptId: id, action: body.action });
   });

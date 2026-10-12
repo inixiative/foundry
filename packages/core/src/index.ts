@@ -72,6 +72,7 @@ export {
   type GateContext,
   type PermissionLevel,
   type PermissionPolicy,
+  permissionLevel,
   RESTRICTED_POLICY,
 } from './capability';
 export {

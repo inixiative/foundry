@@ -276,6 +276,13 @@ export class TurnService {
     return { ok: true, turnId, threadId, queued, settled };
   }
 
+  /** The turn running on a thread now (dequeued and not settled), if any. */
+  runningTurn(threadId: string): string | null {
+    for (const [turnId, state] of this.live)
+      if (state.threadId === threadId && state.phase === 'running') return turnId;
+    return null;
+  }
+
   /** Stop a turn: cancel it before native dispatch, or ask the runtime to stop it after. */
   async interrupt(threadId: string, turnId: string): Promise<InterruptResult> {
     const state = this.live.get(turnId);

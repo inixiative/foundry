@@ -65,6 +65,8 @@ export interface PromptOpts {
   urgency?: PromptUrgency;
   /** Auto-expire after this many ms. Resolves as rejected. */
   timeoutMs?: number;
+  /** Withdraws the prompt (the asker no longer needs an answer): it expires, resolved rejected by policy. */
+  signal?: AbortSignal;
   meta?: Record<string, unknown>;
 }
 
@@ -159,24 +161,21 @@ export class ActionQueue {
     // Register the waiter before notifying: a listener may resolve synchronously.
     const settled = new Promise<ActionResolution>((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const expire = (by: ActionResolution['by']) => {
+        if (prompt.status !== 'pending') return;
+        if (timer) clearTimeout(timer);
+        const resolution: ActionResolution = { by, action: 'rejected', timestamp: Date.now() };
+        prompt.status = 'expired';
+        prompt.resolution = resolution;
+        this._waiters.delete(id);
+        resolve(resolution);
+        this._settled(prompt);
+      };
 
-      if (opts.timeoutMs) {
-        timer = setTimeout(() => {
-          if (prompt.status !== 'pending') return;
-          const resolution: ActionResolution = {
-            by: 'timeout',
-            action: 'rejected',
-            timestamp: Date.now(),
-          };
-          prompt.status = 'expired';
-          prompt.resolution = resolution;
-          this._waiters.delete(id);
-          resolve(resolution);
-          this._settled(prompt);
-        }, opts.timeoutMs);
-      }
-
+      if (opts.timeoutMs) timer = setTimeout(() => expire('timeout'), opts.timeoutMs);
       this._waiters.set(id, { resolve, timer });
+      if (opts.signal?.aborted) queueMicrotask(() => expire('policy'));
+      else opts.signal?.addEventListener('abort', () => expire('policy'), { once: true });
     });
 
     // Notify listeners (viewer badge, event stream, etc.)

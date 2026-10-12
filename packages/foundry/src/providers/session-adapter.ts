@@ -32,18 +32,23 @@ import {
   CodexAppServerSession,
   CodexSession,
   type CodexSessionConfig,
+  codexPermissions,
   type HarnessSession,
   type SessionEvent,
+  type ToolGate,
 } from '@inixiative/agent-session';
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import {
   appServerBridgeConfiguration,
+  appServerClientMcpConfiguration,
+  withClientMcpServers,
   withIsolatedFixture,
   withNativeBridge,
 } from './native-launch';
 import { nativeTextEnvironment } from './native-text-environment';
+import type { ClientMcpServer, EffortLevel, PermissionMode } from './thread-launch';
 
 // ---------------------------------------------------------------------------
 // ExternalSessionStore — persists (threadId, runtime) → externalSessionId
@@ -225,6 +230,14 @@ export interface CreateSessionOpts {
    * configuration, not native acknowledgment of the model that actually ran.
    */
   model?: string;
+  /** The host's permission mode; absent keeps the adapter's default (full access). */
+  permissionMode?: PermissionMode;
+  /** The host's effort; an authentication-assigned effort wins. */
+  effort?: EffortLevel;
+  /** The host's MCP servers, beside Foundry's own bridge. Secrets stay in the process env. */
+  mcpServers?: readonly ClientMcpServer[];
+  /** Per-call tool decisions (structural denies, asks); registered before the session starts. */
+  toolGate?: ToolGate;
 }
 
 /**
@@ -622,12 +635,19 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
                 env: nativeTextEnvironment(launch?.env ?? options.env),
               },
             )
-          : (opts.tools === false ? restrictedSpawn : defaultSpawn)(
-              opts.nativeBridge
-                ? withNativeBridge(launch?.argv ?? cmd, 'claude', opts.nativeBridge)
-                : (launch?.argv ?? cmd),
-              { ...options, env: launch?.env ?? options.env },
-            );
+          : (() => {
+              const client = withClientMcpServers(
+                launch?.argv ?? cmd,
+                launch?.env ?? options.env,
+                opts.tools === false ? [] : (opts.mcpServers ?? []),
+              );
+              return (opts.tools === false ? restrictedSpawn : defaultSpawn)(
+                opts.nativeBridge
+                  ? withNativeBridge(client.argv, 'claude', opts.nativeBridge)
+                  : client.argv,
+                { ...options, env: client.env },
+              );
+            })();
       } catch (error) {
         auth?.release();
         throw error;
@@ -652,11 +672,16 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
         : opts.model !== undefined
           ? { model: opts.model }
           : {}),
-      ...(auth?.effort ? { effort: auth.effort } : {}),
+      ...((auth?.effort ?? opts.effort) ? { effort: auth?.effort ?? opts.effort } : {}),
       // The candidate accepts null as the native optional/unbounded setting.
       // Registry legacy types do not yet describe this additive representation.
       ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns as number } : {}),
-      ...(opts.tools === false || fixture ? { permissionMode: 'dontAsk' } : {}),
+      ...(opts.tools === false || fixture
+        ? { permissionMode: 'dontAsk' }
+        : {
+            ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+            ...(opts.toolGate ? { toolGate: true } : {}),
+          }),
       spawn: trackedSpawn,
       cwd: fixture ? opts.nativeBridge!.fixtureCwd! : opts.cwd,
       baseContext: opts.baseContext,
@@ -671,6 +696,11 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     )
       throw Error('Native authentication requires the prewrite-capable agent-session package');
     if (auth) this._authLaunches.set(session, auth);
+    if (opts.toolGate && opts.tools !== false && !fixture) {
+      if (!session.onToolRequest)
+        throw Error('Installed agent-session lacks onToolRequest; no process started');
+      session.onToolRequest(opts.toolGate);
+    }
     this._constructions.set(
       session,
       Object.freeze({
@@ -888,6 +918,15 @@ export class CodexSessionAdapter implements SessionAdapter {
         'Codex MCP adapter cannot enforce text-only sessions; use an explicitly configured decision provider until native policy support is implemented',
       );
     }
+    if (this._engine === 'mcp') {
+      // The MCP engine has no approval channel and runs with approvals and sandbox off.
+      if (opts.permissionMode && opts.permissionMode !== 'bypassPermissions')
+        throw Error(
+          `Codex's MCP engine runs with full access only; the ${opts.permissionMode} mode needs the app-server engine`,
+        );
+      if (opts.mcpServers?.length)
+        throw Error('Client MCP servers on Codex need the app-server engine');
+    }
     const auth = await this._authentication?.prepare(opts.threadId, 'codex');
     const bindingId = auth?.bindingId ?? opts.threadId;
     const existing = await this._store.load(bindingId, this.runtime);
@@ -905,9 +944,13 @@ export class CodexSessionAdapter implements SessionAdapter {
             onThreadReady: async (id: string) => {
               await this._store.save(bindingId, this.runtime, id);
             },
-            config: opts.nativeBridge
-              ? appServerBridgeConfiguration(opts.nativeBridge, this._appConfig)
-              : this._appConfig,
+            config: appServerClientMcpConfiguration(
+              opts.mcpServers ?? [],
+              opts.nativeBridge
+                ? appServerBridgeConfiguration(opts.nativeBridge, this._appConfig)
+                : this._appConfig,
+            ),
+            ...(opts.permissionMode ? codexPermissions(opts.permissionMode) : {}),
             ...(opts.nativeBridge
               ? {
                   requiredMcpServer: {
@@ -957,11 +1000,19 @@ export class CodexSessionAdapter implements SessionAdapter {
         : opts.model !== undefined
           ? { model: opts.model }
           : {}),
-      ...(auth?.effort ? { effort: auth.effort } : {}),
+      ...((auth?.effort ?? opts.effort) ? { effort: auth?.effort ?? opts.effort } : {}),
       cwd: opts.cwd,
       baseContext: opts.baseContext,
       externalSessionId: existing ?? undefined,
     });
+    // Codex asks only under an approval policy other than `never` (default, acceptEdits); it has no pre-use stage.
+    if (
+      opts.toolGate &&
+      session instanceof CodexAppServerSession &&
+      opts.permissionMode &&
+      codexPermissions(opts.permissionMode).approvalPolicy !== 'never'
+    )
+      session.onToolRequest(opts.toolGate);
     if (
       this._engine === 'app-server' &&
       (session as HarnessSession & { appServerProtocol?: string }).appServerProtocol !==

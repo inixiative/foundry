@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import type { ToolGate } from '@inixiative/agent-session';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import { NativeAuthentication } from './providers/native-authentication';
@@ -55,6 +56,7 @@ import {
   type SessionAdapter,
   SessionBackedProvider,
 } from './providers';
+import { ThreadLaunchSettings } from './providers/thread-launch';
 import { DOCS_ADVISE_PROMPT } from './setup/scan-docs';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
@@ -213,6 +215,14 @@ for (const project of Object.values(config.projects)) {
 // Create LLM provider
 // ---------------------------------------------------------------------------
 
+// What hosts chose per thread, and each thread's tool gate (bound once the viewer exists).
+const threadLaunch = new ThreadLaunchSettings();
+let toolGateFor: ((threadId: string) => ToolGate | undefined) | undefined;
+const hostSettings = {
+  launch: threadLaunch,
+  toolGate: (threadId: string) => toolGateFor?.(threadId),
+};
+
 function createProvider(config: FoundryConfig): {
   provider: LLMProvider;
   sessionAdapter?: SessionAdapter;
@@ -297,6 +307,7 @@ function createProvider(config: FoundryConfig): {
           id: 'claude-code',
           adapter: sessionAdapter,
           defaultModel: config.defaults.model,
+          ...hostSettings,
         }),
       };
     }
@@ -319,6 +330,7 @@ function createProvider(config: FoundryConfig): {
           id: 'codex',
           adapter: sessionAdapter,
           defaultModel: config.defaults.model,
+          ...hostSettings,
         }),
       };
     }
@@ -761,7 +773,9 @@ const viewer = await startViewer({
   actionQueue,
   assistTools: tools,
   acpCapability: acpLaunch?.capability,
+  threadLaunch,
 });
+toolGateFor = viewer.toolGate;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

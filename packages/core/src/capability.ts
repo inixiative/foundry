@@ -133,6 +133,42 @@ export interface GateContext {
   meta?: Record<string, unknown>;
 }
 
+/** The level a policy gives a capability, without prompting: what CapabilityGate checks. */
+export function permissionLevel(
+  policy: PermissionPolicy,
+  capability: Capability,
+  ctx?: Partial<GateContext>,
+): PermissionLevel {
+  // Explicit capability override
+  const explicit = policy.capabilities[capability];
+  if (explicit) return explicit;
+
+  // Cost threshold check for LLM calls
+  if (
+    capability === 'llm:call' &&
+    policy.costThreshold != null &&
+    ctx?.meta?.estimatedCost != null
+  ) {
+    if ((ctx.meta.estimatedCost as number) > policy.costThreshold) {
+      return 'prompt';
+    }
+  }
+
+  // Protected paths check for file ops
+  if (
+    (capability === 'file:write' || capability === 'file:delete') &&
+    policy.protectedPaths?.length &&
+    ctx?.meta?.path
+  ) {
+    const path = ctx.meta.path as string;
+    if (policy.protectedPaths.some((p) => path.includes(p))) {
+      return 'prompt';
+    }
+  }
+
+  return policy.defaults;
+}
+
 export class CapabilityGate {
   private _policy: PermissionPolicy;
   private _queue: ActionQueue;
@@ -201,34 +237,7 @@ export class CapabilityGate {
   // -- Internal --
 
   private _resolve(capability: Capability, ctx?: GateContext): PermissionLevel {
-    // Explicit capability override
-    const explicit = this._policy.capabilities[capability];
-    if (explicit) return explicit;
-
-    // Cost threshold check for LLM calls
-    if (
-      capability === 'llm:call' &&
-      this._policy.costThreshold != null &&
-      ctx?.meta?.estimatedCost != null
-    ) {
-      if ((ctx.meta.estimatedCost as number) > this._policy.costThreshold) {
-        return 'prompt';
-      }
-    }
-
-    // Protected paths check for file ops
-    if (
-      (capability === 'file:write' || capability === 'file:delete') &&
-      this._policy.protectedPaths?.length &&
-      ctx?.meta?.path
-    ) {
-      const path = ctx.meta.path as string;
-      if (this._policy.protectedPaths.some((p) => path.includes(p))) {
-        return 'prompt';
-      }
-    }
-
-    return this._policy.defaults;
+    return permissionLevel(this._policy, capability, ctx);
   }
 
   private _buildMessage(capability: Capability, ctx: GateContext): string {

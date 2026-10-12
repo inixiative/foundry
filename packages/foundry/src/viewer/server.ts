@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ToolGate } from '@inixiative/agent-session';
 import type {
   ActionQueue,
   EventStream,
@@ -24,6 +25,8 @@ import {
   type KingdomIntegration,
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
+import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { createToolGate, rulesFor } from '../turns/tool-gate';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -87,6 +90,8 @@ export interface ViewerConfig {
   localStore?: LocalSessionStore | null;
   /** Bearer a local ACP proxy presents (from the ACP launch file) while a tunnel is active. */
   acpCapability?: string;
+  /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
+  threadLaunch?: ThreadLaunchSettings;
 }
 
 /**
@@ -337,7 +342,9 @@ export function createViewer(config: ViewerConfig) {
 
   const db = config.db ?? null;
 
-  registerRuntimeRoutes(app, {
+  const threadLaunch = config.threadLaunch ?? new ThreadLaunchSettings();
+  const { turns } = registerRuntimeRoutes(app, {
+    threadLaunch,
     harness,
     eventStream,
     interventions,
@@ -499,7 +506,44 @@ export function createViewer(config: ViewerConfig) {
     return socket.accept(req, server);
   };
 
+  /** A thread's tool gate: structural rules, then asks to whoever answers first (viewer, ACP host). */
+  const toolGate = (threadId: string): ToolGate | undefined => {
+    const thread = directory.get(threadId);
+    if (!thread) return undefined;
+    return createToolGate({
+      threadId,
+      rules: () => {
+        const settings = configStore.config;
+        const projectId = thread.meta.projectId;
+        return rulesFor(
+          settings.toolRules,
+          projectId ? settings.projects[projectId]?.toolRules : undefined,
+        );
+      },
+      mode: () => threadLaunch.get(threadId).permissionMode,
+      queue: config.actionQueue ?? null,
+      turnId: () => turns.runningTurn(threadId),
+      journal: (id, phase, turnId, record) => {
+        try {
+          localStore?.appendPhase(thread, { id, phase, turnId, dispatchId: null, record });
+          if (turnId)
+            eventStream.push({
+              kind: 'journal',
+              threadId,
+              projectId: thread.meta.projectId,
+              turnId,
+              timestamp: Date.now(),
+            });
+        } catch (error) {
+          log.warn(`[Gate] ${phase} not journalled: ${(error as Error).message}`);
+        }
+      },
+    });
+  };
+
   return {
+    toolGate,
+    threadLaunch,
     app,
     fetch: handleRequest,
     websocket: socket.websocket,
@@ -595,6 +639,7 @@ export async function startViewer(config: ViewerConfig) {
   }
 
   return {
+    toolGate: viewer.toolGate,
     server,
     actions,
     analyticsStore,

@@ -8,8 +8,17 @@ import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { listWorktrees } from '../../git';
-import { registryForViewer } from '../../models/registry';
+import { MODEL_REGISTRY, registryForViewer } from '../../models/registry';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
+import {
+  describeMcpServers,
+  EFFORT_LEVELS,
+  type EffortLevel,
+  PERMISSION_MODES,
+  type PermissionMode,
+  type ThreadLaunchPatch,
+  ThreadLaunchSettings,
+} from '../../providers/thread-launch';
 import { TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
@@ -34,6 +43,8 @@ export interface RuntimeRoutesDeps {
   directory?: ViewerThreadDirectory;
   /** Data streams that carry live turns and thread-list changes to the viewer socket. */
   streams: ViewerStreams;
+  /** What hosts chose per thread for its executor session (mode, model, effort, MCP servers). */
+  threadLaunch?: ThreadLaunchSettings;
 }
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
@@ -76,6 +87,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   const directory =
     deps.directory ?? new ViewerThreadDirectory(harness.thread, projectRegistry, threadFactory);
   const streams = deps.streams;
+  const threadLaunch = deps.threadLaunch ?? new ThreadLaunchSettings();
   const turns = new TurnService({
     harness,
     eventStream,
@@ -389,6 +401,63 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   app.get('/api/threads/:id', (c) => {
     const thread = directory.get(c.req.param('id'));
     return thread ? c.json(threadToJSON(thread)) : c.json({ error: 'thread not found' }, 404);
+  });
+
+  // -- Launch settings: what a host chose for a thread's executor session --
+  //
+  // Held in daemon memory only (client MCP server env and headers can be secrets, so they are never
+  // echoed). A change applies on the thread's next turn: its idle session relaunches, resuming its
+  // native binding.
+  const launchView = (thread: Thread) => {
+    const launch = threadLaunch.get(thread.id);
+    const settings = deps.configStore.config;
+    const projectDefaults = thread.meta.projectId
+      ? settings.projects[thread.meta.projectId]?.defaults
+      : undefined;
+    const provider = projectDefaults?.provider ?? settings.defaults.provider;
+    const configuredModel = projectDefaults?.model ?? settings.defaults.model;
+    return {
+      threadId: thread.id,
+      provider,
+      permissionMode: launch.permissionMode ?? null,
+      model: launch.model ?? configuredModel,
+      modelOverride: launch.model ?? null,
+      effort: launch.effort ?? null,
+      mcpServers: describeMcpServers(launch.mcpServers),
+      revision: launch.revision,
+      options: {
+        permissionModes: PERMISSION_MODES,
+        models: (MODEL_REGISTRY[provider]?.models ?? []).map((model) => ({
+          id: model.id,
+          label: model.label,
+        })),
+        efforts: EFFORT_LEVELS,
+      },
+    };
+  };
+
+  app.get('/api/threads/:id/launch', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    return thread ? c.json(launchView(thread)) : c.json({ error: 'thread not found' }, 404);
+  });
+
+  app.patch('/api/threads/:id/launch', async (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    if (thread.disposed) return c.json({ error: 'thread is archived or disposed' }, 409);
+    const body = await c.req.json<Record<string, unknown>>();
+    const patch: ThreadLaunchPatch = {};
+    if ('permissionMode' in body)
+      patch.permissionMode = body.permissionMode as PermissionMode | null;
+    if ('model' in body) patch.model = body.model as string | null;
+    if ('effort' in body) patch.effort = body.effort as EffortLevel | null;
+    if ('mcpServers' in body) patch.mcpServers = body.mcpServers as ThreadLaunchPatch['mcpServers'];
+    try {
+      threadLaunch.update(thread.id, patch);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    return c.json(launchView(thread));
   });
 
   // -- Worktrees (read-only detection of existing git worktrees) --

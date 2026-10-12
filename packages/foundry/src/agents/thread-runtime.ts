@@ -328,7 +328,13 @@ export interface PhaseRecordInput {
   readonly id: string;
   readonly turnId: string | null;
   readonly dispatchId: string | null;
-  readonly phase: 'route' | 'advice' | 'guard-request' | 'guard-outcome';
+  readonly phase:
+    | 'route'
+    | 'advice'
+    | 'guard-request'
+    | 'guard-outcome'
+    | 'gate-request'
+    | 'gate-outcome';
   readonly record: Record<string, unknown>;
 }
 export type PhaseJournal = (runtime: ThreadRuntime, record: PhaseRecordInput) => void;

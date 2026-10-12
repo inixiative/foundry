@@ -257,6 +257,7 @@ test('provider over the real Claude adapter: a changed model cannot dispatch int
     requestedModel: 'fable',
     textOnly: false,
     maxTurns: null,
+    launchRevision: 0,
     resumedBinding: null,
     bindingLookup: 'resolved',
     preliminaryLookup: null,

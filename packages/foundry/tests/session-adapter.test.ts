@@ -51,6 +51,16 @@ function makeFakeProc(opts?: { sessionId?: string; compact?: boolean }): {
         for (const line of data.split('\n')) {
           if (!line.trim()) continue;
           stdinLines.push(line);
+          const message = JSON.parse(line) as { type?: string; request_id?: string };
+          if (message.type === 'control_request') {
+            queueMicrotask(() =>
+              emit({
+                type: 'control_response',
+                response: { subtype: 'success', request_id: message.request_id, response: {} },
+              }),
+            );
+            continue;
+          }
           queueMicrotask(() => {
             if (!opts?.compact || !initialized) {
               emit({ type: 'system', subtype: 'init', session_id: sessionId });
@@ -137,6 +147,23 @@ test('text-only Claude sessions disable tools and customizations without strippi
     decision.kill();
     worker.kill();
   }
+});
+
+test("Codex's MCP engine refuses a host mode or MCP servers it cannot honour", async () => {
+  const adapter = new CodexSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    engine: 'mcp',
+  });
+  await expect(
+    adapter.createSession({ threadId: 't', cwd: '/tmp', permissionMode: 'default' }),
+  ).rejects.toThrow('full access only');
+  await expect(
+    adapter.createSession({
+      threadId: 't',
+      cwd: '/tmp',
+      mcpServers: [{ name: 'x', command: 'x', args: [], env: [] }],
+    }),
+  ).rejects.toThrow('app-server');
 });
 
 test('Codex MCP adapter refuses a text-only profile it cannot enforce', async () => {
@@ -456,6 +483,83 @@ describe('FileExternalSessionStore', () => {
 // ---------------------------------------------------------------------------
 
 describe('ClaudeCodeSessionAdapter', () => {
+  test("a host's mode, effort, MCP servers and tool gate reach the executor launch; secrets stay out of argv", async () => {
+    const { spawnCalls, spawn } = makeSpawnCapture();
+    const adapter = new ClaudeCodeSessionAdapter({
+      store: new InMemoryExternalSessionStore(),
+      defaults: { bin: 'claude', maxTurns: 1, spawn },
+    });
+    const session = await adapter.createSession({
+      threadId: 'acp-thread',
+      cwd: '/tmp',
+      permissionMode: 'acceptEdits',
+      effort: 'high',
+      toolGate: () => ({ behavior: 'allow' }),
+      mcpServers: [
+        {
+          name: 'paseo',
+          command: 'paseo',
+          args: ['mcp'],
+          env: [{ name: 'PASEO_TOKEN', value: 'secret-token' }],
+        },
+        {
+          type: 'http',
+          name: 'docs',
+          url: 'https://mcp.example.com',
+          headers: [{ name: 'Authorization', value: 'Bearer secret-header' }],
+        },
+      ],
+    });
+    try {
+      await session.start();
+      const { cmd, env, stdin } = spawnCalls[0];
+      expect(cmd[cmd.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
+      expect(cmd[cmd.indexOf('--effort') + 1]).toBe('high');
+      expect(cmd).toContain('--permission-prompt-tool');
+      expect(JSON.parse(cmd[cmd.indexOf('--mcp-config') + 1])).toEqual({
+        mcpServers: {
+          paseo: { command: 'paseo', args: ['mcp'], env: { PASEO_TOKEN: '${FOUNDRY_MCP_0}' } },
+          docs: {
+            type: 'http',
+            url: 'https://mcp.example.com',
+            headers: { Authorization: '${FOUNDRY_MCP_1}' },
+          },
+        },
+      });
+      expect(cmd.join(' ')).not.toContain('secret');
+      expect(env).toMatchObject({
+        FOUNDRY_MCP_0: 'secret-token',
+        FOUNDRY_MCP_1: 'Bearer secret-header',
+      });
+      // The PreToolUse callback is registered over the control channel before any turn.
+      expect(JSON.parse(stdin[0]!)).toMatchObject({
+        type: 'control_request',
+        request: { subtype: 'initialize' },
+      });
+    } finally {
+      session.kill();
+    }
+  });
+
+  test('an ungated session launches as before', async () => {
+    const { spawnCalls, spawn } = makeSpawnCapture();
+    const adapter = new ClaudeCodeSessionAdapter({
+      store: new InMemoryExternalSessionStore(),
+      defaults: { bin: 'claude', maxTurns: 1, spawn },
+    });
+    const session = await adapter.createSession({ threadId: 'viewer-thread', cwd: '/tmp' });
+    try {
+      await session.start();
+      expect(spawnCalls[0].cmd).not.toContain('--permission-prompt-tool');
+      expect(spawnCalls[0].cmd[spawnCalls[0].cmd.indexOf('--permission-mode') + 1]).toBe(
+        'bypassPermissions',
+      );
+      expect(spawnCalls[0].stdin).toEqual([]);
+    } finally {
+      session.kill();
+    }
+  });
+
   test('createSession for a fresh thread: no --resume in spawn args', async () => {
     const store = new InMemoryExternalSessionStore();
     const { spawnCalls, spawn } = makeSpawnCapture();

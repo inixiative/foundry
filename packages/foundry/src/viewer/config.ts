@@ -47,6 +47,7 @@ import {
   SUBSCRIPTION_DECISIONS,
   type SubscriptionSettings,
 } from '../providers/subscription-policy';
+import type { ToolRules } from '../turns/tool-gate';
 import {
   type ResolvedLayerDefinition,
   type ResolvedProjectView,
@@ -70,6 +71,8 @@ export interface FoundryConfig {
   apiTokens?: boolean;
   /** Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md. */
   subscriptionOnly?: SubscriptionSettings;
+  /** Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts). */
+  toolRules?: ToolRules;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
   kingdomInference?: KingdomInferenceSource[];
@@ -181,6 +184,8 @@ export interface ProjectSettingsConfig {
   description?: string;
   /** Override global defaults for this project. Omitted fields inherit from global. */
   defaults?: Partial<FoundryConfig['defaults']>;
+  /** Project tool rules: a capability here overrides the global one; protected paths add up. */
+  toolRules?: ToolRules;
   /**
    * Base identity prompts — composed into CLAUDE.md, .cursorrules, etc.
    * This is the project's "front door" — the first thing any model reads.
@@ -1221,6 +1226,8 @@ export class ConfigStore {
         next.instructions = { ...next.instructions, ...patch } as InstructionSettings;
       } else if (section === 'subscriptionOnly') {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
+      } else if (section === 'toolRules') {
+        next.toolRules = { ...next.toolRules, ...patch } as ToolRules;
       } else if (section === 'apiTokens') {
         // Explicit opt-in to API-key providers; absent or false is subscription-only.
         if (patch.enabled === true) next.apiTokens = true;

@@ -1,4 +1,4 @@
-import type { HarnessSession } from '@inixiative/agent-session';
+import type { HarnessSession, ToolGate } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -16,6 +16,7 @@ import {
 } from '@inixiative/foundry-core';
 import { projectNative } from './native-evidence';
 import type { ConstructionBinding, SessionAdapter } from './session-adapter';
+import type { ThreadLaunchSettings } from './thread-launch';
 
 export const DECISION_CONTEXT =
   "You are Foundry's internal decision middleware, not its coding executor. " +
@@ -29,6 +30,10 @@ export interface SessionBackedProviderConfig {
   adapter: SessionAdapter;
   defaultModel: string;
   defaultCwd?: string;
+  /** What hosts chose per thread (mode, model, effort, MCP servers) for executor sessions. */
+  launch?: ThreadLaunchSettings;
+  /** The thread's tool gate, registered on every executor session (never an auxiliary's). */
+  toolGate?: (threadId: string) => ToolGate | undefined;
 }
 
 /**
@@ -59,6 +64,8 @@ export interface NativeSessionProfile {
   readonly requestedEffort?: string;
   readonly bridgeKey?: string;
   readonly requestedModel: string;
+  /** The host launch revision (ThreadLaunchSettings) this session was launched at; 0 for none. */
+  readonly launchRevision?: number;
   readonly textOnly: boolean;
   readonly maxTurns?: number | null;
   /**
@@ -124,6 +131,8 @@ export class SessionBackedProvider implements LLMProvider {
   >();
   private _releasing = new Map<string, Promise<'released' | 'unknown'>>();
   private _cleanupOutcomes = new WeakMap<HarnessSession, 'pending' | 'unknown'>();
+  private _launch?: ThreadLaunchSettings;
+  private _toolGate?: SessionBackedProviderConfig['toolGate'];
   readonly completionLifecycle: NonNullable<LLMProvider['completionLifecycle']> = Object.freeze({
     kind: 'session' as const,
     admission: ({ result, error }: { result?: CompletionResult; error?: unknown }) => {
@@ -243,6 +252,8 @@ export class SessionBackedProvider implements LLMProvider {
     this._adapter = config.adapter;
     this._defaultModel = config.defaultModel;
     this._defaultCwd = config.defaultCwd ?? process.cwd();
+    this._launch = config.launch;
+    this._toolGate = config.toolGate;
   }
 
   /** Frozen profile of the warm session for a thread, if one exists. Inspection only. */
@@ -390,7 +401,9 @@ export class SessionBackedProvider implements LLMProvider {
     const threadId = opts?.threadId ?? `${this.id}:default`;
     const cwd = opts?.cwd ?? this._defaultCwd;
     const textOnly = threadId.includes(':aux:') || opts?.tools === false;
-    const requestedModel = opts?.model ?? this._defaultModel;
+    // A host's choice applies to the thread's executor session only.
+    const host = textOnly ? undefined : this._launch?.get(threadId);
+    const requestedModel = host?.model ?? opts?.model ?? this._defaultModel;
     const observation = opts?.nativeObservation
       ? {
           ...opts.nativeObservation,
@@ -421,6 +434,7 @@ export class SessionBackedProvider implements LLMProvider {
         requestedModel,
         textOnly,
         maxTurns,
+        launchRevision: host?.revision ?? 0,
         ...(source
           ? {
               bridgeKey: source.key,
@@ -686,6 +700,42 @@ export class SessionBackedProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Release an idle executor session so the next one launches with the host's new settings and
+   * resumes the same native binding. Refused (nothing sent, binding kept) while work is unsettled.
+   */
+  private _relaunch(
+    key: string,
+    existing: Promise<HarnessSession>,
+    recreate: () => Promise<HarnessSession>,
+  ): Promise<HarnessSession> {
+    return existing.then(async (session) => {
+      const admissions = this._observations.get(session)?.size ?? 0;
+      const idle =
+        (this._activeCalls.get(key) ?? 0) <= 1 &&
+        !this._releasing.has(key) &&
+        !this._sessionCalls.get(session)?.size &&
+        (admissions ? this._sessionSettled(session) : !this._uncertain.has(key));
+      const released =
+        idle && this._adapter.releaseIdleSession
+          ? await this._adapter.releaseIdleSession(session).catch(() => 'unknown' as const)
+          : 'unknown';
+      if (released !== 'released')
+        throw Error(
+          'Launch settings changed while native work on this thread is unsettled; nothing was sent. Try again once the current turn settles.',
+        );
+      this._released.add(session);
+      if (this._sessions.get(key) === existing) {
+        this._sessions.delete(key);
+        this._profiles.delete(key);
+        this._bridgeSources.delete(key);
+        this._idle.delete(key);
+        this._uncertain.delete(key);
+      }
+      return recreate();
+    });
+  }
+
   private _getSession(
     threadId: string,
     cwd: string,
@@ -693,6 +743,7 @@ export class SessionBackedProvider implements LLMProvider {
       requestedModel: string;
       textOnly: boolean;
       maxTurns?: number | null;
+      launchRevision: number;
       bridgeKey?: string;
       toolPolicyIdentity?: string;
     },
@@ -702,10 +753,26 @@ export class SessionBackedProvider implements LLMProvider {
     const existing = this._sessions.get(key);
     const current = this._profiles.get(key);
     if (existing && current) {
-      const differences = (
-        ['requestedModel', 'textOnly', 'maxTurns', 'bridgeKey', 'toolPolicyIdentity'] as const
+      const fields = [
+        'requestedModel',
+        'textOnly',
+        'maxTurns',
+        'launchRevision',
+        'bridgeKey',
+        'toolPolicyIdentity',
+      ] as const;
+      const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
+      // A host changed this thread's launch settings: relaunch the idle session, resuming its binding.
+      if (
+        changed.includes('launchRevision') &&
+        changed.every((field) => field === 'launchRevision' || field === 'requestedModel') &&
+        this._bridgeSources.get(key) === source
       )
-        .filter((field) => current[field] !== requested[field])
+        return this._relaunch(key, existing, () =>
+          this._getSession(threadId, cwd, requested, source),
+        );
+      const differences = fields
+        .filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0))
         .map(
           (field) =>
             `${field}: warm ${JSON.stringify(current[field])}, requested ${JSON.stringify(requested[field])}`,
@@ -753,6 +820,8 @@ export class SessionBackedProvider implements LLMProvider {
         if (source) bridge = await source.acquire();
         if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity)
           throw Error('Owned fixture policy changed during acquisition');
+        const host = requested.textOnly ? undefined : this._launch?.get(threadId);
+        const gate = requested.textOnly ? undefined : this._toolGate?.(threadId);
         const session = await this._adapter.createSession({
           threadId,
           cwd,
@@ -760,6 +829,10 @@ export class SessionBackedProvider implements LLMProvider {
           ...(bridge ? { nativeBridge: bridge } : {}),
           ...(requested.maxTurns !== undefined ? { maxTurns: requested.maxTurns } : {}),
           ...(requested.textOnly ? { tools: false, baseContext: DECISION_CONTEXT } : {}),
+          ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
+          ...(host?.effort ? { effort: host.effort } : {}),
+          ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
+          ...(gate ? { toolGate: gate } : {}),
         });
         if (bridge) this._bridges.set(session, bridge);
         const observations = new Map<string, NativeObservation>();

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { NativeBridgeLease } from '@inixiative/foundry-core';
+import type { ClientMcpServer } from './thread-launch';
 
 /** Metadata-only recording policy: neither launch paths/config nor capability
  * contents can enter argv reports. Original executable argv is never rewritten
@@ -184,4 +185,69 @@ export function withIsolatedFixture(argv: readonly string[], bridge: NativeBridg
     '--settings',
     JSON.stringify({ disableAllHooks: true, disableClaudeAiConnectors: true }),
   ];
+}
+
+/**
+ * A host's MCP servers for Claude: one more `--mcp-config` whose env and header values are
+ * `${FOUNDRY_MCP_<n>}` references Claude expands from the process environment, so a secret
+ * never appears in argv (verified on Claude CLI 2.1.296). The values go into `env`. Compose
+ * before `withNativeBridge`, which refuses a name collision with the bridge.
+ */
+export function withClientMcpServers(
+  argv: readonly string[],
+  env: Record<string, string | undefined>,
+  servers: readonly ClientMcpServer[],
+): { argv: string[]; env: Record<string, string | undefined> } {
+  if (!servers.length) return { argv: [...argv], env };
+  if (argv.some((arg) => ['--safe-mode', '--strict-mcp-config', '--bare'].includes(arg)))
+    throw Error("Client MCP servers conflict with the session's MCP policy");
+  const secrets: Record<string, string> = {};
+  const reference = (value: string) => {
+    const name = `FOUNDRY_MCP_${Object.keys(secrets).length}`;
+    secrets[name] = value;
+    return `\${${name}}`;
+  };
+  const mcpServers: Record<string, unknown> = {};
+  for (const server of servers)
+    mcpServers[server.name] =
+      server.type === 'http'
+        ? {
+            type: 'http',
+            url: server.url,
+            headers: Object.fromEntries(server.headers.map((h) => [h.name, reference(h.value)])),
+          }
+        : {
+            command: server.command,
+            args: [...server.args],
+            env: Object.fromEntries(server.env.map((v) => [v.name, reference(v.value)])),
+          };
+  return {
+    argv: [...argv, '--mcp-config', JSON.stringify({ mcpServers })],
+    env: { ...env, ...secrets },
+  };
+}
+
+/** A host's MCP servers as Codex app-server config keys (sent over stdio, never argv). */
+export function appServerClientMcpConfiguration(
+  servers: readonly ClientMcpServer[],
+  existing: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const config: Record<string, unknown> = structuredClone(existing);
+  for (const server of servers) {
+    const key = `mcp_servers.${server.name}`;
+    if (Object.keys(config).some((k) => k === key || k.startsWith(`${key}.`)))
+      throw Error(`MCP server name collision: ${server.name}`);
+    config[key] =
+      server.type === 'http'
+        ? {
+            url: server.url,
+            http_headers: Object.fromEntries(server.headers.map((h) => [h.name, h.value])),
+          }
+        : {
+            command: server.command,
+            args: [...server.args],
+            env: Object.fromEntries(server.env.map((v) => [v.name, v.value])),
+          };
+  }
+  return config;
 }
