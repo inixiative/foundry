@@ -177,10 +177,6 @@ export {
   VoyageEmbeddingProvider,
 } from './providers/anthropic';
 // LLM Providers
-export {
-  type ClaudeCodeConfig as ClaudeCodeProviderConfig,
-  ClaudeCodeProvider,
-} from './providers/claude-code';
 export type { ClaudeContextBudget } from './providers/claude-context-budget';
 export {
   type GeminiConfig,
@@ -210,17 +206,6 @@ export {
   OpenAIProvider,
 } from './providers/openai';
 
-// Runtime Adapters (context injection)
-export {
-  ClaudeCodeRuntime,
-  CodexRuntime,
-  type ContextInjection,
-  CursorRuntime,
-  type RuntimeAdapter,
-  type RuntimeEvent,
-  type RuntimeEventHandler,
-  type RuntimeEventKind,
-} from './providers/runtime';
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {
   ClaudeCodeSessionAdapter,

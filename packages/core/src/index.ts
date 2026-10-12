@@ -220,13 +220,6 @@ export {
   SUBSCRIPTION_DECISION_MODELS,
 } from './model-registry';
 export * from './native-evidence';
-// Permission middleware
-export {
-  type PermissionCheck,
-  type PermissionCheckResult,
-  type PermissionMiddlewareConfig,
-  permissionMiddleware,
-} from './permission-middleware';
 // Retry middleware
 export { type RetryConfig, retryMiddleware } from './retry';
 export { type Route, type RouteHandler, Router, type RouterConfig } from './router';

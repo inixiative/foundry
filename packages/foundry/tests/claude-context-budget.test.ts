@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { ClaudeCodeProvider } from '../src/providers/claude-code';
 import { claudeContextEnvironment } from '../src/providers/claude-context-budget';
 
 describe('Claude native context budget', () => {
@@ -28,10 +27,10 @@ describe('Claude native context budget', () => {
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '70',
     });
     for (const maxTokens of [0, 99999, 1000001, 200000.5, NaN, Infinity]) {
-      expect(() => new ClaudeCodeProvider({ contextBudget: { maxTokens } })).toThrow('maxTokens');
+      expect(() => claudeContextEnvironment({}, { maxTokens })).toThrow('maxTokens');
     }
     for (const compactAt of [0, 1, -1, NaN, Infinity]) {
-      expect(() => new ClaudeCodeProvider({ contextBudget: { compactAt } })).toThrow('compactAt');
+      expect(() => claudeContextEnvironment({}, { compactAt })).toThrow('compactAt');
     }
   });
 });

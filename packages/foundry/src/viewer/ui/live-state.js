@@ -40,8 +40,7 @@ export function liveWorkLabel(message) {
 }
 
 export function liveThreadStatus(messages) {
-  if (messages.some((m) => ['queued', 'running'].includes(liveExecutionStatus(m))))
-    return 'active';
+  if (messages.some((m) => ['queued', 'running'].includes(liveExecutionStatus(m)))) return 'active';
   if (
     messages.some(
       (m) =>

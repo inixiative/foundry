@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AnthropicProvider } from '../src/providers/anthropic';
-import { ClaudeCodeProvider } from '../src/providers/claude-code';
 
 const stubFetch = (
   respond: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
@@ -30,28 +29,6 @@ const expected = {
 };
 
 describe('Claude provider usage', () => {
-  test('CLI object/array results and streaming preserve usage and apply native context policy', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'foundry-claude-usage-'));
-    try {
-      for (const array of [false, true]) {
-        const bin = join(dir, 'claude');
-        await writeFile(
-          bin,
-          `#!/usr/bin/env bun\nconst result = { type: "result", subtype: "success", result: "done", usage: ${JSON.stringify(usage)}, testEnv: { window: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, pct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }, session_id: "test-id" };\nconsole.log(JSON.stringify(process.argv.includes("stream-json") ? result : ${array} ? [result] : result));\n`,
-          { mode: 0o755 },
-        );
-        const provider = new ClaudeCodeProvider({ bin, cwd: dir });
-        const result = await provider.complete([{ role: 'user', content: 'test' }]);
-        expect(result.tokens).toEqual(expected);
-        expect(result.raw).toMatchObject({ testEnv: { window: '200000', pct: '80' } });
-        const events = await Array.fromAsync(provider.stream([{ role: 'user', content: 'test' }]));
-        expect(events.find((e) => e.type === 'usage')?.tokens).toEqual(expected);
-      }
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
   test('Anthropic completion and SSE preserve cache-only usage across split chunks', async () => {
     const originalFetch = globalThis.fetch;
     const provider = new AnthropicProvider({ apiKey: 'test-key' });

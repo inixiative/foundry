@@ -28,10 +28,6 @@ export {
 } from '@inixiative/foundry-core';
 export { type AnthropicConfig, AnthropicProvider, VoyageEmbeddingProvider } from './anthropic';
 // LLM Providers (API-level)
-export {
-  type ClaudeCodeConfig as ClaudeCodeProviderConfig,
-  ClaudeCodeProvider,
-} from './claude-code';
 export type { ClaudeContextBudget } from './claude-context-budget';
 export { type GeminiConfig, GeminiEmbeddingProvider, GeminiProvider } from './gemini';
 export {
@@ -66,20 +62,6 @@ export {
   type RegisteredProviderConfig,
   registeredProvider,
 } from './openai-compatible';
-// Runtime Adapters (context injection into agent runtimes)
-export {
-  type ClaudeCodeConfig,
-  ClaudeCodeRuntime,
-  type CodexConfig,
-  CodexRuntime,
-  type ContextInjection,
-  type CursorConfig,
-  CursorRuntime,
-  type RuntimeAdapter,
-  type RuntimeEvent,
-  type RuntimeEventHandler,
-  type RuntimeEventKind,
-} from './runtime';
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {
   ClaudeCodeSessionAdapter,

@@ -1,5 +1,4 @@
 import type { EventStream, Harness, InterventionLog, Thread } from '@inixiative/foundry-core';
-import type { RuntimeAdapter } from '../providers/runtime';
 
 // ---------------------------------------------------------------------------
 // Operator actions — commands that the viewer can send to the system
@@ -13,7 +12,6 @@ export type ActionKind =
   | 'layer:warm'
   | 'layer:invalidate'
   | 'agent:dispatch'
-  | 'runtime:command'
   | 'system:snapshot';
 
 export interface OperatorAction {
@@ -40,7 +38,6 @@ export class ActionHandler {
   private _harness: Harness;
   private _events: EventStream;
   private _interventions: InterventionLog;
-  private _runtimes: Map<string, RuntimeAdapter> = new Map();
   private _actionLog: OperatorAction[] = [];
   private _maxLog = 500;
   private _resolveThread: (id: string) => Thread | undefined;
@@ -62,11 +59,6 @@ export class ActionHandler {
     this._onThreadChange = opts.onThreadChange;
   }
 
-  /** Register a runtime adapter for command passthrough. */
-  registerRuntime(adapter: RuntimeAdapter): void {
-    this._runtimes.set(adapter.id, adapter);
-  }
-
   /** Execute an operator action. */
   async execute(action: OperatorAction): Promise<ActionResult> {
     this._actionLog.push(action);
@@ -74,7 +66,6 @@ export class ActionHandler {
       this._actionLog.shift();
     }
 
-    if (action.kind === 'runtime:command') return this._runtimeCommand(action);
     const threadAction = action.kind.startsWith('thread:');
     if (threadAction && action.target && action.threadId && action.target !== action.threadId) {
       return { ok: false, action: action.kind, message: 'Conflicting thread targets' };
@@ -228,32 +219,6 @@ export class ActionHandler {
         message: `Dispatch to ${agentId} failed: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
-  }
-
-  private _runtimeCommand(action: OperatorAction): ActionResult {
-    const runtimeId = action.target;
-    if (!runtimeId) {
-      return {
-        ok: false,
-        action: action.kind,
-        message: 'runtime:command requires a target runtime ID',
-      };
-    }
-    const runtime = this._runtimes.get(runtimeId);
-    if (!runtime) {
-      const available = [...this._runtimes.keys()].join(', ') || 'none';
-      return {
-        ok: false,
-        action: action.kind,
-        message: `Runtime ${runtimeId} not found. Available: ${available}`,
-      };
-    }
-    return {
-      ok: false,
-      action: action.kind,
-      message: `Runtime ${runtimeId} does not support operator command dispatch`,
-      data: { runtimeId, command: action.payload },
-    };
   }
 
   private _systemSnapshot(thread: Thread): ActionResult {

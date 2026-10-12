@@ -45,7 +45,6 @@ import {
 import type { LLMProvider } from './providers';
 import {
   AnthropicProvider,
-  ClaudeCodeProvider,
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
   createRegisteredProvider,

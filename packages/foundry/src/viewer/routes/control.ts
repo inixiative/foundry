@@ -66,7 +66,6 @@ function isActionKind(value: string): value is OperatorAction['kind'] {
     'layer:warm',
     'layer:invalidate',
     'agent:dispatch',
-    'runtime:command',
     'system:snapshot',
   ].includes(value);
 }

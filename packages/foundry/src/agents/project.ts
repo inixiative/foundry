@@ -1,6 +1,5 @@
 import { type ContextStack, Thread, type ThreadConfig } from '@inixiative/foundry-core';
 import { containingPath, listWorktrees } from '../git/worktree';
-import type { RuntimeAdapter } from '../providers/runtime';
 import type { ProjectSettingsConfig } from '../viewer/config';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +74,6 @@ export class Project {
   status: ProjectStatus;
 
   private _threads: Map<string, Thread> = new Map();
-  private _runtimeAdapter?: RuntimeAdapter;
 
   constructor(config: ProjectConfig) {
     this.id = config.id;
@@ -86,16 +84,6 @@ export class Project {
     this.description = config.description ?? '';
     this.createdAt = Date.now();
     this.status = 'idle';
-  }
-
-  // -- Runtime adapter --
-
-  get runtimeAdapter(): RuntimeAdapter | undefined {
-    return this._runtimeAdapter;
-  }
-
-  setRuntime(adapter: RuntimeAdapter): void {
-    this._runtimeAdapter = adapter;
   }
 
   // -- Thread management --
