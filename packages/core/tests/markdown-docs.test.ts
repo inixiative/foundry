@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,6 +8,7 @@ import {
   MarkdownDocs,
   readInstructionFile,
   stripInstructionComments,
+  withinAny,
 } from '../src/adapters/markdown-docs';
 
 const TEST_DIR = '/tmp/foundry-markdown-docs-test';
@@ -144,6 +145,32 @@ describe('instruction @imports (Claude Code semantics)', () => {
     ).toEqual(['a.md', 'dir/b.md.', 'with space.md', 'after.md']);
   });
 
+  test('indented code and code spans are paragraph-bound, as in Markdown', () => {
+    expect(instructionImports('text\n\n    @indented.md\n\n@real.md')).toEqual(['real.md']);
+    expect(instructionImports('Use `foo\n\n@real.md\n\nthen `bar`')).toEqual(['real.md']);
+  });
+
+  test('secrets never import: dotfiles, keys and credential directories, even through a symlink', async () => {
+    write(join(dir, '.env'), 'DB_PASSWORD=x');
+    write(join(home, '.ssh', 'config'), 'Host x');
+    write(join(dir, 'server.pem'), 'key');
+    symlinkSync(join(home, '.ssh', 'config'), join(dir, 'innocent.md'));
+    write(join(dir, 'CLAUDE.md'), '@.env @server.pem @innocent.md @~/.ssh/config');
+    const files = await readInstructionFile(join(dir, 'CLAUDE.md'), { home });
+    expect(paths(files)).toEqual([join(dir, 'CLAUDE.md')]);
+  });
+
+  test('the import boundary is checked on the symlink target, not only the path as written', async () => {
+    write(join(home, 'notes.md'), 'PRIVATE');
+    symlinkSync(join(home, 'notes.md'), join(dir, 'notes.md'));
+    write(join(dir, 'CLAUDE.md'), '@notes.md');
+    const files = await readInstructionFile(join(dir, 'CLAUDE.md'), {
+      home,
+      allows: withinAny([dir]),
+    });
+    expect(paths(files)).toEqual([join(dir, 'CLAUDE.md')]);
+  });
+
   test('imports resolve relative to the importing file, then depth-first in document order', async () => {
     write(join(dir, 'CLAUDE.md'), 'root @docs/one.md @two.md');
     write(join(dir, 'docs', 'one.md'), 'one @nested/three.md');
@@ -207,6 +234,9 @@ describe('instruction @imports (Claude Code semantics)', () => {
         ].join('\n'),
       ),
     ).toBe(['keep', 'after', '```', '<!-- code -->', '```'].join('\n'));
+    expect(stripInstructionComments('<!-- c --> inline text stays')).toBe(
+      '<!-- c --> inline text stays',
+    );
   });
 
   test('claudemdSource inlines imports under their own heading instead of passing @paths through', async () => {

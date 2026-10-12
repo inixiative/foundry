@@ -30,7 +30,7 @@ import {
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import { DECISION_MODEL } from '../models/registry';
-import { instructionStackSource } from '../prompts/instruction-stack';
+import { codexReadsUserHome, instructionStackSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from '../viewer/config';
@@ -78,7 +78,9 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
         // CLAUDE.md, AGENTS.md and auto memory for the thread's cwd; the personal global file follows the harness.
         return instructionStackSource(srcCfg.id, {
           harness: cfg.defaults.provider === 'codex' ? 'codex' : 'claude',
+          harnessLoadsGlobal: codexReadsUserHome(cfg),
           audience: srcCfg.audience,
+          projectPath: (projectId) => cfg.projects[projectId]?.path,
         });
       case 'file':
         // Bounded selection by default: the owned log stays complete and

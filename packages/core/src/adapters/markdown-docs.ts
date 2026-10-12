@@ -1,6 +1,7 @@
+import { realpathSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { ContextSource } from '../context-layer';
 import type { ContextRef, HydrationAdapter } from '../hydrator';
 
@@ -229,7 +230,7 @@ export interface InstructionReadOptions {
  */
 const TEXT_EXTENSIONS = new Set(
   (
-    'md mdx markdown txt text rst adoc org json jsonc json5 yaml yml toml ini cfg conf env xml csv tsv ' +
+    'md mdx markdown txt text rst adoc org json jsonc json5 yaml yml toml ini cfg conf xml csv tsv ' +
     'html htm css scss sass less ts tsx mts cts js jsx mjs cjs py pyi rb go rs java kt kts swift c h cc ' +
     'cpp hpp cs php sh bash zsh fish ps1 bat sql graphql gql proto prisma tf hcl lua r scala ex exs erl ' +
     'hs ml clj dart pl vue svelte astro gradle lock log diff patch'
@@ -237,6 +238,21 @@ const TEXT_EXTENSIONS = new Set(
     .split(' ')
     .map((ext) => `.${ext}`),
 );
+
+/**
+ * Never imported, whatever a file asks: dotfiles (`.env`, `.npmrc`), key material and credential
+ * directories. Claude Code would import some of these; Foundry refuses because a committed file
+ * must not be able to pull a secret into a shared context.
+ */
+function secretPath(path: string): boolean {
+  const name = basename(path);
+  return (
+    name.startsWith('.') ||
+    /^id_[a-z0-9]+/i.test(name) ||
+    /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ||
+    path.split(sep).some((part) => ['.ssh', '.aws', '.gnupg', '.kube', '.docker'].includes(part))
+  );
+}
 
 /** Claude Code skips an instruction file larger than this. */
 const INSTRUCTION_FILE_LIMIT = 4 * 1024 * 1024;
@@ -277,7 +293,9 @@ function fenceSegments(text: string): Array<{ code: boolean; text: string }> {
 export function stripInstructionComments(text: string): string {
   return fenceSegments(text)
     .map((segment) =>
-      segment.code ? segment.text : segment.text.replace(/^[ \t]*<!--[\s\S]*?-->[ \t]*\n?/gm, ''),
+      segment.code
+        ? segment.text
+        : segment.text.replace(/^[ \t]*<!--[\s\S]*?-->[ \t]*(?:\n|$)/gm, ''),
     )
     .join('\n');
 }
@@ -290,9 +308,13 @@ export function instructionImports(text: string): string[] {
   const imports: string[] = [];
   for (const segment of fenceSegments(text)) {
     if (segment.code) continue;
-    const prose = segment.text.replace(/(`+)[\s\S]*?[^`]\1(?!`)|(`+)\2/g, ' ');
-    for (const match of prose.matchAll(/(?:^|\s)@((?:\\ |[^\s])+)/g))
-      imports.push(match[1]!.replace(/\\ /g, ' '));
+    // A code span never crosses a blank line; an indented block after a blank line is code.
+    for (const paragraph of segment.text.split(/\n[ \t]*\n/)) {
+      if (/^( {4}|\t)/.test(paragraph)) continue;
+      const prose = paragraph.replace(/(`+)[\s\S]*?[^`]\1(?!`)|(`+)\2/g, ' ');
+      for (const match of prose.matchAll(/(?:^|\s)@((?:\\ |[^\s])+)/g))
+        imports.push(match[1]!.replace(/\\ /g, ' '));
+    }
   }
   return imports;
 }
@@ -325,6 +347,8 @@ export async function readInstructionFile(
     } catch {
       return;
     }
+    // An import is judged on where it resolves and where its symlinks lead.
+    if (importedBy && (secretPath(real) || (options.allows && !options.allows(real)))) return;
     seen.add(real);
     const content = stripInstructionComments(await Bun.file(real).text());
     files.push({ path: file, content, depth, ...(importedBy ? { importedBy } : {}) });
@@ -332,7 +356,7 @@ export async function readInstructionFile(
     for (const target of instructionImports(content)) {
       const next = resolveInstructionImport(target, file, options.home);
       const ext = extname(next).toLowerCase();
-      if (ext && !TEXT_EXTENSIONS.has(ext)) continue;
+      if ((ext && !TEXT_EXTENSIONS.has(ext)) || secretPath(next)) continue;
       if (!options.allows || options.allows(next)) await visit(next, depth + 1, file);
     }
   };
@@ -350,12 +374,35 @@ export function formatInstructionFiles(files: readonly InstructionFile[]): strin
     .join('\n\n');
 }
 
-/** A ContextSource for one CLAUDE.md or similar file, with its `@path` imports resolved. */
+/** Whether `path` is `root` or inside it. */
+export function withinPath(path: string, root: string): boolean {
+  const rel = relative(root, path);
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+/** A boundary test for `roots`, as written and with symlinks resolved, so a real path compares too. */
+export function withinAny(roots: readonly string[]): (path: string) => boolean {
+  const all = roots.flatMap((root) => {
+    try {
+      return [root, realpathSync(root)];
+    } catch {
+      return [root];
+    }
+  });
+  return (path) => all.some((root) => withinPath(path, root));
+}
+
+/**
+ * A ContextSource for one CLAUDE.md or similar file, with its `@path` imports resolved. Imports
+ * load from the file's own directory tree only.
+ */
 export function claudemdSource(id: string, path: string): ContextSource {
   return {
     id,
     async load() {
-      return formatInstructionFiles(await readInstructionFile(path));
+      return formatInstructionFiles(
+        await readInstructionFile(path, { allows: withinAny([dirname(resolve(path))]) }),
+      );
     },
   };
 }

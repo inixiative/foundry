@@ -213,6 +213,7 @@ test('native worker requires subscription status and strips paid credentials whi
     OPENAI_API_KEY: 'synthetic-paid-key',
     ANTHROPIC_API_KEY: 'synthetic-paid-key',
     CLAUDE_CODE_OAUTH_TOKEN: 'synthetic-other-account',
+    CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
   });
   try {
     expect(command.env.OPENAI_API_KEY).toBeUndefined();
@@ -221,6 +222,8 @@ test('native worker requires subscription status and strips paid credentials whi
     expect(command.env.CLAUDE_CONFIG_DIR).toBe(realpathSync(f.worker.profileDirectory));
     expect(command.argv.slice(-2)).toEqual(['--setting-sources', '']);
     expect(command.argv).not.toContain('--tools');
+    // `--setting-sources ''` still loads auto memory; the instruction off switch survives the scrub.
+    expect(command.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe('1');
     // Worker threads and decisions are shared holders of the one login.
     const second = await auth.prepare('another-worker', 'claude');
     second.launch(['claude'], {});

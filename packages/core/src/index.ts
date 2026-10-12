@@ -43,6 +43,8 @@ export {
   readInstructionFile,
   resolveInstructionImport,
   stripInstructionComments,
+  withinAny,
+  withinPath,
 } from './adapters/markdown-docs';
 export { type SqliteEntry, SqliteMemory } from './adapters/sqlite-memory';
 // Agent primitives

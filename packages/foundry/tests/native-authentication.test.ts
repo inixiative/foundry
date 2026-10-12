@@ -72,6 +72,7 @@ describe('Foundry native authentication', () => {
       OPENAI_API_KEY: 'wrong',
       FOUNDRY_TEST_AUTH_A: 'synthetic-a',
       FOUNDRY_TEST_AUTH_B: 'synthetic-b',
+      CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
       PATH: '/bin',
     };
     const left = first.launch(['claude'], inherited),
@@ -84,6 +85,8 @@ describe('Foundry native authentication', () => {
     expect(left.env.FOUNDRY_TEST_AUTH_B).toBeUndefined();
     expect(right.env.FOUNDRY_TEST_AUTH_A).toBeUndefined();
     expect(left.argv).toEqual(['claude', '--setting-sources', 'user']);
+    // Foundry composes instruction files; the gateway's user settings source must not load them again.
+    expect(left.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe('1');
     expect(JSON.stringify(left.argv)).not.toContain('synthetic-a');
     expect(readFileSync(join(right.env.CODEX_HOME!, 'config.toml'), 'utf8')).not.toContain(
       'synthetic-b',

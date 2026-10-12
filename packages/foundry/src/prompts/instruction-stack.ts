@@ -1,13 +1,16 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   type ContextSource,
   type InstructionFile,
   type OwnershipScope,
   readInstructionFile,
+  withinAny,
+  withinPath,
 } from '@inixiative/foundry-core';
 import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
+import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 
@@ -63,11 +66,16 @@ export interface InstructionStackOptions {
   codexHome?: string;
   /** Default: the platform's Claude Code managed CLAUDE.md. */
   managedPath?: string;
+  /** Leave out the global level: the harness reads that same file itself and cannot be told not to. */
+  harnessLoadsGlobal?: boolean;
 }
 
-const within = (path: string, root: string) => {
-  const rel = relative(root, path);
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+const within = withinPath;
+const TIER_RANK: Readonly<Record<CorpusTier, number>> = {
+  personal_private: 0,
+  personal_public: 1,
+  team: 2,
+  org: 3,
 };
 
 const isFile = (path: string) => {
@@ -116,7 +124,12 @@ async function ruleFiles(dir: string): Promise<string[]> {
   const found: string[] = [];
   for await (const rel of new Bun.Glob('**/*.md').scan({ cwd: dir, followSymlinks: true })) {
     const path = join(dir, rel);
-    const frontmatter = FRONTMATTER.exec(readFileSync(path, 'utf8'))?.[1];
+    let frontmatter: string | undefined;
+    try {
+      frontmatter = FRONTMATTER.exec(readFileSync(path, 'utf8'))?.[1];
+    } catch {
+      continue; // unreadable: Claude Code skips it too
+    }
     if (!frontmatter || !/^paths\s*:/m.test(frontmatter)) found.push(path);
   }
   return found.sort();
@@ -144,17 +157,29 @@ export async function discoverInstructionStack(
   const seen = new Set<string>();
   const stack: InstructionStackFile[] = [];
 
+  const personalDirs = withinAny([claudeDir, codexHome]);
+  /** Where a file sits says how private it is, whoever imported it. */
+  const located = (path: string): InstructionLevel | undefined => {
+    if (basename(path) === 'CLAUDE.local.md') return 'local';
+    if (personalDirs(path) || dirname(path) === home) return 'global';
+    if (within(path, root) || within(path, repository)) return 'project';
+    return undefined;
+  };
+
   const add = async (path: string, level: InstructionLevel, body?: (text: string) => string) => {
     const personal = level === 'global' || level === 'managed';
     // Claude Code asks once before loading a project file's import from outside the project.
     // Foundry has no dialog: an import loads inside the project or the importing file's own tree.
-    const allows = personal
-      ? undefined
-      : (target: string) =>
-          within(target, root) || within(target, repository) || within(target, dirname(path));
+    const allows = personal ? undefined : withinAny([root, repository, dirname(path)]);
     for (const file of await readInstructionFile(path, { home, seen, allows })) {
       const content = file.depth === 0 && body ? body(file.content) : file.content;
-      stack.push({ ...file, content, level, tier: INSTRUCTION_LEVEL_TIER[level] });
+      // An import never widens: it keeps the narrower of its importer's tier and its own location's.
+      const own = file.importedBy ? located(file.path) : undefined;
+      const final =
+        own && TIER_RANK[INSTRUCTION_LEVEL_TIER[own]] < TIER_RANK[INSTRUCTION_LEVEL_TIER[level]]
+          ? own
+          : level;
+      stack.push({ ...file, content, level: final, tier: INSTRUCTION_LEVEL_TIER[final] });
     }
   };
 
@@ -165,7 +190,9 @@ export async function discoverInstructionStack(
         : '/etc/claude-code/CLAUDE.md'),
     'managed',
   );
-  if (options.harness === 'claude') {
+  if (options.harnessLoadsGlobal) {
+    // The harness reads the personal global file itself.
+  } else if (options.harness === 'claude') {
     await add(join(claudeDir, 'CLAUDE.md'), 'global');
     for (const rule of await ruleFiles(join(claudeDir, 'rules')))
       await add(rule, 'global', ruleBody);
@@ -177,14 +204,21 @@ export async function discoverInstructionStack(
   const dirs: string[] = [];
   for (let dir = cwd; dirname(dir) !== dir; dir = dirname(dir)) dirs.unshift(dir);
   for (const dir of dirs) {
-    const level: InstructionLevel =
-      within(dir, root) || within(dir, repository) ? 'project' : 'org';
+    // The home directory is personal, and its .claude is the global level's (per harness), never org.
+    const isHome = dir === resolve(home);
+    const level: InstructionLevel = isHome
+      ? 'global'
+      : within(dir, root) || within(dir, repository)
+        ? 'project'
+        : 'org';
     await add(join(dir, 'CLAUDE.md'), level);
-    await add(join(dir, '.claude', 'CLAUDE.md'), level);
-    for (const rule of await ruleFiles(join(dir, '.claude', 'rules')))
-      await add(rule, level, ruleBody);
+    if (!isHome) {
+      await add(join(dir, '.claude', 'CLAUDE.md'), level);
+      for (const rule of await ruleFiles(join(dir, '.claude', 'rules')))
+        await add(rule, level, ruleBody);
+    }
     await add(join(dir, 'AGENTS.md'), level);
-    await add(join(dir, '.claude', 'AGENTS.md'), level);
+    if (!isHome) await add(join(dir, '.claude', 'AGENTS.md'), level);
     await add(join(dir, 'CLAUDE.local.md'), 'local');
   }
 
@@ -195,7 +229,7 @@ export async function discoverInstructionStack(
     'memory',
     'MEMORY.md',
   );
-  if (isFile(memory)) {
+  if (isFile(memory) && !seen.has(realpathSync(memory))) {
     const lines = readFileSync(memory, 'utf8').split('\n').slice(0, MEMORY_LINES).join('\n');
     const content = Buffer.from(lines).subarray(0, MEMORY_BYTES).toString('utf8');
     stack.push({ path: memory, content, depth: 0, level: 'memory', tier: 'personal_private' });
@@ -218,6 +252,8 @@ export function composeInstructionStack(
 
 export interface InstructionStackSourceOptions extends Omit<InstructionStackOptions, 'cwd'> {
   audience?: CorpusTier;
+  /** Where a thread with no cwd works: its project's directory. */
+  projectPath?: (projectId: string) => string | undefined;
 }
 
 /**
@@ -235,7 +271,10 @@ export function instructionStackSource(
     async load() {
       const files = await discoverInstructionStack({
         ...options,
-        cwd: scope?.cwd ?? process.cwd(),
+        cwd:
+          scope?.cwd ??
+          (scope?.projectId ? options.projectPath?.(scope.projectId) : undefined) ??
+          process.cwd(),
       });
       return composeInstructionStack(files, options.audience);
     },
@@ -271,5 +310,25 @@ export function harnessLoadsInstructions(config: FoundryConfig): boolean {
           ...(layer.chunks ?? []).flatMap((chunk) => chunk.sourceIds),
         ].some((id) => view.sources[id]?.enabled && view.sources[id]?.type === 'instructions'),
     );
-  return !views.some((view) => view && composes(view));
+  // Suppression is process-wide, so it needs every view to compose: otherwise a thread could get neither.
+  return !views.every((view) => !view || composes(view));
+}
+
+/**
+ * True when the Codex worker runs on the user's own CODEX_HOME (no subscription or native
+ * authentication), so Codex reads `$CODEX_HOME/AGENTS.md` itself with no way to turn it off.
+ */
+export function codexReadsUserHome(config: FoundryConfig): boolean {
+  if (config.defaults.provider !== 'codex') return false;
+  try {
+    if (resolveSubscriptionPolicy(config)) return false;
+  } catch {
+    return false;
+  }
+  return (
+    !config.defaults.kingdomOwnerKey &&
+    !Object.keys(config.kingdomInferenceAssignments ?? {}).length &&
+    !config.defaults.nativeAuthenticationId &&
+    !Object.keys(config.nativeAuthenticationSelections ?? {}).length
+  );
 }

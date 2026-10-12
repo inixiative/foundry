@@ -89,9 +89,13 @@ code is `prompts/instruction-stack.ts`; `@path` imports are resolved by core's
 The order matches what Claude Code 2.1.296 loads (checked live): managed, global,
 then the root-to-cwd walk, then auto memory, each file followed by its imports.
 A worktree's main checkout counts as the same repository, and auto memory is
-keyed by it. Each file loads once however it is reached. The source's `audience`
-(default `personal_private`) filters by tier through the corpus `VISIBLE_TO`
-rules, so personal files never reach a `team` or `org` audience.
+keyed by it. The home directory's own files are personal (global level), and its
+`.claude` is read only as the running harness's global level. Each file loads
+once however it is reached, and an import keeps the narrower of its importer's
+tier and its own location's (a `CLAUDE.local.md` imported by `CLAUDE.md` stays
+personal). The source's `audience` (default `personal_private`) filters by tier
+through the corpus `VISIBLE_TO` rules, so personal files never reach a `team` or
+`org` audience.
 
 Imports follow Claude Code: `@path` at a line start or after whitespace, relative
 to the importing file, `~/` for home, absolute paths allowed, `\ ` for a space,
@@ -99,14 +103,18 @@ four hops at most, not inside code spans or fenced blocks, text files only.
 Block-level HTML comments are stripped. Claude Code asks once before loading a
 project file's import from outside the project. Foundry has no dialog, so a
 project, org or local file imports only inside the repository or its own
-directory tree; global files import from anywhere.
+directory tree, checked on the symlink target too; global files import from
+anywhere. Dotfiles (`.env`), key files and credential directories (`.ssh`,
+`.aws`, ...) never import, unlike Claude Code. `claudemdSource` (a `markdown`
+source naming one file) imports only within that file's directory.
 
 Not composed: subdirectory files and path-scoped rules, which Claude Code loads
 on demand as it touches files.
 
 **One injection path.** `instructions.harnessLoading` decides whether the
-harness loads these files too. Absent, it is `suppress` exactly when an enabled
-layer reads an enabled `instructions` source, and `load` otherwise. It applies on
+harness loads these files too. Absent, it is `suppress` when every view (global
+and each enabled project) has an enabled layer reading an enabled `instructions`
+source, and `load` otherwise, so no thread is left with neither. It applies on
 restart.
 
 - Claude Code: `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on the worker. It drops every
@@ -114,9 +122,13 @@ restart.
   `--setting-sources ''` (the subscription worker's isolation) already drops the
   CLAUDE.md files but not auto memory, so `load` on that worker keeps only memory.
 - Codex app-server: thread config `project_doc_max_bytes: 0` drops project
-  AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting; the
-  subscription worker's private CODEX_HOME never has one. The legacy MCP engine
-  takes no thread config, so suppression does not reach it.
+  AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting. Subscription
+  and native-profile workers run on a Foundry-private CODEX_HOME without one, so
+  Foundry composes the user's file; a worker on the user's own CODEX_HOME reads
+  it natively, so Foundry leaves that level out. The legacy MCP engine takes no
+  thread config, so suppression does not reach it.
+- The off switch is kept through every authentication launch (subscription,
+  gateway, Kingdom), which otherwise clear `CLAUDE_CODE_*` variables.
 
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
 `instructions` source injects that file twice. Remove the `markdown` source.

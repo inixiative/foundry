@@ -280,6 +280,9 @@ export class NativeAuthentication {
         for (const configured of this.sources.values())
           if (configured.mode === 'gateway' && configured.credential.type === 'environment')
             delete env[configured.credential.variable];
+        // Foundry's own instruction-file switch is policy, not a credential: keep it.
+        if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1')
+          env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
         // A default login location is selected by leaving the override unset.
         Object.assign(
           env,

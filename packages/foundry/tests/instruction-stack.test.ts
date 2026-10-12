@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
@@ -144,6 +144,57 @@ test('personal files never reach a team audience; org reaches every audience', a
   expect(own).toContain(`Contents of ${join(repo, 'CLAUDE.md')} (project instructions`);
 });
 
+test('with home above the repository, home files stay personal and its .claude belongs to the harness', async () => {
+  // A realistic layout: ~/code/org/repo, so the walk passes through the home directory.
+  const nestedOrg = join(home, 'code', 'org');
+  const nestedRepo = join(nestedOrg, 'repo');
+  mkdirSync(join(nestedRepo, '.git'), { recursive: true });
+  write(join(home, 'CLAUDE.md'), 'HOME_FILE');
+  write(join(claudeDir, 'CLAUDE.md'), 'CLAUDE_GLOBAL');
+  write(join(codexHome, 'AGENTS.md'), 'CODEX_GLOBAL');
+  write(join(nestedOrg, 'CLAUDE.md'), 'ORG_RULES');
+  write(join(nestedRepo, 'CLAUDE.md'), 'TEAM_RULES');
+  for (const harness of ['claude', 'codex'] as const) {
+    const stack = await discoverInstructionStack(options(nestedRepo, harness));
+    const team = composeInstructionStack(stack, 'team');
+    for (const text of ['HOME_FILE', 'CLAUDE_GLOBAL', 'CODEX_GLOBAL'])
+      expect(team).not.toContain(text);
+    expect(team).toContain('ORG_RULES');
+    const own = composeInstructionStack(stack);
+    expect(own).toContain(harness === 'claude' ? 'CLAUDE_GLOBAL' : 'CODEX_GLOBAL');
+    expect(own).not.toContain(harness === 'claude' ? 'CODEX_GLOBAL' : 'CLAUDE_GLOBAL');
+  }
+});
+
+test('an import keeps the narrower tier: a committed file importing CLAUDE.local.md does not publish it', async () => {
+  write(join(repo, 'CLAUDE.md'), 'TEAM_RULES @CLAUDE.local.md');
+  write(join(repo, 'CLAUDE.local.md'), 'LOCAL_SECRET');
+  const stack = await discoverInstructionStack(options(repo));
+  expect(stack.find((file) => file.content === 'LOCAL_SECRET')).toMatchObject({
+    level: 'local',
+    tier: 'personal_private',
+  });
+  expect(composeInstructionStack(stack, 'team')).not.toContain('LOCAL_SECRET');
+});
+
+test('the Codex global file is left to Codex when it runs on that same CODEX_HOME', async () => {
+  write(join(codexHome, 'AGENTS.md'), 'CODEX_GLOBAL');
+  write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
+  const stack = await discoverInstructionStack({
+    ...options(repo, 'codex'),
+    harnessLoadsGlobal: true,
+  });
+  expect(stack.map((file) => file.content)).toEqual(['TEAM_RULES']);
+});
+
+test('an unreadable rule is skipped, not fatal', async () => {
+  write(join(repo, '.claude', 'rules', 'locked.md'), 'locked');
+  write(join(repo, 'CLAUDE.md'), 'TEAM_RULES');
+  chmodSync(join(repo, '.claude', 'rules', 'locked.md'), 0o000);
+  const stack = await discoverInstructionStack(options(repo));
+  expect(stack.map((file) => file.content)).toEqual(['TEAM_RULES']);
+});
+
 test('each file reaches the stack once, however many ways it is reached', async () => {
   write(join(repo, 'CLAUDE.md'), 'Claude rules @AGENTS.md @shared.md');
   write(join(repo, 'CLAUDE.local.md'), 'mine @shared.md');
@@ -188,6 +239,15 @@ test('the instructions layer composes the stack for the thread cwd it is bound t
     mkdirSync(join(repo, 'pkg'));
     await stack.getLayer('instructions')!.warm();
     expect(stack.getLayer('instructions')!.content).toContain('THREAD_REPO_RULES');
+    // A project thread with no worktree works in its project's directory.
+    config.projects.p = { id: 'p', path: repo };
+    const projectStack = new ContextStack(
+      buildLayers(config, {
+        sourceResolver: createSourceResolver({ memory: new FileMemory(join(root, 'memory')) }),
+      }),
+    ).clone({ threadId: 'u', projectId: 'p' });
+    await projectStack.getLayer('instructions')!.warm();
+    expect(projectStack.getLayer('instructions')!.content).toContain('THREAD_REPO_RULES');
   } finally {
     for (const [key, value] of Object.entries(previous))
       if (value === undefined) delete process.env[key];
@@ -211,6 +271,15 @@ test('harness loading is suppressed exactly when Foundry composes the stack, unl
   disabled.layers.instructions!.enabled = false;
   expect(harnessLoadsInstructions(disabled)).toBe(true);
 
+  // One project that does not compose keeps the harness loading for everyone: never neither.
+  const mixed: FoundryConfig = structuredClone(composing);
+  mixed.projects.p = {
+    id: 'p',
+    path: repo,
+    layers: { instructions: { enabled: false } },
+  };
+  expect(harnessLoadsInstructions(mixed)).toBe(true);
+
   composing.instructions = { harnessLoading: 'load' };
   expect(harnessLoadsInstructions(composing)).toBe(true);
 });
@@ -231,12 +300,16 @@ test('the Claude off switch reaches the native process through the subscription 
       kill: () => exit(143),
     };
   };
-  const adapter = (env?: Record<string, string>) =>
+  const adapter = (env?: Record<string, string | undefined>) =>
     new ClaudeCodeSessionAdapter({
       store: new InMemoryExternalSessionStore(),
       defaults: { spawn, ...(env ? { env } : {}) },
     });
-  for (const env of [{ ...CLAUDE_HARNESS_INSTRUCTIONS_OFF }, undefined]) {
+  // Explicitly unset in the second case, so a shell that exports the variable cannot pass the test.
+  for (const env of [
+    { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF },
+    { CLAUDE_CODE_DISABLE_CLAUDE_MDS: undefined },
+  ]) {
     const session = await adapter(env).createSession({ threadId: 'main', cwd: repo });
     await session.start();
     session.kill();

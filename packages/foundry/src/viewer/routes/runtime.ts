@@ -505,11 +505,14 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     if (!thread) return c.json({ error: 'thread not found' }, 404);
 
     // Update worktree assignment
+    const priorCwd = thread.meta.cwd;
     if (typeof body.worktreePath === 'string') {
       thread.meta.cwd = body.worktreePath || undefined;
     } else if (body.worktreePath === null) {
       thread.meta.cwd = undefined;
     }
+    // Instruction files are discovered from the cwd: re-read them on the next turn.
+    if (thread.meta.cwd !== priorCwd) for (const layer of thread.stack.layers) layer.invalidate();
 
     if (typeof body.branch === 'string') {
       thread.meta.branch = body.branch || undefined;
