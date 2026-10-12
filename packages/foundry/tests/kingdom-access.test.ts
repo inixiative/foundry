@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { expect, test } from 'bun:test';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import type { KingdomAccessSource } from '../src/providers/kingdom-access-client
 import { inspectReadiness } from '../src/readiness';
 import { registerKingdomAccess } from '../src/tools/kingdom-access';
 import { ConfigStore, defaultConfig, validateConfig } from '../src/viewer/config';
+import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installation';
 
 const require = createRequire(new URL('../package.json', import.meta.url));
 const { Client } = await import(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
@@ -28,12 +29,7 @@ const scope = { projectId, threadId: crypto.randomUUID() };
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-access-'));
-  const secret = `kingdom_${'x'.repeat(43)}`,
-    credentialFile = join(directory, 'access.json');
-  await writeFile(credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
-  const integrationId = crypto.randomUUID(),
-    signetId = crypto.randomUUID(),
-    resourceId = crypto.randomUUID();
+  const resourceId = crypto.randomUUID();
   const requests: Array<{ action: string; body: any; authorized: boolean }> = [];
   let revoked = false,
     wrongGrant = false,
@@ -41,66 +37,55 @@ async function fixture() {
     redirect = false,
     failExecution = false;
   let onExecute: (() => Promise<void>) | undefined;
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
-      const action = new URL(request.url).pathname.split('/').at(-1)!;
-      requests.push({
-        action,
-        body: await request.json(),
-        authorized: request.headers.get('authorization') === `Bearer ${secret}`,
-      });
+  let integrationId = '';
+  const kingdom = mockKingdom({
+    async onSignet(action, body, presented) {
+      requests.push({ action, body, authorized: true });
       if (redirect) return Response.redirect('http://127.0.0.1:1/credential-trap');
       if (revoked) return new Response('PRIVATE_PROVIDER_ERROR', { status: 401 });
       if (oversize) return new Response('x'.repeat(1_048_577));
       if (action === 'describe')
-        return Response.json({
-          data: {
-            signetId,
-            integrationId: wrongGrant ? crypto.randomUUID() : integrationId,
-            name: 'Team integration',
-            expiresAt: new Date(Date.now() + 60000).toISOString(),
-            provider: 'linear',
-            lifecycle: 'ongoing',
-            taskId: null,
-            currentRevision: 1,
-            remainingRequests: 4,
-            operations: [
-              {
-                key: 'issues.read',
-                name: 'Read issue',
-                resources: [
-                  { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId },
-                ],
-              },
-              {
-                key: 'issues.write',
-                name: 'Write issue',
-                resources: [
-                  { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId },
-                ],
-              },
-            ],
-          },
-        });
+        return {
+          signetId: presented.signetId,
+          integrationId: wrongGrant ? crypto.randomUUID() : integrationId,
+          name: 'Team integration',
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          provider: 'linear',
+          lifecycle: 'ongoing',
+          taskId: null,
+          currentRevision: 1,
+          remainingRequests: 4,
+          operations: [
+            {
+              key: 'issues.read',
+              name: 'Read issue',
+              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
+            },
+            {
+              key: 'issues.write',
+              name: 'Write issue',
+              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
+            },
+          ],
+        };
       if (action === 'execute') {
         await onExecute?.();
         if (failExecution) return new Response('PRIVATE_UNCERTAIN_BODY', { status: 503 });
-        return Response.json({
-          data: { executionId: crypto.randomUUID(), result: { title: 'CONTROLLED_ISSUE' } },
-        });
+        return { executionId: crypto.randomUUID(), result: { title: 'CONTROLLED_ISSUE' } };
       }
       return new Response(null, { status: 404 });
     },
   });
+  const held = await heldSignet(kingdom, directory, userOwner());
+  integrationId = held.integrationId;
+  const { signetId, credentialFile } = held;
   const source: KingdomAccessSource = {
     id: crypto.randomUUID(),
     name: 'Team issues',
     integrationId,
     signetId,
     credentialFile,
-    url: server.url.origin,
+    url: kingdom.url,
     projectIds: [projectId],
   };
   const tools = new ToolRegistry();
@@ -132,7 +117,7 @@ async function fixture() {
       onExecute = options.onExecute;
     },
     async close() {
-      server.stop(true);
+      kingdom.stop();
       await rm(directory, { recursive: true, force: true });
     },
   };
@@ -239,21 +224,19 @@ test('private credentials, response bounds, redirect refusal and uncertain failu
     expect((await f.read()).ok).toBe(false);
     expect(f.requests).toHaveLength(0);
     await chmod(f.source.credentialFile, 0o600);
-    await writeFile(
-      f.source.credentialFile,
-      JSON.stringify({ secret: `kingdom_refresh_${'x'.repeat(43)}` }),
-    );
-    expect((await f.read()).ok).toBe(false);
-    expect(f.requests).toHaveLength(0);
-    await writeFile(
-      f.source.credentialFile,
-      JSON.stringify({ secret: `kingdom_${'x'.repeat(43)}` }),
-    );
+    const enrolled = await readFile(f.source.credentialFile, 'utf8');
+    for (const secret of [`kingdom_${'x'.repeat(43)}`, `kingdom_refresh_${'x'.repeat(43)}`]) {
+      await writeFile(f.source.credentialFile, JSON.stringify({ secret }));
+      expect((await f.read()).ok).toBe(false);
+      expect(f.requests).toHaveLength(0);
+    }
+    await writeFile(f.source.credentialFile, enrolled);
     for (const state of [{ redirect: true }, { oversize: true }, { failExecution: true }]) {
       f.state(state);
       const failure = await f.read();
       expect(failure.ok).toBe(false);
-      expect(JSON.stringify(failure)).not.toMatch(/PRIVATE|kingdom_x|access\.json|credential-trap/);
+      expect(JSON.stringify(failure)).not.toMatch(/PRIVATE|kingdom_|signet_renew_|credential-trap/);
+      expect(JSON.stringify(failure)).not.toContain(f.source.credentialFile);
     }
     expect(f.requests.filter((request) => request.action === 'execute')).toHaveLength(1);
   } finally {
@@ -446,7 +429,8 @@ test('the native launch bridge transports integration reads and persists their o
       f.requests.find((request) => request.action === 'execute')!.body.requestId,
     );
     expect(delivered.executionId).toMatch(/^[a-f0-9-]{36}$/);
-    expect(JSON.stringify(records)).not.toMatch(/kingdom_x|access\.json/);
+    expect(JSON.stringify(records)).not.toMatch(/kingdom_|signet_renew_/);
+    expect(JSON.stringify(records)).not.toContain(f.source.credentialFile);
     lease.observe({ ...admission, nativeOutcome: 'completed' });
   } finally {
     await client.close();

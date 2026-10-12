@@ -9,6 +9,7 @@ import type {
 } from '../src/providers/kingdom-access-client';
 import { ConfigStore, defaultConfig } from '../src/viewer/config';
 import { registerAccessRoutes } from '../src/viewer/routes/access';
+import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installation';
 
 type AccessSettings = {
   sources: (KingdomAccessSource & { credentialStatus: 'available' | 'unavailable' })[];
@@ -71,7 +72,30 @@ test('grant editing preserves unrelated settings, reports missing private files,
     expect(settings.applyMode).toBe('restart');
     expect(settings.sources[0].credentialStatus).toBe('unavailable');
     const secret = `kingdom_${'x'.repeat(43)}`;
-    await writeFile(f.source.credentialFile, JSON.stringify({ secret }), { mode: 0o600 });
+    await writeFile(
+      f.source.credentialFile,
+      JSON.stringify({ secret: `kingdom_${'y'.repeat(43)}` }),
+      { mode: 0o600 },
+    );
+    expect((await f.get()).sources[0].credentialStatus).toBe('unavailable');
+    await writeFile(
+      f.source.credentialFile,
+      JSON.stringify({
+        url: f.source.url,
+        signetId: f.source.signetId,
+        enrollmentId: crypto.randomUUID(),
+        lifecycle: 'ongoing',
+        taskId: null,
+        keyFile: join(f.dir, 'key.json'),
+        renewalCredential: `signet_renew_${'r'.repeat(43)}`,
+        accessToken: secret,
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        renewalExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        idleExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        tokenType: 'DPoP',
+      }),
+      { mode: 0o600 },
+    );
     const response = await f.app.request('/api/access/sources');
     expect(response.headers.get('cache-control')).toBe('no-store');
     settings = (await response.json()) as AccessSettings;
@@ -127,54 +151,51 @@ test('stale or competing saves cannot silently overwrite grants; invalid authori
   }
 });
 
-test('explicit checks use only the saved origin and private token, expose metadata without executing or renewing', async () => {
+test('explicit checks use only the saved origin and enrolled Signet, expose metadata without executing or renewing', async () => {
   const f = await fixture();
   let calls = 0,
     rejected = false;
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    async fetch(request) {
+  const kingdom = mockKingdom({
+    onSignet(action, body) {
       calls++;
-      expect(new URL(request.url).pathname).toBe('/api/v1/access/describe');
-      expect(await request.json()).toEqual({});
+      expect(action).toBe('describe');
+      expect(body).toEqual({});
       if (rejected) return new Response('PRIVATE_TOKEN_FAILURE', { status: 401 });
-      return Response.json({
-        data: {
-          signetId: f.source.signetId,
-          integrationId: f.source.integrationId,
-          name: 'Team issues',
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-          provider: 'linear',
-          lifecycle: 'ongoing',
-          taskId: null,
-          currentRevision: 1,
-          remainingRequests: 3,
-          operations: [
-            {
-              key: 'issues.read',
-              name: 'Read issue',
-              resources: [
-                {
-                  id: crypto.randomUUID(),
-                  name: 'Issue',
-                  kind: 'issue',
-                  integrationId: f.source.integrationId,
-                },
-              ],
-            },
-          ],
-        },
-      });
+      return {
+        signetId: f.source.signetId,
+        integrationId: f.source.integrationId,
+        name: 'Team issues',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+        provider: 'linear',
+        lifecycle: 'ongoing',
+        taskId: null,
+        currentRevision: 1,
+        remainingRequests: 3,
+        operations: [
+          {
+            key: 'issues.read',
+            name: 'Read issue',
+            resources: [
+              {
+                id: crypto.randomUUID(),
+                name: 'Issue',
+                kind: 'issue',
+                integrationId: f.source.integrationId,
+              },
+            ],
+          },
+        ],
+      };
     },
   });
   try {
-    f.source.url = server.url.origin;
-    await writeFile(
-      f.source.credentialFile,
-      JSON.stringify({ secret: `kingdom_${'x'.repeat(43)}` }),
-      { mode: 0o600 },
-    );
+    const held = await heldSignet(kingdom, f.dir, userOwner());
+    Object.assign(f.source, {
+      url: kingdom.url,
+      credentialFile: held.credentialFile,
+      integrationId: held.integrationId,
+      signetId: held.signetId,
+    });
     await f.put({ revision: (await f.get()).revision, source: f.source });
     await f.get();
     expect(calls).toBe(0);
@@ -193,7 +214,7 @@ test('explicit checks use only the saved origin and private token, expose metada
     expect(JSON.stringify(failed)).not.toContain('PRIVATE');
     expect(calls).toBe(2);
   } finally {
-    server.stop(true);
+    kingdom.stop();
     await f.close();
   }
 });

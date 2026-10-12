@@ -7,7 +7,6 @@ import {
   signetDescriptionSchema,
 } from '@inixiative/signet';
 import { z } from 'zod';
-import { accessSecretPattern } from './kingdom-secrets';
 
 /** Access grants are independent of native inference installations and capacity. */
 export const kingdomAccessSourceSchema = z
@@ -33,9 +32,6 @@ export const kingdomAccessSourceSchema = z
   })
   .strict();
 export type KingdomAccessSource = z.infer<typeof kingdomAccessSourceSchema>;
-export const accessCredentialSchema = z
-  .object({ secret: z.string().regex(accessSecretPattern) })
-  .strict();
 export const readOperationSchema = z
   .string()
   .max(80)
@@ -48,59 +44,17 @@ export function validateKingdomAccess(sources: unknown): KingdomAccessSource[] {
   return parsed;
 }
 
-export class KingdomAccessHttpError extends Error {
-  constructor(readonly status: number) {
-    super(`Kingdom access refused (${status})`);
-  }
-}
-
 /** Single requests only: never retry uncertain execution or follow credential-bearing redirects. */
 export class KingdomAccessClient {
   constructor(private source: KingdomAccessSource) {
     this.source = kingdomAccessSourceSchema.parse(source);
   }
-  private async post(
-    action: 'describe' | 'execute',
-    body: unknown,
-    onDispatch?: () => void,
-  ): Promise<unknown> {
-    const stored = await readPrivateJson(this.source.credentialFile);
-    if (signetCredentialSchema.safeParse(stored).success)
-      return new SignetClient(
-        this.source.url,
-        this.source.credentialFile,
-        this.source.signetId,
-      ).post(action, body, onDispatch);
-    const { secret } = accessCredentialSchema.parse(stored);
-    onDispatch?.();
-    const response = await fetch(`${this.source.url}/api/v1/access/${action}`, {
-      method: 'POST',
-      redirect: 'error',
-      signal: AbortSignal.timeout(20000),
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new KingdomAccessHttpError(response.status);
-    }
-    const reader = response.body?.getReader();
-    if (!reader) throw Error('Kingdom access response unavailable');
-    const chunks: Uint8Array[] = [];
-    let bytes = 0;
-    try {
-      for (;;) {
-        const next = await reader.read();
-        if (next.done) break;
-        bytes += next.value.byteLength;
-        if (bytes > 1_048_576) throw Error('Kingdom access response exceeds limit');
-        chunks.push(next.value);
-      }
-    } finally {
-      await reader.cancel();
-    }
-    return z.object({ data: z.unknown() }).parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
-      .data;
+  private post(action: 'describe' | 'execute', body: unknown, onDispatch?: () => void) {
+    return new SignetClient(this.source.url, this.source.credentialFile, this.source.signetId).post(
+      action,
+      body,
+      onDispatch,
+    );
   }
   async describe() {
     const description = signetDescriptionSchema.parse(await this.post('describe', {}));

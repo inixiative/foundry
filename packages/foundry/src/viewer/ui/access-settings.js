@@ -157,9 +157,9 @@ export function AccessSettings({ projectId, onSaved }) {
           <label class="settings-field">Integration ID<input class="settings-input mono" required value=${draft.integrationId} onInput=${(event) => update('integrationId', event.target.value.trim())} /></label>
           <label class="settings-field">Signet ID<input class="settings-input mono" required value=${draft.signetId} onInput=${(event) => update('signetId', event.target.value.trim())} /></label>
         </div>
-        <label class="settings-field">Kingdom token file<input class="settings-input mono" required placeholder="/private/path/access.json" value=${draft.credentialFile} onInput=${(event) => update('credentialFile', event.target.value)} /></label>
+        <label class="settings-field">Signet credential file<input class="settings-input mono" required placeholder="/path/.foundry/kingdom/HOST/signet-SIGNET.json" value=${draft.credentialFile} onInput=${(event) => update('credentialFile', event.target.value)} /></label>
         <button type="button" class="action-btn" onClick=${() => setPicker(true)}>Choose file</button>
-        <p class="settings-desc">Select a private file on the Foundry host containing your Kingdom token. The file must be owned by the current user and accessible only to that user. Its contents are not sent to this browser.</p>
+        <p class="settings-desc">Select the enrolled Signet credential this Foundry holds, under its configuration directory's <code>kingdom/HOST/</code>. The file must be owned by the current user and accessible only to that user. Its contents are not sent to this browser.</p>
         <fieldset class="access-projects"><legend>Allowed projects · choose at least one</legend>
           ${data.projects.filter((project) => project.enabled).map((project) => html`<label key=${project.id}><input type="checkbox" checked=${draft.projectIds.includes(project.id)} onChange=${(event) => update('projectIds', event.target.checked ? [...draft.projectIds, project.id] : draft.projectIds.filter((id) => id !== project.id))} /> ${project.name}</label>`)}
           ${!data.projects.some((project) => project.enabled) && html`<p>Add an enabled project before saving a grant.</p>`}

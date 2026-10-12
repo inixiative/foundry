@@ -6,7 +6,6 @@ import { configuredExperts } from './agents/configured-experts';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { MODEL_REGISTRY } from './models/registry';
 import { resolveDecisionModel } from './providers/decision-provider';
-import { accessCredentialSchema } from './providers/kingdom-access-client';
 import {
   type KingdomIntegration,
   kingdomInstallationPaths,
@@ -176,13 +175,13 @@ export async function inspectReadiness(
   checkProvider(config.defaults.provider, 'global');
   for (const source of config.kingdomAccess ?? []) {
     try {
-      accessCredentialSchema.parse(await readPrivateJson(source.credentialFile));
+      signetCredentialSchema.parse(await readPrivateJson(source.credentialFile));
     } catch {
       issue(
         'error',
         source.id,
         'integration-credential-unavailable',
-        'The integration access token must be in an owned private regular file. Inference installation and run tokens cannot authorize integration reads.',
+        'The integration grant must be an enrolled Signet credential file this Foundry holds, owned and private. Inference installation and run tokens cannot authorize integration reads.',
       );
     }
     issue(

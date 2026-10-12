@@ -112,10 +112,9 @@ Three packages: `@inixiative/foundry-core` 0.4.0 (MIT, `packages/core`), `@inixi
 ## 3. Boundaries still crossed
 
 ### Kingdom
-- **Resolved:** the Connection term (`INTEGRATION_SECRETS`, `renewIntegrations`, Kingdom #114); the Oracle cycle, runtime-job and delegation machinery is gone (no `oracleCycle`, `runtimeJobs`, `runtimeOracle*` or `OracleCycles` left), as are the `RuntimeTribe*` models, `remoteRoutes.ts`, `connectionCheck`, `ARCHIVE_REMOTE_BINDINGS` and the sibling-checkout `foundrySource.ts` (Kingdom tests the published `@inixiative/foundry`). Duplicate Archive storage went in `59ee9b8a`.
+- **Resolved:** bearer-token Signets are gone (2026-10-12, Aron: "Signets are their own authentication system"): no legacy `access` input, `proofRequired` flag or `owner/issueToken`. Every Signet is presented through an enrolled key with DPoP access tokens, and a Kingdom API token may enroll a key for its own user. The Connection term (`INTEGRATION_SECRETS`, `renewIntegrations`, Kingdom #114); the Oracle cycle, runtime-job and delegation machinery is gone (no `oracleCycle`, `runtimeJobs`, `runtimeOracle*` or `OracleCycles` left), as are the `RuntimeTribe*` models, `remoteRoutes.ts`, `connectionCheck`, `ARCHIVE_REMOTE_BINDINGS` and the sibling-checkout `foundrySource.ts` (Kingdom tests the published `@inixiative/foundry`). Duplicate Archive storage went in `59ee9b8a`.
 - **Open:**
   - `oracle` is in the `Provider` enum (`packages/db/prisma/schema/integration.prisma:78-97`) but has no catalog entry; `foundry` has one with `operations: []`.
-  - The legacy `access` policy path in `apps/api/src/modules/owner/schemas/ownerSchemas.ts:105` ("Choose resource grants or legacy access"). It is the only way to issue a Signet with `proofRequired: false`, which `ownerIssueToken` needs to mint a bearer token, so removing it is a decision for Aron, not a cleanup.
   - The inference gateway (`apps/api/src/modules/access/services/streamInference.ts`) proxies API-key calls to Anthropic and OpenAI. Its purpose under subscription-only execution needs a decision.
 
 ### Foundry
@@ -212,7 +211,7 @@ The acceptance bar is that an agent can drive every step for you. Most steps are
 **Kingdom**
 1. Add per-owner AI provider integrations (Claude, OpenAI/Codex, Grok, Gemini, Meta Muse) that feed subscription pools. Decide what the API-key inference gateway is for (goal 6).
 2. Give `oracle` a catalog entry, and give the paired `foundry` Signet real operations.
-3. Decide the legacy `access` policy path (bearer-token Signets) and drop it or keep it. `CONNECTION_SECRETS` and `renewConnections` became `INTEGRATION_SECRETS` and `renewIntegrations` (Kingdom #114).
+3. `CONNECTION_SECRETS` and `renewConnections` became `INTEGRATION_SECRETS` and `renewIntegrations` (Kingdom #114); bearer-token Signets were removed on 2026-10-12.
 
 **Foundry**
 1. Add a `layer test` command with recorded cases (goal 7).
