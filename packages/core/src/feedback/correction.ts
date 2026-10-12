@@ -73,11 +73,14 @@ export const AGAIN_CORRECTION = {
   word: /\bagain\b/i,
   retry:
     /\b(?:try|run|do|check|show|send|ask|say|test|start|restart|look|read|load|open|build|deploy|push|pull|merge|call|post|go)(?: (?:it|that|this|them|me|the \w+))? again\b|^\W*again\W*$/i,
+  opening: /^\W*(?:no,?\s+)?again\s*[,:;—-]\s*\S/i,
   context:
     /\b(?:don'?t|do not|not|never|shouldn'?t|stop|why|wrong|told|said|no longer|keep|still|same|we'?re|you'?re|you)\b/i,
 } as const;
 
-/** Measured precision per signal: openers hold best, interruptions worst. */
+/** What a signal says, most telling first: the `signal` a caller acts on (a repeat can block). */
+const MEANING: readonly CorrectionSignal[] = ['repeat', 'explicit', 'interruption', 'opener'];
+/** Measured precision per signal, for `score`: openers hold best, interruptions worst. */
 const WEIGHT: Record<CorrectionSignal, number> = {
   opener: 0.8,
   repeat: 0.7,
@@ -107,6 +110,8 @@ export function proseOf(text: string): string {
 function againPhrase(prose: string): string | undefined {
   for (const sentence of prose.split(/(?<=[.!?\n])\s+/)) {
     if (!AGAIN_CORRECTION.word.test(sentence) || AGAIN_CORRECTION.retry.test(sentence)) continue;
+    // "Again, merge it yourself." opens with the marker: a repeat whatever follows.
+    if (AGAIN_CORRECTION.opening.test(sentence)) return 'again';
     if (AGAIN_CORRECTION.context.test(sentence.replace(AGAIN_CORRECTION.word, ''))) return 'again';
   }
   return undefined;
@@ -126,10 +131,10 @@ export function detectCorrection(
   const again = againPhrase(prose);
   if (again && !found.has('repeat')) found.set('repeat', again);
   if (options.interrupted) found.set('interruption', undefined);
-  const signals = [...found.keys()].sort((a, b) => WEIGHT[b] - WEIGHT[a]);
+  const signals = MEANING.filter((signal) => found.has(signal));
   const [strongest] = signals;
   if (!strongest) return { hit: false, signals, score: 0 };
-  let score = WEIGHT[strongest] + 0.1 * (signals.length - 1);
+  let score = Math.max(...signals.map((signal) => WEIGHT[signal])) + 0.1 * (signals.length - 1);
   if (signals.length === 1 && strongest === 'opener' && ASKED.test(before)) score -= 0.4;
   const phrase = found.get(strongest) ?? signals.map((signal) => found.get(signal)).find(Boolean);
   return {

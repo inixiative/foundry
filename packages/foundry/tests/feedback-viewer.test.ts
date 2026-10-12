@@ -22,12 +22,16 @@ function decisions(): LLMProvider & { calls: LLMMessage[][] } {
     async complete(messages: LLMMessage[]): Promise<CompletionResult> {
       calls.push(messages);
       const system = String(messages[0]?.content ?? '');
-      const content = system.startsWith('You classify one message')
+      const content = system.startsWith('You classify messages')
         ? JSON.stringify({
-            isCorrection: true,
-            category: 'approach',
-            statements: [RULE],
-            sharp: true,
+            results: {
+              M1: {
+                isCorrection: true,
+                category: 'approach',
+                statements: [RULE],
+                sharp: true,
+              },
+            },
           })
         : JSON.stringify({ itemId: null, confidence: 0 });
       return {

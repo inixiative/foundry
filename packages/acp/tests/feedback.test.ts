@@ -23,14 +23,18 @@ const decisions = (sharp: boolean) =>
   ({
     id: 'decisions',
     async complete(messages: Array<{ content: unknown }>): Promise<CompletionResult> {
-      const classify = String(messages[0]?.content ?? '').startsWith('You classify one message');
+      const classify = String(messages[0]?.content ?? '').startsWith('You classify messages');
       return {
         content: classify
           ? JSON.stringify({
-              isCorrection: true,
-              category: 'approach',
-              statements: sharp ? [RULE] : [],
-              sharp,
+              results: {
+                M1: {
+                  isCorrection: true,
+                  category: 'approach',
+                  statements: sharp ? [RULE] : [],
+                  sharp,
+                },
+              },
             })
           : JSON.stringify({ itemId: null, confidence: 0 }),
       } as CompletionResult;
