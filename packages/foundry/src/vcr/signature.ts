@@ -4,7 +4,8 @@
 export type Signature = { status: number; shape: Record<string, string[]> };
 
 const MAX_DEPTH = 3;
-const ID_KEY = /^[a-z]+_[A-Za-z0-9]{16,}$/;
+// Ids a run draws (`toolu_…`) and content-hashed subagent names (`d-…`, `w-…`) keyed maps by.
+const ID_KEY = /^(?:[a-z]+_[A-Za-z0-9]{16,}|[dw]-[0-9a-f]{16})$/;
 
 /** Dotted key paths (arrays collapse to `[]`) and leaf types, to `MAX_DEPTH`. */
 function paths(value: unknown, prefix = '', depth = 0, out = new Set<string>()): Set<string> {

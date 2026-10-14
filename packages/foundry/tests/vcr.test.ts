@@ -217,6 +217,21 @@ describe('live drift', () => {
     expect(read('outcome.x.json').body).toEqual({ ok: true });
     expect(read('outcome.x.pending.json').body).toEqual({ ok: false });
   });
+
+  it('a recording committed before a later sibling drifted is held back with it, never mixed', async () => {
+    const vcr = () =>
+      new VCR(dir, { service: 'svc', version: () => '1' }).queue('t', 'one').queue('t', 'two');
+    const committed = vcr();
+    await committed.capture('t', async () => ({ a: 1 }));
+    await committed.capture('t', async () => ({ b: 1 }));
+    const next = vcr();
+    await next.capture('t', async () => ({ a: 2 })); // same shape: would commit on its own
+    await next.capture('t', async () => ({ b: 'drifted' }));
+    expect(read('t.one.json').body).toEqual({ a: 1 });
+    expect(read('t.one.pending.json').body).toEqual({ a: 2 });
+    expect(read('t.two.json').body).toEqual({ b: 1 });
+    expect(read('t.two.pending.json').body).toEqual({ b: 'drifted' });
+  });
 });
 
 describe('drift classification', () => {
@@ -382,6 +397,70 @@ describe('process cassettes', () => {
     ).spawn(['x'], { cwd: dir, env: {} });
     expect(() => child.stdin.write('{"id":1,"method":"other"}\n')).toThrow(
       'stdin line 1 differs from the recording (other vs ping)',
+    );
+  });
+
+  it('replay maps a run’s own user uuids and definition hashes into the recorded frames, and nothing else', async () => {
+    mkdirSync(dir, { recursive: true });
+    const user = (uuid: string, hash: string) =>
+      JSON.stringify({
+        type: 'user',
+        uuid,
+        message: { role: 'user', content: `d-${hash} m1` },
+        parent_tool_use_id: null,
+      });
+    const was = 'aaaaaaaaaaaaaaaa',
+      wasUuid = '11111111-1111-4111-8111-111111111111';
+    writeFileSync(
+      join(dir, 'session.side.json'),
+      JSON.stringify({
+        version: '1',
+        status: 0,
+        body: {
+          kind: 'process',
+          argv: ['claude', '--print'],
+          cwd: '{{cwd}}',
+          stdin: [
+            user(wasUuid, was),
+            JSON.stringify({
+              type: 'control_request',
+              request_id: 'c-1',
+              request: { subtype: 'rewind_conversation', target_message_uuid: wasUuid },
+            }),
+          ],
+          stdinEnded: false,
+          frames: [
+            {
+              after: 1,
+              stream: 'stdout',
+              data: JSON.stringify({ type: 'system', subagent_type: `w-${was}`, uuid: wasUuid }),
+            },
+          ],
+          exit: { after: 9, code: 0, killed: false },
+        },
+      }),
+    );
+    setMode('replay');
+    const cassettes = new ProcessCassettes(
+      new VCR(dir, { service: 'claude', version: () => '1' })
+        .queue('session', 'side')
+        .queue('session', 'side'),
+      'session',
+    );
+    const now = 'bbbbbbbbbbbbbbbb',
+      nowUuid = '22222222-2222-4222-8222-222222222222';
+    const child = cassettes.spawn(['claude', '--print'], { cwd: dir, env: {} });
+    child.stdin.write(`${user(nowUuid, now)}\n`);
+    const reader = child.stdout.getReader();
+    const frame = JSON.parse(new TextDecoder().decode((await reader.read()).value).trim());
+    expect(frame).toEqual({ type: 'system', subagent_type: `w-${now}`, uuid: nowUuid });
+    child.stdin.write(
+      `${JSON.stringify({ type: 'control_request', request_id: 'c-9', request: { subtype: 'rewind_conversation', target_message_uuid: nowUuid } })}\n`,
+    );
+    // A different message under a fresh uuid is still a different message.
+    const other = cassettes.spawn(['claude', '--print'], { cwd: dir, env: {} });
+    expect(() => other.stdin.write(`${user(nowUuid, now).replace('m1', 'm2')}\n`)).toThrow(
+      'stdin line 1 differs',
     );
   });
 

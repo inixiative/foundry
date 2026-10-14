@@ -7,32 +7,29 @@
       true,
       true
     ],
-    "primers": 2,
-    "primersCarriedComposition": true,
-    "secondPrimerChanged": true,
-    "cyclesSentOnlyTheTurn": true,
+    "sideSessions": 2,
+    "definitionsCarriedComposition": true,
+    "secondDefinitionChanged": true,
+    "subagentsGivenOnlyTheTurn": true,
     "receipts": [
       {
         "valid": true,
-        "settled": true,
-        "prime": "cold"
+        "settled": true
       },
       {
         "valid": true,
-        "settled": true,
-        "prime": "warm"
+        "settled": true
       },
       {
         "valid": true,
-        "settled": true,
-        "prime": "cold"
+        "settled": true
       }
     ]
   },
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-14T03:10:41.354Z",
+    "recordedAt": "2026-10-14T04:04:13.645Z",
     "agentSession": "0.6.3",
     "environment": "terminal"
   }

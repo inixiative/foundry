@@ -42,23 +42,20 @@ function claudeTransport(options: { model?: string } = {}) {
     argv: string[];
     env: Record<string, string | undefined>;
     inputs: string[];
-    /** The base context file's contents at spawn; agent-session removes the file when the session ends. */
-    base?: string;
     exited: boolean;
+    systemPrompt?: string;
   }[] = [];
   return {
     launches,
     spawn(argv: string[], config: { cwd: string; env: Record<string, string | undefined> }) {
-      const file = argv[argv.indexOf('--append-system-prompt-file') + 1];
+      const file = argv.indexOf('--append-system-prompt-file');
       const launch = {
         argv,
         env: config.env,
         inputs: [] as string[],
-        base:
-          argv.includes('--append-system-prompt-file') && file
-            ? readFileSync(file, 'utf8')
-            : undefined,
         exited: false,
+        // Read at launch: the private file is removed when the process ends.
+        systemPrompt: file >= 0 ? readFileSync(argv[file + 1]!, 'utf8') : undefined,
       };
       launches.push(launch);
       let controller!: ReadableStreamDefaultController<Uint8Array>, exit!: (code: number) => void;
@@ -184,7 +181,7 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
         { role: 'system', content: 'ADVISE' },
         { role: 'user', content: `${cache}\n## Message\n${message}` },
       ],
-      { threadId: 'T:aux:domain:api', stablePrefix: cache },
+      { threadId: 'T:aux:cartographer', stablePrefix: cache },
     );
   try {
     const first = await advise('one');
@@ -216,9 +213,8 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
         Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN|CLAUDE_CONFIG_DIR/.test(key)),
       ).toEqual([]);
     }
-    // agent-session hands the base context over in a private file, never on argv.
-    expect(primer!.base).toContain("Foundry's internal decision middleware");
-    expect(primer!.base).toContain('ADVISE');
+    expect(primer!.systemPrompt).toContain("Foundry's internal decision middleware");
+    expect(primer!.systemPrompt).toContain('ADVISE');
     for (const launch of decided) expect(launch.argv).toContain('--fork-session');
   } finally {
     await run.close();

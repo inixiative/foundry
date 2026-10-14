@@ -2,6 +2,11 @@
 // instance on a spare VIEWER_PORT (never the daemon's 4500).
 //
 //   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--experts 6] [--gap-ms 30000]
+//     [--roster <project>]
+//
+// --roster copies a project's .foundry/settings.json and .foundry/roles (for example the live
+// Warden roster) instead of generating N experts. The Foundry's process tree is sampled every
+// second: processes, Claude processes and resident memory, peak and at the end.
 //
 // --gap-ms spaces messages like real turns (the worker's own run separates them);
 // back-to-back messages measure a request burst the provider may throttle.
@@ -16,6 +21,7 @@
 
 import { Database } from 'bun:sqlite';
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -35,7 +41,8 @@ const foundry = resolve(arg('foundry', join(import.meta.dir, '..')));
 const port = Number(arg('port', '4471')),
   runs = Number(arg('runs', '10')),
   expertCount = Number(arg('experts', '6')),
-  gapMs = Number(arg('gap-ms', '30000'));
+  gapMs = Number(arg('gap-ms', '30000')),
+  roster = process.argv.includes('--roster') ? resolve(arg('roster', '')) : undefined;
 if (port === 4500) throw Error('4500 belongs to the daemon; choose a spare port');
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing', 'performance', 'docs'].slice(
   0,
@@ -82,10 +89,28 @@ async function start(label: string) {
   };
 }
 
-// 1. Starter configuration, then N experts with owned inline knowledge.
+// 1. Starter configuration, then N experts with owned inline knowledge (or a copied roster).
 const first = await start('generate');
 await first.stop();
 const settingsPath = join(project, '.foundry', 'settings.json');
+if (roster) {
+  // The roster is its agents and what composes them. The project registration, daemon and Kingdom
+  // pairings stay this throwaway Foundry's own: its journal already owns thread `main` for its project.
+  const own = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  const {
+    projects: _projects,
+    daemon: _daemon,
+    kingdomIntegrations: _kingdom,
+    setupComplete: _setup,
+    ...rosterSettings
+  } = JSON.parse(readFileSync(join(roster, '.foundry', 'settings.json'), 'utf8'));
+  writeFileSync(settingsPath, JSON.stringify({ ...own, ...rosterSettings }, null, 2));
+  if (existsSync(join(roster, '.foundry', 'roles')))
+    cpSync(join(roster, '.foundry', 'roles'), join(project, '.foundry', 'roles'), {
+      recursive: true,
+    });
+  DOMAINS.length = 0;
+}
 const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
 const model = settings.defaults.classifierModel ?? DECISION_MODEL;
 const knowledge = (d: string) =>
@@ -122,6 +147,30 @@ writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 
 // 2. Measure.
 const foundryInstance = await start('measure');
+/** The Foundry's process tree: processes, Claude processes and resident memory (MB). */
+const tree = () => {
+  const rows = Bun.spawnSync(['/bin/ps', '-A', '-o', 'pid=,ppid=,rss=,comm='])
+    .stdout.toString()
+    .trim()
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/));
+  const kids = (pid: string): string[][] =>
+    rows.filter((r) => r[1] === pid).flatMap((r) => [r, ...kids(r[0]!)]);
+  const all = [
+    rows.find((r) => r[0] === String(foundryInstance.child.pid)) ?? [],
+    ...kids(String(foundryInstance.child.pid)),
+  ].filter((r) => r.length);
+  return {
+    processes: all.length,
+    claude: all.filter((r) => /claude$/.test(r[3] ?? '')).length,
+    rssMb: Math.round(all.reduce((n, r) => n + Number(r[2]) / 1024, 0)),
+  };
+};
+let peak = tree();
+const sampler = setInterval(() => {
+  const now = tree();
+  if (now.rssMb > peak.rssMb) peak = now;
+}, 1_000);
 const messages = [
   'Add a rate limit to the login endpoint',
   'Why does the orders query scan the whole table?',
@@ -146,8 +195,9 @@ const send = async (id: string, message: string) => {
   return { status: response.status, wallMs: Date.now() - started };
 };
 const ids: string[] = [];
+const warmupId = `warmup-${Date.now()}`;
 try {
-  await send(`warmup-${Date.now()}`, 'Warm up: summarize what this project does.');
+  await send(warmupId, 'Warm up: summarize what this project does.');
   for (let n = 0; n < runs; n++) {
     await Bun.sleep(gapMs);
     const id = `measure-${n}-${Date.now()}`;
@@ -155,8 +205,10 @@ try {
     await send(id, messages[n % messages.length]!);
   }
 } finally {
-  await foundryInstance.stop();
+  clearInterval(sampler);
 }
+const atEnd = tree();
+await foundryInstance.stop();
 
 // 3. Journaled timings.
 const db = new Database(join(project, '.foundry', 'sessions.sqlite'), { readonly: true });
@@ -172,6 +224,14 @@ const rows = ids
   })
   .filter((r) => r.startedAt && r.sealedAt)
   .map((r) => r.sealedAt! - r.startedAt!);
+const warmTurn = db
+  .query('select started_at as startedAt from session_turns where id = ?')
+  .get(warmupId) as { startedAt: number } | null;
+const warmSeal = db
+  .query('select min(stored_at) as sealedAt from session_phase where turn_id = ?')
+  .get(warmupId) as { sealedAt: number | null } | null;
+const firstTurnMs =
+  warmTurn && warmSeal?.sealedAt ? warmSeal.sealedAt - warmTurn.startedAt : undefined;
 const pct = (values: number[], p: number) => {
   const s = [...values].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)];
@@ -180,6 +240,9 @@ const pct = (values: number[], p: number) => {
 // Per-decision latency from the decision receipts (primed hosts write decisions.jsonl; exec runs write codex-text.json).
 const receipts = join(project, '.foundry', 'decision-receipts');
 const decisions: number[] = [];
+// Pre-message decisions (advice, guards, routing) gate the turn; reviews run after it lands.
+const preMessage: number[] = [],
+  reviews: number[] = [];
 let hedged = 0,
   fallbacks = 0,
   receiptsSeen = 0;
@@ -193,6 +256,10 @@ for (const entry of existsSync(receipts) ? readdirSync(receipts) : []) {
       if (r.hedged) hedged++;
       if (r.transportFallback) fallbacks++;
       if (r.valid && r.prime === 'warm' && r.finishedAt) decisions.push(r.finishedAt - r.startedAt);
+      if (r.valid && r.finishedAt)
+        (String(r.owner?.threadId ?? '').includes(':aux:') ? preMessage : reviews).push(
+          r.finishedAt - r.startedAt,
+        );
     }
   if (existsSync(exec))
     for (const call of JSON.parse(readFileSync(exec, 'utf8')).calls ?? [])
@@ -216,7 +283,9 @@ const budgetCheck =
 console.log(
   JSON.stringify({
     foundry,
-    experts: DOMAINS.length,
+    experts: roster ? `roster ${roster}` : DOMAINS.length,
+    processTree: { peak, atEnd },
+    firstTurnMessageToWorkerMs: firstTurnMs,
     runs: rows.length,
     gapMs,
     messageToWorkerStartMs: {
@@ -228,6 +297,12 @@ console.log(
     ...(budgetCheck ? { budget: budgetCheck } : {}),
     decisionMs: decisions.length
       ? { count: decisions.length, p50: pct(decisions, 0.5), p95: pct(decisions, 0.95) }
+      : undefined,
+    preMessageMs: preMessage.length
+      ? { count: preMessage.length, p50: pct(preMessage, 0.5), p95: pct(preMessage, 0.95) }
+      : undefined,
+    reviewMs: reviews.length
+      ? { count: reviews.length, p50: pct(reviews, 0.5), p95: pct(reviews, 0.95) }
       : undefined,
     decisions: { total: receiptsSeen, hedged, websocketFallbacks: fallbacks },
     workerLaunch: /in use or unavailable/.test(foundryInstance.output)

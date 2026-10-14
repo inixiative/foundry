@@ -34,6 +34,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   effort?: string;
   /** Codex decisions: hedge a decision still running after this long (off when omitted). */
   hedgeAfterMs?: number;
+  /** Claude: keep each thread's Wardens pre-started between triggers. Default true. */
+  prestart?: boolean;
 }
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
@@ -83,8 +85,12 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
     callTimeoutMs: config.callTimeoutMs,
     onEvent: onPrimedEvent,
+    ...(config.prestart !== undefined ? { prestart: config.prestart } : {}),
   });
   const decisions = buildSubscriptionDecisions(options, primed.createRun);
+  // Pre-starting is not a decision: it bypasses the queue and costs no admission.
+  decisions.provider.prestart = primed.prestart;
+  decisions.provider.releaseThread = primed.releaseThread;
   return {
     ...decisions,
     close: () => {
@@ -96,7 +102,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       await decisions.shutdown(timeoutMs);
       await primed.close();
     },
-    snapshot: () => ({ ...decisions.snapshot(), primed: primed.host.snapshot() }),
+    snapshot: () => ({ ...decisions.snapshot(), ...primed.snapshot() }),
   };
 }
 

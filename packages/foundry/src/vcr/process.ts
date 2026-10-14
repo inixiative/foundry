@@ -43,6 +43,10 @@ export type Launch = {
   cwd: string;
   stdin: string;
   exited: boolean;
+  /** Claude's appended system prompt, read at launch (its private file is removed when the process ends). */
+  systemPrompt?: string;
+  /** A Claude side session's agent definitions (`--agents`), read at launch for the same reason. */
+  agents?: string;
 };
 
 type Options = {
@@ -111,7 +115,18 @@ export class ProcessCassettes {
 
   spawn = (argv: string[], options: SpawnOptions): RecordedProcess => {
     const path = this.vcr.popFixturePath(this.method);
-    const launch: Launch = { argv, env: options.env, cwd: options.cwd, stdin: '', exited: false };
+    const file = argv.indexOf('--append-system-prompt-file');
+    const launch: Launch = {
+      argv,
+      env: options.env,
+      cwd: options.cwd,
+      stdin: '',
+      exited: false,
+      ...(file >= 0 ? { systemPrompt: readFileSync(argv[file + 1]!, 'utf8') } : {}),
+      ...(argv.includes('--agents')
+        ? { agents: readFileSync(argv[argv.indexOf('--agents') + 1]!, 'utf8') }
+        : {}),
+    };
     this.launches.push(launch);
     const onWrite = (data: string) => {
       launch.stdin += data;
@@ -298,6 +313,32 @@ const clientRequestId = (value: JsonRpc | undefined) =>
     : value?.type === 'control_request' && typeof value.request_id === 'string'
       ? value.request_id
       : undefined;
+/** A subagent definition's name is a hash of its content (`d-…`, standby `w-…`); the content can
+ * carry this run's paths, so the hash is drawn per run. The definitions themselves are not on stdin. */
+const DEFINITION_NAME = /\b[dw]-([0-9a-f]{16})\b/g;
+/** Pairs of (recorded, current) per-run values in one stdin line: user uuids and definition hashes. */
+const runChosenPairs = (
+  recorded: string,
+  live: JsonRpc | undefined,
+  current: string,
+  now: JsonRpc | undefined,
+): [string, string][] => {
+  const pairs: [string, string][] = [];
+  const uuid = (value: JsonRpc | undefined) => {
+    const id = (value as { uuid?: unknown } | undefined)?.uuid;
+    return value?.type === 'user' && typeof id === 'string' ? id : undefined;
+  };
+  const was = uuid(live),
+    is = uuid(now);
+  if (was && is) pairs.push([was, is]);
+  const recordedNames = [...recorded.matchAll(DEFINITION_NAME)].map((m) => m[1]!),
+    currentNames = [...current.matchAll(DEFINITION_NAME)].map((m) => m[1]!);
+  if (recordedNames.length === currentNames.length)
+    recordedNames.forEach((name, index) => {
+      pairs.push([name, currentNames[index]!]);
+    });
+  return pairs;
+};
 /** Hook callback ids a Claude control `initialize` registers: the client's choice, like request ids. */
 const hookCallbackIds = (value: JsonRpc | undefined): string[] => {
   const hooks = (value as { request?: { subtype?: string; hooks?: unknown } } | undefined)?.request;
@@ -359,6 +400,17 @@ function replay(
   // JSON-RPC request ids the client chose live vs now, so replayed responses answer this run's requests.
   const ids = new Map<string, string | number>();
   const hooks = new Map<string, string>();
+  // Values the client draws per run that stdin and the CLI's frames both name: a user message's
+  // uuid (rewinds target it) and a subagent definition's content hash (its `d-`/`w-` name).
+  const chosen = new Map<string, string>();
+  const toCurrent = (line: string) => {
+    for (const [recorded, current] of chosen) line = line.replaceAll(recorded, current);
+    return line;
+  };
+  const toRecorded = (line: string) => {
+    for (const [recorded, current] of chosen) line = line.replaceAll(current, recorded);
+    return line;
+  };
   const close = (code: number) => {
     if (closed) return;
     closed = true;
@@ -406,7 +458,8 @@ function replay(
         transcript.frames[next]!.after <= events
       ) {
         const frame = transcript.frames[next++]!;
-        const data = remap(rehydrate(frame.data, context)) + (frame.eol === false ? '' : '\n');
+        const data =
+          remap(toCurrent(rehydrate(frame.data, context))) + (frame.eol === false ? '' : '\n');
         try {
           controllers[frame.stream].enqueue(encoder.encode(data));
         } catch {
@@ -444,7 +497,10 @@ function replay(
           if (recorded === undefined) mismatch(`stdin line ${stdinLines} was not recorded`);
           const live = json(recorded!),
             now = json(line);
-          if (comparable(scrubLine(line, context)) !== comparable(recorded!))
+          const scrubbed = scrubLine(line, context);
+          for (const [was, is] of runChosenPairs(recorded!, live, scrubbed, now))
+            if (!chosen.has(was)) chosen.set(was, is);
+          if (comparable(toRecorded(scrubbed)) !== comparable(recorded!))
             mismatch(
               `stdin line ${stdinLines} differs from the recording (${now?.method ?? now?.type ?? 'text'} vs ${live?.method ?? live?.type ?? 'text'})`,
             );

@@ -502,6 +502,18 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         notes: 'The Codex CLI default.',
       },
       {
+        id: 'gpt-6.1-sol',
+        label: 'GPT-6.1 Sol',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 272_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CODEX_REASONING_ULTRA,
+        notes:
+          'Needs Codex CLI 0.159 or later: 0.155 is refused on a ChatGPT login (verified 2026-10-12).',
+      },
+      {
         id: 'gpt-6-sol',
         label: 'GPT-6 Sol',
         tier: 'powerful',
