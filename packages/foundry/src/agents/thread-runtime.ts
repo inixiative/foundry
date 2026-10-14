@@ -2794,8 +2794,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     return deferred;
   }
   /**
-   * Ask every Warden to stay pre-started with its current thread understanding and the thread state
-   * (debounced: a landed turn and its reviews coalesce). A provider without pre-start ignores it.
+   * Ask every Warden to stay pre-started with its current thread understanding (debounced: a landed
+   * turn and its reviews coalesce). A provider without pre-start ignores it.
    */
   private _schedulePrestart(since = Date.now()): void {
     if (this._disposed) return;
@@ -2812,8 +2812,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         this._schedulePrestart(since);
         return;
       }
-      const threadState = this.librarian.layer.content;
-      for (const lib of this.domainLibrarians.values()) lib.prestart(threadState);
+      for (const lib of this.domainLibrarians.values()) lib.prestart();
     }, PRESTART_DEBOUNCE_MS);
     (this._prestartTimer as { unref?: () => void }).unref?.();
   }

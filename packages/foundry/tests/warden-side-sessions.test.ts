@@ -379,7 +379,7 @@ test('advice and guard declare the thread section that follows the domain cache;
   await lib.guard({ tool: 'Bash', input: { command: 'ls' } } as never, 'STATE', {
     threadKnowledge: 'KNOWN',
   });
-  const expected = threadSection('KNOWN', 'STATE');
+  const expected = threadSection('KNOWN');
   for (const call of seen) {
     expect(call.threadPrefix).toBe(expected);
     expect(call.content.startsWith(`${call.stablePrefix}${call.threadPrefix}`)).toBe(true);
@@ -395,6 +395,8 @@ test('advice and guard declare the thread section that follows the domain cache;
   expect(spec.context).toBe(domainCachePrefix('api', 'Routes live under src/api.'));
   expect(standby).toBe(expected);
   expect(input.startsWith(expected)).toBe(true);
+  // The thread state moves with every action: it rides with the moment, never in the standby.
+  expect(input.slice(expected.length)).toContain('## Thread state\nSTATE');
 });
 
 test("a thread's Wardens fan out in one side session; another thread gets its own", async () => {
@@ -408,9 +410,7 @@ test("a thread's Wardens fan out in one side session; another thread gets its ow
     expect(cli.sides[0]!.inputs).toHaveLength(1); // one fan-out turn
     expect(cli.primed).toHaveLength(0);
     // Without a pre-started member, the standby context rides in front of the input.
-    expect(cli.subagentInputs.every((p) => p.startsWith(threadSection(undefined, 'STATE')))).toBe(
-      true,
-    );
+    expect(cli.subagentInputs.every((p) => p.startsWith(threadSection(undefined)))).toBe(true);
     await warden('docs', run.decisions.provider, 'T2').advise('Other thread', 'STATE');
     expect(cli.sides).toHaveLength(2);
   } finally {
@@ -423,21 +423,34 @@ test('pre-started Wardens take only the moment; a landed turn refreshes them; a 
   const run = decisionsOn(cli);
   try {
     const wardens = ['docs', 'tests'].map((d) => warden(d, run.decisions.provider, 'T1'));
-    for (const w of wardens) w.prestart('STATE v1');
+    for (const w of wardens) w.prestart();
     await tick(120);
     expect(cli.standbyPrompts).toHaveLength(2);
-    expect(
-      cli.standbyPrompts.every((p) => p.startsWith(threadSection(undefined, 'STATE v1'))),
-    ).toBe(true);
+    expect(cli.standbyPrompts.every((p) => p.startsWith(threadSection(undefined)))).toBe(true);
     const results = await Promise.all(wardens.map((w) => w.advise('Add a route', 'STATE v1')));
     expect(results.every((r) => r.noComment)).toBe(true);
     expect(cli.momentInputs).toHaveLength(2);
-    expect(cli.momentInputs.every((m) => m.startsWith('\n## Message\nAdd a route'))).toBe(true);
+    // The moment carries the thread state, then the message.
+    expect(
+      cli.momentInputs.every((m) =>
+        m.startsWith('\n## Thread state\nSTATE v1\n\n## Message\nAdd a route'),
+      ),
+    ).toBe(true);
     expect(cli.subagentInputs).toEqual([]); // nothing fanned out
-    // The turn landed with a new thread state: every Warden is pre-started with it.
-    for (const w of wardens) w.prestart('STATE v2');
+    // A new thread state alone does not stale the spares: a guard on the next action takes one.
     await tick(200);
-    expect(cli.standbyPrompts.filter((p) => p.includes('STATE v2'))).toHaveLength(2);
+    await wardens[0]!.guard({ tool: 'Bash', input: { command: 'ls' } } as never, 'STATE v2');
+    expect(cli.subagentInputs).toEqual([]);
+    // A review landed new understanding: every Warden is pre-started with it.
+    for (const w of wardens)
+      w.threadKnowledge.learn(
+        'KNOWN v2',
+        { kind: 'dispatch', id: 'review', ok: true, timestamp: 1 },
+        'review',
+      );
+    for (const w of wardens) w.prestart();
+    await tick(200);
+    expect(cli.standbyPrompts.filter((p) => p.includes('KNOWN v2'))).toHaveLength(2);
     await run.decisions.provider.releaseThread!('T1');
     expect(cli.sides.every((s) => s.killed)).toBe(true);
   } finally {

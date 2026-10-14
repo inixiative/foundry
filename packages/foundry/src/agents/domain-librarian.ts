@@ -1173,14 +1173,14 @@ export class DomainLibrarian {
    */
   /**
    * Keep this Warden pre-started for its next advice or guard on this thread: its instructions,
-   * domain knowledge, current thread understanding and the thread state, so the call starts at
-   * once. A provider without pre-start ignores it; nothing is decided here.
+   * domain knowledge and current thread understanding, so the call starts at once (the thread state
+   * rides with the moment). A provider without pre-start ignores it; nothing is decided here.
    */
-  prestart(threadState?: string): void {
+  prestart(): void {
     const cacheContent = this._cache.content;
     if (!cacheContent || !this._llm.prestart) return;
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
-    const threadPrefix = threadSection(this._threadKnowledge.content || undefined, threadState);
+    const threadPrefix = threadSection(this._threadKnowledge.content || undefined);
     this._llm.prestart(
       [
         { role: 'system', content: chartered(this.advisePrompt, this._charter) },
@@ -1204,7 +1204,7 @@ export class DomainLibrarian {
     // so custom instructions never have to restate the schema and never get rewritten to carry it.
     // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
-    const threadPrefix = threadSection(opts?.threadKnowledge, threadState);
+    const threadPrefix = threadSection(opts?.threadKnowledge);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1336,7 +1336,7 @@ export class DomainLibrarian {
         ? opts.threadKnowledgeRevision
         : this._threadKnowledge.revision;
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
-    const threadPrefix = threadSection(understanding, threadState);
+    const threadPrefix = threadSection(understanding);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1490,11 +1490,13 @@ export const ADVICE_RESPONSE_PROTOCOL = [
 ].join('\n');
 
 /**
- * What follows the domain cache in an advice or guard message and changes only between turns: this
- * Warden's understanding of the thread and the thread state. Exactly the bytes those messages carry.
+ * What follows the domain cache in an advice or guard message and changes only when this Warden's
+ * review lands: its understanding of the thread. A pre-started Warden holds it. The thread state
+ * comes next and moves with every action, so it rides with the moment. Exactly the bytes those
+ * messages carry.
  */
-export function threadSection(understanding: string | undefined, threadState: string | undefined) {
-  return `${understanding ? `\n## Your understanding of this thread\n${understanding}` : ''}\n${threadState ? `\n## Thread state\n${threadState}` : ''}\n`;
+export function threadSection(understanding: string | undefined) {
+  return `${understanding ? `\n## Your understanding of this thread\n${understanding}` : ''}\n`;
 }
 
 /** The stable start of every phase's message: one primed session serves advice, guard and review. */

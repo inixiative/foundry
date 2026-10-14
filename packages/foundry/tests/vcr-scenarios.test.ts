@@ -479,7 +479,7 @@ test(
         });
       });
       try {
-        for (const w of wardens) w.prestart('Thread state: building the settings page.');
+        for (const w of wardens) w.prestart();
         // Both are pre-started and holding their moment call before anything is asked.
         for (let waited = 0; waited < 30_000; waited += 50) {
           const stdin = transport.launches[0]?.stdin ?? '';
@@ -511,9 +511,15 @@ test(
         return {
           advised: advice.map((a) => a.error === undefined),
           sideSessions: transport.launches.filter((l) => l.agents).length,
+          // A moment is the turn: the thread state (it moves with every action) and the message.
           momentsWereOnlyTheTurn:
             moments.length === 2 &&
-            moments.every((m) => m.includes('## Message') && !m.includes('Thread state')),
+            moments.every(
+              (m) =>
+                m.startsWith('\n## Thread state\nThread state: building the settings page.') &&
+                m.includes('## Message') &&
+                !m.includes('Domain cache'),
+            ),
         };
       } finally {
         await decisions.shutdown();
