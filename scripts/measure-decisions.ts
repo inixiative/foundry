@@ -94,7 +94,17 @@ const first = await start('generate');
 await first.stop();
 const settingsPath = join(project, '.foundry', 'settings.json');
 if (roster) {
-  cpSync(join(roster, '.foundry', 'settings.json'), settingsPath);
+  // The roster is its agents and what composes them. The project registration, daemon and Kingdom
+  // pairings stay this throwaway Foundry's own: its journal already owns thread `main` for its project.
+  const own = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  const {
+    projects: _projects,
+    daemon: _daemon,
+    kingdomIntegrations: _kingdom,
+    setupComplete: _setup,
+    ...rosterSettings
+  } = JSON.parse(readFileSync(join(roster, '.foundry', 'settings.json'), 'utf8'));
+  writeFileSync(settingsPath, JSON.stringify({ ...own, ...rosterSettings }, null, 2));
   if (existsSync(join(roster, '.foundry', 'roles')))
     cpSync(join(roster, '.foundry', 'roles'), join(project, '.foundry', 'roles'), {
       recursive: true,
