@@ -51,7 +51,7 @@ Foundry has no runtime key. It pairs as a Kingdom **Installation** (its own DPoP
 
 ## 2. The apps
 
-Versions: the `agentic` lane of the `@inixiative/config` train blesses the versions in `config/versions.json`; npm may already carry a newer one that is not blessed yet.
+Versions: the `agentic` lane of the `@inixiative/config` train blesses the versions in `config/versions.json`; npm may already carry a newer one that is not blessed yet. A newly published version is first a *candidate*, which `inixiative-config check` accepts; when Foundry fails against one, the train opens a `train/adopt-<pkg>-<version>` PR here and runs `train:adopt` (the live tier, which re-records the cassettes) on it.
 
 ### agent-session (`inixiative/agent-session`, `@inixiative/agent-session` 0.6.0 on npm, 0.5.2 blessed, MIT)
 - **Owns:** persistent native sessions (Claude CLI, Claude Agent SDK, Codex), the normalized event stream, primed decision sessions (`ClaudePrimedSessions`, `CodexPrimedSessions`), subscription pools, deterministic routing (`./routing`), limit polling, and continuity between accounts.
