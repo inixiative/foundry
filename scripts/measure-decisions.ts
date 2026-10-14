@@ -240,6 +240,9 @@ const pct = (values: number[], p: number) => {
 // Per-decision latency from the decision receipts (primed hosts write decisions.jsonl; exec runs write codex-text.json).
 const receipts = join(project, '.foundry', 'decision-receipts');
 const decisions: number[] = [];
+// Pre-message decisions (advice, guards, routing) gate the turn; reviews run after it lands.
+const preMessage: number[] = [],
+  reviews: number[] = [];
 let hedged = 0,
   fallbacks = 0,
   receiptsSeen = 0;
@@ -253,6 +256,10 @@ for (const entry of existsSync(receipts) ? readdirSync(receipts) : []) {
       if (r.hedged) hedged++;
       if (r.transportFallback) fallbacks++;
       if (r.valid && r.prime === 'warm' && r.finishedAt) decisions.push(r.finishedAt - r.startedAt);
+      if (r.valid && r.finishedAt)
+        (String(r.owner?.threadId ?? '').includes(':aux:') ? preMessage : reviews).push(
+          r.finishedAt - r.startedAt,
+        );
     }
   if (existsSync(exec))
     for (const call of JSON.parse(readFileSync(exec, 'utf8')).calls ?? [])
@@ -290,6 +297,12 @@ console.log(
     ...(budgetCheck ? { budget: budgetCheck } : {}),
     decisionMs: decisions.length
       ? { count: decisions.length, p50: pct(decisions, 0.5), p95: pct(decisions, 0.95) }
+      : undefined,
+    preMessageMs: preMessage.length
+      ? { count: preMessage.length, p50: pct(preMessage, 0.5), p95: pct(preMessage, 0.95) }
+      : undefined,
+    reviewMs: reviews.length
+      ? { count: reviews.length, p50: pct(reviews, 0.5), p95: pct(reviews, 0.95) }
       : undefined,
     decisions: { total: receiptsSeen, hedged, websocketFallbacks: fallbacks },
     workerLaunch: /in use or unavailable/.test(foundryInstance.output)
