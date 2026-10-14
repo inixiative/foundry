@@ -85,6 +85,11 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     expect(pairing.pending!.review).toBe(
       `${kingdom.url}/dashboard?reviewSignet=${pairing.pending!.reviewCode}`,
     );
+    expect(kingdom.requested()).toMatchObject({
+      name: 'Test Foundry',
+      resources: [{ resourceKind: 'model', operations: ['inference.create'], lens: {} }],
+    });
+    expect(kingdom.requested()?.owner).toBeUndefined();
     expect((await f.post('pair', { url: kingdom.url, name: 'Duplicate' })).status).toBe(409);
     expect(await f.tunnel()).toBe(200);
 

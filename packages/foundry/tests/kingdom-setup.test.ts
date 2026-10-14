@@ -129,8 +129,13 @@ test('CLI pairing shows the review code, opens the review page and persists like
       configDir: dir,
       url: kingdom.url,
       name: 'CLI Foundry',
+      organization: 'inixiative',
       log: (line) => lines.push(line),
       launch: (url) => opened.push(url),
+    });
+    expect(kingdom.requested()).toMatchObject({
+      owner: { ownerModel: 'Organization', organization: 'inixiative' },
+      resources: [{ resourceKind: 'model', operations: ['inference.create'] }],
     });
     expect(result).toMatchObject({
       status: 'connected',

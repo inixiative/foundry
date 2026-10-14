@@ -26,6 +26,8 @@ export interface PairKingdomOptions {
   /** Required unless `replace` selects the paired Kingdom. */
   url?: string;
   name?: string;
+  /** Organization (slug or id) the review opens on. */
+  organization?: string;
   /** Open the review page (macOS `open`). */
   open?: boolean;
   /** Re-pair an already paired Kingdom (selected by `kingdom`, else by `url`) instead of adding one. */
@@ -50,6 +52,7 @@ export async function pairKingdom(options: PairKingdomOptions) {
       return kingdomPairInputSchema.parse({
         url: replaced?.url ?? options.url,
         name: options.name ?? defaultInstallationName(),
+        organization: options.organization,
       });
     } catch {
       throw Error(
@@ -129,7 +132,7 @@ export async function kingdomStatus(configDir: string) {
 export const defaultKingdomUrl = () => process.env.KINGDOM_URL ?? HOSTED_KINGDOM_URL;
 
 const usage = [
-  'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]',
+  'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--organization SLUG|ID] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]',
   '       bun run kingdom login <claude|codex> [--owner PAIRED_ID|OWNER_KEY|ORG_OR_USER_ID] [--kingdom ID|URL] [--name NAME]',
   '       bun run kingdom capacity <FOUNDRY_PROJECT_ID> <local|kingdom> [--kingdom ID|URL] [--signet SIGNET_ID] [--project KINGDOM_PROJECT_ID]',
 ].join('\n');
@@ -142,6 +145,7 @@ async function main() {
     options: {
       url: { type: 'string' },
       name: { type: 'string' },
+      organization: { type: 'string' },
       kingdom: { type: 'string' },
       'config-dir': { type: 'string' },
       replace: { type: 'boolean' },
@@ -261,6 +265,7 @@ async function main() {
       configDir,
       url,
       name: v.name,
+      organization: v.organization,
       open: !v['no-open'],
       replace: v.replace,
       kingdom: v.kingdom,
