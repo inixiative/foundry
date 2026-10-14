@@ -2,7 +2,7 @@
 // Foundry's live-first policy: the mode is explicit (replay never calls live; record always
 // does), a recording is stamped with who/what/when, and a recording whose structure drifted
 // from the committed cassette is written beside it as pending instead of overwriting it.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { compareSignatures, type Signature, signatureOf } from './signature';
 
@@ -99,6 +99,8 @@ export class VCR {
   private readonly saving = new Set<Promise<unknown>>();
   /** Once one recording drifted, this instance's later ones (its outcome) go to pending with it. */
   private drifted = false;
+  /** This instance's recordings so far that replaced (or created) a committed cassette, with what was there. */
+  private committedHere: { fixturePath: string; out: string; previous?: string }[] = [];
 
   constructor(fixturesDir: string, opts: VCROptions) {
     this.fixturesDir = fixturesDir;
@@ -237,8 +239,10 @@ export class VCR {
         ...extra,
       };
       const next: Fixture = { version, ...fixture, recorded };
+      const previous = existsSync(fixturePath) ? readFileSync(fixturePath, 'utf-8') : undefined;
       const target = this.targetPath(fixturePath, next);
       write(target, next);
+      if (!this.drifted) this.committedHere.push({ fixturePath, out: target, previous });
       VCR.written.set(fixturePath, target);
       return target;
     })();
@@ -270,11 +274,25 @@ export class VCR {
     if (!differences.length) return out;
     const pending = pendingPath;
     this.drifted = true;
+    this.holdBackEarlier();
     VCR.drift.push({ cassette: fixturePath, pending, differences });
     console.warn(
       `VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join('\n  ')}`,
     );
     return pending;
+  }
+
+  /** A scenario's recordings are one run: once one drifts, the ones it already committed are held back
+   * with it, so the committed set never mixes two runs (a relaunch replayed against a stale sibling hangs). */
+  private holdBackEarlier(): void {
+    for (const { fixturePath, out, previous } of this.committedHere) {
+      const pending = out.replace(/\.json$/, '.pending.json');
+      renameSync(out, pending);
+      if (out === fixturePath && previous !== undefined) writeFileSync(fixturePath, previous);
+      else if (out === fixturePath) rmSync(fixturePath, { force: true });
+      VCR.written.set(fixturePath, pending);
+    }
+    this.committedHere = [];
   }
 
   private async saveFixture<T>(

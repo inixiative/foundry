@@ -1,0 +1,19 @@
+{
+  "version": "2.1.299",
+  "status": 200,
+  "body": {
+    "advised": [
+      true,
+      true
+    ],
+    "sideSessions": 1,
+    "momentsWereOnlyTheTurn": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-14T04:03:58.338Z",
+    "agentSession": "0.6.3",
+    "environment": "terminal"
+  }
+}
