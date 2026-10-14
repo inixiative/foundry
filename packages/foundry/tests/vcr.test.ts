@@ -229,6 +229,20 @@ describe('drift classification', () => {
     });
   const init = { type: 'system', subtype: 'init', model: 'm' },
     result = { type: 'result', subtype: 'success', result: 'x' };
+  it('reads a map keyed by ids as one shape, whatever ids a run drew', () => {
+    const toolUse = (id: string) =>
+      transcript(init, {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id }] },
+        wire_tool_inputs: { [id]: { command: 'ls', description: 'list' } },
+      });
+    expect(
+      compareSignatures(
+        toolUse('toolu_01PChqq8ejtgM2e7a96gxR2P'),
+        toolUse('toolu_01VrTGy4P6VX3bVfh1CH9ATv'),
+      ),
+    ).toEqual([]);
+  });
   it('treats thinking, rate-limit notices and reconnects as notices, and protocol shape as drift', () => {
     const before = transcript(init, result);
     const noisy = transcript(

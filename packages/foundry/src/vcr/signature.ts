@@ -4,6 +4,7 @@
 export type Signature = { status: number; shape: Record<string, string[]> };
 
 const MAX_DEPTH = 3;
+const ID_KEY = /^[a-z]+_[A-Za-z0-9]{16,}$/;
 
 /** Dotted key paths (arrays collapse to `[]`) and leaf types, to `MAX_DEPTH`. */
 function paths(value: unknown, prefix = '', depth = 0, out = new Set<string>()): Set<string> {
@@ -21,8 +22,11 @@ function paths(value: unknown, prefix = '', depth = 0, out = new Set<string>()):
       out.add(`${prefix}{}`);
       return out;
     }
-    for (const [key, child] of Object.entries(value))
+    for (const [raw, child] of Object.entries(value)) {
+      // A map keyed by ids (`wire_tool_inputs.toolu_…`) has one shape whatever ids a run drew.
+      const key = ID_KEY.test(raw) ? '<id>' : raw;
       paths(child, prefix ? `${prefix}.${key}` : key, depth + 1, out);
+    }
     return out;
   }
   out.add(`${prefix}:${value === null ? 'null' : typeof value}`);
