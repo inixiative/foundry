@@ -906,7 +906,9 @@ test(
           answers: [first, second, third].map((r) => r.content.trim()),
           sessions: [first, second, third].map((r) => r.delivery!.session),
           sent: [first, second, third].map((r) => r.delivery!.sent.map((part) => part.id)),
-          systemPrompt: worker.launches[0]!.argv.includes('--append-system-prompt'),
+          systemPrompt: worker.launches[0]!.argv.some((arg) =>
+            arg.startsWith('--append-system-prompt'),
+          ),
           standingResent: worker.launches[0]!.stdin.includes('The standing codeword'),
           thirdReadsCache: (third.tokens?.cacheRead ?? 0) > 0,
           launches: worker.launches.length,
@@ -954,6 +956,7 @@ test(
         standingPart('learning', `The learned codeword is ${word}.`);
       let held: Record<string, string> = {};
       let turn = 0;
+      const prompts: (string | undefined)[] = [];
       const ask = async (question: string, part: StandingPart) => {
         turn++;
         const result = await provider.complete(
@@ -970,6 +973,9 @@ test(
             delivery: { standing: [standing, part], turn: `Thread state: message ${turn}.`, held },
           },
         );
+        // agent-session removes a launch's system prompt file when that session ends: read it while it runs.
+        const latest = worker.launches.length - 1;
+        prompts[latest] ??= systemPrompt(latest);
         const report = result.delivery!;
         const next = report.session === 'started' ? {} : { ...held };
         for (const p of [...(report.session === 'started' ? report.base : []), ...report.sent])
@@ -999,8 +1005,8 @@ test(
           ),
           launches: worker.launches.length,
           resumes: worker.launches.map((l) => l.argv.includes('--resume')),
-          stateInSystemPrompt: [0, 1, 2].some((n) => systemPrompt(n)?.includes('Thread state')),
-          relaunchPromptsIdentical: systemPrompt(1) === systemPrompt(2),
+          stateInSystemPrompt: [0, 1, 2].some((n) => prompts[n]?.includes('Thread state')),
+          relaunchPromptsIdentical: prompts[1] !== undefined && prompts[1] === prompts[2],
           relaunchReadsCache: (again.tokens?.cacheRead ?? 0) > 0,
         };
       } finally {
