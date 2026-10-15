@@ -9,6 +9,7 @@
  *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
+ *     [--experiment <design.md>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -37,6 +38,10 @@
  * instructions, knowledge and charter are generated and composed exactly as a live thread of that
  * project composes them (`resolveProjectView`, `buildRoleLayers`, `wardenCharter`). The daemon's
  * settings file is read, never written. Requires exactly one --projects entry.
+ *
+ * --experiment <design.md>: a run of more than three moments, or --pipeline, refuses to start without
+ * a reviewed pre-registration (`scripts/evals/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
+ * the design's path and hash land in <out>/experiment.json.
  */
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -70,6 +75,7 @@ import {
 } from '../../packages/foundry/src/providers/decision-host';
 import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
+import { requireExperiment, TINY_MOMENTS } from './experiment-gate';
 
 const { values } = parseArgs({
   options: {
@@ -96,6 +102,7 @@ const { values } = parseArgs({
     'pause-at': { type: 'string' },
     model: { type: 'string' },
     effort: { type: 'string' },
+    experiment: { type: 'string' },
   },
 });
 const positive = (flag: string, value: string | undefined) => {
@@ -161,6 +168,11 @@ const probes = (projects ?? [undefined]).flatMap((project) => [
   ...pick('positive', project),
   ...pick('negative', project),
 ]);
+const experiment = requireExperiment(
+  values.experiment,
+  probes.length > TINY_MOMENTS || process.argv.includes('--pipeline'),
+);
+if (experiment) writeFileSync(join(out, 'experiment.json'), JSON.stringify(experiment, null, 1));
 
 // The roster, composed as live from the daemon's settings and composition view.
 const foundryDir = resolve(
