@@ -36,6 +36,7 @@ export { HttpMemory } from './adapters/http-memory';
 export {
   claudemdSource,
   formatInstructionFiles,
+  INSTRUCTION_FILE_LIMIT,
   type InstructionFile,
   type InstructionReadOptions,
   instructionImports,

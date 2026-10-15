@@ -798,9 +798,10 @@ export function resolveProjectView(
         };
     generated = regionWardens(composed.regions);
   }
-  // The view's project entry carries the effective chorus, normalized: what `chorusSource` reads. It
-  // is a valid setting that resolves to itself (a roster, from a request or a fall-back, names no
-  // layers; the layers read stay on `view.chorus`).
+  // The view's project entry carries the effective chorus, normalized: what `chorusSource` reads. The
+  // setting is valid and, on a raw config, resolves to the same chorus (a roster, from a request or a
+  // fall-back, names no layers; the layers read stay on `view.chorus`). A view config itself is not
+  // re-resolvable: it carries the generated agents.
   const effectiveChorus: ChorusSettings =
     chorus.source === 'regions'
       ? {

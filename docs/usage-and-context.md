@@ -402,7 +402,8 @@ builder writes (plan: "Wardens built from docs"), one Warden per region:
 
 - **Setting.** `projects[id].chorus` is `{ source?, regions? | layers? }`.
   `source` is `"regions"` (the default) or `"roster"`, the hand-named
-  `domain-advising` agents in settings, whatever regions exist. `regions` points
+  `domain-advising` agents in settings, whatever regions exist (`regions` or
+  `layers` may stay written beside it, unread). `regions` points
   the one layer at another directory (absolute, or relative to the project;
   default `.foundry/regions`). No setting means the chorus from
   `.foundry/regions` when that directory holds regions; otherwise the hand-named
@@ -455,10 +456,15 @@ builder writes (plan: "Wardens built from docs"), one Warden per region:
   `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
 - **Warm-cache key.** Each region has a key, the content hash of its composed
-  knowledge (`regionKey`: `knowledge.md` as its source loads it). It does not
-  depend on the project, the layer or the directory, so two projects whose
-  template-base region is identical have the same key, and a primed prefix
-  could be shared between them. Every Warden call journals it with its versions
+  knowledge (`regionKey`: `knowledge.md` as its source loads it, comments
+  stripped). It does not depend on the project, the layer or the directory (a
+  `knowledge.md` that resolves an `@path` import would compose that path too;
+  the builder writes none), so two projects whose template-base region is
+  identical have the same key, and a primed prefix could be shared between
+  them. A `knowledge.md` that is not a regular file, or is over the 4 MiB an
+  instruction file loads, is an error that names the region, never a Warden
+  running with no knowledge; one that cannot be read shows `keyError` in the
+  doctor and the Chorus page. Every Warden call journals it with its versions
   (`versions.chorus: { region, key }`, THREAD-TREE spec B). The sharing itself
   is not built; the key is what it will be looked up by.
 - **Charter.** Region Wardens run under the classifier charter

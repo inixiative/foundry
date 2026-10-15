@@ -67,7 +67,9 @@ export interface ReadinessChorus {
     bytes: number;
     tokens?: number;
     /** The region's warm-cache key (`regionKey`): the content hash of its composed knowledge. */
-    key: string;
+    key?: string;
+    /** Why the key could not be computed (the knowledge file could not be read). */
+    keyError?: string;
   }>;
 }
 export interface ReadinessArchive {
@@ -420,14 +422,29 @@ export async function inspectReadiness(
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
-  chorus = await Promise.all(choruses.map(([scope, c]) => describeReadinessChorus(scope, c)));
+  chorus = await Promise.all(
+    choruses.map(([scope, c]) =>
+      describeReadinessChorus(scope, c, (region, message) =>
+        issue(
+          'error',
+          scope,
+          'region-knowledge-unreadable',
+          `Region ${region} knowledge could not be read (${message}); its Warden would run without it.`,
+        ),
+      ),
+    ),
+  );
   return result();
 }
 
-/** A project's chorus with each region's key computed (the file is read once per region). */
+/**
+ * A project's chorus with each region's key computed (the file is read once per region). A region
+ * whose knowledge cannot be read gets `keyError` instead of a key, and `onError` hears of it.
+ */
 export async function describeReadinessChorus(
   scope: string,
   chorus: ResolvedChorus,
+  onError: (region: string, message: string) => void = () => {},
 ): Promise<ReadinessChorus> {
   return {
     scope,
@@ -447,7 +464,14 @@ export async function describeReadinessChorus(
         replaces: [...region.replaces],
         bytes: region.bytes,
         ...(region.tokens !== undefined ? { tokens: region.tokens } : {}),
-        key: await regionKey(region),
+        ...(await regionKey(region).then(
+          (key) => ({ key }),
+          (error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            onError(region.id, message);
+            return { keyError: message };
+          },
+        )),
       })),
     ),
   };

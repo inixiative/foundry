@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { claudemdSource } from '@inixiative/foundry-core';
+import { claudemdSource, INSTRUCTION_FILE_LIMIT } from '@inixiative/foundry-core';
 import { contentHash } from '../persistence/journal-content';
 import type {
   AgentSettingsConfig,
@@ -106,6 +106,14 @@ export function readRegions(dir: string): RegionSummary[] {
     if (!existsSync(path)) continue;
     if (!existsSync(knowledgePath))
       throw Error(`region ${entry.name} at ${dir} has a region.json but no knowledge.md`);
+    const knowledge = statSync(knowledgePath);
+    if (!knowledge.isFile())
+      throw Error(`region ${entry.name} at ${dir}: knowledge.md is not a regular file`);
+    // Its source would load an oversized file as nothing: a Warden with no knowledge, never silently.
+    if (knowledge.size > INSTRUCTION_FILE_LIMIT)
+      throw Error(
+        `region ${entry.name} at ${dir}: knowledge.md is ${knowledge.size} bytes, over the ${INSTRUCTION_FILE_LIMIT}-byte limit an instruction file loads`,
+      );
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(path, 'utf8'));
@@ -144,7 +152,7 @@ export function readRegions(dir: string): RegionSummary[] {
       routing: r.routing.trim(),
       concepts,
       ...(typeof r.tokens === 'number' && Number.isFinite(r.tokens) ? { tokens: r.tokens } : {}),
-      bytes: statSync(knowledgePath).size,
+      bytes: knowledge.size,
       path,
       knowledgePath,
     });
@@ -201,7 +209,9 @@ export function describeChorus(
  * A region's warm-cache key: the content hash of its knowledge as its Warden's source composes it
  * (`knowledge.md` with comments stripped, the one text the `source-content:region:<id>` version and
  * the journalled `versions.chorus` carry). Two projects whose region text is identical share the key,
- * whichever layer or directory it came from, so their primed prefix can be shared later.
+ * whichever layer or directory it came from, so their primed prefix can be shared later. (A
+ * knowledge.md that resolves an `@path` import composes that file's path too; the builder writes none.)
+ * Rejects when the file cannot be read.
  */
 export async function regionKey(
   region: Pick<RegionSummary, 'id' | 'knowledgePath'>,

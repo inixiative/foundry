@@ -251,7 +251,8 @@ export interface ChorusLayerSettings {
  * region id present in a later layer replaces the earlier one whole; unique ids union. One layer is
  * `regions` (default `.foundry/regions`); several are `layers`, e.g. a template base then this
  * project's delta. With no regions found the hand-named roster runs and the view says why.
- * `source: "roster"` runs the hand-named roster whatever regions exist.
+ * `source: "roster"` runs the hand-named roster whatever regions exist; `regions`/`layers` may stay
+ * written beside it, unread.
  */
 export interface ChorusSettings {
   source?: ChorusSource;
@@ -994,10 +995,6 @@ function validateChorusSettings(where: string, chorus: unknown): void {
       labels.add(label);
     });
   }
-  if (c.source === 'roster' && (c.regions !== undefined || c.layers !== undefined))
-    throw Error(
-      `${where}: source "roster" runs the hand-named Wardens and takes no regions or layers`,
-    );
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

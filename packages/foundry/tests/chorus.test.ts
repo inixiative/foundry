@@ -1,7 +1,15 @@
 // A project's chorus (`projects[id].chorus`): its Wardens generated from layers of concept regions, each
 // Warden's knowledge the region's knowledge.md in full, under the classifier charter, with a warm-cache key.
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -52,6 +60,7 @@ import { contentHash } from '../src/persistence/journal-content';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';
 import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
+import { describeReadinessChorus } from '../src/readiness';
 import {
   type AgentSettingsConfig,
   type FoundryConfig,
@@ -338,8 +347,8 @@ test('without regions the hand-named roster runs and the view says why; source "
   expect(q.agents.map((a) => a.scope)).not.toContain('project-generated');
   expect(describeChorus('Q', q.chorus)).toContain('asked for regions but no regions at');
 
-  // A project may ask for the hand-named roster whatever regions it has.
-  c.projects.P!.chorus = { source: 'roster' };
+  // A project may ask for the hand-named roster whatever regions it has; a layer list may stay written.
+  c.projects.P!.chorus = { source: 'roster', layers: [{ regions: '.foundry/regions' }] };
   validateConfig(c);
   const roster = resolveProjectView(c, 'P')!;
   expect(roster.chorus).toEqual({ source: 'roster', requested: 'roster', layers: [], regions: [] });
@@ -380,7 +389,6 @@ test('without regions the hand-named roster runs and the view says why; source "
       'two layers are labelled "same"',
     ],
     [{ layers: [{ regions: 'a', extra: 1 }] }, 'layers[0].extra is not a layer setting'],
-    [{ source: 'roster', regions: 'x' }, 'takes no regions or layers'],
     [{ mode: 'regions' }, 'chorus.mode is not a chorus setting'],
     ['regions', 'chorus must be an object'],
   ] as const) {
@@ -611,6 +619,10 @@ test('a hand-written project Warden is refused under a chorus of regions, and a 
   );
   expect(() => readRegions(regions)).toThrow('region orphan at');
   expect(() => readRegions(regions)).toThrow('no knowledge.md');
+  rmSync(join(regions, 'orphan', 'knowledge.md'), { force: true });
+  mkdirSync(join(regions, 'orphan', 'knowledge.md'));
+  expect(() => readRegions(regions)).toThrow('knowledge.md is not a regular file');
+  rmSync(join(regions, 'orphan', 'knowledge.md'), { recursive: true });
   write(join(regions, 'orphan', 'knowledge.md'), 'x');
   write(
     join(regions, 'orphan', 'region.json'),

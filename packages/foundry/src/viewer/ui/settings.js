@@ -671,7 +671,11 @@ function ProjectChorus({ projectId }) {
                     : null
                 }</td>
                 <td>${kb(region.bytes)}${region.tokens ? html`<div class="settings-desc">~${region.tokens.toLocaleString()} tokens</div>` : null}</td>
-                <td><code title=${region.key}>${region.key.slice(0, 12)}</code></td>
+                <td>${
+                  region.key
+                    ? html`<code title=${region.key}>${region.key.slice(0, 12)}</code>`
+                    : html`<span class="settings-desc" title=${region.keyError}>unreadable</span>`
+                }</td>
               </tr>`,
             )}
           </tbody>
