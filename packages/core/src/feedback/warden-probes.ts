@@ -9,6 +9,19 @@
 
 import type { TokenCounts } from '../token-counts';
 
+/** Where the Prospector found a probe. */
+export type ProbeSource = 'session' | 'github' | 'linear';
+
+/**
+ * Whether the person wrote a correction or an agent wrote it under their account. `strong` rests on
+ * a marker (an agent footer, a posting command in a session, text typed in the web UI); `weak` on style.
+ */
+export interface Authorship {
+  readonly by: 'human' | 'agent';
+  readonly confidence: 'strong' | 'weak';
+  readonly signals: readonly string[];
+}
+
 /** The trigger points a probe is asked at (live: `user-message` advises, `agent-action` guards). */
 export type WardenProbeTrigger = 'user-message' | 'agent-action';
 
@@ -19,6 +32,12 @@ export interface WardenProbe {
   /** Which context's Wardens may see it (UserEvidence probes only ever see the UserEvidence ladder). */
   readonly ctx: string;
   readonly project?: string;
+  /** Where the Prospector found it: a session, a GitHub PR review, a Linear issue. Absent means session. */
+  readonly source?: ProbeSource;
+  /** Who wrote the correction, for sources where the person's account also posts agent-written text. */
+  readonly authorship?: Authorship;
+  /** How much the probe counts in weighted scores (default 1): generic code-correctness findings count less. */
+  readonly weight?: number;
   /** What the agent just did or said, as the Warden sees it ('' when only the user's ask was recorded). */
   readonly moment: string;
   /** The user's message the agent was answering: what the `user-message` trigger advises on. */
@@ -103,6 +122,8 @@ export interface CharterScore {
   readonly recall: number | null;
   /** The primary measure: of all positive probes, those where any Warden, at any trigger, said the correction first. */
   readonly anticipated: number | null;
+  /** `anticipated` with each positive counted at its `weight`. */
+  readonly weightedAnticipated: number | null;
   /** Remarks the judge did not match to a real correction (on negative probes, or saying something else). */
   readonly wrongRemarks: number;
   /** Wrong remarks per probe asked: how often the chorus speaks when the user would not have. */
@@ -241,6 +262,13 @@ export function scoreCharterRun(
     scopeViolations: scope,
     recall: ratio(recalled.size, owners),
     anticipated: ratio(anticipated.size, positives.length),
+    weightedAnticipated: (() => {
+      const total = positives.reduce((n, p) => n + (p.weight ?? 1), 0);
+      const said = positives
+        .filter((p) => anticipated.has(p.id))
+        .reduce((n, p) => n + (p.weight ?? 1), 0);
+      return total ? Math.round((said / total) * 1000) / 1000 : null;
+    })(),
     wrongRemarks: remarks - remarksRight,
     wrongPerProbe: ratio(remarks - remarksRight, probes.filter((p) => asked.has(p.id)).length),
     byTrigger,
@@ -277,7 +305,17 @@ export interface CorrectionTarget {
   readonly where?: string;
   /** The canonical name shared by every correction that pushed toward the same thing. */
   readonly canonical?: string;
+  /** What was built instead of using it, when the source says (PR reviews do). */
+  readonly builtInstead?: string;
+  /**
+   * Why it was missed, from the thread: `unaware` (didn't know it existed), `misfit` (knew it and
+   * worked around a gap instead of extending it), `wrapper` (wrapped it under a new name), `unclear`.
+   */
+  readonly miss?: MissKind;
 }
+
+export const MISS_KINDS = ['unaware', 'misfit', 'wrapper', 'unclear'] as const;
+export type MissKind = (typeof MISS_KINDS)[number];
 
 /** Concept clusters the labeler starts from; it may add one when none fits. */
 export const CONCEPT_CLUSTERS = [

@@ -6,7 +6,7 @@
       "name": "@inixiative/foundry-monorepo",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
-        "@inixiative/config": "^0.5.88",
+        "@inixiative/config": "^0.5.90",
         "@prisma/client": "6",
         "@types/bun": "1.4.2",
         "lefthook": "2.1.9",
@@ -46,7 +46,7 @@
         "@anthropic-ai/claude-code": "^2.1.92",
         "@bull-board/api": "^6.20.7",
         "@bull-board/hono": "^6.20.7",
-        "@inixiative/agent-session": "^0.6.5",
+        "@inixiative/agent-session": "^0.6.6",
         "@inixiative/archive": "^0.20.0",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
@@ -115,11 +115,11 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.6.5", "", { "dependencies": { "@inixiative/json-rules": "^3.5.4" } }, "sha512-jiWOSHJApUeepkqPrsD30pA7UN3x1ZzCsgJmGYbC/mRxlYGQev0TU7jTv9WLZ5uNh2e9dhHI7uV2nCPh1XRo3g=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.6.6", "", { "dependencies": { "@inixiative/json-rules": "^3.5.4" } }, "sha512-SS5mSWlG047LO65K9ojoCsFbJlE9MfguGYLd55GAjFdI1FDFvTecVO4BYq4r8uCsTeSsCp1X1a433ENQdrW5tA=="],
 
     "@inixiative/archive": ["@inixiative/archive@0.20.0", "", { "dependencies": { "@inixiative/agent-session": "^0.6.5", "@inixiative/signet": "^0.4.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-inCDf33QVIjJzfLOAseUo68AFhtm08eGS2RdeeuGMlbeYG+cWVA4j1BRUkp7GdxmVZD/laBxePR3VrF+Mq5mAA=="],
 
-    "@inixiative/config": ["@inixiative/config@0.5.88", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-eVVlauyd1xnmTJTK01FkJFXJ/uXXB+ZPCSAoDni6/8YLl2XMdO4F8ZfzSLb6VWKP9/FleMrvlQTPHxhMYqHXgg=="],
+    "@inixiative/config": ["@inixiative/config@0.5.90", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-tD18xSWUzz3DIQ32Iv5vZ8Z6nCvWlxtbFOvYrw7c3R950cU0ou/JPo2S94tNGeqDId5roZEWVgt71iq2rMJMPg=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
 

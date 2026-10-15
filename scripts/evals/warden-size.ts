@@ -1061,7 +1061,10 @@ function report() {
       const affordable =
         s.capRefusals === 0 &&
         (s.quota?.percentPerCall == null || s.quota.percentPerCall <= 0.0167);
-      return { size: s.size, accurate, fast, affordable };
+      // Amendment 2026-10-15: a pointer that still leads but no longer names the exact unit is a
+      // precision loss, reported beside the verdict.
+      const exactDrop = !!base && (s.ladder.exact ?? 0) < (base.ladder.exact ?? 0) - 0.15;
+      return { size: s.size, accurate, fast, affordable, exactDrop };
     });
     const baselineFails =
       !!base && ((base.recall ?? 0) < 0.8 || (base.leads ?? 0) < 0.6 || (base.falseYes ?? 1) > 0.2);

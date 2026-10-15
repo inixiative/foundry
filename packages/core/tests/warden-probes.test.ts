@@ -130,6 +130,17 @@ test('anticipation counts any Warden at any trigger; wrong remarks are counted p
   });
 });
 
+test('weighted anticipation counts each positive at its weight', () => {
+  const weighted: WardenProbe[] = [
+    { id: 'w1', kind: 'positive', ctx: 'x', moment: 'm', hidden: 'h', weight: 0.75 },
+    { id: 'w2', kind: 'positive', ctx: 'x', moment: 'm', hidden: 'h' },
+  ];
+  const score = scoreCharterRun(weighted, [said('w2', 'reuse', true), quiet('w1', 'reuse')]);
+  expect(score.anticipated).toBe(0.5);
+  expect(score.weightedAnticipated).toBe(0.571);
+  expect(scoreCharterRun([], []).weightedAnticipated).toBeNull();
+});
+
 test('the judge sees what the Warden saw at its trigger', () => {
   const before = wardenJudgeMessage({
     domain: 'reuse',
