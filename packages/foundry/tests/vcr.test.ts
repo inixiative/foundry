@@ -291,6 +291,19 @@ describe('drift classification', () => {
       'stderr:kept added text:Logged in using an API key',
       'stderr:kept removed text:Logged in using ChatGPT',
     ]);
+    // Prompt-cache diagnostics follow cache state: a miss carries a reason, a hit is null.
+    const reply = (diagnostics: unknown) =>
+      transcript(init, {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'x' }], diagnostics },
+      });
+    const miss = reply({ cache_miss_reason: { kind: 'ttl' } }),
+      hit = reply(null);
+    expect(compareSignatures(miss, hit)).toEqual([]);
+    expect(volatileDifferences(miss, hit)).toEqual([
+      'stdout:assistant:text added message.diagnostics:null',
+      'stdout:assistant:text removed message.diagnostics.cache_miss_reason{}',
+    ]);
     expect(compareSignatures(before, changed)).toEqual([
       'new stdout:result:error_max_turns',
       'missing stdout:result:success',
@@ -607,6 +620,15 @@ describe('scrubbing and freshness', () => {
       'home path',
       'unredacted orgName',
     ]);
+    // The account's claude.ai connectors are account state, not protocol; other MCP servers stay.
+    expect(
+      scrubValue({
+        mcp_servers: [
+          { name: 'claude.ai Gmail', status: 'needs-auth', source: 'claudeai' },
+          { name: 'foundry', status: 'connected' },
+        ],
+      }),
+    ).toEqual({ mcp_servers: [{ name: 'foundry', status: 'connected' }] });
     expect(scrubValue({ user_id: 'u-1', nested: [{ access_token: 'x' }] })).toEqual({
       user_id: 'REDACTED',
       nested: [{ access_token: 'REDACTED' }],

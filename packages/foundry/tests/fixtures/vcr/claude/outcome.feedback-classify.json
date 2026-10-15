@@ -1,5 +1,5 @@
 {
-  "version": "2.1.299",
+  "version": "2.1.300",
   "status": 200,
   "body": {
     "isCorrection": true,
@@ -11,8 +11,8 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-14T03:10:10.036Z",
-    "agentSession": "0.6.3",
+    "recordedAt": "2026-10-15T02:21:06.674Z",
+    "agentSession": "0.6.4",
     "environment": "terminal"
   }
 }
