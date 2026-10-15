@@ -68,6 +68,11 @@ export interface NativeSessionProfile {
   readonly requestedModel: string;
   /** The host launch revision (ThreadLaunchSettings) this session was launched at; 0 for none. */
   readonly launchRevision?: number;
+  /**
+   * Opened ahead of the thread's first turn (`open`): its model and turn budget were Foundry's
+   * defaults, so a first turn that asks for others relaunches it instead of being refused.
+   */
+  readonly provisional?: boolean;
   /** Whether the thread had structural tool rules (deny, prompt, protected paths) at launch. */
   readonly structuralRules?: boolean;
   readonly textOnly: boolean;
@@ -280,6 +285,44 @@ export class SessionBackedProvider implements LLMProvider {
     this._defaultCwd = config.defaultCwd ?? process.cwd();
     this._launch = config.launch;
     this._toolGate = config.toolGate;
+  }
+
+  /**
+   * Start a thread's executor session ahead of its first turn (in-session Wardens set up meanwhile,
+   * docs/THREAD-TREE.md spec C). Launched with the host's settings, the thread's native bridge and
+   * no base context (the first turn delivers every standing part). Nothing is sent. A session
+   * already running for the thread is left as it is.
+   */
+  async open(threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource } = {}) {
+    const cwd = opts.cwd ?? this._defaultCwd;
+    const key = JSON.stringify([cwd, threadId]);
+    if (this._sessions.has(key) || threadId.includes(':aux:')) return;
+    const host = this._launch?.forLaunch(threadId);
+    const source = opts.bridge;
+    await this._getSession(
+      threadId,
+      cwd,
+      {
+        requestedModel: host?.model ?? this._defaultModel,
+        textOnly: false,
+        maxTurns: null,
+        launchRevision: host?.revision ?? 0,
+        ...(this._adapter.structuralRulesAtLaunch
+          ? { structuralRules: this._toolGate?.(threadId)?.hasRules() ?? false }
+          : {}),
+        ...(source
+          ? {
+              bridgeKey: source.key,
+              ...(source.toolPolicy
+                ? { toolPolicyIdentity: JSON.stringify(source.toolPolicy) }
+                : {}),
+            }
+          : {}),
+      },
+      source,
+    );
+    const profile = this._profiles.get(key);
+    if (profile) this._profiles.set(key, Object.freeze({ ...profile, provisional: true }));
   }
 
   /** Frozen profile of the warm session for a thread, if one exists. Inspection only. */
@@ -854,6 +897,19 @@ export class SessionBackedProvider implements LLMProvider {
         'toolPolicyIdentity',
       ] as const;
       const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
+      // An opened session meets its first turn: the same profile adopts it; another one relaunches.
+      if (current.provisional && this._bridgeSources.get(key) === source) {
+        if (!changed.length) {
+          this._profiles.set(key, Object.freeze({ ...current, provisional: false }));
+          return existing;
+        }
+        if (
+          changed.every((field) => !['textOnly', 'bridgeKey', 'toolPolicyIdentity'].includes(field))
+        )
+          return this._relaunch(key, existing, () =>
+            this._getSession(threadId, cwd, requested, source, base),
+          );
+      }
       // A host changed this thread's launch settings, or its structural rules appeared or went:
       // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
       // (Codex) refuses on the next turn instead of running warm past the new rules.

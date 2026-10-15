@@ -381,6 +381,7 @@ export {
   type ThreadMeta,
   type ThreadName,
   type ThreadReference,
+  type ThreadSetup,
   type ThreadSpawn,
   type ThreadStatus,
   threadTitle,

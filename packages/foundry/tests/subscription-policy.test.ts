@@ -459,6 +459,34 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
   }
 });
 
+test('claude-in-session runs Claude decisions with Wardens held in the Claude Code main thread', () => {
+  const root = mkdtempSync(join(tmpdir(), 'in-session-'));
+  roots.push(root);
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  mkdirSync(join(root, '.codex'), { mode: 0o755 });
+  writeFileSync(join(root, '.codex', 'auth.json'), '{}', { mode: 0o600 });
+  const home = process.env.HOME;
+  process.env.HOME = root;
+  try {
+    const c = defaultConfig();
+    // Off by default: Wardens run on primed sessions.
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
+    c.subscriptionOnly = { decisionRuntime: 'claude-in-session' };
+    const resolved = resolveSubscriptionPolicy(c, { cwd: root })!;
+    expect(resolved.policy.wardens).toBe('in-session');
+    expect(resolved.decision.runtime).toBe('claude');
+    expect(resolved.policy.model).toBe('claude-haiku-5-5');
+    // A Codex main thread cannot hold Claude Wardens.
+    c.defaults.provider = 'codex';
+    c.defaults.model = 'gpt-6-astra';
+    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
+      'the worker must be claude-code',
+    );
+  } finally {
+    process.env.HOME = home;
+  }
+});
+
 test('a Codex executor must be the Codex worker in subscription mode', () => {
   const f = codexMain();
   f.c.agents.artificer!.provider = 'claude-code';

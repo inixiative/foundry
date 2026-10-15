@@ -84,6 +84,7 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     maxConcurrent: 16,
     callTimeoutMs: 30000,
     effort: 'low',
+    wardens: 'primed',
   });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({

@@ -103,9 +103,9 @@ export class KnowledgePersistence {
         restoring.delete(runtime);
       }
     };
-    const detachPhase = manager.setPhaseJournal((runtime, record) => {
+    const detachPhase = manager.setPhaseJournal((runtime, { node, ...record }) => {
       try {
-        store.appendPhase(runtime.thread, { ...record, record: versioned(record.record) });
+        store.appendPhase(node ?? runtime.thread, { ...record, record: versioned(record.record) });
       } catch (error) {
         notify(runtime, record.turnId, 'phase', 'failed');
         this.events.pushError(

@@ -7,9 +7,11 @@ import type {
   InterventionLog,
   LLMProvider,
   Thread,
+  ThreadSetup,
   TokenTracker,
   ToolRegistry,
 } from '@inixiative/foundry-core';
+import { newId } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -39,6 +41,7 @@ import {
   type ThreadToolGate,
   UNBOUND_GATE,
 } from '../turns/tool-gate';
+import type { ThreadSetupHost } from '../turns/turn-service';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -106,6 +109,13 @@ export interface ViewerConfig {
   acpCapability?: string;
   /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
   threadLaunch?: ThreadLaunchSettings;
+  /**
+   * In-session Wardens (docs/THREAD-TREE.md spec C): opens a thread's session ahead of its turn,
+   * and reports its setup, which becomes `ThreadMeta.setup`.
+   */
+  threadSetup?: ThreadSetupHost & {
+    onSetup(listener: (threadId: string, setup: ThreadSetup) => void): void;
+  };
   /** Executor providers whose sessions report their subagents (spec A: observed child threads). */
   subagentSources?: ReadonlyArray<{
     observeSubagents(
@@ -286,6 +296,35 @@ export function createViewer(config: ViewerConfig) {
         streams.threadsChanged(child.id);
       },
       events: eventStream,
+      // In-session runtime only: a subagent's tool calls get the root thread's guard Wardens (one
+      // pool per main thread). Subagents' own Wardens are parked (docs/THREAD-TREE.md §C.10).
+      observeTool: !config.threadSetup
+        ? undefined
+        : (rootThreadId, call) => {
+            const root = directory.get(rootThreadId);
+            if (!root) return;
+            void root.signals
+              .emit({
+                id: newId('sig-tool'),
+                kind: 'tool_observation',
+                source: `subagent:${call.node.id}`,
+                content: {
+                  threadId: rootThreadId,
+                  tool: call.tool,
+                  input: call.input,
+                  ...(call.output !== undefined ? { output: call.output } : {}),
+                  callId: call.callId,
+                  agentId: 'subagent',
+                  subagent: { node: call.node, turnId: call.turnId },
+                },
+                timestamp: Date.now(),
+              })
+              .catch((error: unknown) =>
+                log.warn(
+                  `[Subagents] guard of ${call.node.id} not started: ${(error as Error).message}`,
+                ),
+              );
+          },
     });
     for (const source of config.subagentSources ?? [])
       source.observeSubagents((threadId, evidence) => {
@@ -461,6 +500,14 @@ export function createViewer(config: ViewerConfig) {
     directory,
     streams,
     feedback,
+    ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
+  });
+  // "Setting up your thread": the thread's setup streams on `threads` with its meta.
+  config.threadSetup?.onSetup((threadId, setup) => {
+    const thread = directory.get(threadId);
+    if (!thread) return;
+    thread.meta.setup = setup;
+    threadChanged(thread);
   });
 
   registerControlRoutes(app, {
