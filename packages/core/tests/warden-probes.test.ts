@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test';
 import {
+  correctionTargetMessages,
+  parseCorrectionTargets,
+  parseTargetCanonical,
   parseWardenJudgement,
   probeTriggers,
   scoreCharterRun,
@@ -160,4 +163,60 @@ test('a judge answer parses strictly', () => {
   });
   expect(parseWardenJudgement('Sure: {"matches":true,"inDomain":true}')).toBeUndefined();
   expect(parseWardenJudgement('{"matches":"yes","inDomain":true}')).toBeUndefined();
+});
+
+test('correction targets parse strictly: a thing, no existing thing, or unanswered', () => {
+  const content = JSON.stringify({
+    results: {
+      a: {
+        target: {
+          name: 'Inquiry handler autoApprove',
+          kind: 'system',
+          concept: 'Requests / Inquiry',
+        },
+      },
+      b: { target: null },
+      c: { target: { kind: 'rule' } },
+    },
+  });
+  expect(parseCorrectionTargets(`Here: ${content}`, ['a', 'b', 'c', 'd'])).toEqual([
+    { name: 'Inquiry handler autoApprove', kind: 'system', concept: 'requests-inquiry' },
+    null,
+    undefined,
+    undefined,
+  ]);
+  expect(parseCorrectionTargets('not json', ['a'])).toEqual([undefined]);
+  const [, user] = correctionTargetMessages([
+    { id: 'a', moment: '', ask: 'add a lock', hidden: 'use the lock helper' },
+  ]);
+  expect(user!.content).toContain('### Request\nadd a lock');
+  expect(user!.content).toContain('concurrency-locking');
+});
+
+test('canonical names map in order, keeping a name the merge left out', () => {
+  expect(
+    parseTargetCanonical('{"canonical":{"N1":"shared VCR utilities"}}', [
+      'vcr utils',
+      'vcr wrapper',
+    ]),
+  ).toEqual(['shared VCR utilities', 'vcr wrapper']);
+});
+
+test('with a target, the judge is shown it', () => {
+  const message = wardenJudgeMessage({
+    domain: 'reuse',
+    domainDescription: 'd',
+    moment: 'turn',
+    remark: 'r',
+    hidden: 'h',
+    target: {
+      name: 'lock helper',
+      kind: 'primitive',
+      concept: 'concurrency-locking',
+      canonical: 'SELECT FOR UPDATE lock helper',
+    },
+  });
+  expect(message).toContain(
+    '## TARGET (what the user pushed the agent toward)\n\nSELECT FOR UPDATE lock helper (primitive, concurrency-locking)',
+  );
 });

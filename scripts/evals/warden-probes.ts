@@ -17,12 +17,27 @@
  * says is not a correction. Each probe carries the ask the agent was answering (the user-message
  * trigger) and the agent's turn when the source recorded it (agent-action). Per project, the latest
  * --test-share of positives by time are the test period, the rest train; a manifest records the cut.
+ *
+ * Label what each positive pushed toward (the existing rule, primitive, system or pattern, with its
+ * concept cluster), in place, resumable; then merge names per cluster and write the distinct targets:
+ *   bun scripts/evals/warden-probes.ts --label-targets --out ~/.foundry/evals/warden-corrections/probes.jsonl
+ * Writes targets.json beside the probes: every distinct target by cluster, with counts and probe ids
+ * (the catalog's checklist: a target the catalog lacks is a catalog gap).
  */
-import { chmodSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { scrubSecrets, type TokenCounts, type WardenProbe } from '../../packages/core/src';
+import {
+  type CorrectionTarget,
+  correctionTargetMessages,
+  parseCorrectionTargets,
+  parseTargetCanonical,
+  scrubSecrets,
+  type TokenCounts,
+  targetCanonicalMessages,
+  type WardenProbe,
+} from '../../packages/core/src';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import {
   collectCandidates,
@@ -47,9 +62,10 @@ const { values } = parseArgs({
     'test-share': { type: 'string' },
     'min-score': { type: 'string' },
     concurrency: { type: 'string' },
+    'label-targets': { type: 'boolean' },
   },
 });
-if ((!values.work && !values.sessions) || !values.out) {
+if ((!values.work && !values.sessions && !values['label-targets']) || !values.out) {
   console.error(
     'usage: warden-probes.ts (--work <kit work dir> | --sessions --projects a,b) --out <probes.jsonl>',
   );
@@ -299,5 +315,177 @@ async function fromSessions() {
   console.log(JSON.stringify(manifest, null, 1));
 }
 
-if (values.sessions) await fromSessions();
+if (values['label-targets']) await labelTargets();
+else if (values.sessions) await fromSessions();
 else fromKit();
+
+/** Opus labels each positive's target over the subscription; answers are kept in targets-raw.jsonl. */
+async function labelTargets() {
+  const probes = readFileSync(out, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as WardenProbe);
+  const rawFile = join(dirname(out), 'targets-raw.jsonl');
+  const raw = new Map<string, CorrectionTarget | null>(
+    (existsSync(rawFile) ? readFileSync(rawFile, 'utf8').split('\n') : [])
+      .filter(Boolean)
+      .map((line) => {
+        const row = JSON.parse(line) as { id: string; target: CorrectionTarget | null };
+        return [row.id, row.target];
+      }),
+  );
+  const pending = probes.filter((p) => p.kind === 'positive' && !raw.has(p.id));
+  const model = 'claude-opus-5-5';
+  const state = privateDirectory(dirname(out));
+  markEvalRun(state);
+  const concurrency = Number(values.concurrency ?? 3);
+  const host = decisionHost(model, 'claude', concurrency, state);
+  const save = () =>
+    writePrivate(
+      rawFile,
+      [...raw].map(([id, target]) => `${JSON.stringify({ id, target })}\n`).join(''),
+    );
+  const ask = async (batch: WardenProbe[]): Promise<void> => {
+    try {
+      const result = await host.provider.complete(correctionTargetMessages(batch), {
+        tools: false,
+        maxTurns: 1,
+        temperature: 0,
+      });
+      const parsed = parseCorrectionTargets(
+        result.content,
+        batch.map((p) => p.id),
+      );
+      batch.forEach((p, i) => {
+        if (parsed[i] !== undefined) raw.set(p.id, parsed[i]!);
+      });
+      save();
+      const missing = batch.filter((_, i) => parsed[i] === undefined);
+      if (missing.length && missing.length < batch.length) for (const p of missing) await ask([p]);
+    } catch (error) {
+      console.error(`label failed: ${String(error).slice(0, 160)}`);
+      if (batch.length > 1) for (const p of batch) await ask([p]);
+    }
+  };
+  const batches: WardenProbe[][] = [];
+  for (let i = 0; i < pending.length; i += 8) batches.push(pending.slice(i, i + 8));
+  let next = 0;
+  let labelled = 0;
+  try {
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        for (let batch = batches[next++]; batch; batch = batches[next++]) {
+          await ask(batch);
+          labelled += batch.length;
+          process.stderr.write(`\rlabelled ${labelled}/${pending.length}`);
+        }
+      }),
+    );
+    process.stderr.write('\n');
+    // One merge call per concept cluster: names for the same thing share a canonical name.
+    const byConcept = new Map<string, Set<string>>();
+    for (const target of raw.values())
+      if (target)
+        byConcept.set(
+          target.concept,
+          (byConcept.get(target.concept) ?? new Set()).add(target.name),
+        );
+    const canonical = new Map<string, string>();
+    for (const [concept, set] of byConcept) {
+      const names = [...set].sort();
+      let merged = names;
+      if (names.length > 1) {
+        const result = await host.provider
+          .complete(targetCanonicalMessages(concept, names), {
+            tools: false,
+            maxTurns: 1,
+            temperature: 0,
+          })
+          .catch(() => undefined);
+        if (result) merged = parseTargetCanonical(result.content, names);
+      }
+      names.forEach((name, i) => {
+        canonical.set(`${concept}|${name}`, merged[i]!);
+      });
+    }
+    const labelled2 = probes.map((p) => {
+      const target = raw.get(p.id);
+      if (p.kind !== 'positive' || !target) return p;
+      return {
+        ...p,
+        gold: {
+          domains: p.gold?.domains ?? [],
+          statements: p.gold?.statements ?? [],
+          target: {
+            ...target,
+            canonical: canonical.get(`${target.concept}|${target.name}`) ?? target.name,
+          },
+        },
+      };
+    });
+    writePrivate(out, `${labelled2.map((p) => JSON.stringify(p)).join('\n')}\n`);
+    // The distinct targets, by cluster, most corrected first.
+    type Entry = {
+      target: string;
+      kind: string;
+      concept: string;
+      where: string[];
+      corrections: number;
+      byPeriod: Record<string, number>;
+      byProject: Record<string, number>;
+      names: string[];
+      probes: string[];
+    };
+    const entries = new Map<string, Entry>();
+    for (const p of labelled2) {
+      const t = p.gold?.target;
+      if (!t?.canonical) continue;
+      const key = `${t.concept}|${t.canonical}`;
+      const e = entries.get(key) ?? {
+        target: t.canonical,
+        kind: t.kind,
+        concept: t.concept,
+        where: [],
+        corrections: 0,
+        byPeriod: {},
+        byProject: {},
+        names: [],
+        probes: [],
+      };
+      e.corrections++;
+      if (t.where && !e.where.includes(t.where)) e.where.push(t.where);
+      if (!e.names.includes(t.name)) e.names.push(t.name);
+      e.byPeriod[p.period ?? '?'] = (e.byPeriod[p.period ?? '?'] ?? 0) + 1;
+      e.byProject[p.project ?? '?'] = (e.byProject[p.project ?? '?'] ?? 0) + 1;
+      e.probes.push(p.id);
+      entries.set(key, e);
+    }
+    const list = [...entries.values()].sort(
+      (a, b) => a.concept.localeCompare(b.concept) || b.corrections - a.corrections,
+    );
+    const positives = labelled2.filter((p) => p.kind === 'positive');
+    const summary = {
+      positives: positives.length,
+      targeted: positives.filter((p) => p.gold?.target).length,
+      noExistingTarget: positives.filter((p) => raw.get(p.id) === null).length,
+      unlabelled: positives.filter((p) => !raw.has(p.id)).length,
+      distinctTargets: list.length,
+      concepts: Object.fromEntries(
+        [...new Set(list.map((e) => e.concept))].map((c) => [
+          c,
+          {
+            targets: list.filter((e) => e.concept === c).length,
+            corrections: list.filter((e) => e.concept === c).reduce((n, e) => n + e.corrections, 0),
+          },
+        ]),
+      ),
+    };
+    writePrivate(
+      join(dirname(out), 'targets.json'),
+      `${JSON.stringify({ ...summary, targets: list }, null, 1)}\n`,
+    );
+    console.log(JSON.stringify(summary, null, 1));
+  } finally {
+    await host.shutdown();
+  }
+}

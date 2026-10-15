@@ -223,9 +223,17 @@ export {
 } from './feedback/warden-prefilter';
 export {
   type CharterScore,
+  CONCEPT_CLUSTERS,
+  CORRECTION_TARGET_PROMPT,
+  type CorrectionTarget,
+  correctionTargetMessages,
+  parseCorrectionTargets,
+  parseTargetCanonical,
   parseWardenJudgement,
   probeTriggers,
   scoreCharterRun,
+  TARGET_CANONICAL_PROMPT,
+  targetCanonicalMessages,
   WARDEN_JUDGE_PROMPT,
   type WardenJudgement,
   type WardenProbe,

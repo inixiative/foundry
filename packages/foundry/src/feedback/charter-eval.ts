@@ -117,6 +117,7 @@ export async function runCharterEval(
                 moment: probe.moment,
                 ...(probe.ask ? { ask: probe.ask } : {}),
                 trigger,
+                ...(probe.gold?.target ? { target: probe.gold.target } : {}),
                 remark: answer.text,
                 hidden: probe.hidden ?? '',
               })
@@ -206,7 +207,10 @@ async function ask(
 }
 
 /** A judge call that fails (not one that answers out of shape) is asked again, up to twice. */
-async function judge(provider: LLMProvider, input: Parameters<typeof wardenJudgeMessage>[0]) {
+export async function judge(
+  provider: LLMProvider,
+  input: Parameters<typeof wardenJudgeMessage>[0],
+) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const result = await provider.complete(

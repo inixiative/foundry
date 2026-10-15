@@ -5,7 +5,8 @@
  *   bun scripts/evals/warden-charter.ts --probes ~/.foundry/evals/warden-probes.jsonl \
  *     [--foundry-dir ~/code/inixiative/foundry/.foundry] [--charter <file>] [--per-kind 40] \
  *     [--ctx inixiative | --projects template,zealot] [--period test] \
- *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>]
+ *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>] [--resume] \
+ *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -38,6 +39,7 @@ import {
 } from '../../packages/foundry/src/agents/warden-charter';
 import {
   type EvalWarden,
+  judge,
   markEvalRun,
   runCharterEval,
 } from '../../packages/foundry/src/feedback/charter-eval';
@@ -58,6 +60,8 @@ const { values } = parseArgs({
     out: { type: 'string' },
     concurrency: { type: 'string' },
     resume: { type: 'boolean' },
+    knowledge: { type: 'string' },
+    rejudge: { type: 'string' },
   },
 });
 if (!values.probes) {
@@ -124,6 +128,21 @@ const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
         : join(homedir(), 'code', 'inixiative'),
   };
 };
+/**
+ * --knowledge <dir>: score another knowledge set (e.g. the catalog) against the same probes. A role's
+ * `<dir>/<project>/<role>/domainKnowledge.md`, else `<dir>/<role>/domainKnowledge.md`, replaces its
+ * composed domain knowledge; roles without a file keep the live composition.
+ */
+const alternateKnowledge = (role: string, project?: string): string | undefined => {
+  if (!values.knowledge) return undefined;
+  const dir = resolve(values.knowledge);
+  for (const path of [
+    ...(project ? [join(dir, project, role, 'domainKnowledge.md')] : []),
+    join(dir, role, 'domainKnowledge.md'),
+  ])
+    if (existsSync(path)) return readFileSync(path, 'utf8');
+  return undefined;
+};
 const composed = new Map<string, EvalWarden[]>();
 const cold = new Map<string, string[]>();
 for (const probe of probes) {
@@ -134,14 +153,15 @@ for (const probe of probes) {
   for (const { agentId, domain } of roster) {
     const slots = buildRoleLayers(config, agentId, { resolveSource, scope: place });
     await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm()]);
-    if (!slots.domainKnowledge.content.trim()) {
+    const knowledge = alternateKnowledge(agentId, probe.project) ?? slots.domainKnowledge.content;
+    if (!knowledge.trim()) {
       cold.set(key, [...(cold.get(key) ?? []), domain]);
       continue;
     }
     wardens.push({
       domain,
       instructions: slots.instructions.content,
-      domainKnowledge: slots.domainKnowledge.content,
+      domainKnowledge: knowledge,
       budget: roleComposition(config.composition, agentId).budget,
     });
   }
@@ -151,6 +171,89 @@ const wardensFor = (probe: WardenProbe): EvalWarden[] => {
   const place = placeOf(probe);
   return composed.get(`${place.projectId ?? ''}|${place.cwd}`) ?? [];
 };
+
+const scoreByProject = (answers: readonly WardenProbeAnswer[], turns: readonly WardenProbeTurn[]) =>
+  Object.fromEntries(
+    (projects ?? []).map((project) => {
+      const mine = probes.filter((p) => p.project === project);
+      const ids = new Set(mine.map((p) => p.id));
+      return [
+        project,
+        scoreCharterRun(
+          mine,
+          answers.filter((a) => ids.has(a.probeId)),
+          turns.filter((t) => ids.has(t.probeId)),
+        ),
+      ];
+    }),
+  );
+
+/**
+ * --rejudge <run dir>: judge an earlier run's remarks again against the probes as they are now (e.g.
+ * once targets are labelled), without asking any Warden again. Writes answers.rejudged.jsonl and
+ * score.rejudged.json there.
+ */
+if (values.rejudge) {
+  const run = resolve(values.rejudge);
+  const rows = <T>(file: string): T[] =>
+    readFileSync(join(run, file), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as T);
+  const earlier = rows<WardenProbeAnswer>('answers.jsonl');
+  const turns = rows<WardenProbeTurn>('turns.jsonl');
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const judges = decisionHost(
+    'claude-opus-5-5',
+    'claude',
+    4,
+    privateDirectory(join(homedir(), '.foundry', 'evals')),
+  );
+  markEvalRun(join(homedir(), '.foundry', 'evals'));
+  try {
+    const answers: WardenProbeAnswer[] = [];
+    for (const a of earlier) {
+      const probe = byId.get(a.probeId);
+      if (!probe || a.noComment || a.error || !a.text) {
+        answers.push(a);
+        continue;
+      }
+      const warden = wardensFor(probe).find((w) => w.domain === a.domain);
+      const judged = await judge(judges.provider, {
+        domain: a.domain,
+        domainDescription: warden?.instructions.slice(0, 1200) ?? '',
+        moment: probe.moment,
+        ...(probe.ask ? { ask: probe.ask } : {}),
+        trigger: a.trigger ?? 'agent-action',
+        ...(probe.gold?.target ? { target: probe.gold.target } : {}),
+        remark: a.text,
+        hidden: probe.hidden ?? '',
+      });
+      const { judged: _old, ...rest } = a;
+      answers.push(judged ? { ...rest, judged } : rest);
+    }
+    const asked = probes.filter((p) => turns.some((t) => t.probeId === p.id));
+    const score = scoreCharterRun(asked, answers, turns);
+    writeFileSync(
+      join(run, 'answers.rejudged.jsonl'),
+      answers.map((a) => `${JSON.stringify(a)}\n`).join(''),
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      join(run, 'score.rejudged.json'),
+      JSON.stringify(
+        { probesFile: values.probes, score, byProject: scoreByProject(answers, turns) },
+        null,
+        1,
+      ),
+      { mode: 0o600 },
+    );
+    console.log(JSON.stringify({ ...score, byProject: scoreByProject(answers, turns) }, null, 1));
+  } finally {
+    await judges.shutdown();
+  }
+  process.exit(0);
+}
 
 const concurrency = Number(values.concurrency ?? 16);
 // An eval run, not work: Archive and the repeat report leave its sessions out.
@@ -209,20 +312,7 @@ try {
   const answers = [...kept, ...run.answers];
   const turns = [...keptTurns, ...run.turns];
   const score = scoreCharterRun(probes, answers, turns);
-  const byProject = Object.fromEntries(
-    (projects ?? []).map((project) => {
-      const mine = probes.filter((p) => p.project === project);
-      const ids = new Set(mine.map((p) => p.id));
-      return [
-        project,
-        scoreCharterRun(
-          mine,
-          answers.filter((a) => ids.has(a.probeId)),
-          turns.filter((t) => ids.has(t.probeId)),
-        ),
-      ];
-    }),
-  );
+  const byProject = scoreByProject(answers, turns);
   writeFileSync(
     join(out, 'score.json'),
     JSON.stringify(
@@ -235,6 +325,7 @@ try {
         triggers,
         perKind,
         foundryDir,
+        knowledge: values.knowledge,
         roster: roster.map((r) => r.domain),
         cold: Object.fromEntries(cold),
         score,
