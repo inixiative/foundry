@@ -261,6 +261,8 @@ Conventions: a real `LocalSessionStore`, a real viewer, the controlled native fi
 
 ## 8. Build order (smallest useful slice first)
 
+> **Step 1 and the lineage part of step 2 are built** (2026-10-15, docs/THREAD-TREE.md §A.8): native subagents are observed child threads with `handoff` / `handoff-return` rows and lineage in Archive. The tool gate still journals `agentId: 'artificer'`.
+
 1. **See native subagents** (option b's half, useful with no other change):
    - agent-session: `parentToolUseId` / `agentId` on normalized events (published through the agentic train);
    - `projectNative` keeps them;

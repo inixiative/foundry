@@ -26,6 +26,8 @@ export interface SubagentRecorderDeps {
 
 interface Run {
   readonly key: string;
+  /** The thread the session runs under (the root of the tree). */
+  readonly root: string;
   readonly child: ThreadRecord;
   readonly parent: ThreadRecord;
   readonly handoffId: string;
@@ -86,7 +88,8 @@ export class SubagentRecorder {
 
   private start(root: ThreadRecord, evidence: NativeEvidence): Run {
     const life = evidence.subagent!;
-    const codex = !!evidence.threadId && evidence.threadId === life.taskId;
+    // Codex reports a spawn with its parent thread's identity; Claude subagent events carry none.
+    const codex = !!evidence.threadId;
     // The parent: the subagent that issued the spawn (by its task, or by the spawning call), else
     // the thread the session runs under.
     const parentRun =
@@ -146,6 +149,7 @@ export class SubagentRecorder {
     });
     const run: Run = {
       key: `${root.id}:${life.taskId}`,
+      root: root.id,
       child,
       parent,
       handoffId,
@@ -209,6 +213,12 @@ export class SubagentRecorder {
       },
     });
     this.byTask.delete(run.key);
+    const call = run.child.meta.spawn?.toolCallId;
+    if (call) this.byToolUse.delete(`${run.root}:${call}`);
+    for (const [key, owner] of this.spawnedInside)
+      if (owner === run) this.spawnedInside.delete(key);
+    // The directory's thread shows the run ended.
+    this.deps.adopt?.(run.child);
     this.changed(run.parent, run.parentTurnId);
   }
 

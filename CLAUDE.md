@@ -122,6 +122,12 @@ Settings edits apply live: every committed change is a row in Foundry's audit lo
 
 Every Warden call records what its instructions and domain knowledge were composed from, as version ids, not text (`audit/`, docs/THREAD-TREE.md spec B). The audit log holds a **source version** for every change to a source: a settings definition, a ladder file (`file:<path>`), a settings prompt (`prompt:agent:<id>`), a configured source's text (`source-content:<id>`), a feedback-written line, or the charter. Each row records the actor and the cause. The journal's `composition_version` lists a slot's parts in order (glue, source version plus the text it contributed, per-message text), so `CompositionAuditor.recompose` returns the exact text. Advice, guard and review requests carry `versions: {charter, instructions, domainKnowledge, retrieved?}`; text chosen per message is stored raw with the call.
 
+A thread is a tree (docs/THREAD-TREE.md spec A).
+- **Subagents.** The executor's native subagents (Claude Agent/Task, Codex sub-agents) are recorded as observed child threads (`turns/subagents.ts`), tied to their real parent by `handoff` / `handoff-return` rows.
+- **Compaction.** When a turn closes, each middleware call gets a `middleware-reduced` row: its state (versions) and its result, never its input.
+- **Retention.** Raw middleware rows age out after `journal.rawMiddlewareDays` (default 30).
+- **Archive.** It gets reduced entries and per-node snapshots with `lineage`. Capture claims the native sessions it records, with a lease, so the Archive collector skips them unless Foundry dies before fulfilling.
+
 ## Tech Stack
 
 - **Runtime**: Bun

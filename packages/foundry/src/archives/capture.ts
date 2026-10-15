@@ -1,4 +1,5 @@
 import { userInfo } from 'node:os';
+import { resolve } from 'node:path';
 import {
   type ArchiveActor,
   type ArchiveEntry,
@@ -273,8 +274,9 @@ export class ArchiveCapture {
   private readonly renewal: ReturnType<typeof setInterval>;
   /** This Foundry's name on its claims: one per journal, so two Foundries never share one. */
   private readonly claimant: string;
-  private claimsUnsupported = false;
   readonly errors = new Map<string, string>();
+  /** The last claim refusal per session (or `hold`), for diagnosis; capture goes on regardless. */
+  readonly claimErrors = new Map<string, string>();
   constructor(
     readonly journal: LocalSessionStore,
     private readonly writer: () => ArchiveWriter | undefined,
@@ -289,7 +291,7 @@ export class ArchiveCapture {
       for (const threadId of this.errors.keys()) this.schedule(threadId);
     }, RETRY_MS);
     this.retry.unref();
-    this.claimant = `foundry:${contentHash(journal.path).slice(0, 16)}`;
+    this.claimant = `foundry:${contentHash(resolve(journal.path)).slice(0, 16)}`;
     this.renewal = setInterval(() => void this.renew().catch(() => {}), RENEW_MS);
     this.renewal.unref();
     for (const thread of journal.threads()) this.schedule(thread.id);
@@ -351,30 +353,39 @@ export class ArchiveCapture {
   /**
    * Renew the lease on every thread with an open turn: a thread at work keeps its native sessions
    * claimed; once its turn closes, its last capture fulfils them, and a crash lets the lease lapse
-   * so the collector keeps the raw transcript.
+   * so the collector keeps the raw transcript. Runs in the capture chain, so a renewal never lands
+   * after (and undoes) the fulfilment of a turn that closed meanwhile.
    */
-  async renew(): Promise<void> {
-    const writer = this.writer();
-    if (!writer) return;
-    const sessions = this.journal
-      .openTurnThreads()
-      .flatMap((threadId) => nativeSessions(this.journal, threadId));
-    await this.claim(writer, sessions);
+  renew(): Promise<void> {
+    const run = this.flushing.then(async () => {
+      const writer = this.writer();
+      if (!writer || this.closed) return;
+      await this.claim(
+        writer,
+        this.journal
+          .openTurnThreads()
+          .flatMap((threadId) => nativeSessions(this.journal, threadId)),
+      );
+    });
+    this.flushing = run.catch(() => {});
+    return run;
   }
+  /** Claims are a courtesy to the collector: a refused claim never stops Foundry writing its journal. */
   private async claim(writer: ArchiveWriter, sessions: NativeSession[]) {
-    if (!sessions.length || this.claimsUnsupported) return;
+    if (!sessions.length) return;
     try {
       await writer.holdClaims({ claimant: this.claimant, ttlMs: CLAIM_TTL_MS, sessions });
     } catch (error) {
-      // An Archive older than claims (0.20.0) has no such route: capture goes on unclaimed.
-      if ((error as { status?: number }).status === 404) this.claimsUnsupported = true;
-      else throw error;
+      this.claimErrors.set('hold', (error as Error).message);
     }
   }
   private async fulfil(writer: ArchiveWriter, sessions: NativeSession[], archiveId: string) {
-    if (this.claimsUnsupported) return;
     for (const session of sessions)
-      await writer.fulfilClaim({ claimant: this.claimant, ...session, archiveId });
+      try {
+        await writer.fulfilClaim({ claimant: this.claimant, ...session, archiveId });
+      } catch (error) {
+        this.claimErrors.set(`${session.source}:${session.sessionId}`, (error as Error).message);
+      }
   }
   close() {
     if (this.closed) return;
@@ -402,18 +413,19 @@ const RENEW_MS = 2 * 60_000;
  * follows its session's claim.
  */
 function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSession[] {
-  const found = new Map<string, NativeSession>();
-  const add = (session: NativeSession) =>
-    found.set(`${session.source}:${session.sessionId}`, session);
-  for (const evidence of journal.archiveRecords(threadId).native) {
-    if (evidence.threadId) add({ source: 'codex', sessionId: evidence.threadId });
-    else {
-      const id = evidence.externalSessionId ?? evidence.nativeSessionId;
-      if (id) add({ source: 'claude-code', sessionId: id });
-    }
-  }
   const meta = journal.threads().find((t) => t.id === threadId)?.meta;
-  if (meta?.spawn?.via === 'native-codex' && meta.spawn.nativeTaskId)
-    add({ source: 'codex', sessionId: meta.spawn.nativeTaskId });
+  // An observed subagent's own native session: a Codex child's thread (a Claude subagent's
+  // transcript follows its session's claim, so it has none of its own).
+  if (meta?.spawn?.observed)
+    return meta.spawn.via === 'native-codex' && meta.spawn.nativeTaskId
+      ? [{ source: 'codex', sessionId: meta.spawn.nativeTaskId }]
+      : [];
+  const found = new Map<string, NativeSession>();
+  for (const id of journal.nativeSessionIds(threadId)) {
+    const session: NativeSession = id.threadId
+      ? { source: 'codex', sessionId: id.threadId }
+      : { source: 'claude-code', sessionId: id.sessionId! };
+    found.set(`${session.source}:${session.sessionId}`, session);
+  }
   return [...found.values()];
 }

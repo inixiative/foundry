@@ -83,6 +83,17 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
           sessions: Array<{ source: string; sessionId: string }>;
         };
         const expiresAt = Date.now() + input.ttlMs;
+        // As Archive does: another writer's live, unfulfilled lease is never taken over.
+        for (const session of input.sessions) {
+          const held = claims.get(`${session.source}:${session.sessionId}`);
+          if (
+            held &&
+            held.claimant !== input.claimant &&
+            held.expiresAt > Date.now() &&
+            !held.fulfilledBy
+          )
+            return json({ error: 'claimed by another writer' }, 409);
+        }
         for (const session of input.sessions)
           claims.set(`${session.source}:${session.sessionId}`, {
             claimant: input.claimant,

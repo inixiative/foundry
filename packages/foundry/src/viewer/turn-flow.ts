@@ -189,7 +189,7 @@ export function slimTurn(record: TurnFlowRecord) {
       : null,
     snippets: Array.isArray(plan?.snippets) ? plan.snippets.length : null,
     // The live view shows the calls themselves; their reduced copies are for Archive.
-    phases: record.phases.filter((row) => row.phase !== REDUCED_PHASE).map((row) => slim(row)),
+    phases: shownPhases(record.phases).map((row) => slim(row)),
     ...(guards ? { guards } : {}),
     trace: record.trace
       ? {
@@ -384,4 +384,19 @@ export function flowSnapshot(journal: FlowJournal, threadId: string) {
     ...readLearning(journal, threadId),
     limits,
   };
+}
+
+/**
+ * The calls themselves while the journal keeps them; once retention removed a call's raw rows, its
+ * reduced row stands in (spec A), so a pruned turn still shows its middleware.
+ */
+function shownPhases<T extends { id: string; phase: string; record: Record<string, unknown> }>(
+  rows: readonly T[],
+): T[] {
+  const ids = new Set(rows.map((row) => row.id));
+  return rows.filter((row) => {
+    if (row.phase !== REDUCED_PHASE) return true;
+    const sources = (row.record as { sources?: unknown }).sources;
+    return !Array.isArray(sources) || !sources.some((id) => ids.has(String(id)));
+  });
 }

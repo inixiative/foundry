@@ -693,6 +693,13 @@ export class LocalSessionStore {
         checksum(record),
         storedAt,
       );
+      // A middleware row that lands after its turn closed (a late guard outcome) is reduced now.
+      if (
+        input.turnId &&
+        (RAW_MIDDLEWARE_PHASES as readonly string[]).includes(input.phase) &&
+        !isOpenTurn(this.turn(input.turnId)?.status ?? 'unknown')
+      )
+        this.compactTurn(thread, input.turnId);
       return storedAt;
     })();
   }
@@ -778,10 +785,6 @@ export class LocalSessionStore {
   }
 
   /**
-   * Advice and guard-request rows stored at or after `since` whose recorded input contains `marker`: the
-   * calls that had a feedback rule in front of a Warden. Roles are the participants whose segments hold it.
-   */
-  /**
    * An observed subagent run (spec A): a turn of a child thread recorded from the native stream,
    * opened with the task it was given. Idempotent for the same turn.
    */
@@ -859,12 +862,26 @@ export class LocalSessionStore {
     })();
   }
 
-  /** A thread's latest turn still queued or running. */
+  /** A thread's running turn, else its latest queued one. */
   openTurn(threadId: string): StoredTurn | undefined {
     const row = this.query(
-      "SELECT id FROM session_turns WHERE thread_id=? AND status IN ('queued', 'active') ORDER BY started_at DESC LIMIT 1",
+      "SELECT id FROM session_turns WHERE thread_id=? AND status IN ('queued', 'active') ORDER BY status = 'active' DESC, started_at DESC LIMIT 1",
     ).get(threadId) as { id: string } | null;
     return row ? this.turn(row.id) : undefined;
+  }
+
+  /** The native session identities a thread's executor evidence names (Codex thread, Claude session). */
+  nativeSessionIds(threadId: string): Array<{ threadId?: string; sessionId?: string }> {
+    return (
+      this.query(
+        `SELECT DISTINCT json_extract(record, '$.threadId') AS thread,
+          COALESCE(json_extract(record, '$.externalSessionId'), json_extract(record, '$.nativeSessionId')) AS session
+          FROM session_native WHERE thread_id=? AND admission_id NOT LIKE 'observed:%'`,
+      ).all(threadId) as Array<{ thread: string | null; session: string | null }>
+    ).flatMap(
+      (row): Array<{ threadId?: string; sessionId?: string }> =>
+        row.thread ? [{ threadId: row.thread }] : row.session ? [{ sessionId: row.session }] : [],
+    );
   }
 
   /** Threads with a turn queued or running. */
@@ -947,6 +964,11 @@ export class LocalSessionStore {
     return ids;
   }
 
+  /**
+   * Advice and guard-request rows stored at or after `since` whose composed input held `marker` (by
+   * the versions they name, or their recorded text): the calls that had a feedback rule in front of a
+   * Warden; after retention, their reduced rows. Roles are the participants that had it.
+   */
   phasesContaining(
     marker: string,
     since: number,
@@ -1046,7 +1068,8 @@ export class LocalSessionStore {
     const rawExists = this.query('SELECT 1 FROM session_phase WHERE id=?');
     for (const row of this.query(
       `SELECT thread_id, turn_id, record, stored_at FROM session_phase
-        WHERE phase='${REDUCED_PHASE}' AND stored_at >= ? ORDER BY seq`,
+        WHERE phase='${REDUCED_PHASE}' AND COALESCE(json_extract(record, '$.at'), stored_at) >= ?
+        ORDER BY seq`,
     ).iterate(since) as Iterable<{
       thread_id: string;
       turn_id: string | null;
@@ -1058,6 +1081,7 @@ export class LocalSessionStore {
       const reduced = this.decode<{
         callId: string;
         role: string;
+        at?: number;
         state?: { versions?: { instructions?: string; domainKnowledge?: string } };
       }>(row.record);
       const versions = reduced.state?.versions;
@@ -1072,7 +1096,8 @@ export class LocalSessionStore {
         turnId: row.turn_id,
         phase: REDUCED_PHASE,
         roles: [reduced.role],
-        storedAt: row.stored_at,
+        // When the call ran, not when it was reduced.
+        storedAt: reduced.at ?? row.stored_at,
       });
     }
     return out;
@@ -1218,13 +1243,28 @@ export class LocalSessionStore {
    * Spec A (docs/THREAD-TREE.md): a closed turn's middleware calls as reduced rows, one per call
    * (`middleware-reduced`, id `mw:<call id>`): state and result, never the message the call was
    * sent. Raw rows are never rewritten; they age out under `pruneRawMiddleware`. Idempotent: a call
-   * already reduced is not reduced again, and a late call (a guard outcome after the turn closed)
-   * is reduced on the next sweep.
+   * already reduced is not reduced again, and a late call is reduced when it lands.
    */
   compactTurn(thread: Pick<Thread, 'id' | 'meta'>, turnId: string): number {
-    const rows = this.phaseHistory(thread.id, { turnId, limit: 1000 }).filter((row) =>
-      (RAW_MIDDLEWARE_PHASES as readonly string[]).includes(row.phase),
-    );
+    const raw = RAW_MIDDLEWARE_PHASES.map((phase) => `'${phase}'`).join(', ');
+    const rows = (
+      this.query(
+        `SELECT id, turn_id, phase, record, stored_at FROM session_phase
+          WHERE thread_id=? AND turn_id=? AND phase IN (${raw}) ORDER BY seq`,
+      ).all(thread.id, turnId) as Array<{
+        id: string;
+        turn_id: string | null;
+        phase: string;
+        record: string;
+        stored_at: number;
+      }>
+    ).map((row) => ({
+      id: row.id,
+      turnId: row.turn_id,
+      phase: row.phase,
+      record: this.decode<Record<string, unknown>>(row.record),
+      storedAt: row.stored_at,
+    }));
     if (!rows.length) return 0;
     const done = new Set(
       (
@@ -1234,7 +1274,7 @@ export class LocalSessionStore {
       ).map((row) => row.id),
     );
     let added = 0;
-    for (const reduced of reduceMiddleware(rows)) {
+    for (const reduced of reduceMiddleware(rows, (text) => this.content.put(text))) {
       const id = `mw:${reduced.callId}`;
       if (done.has(id)) continue;
       this.appendPhase(thread, {
@@ -1250,43 +1290,47 @@ export class LocalSessionStore {
   }
 
   /**
-   * Reduce every closed turn whose middleware rows are newer than its reduced rows: on start (a turn
-   * a restart interrupted, compacted before the first capture) and with each retention sweep.
+   * Reduce every closed turn with a middleware row written after its reduced rows (by journal
+   * order): on start, so a turn a restart interrupted is reduced before its first capture. Returns
+   * the threads it reduced something for, so their capture can be scheduled.
    */
-  compactClosedTurns(): number {
+  compactClosedTurns(): string[] {
     const raw = RAW_MIDDLEWARE_PHASES.map((phase) => `'${phase}'`).join(', ');
     const pending = this.query(
       `SELECT p.thread_id AS thread_id, p.turn_id AS turn_id FROM session_phase p
         JOIN session_turns t ON t.id = p.turn_id
         WHERE t.status IN ('completed', 'failed', 'interrupted')
         GROUP BY p.thread_id, p.turn_id
-        HAVING MAX(CASE WHEN p.phase IN (${raw}) THEN p.stored_at END) >
-          COALESCE(MAX(CASE WHEN p.phase = '${REDUCED_PHASE}' THEN p.stored_at END), -1)`,
+        HAVING MAX(CASE WHEN p.phase IN (${raw}) THEN p.seq END) >
+          COALESCE(MAX(CASE WHEN p.phase = '${REDUCED_PHASE}' THEN p.seq END), -1)`,
     ).all() as Array<{ thread_id: string; turn_id: string }>;
     const threads = new Map(this.threads().map((thread) => [thread.id, thread]));
-    let added = 0;
+    const changed = new Set<string>();
     for (const { thread_id, turn_id } of pending) {
       const thread = threads.get(thread_id);
-      if (thread) added += this.db.transaction(() => this.compactTurn(thread, turn_id))();
+      if (thread && this.db.transaction(() => this.compactTurn(thread, turn_id))())
+        changed.add(thread_id);
     }
-    return added;
+    return [...changed];
   }
 
   /**
-   * Retention for raw middleware rows (`journal.rawMiddlewareDays`): rows stored before `cutoff`
-   * whose turn is closed and reduced are deleted, and journal content nothing references any more
-   * is released. Reduced rows, and everything else, are kept.
+   * Retention for raw middleware rows (`journal.rawMiddlewareDays`): a raw row is deleted once its
+   * turn ended before `cutoff` and a reduced row names it as a source. A row no reduced row covers
+   * (a guard request whose outcome never came) is kept. Then journal content nothing references any
+   * more is released.
    */
   pruneRawMiddleware(cutoff: number): { rows: number; content: number } {
-    this.compactClosedTurns();
     const raw = RAW_MIDDLEWARE_PHASES.map((phase) => `'${phase}'`).join(', ');
     const rows = this.db.transaction(
       () =>
         this.query(
-          `DELETE FROM session_phase WHERE phase IN (${raw}) AND stored_at < ?
-            AND turn_id IN (SELECT id FROM session_turns WHERE status IN ('completed', 'failed', 'interrupted'))
-            AND EXISTS (SELECT 1 FROM session_phase r WHERE r.turn_id = session_phase.turn_id
-              AND r.thread_id = session_phase.thread_id AND r.phase = '${REDUCED_PHASE}')`,
+          `DELETE FROM session_phase WHERE phase IN (${raw})
+            AND turn_id IN (SELECT id FROM session_turns
+              WHERE status IN ('completed', 'failed', 'interrupted') AND ended_at < ?)
+            AND EXISTS (SELECT 1 FROM session_phase r, json_each(r.record, '$.sources') source
+              WHERE r.thread_id = session_phase.thread_id AND r.turn_id = session_phase.turn_id
+                AND r.phase = '${REDUCED_PHASE}' AND source.value = session_phase.id)`,
         ).run(cutoff).changes,
     )();
     return { rows, content: rows ? this.collectContent() : 0 };

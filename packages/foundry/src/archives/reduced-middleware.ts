@@ -25,6 +25,8 @@ export interface ReducedMiddleware {
   readonly state: Record<string, unknown>;
   readonly served?: { readonly model: string; readonly effort?: string };
   readonly at: number;
+  /** The raw rows this entry reduces: retention deletes a raw row only when an entry names it. */
+  readonly sources: readonly string[];
 }
 
 interface PhaseRow {
@@ -45,8 +47,14 @@ const served = (request: unknown) => {
     : undefined;
 };
 
-/** One turn's middleware rows as reduced entries, in row order. Rows of other phases are ignored. */
-export function reduceMiddleware(rows: readonly PhaseRow[]): ReducedMiddleware[] {
+/**
+ * One turn's middleware rows as reduced entries, in row order. Rows of other phases are ignored.
+ * `keep` stores text the entry refers to by hash (a call's thread knowledge, stored raw).
+ */
+export function reduceMiddleware(
+  rows: readonly PhaseRow[],
+  keep: (text: string) => string = () => '',
+): ReducedMiddleware[] {
   const requests = new Map(rows.filter((r) => r.phase === 'guard-request').map((r) => [r.id, r]));
   const out: ReducedMiddleware[] = [];
   for (const row of rows) {
@@ -68,12 +76,14 @@ export function reduceMiddleware(rows: readonly PhaseRow[]): ReducedMiddleware[]
         state: { ...(obj(obj(routing.request)?.versions) ?? {}) },
         ...(served(routing.request) ? { served: served(routing.request)! } : {}),
         at: row.storedAt,
+        sources: [row.id],
       });
       continue;
     }
     if (row.phase === 'advice') {
       for (const p of (r.participants as Rec[] | undefined) ?? []) {
         const snippets = Array.isArray(p.snippets) ? (p.snippets as string[]) : [];
+        const knowledge = obj(p.segments)?.threadKnowledge;
         out.push({
           callId: `${row.id}:${String(p.domain)}`,
           role: String(p.domain),
@@ -86,12 +96,18 @@ export function reduceMiddleware(rows: readonly PhaseRow[]): ReducedMiddleware[]
             ...(typeof r.charter === 'string' ? { charter: r.charter } : {}),
             ...(obj(obj(p.request)?.versions) ? { versions: obj(obj(p.request)?.versions) } : {}),
             ...(typeof p.threadKnowledgeRevision === 'number'
-              ? { threadKnowledgeRevision: p.threadKnowledgeRevision }
+              ? {
+                  threadKnowledge: {
+                    revision: p.threadKnowledgeRevision,
+                    ...(typeof knowledge === 'string' ? { hash: keep(knowledge) } : {}),
+                  },
+                }
               : {}),
             ...(typeof p.cacheHash === 'string' ? { cacheHash: p.cacheHash } : {}),
           },
           ...(served(p.request) ? { served: served(p.request)! } : {}),
           at: row.storedAt,
+          sources: [row.id],
         });
       }
       continue;
@@ -115,7 +131,7 @@ export function reduceMiddleware(rows: readonly PhaseRow[]): ReducedMiddleware[]
             ...(typeof r.charter === 'string' ? { charter: r.charter } : {}),
             ...(obj(request?.versions) ? { versions: obj(request?.versions) } : {}),
             ...(typeof o.threadKnowledgeRevision === 'number'
-              ? { threadKnowledgeRevision: o.threadKnowledgeRevision }
+              ? { threadKnowledge: { revision: o.threadKnowledgeRevision } }
               : {}),
           },
           ...(o.served && obj(o.served)?.model
@@ -124,6 +140,7 @@ export function reduceMiddleware(rows: readonly PhaseRow[]): ReducedMiddleware[]
               ? { served: served(request)! }
               : {}),
           at: row.storedAt,
+          sources: requestRow ? [row.id, requestRow.id] : [row.id],
         });
       }
     }
