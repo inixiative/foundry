@@ -72,10 +72,10 @@ MESSAGE ARRIVES (user or system)
        ▼
 ┌─ 4. CORRECTNESS CHECKING ────────────────────────────────────────┐
 │                                                                    │
-│  After tool calls, domain agents switch to guard mode.             │
-│  Trigger-gated: file-write → convention check,                     │
-│  code-write → security check, cross-module → architecture check,   │
-│  any action → memory guard (an LLM call today; see Guard tiers).   │
+│  When the turn's tool activity ends, domain agents guard it once,  │
+│  over every write, edit and command of the turn, in order.         │
+│  Trigger-gated: a Warden is asked when one of its guardTriggers    │
+│  names a call of the turn; memory on any activity (see Guard tiers)│
 │                                                                    │
 │  Findings → signals for reconciliation; the session sees them on   │
 │  a later turn at best (no push path is built).                     │
@@ -105,7 +105,7 @@ These are the agents we've named so far. Each implements one or more roles. The 
 | **Domain advising** | Wardens (formerly called Domain Librarians) — Docs Warden, Convention Warden, Security Warden, Architecture Warden, Memory Warden | Each maintains a warm cache for its domain. Advise mode: "what context does this message need from my domain?" |
 | **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the class exists (`agents/herald.ts`) but no runtime constructs it (`viewer/config.ts:301`). |
 | **Execution** | Artificer (the native Claude Code or Codex session running under the harness) | The real work. Full tool access, capable model. |
-| **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode: "did this action violate anything in my domain?" |
+| **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode, once per turn: "did what the agent did this turn violate anything in my domain?" |
 | **Signal reconciliation** | Librarian (singular — distinct from the plural Wardens) | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
 
 A role can compose many subagents — the Librarian might delegate security checking to three specialized subagents, the Cartographer might have a doc-map builder and a dependency-graph builder underneath. The flow doesn't change. What matters is that after a tool call, *something* checks conventions, *something* checks security, and the results flow into *one* reconciliation point.
@@ -114,7 +114,7 @@ A role can compose many subagents — the Librarian might delegate security chec
 
 Each Warden maintains knowledge, advises when asked, and guards when triggered:
 
-| Domain | Warm Cache | Advise (on message) | Guard (on tool call) |
+| Domain | Warm Cache | Advise (on message) | Guard (once per turn, over its tool calls) |
 |--------|-----------|--------------------|--------------------|
 | **Docs** | Doc map + full content | "Which docs does this message need?" | "Did this edit invalidate any docs?" |
 | **Convention** | Naming/pattern rules | "Which conventions apply here?" | "Does this edit violate conventions?" |
@@ -128,14 +128,19 @@ Memory is meant to be special in guard mode: **programmatic pattern matching** a
 
 **The Warden charter** (`agents/warden-charter.ts`) is how every Warden works. It is one fixed meta-instruction set, part of Foundry, never settings, and never edited per project. It heads the system message of every Warden call, above that Warden's own composed instructions. It sets scope discipline (a point is yours only when you can name the rule, fact or `fb_` item in your instructions or knowledge that it touches), `NO_COMMENT` as the default answer, what each moment asks, and how to speak: at most three short points, each citing its `fb_` id or rule. Its wording is iterated against real sessions with the charter eval (below), never hand-tuned per Warden. Two wordings ship, selected by what a project's chorus is built from: this one for the hand-named roster, and the **classifier charter** (`WARDEN_CHARTER_CLASSIFY`) for a chorus of region Wardens ([usage-and-context.md](usage-and-context.md#chorus-projectsidchorus)), which asks two yes/no questions (does the moment touch your region; does something already exist that is close) and answers `NO_COMMENT` or one pointer, `Look over here: <name(s) or class> (<where it is written>)`, for the main thread to follow.
 
-**Trigger points.** A Warden is asked at a named trigger point. Every Warden the point reaches is asked unless the **pre-filter**, when turned on, rules it out: one local decision-model call per trigger scores, per Warden, whether the moment is about its domain, and a Warden is skipped only on a confident no ([subscription decisions, Warden pre-filter](subscription-decisions.md#warden-pre-filter)). It fails open: an unsure score, a failed call or a missing model asks the Warden. It is not a keyword or path filter, which would fail silently; every skip is journalled with its score, so a Warden that should have spoken is auditable. It is off by default (`prefilter.enabled` in settings; no local model clears the bar yet), and when on it runs before advice, before each guard and before the post-work review. Deciding what to say stays the Warden's job under the charter.
+**Trigger points.** A Warden is asked at a named trigger point. Every Warden the point reaches is asked unless the **pre-filter**, when turned on, rules it out: one local decision-model call per trigger scores, per Warden, whether the moment is about its domain, and a Warden is skipped only on a confident no ([subscription decisions, Warden pre-filter](subscription-decisions.md#warden-pre-filter)). It fails open: an unsure score, a failed call or a missing model asks the Warden. It is not a keyword or path filter, which would fail silently; every skip is journalled with its score, so a Warden that should have spoken is auditable. It is off by default (`prefilter.enabled` in settings; no local model clears the bar yet), and when on it runs before advice, before the turn's guard, before a handoff brief and before the post-work review. Deciding what to say stays the Warden's job under the charter.
 
 | Trigger point | Phase | Who is asked | The charter asks |
 |---|---|---|---|
 | `user-message` | advice | every Warden, on every user message | what does the user usually add here, in your domain, so they need not say it perfectly every time? |
-| `agent-action` | guard | every Warden whose `guardTriggers` name the tool | does this action go against your domain? |
+| `agent-action` | guard | once per turn, when the turn's tool activity ends: every Warden whose `guardTriggers` name a call of the turn, over the whole turn's writes, edits and commands in order | does what the agent did this turn go against your domain? |
+| `subagent-spawn` | brief (advice protocol) | every Warden, when the agent hands a task to a subagent | what must the subagent know, from your domain, that the task text leaves out? |
 
-After the work, every Warden reviews it (post-work review) under the same charter. Next trigger points, each with its own input, protocol text and NO_COMMENT default: `subagent-spawn` (brief the handoff), `agent-question` (answer on the user's behalf when confident and backed by a recorded ruling), `hand-back` (process Wardens review the final message before it lands, one extra pass at most).
+**One guard per turn** (Aron, 2026-10-15). Tool calls are journalled as they happen (the native journal, the review's per-dispatch tool bucket); the guard is not asked per call. The runtime holds the turn's guardable calls (those some Warden's `guardTriggers` name; reads never enter the moment) on the live dispatch and, when the executor's dispatch returns, fires one `postAction` over them, not awaited: the chorus never holds the hand-back, and its outcome reconciles the turn's pending guard entry. One `guard-request` row per asked Warden and one `guard-outcome` row wrap the turn (`wraps: turn:<id>`, `activity.calls` in order). `guard: "per-call"` in settings restores a guard per tool call. An observed subagent's turn is guarded the same way when its turn ends (`subagent_turn`), on the subagent's node, in the in-session runtime. A call with no live dispatch to belong to is guarded on its own, visibly uncorrelated.
+
+**The handoff brief.** `task_started` (agent-session 0.6.6) makes the child an observed thread (`turns/subagents.ts`); the recorder's `onSpawn` fires `subagent_spawn` on the root thread, and `FlowOrchestrator.brief` asks the roster once over the task text (`handoffText`). Each Warden's decision is journalled on the parent node as an `advice` row with `trigger: subagent-spawn` wrapping `handoff:<child>`; what they said is queued (`queueNotes`) and rides with the parent's next user message as "The <domain> Warden chimed in on the handoff to <description>:" notes. The subagent itself is not changed: the harness has already composed what it received, and no push path reaches a running turn.
+
+After the work, every Warden reviews it (post-work review) under the same charter. Next trigger points, each with its own input, protocol text and NO_COMMENT default: `agent-question` (answer on the user's behalf when confident and backed by a recorded ruling), `hand-back` (process Wardens review the final message before it lands, one extra pass at most).
 
 **NO_COMMENT is the expected answer** in every phase protocol (advice, guard, review): exactly `NO_COMMENT`, nothing else. It adds nothing to the thread: no note, no "Domain decisions" line, nothing in the shared thread state. It is still journalled as the Warden's decision (`no-comment`), so the silence rate is measurable. Any other answer outside the protocol (an empty contribution, extra fields, prose around JSON, NO_COMMENT with anything else) is an error, never a comment.
 
@@ -240,12 +245,14 @@ flowchart TB
 
 ### Guard tiers
 
-| Guard | Trigger | Skips |
+Every guard fires at most once per turn, over the turn's whole tool activity; a Warden is asked when one of its `guardTriggers` names a call of the turn.
+
+| Guard | Asked when the turn has | Skips |
 |-------|---------|-------|
-| Convention Guard | File-write tool calls | Reads, bash commands, grep |
-| Security Guard | Code-write tool calls | Reads, non-code file edits |
-| Architecture Advisor | File creation or cross-module imports | Edits within same module |
-| Memory Advisor | Always. Designed as a programmatic pattern match; today an LLM call, because no `guardFn` is supplied | Never |
+| Convention Guard | a file write or edit | Turns of reads, bash commands, grep only |
+| Security Guard | a code write or command | Turns of reads or non-code edits only |
+| Architecture Advisor | a file creation or cross-module import | Turns of edits within one module |
+| Memory Advisor | any guardable call. Designed as a programmatic pattern match; today an LLM call, because no `guardFn` is supplied | Turns with no guardable call |
 
 ### The thread-state layer makes this work
 
@@ -573,7 +580,7 @@ The MCP tools show up in the Artificer's session as available tools alongside fi
 
 ## Loop 3: Post-Action — Correctness Checking
 
-Foundry observes the Artificer's tool calls on the native event stream (agent-session's normalized events; no Claude Code hook is involved) and runs correctness checks on them through `FlowOrchestrator.postAction` (`agents/flow-orchestrator.ts:956`) — but not all checks on every call. Guards are trigger-gated per domain. Separately, the structural tool gate (`turns/tool-gate.ts`) answers the CLI's permission request before a call runs; that is the only thing that denies.
+Foundry observes the Artificer's tool calls on the native event stream (agent-session's normalized events; no Claude Code hook is involved), holds the turn's guardable calls, and when the turn's tool activity ends runs one correctness check over them through `FlowOrchestrator.postAction` (`agents/flow-orchestrator.ts`) — not a check per call. Guards are trigger-gated per domain: a Warden is asked when a call of the turn matches its triggers, and it sees the whole turn. Separately, the structural tool gate (`turns/tool-gate.ts`) answers the CLI's permission request before a call runs; that is the only thing that denies.
 
 ```mermaid
 flowchart TB
@@ -651,7 +658,7 @@ There's no separate "guard" agent type. The same Wardens that advise pre-message
 | **Urgency** | Bounded by a deadline: a Warden that times out is skipped and the turn proceeds | Non-blocking (async) |
 | **Gating** | Classification domain shift | Tool call type (file-write, code-write, etc.) |
 
-Guard mode is trigger-gated by the Librarian: a file-read doesn't fire the Convention Warden's guard, a bash command doesn't fire the Security Warden. This means a session that does 50 tool calls but only 15 are file-writes runs convention guard 15 times, not 50. The Memory Warden is the exception — it fires on every tool call. It was designed as free programmatic pattern matching; today it runs the LLM guard, because nothing supplies its `guardFn`.
+Guard mode fires once per turn and is trigger-gated: a turn of reads doesn't fire the Convention Warden's guard, a turn of only bash commands doesn't fire the Security Warden. A turn that makes 50 tool calls, 15 of them file writes, runs the convention guard once, over those 15 writes in order, not 15 times. The Memory Warden is asked whenever the turn had any guardable call. It was designed as free programmatic pattern matching; today it runs the LLM guard, because nothing supplies its `guardFn`.
 
 **Why the guard layer matters:** As a session grows and the context window fills, agents become more random. The guard-mode Wardens don't degrade with session length because they compare tool outputs against their own warm caches — stable, compact, independent of the session's growing context. At message 50, the Security Warden is comparing against the same security patterns it had at message 1. The guards are the mechanism that keeps the session aligned as context pressure mounts.
 
@@ -859,7 +866,8 @@ Every branching point in the system, who decides, and how.
 - **Librarian** — sole writer to the thread-state layer. `packages/foundry/src/agents/librarian.ts`
 - **Thread-state layer** — compact materialized view, updated by the Librarian.
 - **Warden framework** — shared advise + guard pattern (`agents/domain-librarian.ts`, `DomainLibrarian`), instantiated from settings; instructions and domain knowledge composed by the composition view ([usage-and-context.md](usage-and-context.md)). Decisions run Claude Haiku 5.5 on agent-session primed sessions (`providers/primed-decisions.ts`).
-- **Guard trigger-gating** — tool observations reach `FlowOrchestrator.postAction`, which fires each Warden whose triggers match.
+- **Guard trigger-gating** — a turn's tool observations are held on its dispatch and reach `FlowOrchestrator.postAction` once when the turn's tool activity ends; it fires each Warden whose triggers name a call of the turn (`guard: per-turn`; `per-call` restores a guard per call).
+- **Handoff brief** — a native subagent's `task_started` fires `FlowOrchestrator.brief` on the root thread (`subagent-spawn`); the brief is journalled on the parent and rides with its next turn.
 - **Cartographer** — context routing with keyword fallback. `packages/foundry/src/agents/cartographer.ts`
 
 ### Not built

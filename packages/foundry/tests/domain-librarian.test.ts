@@ -9,7 +9,8 @@ import {
 import {
   DomainLibrarian,
   type GuardFinding,
-  type ToolObservation,
+  oneCall,
+  type TurnActivity,
 } from '../src/agents/domain-librarian';
 
 // ---------------------------------------------------------------------------
@@ -64,16 +65,16 @@ function makeMemoryLibrarian(signals: SignalBus) {
     signals,
     llm: mockLLM('unused'),
     programmaticGuard: true,
-    guardFn: (obs: ToolObservation, cacheContent: string): GuardFinding[] => {
+    guardFn: (activity: TurnActivity, cacheContent: string): GuardFinding[] => {
       const patterns = JSON.parse(cacheContent) as Array<{ pattern: string; failure: string }>;
-      const output = obs.output ?? '';
+      const output = activity.observations.map((o) => o.output ?? '').join('\n');
       const findings: GuardFinding[] = [];
       for (const p of patterns) {
         if (new RegExp(p.pattern).test(output)) {
           findings.push({
             severity: 'advisory',
             description: p.failure,
-            location: obs.input?.file_path as string,
+            location: activity.observations.at(-1)?.input?.file_path as string,
           });
         }
       }
@@ -176,11 +177,13 @@ describe('DomainLibrarian', () => {
         }),
       );
       const lib = makeConventionLibrarian(llm, signals);
-      const result = await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/auth/service.ts' },
-        output: 'function get_user() { ... }',
-      });
+      const result = await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/auth/service.ts' },
+          output: 'function get_user() { ... }',
+        }),
+      );
 
       expect(result.ran).toBe(true);
       expect(result.findings).toHaveLength(1);
@@ -190,10 +193,12 @@ describe('DomainLibrarian', () => {
 
     it('skips guard for non-matching tool types', async () => {
       const lib = makeConventionLibrarian(mockLLM('unused'), signals);
-      const result = await lib.guard({
-        tool: 'file_read',
-        input: { file_path: 'src/auth/service.ts' },
-      });
+      const result = await lib.guard(
+        oneCall({
+          tool: 'file_read',
+          input: { file_path: 'src/auth/service.ts' },
+        }),
+      );
 
       expect(result.ran).toBe(false);
       expect(result.findings).toHaveLength(0);
@@ -218,11 +223,13 @@ describe('DomainLibrarian', () => {
         emitted.push(s);
       });
 
-      await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/db/query.ts' },
-        output: 'db.query(`SELECT * FROM users WHERE id = ${userId}`)',
-      });
+      await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/db/query.ts' },
+          output: 'db.query(`SELECT * FROM users WHERE id = ${userId}`)',
+        }),
+      );
 
       expect(emitted).toHaveLength(1);
       expect(emitted[0].kind).toBe('security_concern');
@@ -247,10 +254,12 @@ describe('DomainLibrarian', () => {
         emitted.push(s);
       });
 
-      await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/utils.ts' },
-      });
+      await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/utils.ts' },
+        }),
+      );
 
       expect(emitted).toHaveLength(1);
       expect(emitted[0].kind).toBe('guard_finding');
@@ -267,11 +276,13 @@ describe('DomainLibrarian', () => {
 
     it('detects known failure patterns', async () => {
       const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/timer.ts' },
-        output: 'setTimeout(() => resolve(), 0)',
-      });
+      const result = await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/timer.ts' },
+          output: 'setTimeout(() => resolve(), 0)',
+        }),
+      );
 
       expect(result.ran).toBe(true);
       expect(result.findings).toHaveLength(1);
@@ -280,11 +291,13 @@ describe('DomainLibrarian', () => {
 
     it('returns all-clear when no patterns match', async () => {
       const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/clean.ts' },
-        output: 'const x = 42;',
-      });
+      const result = await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/clean.ts' },
+          output: 'const x = 42;',
+        }),
+      );
 
       expect(result.ran).toBe(true);
       expect(result.findings).toHaveLength(0);
@@ -292,11 +305,13 @@ describe('DomainLibrarian', () => {
 
     it('detects multiple patterns in same output', async () => {
       const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard({
-        tool: 'file_write',
-        input: { file_path: 'src/bad.ts' },
-        output: 'eval(input); setTimeout(() => {}, 0)',
-      });
+      const result = await lib.guard(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/bad.ts' },
+          output: 'eval(input); setTimeout(() => {}, 0)',
+        }),
+      );
 
       expect(result.ran).toBe(true);
       expect(result.findings).toHaveLength(2);

@@ -55,20 +55,22 @@ import {
   type WardenPrefilter,
 } from '../providers/warden-prefilter';
 import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
-import type {
-  AdviceRequestEvidence,
-  CacheComposition,
-  DomainLibrarian,
-  GuardCallEvidence,
-  GuardFinding,
-  GuardResult,
-  GuardStatus,
-  PhaseRequestEvidence,
-  ToolObservation,
+import {
+  type AdviceRequestEvidence,
+  activityTools,
+  type CacheComposition,
+  type DomainLibrarian,
+  type GuardCallEvidence,
+  type GuardFinding,
+  type GuardResult,
+  type GuardStatus,
+  type PhaseRequestEvidence,
+  renderTurnActivity,
+  type TurnActivity,
 } from './domain-librarian';
 import type { Librarian } from './librarian';
 import type { WardenPointer } from './warden-charter';
-import type { TriggerPoint } from './warden-triggers';
+import type { AdviceTrigger, TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -321,11 +323,11 @@ export interface GuardReport {
   advisory: GuardFinding[];
   /** Which domain guards were triggered (completed or not). */
   domainsChecked: string[];
-  /** Domains whose guard triggers do not name this tool: not asked. */
+  /** Domains whose guard triggers name none of the activity's tools: not asked. */
   skipped: string[];
-  /** Domains the pre-filter skipped: confident the action is outside their domain. Not asked. */
+  /** Domains the pre-filter skipped: confident the activity is outside their domain. Not asked. */
   prefiltered: Array<{ domain: string } & PrefilterSkip>;
-  /** The pre-filter's call for this action, when it is on. */
+  /** The pre-filter's call for this activity, when it is on. */
   prefilter?: PrefilterRun;
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
@@ -333,6 +335,29 @@ export interface GuardReport {
   failed: string[];
   /** Time taken for the full guard flow (ms). */
   elapsed: number;
+}
+
+/** A handoff the agent made: the task text a subagent starts from, and the child it became. */
+export interface HandoffMoment {
+  readonly childThreadId: string;
+  readonly handoffId: string;
+  readonly description?: string;
+  readonly agentType?: string;
+  readonly prompt: string;
+}
+
+/** The roster's brief for a handoff: every Warden's decision at the `subagent-spawn` trigger. */
+export interface BriefReport {
+  /** The moment the Wardens were given, frozen: the handoff as text. */
+  readonly input: PlanInput;
+  /** Per Warden, in configured order: contribute (the brief), no-comment, skipped, excluded, timeout or error. */
+  readonly contributions: DomainContribution[];
+  /** The pre-filter's call for this handoff, when it is on. */
+  readonly prefilter?: PrefilterRun;
+  /** Calls that timed out and are still running. */
+  readonly outstanding: OutstandingCall[];
+  readonly elapsed: number;
+  readonly sealedAt: number;
 }
 
 /** Timing and budget settings for the pre-message flow. All bounds are validated. */
@@ -432,6 +457,12 @@ export class FlowOrchestrator {
   private _invalidationListeners: Array<(event: InvalidationEvent) => void> = [];
   /** Signal bus unsubscribe handles. */
   private _unsubscribes: Array<() => void> = [];
+  /**
+   * Notes that arrived between turns (a handoff brief) and ride with the next user message as
+   * after-message blocks, the way a Warden chimes in on the message itself. No push path reaches a
+   * running turn (CLAUDE.md, Communication Channels).
+   */
+  private _pendingNotes: PromptBlock[] = [];
 
   constructor(config: FlowOrchestratorConfig) {
     this._cartographer = config.cartographer;
@@ -554,27 +585,8 @@ export class FlowOrchestrator {
       threadStateHash: computeHash(threadState),
       capturedAt: start,
     };
-    const participants: Participant[] = [...this._domains.values()].map((lib) => ({
-      lib,
-      cache: lib.cache.content,
-      cacheComposition: lib.cacheComposition(),
-      cacheHash: lib.cache.hash,
-      cacheState: lib.cache.checkStaleness(),
-      cacheLastWarmed: lib.cache.lastWarmed,
-      threadKnowledge: lib.threadKnowledge.content,
-      threadKnowledgeRevision: lib.threadKnowledge.revision,
-      threadKnowledgeHash: lib.threadKnowledge.hash,
-    }));
-
-    const planTimeoutMs = this._planTimeoutMs;
-    const deadlineAt = planTimeoutMs !== undefined ? start + planTimeoutMs : undefined;
-    const clock: PlanClock = {
-      deadlineAt,
-      planTimeoutMs,
-      passed: () => deadlineAt !== undefined && Date.now() >= deadlineAt,
-      remaining: () =>
-        deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now()),
-    };
+    const participants = this._participants();
+    const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
 
     // 2. Assess: the user-message trigger point asks every Warden the pre-filter does not rule out;
@@ -601,13 +613,106 @@ export class FlowOrchestrator {
       : plan;
   }
 
+  /** Every Warden with what it would assess against, frozen now, before any await. */
+  private _participants(): Participant[] {
+    return [...this._domains.values()].map((lib) => ({
+      lib,
+      cache: lib.cache.content,
+      cacheComposition: lib.cacheComposition(),
+      cacheHash: lib.cache.hash,
+      cacheState: lib.cache.checkStaleness(),
+      cacheLastWarmed: lib.cache.lastWarmed,
+      threadKnowledge: lib.threadKnowledge.content,
+      threadKnowledgeRevision: lib.threadKnowledge.revision,
+      threadKnowledgeHash: lib.threadKnowledge.hash,
+    }));
+  }
+
+  /** The shared deadline of one fan-out to the roster, from `start`. */
+  private _clock(start: number): PlanClock {
+    const planTimeoutMs = this._planTimeoutMs;
+    const deadlineAt = planTimeoutMs !== undefined ? start + planTimeoutMs : undefined;
+    return {
+      deadlineAt,
+      planTimeoutMs,
+      passed: () => deadlineAt !== undefined && Date.now() >= deadlineAt,
+      remaining: () =>
+        deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now()),
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Handoff brief — the subagent-spawn trigger point
+  // -----------------------------------------------------------------------
+
+  /**
+   * The agent handed a task to a subagent: ask the roster, once, what the subagent must know that
+   * the task text leaves out. Every Warden decides under the charter through the advice protocol
+   * (NO_COMMENT expected); the pre-filter, when on, rules out the ones it is confident the task is
+   * outside of. The brief never blocks the handoff, which the harness has already made.
+   */
+  async brief(handoff: HandoffMoment): Promise<BriefReport> {
+    const start = Date.now();
+    const threadState = this._librarian.layer.content;
+    const message = handoffText(handoff);
+    const input: PlanInput = {
+      message,
+      hash: computeHash(message),
+      threadState,
+      threadStateHash: computeHash(threadState),
+      capturedAt: start,
+    };
+    const participants = this._participants();
+    const clock = this._clock(start);
+    const outstanding: OutstandingCall[] = [];
+    const prefiltered = await this.prefilter(
+      'subagent-spawn',
+      message,
+      threadState,
+      participants.filter((p) => p.cache).map((p) => p.lib),
+    );
+    const contributions = await runBounded(participants, this._maxAdviseParallel, (p) =>
+      this._assess(
+        p,
+        input,
+        clock,
+        outstanding,
+        prefilterSkip(prefiltered, p.lib.domain),
+        'subagent-spawn',
+      ),
+    );
+    return deepFreeze({
+      input,
+      contributions,
+      ...(prefiltered
+        ? { prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length) }
+        : {}),
+      outstanding,
+      elapsed: Date.now() - start,
+      sealedAt: Date.now(),
+    });
+  }
+
+  /**
+   * Notes for the next turn: appended to the end of the next user message as after-message blocks
+   * (the "chimed in" delivery), since nothing reaches a running turn.
+   */
+  queueNotes(blocks: readonly PromptBlock[]): void {
+    this._pendingNotes.push(...blocks);
+  }
+
+  /** Notes waiting for the next turn. */
+  get pendingNotes(): readonly PromptBlock[] {
+    return this._pendingNotes;
+  }
+
   /**
    * The pre-filter's one call for a trigger, over the Wardens that would be asked. Undefined when
    * it is off. Never throws: an unavailable model comes back as `unavailable`, and every Warden is
    * asked.
    */
   async prefilter(
-    trigger: 'user-message' | 'agent-action' | 'post-turn',
+    trigger: TriggerPoint | 'post-turn',
     text: string,
     context: string | undefined,
     wardens: readonly DomainLibrarian[],
@@ -703,6 +808,7 @@ export class FlowOrchestrator {
     clock: PlanClock,
     outstanding: OutstandingCall[],
     skip?: PrefilterSkip,
+    trigger: AdviceTrigger = 'user-message',
   ): Promise<DomainContribution> {
     const startedAt = Date.now();
     // Three separately owned segments: configured instructions, configured
@@ -762,7 +868,7 @@ export class FlowOrchestrator {
     ): DomainContribution => ({
       domain: p.lib.domain,
       decision,
-      trigger: 'user-message',
+      trigger,
       layers: [],
       snippets: [],
       confidence: 0,
@@ -793,6 +899,7 @@ export class FlowOrchestrator {
           served = value;
         },
         timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
+        trigger,
       })
       .then(
         (result) => ({ kind: 'result' as const, result }),
@@ -1027,7 +1134,8 @@ export class FlowOrchestrator {
       reinjected,
       pending,
       revisions,
-      decoration: composeDecoration(plan, deliveredByDomain),
+      // Notes that arrived since the last turn (handoff briefs) ride with this one.
+      decoration: composeDecoration(plan, deliveredByDomain, this._pendingNotes.splice(0)),
       warmShortfalls,
     };
   }
@@ -1101,25 +1209,31 @@ export class FlowOrchestrator {
   // Post-action flow — correctness checking
   // -----------------------------------------------------------------------
 
+  /** Whether some Warden's guard triggers name this tool: the calls a turn's activity collects. */
+  guardsTool(tool: string): boolean {
+    for (const lib of this._domains.values()) if (lib.guardTriggers.has(tool)) return true;
+    return false;
+  }
+
   /**
-   * Run the post-action flow: trigger-gate the observation to the right
-   * domain librarians and collect findings.
+   * Run the post-action flow over a turn's activity (one call in `per-call` mode): trigger-gate it
+   * to the right domain librarians, ask each once, and collect findings.
    */
-  async postAction(observation: ToolObservation, hooks?: GuardPhaseHooks): Promise<GuardReport> {
+  async postAction(activity: TurnActivity, hooks?: GuardPhaseHooks): Promise<GuardReport> {
     const start = Date.now();
     const threadState = this._librarian.layer.content;
 
-    // The agent-action trigger point asks every domain whose guard triggers name this tool.
+    // The agent-action trigger point asks every domain whose guard triggers name a call of the activity.
     const triggered: DomainLibrarian[] = [];
     const skipped: string[] = [];
     for (const [, domainLib] of this._domains) {
-      if (domainLib.shouldGuard(observation.tool)) triggered.push(domainLib);
+      if (domainLib.guards(activity)) triggered.push(domainLib);
       else skipped.push(domainLib.domain);
     }
-    // The pre-filter rules out the Wardens it is confident the action is outside of.
+    // The pre-filter rules out the Wardens it is confident the activity is outside of.
     const prefiltered = await this.prefilter(
       'agent-action',
-      observationText(observation),
+      renderTurnActivity(activity),
       threadState,
       triggered,
     );
@@ -1144,7 +1258,7 @@ export class FlowOrchestrator {
     const results: GuardResult[] = await Promise.all(
       domainsToCheck.map((d, i) =>
         d
-          .guard(observation, threadState, {
+          .guard(activity, threadState, {
             ...frozen[i],
             observeRequest: (evidence) => {
               observed[i] = evidence;
@@ -1222,9 +1336,14 @@ export class FlowOrchestrator {
       kind: 'tool_observation',
       source: 'flow-orchestrator',
       content: {
-        tool: observation.tool,
-        input: observation.input,
-        filesAffected: observation.filesAffected,
+        tool: activityTools(activity).join(', '),
+        tools: activityTools(activity),
+        turnId: activity.turnId,
+        calls: activity.observations.map((o) => ({
+          tool: o.tool,
+          ...(o.callId ? { callId: o.callId } : {}),
+        })),
+        filesAffected: [...new Set(activity.observations.flatMap((o) => o.filesAffected ?? []))],
         guardsRan: domainsChecked,
         guardsSkipped: skipped,
         guardsPrefiltered: ruledOut,
@@ -1367,10 +1486,11 @@ async function runBounded<T, R>(
   return results;
 }
 
-/** Build the executor-facing decoration from a sealed plan. */
+/** Build the executor-facing decoration from a sealed plan, plus notes held for this turn. */
 function composeDecoration(
   plan: InjectionPlan,
   deliveredByDomain: Map<string, string>,
+  notes: readonly PromptBlock[] = [],
 ): MessageDecoration {
   const blocks: PromptBlock[] = [];
 
@@ -1413,6 +1533,8 @@ function composeDecoration(
       text: `The ${c.domain} Warden chimed in:\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
     });
   }
+  // Notes from between turns (a Warden's brief at a handoff) land after the fresh advice.
+  blocks.push(...notes);
 
   return deepFreeze({
     input: {
@@ -1454,11 +1576,25 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/** The text the pre-filter reads for a tool call: the tool, its input and the files it touched. */
-function observationText(observation: ToolObservation): string {
-  const input = JSON.stringify(observation.input ?? {});
-  const files = observation.filesAffected?.length
-    ? `\nFiles: ${observation.filesAffected.join(', ')}`
-    : '';
-  return `${observation.tool}: ${input}${files}`;
+/** A handoff as the Wardens read it: who the task went to, then the task text the subagent starts from. */
+export function handoffText(handoff: HandoffMoment): string {
+  const to = [handoff.agentType, handoff.description && `"${handoff.description}"`]
+    .filter(Boolean)
+    .join(' ');
+  return `The main agent is handing this task to a subagent${to ? ` (${to})` : ''}. The subagent starts from the task text alone.\n\nTask:\n${handoff.prompt || '(no task text recorded)'}`;
+}
+
+/** The note a Warden's brief becomes on the next turn: the "chimed in" delivery, naming the handoff. */
+export function briefNotes(handoff: HandoffMoment, report: BriefReport): PromptBlock[] {
+  const to = handoff.description ?? handoff.agentType ?? handoff.childThreadId;
+  return report.contributions
+    .filter((c) => c.decision === 'contribute' && c.snippets.length)
+    .map((c) => ({
+      role: 'content' as const,
+      id: `brief:${handoff.handoffId}:${c.domain}`,
+      source: c.domain,
+      segment: 'domain-knowledge',
+      placement: 'after-message' as const,
+      text: `The ${c.domain} Warden chimed in on the handoff to ${to}:\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
+    }));
 }

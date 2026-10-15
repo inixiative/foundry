@@ -10,7 +10,7 @@ import {
   SignalBus,
   selectMemory,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 
 // An advisory guard finding is evidence, not a human correction: it is retained in the
 // thread's memory log but never pinned into every later turn.
@@ -50,7 +50,7 @@ test('advisory guard findings and operator corrections are retained as audit-onl
       }),
     },
   });
-  const result = await lib.guard({ tool: 'Write', input: { file_path: 'contacts.ts' } });
+  const result = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } }));
   expect(result.status).toBe('completed');
   await new InterventionLog().intervene(
     { id: owner.threadId, signals },

@@ -220,7 +220,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   const guard = annotations.guards[0];
   expect(guard).toMatchObject({
     status: 'reported',
-    observation: { signalId: 'sig-tool-2', tool: 'Write', callId: 'call-2', agentId: 'worker' },
+    observation: { tool: 'Write', callId: 'call-2', agentId: 'worker', calls: 1 },
     domainsChecked: ['architecture'],
     findings: 0,
   });

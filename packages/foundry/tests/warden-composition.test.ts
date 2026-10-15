@@ -9,6 +9,7 @@ import {
   type LLMProvider,
 } from '@inixiative/foundry-core';
 import { configuredExperts } from '../src/agents/configured-experts';
+import { oneCall } from '../src/agents/domain-librarian';
 import {
   buildAgents,
   buildLayers,
@@ -381,7 +382,7 @@ test('a project extension edit and a guard-trigger edit reach a running project 
   await thread.dispatch('worker', 'Next turn');
   expect(f.last('pre').messages[0]!.content).toContain('Use Bun 1.4');
   expect(lib.shouldGuard('Write')).toBe(true);
-  const guard = await lib.guard({ tool: 'Write', input: { file_path: 'a.ts' } });
+  const guard = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));
   expect(guard.request).toMatchObject({ status: 'supplied' });
   // Guard and advise share the instructions; the guard phase appends its own protocol.
   const guarded = f.last('pre');

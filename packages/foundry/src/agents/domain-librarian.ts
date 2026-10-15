@@ -37,6 +37,7 @@ import {
   WARDEN_CHARTER_CLASSIFY,
   type WardenPointer,
 } from './warden-charter';
+import type { AdviceTrigger } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +81,12 @@ export interface AdviseOpts {
   observeServed?: (served: ServedModel) => void;
   /** The caller's deadline for this call. Passed to the provider so a late call is cancelled, not left running. */
   timeoutMs?: number;
+  /**
+   * The trigger point the advice is for: the user's message (default), or a handoff to a subagent
+   * (`subagent-spawn`), where the moment is the task text the subagent starts from and the protocol
+   * asks what it must know that the text leaves out.
+   */
+  trigger?: AdviceTrigger;
 }
 
 /** The exact input one phase call supplied to its provider, frozen at the call boundary. Text only. */
@@ -569,21 +576,94 @@ export interface GuardFinding {
   pointer?: WardenPointer;
 }
 
-/** A tool call observation that guards evaluate. */
+/** One observed tool call: a unit of a turn's activity. */
 export interface ToolObservation {
-  /** Tool name (e.g., "file_write", "bash", "file_read"). */
+  /** Tool name (e.g., "Write", "Edit", "Bash"). */
   tool: string;
-  /** Tool input (file_path, command, etc.). */
+  /** Tool input (file_path, command, the edit, etc.). */
   input: Record<string, unknown>;
   /** Tool output (truncated if large). */
   output?: string;
   /** Files affected by this tool call. */
   filesAffected?: string[];
+  /** The native call id, when known. */
+  callId?: string;
+  /** Outcome when known. Absent means unknown: never assume success or failure. */
+  ok?: boolean;
+}
+
+/**
+ * The guard's moment: the tool activity of one turn in call order, every write, edit and command a
+ * Warden's `guardTriggers` name (`guard: "per-turn"`, the default), or one call (`guard: "per-call"`).
+ * The roster is asked once over it when the turn's tool activity ends.
+ */
+export interface TurnActivity {
+  /** The turn the activity belongs to; an observed subagent's own turn for its calls. */
+  turnId: string | null;
+  observations: ToolObservation[];
+}
+
+/** A moment of one call: `guard: "per-call"`, an uncorrelated call, or a probe. */
+export function oneCall(observation: ToolObservation, turnId: string | null = null): TurnActivity {
+  return { turnId, observations: [observation] };
+}
+
+/** One call's input as the guard sees it. An edit carries its old and new text; a write its content. */
+const GUARD_INPUT_CHARS = 4_000;
+/** One call's output as the guard sees it. */
+const GUARD_OUTPUT_CHARS = 1_000;
+/** The whole activity as the guard sees it; past this, calls in the middle are elided with a marker. */
+const GUARD_ACTIVITY_CHARS = 60_000;
+
+const clipped = (text: string, max: number) =>
+  text.length <= max ? text : `${text.slice(0, max)}… [${text.length - max} more chars]`;
+
+function renderObservation(observation: ToolObservation, index: number): string {
+  let input: string;
+  try {
+    input = JSON.stringify(observation.input ?? {}) ?? '{}';
+  } catch {
+    input = '[unserializable input]';
+  }
+  return [
+    `### Call ${index + 1}: ${observation.tool}${observation.callId ? ` (${observation.callId})` : ''}${
+      observation.ok === undefined ? '' : observation.ok ? '' : ' — FAILED'
+    }`,
+    `Input: ${clipped(input, GUARD_INPUT_CHARS)}`,
+    ...(observation.output ? [`Output: ${clipped(observation.output, GUARD_OUTPUT_CHARS)}`] : []),
+    ...(observation.filesAffected?.length
+      ? [`Files affected: ${observation.filesAffected.join(', ')}`]
+      : []),
+  ].join('\n');
+}
+
+/**
+ * The turn's activity as text, in call order, each call bounded. When the whole exceeds its bound,
+ * calls in the middle are elided (the first and last are what a turn states and lands) and a
+ * marker says how many.
+ */
+export function renderTurnActivity(activity: TurnActivity): string {
+  const lines = activity.observations.map(renderObservation);
+  let total = lines.reduce((sum, line) => sum + line.length + 1, 0);
+  let elided = 0;
+  while (total > GUARD_ACTIVITY_CHARS && lines.length > 2) {
+    const middle = Math.floor(lines.length / 2);
+    total -= lines[middle]!.length + 1;
+    lines.splice(middle, 1);
+    elided++;
+  }
+  if (elided) lines.splice(Math.floor(lines.length / 2), 0, `… ${elided} call(s) elided …`);
+  return lines.join('\n');
+}
+
+/** The distinct tools of an activity, in first-seen order. */
+export function activityTools(activity: TurnActivity): string[] {
+  return [...new Set(activity.observations.map((o) => o.tool))];
 }
 
 /**
  * How a guard check ended. Only `completed` certifies its findings (or its empty
- * all-clear); every other status means no check result exists for this observation.
+ * all-clear); every other status means no check result exists for this activity.
  * - skipped: trigger-gated out.
  * - cold-cache: triggered, but the domain has no knowledge to check against; no call made.
  * - provider-error: the provider call rejected; whether a model ran is not implied.
@@ -611,7 +691,7 @@ export interface GuardResult {
   findings: GuardFinding[];
   /** A completed check whose answer was NO_COMMENT: nothing to add. */
   noComment?: true;
-  /** Whether the guard was triggered for this observation (false only when trigger-gated out). */
+  /** Whether the guard was triggered for this activity (false only when trigger-gated out). */
   ran: boolean;
   /** Distinguishes a completed check from a skipped, cold, failed or malformed one. */
   status: GuardStatus;
@@ -741,10 +821,10 @@ export interface DomainLibrarianConfig {
   /** If true, guard uses programmatic matching instead of LLM (like Memory domain). */
   programmaticGuard?: boolean;
   /**
-   * Programmatic guard function. Called instead of LLM when programmaticGuard=true.
-   * Return findings directly — no LLM call needed.
+   * Programmatic guard function. Called instead of LLM when programmaticGuard=true, over the turn's
+   * activity. Return findings directly — no LLM call needed.
    */
-  guardFn?: (observation: ToolObservation, cache: string) => GuardFinding[];
+  guardFn?: (activity: TurnActivity, cache: string) => GuardFinding[];
   /**
    * Owned layer holding this domain's understanding of the thread. Supplied by
    * the thread runtime so it sits on that thread's stack; created privately
@@ -780,7 +860,7 @@ export class DomainLibrarian {
   private _promptFromSettings = false;
   private _guardPrompt!: string;
   private _programmaticGuard: boolean;
-  private _guardFn?: (obs: ToolObservation, cache: string) => GuardFinding[];
+  private _guardFn?: (activity: TurnActivity, cache: string) => GuardFinding[];
   private _adviseStrategy: ProcessingStrategy;
   private _guardStrategy: ProcessingStrategy;
   private _reviewPrompt!: string;
@@ -910,6 +990,16 @@ export class DomainLibrarian {
     // Programmatic guards run on everything (free)
     if (this._programmaticGuard) return true;
     return this._guardTriggers.has(toolType);
+  }
+
+  /** The tools this domain's guard triggers name (a programmatic guard names none and runs on any activity). */
+  get guardTriggers(): ReadonlySet<string> {
+    return this._guardTriggers;
+  }
+
+  /** Whether this domain's guard fires for a turn's activity: any call its triggers name. */
+  guards(activity: TurnActivity): boolean {
+    return activity.observations.some((o) => this.shouldGuard(o.tool));
   }
 
   // -----------------------------------------------------------------------
@@ -1303,6 +1393,7 @@ export class DomainLibrarian {
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
     // so custom instructions never have to restate the schema and never get rewritten to carry it.
     // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
+    const trigger = opts?.trigger ?? 'user-message';
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const threadPrefix = threadSection(opts?.threadKnowledge);
     const messages: LLMMessage[] = [
@@ -1316,8 +1407,10 @@ export class DomainLibrarian {
             ? `\n## Your understanding of this thread\n${opts.threadKnowledge}`
             : '',
           threadState ? `\n## Thread state\n${threadState}` : '',
-          `\n## Message\n${message}`,
-          `\n${ADVICE_RESPONSE_PROTOCOL}`,
+          trigger === 'subagent-spawn'
+            ? `\n## Handoff to a subagent\n${message}`
+            : `\n## Message\n${message}`,
+          `\n${adviceResponseProtocol(trigger)}`,
         ].join('\n'),
       },
     ];
@@ -1374,16 +1467,16 @@ export class DomainLibrarian {
   // -----------------------------------------------------------------------
 
   /**
-   * Guard against a tool call observation.
-   * Returns findings (critical or advisory) or empty array for all-clear.
+   * Guard a turn's tool activity (one call in `per-call` mode): findings (critical or advisory), or
+   * an empty array for all-clear.
    */
   async guard(
-    observation: ToolObservation,
+    activity: TurnActivity,
     threadState?: string,
     opts?: GuardOpts,
   ): Promise<GuardResult> {
-    // Check trigger gate
-    if (!this.shouldGuard(observation.tool)) {
+    // Check trigger gate: any call of the activity this domain's triggers name.
+    if (!this.guards(activity)) {
       return {
         findings: [],
         ran: false,
@@ -1394,8 +1487,8 @@ export class DomainLibrarian {
 
     // Programmatic guard — no LLM call
     if (this._programmaticGuard && this._guardFn) {
-      const findings = this._guardFn(observation, this._cache.content);
-      await this._emitFindings(findings, observation);
+      const findings = this._guardFn(activity, this._cache.content);
+      await this._emitFindings(findings, activity);
       return {
         findings,
         ran: true,
@@ -1419,8 +1512,8 @@ export class DomainLibrarian {
     // Three separately owned parts plus shared evidence: the configured instructions stay verbatim
     // as the system message; the user message carries this domain's knowledge, this domain's OWN
     // frozen understanding of the thread (never another domain's), the shared thread state, the
-    // observation, and the guard phase's response protocol supplied by this phase, not by the
-    // instructions.
+    // turn's activity in call order, and the guard phase's response protocol supplied by this
+    // phase, not by the instructions.
     const system = this.guardPrompt;
     const over = this.budgetError(system, cacheContent);
     if (over)
@@ -1448,13 +1541,8 @@ export class DomainLibrarian {
           cacheContent,
           understanding ? `\n## Your understanding of this thread\n${understanding}` : '',
           threadState ? `\n## Thread state\n${threadState}` : '',
-          `\n## Tool observation`,
-          `Tool: ${observation.tool}`,
-          `Input: ${JSON.stringify(observation.input)}`,
-          observation.output ? `Output (truncated): ${observation.output.slice(0, 2000)}` : '',
-          observation.filesAffected?.length
-            ? `Files affected: ${observation.filesAffected.join(', ')}`
-            : '',
+          `\n## The agent's actions this turn (${activity.observations.length} tool call${activity.observations.length === 1 ? '' : 's'}, in order)`,
+          renderTurnActivity(activity),
           `\n${GUARD_RESPONSE_PROTOCOL}`,
         ].join('\n'),
       },
@@ -1522,7 +1610,7 @@ export class DomainLibrarian {
       this._charter === WARDEN_CHARTER_CLASSIFY
         ? validated.findings.map((f) => ({ ...f, pointer: parseWardenPointer(f.description) }))
         : validated.findings;
-    await this._emitFindings(findings, observation);
+    await this._emitFindings(findings, activity);
     return {
       findings,
       ...(validated.noComment ? { noComment: true as const } : {}),
@@ -1537,10 +1625,8 @@ export class DomainLibrarian {
   // Signal emission
   // -----------------------------------------------------------------------
 
-  private async _emitFindings(
-    findings: GuardFinding[],
-    observation: ToolObservation,
-  ): Promise<void> {
+  private async _emitFindings(findings: GuardFinding[], activity: TurnActivity): Promise<void> {
+    const tools = activityTools(activity);
     for (const finding of findings) {
       // A guard's advisory finding is audit evidence, not a human correction: it must never be pinned.
       const kind = finding.severity === 'critical' ? 'security_concern' : 'guard_finding';
@@ -1554,7 +1640,10 @@ export class DomainLibrarian {
           description: finding.description,
           location: finding.location,
           suggestion: finding.suggestion,
-          tool: observation.tool,
+          tool: tools.join(', '),
+          tools,
+          turnId: activity.turnId,
+          calls: activity.observations.length,
         },
         timestamp: Date.now(),
       });
@@ -1591,14 +1680,27 @@ export const NO_COMMENT = 'NO_COMMENT';
 const NO_COMMENT_RULE = `Nothing to add is the expected answer, and the most common one. Then respond with exactly ${NO_COMMENT} and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread.`;
 const STRICT_RULE = `Any other answer, including JSON with empty lists or extra fields, is an error, not a comment.`;
 
-/** The advice phase's response contract. Sent with every advice request, independent of the domain's instructions. */
-export const ADVICE_RESPONSE_PROTOCOL = [
-  '## Response protocol (advice phase, trigger: user-message)',
-  NO_COMMENT_RULE,
-  'Only when your domain has something the user would otherwise have to say themselves, respond with JSON only, exactly this shape: { "snippets": string[], "layers": string[], "confidence": number }.',
-  '"snippets" are short notes from your domain, one point each; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
-  STRICT_RULE,
-].join('\n');
+/**
+ * The advice phase's response contract for a trigger. Sent with every advice request, independent of
+ * the domain's instructions. At a handoff (`subagent-spawn`) the moment is the task text a subagent
+ * starts from, and a note is what it must know that the text leaves out.
+ */
+export function adviceResponseProtocol(trigger: AdviceTrigger): string {
+  return [
+    `## Response protocol (advice phase, trigger: ${trigger})`,
+    trigger === 'subagent-spawn'
+      ? `${NO_COMMENT_RULE} Here it means the task text already carries what your domain would add, or your domain has nothing for this task.`
+      : NO_COMMENT_RULE,
+    trigger === 'subagent-spawn'
+      ? 'Only when your domain has something the subagent must know that the task text leaves out (a rule, the existing thing to use, a decision already made), respond with JSON only, exactly this shape: { "snippets": string[], "layers": string[], "confidence": number }.'
+      : 'Only when your domain has something the user would otherwise have to say themselves, respond with JSON only, exactly this shape: { "snippets": string[], "layers": string[], "confidence": number }.',
+    '"snippets" are short notes from your domain, one point each; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
+    STRICT_RULE,
+  ].join('\n');
+}
+
+/** The advice phase's response contract at the user's message. */
+export const ADVICE_RESPONSE_PROTOCOL = adviceResponseProtocol('user-message');
 
 /**
  * What follows the domain cache in an advice or guard message and changes only when this Warden's
@@ -1633,8 +1735,8 @@ export function reviewResponseProtocol(maxKnowledgeChars: number): string {
 /** The guard phase's response contract. Sent with every guard request, independent of the domain's instructions. */
 export const GUARD_RESPONSE_PROTOCOL = [
   '## Response protocol (guard phase, trigger: agent-action)',
-  `${NO_COMMENT_RULE} Here it means the action breaks nothing in your domain.`,
-  'Only for a violation of your domain that the observation evidences, respond with JSON only, exactly this shape: { "findings": [ { "severity": "critical" | "advisory", "description": string, "location"?: string, "suggestion"?: string } ] }, with at least one finding.',
+  `${NO_COMMENT_RULE} Here it means the agent's actions this turn break nothing in your domain.`,
+  'Only for a violation of your domain that the actions evidence, respond with JSON only, exactly this shape: { "findings": [ { "severity": "critical" | "advisory", "description": string, "location"?: string, "suggestion"?: string } ] }, with at least one finding. "location" names the call (its number or tool) and file the finding is about.',
   STRICT_RULE,
 ].join('\n');
 

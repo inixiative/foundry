@@ -12,7 +12,7 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import { DomainLibrarian, GUARD_RESPONSE_PROTOCOL } from '../src/agents/domain-librarian';
+import { DomainLibrarian, GUARD_RESPONSE_PROTOCOL, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
@@ -225,7 +225,8 @@ test("a held guard's exact request is durable before its answer; the late outcom
     correlation: 'live-dispatch',
     domain: 'architecture',
     threadKnowledgeRevision: 0,
-    observation: { signalId: 'sig-tool-1', tool: 'Write', callId: 'call-1', agentId: 'worker' },
+    observation: { tool: 'Write', callId: 'call-1', agentId: 'worker', calls: 1, turnId: 'turn-1' },
+    wraps: 'turn:turn-1',
   });
   const guardCall = f.aux.find((ms) => ms.some((m) => m.content.includes(GUARD)))!;
   expect((request.record.request as any).messages).toEqual(guardCall);
@@ -372,7 +373,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
     },
     configurable: true,
   });
-  const report = await f.runtime.flowOrchestrator.postAction({ tool: 'Write', input: {} });
+  const report = await f.runtime.flowOrchestrator.postAction(oneCall({ tool: 'Write', input: {} }));
   expect(report.outcomes[0]).toMatchObject({
     domain: 'architecture',
     status: 'provider-error',

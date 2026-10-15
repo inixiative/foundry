@@ -8,7 +8,7 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 
@@ -140,7 +140,9 @@ test('route and advice requests record what served them; a call that missed the 
 test('a completed guard check records what served it', async () => {
   const h = harness();
   try {
-    const result = await h.architecture.guard({ tool: 'Write', input: { file_path: 'a.ts' } });
+    const result = await h.architecture.guard(
+      oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }),
+    );
     expect(result.status).toBe('invalid-response');
     expect(result.request).toMatchObject({
       status: 'supplied',

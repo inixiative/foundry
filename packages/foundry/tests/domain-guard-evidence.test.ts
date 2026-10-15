@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 
 function fixture(respond: () => string) {
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
@@ -36,8 +36,8 @@ for (const fault of ['provider refusal', 'malformed JSON', 'missing findings'] a
       input: { file_path: 'contacts.ts' },
       output: 'Changed schema',
     };
-    const completed = await good.lib.guard(observation);
-    const failed = await bad.lib.guard(observation);
+    const completed = await good.lib.guard(oneCall(observation));
+    const failed = await bad.lib.guard(oneCall(observation));
     expect(completed).toMatchObject({ findings: [], ran: true });
     expect(good.requests).toHaveLength(1);
     expect(bad.requests).toHaveLength(1);
@@ -54,7 +54,7 @@ test('a domain guard receives its own learned thread understanding, not only sha
     'architecture-reviewer',
   );
   await lib.guard(
-    { tool: 'Write', input: { file_path: 'contacts.ts' } },
+    oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } }),
     'COMMON_EVIDENCE: the migration is being edited.',
   );
   expect(requests).toHaveLength(1);

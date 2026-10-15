@@ -296,8 +296,61 @@ export function createViewer(config: ViewerConfig) {
         streams.threadsChanged(child.id);
       },
       events: eventStream,
-      // In-session runtime only: a subagent's tool calls get the root thread's guard Wardens (one
-      // pool per main thread). Subagents' own Wardens are parked (docs/THREAD-TREE.md §C.10).
+      // Every runtime: the root thread's Wardens brief a handoff when the subagent starts (the
+      // subagent-spawn trigger); the brief is journalled on the parent and rides with its next turn.
+      onSpawn: (rootThreadId, spawn) => {
+        const root = directory.get(rootThreadId);
+        if (!root) return;
+        void root.signals
+          .emit({
+            id: newId('sig-spawn'),
+            kind: 'subagent_spawn',
+            source: `subagent:${spawn.node.id}`,
+            content: {
+              threadId: rootThreadId,
+              childThreadId: spawn.node.id,
+              parent: spawn.parent,
+              parentTurnId: spawn.parentTurnId,
+              handoffId: spawn.handoffId,
+              ...(spawn.description ? { description: spawn.description } : {}),
+              ...(spawn.agentType ? { agentType: spawn.agentType } : {}),
+              prompt: spawn.prompt,
+            },
+            timestamp: Date.now(),
+          })
+          .catch((error: unknown) =>
+            log.warn(
+              `[Subagents] brief of ${spawn.node.id} not started: ${(error as Error).message}`,
+            ),
+          );
+      },
+      // In-session runtime only: a subagent's turn gets the root thread's guard Wardens once, over
+      // its tool calls, when the turn ends (one pool per main thread). Subagents' own Wardens are
+      // parked (docs/THREAD-TREE.md §C.10).
+      onTurnEnd: !config.threadSetup
+        ? undefined
+        : (rootThreadId, turn) => {
+            const root = directory.get(rootThreadId);
+            if (!root) return;
+            void root.signals
+              .emit({
+                id: newId('sig-subturn'),
+                kind: 'subagent_turn',
+                source: `subagent:${turn.node.id}`,
+                content: {
+                  threadId: rootThreadId,
+                  node: turn.node,
+                  turnId: turn.turnId,
+                  outcome: turn.outcome,
+                },
+                timestamp: Date.now(),
+              })
+              .catch((error: unknown) =>
+                log.warn(
+                  `[Subagents] guard of ${turn.node.id} not started: ${(error as Error).message}`,
+                ),
+              );
+          },
       observeTool: !config.threadSetup
         ? undefined
         : (rootThreadId, call) => {
@@ -313,6 +366,7 @@ export function createViewer(config: ViewerConfig) {
                   tool: call.tool,
                   input: call.input,
                   ...(call.output !== undefined ? { output: call.output } : {}),
+                  ...(call.ok !== undefined ? { ok: call.ok } : {}),
                   callId: call.callId,
                   agentId: 'subagent',
                   subagent: { node: call.node, turnId: call.turnId },

@@ -47,7 +47,7 @@ export const learned = (thread: string, d: Domain) =>
   });
 
 export interface Call {
-  phase: 'pre' | 'post' | 'route' | 'central';
+  phase: 'pre' | 'guard' | 'post' | 'route' | 'central';
   thread: string;
   domain?: Domain;
   messages: LLMMessage[];
@@ -238,16 +238,20 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
       async complete(messages, opts = {}) {
         const id = opts.threadId ?? '';
         const domain = domains.find((d) => id.endsWith(`:domain:${d}`));
+        // The guard shares the Warden's advice session; its phase shows in the protocol it carries.
         const phase = id.endsWith(':cartographer')
           ? 'route'
           : id.includes(':review:')
             ? 'post'
-            : 'pre';
+            : messages.some((m) => m.content.includes('## Response protocol (guard phase'))
+              ? 'guard'
+              : 'pre';
         const call = copyCall(phase, messages, opts, domain);
         let content: string;
         if (phase === 'route')
           content = JSON.stringify({ domains, layers: domains, confidence: 1 });
         else if (!domain) throw Error('Unowned expert request');
+        else if (phase === 'guard') content = noComment;
         else if (phase === 'pre')
           content = JSON.stringify({
             layers: [domain],
@@ -274,7 +278,8 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
       domains: domains.map((d) => ({
         domain: d,
         layerId: d,
-        guardTriggers: [],
+        // The migration tool is the turn's one guardable call: one guard over the turn, per Warden.
+        guardTriggers: ['migration_evaluate'],
         advisePrompt: `${instructions(d)} Advise with JSON layers/snippets/confidence.`,
         reviewPrompt: `${instructions(d)} You are the ${d} reviewer. Review actual completion evidence and replace only your thread interpretation with JSON knowledge/facts/reason.`,
       })),

@@ -10,6 +10,7 @@ import { Cartographer } from '../src/agents/cartographer';
 import {
   DomainLibrarian,
   GUARD_RESPONSE_PROTOCOL,
+  oneCall,
   validateGuardResponse,
 } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
@@ -71,7 +72,7 @@ const learn = (lib: DomainLibrarian, text: string) =>
 
 test('NO_COMMENT and actual findings both complete; findings are normalized and emitted as signals', async () => {
   const clear = fixture(() => 'NO_COMMENT');
-  const cleared = await clear.lib.guard(observation);
+  const cleared = await clear.lib.guard(oneCall(observation));
   expect(cleared).toMatchObject({
     findings: [],
     noComment: true,
@@ -87,7 +88,7 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
     () =>
       '```json\n{"findings":[{"severity":"critical","description":"Schema drops legacy column","location":"contacts.ts:12"},{"severity":"advisory","description":"Add a migration test"}]}\n```',
   );
-  const result = await found.lib.guard(observation, 'COMMON_EVIDENCE');
+  const result = await found.lib.guard(oneCall(observation), 'COMMON_EVIDENCE');
   expect(result).toMatchObject({
     ran: true,
     status: 'completed',
@@ -114,7 +115,7 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
 
 test('invalid schema is an explicit invalid-response with a bounded error that never echoes the answer; nothing is emitted', async () => {
   const secret = 'PRIVATE_GUARD_OUTPUT_SENTINEL';
-  const completed = await fixture(() => 'NO_COMMENT').lib.guard(observation);
+  const completed = await fixture(() => 'NO_COMMENT').lib.guard(oneCall(observation));
   for (const bad of [
     `not json ${secret}`,
     // Silence is NO_COMMENT alone: an empty findings list, NO_COMMENT with text, or prose-wrapped JSON is malformed.
@@ -134,7 +135,7 @@ test('invalid schema is an explicit invalid-response with a bounded error that n
     `{"findings":[{"severity":"advisory","description":"${'x'.repeat(20_001)}"}]}`,
   ]) {
     const f = fixture(() => bad);
-    const result = await f.lib.guard(observation);
+    const result = await f.lib.guard(oneCall(observation));
     expect(result).toMatchObject({ findings: [], ran: true, status: 'invalid-response' });
     expect(result.admission).toBeUndefined();
     expect(typeof result.error).toBe('string');
@@ -157,7 +158,7 @@ test("provider error is a provider-error with the provider's lifecycle classific
   const plain = fixture(() => {
     throw Error('CONTROLLED_REFUSAL_WITH_NO_CHECK');
   });
-  const refused = await plain.lib.guard(observation);
+  const refused = await plain.lib.guard(oneCall(observation));
   expect(refused).toMatchObject({
     findings: [],
     ran: true,
@@ -181,7 +182,7 @@ test("provider error is a provider-error with the provider's lifecycle classific
       },
     });
   });
-  const unknownNative = await classified.lib.guard(observation);
+  const unknownNative = await classified.lib.guard(oneCall(observation));
   expect(unknownNative).toMatchObject({
     status: 'provider-error',
     admission: { nativeOutcome: 'unknown', localOutcome: 'rejected', dispatch: 'attempted' },
@@ -197,7 +198,7 @@ test("provider error is a provider-error with the provider's lifecycle classific
       native: { nativeOutcome: 'unknown', localOutcome: 'rejected', dispatch: 'not-dispatched' },
     });
   });
-  expect((await notAdmitted.lib.guard(observation)).admission).toEqual({
+  expect((await notAdmitted.lib.guard(oneCall(observation))).admission).toEqual({
     nativeOutcome: 'unknown',
     localOutcome: 'rejected',
     dispatch: 'not-dispatched',
@@ -205,19 +206,19 @@ test("provider error is a provider-error with the provider's lifecycle classific
   const long = fixture(() => {
     throw Error('E'.repeat(1_000));
   });
-  expect((await long.lib.guard(observation)).error!.length).toBe(200);
+  expect((await long.lib.guard(oneCall(observation))).error!.length).toBe(200);
 });
 
 test('scoped no-admission: a trigger-gated tool is skipped and a cold cache is cold-cache; neither calls the provider or invents a result', async () => {
   const gated = fixture(() => 'NO_COMMENT');
-  expect(await gated.lib.guard({ tool: 'Read', input: {} })).toEqual({
+  expect(await gated.lib.guard(oneCall({ tool: 'Read', input: {} }))).toEqual({
     findings: [],
     ran: false,
     status: 'skipped',
     request: { status: 'not-sent', phase: 'guard', reason: 'skipped' },
   });
   const cold = fixture(() => 'NO_COMMENT', { knowledge: null });
-  expect(await cold.lib.guard(observation)).toEqual({
+  expect(await cold.lib.guard(oneCall(observation))).toEqual({
     findings: [],
     ran: true,
     status: 'cold-cache',
@@ -237,7 +238,7 @@ test("configured instructions stay verbatim under the charter as the system mess
   const b = fixture(() => 'NO_COMMENT', { domain: 'testing', signals });
   learn(a.lib, 'A_OWN_INTERPRETATION: legacy callers use display_name.');
   learn(b.lib, 'B_PRIVATE_INTERPRETATION: flaky timer test.');
-  const live = await a.lib.guard(observation, 'COMMON_EVIDENCE: migration being edited.');
+  const live = await a.lib.guard(oneCall(observation), 'COMMON_EVIDENCE: migration being edited.');
   expect(live.threadKnowledgeRevision).toBe(1);
   const [system, user] = a.requests[0]!;
   expect(system).toEqual({
@@ -254,7 +255,7 @@ test("configured instructions stay verbatim under the charter as the system mess
     '## Domain cache (architecture)\nDOMAIN_KNOWLEDGE(architecture)',
     '## Your understanding of this thread\nA_OWN_INTERPRETATION',
     '## Thread state\nCOMMON_EVIDENCE',
-    '## Tool observation\nTool: Write',
+    "## The agent's actions this turn (1 tool call, in order)\n### Call 1: Write",
   ])
     expect(user!.content).toContain(part);
   expect(user!.content.indexOf('## Domain cache')).toBeLessThan(
@@ -271,7 +272,7 @@ test("configured instructions stay verbatim under the charter as the system mess
     return 'NO_COMMENT';
   });
   learn(slow.lib, 'FROZEN_V1');
-  const pending = slow.lib.guard(observation, undefined, {
+  const pending = slow.lib.guard(oneCall(observation), undefined, {
     threadKnowledge: 'FROZEN_V1',
     threadKnowledgeRevision: 1,
   });
@@ -280,9 +281,13 @@ test("configured instructions stay verbatim under the charter as the system mess
   expect(frozen.threadKnowledgeRevision).toBe(1);
   expect(slow.requests[0]![1]!.content).toContain('FROZEN_V1');
   expect(slow.requests[0]![1]!.content).not.toContain('LATER_V2');
-  const unknownRevision = await fixture(() => 'NO_COMMENT').lib.guard(observation, undefined, {
-    threadKnowledge: 'SUPPLIED_WITHOUT_REVISION',
-  });
+  const unknownRevision = await fixture(() => 'NO_COMMENT').lib.guard(
+    oneCall(observation),
+    undefined,
+    {
+      threadKnowledge: 'SUPPLIED_WITHOUT_REVISION',
+    },
+  );
   expect(unknownRevision.threadKnowledgeRevision).toBeUndefined();
   expect(unknownRevision.status).toBe('completed');
 });
@@ -332,7 +337,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     if (s.source === 'flow-orchestrator') observed.push(s);
   });
   try {
-    const report = await flow.postAction(observation);
+    const report = await flow.postAction(oneCall(observation));
     expect(report.domainsChecked).toEqual(['architecture', 'testing', 'security']);
     expect(report.skipped).toEqual([]);
     expect(report.findings).toEqual([

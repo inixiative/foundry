@@ -11,6 +11,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { oneCall } from '../src/agents/domain-librarian';
 import { invalidateComposition } from '../src/agents/role-layers';
 import {
   buildAgents,
@@ -360,7 +361,7 @@ test('a composition over the role budget is a clear reported error in every phas
     expect(advice.error).toContain(`composition.roles.${WARDEN}.budget`);
     expect(advice.error).toContain(`${join(org, 'CLAUDE.md')} (domainKnowledge`);
     expect(advice.error).toContain('opted in');
-    const guard = await f.lib.guard({ tool: 'Write', input: { file_path: 'a.ts' } });
+    const guard = await f.lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));
     expect(guard.status).toBe('not-admitted');
     expect(guard.error).toContain('exceed its budget');
     expect(guard.request).toMatchObject({ status: 'not-sent' });

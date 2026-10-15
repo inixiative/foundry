@@ -13,6 +13,8 @@ import { Cartographer } from '../src/agents/cartographer';
 import {
   DomainLibrarian,
   NO_COMMENT,
+  oneCall,
+  type ToolObservation,
   validateAdviceResponse,
   validateGuardResponse,
 } from '../src/agents/domain-librarian';
@@ -71,7 +73,7 @@ test('every phase protocol names NO_COMMENT as the expected answer', async () =>
     guardTriggers: ['Edit'],
   });
   await lib.advise('Harden the security headers');
-  await lib.guard({ tool: 'Edit', input: { file_path: 'src/security.ts' } });
+  await lib.guard(oneCall({ tool: 'Edit', input: { file_path: 'src/security.ts' } }));
   await lib.review({
     evidence: { kind: 'dispatch', id: 'd1', timestamp: 1 },
     agentId: 'worker',
@@ -341,19 +343,23 @@ test('user-message: every Warden is asked on every message, whatever it says', a
 
 test('agent-action: every Warden whose guard triggers name the tool is asked; the rest are recorded as not asked', async () => {
   const { flow, calls } = roster(DOMAINS);
-  const edit = await flow.postAction({
-    tool: 'Edit',
-    input: { file_path: '/repo/apps/web/app/components/Button.tsx' },
-  });
+  const edit = await flow.postAction(
+    oneCall({
+      tool: 'Edit',
+      input: { file_path: '/repo/apps/web/app/components/Button.tsx' },
+    }),
+  );
   expect(calls).toEqual(Object.keys(DOMAINS).map((domain) => ({ domain, phase: 'guard' })));
   expect(edit.outcomes.every((o) => o.status === 'completed' && o.noComment)).toBe(true);
   expect(edit.skipped).toEqual([]);
 
   calls.length = 0;
-  const read = await flow.postAction({
-    tool: 'Read',
-    input: { file_path: 'prisma/schema.prisma' },
-  });
+  const read = await flow.postAction(
+    oneCall({
+      tool: 'Read',
+      input: { file_path: 'prisma/schema.prisma' },
+    }),
+  );
   expect(calls).toEqual([]);
   expect(read.skipped).toEqual(Object.keys(DOMAINS));
 });
@@ -475,7 +481,8 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
     librarian.dispose();
   });
 
-  const thread: Array<{ say: string; act?: Parameters<FlowOrchestrator['postAction']>[0][] }> = [
+  // Each turn's actions are one guard moment (`guard: per-turn`): the roster is asked once over them.
+  const thread: Array<{ say: string; act?: ToolObservation[] }> = [
     { say: 'what does the decision scheduler do?' },
     {
       say: 'Add a Signet revocation endpoint to Kingdom',
@@ -516,8 +523,8 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
       if (c.decision !== 'skipped') decided++;
       if (c.decision === 'no-comment') silent++;
     }
-    for (const action of turn.act ?? []) {
-      const report = await flow.postAction(action);
+    if (turn.act?.length) {
+      const report = await flow.postAction({ turnId: null, observations: turn.act });
       for (const o of report.outcomes) {
         if (o.status !== 'completed') problems.push(`${o.domain} guard ${o.status} ${o.error}`);
         decided++;
@@ -528,12 +535,12 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
   }
   expect(problems).toEqual([]);
   expect(decisions.snapshot()).toMatchObject({ shed: 0, queued: 0 });
-  // Every Warden on every message; every guard-triggered Warden on every action.
-  const actions = thread.reduce(
-    (n, turn) => n + (turn.act ?? []).filter((a) => a.tool !== 'Read').length,
-    0,
-  );
-  expect(calls.length).toBe(thread.length * 24 + actions * 24);
+  // Every Warden on every message; every guard-triggered Warden once per turn that acted, however many
+  // calls the turn made (a Read alone would trigger none of them).
+  const guardedTurns = thread.filter((turn) =>
+    (turn.act ?? []).some((a) => a.tool !== 'Read'),
+  ).length;
+  expect(calls.length).toBe(thread.length * 24 + guardedTurns * 24);
   expect(perTurn[2]).toBe(24);
   expect(silent).toBe(decided);
 });

@@ -6,8 +6,9 @@
 import type { WardenTriggerKind } from './warden-labels';
 
 /**
- * Where a moment arrives: before (the user's message) or after (the agent's action or plan, and its
- * finished turn). The labelled moments are `WardenFixture`s (`warden-labels`).
+ * Where a moment arrives: before (the user's message), after (the agent's actions of a turn or its
+ * plan, and its finished turn), or at a handoff to a subagent. The labelled moments are
+ * `WardenFixture`s (`warden-labels`).
  */
 export type PrefilterTrigger = WardenTriggerKind | 'post-turn';
 
@@ -172,8 +173,9 @@ export function prefilterQuestion(description: string) {
 export function prefilterState(trigger: PrefilterTrigger, text: string, context?: string): string {
   const label = {
     'user-message': "The user's message",
-    'agent-action': "The agent's action",
+    'agent-action': "The agent's actions this turn",
     'agent-plan': "The agent's plan",
+    'subagent-spawn': 'The task the agent is handing to a subagent',
     'post-turn': "The agent's finished turn",
   }[trigger];
   const moment = window(text.trim(), PREFILTER_MOMENT_CHARS);

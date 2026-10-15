@@ -497,7 +497,9 @@ test('a guard outcome landing after its turn closed is reduced at once', () => {
     phase: 'guard-outcome',
     record: {
       trigger: 'agent-action',
-      observation: { callId: 'tool-9' },
+      mode: 'per-call',
+      observation: { callId: 'tool-9', tool: 'Write', calls: 1 },
+      wraps: 'tool-9',
       outcomes: [
         {
           domain: 'security',

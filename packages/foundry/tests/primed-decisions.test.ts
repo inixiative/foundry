@@ -8,7 +8,7 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { primedRequest } from '../src/providers/primed-decisions';
 
 /** Records every call; answers with the given JSON. */
@@ -77,7 +77,7 @@ test('advice and guard declare their domain cache as the stable prefix of the me
     guardTriggers: ['Bash'],
   });
   await lib.advise('Add a route', 'state');
-  await lib.guard({ tool: 'Bash', input: { command: 'ls' }, output: 'ok' } as never, 'state');
+  await lib.guard(oneCall({ tool: 'Bash', input: { command: 'ls' }, output: 'ok' }), 'state');
   expect(calls).toHaveLength(2);
   for (const call of calls) {
     const prefix = call.opts?.stablePrefix;

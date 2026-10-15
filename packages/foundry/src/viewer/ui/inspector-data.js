@@ -690,7 +690,7 @@ function durableGuardEntries(trace) {
   if (!requests.length && !outcomes.length) return null;
   const requestById = new Map(requests.map((row) => [row.id, row]));
   const slots = new Map();
-  const key = (row) => row.record.observation?.signalId ?? row.id;
+  const key = (row) => row.record.observation?.momentId ?? row.id;
   const slot = (row) => {
     const k = key(row);
     if (!slots.has(k))
@@ -734,7 +734,7 @@ function durableGuardEntries(trace) {
               ['threadId', 'turnId', 'dispatchId'].every(
                 (field) => (row[field] ?? null) === (settledRow[field] ?? null),
               ) &&
-              ['signalId', 'tool', 'callId', 'agentId', 'dispatchId'].every(
+              ['momentId', 'tool', 'callId', 'agentId', 'dispatchId'].every(
                 (field) =>
                   (row.record.observation?.[field] ?? null) ===
                   (settledRow.record.observation?.[field] ?? null),
@@ -821,6 +821,9 @@ export function guardOutcomes(trace) {
       : [];
     return {
       tool: typeof o.tool === 'string' ? o.tool : 'unknown',
+      // The moment: one call (`guard: per-call`), or a turn's whole tool activity (`calls` of them).
+      calls: Number.isInteger(o.calls) ? o.calls : null,
+      wraps: typeof entry?.wraps === 'string' ? entry.wraps : null,
       callId: typeof o.callId === 'string' ? o.callId : null,
       dispatchId: typeof o.dispatchId === 'string' ? o.dispatchId : null,
       agentId: typeof o.agentId === 'string' ? o.agentId : null,

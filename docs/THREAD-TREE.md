@@ -83,8 +83,8 @@ lineage: {
   model, effort,                             // what served it
   text: JSON.stringify({
     role: 'warden:conventions',              // or 'cartographer'
-    trigger: 'user-message' | 'agent-action' | …,  // TriggerPoint (pf/agents/warden-triggers.ts); new charter triggers join it
-    wraps: 'entryId of the message, tool call or spawn it was asked about',
+    trigger: 'user-message' | 'agent-action' | 'subagent-spawn' | …,  // TriggerPoint (pf/agents/warden-triggers.ts); new charter triggers join it
+    wraps: 'turn:<id> for a message or a turn\'s actions, a tool call id (guard: per-call), handoff:<child> for a brief',
     decision: ContributionDecision,          // pf/agents/flow-orchestrator.ts:69-81, incl. 'omitted'
     result: 'the text it chimed in with' | null,
     reason?: 'cold-cache' | 'deadline-queued' | ...,

@@ -10,7 +10,8 @@ import { Cartographer } from '../src/agents/cartographer';
 import {
   DomainLibrarian,
   type GuardFinding,
-  type ToolObservation,
+  oneCall,
+  type TurnActivity,
 } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -149,8 +150,8 @@ function setup() {
     signals,
     llm: mockLLM({}),
     programmaticGuard: true,
-    guardFn: (obs: ToolObservation): GuardFinding[] => {
-      const output = obs.output ?? '';
+    guardFn: (activity: TurnActivity): GuardFinding[] => {
+      const output = activity.observations.map((o) => o.output ?? '').join('\n');
       if (output.includes('setTimeout') && output.includes('0)')) {
         return [
           {
@@ -281,11 +282,13 @@ describe('FlowOrchestrator', () => {
   describe('postAction flow', () => {
     it('runs convention guard on file_write', async () => {
       const { orchestrator } = setup();
-      const report = await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/auth/service.ts' },
-        output: 'function get_user() { ... }',
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/auth/service.ts' },
+          output: 'function get_user() { ... }',
+        }),
+      );
 
       expect(report.domainsChecked).toContain('convention');
       expect(report.domainsChecked).toContain('security');
@@ -294,10 +297,12 @@ describe('FlowOrchestrator', () => {
 
     it('skips convention guard on file_read', async () => {
       const { orchestrator } = setup();
-      const report = await orchestrator.postAction({
-        tool: 'file_read',
-        input: { file_path: 'src/auth/service.ts' },
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_read',
+          input: { file_path: 'src/auth/service.ts' },
+        }),
+      );
 
       // Only memory should run (programmatic, always fires)
       expect(report.domainsChecked).toContain('memory');
@@ -307,11 +312,13 @@ describe('FlowOrchestrator', () => {
 
     it('separates critical and advisory findings', async () => {
       const { orchestrator } = setup();
-      const report = await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/utils.ts' },
-        output: 'const result = eval(userInput);',
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/utils.ts' },
+          output: 'const result = eval(userInput);',
+        }),
+      );
 
       // Security guard should catch eval() as critical
       const allFindings = [...report.critical, ...report.advisory];
@@ -320,11 +327,13 @@ describe('FlowOrchestrator', () => {
 
     it('memory guard catches known failure patterns', async () => {
       const { orchestrator } = setup();
-      const report = await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/timer.ts' },
-        output: 'setTimeout(() => resolve(), 0)',
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/timer.ts' },
+          output: 'setTimeout(() => resolve(), 0)',
+        }),
+      );
 
       expect(report.findings.some((f) => f.description.includes('setTimeout'))).toBe(true);
     });
@@ -336,10 +345,12 @@ describe('FlowOrchestrator', () => {
         emitted.push(s);
       });
 
-      await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/x.ts' },
-      });
+      await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/x.ts' },
+        }),
+      );
 
       expect(emitted).toHaveLength(1);
       expect(emitted[0].content.tool).toBe('file_write');
@@ -348,10 +359,12 @@ describe('FlowOrchestrator', () => {
 
     it('reports elapsed time', async () => {
       const { orchestrator } = setup();
-      const report = await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/x.ts' },
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/x.ts' },
+        }),
+      );
 
       expect(report.elapsed).toBeGreaterThanOrEqual(0);
     });
@@ -374,12 +387,14 @@ describe('FlowOrchestrator', () => {
       await orchestrator.commitDelivery({ layers: prepared.pending });
 
       // 3. Post-action: executor wrote a file
-      const report = await orchestrator.postAction({
-        tool: 'file_write',
-        input: { file_path: 'src/auth/middleware.ts' },
-        output: 'function validate_jwt(token: string) { ... }',
-        filesAffected: ['src/auth/middleware.ts'],
-      });
+      const report = await orchestrator.postAction(
+        oneCall({
+          tool: 'file_write',
+          input: { file_path: 'src/auth/middleware.ts' },
+          output: 'function validate_jwt(token: string) { ... }',
+          filesAffected: ['src/auth/middleware.ts'],
+        }),
+      );
 
       // Convention guard should have flagged snake_case
       expect(report.domainsChecked).toContain('convention');

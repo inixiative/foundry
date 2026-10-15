@@ -19,6 +19,7 @@ import { type LearningSettings, validateLearningSettings } from '../agents/learn
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
 import type { ChorusSource } from '../agents/warden-charter';
+import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import {
@@ -61,6 +62,9 @@ import {
   type SubscriptionSettings,
 } from '../providers/subscription-policy';
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
+
+const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
+
 import type { ToolRules } from '../turns/tool-gate';
 import {
   type ResolvedLayerDefinition,
@@ -106,6 +110,11 @@ export interface FoundryConfig {
    * Off by default (every Warden is asked); `{ "enabled": true }` opts in. See docs/subscription-decisions.md.
    */
   prefilter?: PrefilterSettings;
+  /**
+   * How often the Wardens' guard fires: `per-turn` (default), once over a turn's whole tool activity
+   * when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15).
+   */
+  guard?: GuardMode;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -1081,6 +1090,8 @@ export function validateConfig(config: FoundryConfig): void {
     throw Error(
       'settings key "wardens" is gone: a project\'s Wardens are its chorus, projects[id].chorus (docs/usage-and-context.md, "Chorus")',
     );
+  if (config.guard !== undefined && !GUARD_MODES.includes(config.guard))
+    throw Error(`guard must be one of ${GUARD_MODES.map((m) => `"${m}"`).join(', ')}`);
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     for (const key of ['wardens', 'regions'] as const)

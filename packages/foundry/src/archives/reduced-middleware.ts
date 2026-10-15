@@ -15,7 +15,7 @@ export interface ReducedMiddleware {
   /** `cartographer`, or the Warden's domain. */
   readonly role: string;
   readonly trigger: string;
-  /** What it was asked about: `turn:<id>` for a message, the tool call id for an action. */
+  /** What it was asked about: `turn:<id>` for a message or a turn's actions, a tool call id (`guard: per-call`), `handoff:<child>` for a brief. */
   readonly wraps: string;
   readonly decision: string;
   readonly reason?: string;
@@ -59,7 +59,8 @@ export function reduceMiddleware(
   const out: ReducedMiddleware[] = [];
   for (const row of rows) {
     const r = row.record;
-    const wraps = `turn:${row.turnId ?? 'none'}`;
+    // A row says what it wraps (a handoff, a call, a turn); one that does not wraps its turn.
+    const wraps = typeof r.wraps === 'string' ? r.wraps : `turn:${row.turnId ?? 'none'}`;
     if (row.phase === 'route') {
       const routing = obj(r.routing) ?? {};
       out.push({
@@ -113,7 +114,6 @@ export function reduceMiddleware(
       continue;
     }
     if (row.phase === 'guard-outcome') {
-      const observation = obj(r.observation) ?? {};
       for (const o of (r.outcomes as Rec[] | undefined) ?? []) {
         const requestRow =
           typeof o.requestRecord === 'string' ? requests.get(o.requestRecord) : undefined;
@@ -123,7 +123,7 @@ export function reduceMiddleware(
           callId: `${row.id}:${String(o.domain)}`,
           role: String(o.domain),
           trigger: String(r.trigger ?? 'agent-action'),
-          wraps: typeof observation.callId === 'string' ? observation.callId : wraps,
+          wraps,
           decision: String(o.status ?? 'unknown'),
           ...(typeof o.error === 'string' ? { reason: o.error } : {}),
           result: notes.length ? notes : null,

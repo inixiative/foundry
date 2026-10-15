@@ -34,6 +34,7 @@ import { resolveProjectView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
 import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
+  activityTools,
   DomainLibrarian,
   isThreadKnowledgeLayerId,
   type KnowledgeEvidence,
@@ -43,11 +44,15 @@ import {
   type ReviewJob,
   type ReviewResult,
   type ThreadKnowledgeSnapshot,
+  type ToolObservation,
+  type TurnActivity,
   threadKnowledgeLayerId,
 } from './domain-librarian';
 import {
+  briefNotes,
   FlowOrchestrator,
   type FlowTimingConfig,
+  type HandoffMoment,
   type HydrationResult,
   type InjectionPlan,
 } from './flow-orchestrator';
@@ -62,7 +67,7 @@ import {
   roleSources,
 } from './role-layers';
 import { chorusSource, type WardenCharter, wardenCharter } from './warden-charter';
-import type { TriggerPoint } from './warden-triggers';
+import type { GuardMode, TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
 // Session identity
@@ -81,6 +86,84 @@ const PRESTART_REVIEW_WAIT_MS = 30_000;
 
 export function auxiliarySessionId(threadId: string, role: string): string {
   return `${threadId}:aux:${role}`;
+}
+
+/** At most this many calls are held for one turn's guard; later calls of the turn are counted, not held. */
+const MAX_TURN_ACTIVITY = 400;
+/** Observed subagent turns whose activity is held for their guard, at most. */
+const MAX_SUBAGENT_TURNS = 64;
+
+/** A `tool_observation` signal's content, as the executor's tool loop, the native projector or an observed subagent emit it. */
+interface ToolSignalContent {
+  tool?: string;
+  input?: Record<string, unknown>;
+  /** The native projector's bounded JSON of the input (`ToolCallObservation`). */
+  inputSummary?: string;
+  output?: string;
+  outputSummary?: string;
+  ok?: boolean;
+  filesAffected?: string[];
+  dispatchId?: string;
+  callId?: string;
+  agentId?: string;
+  /** An observed subagent's call: its guard rows go on the subagent's node. */
+  subagent?: { node: { id: string; meta: ThreadMeta }; turnId: string | null };
+}
+
+/** One observed call as the guard reads it: the native projector's summaries count as input and output. */
+function toObservation(content: ToolSignalContent & { tool: string }): ToolObservation {
+  let input = content.input;
+  if (!input && typeof content.inputSummary === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(content.inputSummary);
+      input =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : { summary: content.inputSummary };
+    } catch {
+      input = { summary: content.inputSummary };
+    }
+  }
+  const output = content.output ?? content.outputSummary;
+  return {
+    tool: content.tool,
+    input: input ?? {},
+    ...(output !== undefined ? { output } : {}),
+    ...(content.filesAffected ? { filesAffected: content.filesAffected } : {}),
+    ...(typeof content.callId === 'string' ? { callId: content.callId } : {}),
+    ...(typeof content.ok === 'boolean' ? { ok: content.ok } : {}),
+  };
+}
+
+/** How a guard moment correlates to the thread's own turns. */
+type GuardCorrelation =
+  | 'live-dispatch'
+  | 'dispatch-not-live'
+  | 'no-dispatch-id'
+  | 'subagent-turn'
+  | 'subagent-call';
+
+/** Who a guard moment belongs to: the identity its journal rows carry. */
+interface GuardMomentOwner {
+  /** Unique per moment: the signal id of a single call, or a fresh id for a turn's activity. */
+  readonly momentId: string;
+  readonly dispatchId: string | null;
+  readonly correlation: GuardCorrelation;
+  readonly agentId?: string;
+  /** The live dispatch whose trace annotations the outcome is recorded on, when it is still live. */
+  readonly live?: LiveDispatch;
+  /** An observed subagent's node: its rows go there, under its own turn. */
+  readonly node?: { id: string; meta: ThreadMeta };
+}
+
+interface LiveDispatch {
+  annotations: Record<string, unknown>;
+  guards: unknown[];
+  messageId: string | null;
+  /** The turn's tool activity so far (`guard: per-turn`): guarded once when the turn's tool activity ends. */
+  activity: ToolObservation[];
+  /** Calls past MAX_TURN_ACTIVITY: counted, not held. */
+  overflow: number;
 }
 
 export interface ScopedProviderIdentity {
@@ -765,10 +848,20 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _uncorrelatedTools: CorrelatedToolObservation[] = [];
   /** Dispatch ids currently executing on this thread; only these may receive evidence. */
   /** Live dispatches by id, with the trace annotations that guard outcomes are recorded on. */
-  private _liveDispatches = new Map<
+  private _liveDispatches = new Map<string, LiveDispatch>();
+  /** An observed subagent turn's tool activity (`<node>:<turn>`), guarded once when its turn ends. */
+  private _subagentActivity = new Map<
     string,
-    { annotations: Record<string, unknown>; guards: unknown[]; messageId: string | null }
+    {
+      node: { id: string; meta: ThreadMeta };
+      turnId: string | null;
+      observations: ToolObservation[];
+    }
   >();
+  /** How often the guard fires (settings `guard`, default `per-turn`). */
+  private readonly _guardMode: GuardMode;
+  private readonly _log: (line: string) => void;
+  private readonly _warn: (line: string) => void;
 
   constructor(
     thread: Thread,
@@ -789,6 +882,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   ) {
     const log = deps.log ?? ((line) => console.log(line));
     const warn = deps.warn ?? ((line) => console.warn(line));
+    this._log = log;
+    this._warn = warn;
+    this._guardMode = deps.config.guard ?? 'per-turn';
     const { stack, signals } = thread;
     const cwd = () => thread.meta.cwd;
     this.thread = thread;
@@ -1048,6 +1144,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           annotations: ctx.annotations as Record<string, unknown>,
           guards: [],
           messageId: ctx.messageId ?? null,
+          activity: [],
+          overflow: 0,
         });
       try {
         const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
@@ -1157,6 +1255,22 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
         const ledgerEpoch = this.librarian.ledgerEpoch;
         const result = await next();
+        // The turn's tool activity has ended: the guard, once, over everything the turn did, in order.
+        // Not awaited: Wardens comment, they never hold the hand-back (the pending entry is on the
+        // dispatch's guards before the turn's meta is read below; the outcome reconciles it later).
+        const landed = liveId ? this._liveDispatches.get(liveId) : undefined;
+        if (landed?.activity.length)
+          void this._guardActivity(
+            { turnId: landed.messageId, observations: landed.activity.splice(0) },
+            {
+              momentId: newId('guard'),
+              dispatchId: liveId!,
+              correlation: 'live-dispatch',
+              agentId: ctx.agentId,
+              live: landed,
+            },
+            landed.overflow,
+          );
         // The turn landed: Wardens are pre-started again with the thread as it now stands.
         this._schedulePrestart();
 
@@ -1284,204 +1398,117 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       }
     });
 
-    // Post-action: guard every tool observation that reaches this thread's bus.
+    // Post-action: the guard. One moment per turn over the turn's tool activity in call order
+    // (`guard: "per-turn"`, the default), asked when the turn's tool activity ends (the flow middleware
+    // above); or one moment per tool call (`guard: "per-call"`). An observed subagent's own turn is
+    // guarded the same way, on its node, when its turn ends. Reads and other calls no Warden's
+    // triggers name never enter a turn's moment.
     this._unsubs.push(
       signals.onAny(async (signal) => {
         if (signal.kind !== 'tool_observation') return;
         if (signal.source === 'flow-orchestrator') return;
-        const content = signal.content as
-          | {
-              tool?: string;
-              input?: Record<string, unknown>;
-              output?: string;
-              filesAffected?: string[];
-              dispatchId?: string;
-              callId?: string;
-              agentId?: string;
-              /** An observed subagent's call: its guard rows go on the subagent's node. */
-              subagent?: { node: { id: string; meta: ThreadMeta }; turnId: string | null };
-            }
-          | undefined;
+        const content = signal.content as ToolSignalContent | undefined;
         if (!content?.tool) return;
-        const node = content.subagent?.node;
-        // Guard outcomes are recorded on the originating dispatch's trace annotations under the source
-        // observation's identity, first as pending, then as reported. A dispatch that has already left
-        // the runtime has no live annotations; nothing is guessed, and the report stays in memory only.
+        const observation = toObservation(content as ToolSignalContent & { tool: string });
         const dispatchId = typeof content.dispatchId === 'string' ? content.dispatchId : null;
         const live = dispatchId ? this._liveDispatches.get(dispatchId) : undefined;
-        // Correlation is the live dispatch's own turn id or nothing; never the latest turn or the tool name.
-        // A subagent's call belongs to the subagent's own turn.
-        const turnId = content.subagent ? content.subagent.turnId : (live?.messageId ?? null);
-        const correlation = live
-          ? 'live-dispatch'
-          : dispatchId
-            ? 'dispatch-not-live'
-            : 'no-dispatch-id';
-        const observation = {
-          signalId: signal.id,
-          tool: content.tool,
-          ...(typeof content.callId === 'string' ? { callId: content.callId } : {}),
-          ...(dispatchId ? { dispatchId } : {}),
-          ...(typeof content.agentId === 'string' ? { agentId: content.agentId } : {}),
-        };
-        const entry: Record<string, unknown> = {
-          observation,
-          status: 'pending',
-          startedAt: Date.now(),
-          correlation,
-        };
-        if (live) {
-          live.guards.push(entry);
-          live.annotations.guards = live.guards;
-        }
-        // Each domain's exact request is journalled the moment it is observed, before any answer, under the
-        // observation identity; the later outcome row references these request rows instead of repeating them.
-        const requestRows = new Map<string, { id: string; journal: PhaseJournalOutcome }>();
-        // Reference map for the outcome row: the request row id when durable; otherwise the explicit journal state.
-        const requestsJournal = () =>
-          Object.fromEntries(
-            [...requestRows].map(([domain, row]) => [
-              domain,
-              row.journal === 'durable' ? row.id : row.journal,
-            ]),
-          );
-        const requestJournalStates = () =>
-          Object.fromEntries([...requestRows].map(([domain, row]) => [domain, row.journal]));
-        const journalOutcome = (record: Record<string, unknown>): PhaseJournalOutcome => {
-          try {
-            return this._journalPhase({
-              ...(node ? { node } : {}),
-              id: newId('phase'),
-              turnId,
+        const agentId = typeof content.agentId === 'string' ? content.agentId : undefined;
+        const node = content.subagent?.node;
+        if (this._guardMode === 'per-call') {
+          // Correlation is the live dispatch's own turn id or nothing; never the latest turn or the tool
+          // name. A subagent's call belongs to the subagent's own turn.
+          await this._guardActivity(
+            {
+              turnId: content.subagent ? content.subagent.turnId : (live?.messageId ?? null),
+              observations: [observation],
+            },
+            {
+              momentId: signal.id,
               dispatchId,
-              phase: 'guard-outcome',
-              record,
-            });
-          } catch (error) {
-            warn(
-              `  [flow:${thread.id}] guard outcome journal failed: ${(error as Error)?.message ?? error}`,
-            );
-            return 'failed';
-          }
-        };
-        try {
-          const report = await flow.postAction(
-            {
-              tool: content.tool,
-              input: content.input ?? {},
-              output: content.output,
-              filesAffected: content.filesAffected,
-            },
-            {
-              onRequest: (domain, request, threadKnowledgeRevision) => {
-                const id = newId('phase');
-                try {
-                  const journal = this._journalPhase({
-                    ...(node ? { node } : {}),
-                    id,
-                    turnId,
-                    dispatchId,
-                    phase: 'guard-request',
-                    record: {
-                      observation,
-                      correlation,
-                      domain,
-                      threadKnowledgeRevision,
-                      requestedAt: request.capturedAt,
-                      request: { status: 'supplied', ...request },
-                    },
-                  });
-                  requestRows.set(domain, { id, journal });
-                } catch (error) {
-                  // Configured persistence refused the supplied input: the guard call is not admitted. The original failure is kept.
-                  requestRows.set(domain, { id, journal: 'failed' });
-                  throw Object.assign(
-                    new Error(
-                      `guard request journal failed; not admitted: ${(error as Error)?.message ?? error}`,
-                    ),
-                    { admission: 'not-admitted', cause: error },
-                  );
-                }
-              },
+              correlation: content.subagent
+                ? 'subagent-call'
+                : live
+                  ? 'live-dispatch'
+                  : dispatchId
+                    ? 'dispatch-not-live'
+                    : 'no-dispatch-id',
+              ...(agentId ? { agentId } : {}),
+              ...(live ? { live } : {}),
+              ...(node ? { node } : {}),
             },
           );
-          const outcomeJournal = journalOutcome({
-            trigger: 'agent-action' satisfies TriggerPoint,
-            charter: charter.version,
-            observation,
-            correlation,
-            status: 'reported',
-            finishedAt: Date.now(),
-            domainsChecked: report.domainsChecked,
-            skipped: report.skipped,
-            prefiltered: report.prefiltered,
-            ...(report.prefilter ? { prefilter: report.prefilter } : {}),
-            failed: report.failed,
-            findings: report.findings.length,
-            critical: report.critical.length,
-            // What the Wardens said: a comment on the tool call (shown to hosts), never a block.
-            notes: report.findings.slice(0, 16).map((finding) => ({
-              severity: finding.severity,
-              description: finding.description.slice(0, 500),
-              ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
-              ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
-            })),
-            elapsed: report.elapsed,
-            requests: requestsJournal(),
-            requestJournal: requestJournalStates(),
-            outcomes: report.outcomes.map(({ request, ...rest }) => ({
-              ...rest,
-              requestRecord:
-                requestRows.get(rest.domain)?.journal === 'durable'
-                  ? requestRows.get(rest.domain)!.id
-                  : null,
-              requestState: request?.status ?? 'not-recorded',
-              ...(request?.status === 'supplied' && request.served
-                ? { served: request.served }
-                : {}),
-            })),
-          });
-          Object.assign(entry, {
-            status: 'reported',
-            finishedAt: Date.now(),
-            domainsChecked: report.domainsChecked,
-            outcomes: report.outcomes,
-            failed: report.failed,
-            findings: report.findings.length,
-            critical: report.critical.length,
-            elapsed: report.elapsed,
-            journal: { requests: requestJournalStates(), outcome: outcomeJournal },
-          });
-          if (report.critical.length > 0) {
-            warn(`  [flow:${thread.id}] CRITICAL findings (${report.domainsChecked.join(', ')}):`);
-            for (const f of report.critical) {
-              warn(`    ⚠ ${f.description}${f.location ? ` at ${f.location}` : ''}`);
-            }
-          } else if (report.findings.length > 0) {
-            log(
-              `  [flow:${thread.id}] guard: ${report.findings.length} advisory findings from ${report.domainsChecked.join(', ')} (${report.elapsed}ms)`,
-            );
-          }
-        } catch (err) {
-          const error = String((err as Error)?.message ?? err).slice(0, 200);
-          const outcomeJournal = journalOutcome({
-            observation,
-            correlation,
-            status: 'failed',
-            finishedAt: Date.now(),
-            error,
-            requests: requestsJournal(),
-            requestJournal: requestJournalStates(),
-            outcomes: [],
-          });
-          Object.assign(entry, {
-            status: 'failed',
-            finishedAt: Date.now(),
-            error,
-            journal: { requests: requestJournalStates(), outcome: outcomeJournal },
-          });
-          warn(`  [flow:${thread.id}] post-action failed: ${(err as Error).message}`);
+          return;
         }
+        if (!flow.guardsTool(content.tool)) return;
+        if (content.subagent) {
+          const key = `${content.subagent.node.id}:${content.subagent.turnId ?? 'none'}`;
+          let held = this._subagentActivity.get(key);
+          if (!held) {
+            if (this._subagentActivity.size >= MAX_SUBAGENT_TURNS) {
+              const oldest = this._subagentActivity.keys().next().value;
+              if (oldest !== undefined) this._subagentActivity.delete(oldest);
+            }
+            held = {
+              node: content.subagent.node,
+              turnId: content.subagent.turnId,
+              observations: [],
+            };
+            this._subagentActivity.set(key, held);
+          }
+          if (held.observations.length < MAX_TURN_ACTIVITY) held.observations.push(observation);
+          return;
+        }
+        if (live) {
+          if (live.activity.length < MAX_TURN_ACTIVITY) live.activity.push(observation);
+          else live.overflow++;
+          return;
+        }
+        // No live dispatch to hold it for: guarded now as its own moment, visibly uncorrelated.
+        await this._guardActivity(
+          { turnId: null, observations: [observation] },
+          {
+            momentId: signal.id,
+            dispatchId,
+            correlation: dispatchId ? 'dispatch-not-live' : 'no-dispatch-id',
+            ...(agentId ? { agentId } : {}),
+          },
+        );
+      }),
+    );
+    // An observed subagent's turn ended: its held activity is guarded once, on its node.
+    this._unsubs.push(
+      signals.on('subagent_turn', async (signal) => {
+        const content = signal.content as
+          | { node?: { id: string; meta: ThreadMeta }; turnId?: string | null }
+          | undefined;
+        if (!content?.node) return;
+        const key = `${content.node.id}:${content.turnId ?? 'none'}`;
+        const held = this._subagentActivity.get(key);
+        this._subagentActivity.delete(key);
+        if (!held?.observations.length) return;
+        await this._guardActivity(
+          { turnId: held.turnId, observations: held.observations },
+          {
+            momentId: signal.id,
+            dispatchId: null,
+            correlation: 'subagent-turn',
+            agentId: 'subagent',
+            node: held.node,
+          },
+        );
+      }),
+    );
+    // The agent handed a task to a subagent: the roster briefs the handoff (the subagent-spawn trigger).
+    this._unsubs.push(
+      signals.on('subagent_spawn', async (signal) => {
+        const content = signal.content as
+          | (HandoffMoment & {
+              parent?: { id: string; meta: ThreadMeta };
+              parentTurnId?: string | null;
+            })
+          | undefined;
+        if (!content?.handoffId || !content.childThreadId) return;
+        await this._briefHandoff(signal.id, content);
       }),
     );
 
@@ -1588,6 +1615,302 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         this._uncorrelatedTools.map((o) => deepFreeze(structuredClone(o))),
       ),
     });
+  }
+
+  /**
+   * The guard, over one moment: a turn's tool activity in call order, or one call. Every asked
+   * domain's exact request is journalled the moment it is observed, before any answer (a
+   * `guard-request` row per domain); one `guard-outcome` row then wraps the whole moment and
+   * references the request rows. Both go on the observed subagent's node when the moment is its
+   * turn's. The outcome is also recorded on the live dispatch's trace annotations, first as pending,
+   * then as reported; a dispatch that has already left the runtime has no live annotations, nothing
+   * is guessed, and the report stays in the journal only.
+   */
+  private async _guardActivity(
+    activity: TurnActivity,
+    owner: GuardMomentOwner,
+    overflow = 0,
+  ): Promise<void> {
+    if (this._disposed) return;
+    const flow = this.flowOrchestrator;
+    const { dispatchId, live, node, correlation } = owner;
+    const turnId = activity.turnId;
+    const single = activity.observations.length === 1 ? activity.observations[0] : undefined;
+    // The moment's identity, carried by every row and trace entry about it: one call's own ids, or the
+    // turn's. The viewer joins outcome and request rows on it.
+    const observation = {
+      momentId: owner.momentId,
+      tool: activityTools(activity).join(', '),
+      calls: activity.observations.length,
+      ...(single?.callId ? { callId: single.callId } : {}),
+      ...(dispatchId ? { dispatchId } : {}),
+      ...(owner.agentId ? { agentId: owner.agentId } : {}),
+      ...(turnId ? { turnId } : {}),
+    };
+    // What the moment wraps: a call, or a turn. Reduced entries carry it (spec A).
+    const wraps =
+      single?.callId && this._guardMode === 'per-call' ? single.callId : `turn:${turnId ?? 'none'}`;
+    const calls = activity.observations.slice(0, 200).map((o) => ({
+      tool: o.tool,
+      ...(o.callId ? { callId: o.callId } : {}),
+      ...(o.ok !== undefined ? { ok: o.ok } : {}),
+    }));
+    const entry: Record<string, unknown> = {
+      observation,
+      wraps,
+      status: 'pending',
+      startedAt: Date.now(),
+      correlation,
+    };
+    if (live) {
+      live.guards.push(entry);
+      live.annotations.guards = live.guards;
+    }
+    // Each domain's exact request is journalled the moment it is observed, before any answer, under the
+    // moment's identity; the later outcome row references these request rows instead of repeating them.
+    const requestRows = new Map<string, { id: string; journal: PhaseJournalOutcome }>();
+    // Reference map for the outcome row: the request row id when durable; otherwise the explicit journal state.
+    const requestsJournal = () =>
+      Object.fromEntries(
+        [...requestRows].map(([domain, row]) => [
+          domain,
+          row.journal === 'durable' ? row.id : row.journal,
+        ]),
+      );
+    const requestJournalStates = () =>
+      Object.fromEntries([...requestRows].map(([domain, row]) => [domain, row.journal]));
+    const journalOutcome = (record: Record<string, unknown>): PhaseJournalOutcome => {
+      try {
+        return this._journalPhase({
+          ...(node ? { node } : {}),
+          id: newId('phase'),
+          turnId,
+          dispatchId,
+          phase: 'guard-outcome',
+          record,
+        });
+      } catch (error) {
+        this._warn(
+          `  [flow:${this.thread.id}] guard outcome journal failed: ${(error as Error)?.message ?? error}`,
+        );
+        return 'failed';
+      }
+    };
+    try {
+      const report = await flow.postAction(activity, {
+        onRequest: (domain, request, threadKnowledgeRevision) => {
+          const id = newId('phase');
+          try {
+            const journal = this._journalPhase({
+              ...(node ? { node } : {}),
+              id,
+              turnId,
+              dispatchId,
+              phase: 'guard-request',
+              record: {
+                observation,
+                wraps,
+                correlation,
+                domain,
+                threadKnowledgeRevision,
+                requestedAt: request.capturedAt,
+                request: { status: 'supplied', ...request },
+              },
+            });
+            requestRows.set(domain, { id, journal });
+          } catch (error) {
+            // Configured persistence refused the supplied input: the guard call is not admitted. The original failure is kept.
+            requestRows.set(domain, { id, journal: 'failed' });
+            throw Object.assign(
+              new Error(
+                `guard request journal failed; not admitted: ${(error as Error)?.message ?? error}`,
+              ),
+              { admission: 'not-admitted', cause: error },
+            );
+          }
+        },
+      });
+      const outcomeJournal = journalOutcome({
+        trigger: 'agent-action' satisfies TriggerPoint,
+        mode: this._guardMode,
+        charter: this._charter.version,
+        observation,
+        wraps,
+        // The turn's activity the Wardens were given, as identity: tool, call id and outcome per call.
+        activity: { turnId, calls, ...(overflow ? { overflow } : {}) },
+        correlation,
+        status: 'reported',
+        finishedAt: Date.now(),
+        domainsChecked: report.domainsChecked,
+        skipped: report.skipped,
+        prefiltered: report.prefiltered,
+        ...(report.prefilter ? { prefilter: report.prefilter } : {}),
+        failed: report.failed,
+        findings: report.findings.length,
+        critical: report.critical.length,
+        // What the Wardens said: a comment on the turn's actions (shown to hosts), never a block.
+        notes: report.findings.slice(0, 16).map((finding) => ({
+          severity: finding.severity,
+          description: finding.description.slice(0, 500),
+          ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
+          ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
+        })),
+        elapsed: report.elapsed,
+        requests: requestsJournal(),
+        requestJournal: requestJournalStates(),
+        outcomes: report.outcomes.map(({ request, ...rest }) => ({
+          ...rest,
+          requestRecord:
+            requestRows.get(rest.domain)?.journal === 'durable'
+              ? requestRows.get(rest.domain)!.id
+              : null,
+          requestState: request?.status ?? 'not-recorded',
+          ...(request?.status === 'supplied' && request.served ? { served: request.served } : {}),
+        })),
+      });
+      Object.assign(entry, {
+        status: 'reported',
+        finishedAt: Date.now(),
+        domainsChecked: report.domainsChecked,
+        outcomes: report.outcomes,
+        failed: report.failed,
+        findings: report.findings.length,
+        critical: report.critical.length,
+        elapsed: report.elapsed,
+        journal: { requests: requestJournalStates(), outcome: outcomeJournal },
+      });
+      if (report.critical.length > 0) {
+        this._warn(
+          `  [flow:${this.thread.id}] CRITICAL findings (${report.domainsChecked.join(', ')}):`,
+        );
+        for (const f of report.critical) {
+          this._warn(`    ⚠ ${f.description}${f.location ? ` at ${f.location}` : ''}`);
+        }
+      } else if (report.findings.length > 0) {
+        this._log(
+          `  [flow:${this.thread.id}] guard: ${report.findings.length} advisory findings from ${report.domainsChecked.join(', ')} over ${activity.observations.length} call(s) (${report.elapsed}ms)`,
+        );
+      }
+    } catch (err) {
+      const error = String((err as Error)?.message ?? err).slice(0, 200);
+      const outcomeJournal = journalOutcome({
+        observation,
+        wraps,
+        activity: { turnId, calls },
+        correlation,
+        status: 'failed',
+        finishedAt: Date.now(),
+        error,
+        requests: requestsJournal(),
+        requestJournal: requestJournalStates(),
+        outcomes: [],
+      });
+      Object.assign(entry, {
+        status: 'failed',
+        finishedAt: Date.now(),
+        error,
+        journal: { requests: requestJournalStates(), outcome: outcomeJournal },
+      });
+      this._warn(`  [flow:${this.thread.id}] post-action failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * The subagent-spawn trigger: the roster briefs a handoff the agent made. Every Warden's decision
+   * is journalled on the parent node as an `advice` row wrapping the handoff (silence included, so
+   * the silence rate is measurable), and what they said is queued as "chimed in on the handoff"
+   * notes for the parent's next turn: no push path reaches the running turn, and the harness has
+   * already composed what the subagent received.
+   */
+  private async _briefHandoff(
+    signalId: string,
+    handoff: HandoffMoment & {
+      parent?: { id: string; meta: ThreadMeta };
+      parentTurnId?: string | null;
+    },
+  ): Promise<void> {
+    if (this._disposed) return;
+    const flow = this.flowOrchestrator;
+    // The parent's node: the thread itself, or the observed subagent that issued the spawn.
+    const node =
+      handoff.parent && handoff.parent.id !== this.thread.id ? handoff.parent : undefined;
+    const turnId = handoff.parentTurnId ?? null;
+    const moment: HandoffMoment = {
+      childThreadId: handoff.childThreadId,
+      handoffId: handoff.handoffId,
+      ...(handoff.description ? { description: handoff.description } : {}),
+      ...(handoff.agentType ? { agentType: handoff.agentType } : {}),
+      prompt: handoff.prompt ?? '',
+    };
+    let report: Awaited<ReturnType<FlowOrchestrator['brief']>>;
+    try {
+      report = await flow.brief(moment);
+    } catch (error) {
+      this._warn(
+        `  [flow:${this.thread.id}] handoff brief failed: ${(error as Error)?.message ?? error}`,
+      );
+      return;
+    }
+    if (this._disposed) return;
+    try {
+      this._journalPhase({
+        ...(node ? { node } : {}),
+        id: newId('phase'),
+        turnId,
+        dispatchId: null,
+        phase: 'advice',
+        record: {
+          trigger: 'subagent-spawn' satisfies TriggerPoint,
+          charter: this._charter.version,
+          wraps: handoff.handoffId,
+          handoff: {
+            childThreadId: handoff.childThreadId,
+            handoffId: handoff.handoffId,
+            signalId,
+            ...(handoff.description ? { description: handoff.description } : {}),
+            ...(handoff.agentType ? { agentType: handoff.agentType } : {}),
+          },
+          inputHash: report.input.hash,
+          sealedAt: report.sealedAt,
+          participants: report.contributions
+            .filter((c) => c.decision !== 'skipped')
+            .map((c) => ({
+              domain: c.domain,
+              decision: c.decision,
+              ...(c.reason ? { reason: c.reason } : {}),
+              snippets: c.snippets,
+              segments: c.segments,
+              request: c.request,
+              threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
+              cacheHash: c.provenance.cacheHash,
+            })),
+          ...(report.prefilter ? { prefilter: report.prefilter } : {}),
+          prefiltered: report.contributions
+            .filter((c) => c.prefilter)
+            .map((c) => ({ domain: c.domain, ...c.prefilter })),
+          skipped: Object.fromEntries(
+            Object.entries(
+              Object.groupBy(
+                report.contributions.filter((c) => c.decision === 'skipped'),
+                (c) => c.reason ?? 'skipped',
+              ),
+            ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
+          ),
+          elapsed: report.elapsed,
+        },
+      });
+    } catch (error) {
+      this._warn(
+        `  [flow:${this.thread.id}] handoff brief journal failed: ${(error as Error)?.message ?? error}`,
+      );
+    }
+    const notes = briefNotes(moment, report);
+    if (notes.length) {
+      flow.queueNotes(notes);
+      this._log(
+        `  [flow:${this.thread.id}] handoff brief: ${notes.map((n) => n.source).join(', ')} chimed in on ${handoff.handoffId} (${report.elapsed}ms)`,
+      );
+    }
   }
 
   /**

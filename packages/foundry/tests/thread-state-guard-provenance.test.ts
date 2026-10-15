@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, SignalBus } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 
@@ -55,7 +55,7 @@ async function observedState(failed: boolean) {
       timestamp: 1,
     });
     const originalActivity = structuredClone(librarian.state.recentActivity);
-    const report = await flow.postAction(observation);
+    const report = await flow.postAction(oneCall(observation));
     expect(report.outcomes[0]!.status).toBe(failed ? 'provider-error' : 'completed');
     return { originalActivity, activity: structuredClone(librarian.state.recentActivity) };
   } finally {

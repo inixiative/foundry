@@ -90,7 +90,7 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
         guards: [
           {
             observation: {
-              signalId: 's1',
+              momentId: 's1',
               tool: 'Write',
               callId: 'c1',
               dispatchId: 'd1',
@@ -123,9 +123,9 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
               },
             ],
           },
-          { observation: { signalId: 's2', tool: 'Bash' }, status: 'pending' },
+          { observation: { momentId: 's2', tool: 'Bash' }, status: 'pending' },
           {
-            observation: { signalId: 's3', tool: 'Edit', callId: 'c3' },
+            observation: { momentId: 's3', tool: 'Edit', callId: 'c3' },
             status: 'failed',
             error: 'post-action threw',
           },

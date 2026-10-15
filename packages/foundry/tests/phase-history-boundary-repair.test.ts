@@ -56,8 +56,8 @@ test('guard join: missing and foreign references are labelled, the foreign reque
     capturedAt: 1,
     messages: [{ role: 'system', content: text }],
   });
-  const obsA = { signalId: 'sig-a', tool: 'Write', callId: 'call-a', dispatchId: 'd1' },
-    obsB = { signalId: 'sig-b', tool: 'Edit', callId: 'call-b', dispatchId: 'd1' };
+  const obsA = { momentId: 'sig-a', tool: 'Write', callId: 'call-a', dispatchId: 'd1' },
+    obsB = { momentId: 'sig-b', tool: 'Edit', callId: 'call-b', dispatchId: 'd1' };
   const base = { threadId: 'owned', turnId: 'turn-1', dispatchId: 'd1' };
   const rows = [
     {

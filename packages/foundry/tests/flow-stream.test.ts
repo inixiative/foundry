@@ -64,7 +64,14 @@ test('flow snapshot: recent turns as recorded flows, learning history and commit
     input: { preview: 'Perform the migration' },
     outcome: { executionOutcome: 'completed', persistence: 'committed' },
   });
-  expect(t1.phases.map((p: any) => p.phase)).toEqual(['route', 'advice', 'guard-outcome']);
+  // One guard over the turn: a request per Warden asked, one outcome wrapping the turn.
+  expect(t1.phases.map((p: any) => p.phase)).toEqual([
+    'route',
+    'advice',
+    'guard-request',
+    'guard-request',
+    'guard-outcome',
+  ]);
   expect(
     t1.plan.contributions.map((c: any) => [
       c.domain,

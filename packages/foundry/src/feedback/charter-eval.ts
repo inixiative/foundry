@@ -18,7 +18,7 @@ import {
   type WardenProbeTurn,
   wardenJudgeMessage,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../agents/domain-librarian';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {
@@ -225,7 +225,7 @@ async function ask(
     return answer({ noComment: false, text: advice.snippets.join('\n') });
   }
   const result = await lib.guard(
-    { tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } },
+    oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
     undefined,
     probe.threadKnowledge ? { threadKnowledge: probe.threadKnowledge } : undefined,
   );

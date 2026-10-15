@@ -14,7 +14,7 @@ export interface WardenLabel {
   readonly shouldKnow?: string;
 }
 
-export type WardenTriggerKind = 'user-message' | 'agent-action' | 'agent-plan';
+export type WardenTriggerKind = 'user-message' | 'agent-action' | 'agent-plan' | 'subagent-spawn';
 
 /**
  * A labelled moment for the Warden prefilter: which Warden domains the trigger touches. Never commit

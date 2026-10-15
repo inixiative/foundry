@@ -77,7 +77,7 @@ test('phase idempotency includes immutable turn, dispatch and phase associations
 
 test('guard history joins the referenced input and preserves another same-domain pending request', () => {
   const observation = {
-    signalId: 'original-signal',
+    momentId: 'original-signal',
     tool: 'Write',
     callId: 'call-1',
     dispatchId: 'dispatch-1',

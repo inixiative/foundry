@@ -23,7 +23,7 @@ import {
   segmentsText,
 } from '@inixiative/foundry-core';
 import { configuredExperts, largestRoster } from '../src/agents/configured-experts';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import {
   chorusLayers,
   composeChorus,
@@ -899,7 +899,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
     where: 'CONCURRENCY.md',
     level: 'exact',
   });
-  const guarded = await classify.guard({ tool: 'Write', input: { text: 'SET NX' } });
+  const guarded = await classify.guard(oneCall({ tool: 'Write', input: { text: 'SET NX' } }));
   expect(guarded.findings[0]!.pointer).toMatchObject({
     pointer: 'claimLane or watchLane',
     level: 'candidates',
@@ -907,7 +907,9 @@ test('the classifier output contract is read into relevant, pointer, where and l
   // The hand-named roster's charter reads no pointer.
   const roster = make();
   expect((await roster.advise('lock it')).pointer).toBeUndefined();
-  expect((await roster.guard({ tool: 'Write', input: {} })).findings[0]!.pointer).toBeUndefined();
+  expect(
+    (await roster.guard(oneCall({ tool: 'Write', input: {} }))).findings[0]!.pointer,
+  ).toBeUndefined();
 });
 
 test('budgets admit a region at the 40k-token hard cap and refuse above it, with the per-role override kept', () => {

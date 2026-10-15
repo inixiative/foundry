@@ -21,7 +21,7 @@ test('selected detail refresh requires the original active thread and exact turn
 
 test('guard reference correlation refuses contradicted thread and original tool/call/agent fields', () => {
   const observation = {
-    signalId: 'signal',
+    momentId: 'signal',
     tool: 'fixture_evaluate',
     callId: 'call',
     agentId: 'worker',

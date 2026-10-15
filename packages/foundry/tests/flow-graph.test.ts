@@ -148,7 +148,7 @@ const turn = {
       dispatchId: 'd',
       phase: 'guard-outcome',
       record: {
-        observation: { signalId: 's1', tool: 'Bash', callId: 'c1' },
+        observation: { momentId: 's1', tool: 'Bash', callId: 'c1' },
         status: 'reported',
         findings: 2,
         critical: 1,

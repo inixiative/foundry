@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeEvidence, NativeOwner } from '@inixiative/foundry-core';
 import { ContextStack, EventStream, type LLMProvider } from '@inixiative/foundry-core';
+import { oneCall } from '../src/agents/domain-librarian';
 import {
   buildAgents,
   buildLayers,
@@ -388,7 +389,8 @@ test('actual factory classification, routing, advice, guard and learning use the
     expect(journal.knowledge('A')!.domains.docs.content).toBe(lib.threadKnowledge.content);
     expect(runtime.learningState.domains.docs.capacity).toBe('settled');
     expect(
-      (await lib.guard({ tool: 'Write', input: { file: 'docs.md' }, output: 'updated' })).status,
+      (await lib.guard(oneCall({ tool: 'Write', input: { file: 'docs.md' }, output: 'updated' })))
+        .status,
     ).toBe('completed');
     factory.create('B', { projectId: 'Q' });
     expect(manager.get('B')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('');

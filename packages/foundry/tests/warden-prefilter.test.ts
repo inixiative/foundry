@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextLayer, ContextStack, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import { DomainLibrarian, NO_COMMENT } from '../src/agents/domain-librarian';
+import { DomainLibrarian, NO_COMMENT, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
@@ -146,10 +146,12 @@ test('a confident no skips the Warden, journalled with its score; an unsure one 
   expect(seen).toHaveLength(1);
 
   calls.length = 0;
-  const report = await flow.postAction({
-    tool: 'Edit',
-    input: { file_path: 'prisma/schema.prisma' },
-  });
+  const report = await flow.postAction(
+    oneCall({
+      tool: 'Edit',
+      input: { file_path: 'prisma/schema.prisma' },
+    }),
+  );
   expect(report.prefiltered).toEqual([
     { domain: 'voice', score: 0.05, skipBelow: 0.2 },
     { domain: 'schema', score: 0.15, skipBelow: 0.2 },
@@ -172,7 +174,7 @@ test('a missing model fails open: every Warden is asked, and the warning fires o
   const plan = await flow.preMessage('Add a column');
   expect(plan.contributions.map((c) => c.decision)).toEqual(['no-comment', 'no-comment']);
   expect(plan.prefilter).toMatchObject({ status: 'unavailable' });
-  const report = await flow.postAction({ tool: 'Edit', input: {} });
+  const report = await flow.postAction(oneCall({ tool: 'Edit', input: {} }));
   expect(report.domainsChecked).toEqual(['voice', 'schema']);
   expect(report.prefilter).toMatchObject({ status: 'unavailable' });
   expect(calls).toHaveLength(4);

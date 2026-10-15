@@ -7,7 +7,10 @@ import type { LocalSessionStore } from '../persistence/local-session-store';
  * §4): each run the executor's session spawns (a Claude Agent/Task, a Codex sub-agent) becomes a
  * child thread tied to its parent — the main thread, or the subagent that spawned it — with a
  * `handoff` row in the parent when it starts and a `handoff-return` row when it ends. Its own
- * activity is recorded on the child, never on the parent's turn. No Foundry middleware runs on it.
+ * activity is recorded on the child, never on the parent's turn. The child runs no Wardens of its
+ * own: the root thread's roster briefs the handoff when it starts (`onSpawn`, the subagent-spawn
+ * trigger) and, in the in-session runtime, guards each of its turns once when the turn ends
+ * (`observeTool` holds the calls, `onTurnEnd` fires the guard), on the child's node.
  */
 
 interface ThreadRecord {
@@ -27,6 +30,31 @@ export interface SubagentRecorderDeps {
    * thread's own, and journal on the subagent's node.
    */
   readonly observeTool?: (rootThreadId: string, call: SubagentToolCall) => void;
+  /** A subagent's turn ended: the root thread's guard runs once over the calls held for it. */
+  readonly onTurnEnd?: (rootThreadId: string, turn: SubagentTurnEnd) => void;
+  /** A subagent started: the root thread's Wardens brief the handoff from the task it was given. */
+  readonly onSpawn?: (rootThreadId: string, spawn: SubagentSpawn) => void;
+}
+
+/** One observed subagent turn that ended, for the root thread's guard. */
+export interface SubagentTurnEnd {
+  readonly node: ThreadRecord;
+  readonly turnId: string;
+  readonly outcome: 'completed' | 'failed';
+}
+
+/** One handoff the executor made, as the subagent-spawn trigger sees it. */
+export interface SubagentSpawn {
+  /** The child thread the subagent became. */
+  readonly node: ThreadRecord;
+  /** The node that issued the spawn: the root thread, or a subagent. */
+  readonly parent: ThreadRecord;
+  readonly parentTurnId: string | null;
+  readonly handoffId: string;
+  readonly description?: string;
+  readonly agentType?: string;
+  /** The task text the subagent starts from. */
+  readonly prompt: string;
 }
 
 /** One finished tool call of an observed subagent, for the root thread's guard Wardens. */
@@ -212,6 +240,19 @@ export class SubagentRecorder {
     this.deps.adopt?.(child);
     this.openTurn(run, task);
     this.changed(parent, parentTurnId);
+    try {
+      this.deps.onSpawn?.(root.id, {
+        node: child,
+        parent,
+        parentTurnId,
+        handoffId,
+        ...(life.description ? { description: life.description } : {}),
+        ...(life.agentType ? { agentType: life.agentType } : {}),
+        prompt: task,
+      });
+    } catch {
+      /* a brief's failure never touches the record */
+    }
     return run;
   }
 
@@ -231,6 +272,15 @@ export class SubagentRecorder {
       failed ? 'failed' : 'completed',
     );
     this.changed(run.child, run.turnId);
+    try {
+      this.deps.onTurnEnd?.(run.root, {
+        node: run.child,
+        turnId: run.turnId,
+        outcome: failed ? 'failed' : 'completed',
+      });
+    } catch {
+      /* a guard's failure never touches the record */
+    }
     run.turnId = undefined;
     run.lastText = undefined;
   }
