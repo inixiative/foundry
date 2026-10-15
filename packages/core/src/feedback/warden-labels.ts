@@ -215,7 +215,10 @@ export function fixtureProbe(
     kind: relevant.length ? 'positive' : 'negative',
     ctx: fixture.ctx,
     ...(fixture.project ? { project: fixture.project } : {}),
-    moment: fixture.trigger.text,
+    // A user-message fixture is asked at the user-message trigger; the others are the agent's turn.
+    ...(fixture.trigger.kind === 'user-message'
+      ? { moment: '', ask: fixture.trigger.text }
+      : { moment: fixture.trigger.text }),
     ...(relevant.length
       ? {
           gold: {

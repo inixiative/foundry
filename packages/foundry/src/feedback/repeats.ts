@@ -171,7 +171,7 @@ const normalized = (text: string) =>
 /** The same message reaches us twice when two sources hold it (Archive and a file, history, a Foundry thread). */
 const SAME_MESSAGE_MS = 120_000;
 
-interface Candidate {
+export interface Candidate {
   event: CorrectionEvent;
   harness: Harness;
   file: string;
@@ -389,10 +389,10 @@ export const classificationKey = (event: CorrectionEvent, model: string) =>
     .digest('hex')
     .slice(0, 16)}`;
 
-/** The scan stage: classify candidates in batches on the cheap model. */
-async function scan(
+/** The scan stage: classify candidates in batches on the cheap model, by event id. */
+export async function scan(
   candidates: Candidate[],
-  options: RepeatOptions,
+  options: Pick<RepeatOptions, 'scan' | 'cache' | 'refresh' | 'progress'>,
   usage: StageUsage,
   tokens: TokenCounts[],
 ) {
