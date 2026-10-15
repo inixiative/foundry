@@ -4,11 +4,13 @@ import {
   parseCorrectionTargets,
   parseTargetCanonical,
   parseWardenJudgement,
+  parseWardenPointerJudgement,
   probeTriggers,
   scoreCharterRun,
   type WardenProbe,
   type WardenProbeAnswer,
   wardenJudgeMessage,
+  wardenPointerJudgeMessage,
 } from '../src/feedback/warden-probes';
 
 const probes: WardenProbe[] = [
@@ -219,4 +221,25 @@ test('with a target, the judge is shown it', () => {
   expect(message).toContain(
     '## TARGET (what the user pushed the agent toward)\n\nSELECT FOR UPDATE lock helper (primitive, concurrency-locking)',
   );
+});
+
+test('the pointer judge sees the moment, the target and where it is written, and parses the ladder strictly', () => {
+  const message = wardenPointerJudgeMessage({
+    moment: 'SET NX plus a setInterval renew',
+    target: {
+      name: 'createLock',
+      kind: 'primitive',
+      concept: 'concurrency-locking',
+      where: '@template/db',
+    },
+    pointer: 'Look over here: createLock (docs/claude/CONCURRENCY.md)',
+  });
+  expect(message).toContain('createLock (primitive, @template/db)');
+  expect(message).toContain('## Pointer');
+  expect(parseWardenPointerJudgement('```json\n{"level":"candidates","reason":"r"}\n```')).toEqual({
+    level: 'candidates',
+    reason: 'r',
+  });
+  expect(parseWardenPointerJudgement('{"level":"close"}')).toBeUndefined();
+  expect(parseWardenPointerJudgement('not json')).toBeUndefined();
 });

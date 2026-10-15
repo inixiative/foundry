@@ -68,6 +68,8 @@ export interface PrimedDecisionHostConfig {
    */
   primedSessions?: number;
   callTimeoutMs: number;
+  /** Characters a decision's serialized messages may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
+  inputCap?: number;
   /** Test seam: launcher used after credential registration, in place of Bun.spawn. */
   spawn?: (
     argv: string[],
@@ -409,7 +411,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             (!Number.isSafeInteger(opts.timeout) || opts.timeout < 100 || opts.timeout > timeout))
         )
           throw Error('Decision scope or model override refused');
-        if (JSON.stringify(messages).length > DECISION_INPUT_CAP)
+        if (JSON.stringify(messages).length > (config.inputCap ?? DECISION_INPUT_CAP))
           throw Error('Decision input cap exceeded');
         const id = crypto.randomUUID(),
           fallbackThread = `primed:${hostId}:${id}`;
