@@ -29,7 +29,7 @@ export const SETUP_USAGE = `foundry-acp setup [--write] [--yes] [--reinstall] [-
 
 Installs Foundry on this Mac and points your ACP hosts at it:
   1. installs @inixiative/foundry-acp globally (bun), so hosts and launchd have a stable path;
-  2. installs the Warden pre-filter model (Laya, about 2.4 GB, under ~/.foundry/models; needs uv),
+  2. installs the Warden pre-filter model (Kev, about 9 GB, under ~/.foundry/models; needs uv),
      then installs and starts the Foundry daemon (a launchd agent; macOS only), which serves it;
   3. shows the Paseo and T3 Code provider settings, and writes Paseo's with --write or your yes;
   4. runs \`foundry repeats\`: the corrections you keep giving your agents.
@@ -180,7 +180,7 @@ export async function runSetup(args: string[]): Promise<number> {
   //    it every Warden is asked on every trigger, and the viewer and doctor say so.
   if (prefilterInstalled()) ok('the Warden pre-filter model is installed');
   else {
-    info('installing the Warden pre-filter model (Laya, about 2.4 GB, under ~/.foundry/models)');
+    info('installing the Warden pre-filter model (Kev, about 9 GB, under ~/.foundry/models)');
     const installed = await installPrefilterModel(info);
     if (installed.ok) ok('installed the Warden pre-filter model');
     else

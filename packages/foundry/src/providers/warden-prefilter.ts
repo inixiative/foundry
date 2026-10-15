@@ -1,8 +1,8 @@
 // The Warden pre-filter: before a trigger fans out to the Wardens, one local decision-model call
 // asks, per Warden, "is this moment about your domain?" A Warden is skipped only on a confident no
 // (its score below `skipBelow`); an unsure score, a failed call or a missing model asks every
-// Warden, as without the pre-filter. The model is Laya (ConvAI, Apache-2.0, ModernBERT-large),
-// served locally on TypeSafe's System One API, so the call goes through TypeSafeDecisionClient.
+// Warden, as without the pre-filter. The model (providers/prefilter-model.ts) runs locally and
+// answers TypeSafe's System One API, so the call goes through TypeSafeDecisionClient.
 
 import {
   ActionQueue,
@@ -28,13 +28,13 @@ export interface PrefilterSettings {
   timeoutMs?: number;
 }
 
-/** The port registry's `decisions` service (default 8100) in Foundry's block (5). */
-export const PREFILTER_PORT = 8600;
+/** The port registry's `decisions` service (default 8180) in Foundry's block (5). */
+export const PREFILTER_PORT = 8680;
 
 export const DEFAULT_PREFILTER: Required<PrefilterSettings> = Object.freeze({
   enabled: true,
   baseUrl: `http://127.0.0.1:${PREFILTER_PORT}`,
-  model: 'english',
+  model: 'kev-latest',
   skipBelow: 0.1,
   timeoutMs: 3_000,
 });
@@ -216,14 +216,18 @@ export class WardenPrefilter {
   }
 
   private async probe(timeoutMs: number): Promise<PrefilterHealth> {
-    try {
-      const response = await this.send(`${this.settings.baseUrl}/health`, {
+    const get = (path: string) =>
+      this.send(`${this.settings.baseUrl}${path}`, {
         method: 'GET',
         redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs),
       });
+    try {
+      // `/health` where the server has one; System One servers without it list `/v1/models`.
+      const health = await get('/health');
+      const response = health.status === 404 ? await get('/v1/models') : health;
       const body = (await response.json().catch(() => ({}))) as { status?: unknown };
-      return response.ok && body.status === 'ok'
+      return response.ok && (response !== health || body.status === 'ok')
         ? { ok: true }
         : { ok: false, reason: `model server answered HTTP ${response.status}` };
     } catch {

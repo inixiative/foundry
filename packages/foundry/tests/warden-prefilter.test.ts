@@ -7,6 +7,8 @@ import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, NO_COMMENT } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
+import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
   DEFAULT_PREFILTER,
   type PrefilterHealth,
@@ -36,7 +38,11 @@ function server(scores: Record<string, number>, seen: unknown[] = []) {
         return [id, { type: 'noul', noul: domain ? scores[domain] : 0.9 }];
       }),
     );
-    return Response.json({ model: 'laya', answers, usage: { input_tokens: 1, output_tokens: 0 } });
+    return Response.json({
+      model: 'kev-latest',
+      answers,
+      usage: { input_tokens: 1, output_tokens: 0 },
+    });
   };
 }
 const down = async () => {
@@ -193,4 +199,93 @@ test('the doctor warns when the model is missing; off reports off', async () => 
   );
   expect(off.prefilter?.status).toBe('off');
   expect(off.issues.map((i) => i.code)).not.toContain('prefilter-not-installed');
+});
+
+test('a thread skips a ruled-out Warden at advice and at review, each journalled with its score', async () => {
+  const phases: string[] = [];
+  const config = starterConfig('mock', 'mock');
+  config.agents = {
+    worker: {
+      id: 'worker',
+      kind: 'executor',
+      provider: 'mock',
+      model: 'mock',
+      prompt: 'Work',
+      temperature: 0,
+      visibleLayers: [],
+      peers: [],
+      maxDepth: 1,
+      enabled: true,
+    },
+  };
+  const layer = new ContextLayer({ id: 'security', prompt: 'Security knowledge' });
+  layer.set('Secrets never reach logs.');
+  const stack = new ContextStack([layer]);
+  const manager = new ThreadRuntimeManager({
+    config,
+    log() {},
+    warn() {},
+    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    prefilter: new WardenPrefilter(undefined, {
+      fetch: async (url, init) => {
+        if (url.endsWith('/health')) return Response.json({ status: 'ok' });
+        const { questions } = JSON.parse(init.body as string) as { questions: object };
+        const answers = Object.fromEntries(
+          Object.keys(questions).map((id) => [id, { type: 'noul', noul: 0.02 }]),
+        );
+        return Response.json({
+          model: 'kev-latest',
+          answers,
+          usage: { input_tokens: 1, output_tokens: 0 },
+        });
+      },
+    }),
+    llm: {
+      id: 'flow',
+      async complete(messages) {
+        const all = messages.map((m) => String(m.content)).join('\n');
+        phases.push(
+          all.includes('Response protocol (post-work review)')
+            ? 'review'
+            : all.includes('Response protocol (advice')
+              ? 'advice'
+              : 'route',
+        );
+        return {
+          model: 'flow',
+          content: JSON.stringify({ layers: [], domains: [], confidence: 0 }),
+        };
+      },
+    },
+  });
+  const factory = new ThreadFactory({
+    stack,
+    runtime: manager,
+    agents: buildAgents(config, stack, {
+      provider: { id: 'mock', complete: async () => ({ model: 'mock', content: 'done' }) },
+    }),
+  });
+  const thread = factory.create('t', { projectId: 'P' });
+  cleanups.push(() => manager.disposeAll());
+  const result = await thread.dispatch('worker', 'Rename the sidebar label', undefined, {
+    messageId: 'm1',
+  });
+  const plan = (
+    result.meta?.injection as { plan?: { contributions: Array<Record<string, unknown>> } }
+  )?.plan;
+  expect(plan?.contributions).toEqual([
+    expect.objectContaining({
+      domain: 'security',
+      decision: 'skipped',
+      reason: 'prefilter',
+      prefilter: { score: 0.02, skipBelow: DEFAULT_PREFILTER.skipBelow },
+    }),
+  ]);
+  const runtime = manager.get('t')!;
+  await runtime.learningSettled();
+  const last = runtime.domainLibrarians.get('security')!.threadKnowledge.history.at(-1)!;
+  expect(last.decision).toBe('prefiltered');
+  expect(last.reason).toContain('0.020');
+  expect(phases).not.toContain('advice');
+  expect(phases).not.toContain('review');
 });

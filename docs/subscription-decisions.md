@@ -133,11 +133,29 @@ The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. A
 
 The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
-## Warden pre-filtering (not built)
+## Warden pre-filter
 
-Every Warden runs on every message; nothing decides beforehand which Wardens a message needs. Pre-filtering was considered and set aside (2026-10-12) because it is not easy to do well.
+Before a trigger point fans out to the Wardens, one local decision-model call asks, per Warden, whether the moment is about its domain. A Warden is skipped only on a confident no (its score below `skipBelow`); an unsure score, a failed call or a missing model asks it, as without the pre-filter. It runs at both ends of a turn: before (the user's message, the advice phase) and after (each agent action that reaches a Warden's guard, and the post-work review of the finished turn).
 
-If it returns to the roadmap, the natural shape is a dedicated classification model rather than another chat decision: one bounded "which domains does this message touch?" judgment per message, gating the Warden fan-out. Jev ([TypeSafe / Jev decisions](typesafe-jev.md)) is one candidate; its Choice and Noul primitives fit that question, and its shadow runner already measures a gate-then-choose policy. This does not have to be hosted. Open-weight classifiers that run locally are reportedly as good or better and faster; evaluate them against the same fixtures before choosing.
+- **Model.** __MODEL__, served on this machine on TypeSafe's System One API (`POST /v1/systemone`), so the call is `TypeSafeDecisionClient` with a `baseUrl` (`providers/warden-prefilter.ts`). One request per trigger carries one yes/no question per Warden: "Is this about <the Warden's instructions, without its opener>?" over a bounded view of the moment and the thread state (core `feedback/warden-prefilter.ts`). The moment never leaves the machine: `baseUrl` must be loopback.
+- **Install.** `foundry-acp setup` installs it (`providers/prefilter-model.ts`): the pinned server source, its uv environment and the pinned weights, all under `~/.foundry/models` (`FOUNDRY_MODELS` overrides), about __SIZE__. It needs `uv` (`brew install uv`) and `git`. The daemon starts the server at its own start on the registry's `decisions` port (8680 in Foundry's block) and stops it on shutdown; a server already answering there is used as is.
+- **Missing or down.** Every Warden is asked, exactly as without it. The daemon log, the viewer's event stream (`warden-prefilter`, a warning) and `bun run doctor` (`prefilter-not-installed` or `prefilter-unavailable`, warnings, never errors) say so. Nothing is silent.
+- **Journal.** Every skip is recorded with its score: the advice row's `prefiltered` list and `prefilter` call (`status`, `elapsedMs`, `skipped`), the guard outcome's `prefiltered`, and a review's `prefiltered` learning record (`pre-filter score 0.031 < 0.1`). Oracle can audit the misses.
+- **Settings.** `prefilter`, on by default:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `prefilter.enabled` | `true` | `false` asks every Warden on every trigger and makes no pre-filter call. |
+| `prefilter.baseUrl` | `http://127.0.0.1:8680` | The local System One server; loopback only. |
+| `prefilter.model` | `__MODELID__` | The server's model name. |
+| `prefilter.skipBelow` | `__T__` | Skip a Warden when its score is below this. |
+| `prefilter.timeoutMs` | `3000` | One call per trigger; past it every Warden is asked. |
+
+**Measured** (`bun scripts/evals/warden-prefilter.ts measure`, 2026-10-14; the Prospector's 740 labelled moments, Opus run-1 labels, plus the 599 charter probes; this MacBook Pro M1 Max, 64 GB):
+
+__TABLE__
+
+Laya (ConvAI's ModernBERT-large decision model) was tried first and dropped: on the probes it recalled 0.53 of relevant Wardens while skipping half (chance is 0.5) and skipped only 23% at 80% recall; on the fixtures its AUROC was 0.55.
 
 ## Ownership and bounds
 

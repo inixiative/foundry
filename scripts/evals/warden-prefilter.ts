@@ -23,7 +23,14 @@
  * filter), on the pairs r1 and r2 agree on, and on the hand check; per Warden; the sweep;
  * consistency over repeats; latency and the server's memory. `--scores` rescores an earlier run.
  */
-import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -31,6 +38,7 @@ import {
   computeHash,
   labelAgreement,
   type PrefilterPair,
+  type PrefilterTrigger,
   parseWardenLabels,
   percentiles,
   prefilterConsistency,
@@ -598,6 +606,39 @@ async function measure() {
   if (!values.settings || !values.knowledge)
     throw Error('measure needs --settings and --knowledge');
   const fixtures = readJsonl<WardenFixture>(join(dir, 'fixtures.jsonl'));
+  // The charter probe pool too: the agent's finished turn, its gold Wardens labelled relevant and
+  // every other Warden unlabelled (counted toward the skip rate, never toward recall).
+  const probes = values.pool ? readJsonl<WardenProbe>(resolve(values.pool)) : [];
+  type Moment = {
+    id: string;
+    ctx: string;
+    project?: string;
+    kind: PrefilterTrigger;
+    text: string;
+    context?: string;
+  };
+  const moments: Moment[] = [
+    ...fixtures.map((f) => ({
+      id: f.id,
+      ctx: f.ctx,
+      ...(f.project ? { project: f.project } : {}),
+      kind: f.trigger.kind,
+      text: f.trigger.text,
+      context: f.context,
+    })),
+    ...probes.map((p) => ({
+      id: `pool:${p.id}`,
+      ctx: p.ctx,
+      ...(p.project ? { project: p.project } : {}),
+      kind: 'post-turn' as const,
+      text: p.moment,
+    })),
+  ];
+  // --ids: score only these moments (fixture ids, `pool:<probe id>`), e.g. a slow model on a subset.
+  const only = values.ids
+    ? new Set(readFileSync(resolve(values.ids), 'utf8').split('\n').filter(Boolean))
+    : undefined;
+  if (only) moments.splice(0, moments.length, ...moments.filter((m) => only.has(m.id)));
   const out = join(dir, 'runs', `${Date.now()}`);
   privateDirectory(out);
   let scored: Scored[];
@@ -623,15 +664,9 @@ async function measure() {
       'eval',
     );
     // What a Warden sees at the moment: the trigger and the context, never `hidden`.
-    const scoreOne = async (f: WardenFixture) => {
+    const scoreOne = async (f: Moment) => {
       const wardens = roster.wardensFor(f.ctx, f.project);
-      const outcome = await prefilter.score(
-        f.trigger.kind,
-        f.trigger.text,
-        f.context,
-        wardens,
-        'eval',
-      );
+      const outcome = await prefilter.score(f.kind, f.text, f.context, wardens, 'eval');
       return wardens.map((w) => ({
         fixtureId: f.id,
         wardenId: w.id,
@@ -642,14 +677,19 @@ async function measure() {
       }));
     };
     scored = [];
-    for (const [i, f] of fixtures.entries()) {
+    // Written as it goes, so a long run can be rescored (`--scores`) before it finishes.
+    const partial = join(out, 'scores.jsonl');
+    writePrivate(partial, '');
+    for (const [i, f] of moments.entries()) {
       const rows = await scoreOne(f);
       latencies.push(rows[0]?.elapsedMs ?? 0);
-      scored.push(...rows.map(({ elapsedMs: _e, ...r }) => r));
-      if ((i + 1) % 50 === 0) console.error(`  ${i + 1}/${fixtures.length}`);
+      const kept = rows.map(({ elapsedMs: _e, ...r }) => r);
+      scored.push(...kept);
+      appendFileSync(partial, `${kept.map((r) => JSON.stringify(r)).join('\n')}\n`);
+      if ((i + 1) % 50 === 0) console.error(`  ${i + 1}/${moments.length}`);
     }
     const repeats = new Map<string, (number | undefined)[]>();
-    const sample = fixtures.slice(0, Number(values['repeat-sample'] ?? 40));
+    const sample = moments.slice(0, Number(values['repeat-sample'] ?? 40));
     for (const r of scored.filter((r) => sample.some((f) => f.id === r.fixtureId)))
       repeats.set(`${r.fixtureId}|${r.wardenId}`, [r.score]);
     for (let n = 1; n < Number(values.repeat ?? 3); n++)
@@ -659,7 +699,11 @@ async function measure() {
     consistency = Object.fromEntries(
       [0.05, 0.1, 0.2, 0.3].map((t) => [String(t), prefilterConsistency(repeats, t)]),
     );
-    for (const pid of Bun.spawnSync(['pgrep', '-f', 'laya-serve']).stdout.toString().split('\n'))
+    // The model server's resident memory: whatever listens on the pre-filter's port.
+    const port = new URL(prefilter.settings.baseUrl).port;
+    for (const pid of Bun.spawnSync(['lsof', '-ti', `tcp:${port}`, '-sTCP:LISTEN'])
+      .stdout.toString()
+      .split('\n'))
       if (pid.trim())
         rssMb +=
           Number(Bun.spawnSync(['ps', '-o', 'rss=', '-p', pid.trim()]).stdout.toString()) / 1024;
@@ -684,7 +728,7 @@ async function measure() {
             },
           ];
     });
-  const sets = {
+  const sets: Record<string, PrefilterPair[]> = {
     r1: pairsFor((f, w) => r1.get(f)?.[w]?.relevant),
     'r1=r2': pairsFor((f, w) => {
       const a = r1.get(f)?.[w]?.relevant;
@@ -693,6 +737,26 @@ async function measure() {
     }),
     hand: pairsFor((f, w) => hand.get(f)?.[w]?.relevant),
   };
+  const gold = new Map(
+    probes.map((p) => [
+      `pool:${p.id}`,
+      new Set(p.kind === 'positive' ? (p.gold?.domains ?? []) : []),
+    ]),
+  );
+  const domainOf = new Map(
+    [...loadRoster(values.settings, values.knowledge).ids].map(([domain, id]) => [id, domain]),
+  );
+  const probePairs = scored
+    .filter((r) => gold.has(r.fixtureId))
+    .map(
+      (r): PrefilterPair => ({
+        momentId: r.fixtureId,
+        wardenId: r.wardenId,
+        ...(gold.get(r.fixtureId)!.has(domainOf.get(r.wardenId) ?? '') ? { relevant: true } : {}),
+        ...(r.score !== undefined ? { score: r.score } : {}),
+      }),
+    );
+  if (probePairs.length) Object.assign(sets, { probes: probePairs });
   const scores = Object.fromEntries(
     Object.entries(sets).map(([k, pairs]) => [k, scorePrefilter(pairs)]),
   );

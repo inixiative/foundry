@@ -161,8 +161,8 @@ export function prefilterDescription(instructions: string): string {
 }
 
 /**
- * The System One yes/no asked per Warden. Asked as a topic ("Is this about …"): measured on Laya,
- * it separates in-domain moments far better than asking about "a reviewer's domain".
+ * The System One yes/no asked per Warden, as a topic ("Is this about …"). On a small hand-checked
+ * grid it separated in-domain moments far better than asking about "a reviewer's domain".
  */
 export function prefilterQuestion(description: string) {
   return { type: 'noul' as const, instructions: `Is this about ${description}` };

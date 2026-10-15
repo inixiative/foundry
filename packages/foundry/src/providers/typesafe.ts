@@ -119,7 +119,7 @@ export interface TypeSafeClientOptions {
   model?: string;
   /**
    * Where the System One API is served. Default `https://api.typesafe.ai`. Self-hosted decision
-   * models that implement `POST /v1/systemone` (Kev, decider, Laya, Jebadiah) take their local URL.
+   * models that implement `POST /v1/systemone` (Kev and its kin) take their local URL.
    */
   baseUrl?: string;
   /** Deadline covers fetch, response parsing, and retries. Default 10 seconds. */
