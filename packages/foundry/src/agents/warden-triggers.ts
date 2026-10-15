@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Warden trigger points — the moments a Warden is asked
 //
-// Every Warden a trigger point reaches is asked, unless the pre-filter (`prefilter` in settings, on
-// by default; providers/warden-prefilter.ts) is confident the moment is outside its domain, and
+// Every Warden a trigger point reaches is asked, unless the pre-filter (`prefilter` in settings, off
+// by default; providers/warden-prefilter.ts) is on and confident the moment is outside its domain, and
 // decides under the fixed charter (`warden-charter.ts`) whether it has anything to add. NO_COMMENT
 // is the default answer and adds nothing to the thread. The pre-filter fails open: an unsure score,
 // a failed call or a missing model asks the Warden, and every skip is journalled with its score, so a

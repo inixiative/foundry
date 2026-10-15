@@ -102,7 +102,7 @@ export interface FoundryConfig {
   journal?: JournalSettings;
   /**
    * The Warden pre-filter: a local decision model skips a Warden on a confident "not my domain".
-   * On by default; `{ "enabled": false }` asks every Warden. See docs/subscription-decisions.md.
+   * Off by default (every Warden is asked); `{ "enabled": true }` opts in. See docs/subscription-decisions.md.
    */
   prefilter?: PrefilterSettings;
   /**

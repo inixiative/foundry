@@ -14,6 +14,7 @@ import { acpLaunchPath, readAcpLaunch, startDaemon } from '@inixiative/foundry/c
 import {
   DAEMON_LOG_DIR,
   daemonLoaded,
+  enabledPrefilter,
   ensureStarterSettings,
   installDaemon,
   installedDaemon,
@@ -29,8 +30,9 @@ export const SETUP_USAGE = `foundry-acp setup [--write] [--yes] [--reinstall] [-
 
 Installs Foundry on this Mac and points your ACP hosts at it:
   1. installs @inixiative/foundry-acp globally (bun), so hosts and launchd have a stable path;
-  2. installs the Warden pre-filter model (Kev, about 9 GB, under ~/.foundry/models; needs uv),
-     then installs and starts the Foundry daemon (a launchd agent; macOS only), which serves it;
+  2. installs and starts the Foundry daemon (a launchd agent; macOS only); when its settings turn
+     the Warden pre-filter on (\`prefilter.enabled\`, off by default), first installs its model
+     (Kev, about 9 GB, under ~/.foundry/models; needs uv), which the daemon serves;
   3. shows the Paseo and T3 Code provider settings, and writes Paseo's with --write or your yes;
   4. runs \`foundry repeats\`: the corrections you keep giving your agents.
 
@@ -176,20 +178,7 @@ export async function runSetup(args: string[]): Promise<number> {
   const acpCommand = [bun, join(acpDir, 'src', 'cli.ts')];
   if (checkout) ok(`using the Foundry checkout at ${checkout}`);
 
-  // 2. The Warden pre-filter's model, before the daemon that serves it. Foundry relies on it; without
-  //    it every Warden is asked on every trigger, and the viewer and doctor say so.
-  if (prefilterInstalled()) ok('the Warden pre-filter model is installed');
-  else {
-    info('installing the Warden pre-filter model (Kev, about 9 GB, under ~/.foundry/models)');
-    const installed = await installPrefilterModel(info);
-    if (installed.ok) ok('installed the Warden pre-filter model');
-    else
-      warn(
-        `the Warden pre-filter model was not installed (${installed.reason}); Foundry asks every Warden until it is. Rerun setup to retry.`,
-      );
-  }
-
-  // The daemon.
+  // 2. The daemon.
   if (process.platform !== 'darwin') {
     warn(
       'The Foundry daemon is a launchd agent, so this platform is not supported yet (macOS only). Skipping it.',
@@ -208,6 +197,28 @@ export async function runSetup(args: string[]): Promise<number> {
       !elsewhere &&
       (!program || installed.program.join('\0') === program.join('\0')) &&
       (await daemonLoaded());
+    // The Warden pre-filter's model, opt-in: only when the daemon's settings turn it on, and before
+    // the daemon that serves it. Off (the default), nothing is downloaded and every Warden is asked.
+    const settingsHome =
+      elsewhere && !values.reinstall && installed.readable
+        ? installed.workingDirectory
+        : workingDirectory;
+    const prefilter = await enabledPrefilter(settingsHome);
+    let modelAdded = false,
+      daemonInstalled = false;
+    if (prefilter) {
+      if (prefilterInstalled()) ok('the Warden pre-filter model is installed');
+      else {
+        info('installing the Warden pre-filter model (Kev, about 9 GB, under ~/.foundry/models)');
+        const model = await installPrefilterModel(info);
+        modelAdded = model.ok;
+        if (model.ok) ok('installed the Warden pre-filter model');
+        else
+          warn(
+            `the Warden pre-filter model was not installed (${model.reason}); Foundry asks every Warden until it is. Rerun setup to retry.`,
+          );
+      }
+    }
     if (elsewhere && !values.reinstall) {
       ok(
         `a Foundry daemon is already installed${installed.readable ? `, running from ${installed.workingDirectory}` : ` (${installed.plistPath})`}`,
@@ -231,14 +242,20 @@ export async function runSetup(args: string[]): Promise<number> {
         port: PORT,
         log: info,
       });
+      daemonInstalled = true;
       ok(`daemon installed (logs: ${DAEMON_LOG_DIR}/foundry.out.log)`);
     }
     if (await daemonAnswers(60_000)) ok(`daemon answering — viewer at http://localhost:${PORT}`);
     else warn(`the daemon did not answer within a minute; see ${DAEMON_LOG_DIR}/foundry.err.log`);
-    if (prefilterInstalled()) {
-      const health = await new WardenPrefilter(undefined).waitReady(120_000);
+    if (prefilter && prefilterInstalled()) {
+      const health = await new WardenPrefilter(prefilter).waitReady(
+        modelAdded && !daemonInstalled ? 0 : 120_000,
+      );
       if (health.ok) ok('the Warden pre-filter answers');
-      else warn(`the Warden pre-filter did not answer (${health.reason}); every Warden is asked`);
+      else
+        warn(
+          `the Warden pre-filter did not answer (${health.reason}); every Warden is asked. The daemon serves it from its start: pass --reinstall to restart it.`,
+        );
     }
   }
 

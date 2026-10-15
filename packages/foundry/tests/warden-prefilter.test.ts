@@ -10,6 +10,7 @@ import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { enabledPrefilter } from '../src/daemon';
 import {
   DEFAULT_PREFILTER,
   type PrefilterHealth,
@@ -18,7 +19,7 @@ import {
   WardenPrefilter,
 } from '../src/providers/warden-prefilter';
 import { inspectReadiness } from '../src/readiness';
-import { starterConfig } from '../src/viewer/config';
+import { ConfigStore, starterConfig } from '../src/viewer/config';
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -111,10 +112,10 @@ function roster(domains: string[], prefilter?: WardenPrefilter) {
   return { flow, calls };
 }
 
-test('the pre-filter is on by default, on a loopback model server', () => {
+test('the pre-filter is off by default, on a loopback model server when turned on', () => {
   expect(resolvePrefilterSettings(undefined)).toEqual(DEFAULT_PREFILTER);
-  expect(DEFAULT_PREFILTER.enabled).toBe(true);
-  expect(resolvePrefilterSettings({ enabled: false }).enabled).toBe(false);
+  expect(DEFAULT_PREFILTER.enabled).toBe(false);
+  expect(resolvePrefilterSettings({ enabled: true }).enabled).toBe(true);
   expect(() =>
     validatePrefilterSettings('prefilter', { baseUrl: 'https://api.example.com' }),
   ).toThrow('loopback');
@@ -159,10 +160,13 @@ test('a confident no skips the Warden, journalled with its score; an unsure one 
 
 test('a missing model fails open: every Warden is asked, and the warning fires once', async () => {
   const warnings: PrefilterHealth[] = [];
-  const prefilter = new WardenPrefilter(undefined, {
-    fetch: down,
-    onHealth: (health) => warnings.push(health),
-  });
+  const prefilter = new WardenPrefilter(
+    { enabled: true },
+    {
+      fetch: down,
+      onHealth: (health) => warnings.push(health),
+    },
+  );
   const { flow, calls } = roster(['voice', 'schema'], prefilter);
 
   const plan = await flow.preMessage('Add a column');
@@ -184,22 +188,33 @@ test('turned off, no pre-filter call is made and every Warden is asked', async (
   expect(calls).toHaveLength(2);
 });
 
-test('the doctor warns when the model is missing; off reports off', async () => {
+test('the doctor reports off by default with no warning, and warns when turned on without a model', async () => {
   const empty = mkdtempSync(join(tmpdir(), 'prefilter-models-'));
   cleanups.push(() => rmSync(empty, { recursive: true, force: true }));
   const config = starterConfig('claude-code', 'fable');
   const which = () => '/usr/bin/true';
-  const missing = await inspectReadiness(config, { which, modelsDir: empty });
-  expect(missing.prefilter).toEqual({ status: 'not-installed', url: DEFAULT_PREFILTER.baseUrl });
+  const off = await inspectReadiness(config, { which, modelsDir: empty });
+  expect(off.prefilter).toEqual({ status: 'off', url: DEFAULT_PREFILTER.baseUrl });
+  expect(off.issues.map((i) => i.code).filter((code) => code.startsWith('prefilter'))).toEqual([]);
+  const missing = await inspectReadiness(
+    { ...config, prefilter: { enabled: true } },
+    { which, modelsDir: empty },
+  );
+  expect(missing.prefilter?.status).toBe('not-installed');
   expect(missing.issues).toContainEqual(
     expect.objectContaining({ severity: 'warning', code: 'prefilter-not-installed' }),
   );
-  const off = await inspectReadiness(
-    { ...config, prefilter: { enabled: false } },
-    { which, modelsDir: empty },
-  );
-  expect(off.prefilter?.status).toBe('off');
-  expect(off.issues.map((i) => i.code)).not.toContain('prefilter-not-installed');
+});
+
+test('setup installs the model only when the home turns the pre-filter on', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'prefilter-home-'));
+  cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+  expect(await enabledPrefilter(home)).toBeUndefined();
+  const store = new ConfigStore(join(home, '.foundry'));
+  await store.save(starterConfig('claude-code', 'fable'));
+  expect(await enabledPrefilter(home)).toBeUndefined();
+  await store.save({ ...starterConfig('claude-code', 'fable'), prefilter: { enabled: true } });
+  expect(await enabledPrefilter(home)).toEqual({ enabled: true });
 });
 
 test('a thread skips a ruled-out Warden at advice and at review, each journalled with its score', async () => {

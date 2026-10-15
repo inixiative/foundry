@@ -223,7 +223,7 @@ export interface ThreadRuntimeDeps {
   lowConfidenceThreshold?: number;
   /** Pre-message deadlines, concurrency and budget. Validated by the orchestrator. */
   flow?: FlowTimingConfig;
-  /** The process's Warden pre-filter (settings `prefilter`, on by default); absent asks every Warden. */
+  /** The process's Warden pre-filter (settings `prefilter`, off by default); absent asks every Warden. */
   prefilter?: WardenPrefilter;
   /** Post-work learning deadline and knowledge size. */
   learning?: LearningConfig;

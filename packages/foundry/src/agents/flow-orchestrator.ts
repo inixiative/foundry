@@ -365,7 +365,7 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
   stack: ContextStack;
   /** Signal bus for emitting orchestration events. */
   signals: SignalBus;
-  /** The Warden pre-filter (on by default in settings); absent asks every Warden. */
+  /** The Warden pre-filter (settings `prefilter`, off by default); absent asks every Warden. */
   prefilter?: WardenPrefilter;
   /** The thread the pre-filter's calls are made for. */
   threadId?: string;

@@ -15,7 +15,10 @@ import {
 } from '@inixiative/foundry-core';
 import { TypeSafeDecisionClient } from './typesafe';
 
-/** `prefilter` in settings. On by default; `enabled: false` asks every Warden on every trigger. */
+/**
+ * `prefilter` in settings. Off by default (no local model clears the bar yet; Aron, 2026-10-15): off
+ * asks every Warden on every trigger and starts no model server. `enabled: true` opts in.
+ */
 export interface PrefilterSettings {
   enabled?: boolean;
   /** The local System One server. Loopback only: the moment never leaves the machine. */
@@ -32,7 +35,7 @@ export interface PrefilterSettings {
 export const PREFILTER_PORT = 8680;
 
 export const DEFAULT_PREFILTER: Required<PrefilterSettings> = Object.freeze({
-  enabled: true,
+  enabled: false,
   baseUrl: `http://127.0.0.1:${PREFILTER_PORT}`,
   model: 'kev-latest',
   skipBelow: 0.26,

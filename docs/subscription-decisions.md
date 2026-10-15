@@ -135,17 +135,19 @@ The floor is the decision model's own first-token latency: about 2.2 s for gpt-6
 
 ## Warden pre-filter
 
-Before a trigger point fans out to the Wardens, one local decision-model call asks, per Warden, whether the moment is about its domain. A Warden is skipped only on a confident no (its score below `skipBelow`); an unsure score, a failed call or a missing model asks it, as without the pre-filter. It runs at both ends of a turn: before (the user's message, the advice phase) and after (each agent action that reaches a Warden's guard, and the post-work review of the finished turn).
+**Off by default** (Aron, 2026-10-15: "leave pre-filtering on but switch it off for now until we figure out if we can make it work"). The code stays in Foundry; no local model clears the bar yet (below). Off, every Warden is asked on every trigger, no model server starts, `foundry-acp setup` downloads nothing, and neither `bun run doctor` nor the viewer mentions a model.
+
+When turned on (`prefilter.enabled: true`), before a trigger point fans out to the Wardens, one local decision-model call asks, per Warden, whether the moment is about its domain. A Warden is skipped only on a confident no (its score below `skipBelow`); an unsure score, a failed call or a missing model asks it, as without the pre-filter. It runs at both ends of a turn: before (the user's message, the advice phase) and after (each agent action that reaches a Warden's guard, and the post-work review of the finished turn).
 
 - **Model.** Kev-4B (Jared Palmer, Apache-2.0: a LoRA and pointer head on Qwen3.5-4B-Base, MLX on Apple Silicon), served on this machine on TypeSafe's System One API (`POST /v1/systemone`), so the call is `TypeSafeDecisionClient` with a `baseUrl` (`providers/warden-prefilter.ts`). One request per trigger carries one yes/no question per Warden: "Is this about <the Warden's instructions, without its opener>?" over a bounded view of the moment and the thread state (core `feedback/warden-prefilter.ts`). The moment never leaves the machine: `baseUrl` must be loopback.
-- **Install.** `foundry-acp setup` installs it (`providers/prefilter-model.ts`): the pinned server source, its uv environment and the pinned weights, all under `~/.foundry/models` (`FOUNDRY_MODELS` overrides), about 9 GB. It needs `uv` (`brew install uv`) and `git`. The daemon starts the server at its own start on the registry's `decisions` port (8680 in Foundry's block) and stops it on shutdown; a server already answering there is used as is.
-- **Missing or down.** Every Warden is asked, exactly as without it. The daemon log, the viewer's event stream (`warden-prefilter`, a warning) and `bun run doctor` (`prefilter-not-installed` or `prefilter-unavailable`, warnings, never errors) say so. Nothing is silent.
+- **Install.** Opt-in: `foundry-acp setup` installs it only when the daemon's settings turn the pre-filter on (`providers/prefilter-model.ts`): the pinned server source, its uv environment and the pinned weights, all under `~/.foundry/models` (`FOUNDRY_MODELS` overrides), about 9 GB. It needs `uv` (`brew install uv`) and `git`. The daemon starts the server at its own start (so turning it on needs a daemon restart) on the `decisions` port, 8680 in Foundry's block (registry entry pending in inixiative/config#8; the code's default does not read the registry), and stops it on shutdown; a server already answering there is used as is.
+- **On, but missing or down.** Every Warden is asked, exactly as without it. The daemon log, the viewer's event stream (`warden-prefilter`, a warning) and `bun run doctor` (`prefilter-not-installed` or `prefilter-unavailable`, warnings, never errors) say so. Nothing is silent.
 - **Journal.** Every skip is recorded with its score: the advice row's `prefiltered` list and `prefilter` call (`status`, `elapsedMs`, `skipped`), the guard outcome's `prefiltered`, and a review's `prefiltered` learning record (`pre-filter score 0.031 < 0.1`). Oracle can audit the misses.
-- **Settings.** `prefilter`, on by default:
+- **Settings.** `prefilter`, off by default:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `prefilter.enabled` | `true` | `false` asks every Warden on every trigger and makes no pre-filter call. |
+| `prefilter.enabled` | `false` | Off asks every Warden on every trigger, makes no pre-filter call and starts no model server. `true` opts in. |
 | `prefilter.baseUrl` | `http://127.0.0.1:8680` | The local System One server; loopback only. |
 | `prefilter.model` | `kev-latest` | The server's model name. |
 | `prefilter.skipBelow` | `0.26` | Skip a Warden when its score is below this. |
@@ -164,7 +166,7 @@ Recall is the share of (moment, Warden) pairs labelled relevant that are still a
 
 By trigger, Kev-4B is best on the user's message (51% skipped at 80% recall, AUROC 0.74) and agent plans (45%), and weak on agent actions (25%) and finished turns (the probes, 18%). Within a Warden the topic Wardens separate (frontend, schema, security, types) and the process Wardens (intent, surface, verify, assumptions) do not.
 
-**Status: not passing.** No model clears 80% recall with a skip rate worth its cost on this machine: Kev-0.8B is fast but barely beats chance, and Kev-4B adds 4–4.6 s before any Warden can start and about 10 GB. The setting ships on the branch only; it is not on in any live settings.
+**Status: not passing.** No model clears 80% recall with a skip rate worth its cost on this machine: Kev-0.8B is fast but barely beats chance, and Kev-4B adds 4–4.6 s before any Warden can start and about 10 GB. So the setting ships off by default.
 
 Laya (ConvAI's ModernBERT-large decision model) was tried first and dropped: on the probes it recalled 0.53 of relevant Wardens while skipping half (chance is 0.5) and skipped only 23% at 80% recall; on the fixtures its AUROC was 0.55.
 

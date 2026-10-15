@@ -522,9 +522,9 @@ const templateAgents = buildAgents(config, templateStack, { provider, tokenTrack
 
 const eventStream = new EventStream();
 
-// The Warden pre-filter (settings `prefilter`, on by default): a local decision model skips a Warden
-// on a confident "not my domain". When its model is missing or down, every Warden is asked, as
-// without it, and the viewer and log say so.
+// The Warden pre-filter (settings `prefilter`, off by default): when turned on, a local decision model
+// skips a Warden on a confident "not my domain". Off, no model server starts and every Warden is
+// asked. On with its model missing or down, every Warden is asked and the viewer and log say so.
 const prefilterSettings = resolvePrefilterSettings(config.prefilter);
 const prefilterServer = prefilterSettings.enabled
   ? await startPrefilterServer(prefilterSettings)
