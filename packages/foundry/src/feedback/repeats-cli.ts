@@ -43,7 +43,7 @@ const POLISH_MODELS = { claude: 'claude-opus-5-5', codex: 'gpt-6-astra' } as con
 const CACHE = join(STATE, 'classifications.jsonl');
 
 /** This machine's Archive, when it is set up and answering; the harness files cover the rest. */
-async function reachableArchive() {
+export async function reachableArchive() {
   const archive = localArchive();
   if (!archive) return undefined;
   try {

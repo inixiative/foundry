@@ -185,6 +185,21 @@ export {
   type TranscriptTurn,
 } from './feedback/correction';
 export {
+  type DomainAgreement,
+  fixtureProbe,
+  labelAgreement,
+  type ParsedWardenLabels,
+  parseWardenLabels,
+  type UnlabelledFixture,
+  WARDEN_LABEL_PROMPT,
+  type WardenFixture,
+  type WardenLabel,
+  type WardenRosterEntry,
+  type WardenTriggerKind,
+  wardenLabelMessages,
+  wardenLabelPrefix,
+} from './feedback/warden-labels';
+export {
   type CharterScore,
   parseWardenJudgement,
   scoreCharterRun,
