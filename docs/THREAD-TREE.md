@@ -290,6 +290,20 @@ At 22:40: *"It's more that there's that composition of the three slices. The fir
 
 And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden or wardens did this get routed to? What was the change to their instructions and/or domain knowledge? How are we using that?"*
 
+## B.9 As built (2026-10-15)
+
+- **Where the rows live.** Source versions are lines in `<configDir>/audit.jsonl` (`pf/audit/audit-log.ts`), not a journal table. The journal database is held exclusively by the running Foundry, but settings are also edited by CLIs while it runs, and every writer must reach the one audit log. Composition versions are derived per machine, so they live in the journal (`composition_version`, store version 5), and their parts' text in `session_content`.
+- **`settings-history.jsonl` is folded in.** On first open its lines become settings rows (subject, revision, before/after, actor `user` or `external` for a hand edit of settings.json) and the file is removed. `ConfigStore.history()` and `GET /api/settings/history` read the audit log, and their output is unchanged.
+- **Subjects.** Settings definitions keep their subjects (`agent:<id>`, `source:<id>`, `layer:<id>`, `project:<id>`, `provider:<id>`, `settings:<key>`). Composed text has its own: `file:<realpath>` (the file as read, with comments), `prompt:agent:<role>[@project:<id>]`, `prompt:builtin:<role>`, `source-content:<id>`, `layer-content:<id>` / `unattributed:<source id>` (text that could not be attributed further) and `charter`.
+- **Capture.** A source can report what its last load was made of (`ContextSource.segments()`, `ContextLayer.segments()` in core). The role-layer chunks, the settings prompt, configured sources and the composition view (`slotSegments`, which `renderSlot` now uses) all do. A Warden call snapshots its slots at the call boundary (`DomainLibrarian.composition`, advice frozen with its cache). The phase and learning journals turn the snapshot into `versions` (`CompositionAuditor.versionRecord`), so composed text never lands in the journal through it.
+- **Actors and causes as written:**
+  - a settings edit: `user`, cause `settingsRevision`;
+  - a composed settings prompt or source text: `external`, `detected: on-read`, plus the `settingsRevision` it was read under (the edit row names the person);
+  - a feedback line: `feedback` (item id), cause `{feedbackItemId, changeId}`;
+  - a file changed outside Foundry: `external`, `detected: on-read`, plus `gitCommit` when the file is committed and clean;
+  - the charter: `release`.
+- **Not yet:** A's compaction (segments and request messages are still journalled whole), Archive carrying the audit rows (B.8 question 1), and a viewer surface for a source's history.
+
 ## B.8 Open questions
 
 1. **Do audit rows travel to Archive?** A reduced entry's `cv_…` only resolves where the audit rows are. Three options:

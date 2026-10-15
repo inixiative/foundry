@@ -1,9 +1,10 @@
 import {
   ContextLayer,
   type ContextSource,
-  inlineSource,
   type OwnershipScope,
+  type SourceSegment,
   type SourceSelectionReport,
+  segmentsText,
 } from '@inixiative/foundry-core';
 import type { CompositionSlot } from '../prompts/instruction-settings';
 import { compositionSource, forgetSharedRoleViews } from '../prompts/instruction-stack';
@@ -81,8 +82,16 @@ export function roleSources(
     delivered,
   );
   if (slot === 'instructions') {
-    const own = agent?.prompt?.trim() ? agent.prompt : options.builtIn;
-    return [...(own ? [inlineSource(`${roleLayerId(role, slot)}#settings`, own)] : []), ladder];
+    const fromSettings = !!agent?.prompt?.trim();
+    const own = fromSettings ? agent!.prompt : options.builtIn;
+    const subject = fromSettings
+      ? (projectId?: string) =>
+          `prompt:agent:${role}${projectId && config.projects?.[projectId]?.agents?.[role] ? `@project:${projectId}` : ''}`
+      : () => `prompt:builtin:${role}`;
+    return [
+      ...(own ? [promptSource(`${roleLayerId(role, slot)}#settings`, own, subject)] : []),
+      ladder,
+    ];
   }
   const ids = [...new Set(agent?.domainKnowledge ?? [])];
   if (ids.length && !options.resolveSource)
@@ -91,10 +100,51 @@ export function roleSources(
     const source = options.resolveSource!(id, config);
     if (!source) throw Error(`Role ${role} domain knowledge source ${id} is missing or disabled`);
     return chunkSource(`${roleLayerId(role, slot)}#${id}`, config.sources[id]?.label ?? id, [
-      source,
+      attributed(source, `source-content:${id}`),
     ]);
   });
   return [...settings, ladder];
+}
+
+/** A role's settings prompt: one part attributed to the setting it came from (per project when the project defines the agent). */
+function promptSource(
+  id: string,
+  text: string,
+  subject: (projectId?: string) => string,
+  projectId?: string,
+): ContextSource {
+  return {
+    id,
+    bind: (scope) => promptSource(id, text, subject, scope.projectId),
+    async load() {
+      return text;
+    },
+    segments: () => [{ subject: subject(projectId), text }],
+  };
+}
+
+/** A configured source as one part, `subject`, unless it attributes its own text; per-message when focusable. */
+function attributed(source: ContextSource, subject: string): ContextSource {
+  let last: string | undefined;
+  return {
+    id: source.id,
+    ...(source.focusable ? { focusable: true } : {}),
+    ...(source.changed ? { changed: () => source.changed!() } : {}),
+    ...(source.report ? { report: () => source.report!() } : {}),
+    bind: (scope) => attributed(source.bind ? source.bind(scope) : source, subject),
+    async load(hint) {
+      last = await source.load(hint);
+      return last;
+    },
+    segments: () => {
+      if (last === undefined) return undefined;
+      const own = source.segments?.();
+      if (own && segmentsText(own) === last) return own;
+      return last
+        ? [{ subject, text: last, ...(source.focusable ? { retrieved: true } : {}) }]
+        : [];
+    },
+  };
 }
 
 /** Every live role layer, so a written role file can reach the next turn (`invalidateComposition`). */
@@ -171,6 +221,7 @@ export function chunkSource(
   heading: string | undefined,
   sources: ContextSource[],
 ): ContextSource {
+  let loaded: { parts: string[]; out: string } | undefined;
   return {
     id,
     focusable: sources.some((source) => source.focusable),
@@ -185,7 +236,28 @@ export function chunkSource(
       const parts: string[] = [];
       for (const source of sources) parts.push(await source.load(hint));
       const text = parts.filter((part) => part.trim()).join('\n\n');
-      return text && heading ? `## ${heading}\n\n${text}` : text;
+      const out = text && heading ? `## ${heading}\n\n${text}` : text;
+      loaded = { parts, out };
+      return out;
+    },
+    segments() {
+      if (!loaded) return undefined;
+      const out: SourceSegment[] = [];
+      loaded.parts.forEach((part, i) => {
+        if (!part.trim()) return;
+        if (out.length) out.push('\n\n');
+        const source = sources[i]!;
+        const own = source.segments?.();
+        if (own && segmentsText(own) === part) out.push(...own);
+        else
+          out.push({
+            subject: `unattributed:${source.id}`,
+            text: part,
+            ...(source.focusable ? { retrieved: true } : {}),
+          });
+      });
+      if (out.length && heading) out.unshift(`## ${heading}\n\n`);
+      return segmentsText(out) === loaded.out ? out : undefined;
     },
     report() {
       const reports = sources

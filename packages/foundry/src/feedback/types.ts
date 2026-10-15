@@ -103,6 +103,8 @@ export interface FeedbackApplyRecord {
   readonly line: string;
   readonly beforeHash: string;
   readonly afterHash: string;
+  /** The file's version in the audit log that this change produced. */
+  readonly sourceVersionId?: string;
 }
 
 export type FeedbackRecord =

@@ -16,6 +16,7 @@
 
 import {
   type CompletionOpts,
+  type CompositionSnapshot,
   ContextLayer,
   computeHash,
   type LLMMessage,
@@ -24,6 +25,8 @@ import {
   type ServedModel,
   type Signal,
   type SignalBus,
+  type SourceSegment,
+  segmentsText,
   servedModel,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
@@ -57,6 +60,8 @@ export interface AdviseOpts {
   cache?: string;
   /** Frozen revision of this domain's own understanding of the thread. */
   threadKnowledge?: string;
+  /** What `cache` was composed of, frozen with it (`ContextLayer.segments()`). */
+  cacheSegments?: readonly SourceSegment[];
   /**
    * Observes the exact messages supplied to the provider for this call, once, synchronously,
    * before the call is made. Scoped to this invocation: a caller attributes it to one participant
@@ -75,6 +80,8 @@ export interface PhaseRequestEvidence {
   readonly providerId: string;
   readonly messages: readonly LLMMessage[];
   readonly capturedAt: number;
+  /** What the call's instructions and domain knowledge were composed of (in memory; journalled as version ids). */
+  readonly composition?: CompositionSnapshot;
 }
 /** Advice-phase request evidence: the advice observer's payload. */
 export type AdviceRequestEvidence = PhaseRequestEvidence & { readonly phase: 'advice' };
@@ -83,11 +90,13 @@ function frozenRequest(
   phase: PhaseRequestEvidence['phase'],
   providerId: string,
   messages: LLMMessage[],
+  composition?: CompositionSnapshot,
 ): PhaseRequestEvidence {
   return Object.freeze({
     phase,
     providerId,
     capturedAt: Date.now(),
+    ...(composition ? { composition } : {}),
     messages: Object.freeze(
       messages.map((m) => Object.freeze({ role: m.role, content: m.content })),
     ),
@@ -98,6 +107,8 @@ function frozenRequest(
 export interface ReviewOpts {
   /** Observes the exact messages supplied to the review provider, once, before the call. Invocation-scoped. */
   observeRequest?: (request: PhaseRequestEvidence) => void;
+  /** What the job's segments were composed of, captured when the job was admitted (`composition('review')`). */
+  composition?: CompositionSnapshot;
 }
 
 // ---------------------------------------------------------------------------
@@ -928,6 +939,39 @@ export class DomainLibrarian {
     };
   }
 
+  /**
+   * What a phase's instructions and domain knowledge are composed of right now: the role's composed
+   * slots, attributed part by part (`ContextLayer.segments()`). Pass the frozen domain knowledge
+   * (and its segments) a call was given when it differs from the live cache.
+   */
+  composition(
+    phase: 'advise' | 'guard' | 'review',
+    frozen?: { cache: string; segments?: readonly SourceSegment[] },
+  ): CompositionSnapshot {
+    const phasePrompt =
+      phase === 'advise'
+        ? this._advisePrompt
+        : phase === 'guard'
+          ? this._guardPrompt
+          : this._reviewPrompt;
+    const instructionsText = this._system(phasePrompt);
+    const instructions =
+      this._instructions?.content === instructionsText && instructionsText
+        ? attributedAs(
+            instructionsText,
+            this._instructions.segments(),
+            `layer-content:${this._instructions.id}`,
+          )
+        : attributedAs(instructionsText, [], `prompt:builtin:${this._role}.${phase}`);
+    const cache = frozen?.cache ?? this._cache.content;
+    const domainKnowledge = attributedAs(
+      cache,
+      frozen ? (frozen.segments ?? []) : this._cache.segments(),
+      `layer-content:${this._cache.id}`,
+    );
+    return { role: this._role, instructions, domainKnowledge };
+  }
+
   get reviewOptions(): CompletionOpts {
     return structuredClone(this._reviewOpts);
   }
@@ -972,6 +1016,7 @@ export class DomainLibrarian {
       },
       nativeObservation,
       opts?.observeRequest,
+      opts?.composition,
     );
     return { ...result, capacity, admission };
   }
@@ -983,6 +1028,7 @@ export class DomainLibrarian {
     admit: (value: 'not-admitted' | 'attempted' | 'unknown') => void,
     nativeObservation?: import('@inixiative/foundry-core').NativeObservation,
     observe?: (request: PhaseRequestEvidence) => void,
+    composition?: CompositionSnapshot,
   ): Promise<ReviewResult> {
     const context = job?.segments ?? this.reviewContext();
     if (context.threadKnowledge.length > this._threadKnowledge.maxChars)
@@ -1060,7 +1106,14 @@ export class DomainLibrarian {
     ];
 
     // The exact input, frozen before the provider sees it. Reported to the invocation's observer only.
-    observe?.(frozenRequest('review', this._reviewLlm.id, messages));
+    observe?.(
+      frozenRequest(
+        'review',
+        this._reviewLlm.id,
+        messages,
+        composition ?? (job ? undefined : this.composition('review')),
+      ),
+    );
 
     let raw: string;
     settle('unknown');
@@ -1179,6 +1232,12 @@ export class DomainLibrarian {
     const system = this.advisePrompt;
     const over = this.budgetError(system, cacheContent);
     if (over) return { layers: [], snippets: [], confidence: 0, error: over };
+    const composition = this.composition(
+      'advise',
+      opts?.cache !== undefined
+        ? { cache: cacheContent, ...(opts.cacheSegments ? { segments: opts.cacheSegments } : {}) }
+        : undefined,
+    );
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
@@ -1205,7 +1264,7 @@ export class DomainLibrarian {
     // The exact input, frozen before the provider sees it. Text only: no transport, session or
     // credential state exists here to leak. What the provider then did is reported separately.
     opts?.observeRequest?.(
-      frozenRequest('advice', this._llm.id, messages) as AdviceRequestEvidence,
+      frozenRequest('advice', this._llm.id, messages, composition) as AdviceRequestEvidence,
     );
 
     let content: string;
@@ -1337,7 +1396,12 @@ export class DomainLibrarian {
     ];
 
     // The exact input, frozen before the provider sees it; retained on every outcome below.
-    const evidence = frozenRequest('guard', this._llm.id, messages);
+    const evidence = frozenRequest(
+      'guard',
+      this._llm.id,
+      messages,
+      this.composition('guard', { cache: cacheContent, segments: this._cache.segments() }),
+    );
     opts?.observeRequest?.(evidence);
     let request: ParticipantRequest = { status: 'supplied', ...evidence };
 
@@ -1655,4 +1719,14 @@ export function validateAdviceResponse(content: unknown): AdviseResult | { error
       error: `advice response contributes nothing; answer ${NO_COMMENT} when there is nothing to add`,
     };
   return { layers: value.layers, snippets, confidence: value.confidence };
+}
+
+/** `segments` when they compose exactly `text`; otherwise `text` as one part, `subject`. */
+function attributedAs(
+  text: string,
+  segments: readonly SourceSegment[],
+  subject: string,
+): readonly SourceSegment[] {
+  if (segments.length && segmentsText(segments) === text) return segments;
+  return text ? [{ subject, text }] : [];
 }

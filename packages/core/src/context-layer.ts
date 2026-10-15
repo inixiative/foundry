@@ -109,7 +109,43 @@ export interface ContextSource {
    * Must be cheap: it runs before every assembly.
    */
   changed?(): boolean;
+  /**
+   * What the last load was made of, in order: glue text and attributed parts whose concatenation is
+   * exactly the loaded text. Absent when the source cannot attribute its text.
+   */
+  segments?(): readonly SourceSegment[] | undefined;
 }
+
+/**
+ * One attributed piece of composed text. `subject` names where it came from (`file:<path>`,
+ * `prompt:agent:<id>`, `source-content:<id>`). `retrieved` marks text chosen per message (it is not
+ * a slow-moving source). `raw` is the source's own text when the composed `text` is a cleaned or
+ * trimmed form of it (comments stripped, a duplicate section removed).
+ */
+export interface SourcePart {
+  readonly subject: string;
+  readonly text: string;
+  readonly retrieved?: boolean;
+  readonly raw?: string;
+  /** The ladder rung of a file part, and its corpus tier. */
+  readonly node?: string;
+  readonly tier?: string;
+}
+
+/** Glue text (headings, separators) or an attributed part. */
+export type SourceSegment = string | SourcePart;
+
+/** What a composed agent call was made of, slot by slot (in memory; persisted as version ids). */
+export interface CompositionSnapshot {
+  /** The role composed for (an agent id). */
+  readonly role?: string;
+  readonly instructions: readonly SourceSegment[];
+  readonly domainKnowledge: readonly SourceSegment[];
+}
+
+/** The text a segment list composes. */
+export const segmentsText = (segments: readonly SourceSegment[]): string =>
+  segments.map((segment) => (typeof segment === 'string' ? segment : segment.text)).join('');
 
 /** Selection provenance carried on a layer instance for inspection. */
 export interface LayerSelectionState {
@@ -320,6 +356,8 @@ export class ContextLayer {
   readonly perTurn: boolean;
 
   private _content: string = '';
+  /** Each source's text from the last warm, in source order; undefined after a manual `set`. */
+  private _loaded: string[] | undefined;
   private _state: LayerState = 'cold';
   private _hash: string = '';
   private _lastWarmed: number | null = null;
@@ -496,6 +534,32 @@ export class ContextLayer {
     return this._content;
   }
 
+  /**
+   * What the current content is made of: each source's segments (or the source's whole text as one
+   * part, `unattributed:<source id>`, when it cannot attribute it), joined as the content was. Content written with
+   * `set` is one part, `layer-content:<id>`. Concatenated, always exactly `content`.
+   */
+  segments(): SourceSegment[] {
+    const whole = (): SourceSegment[] =>
+      this._content ? [{ subject: `layer-content:${this.id}`, text: this._content }] : [];
+    const loaded = this._loaded;
+    if (!loaded || loaded.length !== this._sources.length) return whole();
+    const out: SourceSegment[] = [];
+    loaded.forEach((text, i) => {
+      if (i > 0) out.push('\n\n');
+      const source = this._sources[i]!;
+      const own = source.segments?.();
+      if (own && segmentsText(own) === text) out.push(...own);
+      else if (text)
+        out.push({
+          subject: `unattributed:${source.id}`,
+          text,
+          ...(source.focusable ? { retrieved: true } : {}),
+        });
+    });
+    return segmentsText(out) === this._content ? out : whole();
+  }
+
   get lastAccessed(): number | null {
     return this._lastAccessed;
   }
@@ -595,6 +659,7 @@ export class ContextLayer {
         }
 
         this._content = parts.join('\n\n');
+        this._loaded = parts;
         this._hash = computeHash(this._content);
         this._version = undefined; // even identical unversioned source bytes are a new write
         this._selection = reports.length
@@ -632,6 +697,7 @@ export class ContextLayer {
   set(content: string, author: string = 'system'): void {
     const previous = this._content;
     this._content = content;
+    this._loaded = undefined;
     this._hash = computeHash(content);
     this._selection = undefined; // manual content has no selection provenance
     this._version = undefined; // a new write carries no version until its owner marks it

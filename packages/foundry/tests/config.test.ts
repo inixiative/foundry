@@ -267,7 +267,7 @@ describe('ConfigStore persistence', () => {
   test('a failed write leaves live and persisted config unchanged', async () => {
     const live = store.config,
       disk = readFileSync(join(dir, 'settings.json'), 'utf8'),
-      history = readFileSync(join(dir, 'settings-history.jsonl'), 'utf8'),
+      history = readFileSync(join(dir, 'audit.jsonl'), 'utf8'),
       revision = store.revision;
     chmodSync(dir, 0o500);
     await expect(store.patch('defaults', { model: 'unwritten' })).rejects.toThrow();
@@ -282,8 +282,8 @@ describe('ConfigStore persistence', () => {
     expect(store.config.layers.system.prompt).toBe('System layer');
     expect(store.revision).toBe(revision);
     expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe(disk);
-    expect(readdirSync(dir).sort()).toEqual(['settings-history.jsonl', 'settings.json']);
-    expect(readFileSync(join(dir, 'settings-history.jsonl'), 'utf8')).toBe(history);
+    expect(readdirSync(dir).sort()).toEqual(['audit.jsonl', 'settings.json']);
+    expect(readFileSync(join(dir, 'audit.jsonl'), 'utf8')).toBe(history);
   });
 
   test('concurrent mutations apply in order against the latest committed config', async () => {

@@ -2056,6 +2056,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // A composition over the role's budget is a configuration error, reported per review; the lane
     // stays open so a settings change (a raised budget, an opt-out) takes effect on the next one.
     const segments = lib.reviewContext();
+    // Captured with the segments: what they are composed of (journalled as version ids).
+    const composition = lib.composition('review');
     const over = lib.budgetError(segments.instructions, segments.domainKnowledge);
     if (over) {
       await this._emitLearning(
@@ -2131,6 +2133,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             providerId: reviewRequest.providerId,
             messages: reviewRequest.messages,
             capturedAt: reviewRequest.capturedAt,
+            ...(reviewRequest.composition ? { composition: reviewRequest.composition } : {}),
           }
         : { status: 'not-sent', phase: 'review', reason: 'review call not started' };
     const record = (
@@ -2343,6 +2346,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             },
           },
           {
+            composition,
             observeRequest: (evidence) => {
               reviewRequest = evidence;
               // Durable before the answer or any deadline: the exact request under the job's own identity. This

@@ -47,6 +47,7 @@ import {
   type ServedModel,
   type Signal,
   type SignalBus,
+  type SourceSegment,
 } from '@inixiative/foundry-core';
 
 import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
@@ -346,6 +347,8 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
 interface Participant {
   lib: DomainLibrarian;
   cache: string;
+  /** What `cache` is composed of, frozen with it. */
+  cacheSegments: readonly SourceSegment[];
   cacheHash: string;
   cacheState: LayerState;
   cacheLastWarmed: number | null;
@@ -516,6 +519,7 @@ export class FlowOrchestrator {
     const participants: Participant[] = [...this._domains.values()].map((lib) => ({
       lib,
       cache: lib.cache.content,
+      cacheSegments: lib.cache.segments(),
       cacheHash: lib.cache.hash,
       cacheState: lib.cache.checkStaleness(),
       cacheLastWarmed: lib.cache.lastWarmed,
@@ -668,6 +672,7 @@ export class FlowOrchestrator {
             messages: observed.messages,
             capturedAt: observed.capturedAt,
             ...(served ? { served } : {}),
+            ...(observed.composition ? { composition: observed.composition } : {}),
           }
         : {
             status: 'not-sent',
@@ -703,6 +708,7 @@ export class FlowOrchestrator {
     const task = p.lib
       .advise(input.message, input.threadState, {
         cache: p.cache,
+        cacheSegments: p.cacheSegments,
         threadKnowledge: p.threadKnowledge,
         observeRequest: (evidence) => {
           observed = evidence;

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   type ActionQueue,
   type ActionResolution,
@@ -9,6 +10,7 @@ import {
   type Thread,
 } from '@inixiative/foundry-core';
 import type { Cartographer } from '../agents/cartographer';
+import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { FoundryConfig } from '../viewer/config';
@@ -64,6 +66,8 @@ export interface FeedbackServiceDeps {
   roots: (thread: Thread) => LevelRoots;
   /** A lifecycle item changed. */
   changed?: (item: FeedbackItem) => void;
+  /** Foundry's audit log: each written or removed line is a version of its file, caused by the item. */
+  audit?: AuditLog;
   log?: (message: string) => void;
 }
 
@@ -348,12 +352,27 @@ export class FeedbackService {
     if (!last || last.storedAt < since) return false;
     const marker = ruleMarker(item.id);
     const participants =
-      (last.record as { participants?: Array<{ domain?: string; segments?: unknown }> })
-        .participants ?? [];
-    return participants.some(
-      (p) =>
-        !!p.domain && domains.has(p.domain) && JSON.stringify(p.segments ?? '').includes(marker),
-    );
+      (
+        last.record as {
+          participants?: Array<{
+            domain?: string;
+            segments?: unknown;
+            request?: { versions?: { instructions?: string; domainKnowledge?: string } };
+          }>;
+        }
+      ).participants ?? [];
+    // Exposure is read from the versions a call was composed of; segment text where it was recorded.
+    const holding = this.deps.store.compositionsHolding(marker);
+    return participants.some((p) => {
+      if (!p.domain || !domains.has(p.domain)) return false;
+      const versions = p.request?.versions;
+      if (
+        versions &&
+        [versions.instructions, versions.domainKnowledge].some((id) => !!id && holding.has(id))
+      )
+        return true;
+      return JSON.stringify(p.segments ?? '').includes(marker);
+    });
   }
 
   /** The three lines a tuning prompt shows: what happened, what we did, what we intend. */
@@ -551,7 +570,7 @@ export class FeedbackService {
         )
       )
         continue;
-      const record = applyChange({
+      const applied = applyChange({
         itemId: item.id,
         changeId: newId('chg'),
         statement: item.statement,
@@ -560,6 +579,7 @@ export class FeedbackService {
         level: target.level,
         roots,
       });
+      const record = this.audited(applied);
       this.journal(thread, turnId, { phase: 'feedback-apply', record });
       this.deps.invalidate(role, thread.id);
     }
@@ -584,10 +604,25 @@ export class FeedbackService {
       beforeHash: '',
       afterHash: '',
     };
-    const { found: _found, ...record } = revertChange(applied);
+    const { found, ...reverted } = revertChange(applied);
+    const record = found ? this.audited(reverted) : reverted;
     this.journal(thread, null, { phase: 'feedback-revert', record });
     this.deps.invalidate(change.role, thread.id);
     return item;
+  }
+
+  /** The change as a version of its file in the audit log (actor: the feedback item). */
+  private audited(record: FeedbackApplyRecord): FeedbackApplyRecord {
+    if (!this.deps.audit) return record;
+    const version = this.deps.audit.observe(
+      `file:${record.path}`,
+      readFileSync(record.path, 'utf8'),
+      {
+        actor: { kind: 'feedback', id: record.itemId },
+        cause: { feedbackItemId: record.itemId, changeId: record.changeId },
+      },
+    );
+    return { ...record, sourceVersionId: version.id };
   }
 
   /** Calls since each active change that had the rule in front of a Warden (exposure), newest last. */

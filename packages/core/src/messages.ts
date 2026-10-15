@@ -1,4 +1,8 @@
-import type { LayerInstanceState, LogicalMessageIdentity } from './context-layer';
+import type {
+  CompositionSnapshot,
+  LayerInstanceState,
+  LogicalMessageIdentity,
+} from './context-layer';
 import { computeHash } from './context-layer';
 import type { AssembledContext, PromptBlock } from './context-stack';
 import type { ServedModel } from './native-evidence';
@@ -55,6 +59,8 @@ export type ParticipantRequest =
       readonly capturedAt: number;
       /** The model and effort that answered, when the provider answered before the phase sealed. */
       readonly served?: ServedModel;
+      /** What the call's instructions and domain knowledge were composed of; the journal stores version ids for it. */
+      readonly composition?: CompositionSnapshot;
     }
   | { readonly status: 'not-sent'; readonly phase: string; readonly reason: string }
   /** A call may have been made, but its input was never observed (e.g. the caller threw first). Not "not-sent". */
