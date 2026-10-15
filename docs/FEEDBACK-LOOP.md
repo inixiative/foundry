@@ -165,7 +165,7 @@ The org dir is the owner's directory that the composer already walks, for exampl
 
 This needs no new recording on the turn path. Every advice call already journals the exact composed `segments.instructions` and `segments.domainKnowledge` of each participant, together with its `decision` (`pf:agents/thread-runtime.ts:981-993`, `ContributionDecision` at `pf:agents/flow-orchestrator.ts:69-81`). Guard calls journal the same fields on `guard-request` rows. Two counts are derived from that:
 
-- **Exposure:** an `advice` or `guard-request` row after the apply whose participant segments contain `(fb_<id>)`. This is the denominator: the rule was in front of the Warden on that turn.
+- **Exposure:** an `advice` or `guard-request` row after the apply whose participant composition held `(fb_<id>)`. The row names its composition versions (`request.versions`, docs/THREAD-TREE.md spec B), and a version holds the marker when one of its parts' text does (`LocalSessionStore.compositionsHolding`). Rows that still carry segment text match on the text too. This is the denominator: the rule was in front of the Warden on that turn. Each `feedback-apply` / `feedback-revert` record names the file version it produced (`sourceVersionId`; actor: the feedback item).
 - **Citation:** that participant contributed (`decision: "contribute"`), and its snippets or guard notes contain `fb_<id>`. One response-protocol line is added to advise and guard: "When a numbered rule (fb_…) drives what you say, cite its id." This is the "this Warden chimed in with…" evidence, and the lifecycle view links the turn.
 
 A rule that has many exposures and no citations is dead weight in that Warden's context. The view flags it for a retire decision (section 3, "Supersede, revoke, retire").

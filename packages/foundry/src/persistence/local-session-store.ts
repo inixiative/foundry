@@ -15,6 +15,7 @@ import {
 } from '@inixiative/foundry-core';
 import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
+import type { CompositionBody } from '../audit/compositions';
 import { type CheckpointImport, checkpointSpans } from './checkpoint-import';
 import {
   type ContentStore,
@@ -331,7 +332,7 @@ export class LocalSessionStore {
       // Hold the file lock until close: a second viewer must not recover live turns.
       this.db.exec('PRAGMA busy_timeout=1000; PRAGMA locking_mode=EXCLUSIVE;');
       const version = this.query('PRAGMA user_version').get() as { user_version: number };
-      if (version.user_version > 4)
+      if (version.user_version > 5)
         throw new Error(`Unsupported session store version: ${version.user_version}`);
       this.db.exec(`
       PRAGMA journal_mode = WAL;
@@ -397,7 +398,12 @@ export class LocalSessionStore {
         parent TEXT NOT NULL, child TEXT NOT NULL, PRIMARY KEY(parent, child)
       );
       CREATE INDEX IF NOT EXISTS session_content_ref_child ON session_content_ref(child);
-      PRAGMA user_version = 4;
+      CREATE TABLE IF NOT EXISTS composition_version (
+        id TEXT PRIMARY KEY, role TEXT NOT NULL, slot TEXT NOT NULL, key TEXT NOT NULL UNIQUE,
+        parts_hash TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS composition_version_parts ON composition_version(parts_hash);
+      PRAGMA user_version = 5;
     `);
     } catch (error) {
       this.closeDatabase();
@@ -770,6 +776,77 @@ export class LocalSessionStore {
    * Advice and guard-request rows stored at or after `since` whose recorded input contains `marker`: the
    * calls that had a feedback rule in front of a Warden. Roles are the participants whose segments hold it.
    */
+  /** Store text in the content store; returns its hash. */
+  putContent(text: string): string {
+    return this.content.put(text);
+  }
+
+  /** Text stored under `hash` (throws when it is missing). */
+  contentText(hash: string): string {
+    return this.content.get(hash);
+  }
+
+  /**
+   * The composition version with exactly these parts (written once): its id. Parts name their
+   * source version and the hash of the text it contributed, so the text and its provenance stay
+   * reachable from the version (`session_content_ref`).
+   */
+  compositionVersion(role: string, slot: string, body: CompositionBody): string {
+    const { parts } = body;
+    const json = JSON.stringify(body);
+    const key = contentHash(JSON.stringify([role, slot, json]));
+    const found = this.query('SELECT id FROM composition_version WHERE key=?').get(key) as {
+      id: string;
+    } | null;
+    if (found) return found.id;
+    const partsHash = this.content.put(
+      json,
+      parts.flatMap((part) => ('text' in part ? [part.text] : [])),
+    );
+    const id = `cv_${Bun.randomUUIDv7()}`;
+    this.query(
+      'INSERT INTO composition_version(id, role, slot, key, parts_hash, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING',
+    ).run(id, role, slot, key, partsHash, Date.now());
+    return (this.query('SELECT id FROM composition_version WHERE key=?').get(key) as { id: string })
+      .id;
+  }
+
+  getCompositionVersion(
+    id: string,
+  ): (CompositionBody & { id: string; role: string; slot: string; createdAt: number }) | null {
+    const row = this.query(
+      'SELECT id, role, slot, parts_hash, created_at FROM composition_version WHERE id=?',
+    ).get(id) as {
+      id: string;
+      role: string;
+      slot: string;
+      parts_hash: string;
+      created_at: number;
+    } | null;
+    if (!row) return null;
+    return {
+      id: row.id,
+      role: row.role,
+      slot: row.slot,
+      ...(JSON.parse(this.content.get(row.parts_hash)) as CompositionBody),
+      createdAt: row.created_at,
+    };
+  }
+
+  /** Composition versions one of whose parts' text holds `marker` (a feedback rule's `(fb_…)`). */
+  compositionsHolding(marker: string, holding = this.contentHolding(marker)): Set<string> {
+    const ids = new Set<string>();
+    if (!holding.size) return ids;
+    for (const row of this.query(
+      'SELECT id, parts_hash FROM composition_version',
+    ).iterate() as Iterable<{
+      id: string;
+      parts_hash: string;
+    }>)
+      if (holding.has(row.parts_hash)) ids.add(row.id);
+    return ids;
+  }
+
   phasesContaining(
     marker: string,
     since: number,
@@ -784,6 +861,8 @@ export class LocalSessionStore {
     // Composed input is stored by reference: a row matches when it holds the marker inline, or a
     // reference that leads, through section lists and nested records, to content holding it.
     const holding = this.contentHolding(marker);
+    const held = this.compositionsHolding(marker, holding);
+    const compositions = [...held];
     const rows: Array<{
       thread_id: string;
       turn_id: string | null;
@@ -797,7 +876,8 @@ export class LocalSessionStore {
     ).iterate(since) as Iterable<(typeof rows)[number]>) {
       if (
         row.record.includes(marker) ||
-        referencedHashes(row.record).some((hash) => holding.has(hash))
+        referencedHashes(row.record).some((hash) => holding.has(hash)) ||
+        compositions.some((id) => row.record.includes(id))
       )
         rows.push(row);
       if (rows.length >= limit) break;
@@ -807,21 +887,36 @@ export class LocalSessionStore {
     return rows
       .reverse()
       .map((row) => {
+        type Versions = { instructions?: string; domainKnowledge?: string };
         const record = this.decode<{
           domain?: string;
-          request?: { messages?: Array<{ role?: string; content?: unknown }> };
-          participants?: Array<{ domain?: string; segments?: unknown }>;
+          request?: { messages?: Array<{ role?: string; content?: unknown }>; versions?: Versions };
+          participants?: Array<{
+            domain?: string;
+            segments?: unknown;
+            request?: { versions?: Versions };
+          }>;
         }>(row.record);
+        // A call names the composition versions it was made of; one holding the marker is exposure.
+        const composed = (versions?: Versions) =>
+          !!versions &&
+          [versions.instructions, versions.domainKnowledge].some((id) => !!id && held.has(id));
         const roles =
           row.phase === 'guard-request'
             ? record.domain &&
-              (record.request?.messages ?? []).some(
-                (m) => m.role === 'system' && JSON.stringify(m.content ?? '').includes(marker),
-              )
+              (composed(record.request?.versions) ||
+                (record.request?.messages ?? []).some(
+                  (m) => m.role === 'system' && JSON.stringify(m.content ?? '').includes(marker),
+                ))
               ? [record.domain]
               : []
             : (record.participants ?? [])
-                .filter((p) => p.domain && JSON.stringify(p.segments ?? '').includes(marker))
+                .filter(
+                  (p) =>
+                    p.domain &&
+                    (composed(p.request?.versions) ||
+                      JSON.stringify(p.segments ?? '').includes(marker)),
+                )
                 .map((p) => p.domain as string);
         return {
           threadId: row.thread_id,

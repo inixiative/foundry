@@ -116,6 +116,7 @@ export {
 } from './classifier';
 // Context primitives
 export {
+  type CompositionSnapshot,
   ContextLayer,
   type ContextLayerConfig,
   type ContextSource,
@@ -131,9 +132,13 @@ export {
   type LayerState,
   type LayerVersionMark,
   type LogicalMessageIdentity,
+  type OmittedSource,
   REQUIRED_CONTEXT_BLOCKED,
   type SourceLoadHint,
+  type SourcePart,
+  type SourceSegment,
   type SourceSelectionReport,
+  segmentsText,
   type VersionEntry,
   type VersionLog,
 } from './context-layer';

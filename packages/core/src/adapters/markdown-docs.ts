@@ -209,6 +209,8 @@ export interface InstructionFile {
   readonly path: string;
   /** Text with block-level HTML comments removed, as Claude Code injects it. */
   readonly content: string;
+  /** The file's text as read, when stripping comments changed it (`content` is the stripped form). */
+  readonly raw?: string;
   /** Import hops from the file the chain started at (0 for that file). */
   readonly depth: number;
   /** The file whose `@path` loaded this one. */
@@ -395,8 +397,15 @@ export async function readInstructionFile(
       return;
     }
     seen.add(real);
-    const content = stripInstructionComments(await Bun.file(real).text());
-    files.push({ path: file, content, depth, ...(importedBy ? { importedBy } : {}) });
+    const raw = await Bun.file(real).text();
+    const content = stripInstructionComments(raw);
+    files.push({
+      path: file,
+      content,
+      ...(raw !== content ? { raw } : {}),
+      depth,
+      ...(importedBy ? { importedBy } : {}),
+    });
     if (depth >= maxDepth) return;
     for (const target of instructionImports(content)) {
       const next = resolveInstructionImport(target, file, options.home);

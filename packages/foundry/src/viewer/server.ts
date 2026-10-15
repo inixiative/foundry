@@ -17,6 +17,7 @@ import { invalidateComposition } from '../agents/role-layers';
 import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
+import { CompositionAuditor } from '../audit/compositions';
 import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
@@ -290,6 +291,13 @@ export function createViewer(config: ViewerConfig) {
       void threadContext.observe(snapshot);
     });
   else for (const thread of directory.all()) void threadContext.refresh(thread.id);
+  const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
+  // Every Warden call journals the versions its instructions and domain knowledge were composed from.
+  const compositionAuditor = localStore
+    ? new CompositionAuditor(configStore.audit, localStore, {
+        settingsRevision: () => configStore.revision,
+      })
+    : undefined;
   const knowledgePersistence =
     localStore && config.threadFactory?.runtime
       ? new KnowledgePersistence(
@@ -297,6 +305,7 @@ export function createViewer(config: ViewerConfig) {
           localStore,
           eventStream,
           directory.all(),
+          compositionAuditor,
         )
       : null;
   app.get('/api/threads/:threadId/knowledge', (c) => {
@@ -326,7 +335,6 @@ export function createViewer(config: ViewerConfig) {
       streams.threadsChanged(thread.id);
     },
   });
-  const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
   // Feedback lifecycle: capture → tune → change, journalled; needs the journal and a decision provider.
   const feedbackProvider = config.feedbackProvider;
   const feedback: FeedbackService | null =
@@ -348,6 +356,7 @@ export function createViewer(config: ViewerConfig) {
           },
           roots: (thread) => feedbackRoots(thread, configStore.config),
           changed: (item) => streams.feedbackChanged(item),
+          audit: configStore.audit,
           log: (message) => log.warn(message),
         })
       : null;
