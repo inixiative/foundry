@@ -1385,6 +1385,19 @@ export class ConfigStore {
           settingsRow(subject, this._revision, before, after, author),
         ),
       );
+      // An agent's prompt is composed text too: its version is this edit, by this author.
+      for (const { subject, before, after } of changes) {
+        if (!subject.startsWith('agent:')) continue;
+        const prompt = (value: unknown) => (value as { prompt?: unknown } | undefined)?.prompt;
+        const next = prompt(after);
+        if (typeof next !== 'string' || !next.trim() || next === prompt(before)) continue;
+        const row = rows.find((r) => r.subject === subject)!;
+        AuditLog.for(this._dir).observe(`prompt:${subject}`, next, {
+          record: true,
+          actor: row.actor,
+          cause: row.cause,
+        });
+      }
     } catch (error) {
       console.warn(`[settings] audit not written: ${(error as Error).message}`);
     }

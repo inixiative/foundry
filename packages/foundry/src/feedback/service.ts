@@ -614,15 +614,22 @@ export class FeedbackService {
   /** The change as a version of its file in the audit log (actor: the feedback item). */
   private audited(record: FeedbackApplyRecord): FeedbackApplyRecord {
     if (!this.deps.audit) return record;
-    const version = this.deps.audit.observe(
-      `file:${record.path}`,
-      readFileSync(record.path, 'utf8'),
-      {
-        actor: { kind: 'feedback', id: record.itemId },
-        cause: { feedbackItemId: record.itemId, changeId: record.changeId },
-      },
-    );
-    return { ...record, sourceVersionId: version.id };
+    // The line is written: an audit failure is reported, never left as an unjournalled change.
+    try {
+      const version = this.deps.audit.observe(
+        `file:${record.path}`,
+        readFileSync(record.path, 'utf8'),
+        {
+          record: true,
+          actor: { kind: 'feedback', id: record.itemId },
+          cause: { feedbackItemId: record.itemId, changeId: record.changeId },
+        },
+      );
+      return { ...record, sourceVersionId: version.id };
+    } catch (error) {
+      this.deps.log?.(`feedback: audit of ${record.path} not written: ${(error as Error).message}`);
+      return record;
+    }
   }
 
   /** Calls since each active change that had the rule in front of a Warden (exposure), newest last. */

@@ -132,6 +132,7 @@ export {
   type LayerState,
   type LayerVersionMark,
   type LogicalMessageIdentity,
+  type OmittedSource,
   REQUIRED_CONTEXT_BLOCKED,
   type SourceLoadHint,
   type SourcePart,

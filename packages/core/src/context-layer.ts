@@ -141,6 +141,17 @@ export interface CompositionSnapshot {
   readonly role?: string;
   readonly instructions: readonly SourceSegment[];
   readonly domainKnowledge: readonly SourceSegment[];
+  /** What the composer left out of each slot, and why (excluded by role, a duplicate, refused, over budget). */
+  readonly omitted?: {
+    readonly instructions: readonly OmittedSource[];
+    readonly domainKnowledge: readonly OmittedSource[];
+  };
+}
+
+export interface OmittedSource {
+  readonly subject: string;
+  readonly reason: string;
+  readonly duplicateOf?: string;
 }
 
 /** The text a segment list composes. */

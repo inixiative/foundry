@@ -21,6 +21,7 @@ import {
   computeHash,
   type LLMMessage,
   type LLMProvider,
+  type OmittedSource,
   type ParticipantRequest,
   type ServedModel,
   type Signal,
@@ -60,8 +61,8 @@ export interface AdviseOpts {
   cache?: string;
   /** Frozen revision of this domain's own understanding of the thread. */
   threadKnowledge?: string;
-  /** What `cache` was composed of, frozen with it (`ContextLayer.segments()`). */
-  cacheSegments?: readonly SourceSegment[];
+  /** What `cache` was composed of and left out, frozen with it (`DomainLibrarian.cacheComposition()`). */
+  cacheComposition?: CacheComposition;
   /**
    * Observes the exact messages supplied to the provider for this call, once, synchronously,
    * before the call is made. Scoped to this invocation: a caller attributes it to one participant
@@ -764,6 +765,8 @@ export class DomainLibrarian {
   private _reviewOpts: CompletionOpts;
   private _guardTriggers!: Set<string>;
   private _advisePrompt!: string;
+  /** Whether the phase prompts came from the agent's settings (not the built-in fallback). */
+  private _promptFromSettings = false;
   private _guardPrompt!: string;
   private _programmaticGuard: boolean;
   private _guardFn?: (obs: ToolObservation, cache: string) => GuardFinding[];
@@ -825,6 +828,7 @@ export class DomainLibrarian {
   ): void {
     this._guardTriggers = new Set(config.guardTriggers ?? []);
     if (config.budget !== undefined) this._budget = config.budget;
+    this._promptFromSettings = config.advisePrompt !== undefined;
     this._advisePrompt =
       config.advisePrompt ??
       `You are a ${this.domain} domain advisor. Given a user message and your domain's warm cache, decide what context from your domain the message needs.`;
@@ -944,9 +948,14 @@ export class DomainLibrarian {
    * slots, attributed part by part (`ContextLayer.segments()`). Pass the frozen domain knowledge
    * (and its segments) a call was given when it differs from the live cache.
    */
+  /** What the domain knowledge cache is made of right now, and what its composer left out. */
+  cacheComposition(): CacheComposition {
+    return { segments: this._cache.segments(), omitted: omittedFrom(this._cache) };
+  }
+
   composition(
     phase: 'advise' | 'guard' | 'review',
-    frozen?: { cache: string; segments?: readonly SourceSegment[] },
+    frozen?: { cache: string; composition?: CacheComposition },
   ): CompositionSnapshot {
     const phasePrompt =
       phase === 'advise'
@@ -955,21 +964,36 @@ export class DomainLibrarian {
           ? this._guardPrompt
           : this._reviewPrompt;
     const instructionsText = this._system(phasePrompt);
-    const instructions =
-      this._instructions?.content === instructionsText && instructionsText
-        ? attributedAs(
-            instructionsText,
-            this._instructions.segments(),
-            `layer-content:${this._instructions.id}`,
-          )
-        : attributedAs(instructionsText, [], `prompt:builtin:${this._role}.${phase}`);
+    const fromLayer = !!instructionsText && this._instructions?.content === instructionsText;
+    const instructions = fromLayer
+      ? attributedAs(
+          instructionsText,
+          this._instructions!.segments(),
+          `layer-content:${this._instructions!.id}`,
+        )
+      : attributedAs(
+          instructionsText,
+          [],
+          // The phase prompt is the agent's settings prompt when settings gave one.
+          this._promptFromSettings
+            ? `prompt:agent:${this._role}`
+            : `prompt:builtin:${this._role}.${phase}`,
+        );
     const cache = frozen?.cache ?? this._cache.content;
     const domainKnowledge = attributedAs(
       cache,
-      frozen ? (frozen.segments ?? []) : this._cache.segments(),
+      frozen ? (frozen.composition?.segments ?? []) : this._cache.segments(),
       `layer-content:${this._cache.id}`,
     );
-    return { role: this._role, instructions, domainKnowledge };
+    return {
+      role: this._role,
+      instructions,
+      domainKnowledge,
+      omitted: {
+        instructions: fromLayer ? omittedFrom(this._instructions) : [],
+        domainKnowledge: frozen ? (frozen.composition?.omitted ?? []) : omittedFrom(this._cache),
+      },
+    };
   }
 
   get reviewOptions(): CompletionOpts {
@@ -1235,7 +1259,10 @@ export class DomainLibrarian {
     const composition = this.composition(
       'advise',
       opts?.cache !== undefined
-        ? { cache: cacheContent, ...(opts.cacheSegments ? { segments: opts.cacheSegments } : {}) }
+        ? {
+            cache: cacheContent,
+            ...(opts.cacheComposition ? { composition: opts.cacheComposition } : {}),
+          }
         : undefined,
     );
 
@@ -1400,7 +1427,7 @@ export class DomainLibrarian {
       'guard',
       this._llm.id,
       messages,
-      this.composition('guard', { cache: cacheContent, segments: this._cache.segments() }),
+      this.composition('guard', { cache: cacheContent, composition: this.cacheComposition() }),
     );
     opts?.observeRequest?.(evidence);
     let request: ParticipantRequest = { status: 'supplied', ...evidence };
@@ -1729,4 +1756,21 @@ function attributedAs(
 ): readonly SourceSegment[] {
   if (segments.length && segmentsText(segments) === text) return segments;
   return text ? [{ subject, text }] : [];
+}
+
+/** A domain knowledge cache's attribution, frozen with its content. */
+export interface CacheComposition {
+  readonly segments: readonly SourceSegment[];
+  readonly omitted: readonly OmittedSource[];
+}
+
+/** What a layer's composer left out at its last warm (a file path becomes its `file:` subject). */
+function omittedFrom(layer: ContextLayer | undefined): OmittedSource[] {
+  return (layer?.selection?.sources ?? []).flatMap(({ report }) =>
+    report.omitted.map((o) => ({
+      subject: o.id.startsWith('/') ? `file:${o.id}` : o.id,
+      reason: o.reason,
+      ...(o.duplicateOf ? { duplicateOf: o.duplicateOf } : {}),
+    })),
+  );
 }

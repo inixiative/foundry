@@ -292,17 +292,35 @@ And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden
 
 ## B.9 As built (2026-10-15)
 
-- **Where the rows live.** Source versions are lines in `<configDir>/audit.jsonl` (`pf/audit/audit-log.ts`), not a journal table. The journal database is held exclusively by the running Foundry, but settings are also edited by CLIs while it runs, and every writer must reach the one audit log. Composition versions are derived per machine, so they live in the journal (`composition_version`, store version 5), and their parts' text in `session_content`.
-- **`settings-history.jsonl` is folded in.** On first open its lines become settings rows (subject, revision, before/after, actor `user` or `external` for a hand edit of settings.json) and the file is removed. `ConfigStore.history()` and `GET /api/settings/history` read the audit log, and their output is unchanged.
-- **Subjects.** Settings definitions keep their subjects (`agent:<id>`, `source:<id>`, `layer:<id>`, `project:<id>`, `provider:<id>`, `settings:<key>`). Composed text has its own: `file:<realpath>` (the file as read, with comments), `prompt:agent:<role>[@project:<id>]`, `prompt:builtin:<role>`, `source-content:<id>`, `layer-content:<id>` / `unattributed:<source id>` (text that could not be attributed further) and `charter`.
-- **Capture.** A source can report what its last load was made of (`ContextSource.segments()`, `ContextLayer.segments()` in core). The role-layer chunks, the settings prompt, configured sources and the composition view (`slotSegments`, which `renderSlot` now uses) all do. A Warden call snapshots its slots at the call boundary (`DomainLibrarian.composition`, advice frozen with its cache). The phase and learning journals turn the snapshot into `versions` (`CompositionAuditor.versionRecord`), so composed text never lands in the journal through it.
+- **Where the rows live.** Source versions are lines in `<configDir>/audit.jsonl` (`pf/audit/audit-log.ts`), not a journal table. The journal database is held exclusively by the running Foundry, but settings are also edited by CLIs while it runs, and every writer must reach the one audit log.
+  - The in-memory index keeps rows without their text. `AuditLog.text(id)` reads the text from the file.
+  - Composition versions are derived per machine, so they live in the journal (`composition_version`, store version 5) with their parts' text in `session_content`. A version holds its parts and its omissions (what the composer left out, and why).
+- **`settings-history.jsonl` is a hard cut.** It is no longer written or read, and nothing migrates it. `ConfigStore.history()` and `GET /api/settings/history` read the audit log, in the same shape.
+- **Subjects.**
+  - Settings definitions keep their subjects (`agent:<id>`, `source:<id>`, `layer:<id>`, `project:<id>`, `provider:<id>`, `settings:<key>`).
+  - Composed text has its own:
+    - `file:<realpath>`: the file as read, with comments;
+    - `prompt:agent:<role>[@project:<id>]` and `prompt:builtin:<role>`;
+    - `source-content:<id>[@project:<id>]`;
+    - `layer-content:<id>` and `unattributed:<source id>`: text that could not be attributed further;
+    - `charter`.
+  - Captured memory (`file` sources) and archive retrieval are per-message text, stored raw with each call. They are never source changes.
+- **One version per text.** `observe` returns the subject's existing version when its text was seen before. A snapshot journalled after a later change therefore never logs a fake revert, and replaying a record yields the same ids. A reported change (`record: true`: a settings edit's prompt, a feedback apply or undo) always gets its own row.
+- **Capture.**
+  - A source can report what its last load was made of: `ContextSource.segments()` and `ContextLayer.segments()` in core.
+  - The role-layer chunks, the settings prompt, configured sources and the composition view all report it (`slotSegments`, which `renderSlot` now uses).
+  - A Warden call snapshots its slots and their omissions at the call boundary (`DomainLibrarian.composition`). Advice freezes it with its cache.
+  - The phase and learning journals turn the snapshot into `versions` (`CompositionAuditor.versionRecord`): `{charter, instructions, domainKnowledge, composedHash, retrieved?}`.
+  - The audit never blocks a Warden: on a failure, the call is journalled without versions and the error is reported.
 - **Actors and causes as written:**
-  - a settings edit: `user`, cause `settingsRevision`;
-  - a composed settings prompt or source text: `external`, `detected: on-read`, plus the `settingsRevision` it was read under (the edit row names the person);
+  - a settings edit (and its prompt): `user` (or `external` for a hand edit of settings.json), cause `settingsRevision`;
   - a feedback line: `feedback` (item id), cause `{feedbackItemId, changeId}`;
-  - a file changed outside Foundry: `external`, `detected: on-read`, plus `gitCommit` when the file is committed and clean;
+  - a file or source text changed outside Foundry: `external`, `detected: on-read`, plus `gitCommit` when the file is committed and clean (git is asked only when a new version is written);
   - the charter: `release`.
-- **Not yet:** A's compaction (segments and request messages are still journalled whole), Archive carrying the audit rows (B.8 question 1), and a viewer surface for a source's history.
+- **Not yet:**
+  - A's compaction: segments and request messages are still journalled whole.
+  - Archive carrying the audit rows (B.8 question 1).
+  - A viewer surface for a source's history.
 
 ## B.8 Open questions
 

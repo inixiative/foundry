@@ -1,15 +1,4 @@
-import {
-  appendFileSync,
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  readSync,
-  realpathSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-} from 'node:fs';
+import { appendFileSync, closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { computeHash, type VersionEntry, type VersionLog } from '@inixiative/foundry-core';
 import { contentHash } from '../persistence/journal-content';
@@ -68,6 +57,8 @@ export interface SourceVersion {
 export type SourceVersionInput = Omit<SourceVersion, 'id' | 'createdAt'> & { createdAt?: number };
 
 export interface ObserveOptions {
+  /** A reported change: always a new row when the text differs from the latest (an undo is a change). */
+  readonly record?: boolean;
   readonly actor?: AuditActor;
   readonly cause?: AuditCause;
   readonly node?: string;
@@ -75,7 +66,6 @@ export interface ObserveOptions {
 }
 
 const FILE = 'audit.jsonl';
-const LEGACY_SETTINGS_HISTORY = 'settings-history.jsonl';
 
 const logs = new Map<string, AuditLog>();
 
@@ -83,8 +73,9 @@ export class AuditLog {
   readonly path: string;
   private readonly byId = new Map<string, SourceVersion>();
   private readonly bySubject = new Map<string, SourceVersion[]>();
+  private readonly lines = new Map<string, { at: number; length: number }>();
   private offset = 0;
-  private pending = '';
+  private pending = Buffer.alloc(0);
 
   /** The log of a config directory, shared by everything in this process that writes there. */
   static for(dir: string): AuditLog {
@@ -99,7 +90,6 @@ export class AuditLog {
 
   private constructor(readonly dir: string) {
     this.path = join(dir, FILE);
-    this.importSettingsHistory();
   }
 
   /** Every row, oldest first; one subject's when given. */
@@ -130,9 +120,13 @@ export class AuditLog {
         createdAt: input.createdAt ?? Date.now(),
       }),
     );
-    appendFileSync(this.path, rows.map((row) => `${JSON.stringify(row)}\n`).join(''), {
-      mode: 0o600,
-    });
+    // A writer that died mid-line leaves no newline: start on a fresh line so this row is readable.
+    const torn = this.endsTorn();
+    appendFileSync(
+      this.path,
+      (torn ? '\n' : '') + rows.map((row) => `${JSON.stringify(row)}\n`).join(''),
+      { mode: 0o600 },
+    );
     this.refresh();
     return rows;
   }
@@ -148,6 +142,13 @@ export class AuditLog {
     const hash = contentHash(text);
     const latest = this.latest(key);
     if (latest?.afterHash === hash) return latest;
+    // A text the subject already had is that version: a snapshot read before a later change (a
+    // review admitted before a feedback line, a slower thread) is never logged as a revert. Only a
+    // reported change (`record`) appends a row for text the subject had before.
+    if (!options.record) {
+      const known = this.rows(key).findLast((row) => row.afterHash === hash);
+      if (known) return known;
+    }
     const actor = options.actor ?? { kind: 'external' };
     const commit =
       actor.kind === 'external' && key.startsWith('file:') ? committedAs(key.slice(5)) : undefined;
@@ -181,7 +182,7 @@ export class AuditLog {
         entries: [],
       };
       const entry: VersionEntry<{ before: unknown; after: unknown }> = {
-        hash: row.afterHash ?? computeHash('null'),
+        hash: row.afterHash ?? computeHash(JSON.stringify(null)),
         timestamp: new Date(row.createdAt).toISOString(),
         trigger: 'settings',
         author: row.actor.kind === 'external' ? 'file' : (row.actor.id ?? row.actor.kind),
@@ -191,6 +192,24 @@ export class AuditLog {
       logs.set(row.subject, log);
     }
     return [...logs.values()];
+  }
+
+  private endsTorn(): boolean {
+    let size: number;
+    try {
+      size = statSync(this.path).size;
+    } catch {
+      return false;
+    }
+    if (!size) return false;
+    const fd = openSync(this.path, 'r');
+    try {
+      const last = Buffer.alloc(1);
+      readSync(fd, last, 0, 1, size - 1);
+      return last[0] !== 0x0a;
+    } finally {
+      closeSync(fd);
+    }
   }
 
   /** Read whatever other writers (another Foundry process, a CLI) appended since the last read. */
@@ -204,83 +223,61 @@ export class AuditLog {
     if (size < this.offset) {
       // Truncated or replaced: read it again from the start.
       this.offset = 0;
-      this.pending = '';
+      this.pending = Buffer.alloc(0);
       this.byId.clear();
       this.bySubject.clear();
+      this.lines.clear();
     }
     if (size === this.offset) return;
     const fd = openSync(this.path, 'r');
     try {
-      const buffer = Buffer.alloc(size - this.offset);
-      readSync(fd, buffer, 0, buffer.length, this.offset);
+      const fresh = Buffer.alloc(size - this.offset);
+      readSync(fd, fresh, 0, fresh.length, this.offset);
+      const buffer = Buffer.concat([this.pending, fresh]);
+      let start = this.offset - this.pending.length;
       this.offset = size;
-      const text = this.pending + buffer.toString('utf8');
-      const lines = text.split('\n');
-      this.pending = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      let from = 0;
+      for (let nl = buffer.indexOf(0x0a, from); nl !== -1; nl = buffer.indexOf(0x0a, from)) {
+        const line = buffer.subarray(from, nl);
+        const at = start;
+        start += nl - from + 1;
+        from = nl + 1;
+        if (!line.length) continue;
         let row: SourceVersion;
         try {
-          row = JSON.parse(line) as SourceVersion;
+          row = JSON.parse(line.toString('utf8')) as SourceVersion;
         } catch {
-          continue; // a torn line from an interrupted append
+          console.warn(`[audit] unreadable line at byte ${at} of ${this.path}`);
+          continue;
         }
         if (this.byId.has(row.id)) continue;
-        this.byId.set(row.id, row);
+        // Text stays on disk: the index keeps where to read it.
+        const { content, ...indexed } = row;
+        if (content !== undefined) this.lines.set(row.id, { at, length: line.length });
+        this.byId.set(row.id, indexed);
         const list = this.bySubject.get(row.subject) ?? [];
-        list.push(row);
+        list.push(indexed);
         this.bySubject.set(row.subject, list);
       }
+      this.pending = Buffer.from(buffer.subarray(from));
     } finally {
       closeSync(fd);
     }
   }
 
-  /**
-   * The settings history Foundry kept before this log: its lines become settings rows here and the
-   * old file is removed, so there is one audit log. One process does it (the rename is the claim).
-   */
-  private importSettingsHistory(): void {
-    const legacy = join(this.dir, LEGACY_SETTINGS_HISTORY);
-    if (!existsSync(legacy)) return;
-    const claimed = `${legacy}.importing-${process.pid}`;
+  /** A text subject's text at a version (read from the log; the index does not hold text). */
+  text(id: string): string | undefined {
+    this.refresh();
+    const where = this.lines.get(id);
+    if (!where) return undefined;
+    const fd = openSync(this.path, 'r');
     try {
-      renameSync(legacy, claimed);
-    } catch {
-      return;
+      const line = Buffer.alloc(where.length);
+      readSync(fd, line, 0, where.length, where.at);
+      return (JSON.parse(line.toString('utf8')) as SourceVersion).content;
+    } finally {
+      closeSync(fd);
     }
-    const rows: SourceVersionInput[] = [];
-    for (const line of readFileSync(claimed, 'utf8').split('\n')) {
-      if (!line.trim()) continue;
-      let edit: {
-        subject: string;
-        revision: number;
-        entry: {
-          hash: string;
-          timestamp: string;
-          author: string;
-          snapshot: { before: unknown; after: unknown };
-        };
-      };
-      try {
-        edit = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const { before, after } = edit.entry.snapshot;
-      rows.push(
-        settingsRow(
-          edit.subject,
-          edit.revision,
-          before,
-          after,
-          edit.entry.author,
-          Date.parse(edit.entry.timestamp) || Date.now(),
-        ),
-      );
-    }
-    this.append(rows);
-    unlinkSync(claimed);
   }
 }
 
@@ -307,8 +304,9 @@ export function settingsRow(
         : after === undefined || after === null
           ? 'delete'
           : 'update',
-    beforeHash: before === undefined ? null : computeHash(JSON.stringify(before ?? null)),
-    afterHash: computeHash(JSON.stringify(after ?? null)),
+    beforeHash:
+      before === undefined || before === null ? null : computeHash(JSON.stringify(before)),
+    afterHash: after === undefined || after === null ? null : computeHash(JSON.stringify(after)),
     actor,
     cause: {
       settingsRevision: revision,
@@ -339,7 +337,7 @@ function committedAs(path: string): string | undefined {
       const out = Bun.spawnSync(['git', '-C', cwd, ...args], {
         stdout: 'pipe',
         stderr: 'ignore',
-        timeout: 2_000,
+        timeout: 500,
       });
       return out.exitCode === 0 ? out.stdout.toString().trim() : undefined;
     } catch {

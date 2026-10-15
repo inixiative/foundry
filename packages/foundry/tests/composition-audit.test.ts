@@ -1,6 +1,14 @@
 // Spec B (docs/THREAD-TREE.md): an audit trail for composed instructions and domain knowledge.
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -22,6 +30,7 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { chartered, WARDEN_CHARTER } from '../src/agents/warden-charter';
 import { AuditLog } from '../src/audit/audit-log';
 import { type CallVersions, CompositionAuditor } from '../src/audit/compositions';
+import { contentHash } from '../src/persistence/journal-content';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { instructionStackSource } from '../src/prompts/instruction-stack';
@@ -99,10 +108,14 @@ const tempDir = (name: string) => {
 };
 
 /** A thread whose Warden calls are journalled through the auditor, as the viewer wires it. */
-async function setup(options: { retrieved?: () => string } = {}) {
+async function setup(
+  options: { retrieved?: () => string; edit?: (c: FoundryConfig) => void } = {},
+) {
   const dir = tempDir('composition-audit');
   const configStore = new ConfigStore(dir);
-  await configStore.save(config());
+  const initial = config();
+  options.edit?.(initial);
+  await configStore.save(initial);
   const c = structuredClone(configStore.config);
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
@@ -210,7 +223,10 @@ test('a Warden call journals the versions it was composed from, and they recompo
   // The charter is a version too: written once, by a release.
   const charter = f.configStore.audit.get(versions.charter!)!;
   expect(charter).toMatchObject({ subject: 'charter', actor: { kind: 'release' } });
-  expect(charter.content).toBe(WARDEN_CHARTER);
+  expect(f.configStore.audit.text(charter.id)).toBe(WARDEN_CHARTER);
+  expect(versions.composedHash.instructions).toBe(
+    contentHash(f.auditor.recompose(versions.instructions)),
+  );
 });
 
 test('unchanged sources write nothing: every call names the same composition versions', async () => {
@@ -250,10 +266,13 @@ test('a settings edit is one audit row with before and after; later calls name a
   expect(first!.versions!.instructions).not.toBe(second!.versions!.instructions);
   expect(f.auditor.recompose(first!.versions!.instructions)).toBe(RULES);
   expect(f.auditor.recompose(second!.versions!.instructions)).toBe('EDITED_RULES');
-  // The prompt's own versions point at the settings revision they were read under.
+  // The prompt's versions are the settings edits themselves: one per edit, by its author.
   const prompt = f.configStore.audit.rows('prompt:agent:conventions-warden');
-  expect(prompt.map((row) => row.content)).toEqual([RULES, 'EDITED_RULES']);
-  expect(prompt.at(-1)!.cause.settingsRevision).toBe(f.configStore.revision);
+  expect(prompt.map((row) => f.configStore.audit.text(row.id))).toEqual([RULES, 'EDITED_RULES']);
+  expect(prompt.at(-1)).toMatchObject({
+    actor: { kind: 'user' },
+    cause: { settingsRevision: edit.revision },
+  });
   // The history route still reads the edit.
   const [log] = await f.configStore.history('agent:conventions-warden');
   expect(log!.entries.at(-1)!.author).toBe('user');
@@ -311,7 +330,7 @@ test('ladder files are attributed per file with their rung; the composed text is
   expect(auditor.recompose(cv)).toBe(text);
   // The file's version is its text as read, and a change nobody reported is detected on read.
   const version = audit.latest(`file:${file}`)!;
-  expect(version.content).toBe(readFileSync(file, 'utf8'));
+  expect(audit.text(version.id)).toBe(readFileSync(file, 'utf8'));
   expect(version).toMatchObject({
     actor: { kind: 'external' },
     cause: { detected: 'on-read' },
@@ -381,33 +400,6 @@ test('feedback exposure is found from the versions a call names, without its tex
   expect(store.phasesContaining('(fb_abc)', 0).map((r) => r.threadId)).toEqual(['t1']);
 });
 
-test('the settings history Foundry kept before is folded into the audit log once', () => {
-  const dir = tempDir('composition-legacy');
-  const line = {
-    subject: 'agent:x',
-    revision: 3,
-    entry: {
-      hash: 'h',
-      timestamp: '2026-10-01T00:00:00.000Z',
-      trigger: 'settings',
-      author: 'user',
-      snapshot: { before: { prompt: 'A' }, after: { prompt: 'B' } },
-    },
-  };
-  writeFileSync(join(dir, 'settings-history.jsonl'), `${JSON.stringify(line)}\n`);
-  const audit = AuditLog.for(dir);
-  const [row] = audit.rows('agent:x');
-  expect(row).toMatchObject({
-    action: 'update',
-    actor: { kind: 'user' },
-    revision: 3,
-    cause: { settingsRevision: 3 },
-  });
-  expect(row!.createdAt).toBe(Date.parse('2026-10-01T00:00:00.000Z'));
-  expect(() => readFileSync(join(dir, 'settings-history.jsonl'))).toThrow();
-  expect(audit.settingsHistory('agent:x')[0]!.entries[0]!.snapshot.after).toEqual({ prompt: 'B' });
-});
-
 test('rows another process appends are read on the next lookup', () => {
   const dir = tempDir('composition-shared');
   const audit = AuditLog.for(dir);
@@ -427,6 +419,80 @@ test('rows another process appends are read on the next lookup', () => {
     join(dir, 'audit.jsonl'),
     `${readFileSync(join(dir, 'audit.jsonl'), 'utf8')}${JSON.stringify(line)}\n`,
   );
-  expect(audit.latest('source:a')!.content).toBe('two');
+  expect(audit.text(audit.latest('source:a')!.id)).toBe('two');
   expect(dirname(audit.path)).toBe(dir);
+});
+
+test('a snapshot read before a later change reuses the version it read: no revert rows', () => {
+  const audit = AuditLog.for(tempDir('composition-late'));
+  const v1 = audit.observe('file:/rules.md', 'V1');
+  const v2 = audit.observe('file:/rules.md', 'V2', {
+    record: true,
+    actor: { kind: 'feedback', id: 'fb_1' },
+    cause: { feedbackItemId: 'fb_1', changeId: 'chg_1' },
+  });
+  // A review admitted before the feedback line is journalled after it.
+  expect(audit.observe('file:/rules.md', 'V1').id).toBe(v1.id);
+  expect(audit.observe('file:/rules.md', 'V2').id).toBe(v2.id);
+  expect(audit.rows('file:/rules.md')).toHaveLength(2);
+  // An undo is a reported change: a row of its own even though the text is V1 again.
+  const undo = audit.observe('file:/rules.md', 'V1', {
+    record: true,
+    actor: { kind: 'feedback', id: 'fb_1' },
+  });
+  expect(undo.id).not.toBe(v1.id);
+  expect(undo).toMatchObject({ action: 'update', beforeHash: v2.afterHash });
+});
+
+test('a torn last line from a crashed writer never swallows the next row', () => {
+  const dir = tempDir('composition-torn');
+  const audit = AuditLog.for(dir);
+  audit.observe('source:a', 'one');
+  writeFileSync(
+    join(dir, 'audit.jsonl'),
+    `${readFileSync(join(dir, 'audit.jsonl'), 'utf8')}{"id":"torn`,
+  );
+  const next = audit.observe('source:a', 'two');
+  expect(audit.get(next.id)).toBeDefined();
+  expect(audit.text(next.id)).toBe('two');
+});
+
+test('the settings history file Foundry kept before is not read (hard cut)', async () => {
+  const dir = tempDir('composition-legacy');
+  writeFileSync(
+    join(dir, 'settings-history.jsonl'),
+    '{"subject":"agent:x","revision":1,"entry":{}}\n',
+  );
+  const store = new ConfigStore(dir);
+  expect(await store.history('agent:x')).toEqual([]);
+});
+
+test('an audit failure never blocks a Warden: the call is journalled without versions', async () => {
+  const f = await setup();
+  const thread = f.factory.create('main');
+  chmodSync(join(f.dir, 'audit.jsonl'), 0o400);
+  try {
+    await thread.dispatch('worker', 'audit is read-only');
+  } finally {
+    chmodSync(join(f.dir, 'audit.jsonl'), 0o600);
+  }
+  const [request] = f.advice(thread.id);
+  expect(request).toBeDefined();
+  expect(request!.versions).toBeUndefined();
+  expect(request!.composition).toBeUndefined();
+});
+
+test('captured memory is per-message text, never a source change', async () => {
+  const f = await setup({
+    edit: (c) => {
+      c.sources['how-i-work']!.type = 'file';
+    },
+  });
+  const thread = f.factory.create('main');
+  await thread.dispatch('worker', 'one');
+  const [request] = f.advice(thread.id);
+  expect(request!.versions!.retrieved?.map((r) => r.subject)).toEqual([
+    'source-content:how-i-work',
+  ]);
+  expect(f.configStore.audit.rows('source-content:how-i-work')).toHaveLength(0);
 });

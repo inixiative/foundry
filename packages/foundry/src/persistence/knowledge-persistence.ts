@@ -25,9 +25,20 @@ export class KnowledgePersistence {
     /** Turns each call's composition into version ids (spec B); without one, compositions are dropped. */
     private readonly auditor?: CompositionAuditor,
   ) {
-    // A call's composed text is journalled as the versions it was made of, never as a copy.
-    const versioned = <T>(record: T): T =>
-      this.auditor ? this.auditor.versionRecord(record) : stripCompositions(record);
+    // A call's composed text is journalled as the versions it was made of, never as a copy. The
+    // audit is a record, not a gate: if it fails, the call is journalled without versions.
+    const versioned = <T>(record: T): T => {
+      if (!this.auditor) return stripCompositions(record);
+      try {
+        return this.auditor.versionRecord(record);
+      } catch (error) {
+        this.events.pushError(
+          'audit:composition',
+          `composition versions not recorded: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return stripCompositions(record);
+      }
+    };
     // An owned invalidation, never the private phase input or a new model signal.
     const owners = new WeakMap<
       ThreadRuntime,

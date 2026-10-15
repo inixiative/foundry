@@ -15,7 +15,7 @@ import {
 } from '@inixiative/foundry-core';
 import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
-import type { CompositionPart } from '../audit/compositions';
+import type { CompositionBody } from '../audit/compositions';
 import { type CheckpointImport, checkpointSpans } from './checkpoint-import';
 import {
   type ContentStore,
@@ -791,8 +791,9 @@ export class LocalSessionStore {
    * source version and the hash of the text it contributed, so the text and its provenance stay
    * reachable from the version (`session_content_ref`).
    */
-  compositionVersion(role: string, slot: string, parts: readonly CompositionPart[]): string {
-    const json = JSON.stringify(parts);
+  compositionVersion(role: string, slot: string, body: CompositionBody): string {
+    const { parts } = body;
+    const json = JSON.stringify(body);
     const key = contentHash(JSON.stringify([role, slot, json]));
     const found = this.query('SELECT id FROM composition_version WHERE key=?').get(key) as {
       id: string;
@@ -810,13 +811,9 @@ export class LocalSessionStore {
       .id;
   }
 
-  getCompositionVersion(id: string): {
-    id: string;
-    role: string;
-    slot: string;
-    parts: CompositionPart[];
-    createdAt: number;
-  } | null {
+  getCompositionVersion(
+    id: string,
+  ): (CompositionBody & { id: string; role: string; slot: string; createdAt: number }) | null {
     const row = this.query(
       'SELECT id, role, slot, parts_hash, created_at FROM composition_version WHERE id=?',
     ).get(id) as {
@@ -831,14 +828,13 @@ export class LocalSessionStore {
       id: row.id,
       role: row.role,
       slot: row.slot,
-      parts: JSON.parse(this.content.get(row.parts_hash)) as CompositionPart[],
+      ...(JSON.parse(this.content.get(row.parts_hash)) as CompositionBody),
       createdAt: row.created_at,
     };
   }
 
   /** Composition versions one of whose parts' text holds `marker` (a feedback rule's `(fb_…)`). */
-  compositionsHolding(marker: string): Set<string> {
-    const holding = this.contentHolding(marker);
+  compositionsHolding(marker: string, holding = this.contentHolding(marker)): Set<string> {
     const ids = new Set<string>();
     if (!holding.size) return ids;
     for (const row of this.query(
@@ -865,7 +861,7 @@ export class LocalSessionStore {
     // Composed input is stored by reference: a row matches when it holds the marker inline, or a
     // reference that leads, through section lists and nested records, to content holding it.
     const holding = this.contentHolding(marker);
-    const held = this.compositionsHolding(marker);
+    const held = this.compositionsHolding(marker, holding);
     const compositions = [...held];
     const rows: Array<{
       thread_id: string;

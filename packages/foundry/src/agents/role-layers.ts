@@ -100,7 +100,7 @@ export function roleSources(
     const source = options.resolveSource!(id, config);
     if (!source) throw Error(`Role ${role} domain knowledge source ${id} is missing or disabled`);
     return chunkSource(`${roleLayerId(role, slot)}#${id}`, config.sources[id]?.label ?? id, [
-      attributed(source, `source-content:${id}`),
+      attributed(source, id, FAST_MOVING_SOURCES.has(config.sources[id]?.type ?? '')),
     ]);
   });
   return [...settings, ladder];
@@ -123,15 +123,32 @@ function promptSource(
   };
 }
 
-/** A configured source as one part, `subject`, unless it attributes its own text; per-message when focusable. */
-function attributed(source: ContextSource, subject: string): ContextSource {
+/**
+ * Configured source types whose text is generated per thread or message (captured memory, archive
+ * retrieval), not slow-moving knowledge: stored raw with each call, never audited as a source change.
+ */
+const FAST_MOVING_SOURCES = new Set(['file', 'archive']);
+
+/**
+ * A configured source as one part (`source-content:<id>`, per project when bound to one) unless it
+ * attributes its own text; per-message text when it is focusable or `fast`.
+ */
+function attributed(
+  source: ContextSource,
+  id: string,
+  fast: boolean,
+  projectId?: string,
+): ContextSource {
   let last: string | undefined;
+  const subject = `source-content:${id}${projectId ? `@project:${projectId}` : ''}`;
+  const retrieved = fast || !!source.focusable;
   return {
     id: source.id,
     ...(source.focusable ? { focusable: true } : {}),
     ...(source.changed ? { changed: () => source.changed!() } : {}),
     ...(source.report ? { report: () => source.report!() } : {}),
-    bind: (scope) => attributed(source.bind ? source.bind(scope) : source, subject),
+    bind: (scope) =>
+      attributed(source.bind ? source.bind(scope) : source, id, fast, scope.projectId),
     async load(hint) {
       last = await source.load(hint);
       return last;
@@ -140,9 +157,7 @@ function attributed(source: ContextSource, subject: string): ContextSource {
       if (last === undefined) return undefined;
       const own = source.segments?.();
       if (own && segmentsText(own) === last) return own;
-      return last
-        ? [{ subject, text: last, ...(source.focusable ? { retrieved: true } : {}) }]
-        : [];
+      return last ? [{ subject, text: last, ...(retrieved ? { retrieved: true } : {}) }] : [];
     },
   };
 }

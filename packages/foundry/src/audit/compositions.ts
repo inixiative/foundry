@@ -1,5 +1,11 @@
-import type { CompositionSnapshot, SourceSegment } from '@inixiative/foundry-core';
+import {
+  type CompositionSnapshot,
+  type OmittedSource,
+  type SourceSegment,
+  segmentsText,
+} from '@inixiative/foundry-core';
 import { WARDEN_CHARTER } from '../agents/warden-charter';
+import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import type { AuditLog } from './audit-log';
 
@@ -18,12 +24,20 @@ export type CompositionPart =
 
 export type CompositionSlotName = 'instructions' | 'domainKnowledge';
 
+/** A composition version's content: its parts in order, and what the composer left out and why. */
+export interface CompositionBody {
+  readonly parts: readonly CompositionPart[];
+  readonly omitted: readonly OmittedSource[];
+}
+
 /** What one call was composed from: the version ids that replace its composed text in the journal. */
 export interface CallVersions {
   /** The charter's source version (`charter` subject), when the auditor has seen it. */
   readonly charter?: string;
   readonly instructions: string;
   readonly domainKnowledge: string;
+  /** sha256 of each slot's exact text as the call received it (retrieved text included). */
+  readonly composedHash: { readonly instructions: string; readonly domainKnowledge: string };
   /** Per-message text, stored raw: the slot and subject it filled, and its content hash. */
   readonly retrieved?: ReadonlyArray<{
     readonly slot: CompositionSlotName;
@@ -66,14 +80,18 @@ export class CompositionAuditor {
 
   versions(role: string, snapshot: CompositionSnapshot): CallVersions {
     const retrieved: Array<{ slot: CompositionSlotName; subject: string; hash: string }> = [];
-    const slot = (name: CompositionSlotName, segments: readonly SourceSegment[]) =>
-      this.record(role, name, segments, (subject, hash) =>
+    const slot = (name: CompositionSlotName) =>
+      this.record(role, name, snapshot[name], snapshot.omitted?.[name] ?? [], (subject, hash) =>
         retrieved.push({ slot: name, subject, hash }),
       );
     return {
       charter: this.charter(),
-      instructions: slot('instructions', snapshot.instructions),
-      domainKnowledge: slot('domainKnowledge', snapshot.domainKnowledge),
+      instructions: slot('instructions'),
+      domainKnowledge: slot('domainKnowledge'),
+      composedHash: {
+        instructions: contentHash(segmentsText(snapshot.instructions)),
+        domainKnowledge: contentHash(segmentsText(snapshot.domainKnowledge)),
+      },
       ...(retrieved.length ? { retrieved } : {}),
     };
   }
@@ -83,6 +101,7 @@ export class CompositionAuditor {
     role: string,
     slot: CompositionSlotName,
     segments: readonly SourceSegment[],
+    omitted: readonly OmittedSource[] = [],
     onRetrieved: (subject: string, hash: string) => void = () => {},
   ): string {
     const parts: CompositionPart[] = [];
@@ -112,17 +131,21 @@ export class CompositionAuditor {
       });
       parts.push({ sv: version.id, text: this.store.putContent(segment.text) });
     }
-    return this.store.compositionVersion(role, slot, parts);
+    return this.store.compositionVersion(role, slot, { parts, omitted });
   }
 
   /**
    * The exact text a composition version composes, with the call's retrieved text filled in
    * (`retrieved` by subject, in order of appearance).
    */
-  recompose(id: string, retrieved: ReadonlyArray<{ subject: string; hash: string }> = []): string {
+  recompose(
+    id: string,
+    retrieved: ReadonlyArray<{ slot?: CompositionSlotName; subject: string; hash: string }> = [],
+  ): string {
     const version = this.store.getCompositionVersion(id);
     if (!version) throw Error(`composition version ${id} not found`);
-    const queue = [...retrieved];
+    // A call's retrieved text covers both slots: only this version's slot fills its placeholders.
+    const queue = retrieved.filter((r) => !r.slot || r.slot === version.slot);
     return version.parts
       .map((part) => {
         if ('glue' in part) return part.glue;
