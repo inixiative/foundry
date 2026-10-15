@@ -58,6 +58,7 @@ import {
   SUBSCRIPTION_DECISIONS,
   type SubscriptionSettings,
 } from '../providers/subscription-policy';
+import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 import type { ToolRules } from '../turns/tool-gate';
 import {
   type ResolvedLayerDefinition,
@@ -96,6 +97,11 @@ export interface FoundryConfig {
   learning?: LearningSettings;
   /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
   feedback?: FeedbackSettings;
+  /**
+   * The Warden pre-filter: a local decision model skips a Warden on a confident "not my domain".
+   * On by default; `{ "enabled": false }` asks every Warden. See docs/subscription-decisions.md.
+   */
+  prefilter?: PrefilterSettings;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -997,6 +1003,7 @@ export function validateConfig(config: FoundryConfig): void {
   }
   validateLearningSettings(config.learning);
   validateFeedbackSettings('feedback', config.feedback);
+  validatePrefilterSettings('prefilter', config.prefilter);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
   if ('instructions' in config)

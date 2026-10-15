@@ -13,12 +13,14 @@ import {
   listedSignets,
 } from './providers/kingdom-installation-connection';
 import { providerApiKey } from './providers/openai-compatible';
+import { prefilterInstalled } from './providers/prefilter-model';
 import { assertProfile } from './providers/private-profile';
 import {
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,
   type SubscriptionResolution,
 } from './providers/subscription-policy';
+import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
 import { resolveProjectView } from './viewer/config-resolve';
 
@@ -44,6 +46,11 @@ export interface ReadinessKingdom {
   signetId: string;
   status: 'connected' | 'unavailable' | 'unverified';
 }
+/** The Warden pre-filter's model: `off` in settings, missing, installed (offline), or checked. */
+export interface ReadinessPrefilter {
+  status: 'off' | 'not-installed' | 'installed' | 'ready' | 'unavailable';
+  url: string;
+}
 export interface ReadinessArchive {
   status: 'not-set-up' | 'unverified' | 'reachable' | 'unreachable';
   url: string;
@@ -57,6 +64,8 @@ export interface ReadinessReport {
   kingdoms?: ReadinessKingdom[];
   /** This machine's local Archive; present when inspected. */
   archive?: ReadinessArchive;
+  /** The Warden pre-filter's model. */
+  prefilter?: ReadinessPrefilter;
 }
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
 export async function inspectReadiness(
@@ -68,8 +77,10 @@ export async function inspectReadiness(
     archive?: () => ArchiveClient | undefined;
     /** Where the Kingdom Installation keys and Signets live (default `.foundry`). */
     configDir?: string;
-    /** Enables one Signet listing per paired Kingdom and one local Archive request. */
+    /** Enables one Signet listing per paired Kingdom, one local Archive request and one pre-filter health check. */
     transport?: typeof fetch;
+    /** Where the pre-filter's model is installed (default ~/.foundry/models). */
+    modelsDir?: string;
   } = {},
 ): Promise<ReadinessReport> {
   const saved = config;
@@ -83,7 +94,9 @@ export async function inspectReadiness(
     code: string,
     message: string,
   ) => issues.push({ severity, scope, code, message });
-  let kingdoms: ReadinessKingdom[] | undefined, archive: ReadinessArchive | undefined;
+  let kingdoms: ReadinessKingdom[] | undefined,
+    archive: ReadinessArchive | undefined,
+    prefilter: ReadinessPrefilter | undefined;
   const result = (): ReadinessReport => ({
     configurationReady: !issues.some((item) => item.severity === 'error'),
     liveAccess: 'unverified',
@@ -91,6 +104,7 @@ export async function inspectReadiness(
     issues,
     ...(kingdoms ? { kingdoms } : {}),
     ...(archive ? { archive } : {}),
+    ...(prefilter ? { prefilter } : {}),
   });
   let subscription: SubscriptionResolution | undefined;
   try {
@@ -379,7 +393,39 @@ export async function inspectReadiness(
     integrations.map((integration) => inspectKingdom(integration, configDir, issue, listed)),
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
+  prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
   return result();
+}
+
+/** A missing or silent model is a warning, never an error: every Warden is then asked. */
+async function inspectPrefilter(
+  config: FoundryConfig,
+  issue: Issue,
+  transport?: typeof fetch,
+  modelsDir?: string,
+): Promise<ReadinessPrefilter> {
+  const settings = resolvePrefilterSettings(config.prefilter);
+  const url = settings.baseUrl;
+  if (!settings.enabled) return { status: 'off', url };
+  if (!prefilterInstalled(modelsDir)) {
+    issue(
+      'warning',
+      'prefilter',
+      'prefilter-not-installed',
+      'The Warden pre-filter model is not installed, so every Warden is asked on every trigger. Run foundry-acp setup.',
+    );
+    return { status: 'not-installed', url };
+  }
+  if (!transport) return { status: 'installed', url };
+  const health = await new WardenPrefilter(config.prefilter, { fetch: transport }).check();
+  if (health.ok) return { status: 'ready', url };
+  issue(
+    'warning',
+    'prefilter',
+    'prefilter-unavailable',
+    `The Warden pre-filter model at ${url} did not answer, so every Warden is asked. The daemon starts it; restart the daemon.`,
+  );
+  return { status: 'unavailable', url };
 }
 
 type Issue = (

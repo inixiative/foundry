@@ -2,6 +2,11 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigStore, starterConfig } from '../viewer/config';
 
+export {
+  installPrefilterModel,
+  prefilterInstalled,
+} from '../providers/prefilter-model';
+export { WardenPrefilter } from '../providers/warden-prefilter';
 export { DAEMON_LOG_DIR, daemonLoaded, installDaemon, installedDaemon } from './install';
 
 /** An installed Foundry's home gets the starter settings a first start would write. */

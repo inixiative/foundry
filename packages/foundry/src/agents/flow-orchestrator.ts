@@ -48,7 +48,12 @@ import {
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
-
+import {
+  type PrefilterOutcome,
+  type PrefilterSkip,
+  prefilterSkip,
+  type WardenPrefilter,
+} from '../providers/warden-prefilter';
 import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
 import type {
   AdviceRequestEvidence,
@@ -71,7 +76,8 @@ import type { TriggerPoint } from './warden-triggers';
  * What one domain decided about one input.
  * - contribute: the domain answered with something to add.
  * - no-comment: the domain answered NO_COMMENT; nothing reaches the thread.
- * - skipped: it holds no knowledge yet (a cold cache); no call was made.
+ * - skipped: no call was made: it holds no knowledge yet (a cold cache), or the pre-filter was
+ *   confident the moment is outside its domain (`prefilter` carries the score).
  * - error: the domain's model call failed.
  * - timeout: the domain started but had not answered by its deadline (call still outstanding).
  * - excluded: the domain never started: the plan deadline passed while it was queued, or the
@@ -120,6 +126,8 @@ export interface DomainContribution {
   /** The trigger point it was asked at. */
   readonly trigger: TriggerPoint;
   readonly reason?: string;
+  /** Skipped by the pre-filter: its score and the threshold it fell below. */
+  readonly prefilter?: PrefilterSkip;
   readonly layers: string[];
   readonly snippets: string[];
   readonly confidence: number;
@@ -198,8 +206,21 @@ export interface InjectionPlan {
   }>;
   /** Provider calls still running when the plan was sealed. Not cancelled. */
   readonly outstanding: OutstandingCall[];
+  /** The pre-filter's call for this trigger, when it is on. `unavailable` asked every Warden. */
+  readonly prefilter?: PrefilterRun;
   /** When the plan was sealed. Nothing may change it afterwards. */
   readonly sealedAt: number;
+}
+
+/** What the pre-filter did at one trigger: journalled with the Wardens' decisions. */
+export type PrefilterRun =
+  | { readonly status: 'scored'; readonly elapsedMs: number; readonly skipped: number }
+  | { readonly status: 'unavailable'; readonly elapsedMs: number; readonly reason: string };
+
+function prefilterRun(outcome: PrefilterOutcome, skipped: number): PrefilterRun {
+  return outcome.status === 'scored'
+    ? { status: 'scored', elapsedMs: outcome.elapsedMs, skipped }
+    : { status: 'unavailable', elapsedMs: outcome.elapsedMs, reason: outcome.reason };
 }
 
 /** Assessed versus prepared revision of one layer. */
@@ -296,6 +317,10 @@ export interface GuardReport {
   domainsChecked: string[];
   /** Domains whose guard triggers do not name this tool: not asked. */
   skipped: string[];
+  /** Domains the pre-filter skipped: confident the action is outside their domain. Not asked. */
+  prefiltered: Array<{ domain: string } & PrefilterSkip>;
+  /** The pre-filter's call for this action, when it is on. */
+  prefilter?: PrefilterRun;
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
   /** Domains whose check did not complete: provider-error, invalid-response or not-admitted. No all-clear exists for them. */
@@ -337,6 +362,10 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
   stack: ContextStack;
   /** Signal bus for emitting orchestration events. */
   signals: SignalBus;
+  /** The Warden pre-filter (on by default in settings); absent asks every Warden. */
+  prefilter?: WardenPrefilter;
+  /** The thread the pre-filter's calls are made for. */
+  threadId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +406,8 @@ export class FlowOrchestrator {
   private _routingTimeoutMs: number;
   private _planTimeoutMs: number | undefined;
   private _contributionBudget: number;
+  private _prefilter: WardenPrefilter | undefined;
+  private _threadId: string;
 
   /** Provider calls that timed out but are still running. */
   private _outstanding = new Set<symbol>();
@@ -409,6 +440,8 @@ export class FlowOrchestrator {
     this._routingTimeoutMs = positiveFiniteMs('routingTimeoutMs', config.routingTimeoutMs, 10_000)!;
     this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
     this._contributionBudget = positiveBudget('contributionBudget', config.contributionBudget);
+    this._prefilter = config.prefilter;
+    this._threadId = config.threadId ?? 'thread';
 
     // Subscribe to signals that invalidate the current plan
     this._unsubscribes.push(this._signals.onAny((signal) => this._handleInvalidation(signal)));
@@ -535,16 +568,49 @@ export class FlowOrchestrator {
     };
     const outstanding: OutstandingCall[] = [];
 
-    // 2. Assess: the user-message trigger point asks every Warden; each decides under the charter
-    //    (bounded pool). Routing runs alongside.
-    const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
-      this._assess(p, input, clock, outstanding),
-    );
+    // 2. Assess: the user-message trigger point asks every Warden the pre-filter does not rule out;
+    //    each decides under the charter (bounded pool). Routing starts alongside the pre-filter.
     const routing = this._route(message, threadState, clock, outstanding);
+    const prefiltered = await this.prefilter(
+      'user-message',
+      message,
+      threadState,
+      participants.filter((p) => p.cache).map((p) => p.lib),
+    );
+    const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
+      this._assess(p, input, clock, outstanding, prefilterSkip(prefiltered, p.lib.domain)),
+    );
     const [route, contributions] = await Promise.all([routing, assessments]);
 
     // 3. Compose in configured order and seal.
-    return this._compose(input, route, contributions, outstanding, start, fresh);
+    const plan = this._compose(input, route, contributions, outstanding, start, fresh);
+    return prefiltered
+      ? deepFreeze({
+          ...plan,
+          prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
+        })
+      : plan;
+  }
+
+  /**
+   * The pre-filter's one call for a trigger, over the Wardens that would be asked. Undefined when
+   * it is off. Never throws: an unavailable model comes back as `unavailable`, and every Warden is
+   * asked.
+   */
+  async prefilter(
+    trigger: 'user-message' | 'agent-action' | 'post-turn',
+    text: string,
+    context: string | undefined,
+    wardens: readonly DomainLibrarian[],
+  ): Promise<PrefilterOutcome | undefined> {
+    if (!this._prefilter || !wardens.length) return undefined;
+    return this._prefilter.score(
+      trigger,
+      text,
+      context,
+      wardens.map((lib) => ({ domain: lib.domain, instructions: lib.advisePrompt })),
+      this._threadId,
+    );
   }
 
   /** Route with a deadline. Timeouts, errors and fallbacks are labelled, never hidden. */
@@ -627,6 +693,7 @@ export class FlowOrchestrator {
     input: PlanInput,
     clock: PlanClock,
     outstanding: OutstandingCall[],
+    skip?: PrefilterSkip,
   ): Promise<DomainContribution> {
     const startedAt = Date.now();
     // Three separately owned segments: configured instructions, configured
@@ -677,7 +744,7 @@ export class FlowOrchestrator {
     const decided = (
       decision: ContributionDecision,
       extra: Partial<
-        Pick<DomainContribution, 'reason' | 'layers' | 'snippets' | 'confidence'>
+        Pick<DomainContribution, 'reason' | 'layers' | 'snippets' | 'confidence' | 'prefilter'>
       > = {},
     ): DomainContribution => ({
       domain: p.lib.domain,
@@ -697,6 +764,7 @@ export class FlowOrchestrator {
     });
 
     if (!p.cache) return decided('skipped', { reason: 'cold-cache' });
+    if (skip) return decided('skipped', { reason: 'prefilter', prefilter: skip });
     // Queued behind the pool until the plan deadline passed: never started.
     if (clock.passed()) return decided('excluded', { reason: 'deadline-queued' });
 
@@ -1027,12 +1095,25 @@ export class FlowOrchestrator {
     const threadState = this._librarian.layer.content;
 
     // The agent-action trigger point asks every domain whose guard triggers name this tool.
-    const domainsToCheck: DomainLibrarian[] = [];
+    const triggered: DomainLibrarian[] = [];
     const skipped: string[] = [];
     for (const [, domainLib] of this._domains) {
-      if (domainLib.shouldGuard(observation.tool)) domainsToCheck.push(domainLib);
+      if (domainLib.shouldGuard(observation.tool)) triggered.push(domainLib);
       else skipped.push(domainLib.domain);
     }
+    // The pre-filter rules out the Wardens it is confident the action is outside of.
+    const prefiltered = await this.prefilter(
+      'agent-action',
+      observationText(observation),
+      threadState,
+      triggered,
+    );
+    const ruledOut: GuardReport['prefiltered'] = [];
+    const domainsToCheck = triggered.filter((d) => {
+      const skip = prefilterSkip(prefiltered, d.domain);
+      if (skip) ruledOut.push({ domain: d.domain, ...skip });
+      return !skip;
+    });
 
     // Freeze each domain's OWN thread understanding before any await, so every guard checks
     // against one revision and no other domain's private interpretation can enter its request.
@@ -1128,6 +1209,7 @@ export class FlowOrchestrator {
         filesAffected: observation.filesAffected,
         guardsRan: domainsChecked,
         guardsSkipped: skipped,
+        guardsPrefiltered: ruledOut,
         guardOutcomes: outcomes,
         guardsFailed: failed,
         findingsCount: findings.length,
@@ -1142,6 +1224,8 @@ export class FlowOrchestrator {
       advisory,
       domainsChecked,
       skipped,
+      prefiltered: ruledOut,
+      ...(prefiltered ? { prefilter: prefilterRun(prefiltered, ruledOut.length) } : {}),
       outcomes,
       failed,
       elapsed: Date.now() - start,
@@ -1349,4 +1433,13 @@ function deepFreeze<T>(value: T): T {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
   }
   return value;
+}
+
+/** The text the pre-filter reads for a tool call: the tool, its input and the files it touched. */
+function observationText(observation: ToolObservation): string {
+  const input = JSON.stringify(observation.input ?? {});
+  const files = observation.filesAffected?.length
+    ? `\nFiles: ${observation.filesAffected.join(', ')}`
+    : '';
+  return `${observation.tool}: ${input}${files}`;
 }

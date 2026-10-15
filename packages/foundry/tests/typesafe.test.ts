@@ -93,6 +93,19 @@ test('batches typed decisions against the documented API and reports resolved mo
   expect(count).toBe(1);
 });
 
+test('a self-hosted System One server is reached at its base URL', async () => {
+  const urls: string[] = [];
+  const c = client(
+    async (url) => {
+      urls.push(url);
+      return Response.json(result());
+    },
+    { baseUrl: 'http://127.0.0.1:8008/', model: 'kev-latest' },
+  );
+  await c.evaluate({ message: 'Login broke' }, request, context);
+  expect(urls).toEqual(['http://127.0.0.1:8008/v1/systemone']);
+});
+
 test('missing credentials, invalid request, and denied capability never contact the provider', async () => {
   let count = 0;
   const send = async () => {

@@ -1,0 +1,196 @@
+import { afterEach, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ContextLayer, ContextStack, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
+import { Cartographer } from '../src/agents/cartographer';
+import { DomainLibrarian, NO_COMMENT } from '../src/agents/domain-librarian';
+import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
+import { Librarian } from '../src/agents/librarian';
+import {
+  DEFAULT_PREFILTER,
+  type PrefilterHealth,
+  resolvePrefilterSettings,
+  validatePrefilterSettings,
+  WardenPrefilter,
+} from '../src/providers/warden-prefilter';
+import { inspectReadiness } from '../src/readiness';
+import { starterConfig } from '../src/viewer/config';
+
+const cleanups: Array<() => unknown> = [];
+afterEach(async () => {
+  for (const close of cleanups.splice(0).reverse()) await close();
+});
+
+/** A System One server double: a score per question, chosen by the Warden named in it. */
+function server(scores: Record<string, number>, seen: unknown[] = []) {
+  return async (url: string, init: RequestInit) => {
+    if (url.endsWith('/health')) return Response.json({ status: 'ok' });
+    const body = JSON.parse(init.body as string) as {
+      questions: Record<string, { instructions: string }>;
+    };
+    seen.push(body);
+    const answers = Object.fromEntries(
+      Object.entries(body.questions).map(([id, q]) => {
+        const domain = Object.keys(scores).find((d) => q.instructions.includes(`${d} rules`));
+        return [id, { type: 'noul', noul: domain ? scores[domain] : 0.9 }];
+      }),
+    );
+    return Response.json({ model: 'laya', answers, usage: { input_tokens: 1, output_tokens: 0 } });
+  };
+}
+const down = async () => {
+  throw new TypeError('fetch failed');
+};
+
+function roster(domains: string[], prefilter?: WardenPrefilter) {
+  const calls: Array<{ domain: string; phase: string }> = [];
+  const signals = new SignalBus();
+  const layers = domains.map((id) => {
+    const layer = new ContextLayer({ id, segment: 'domain-knowledge' });
+    layer.set(`${id} knowledge`);
+    return layer;
+  });
+  const stack = new ContextStack(layers);
+  const librarian = new Librarian({ stack, signals });
+  const cartographer = new Cartographer({
+    stack,
+    signals,
+    llm: {
+      id: 'route',
+      complete: async () => ({
+        model: 'x',
+        content: JSON.stringify({ layers: [], domains: [], confidence: 0 }),
+      }),
+    },
+  });
+  const phaseOf = (messages: readonly LLMMessage[]) =>
+    messages.some((m) => String(m.content).includes('Response protocol (guard phase'))
+      ? 'guard'
+      : 'advice';
+  const libs = new Map(
+    layers.map((cache) => [
+      cache.id,
+      new DomainLibrarian({
+        domain: cache.id,
+        cache,
+        signals,
+        advisePrompt: `You are the ${cache.id} Warden. Check ${cache.id} rules.`,
+        guardPrompt: `You are the ${cache.id} Warden. Check ${cache.id} rules.`,
+        guardTriggers: ['Edit'],
+        llm: {
+          id: `warden-${cache.id}`,
+          async complete(messages) {
+            calls.push({ domain: cache.id, phase: phaseOf(messages) });
+            return { model: 'x', content: NO_COMMENT };
+          },
+        },
+      }),
+    ]),
+  );
+  const flow = new FlowOrchestrator({
+    stack,
+    signals,
+    librarian,
+    cartographer,
+    domainLibrarians: libs,
+    ...(prefilter ? { prefilter, threadId: 't1' } : {}),
+  });
+  cleanups.push(() => {
+    flow.dispose();
+    cartographer.dispose();
+    librarian.dispose();
+  });
+  return { flow, calls };
+}
+
+test('the pre-filter is on by default, on a loopback model server', () => {
+  expect(resolvePrefilterSettings(undefined)).toEqual(DEFAULT_PREFILTER);
+  expect(DEFAULT_PREFILTER.enabled).toBe(true);
+  expect(resolvePrefilterSettings({ enabled: false }).enabled).toBe(false);
+  expect(() =>
+    validatePrefilterSettings('prefilter', { baseUrl: 'https://api.example.com' }),
+  ).toThrow('loopback');
+  expect(() => validatePrefilterSettings('prefilter', { skipBelow: 1 })).toThrow('skipBelow');
+  expect(() => validatePrefilterSettings('prefilter', { other: true })).toThrow('unknown field');
+});
+
+test('a confident no skips the Warden, journalled with its score; an unsure one is asked', async () => {
+  const seen: unknown[] = [];
+  const prefilter = new WardenPrefilter(
+    { skipBelow: 0.2 },
+    { fetch: server({ voice: 0.05, schema: 0.15, ship: 0.35 }, seen) },
+  );
+  const { flow, calls } = roster(['voice', 'schema', 'ship'], prefilter);
+
+  const plan = await flow.preMessage('Add a column to the invites table');
+  const by = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
+  expect(by.voice).toMatchObject({
+    decision: 'skipped',
+    reason: 'prefilter',
+    prefilter: { score: 0.05, skipBelow: 0.2 },
+  });
+  expect(by.schema).toMatchObject({ decision: 'skipped', prefilter: { score: 0.15 } });
+  expect(by.ship!.decision).toBe('no-comment');
+  expect(plan.prefilter).toMatchObject({ status: 'scored', skipped: 2 });
+  expect(calls).toEqual([{ domain: 'ship', phase: 'advice' }]);
+  // One call per trigger, every Warden's question in it.
+  expect(seen).toHaveLength(1);
+
+  calls.length = 0;
+  const report = await flow.postAction({
+    tool: 'Edit',
+    input: { file_path: 'prisma/schema.prisma' },
+  });
+  expect(report.prefiltered).toEqual([
+    { domain: 'voice', score: 0.05, skipBelow: 0.2 },
+    { domain: 'schema', score: 0.15, skipBelow: 0.2 },
+  ]);
+  expect(report.domainsChecked).toEqual(['ship']);
+  expect(calls).toEqual([{ domain: 'ship', phase: 'guard' }]);
+});
+
+test('a missing model fails open: every Warden is asked, and the warning fires once', async () => {
+  const warnings: PrefilterHealth[] = [];
+  const prefilter = new WardenPrefilter(undefined, {
+    fetch: down,
+    onHealth: (health) => warnings.push(health),
+  });
+  const { flow, calls } = roster(['voice', 'schema'], prefilter);
+
+  const plan = await flow.preMessage('Add a column');
+  expect(plan.contributions.map((c) => c.decision)).toEqual(['no-comment', 'no-comment']);
+  expect(plan.prefilter).toMatchObject({ status: 'unavailable' });
+  const report = await flow.postAction({ tool: 'Edit', input: {} });
+  expect(report.domainsChecked).toEqual(['voice', 'schema']);
+  expect(report.prefilter).toMatchObject({ status: 'unavailable' });
+  expect(calls).toHaveLength(4);
+  expect(warnings).toEqual([{ ok: false, reason: 'TypeSafe decision transport failed' }]);
+  expect((await prefilter.check()).ok).toBe(false);
+  expect(warnings).toHaveLength(1);
+});
+
+test('turned off, no pre-filter call is made and every Warden is asked', async () => {
+  const { flow, calls } = roster(['voice', 'schema']);
+  const plan = await flow.preMessage('Add a column');
+  expect(plan.prefilter).toBeUndefined();
+  expect(calls).toHaveLength(2);
+});
+
+test('the doctor warns when the model is missing; off reports off', async () => {
+  const empty = mkdtempSync(join(tmpdir(), 'prefilter-models-'));
+  cleanups.push(() => rmSync(empty, { recursive: true, force: true }));
+  const config = starterConfig('claude-code', 'fable');
+  const which = () => '/usr/bin/true';
+  const missing = await inspectReadiness(config, { which, modelsDir: empty });
+  expect(missing.prefilter).toEqual({ status: 'not-installed', url: DEFAULT_PREFILTER.baseUrl });
+  expect(missing.issues).toContainEqual(
+    expect.objectContaining({ severity: 'warning', code: 'prefilter-not-installed' }),
+  );
+  const off = await inspectReadiness(
+    { ...config, prefilter: { enabled: false } },
+    { which, modelsDir: empty },
+  );
+  expect(off.prefilter?.status).toBe('off');
+  expect(off.issues.map((i) => i.code)).not.toContain('prefilter-not-installed');
+});

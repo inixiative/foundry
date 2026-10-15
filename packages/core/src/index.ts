@@ -185,6 +185,26 @@ export {
   type TranscriptTurn,
 } from './feedback/correction';
 export {
+  PREFILTER_CONTEXT_CHARS,
+  PREFILTER_DESCRIPTION_CHARS,
+  PREFILTER_MOMENT_CHARS,
+  PREFILTER_SWEEP,
+  type PrefilterFixture,
+  type PrefilterPair,
+  type PrefilterPoint,
+  type PrefilterScore,
+  type PrefilterTrigger,
+  parsePrefilterFixture,
+  percentiles,
+  prefilterConsistency,
+  prefilterDescription,
+  prefilterQuestion,
+  prefilterSkips,
+  prefilterState,
+  probeFixture,
+  scorePrefilter,
+} from './feedback/warden-prefilter';
+export {
   type CharterScore,
   parseWardenJudgement,
   scoreCharterRun,
