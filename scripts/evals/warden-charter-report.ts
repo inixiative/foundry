@@ -27,7 +27,11 @@
  * chorus's domain recognition, apart from what the judge made of the remarks: chorus recall = targeted
  * positives where at least one labelled region said yes; chorus false-yes = moments where a region
  * outside the labels (any region, on a negative) said yes; and per region, precision and recall of its
- * yes over the probes it is labelled for.
+ * yes over the probes it is labelled for (calls, yeses, right and wrong yeses, precision, recall; macro
+ * averages, the share of speaking regions at precision >= 0.8, regions that never fired). Truth is
+ * multi-region (held or expected); positives with no labelled target are left out of scoring. `goal`
+ * is the per-moment measure: coverage = needed regions shown / needed, correctness = needed shown /
+ * shown, averaged over targeted moments, with the share of moments where correctness > 0.5.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -553,9 +557,16 @@ if (values.labels) {
   };
   const labelled = (probeId: string) =>
     new Set([...(labels.probes[probeId]?.expected ?? []), ...(labels.probes[probeId]?.held ?? [])]);
+  // Truth is known on negatives and on positives with a labelled target; a correction with no doc target is left out of scoring.
   const positives = after.probes.filter((p) => p.kind === 'positive' && labelled(p.id).size);
+  const scored = new Set([
+    ...positives.map((p) => p.id),
+    ...after.probes.filter((p) => p.kind === 'negative').map((p) => p.id),
+  ]);
   const saidYes = (probeId: string, domain: string) =>
     after.answers.some((a) => a.probeId === probeId && a.domain === domain && yes(a));
+  const shown = (probeId: string) =>
+    new Set(after.answers.filter((a) => a.probeId === probeId && yes(a)).map((a) => a.domain));
   const recognised = positives.filter((p) => [...labelled(p.id)].some((r) => saidYes(p.id, r)));
   const outsideYes = (t: WardenProbeTurn) =>
     after.answers.filter(
@@ -565,49 +576,81 @@ if (values.labels) {
         yes(a) &&
         !labelled(a.probeId).has(a.domain),
     ).length;
-  const falseYesTurns = after.turns.filter((t) => outsideYes(t) > 0);
+  const scoredTurns = after.turns.filter((t) => scored.has(t.probeId));
+  const falseYesTurns = scoredTurns.filter((t) => outsideYes(t) > 0);
   const negativeTurns = after.turns.filter((t) => probesById.get(t.probeId)?.kind === 'negative');
+  // Per region: a yes is right when the region holds or is expected for the moment's target (multi-region truth).
   const regions = [...new Set(after.answers.map((a) => a.domain))].sort();
   const perRegion = Object.fromEntries(
     regions.map((region) => {
+      const mine = after.answers.filter((a) => a.domain === region);
       const relevant = positives.filter((p) => labelled(p.id).has(region));
       const hits = relevant.filter((p) => saidYes(p.id, region));
-      const spoke = after.answers.filter((a) => a.domain === region && yes(a));
+      const spoke = mine.filter((a) => yes(a) && scored.has(a.probeId));
       const right = spoke.filter((a) => labelled(a.probeId).has(region));
       return [
         region,
         {
+          calls: mine.length,
+          yes: mine.filter(yes).length,
+          rightYes: right.length,
+          wrongYes: spoke.length - right.length,
+          precision: rate(right.length, spoke.length),
           labelledFor: relevant.length,
           recall: rate(hits.length, relevant.length),
-          yes: spoke.length,
-          precision: rate(right.length, spoke.length),
         },
       ];
     }),
   );
-  const speaking = Object.entries(perRegion).filter(([, r]) => r.yes > 0);
-  const owning = Object.entries(perRegion).filter(([, r]) => r.labelledFor > 0);
+  const speaking = Object.values(perRegion).filter((r) => r.precision !== null);
+  const owning = Object.values(perRegion).filter((r) => r.recall !== null);
+  // Aron's goal metric, per targeted moment: needed = labelled regions, shown = regions that said yes.
+  const moments = positives.map((p) => {
+    const needed = labelled(p.id);
+    const seen = shown(p.id);
+    const both = [...needed].filter((r) => seen.has(r)).length;
+    return {
+      coverage: both / needed.size,
+      correctness: seen.size ? both / seen.size : null,
+    };
+  });
+  const spoken = moments.filter((m) => m.correctness !== null);
+  const mean = (xs: number[]) =>
+    rate(
+      xs.reduce((a, b) => a + b, 0),
+      xs.length,
+    );
   report.recognition = {
     labels: resolve(values.labels),
     labelledPositives: positives.length,
+    excludedPositives: after.probes.filter((p) => p.kind === 'positive').length - positives.length,
     chorusRecall: withCI(recognised.length, positives.length),
-    chorusFalseYes: withCI(falseYesTurns.length, after.turns.length),
+    chorusFalseYes: withCI(falseYesTurns.length, scoredTurns.length),
     chorusFalseYesOnNegatives: withCI(
       negativeTurns.filter((t) => outsideYes(t) > 0).length,
       negativeTurns.length,
     ),
     outsideYesPerMoment: rate(
-      after.turns.reduce((n, t) => n + outsideYes(t), 0),
-      after.turns.length,
+      scoredTurns.reduce((n, t) => n + outsideYes(t), 0),
+      scoredTurns.length,
     ),
-    macroRegionRecall: rate(
-      owning.reduce((n, [, r]) => n + (r.recall ?? 0), 0),
-      owning.length,
-    ),
-    macroRegionPrecision: rate(
-      speaking.reduce((n, [, r]) => n + (r.precision ?? 0), 0),
+    goal: {
+      moments: positives.length,
+      silentMoments: moments.length - spoken.length,
+      coverageMean: mean(moments.map((m) => m.coverage)),
+      correctnessMeanOverAll: mean(moments.map((m) => m.correctness ?? 0)),
+      correctnessMeanOverSpoken: mean(spoken.map((m) => m.correctness!)),
+      majorityCorrect: withCI(spoken.filter((m) => m.correctness! > 0.5).length, positives.length),
+    },
+    regions: regions.length,
+    regionsNeverFired: Object.values(perRegion).filter((r) => r.yes === 0).length,
+    regionsSpeaking: speaking.length,
+    regionsPrecisionAtLeast80: withCI(
+      speaking.filter((r) => r.precision! >= 0.8).length,
       speaking.length,
     ),
+    macroRegionRecall: mean(owning.map((r) => r.recall!)),
+    macroRegionPrecision: mean(speaking.map((r) => r.precision!)),
     perRegion,
   };
 }
