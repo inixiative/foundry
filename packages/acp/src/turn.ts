@@ -42,6 +42,7 @@ export class TurnProjection {
   private readonly calls = new Map<string, string>();
   private readonly guards = new Set<string>();
   private lastPlan = '';
+  private waitingForSetup = false;
   private fallback: ReturnType<typeof setTimeout> | null = null;
   private closing: Promise<void> | null = null;
   private resolve!: (reason: StopReason) => void;
@@ -63,6 +64,31 @@ export class TurnProjection {
 
   private get contextId() {
     return `foundry-context:${this.turnId}`;
+  }
+
+  /**
+   * The thread is setting up its Wardens and the turn waits for it: say so, and say when it is ready
+   * (the turn's first output).
+   */
+  settingUp(): void {
+    if (this.waitingForSetup) return;
+    this.waitingForSetup = true;
+    this.emit({
+      sessionUpdate: 'agent_thought_chunk',
+      content: {
+        type: 'text',
+        text: "Setting up your thread; feel free to start typing; we'll tell you when it's ready.\n",
+      },
+    });
+  }
+
+  private setupReady(): void {
+    if (!this.waitingForSetup) return;
+    this.waitingForSetup = false;
+    this.emit({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text: 'Your thread is ready.\n' },
+    });
   }
 
   /** The visible middleware item opens as soon as the turn is sent. */
@@ -106,6 +132,7 @@ export class TurnProjection {
 
   private chunk(text: string): void {
     if (!text) return;
+    this.setupReady();
     this.output();
     this.streamed = true;
     this.emit({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
@@ -120,6 +147,7 @@ export class TurnProjection {
   flowTurn(turn: unknown): void {
     if (this.settled) return;
     if ((turn as { turnId?: unknown } | null)?.turnId !== this.turnId) return;
+    this.setupReady();
     for (const guard of guardComments(turn)) {
       if (this.guards.has(guard.id)) continue;
       this.guards.add(guard.id);

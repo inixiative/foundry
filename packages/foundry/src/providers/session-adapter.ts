@@ -39,6 +39,7 @@ import {
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import type { InSessionWardens } from './in-session-wardens';
 import {
   appServerBridgeConfiguration,
   appServerClientMcpConfiguration,
@@ -521,6 +522,11 @@ export interface ClaudeCodeSessionAdapterConfig {
    * Currently bridges: `session_compact` → `session_compacted`.
    */
   signals?: SignalBus;
+  /**
+   * `decisionRuntime: claude-in-session`: each executor session hosts its thread's Wardens as
+   * subagents inside its own process (docs/THREAD-TREE.md spec C).
+   */
+  inSession?: InSessionWardens;
 }
 
 export class ClaudeCodeSessionAdapter implements SessionAdapter {
@@ -534,6 +540,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   private _ownedExits = new WeakMap<HarnessSession, () => Promise<number> | undefined>();
   private _live = new Set<HarnessSession>();
   private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
+  private _inSession?: InSessionWardens;
   private _defaults: ClaudeCodeSessionAdapterConfig['defaults'];
   private _controlledFixtureSpawn?: ClaudeCodeSessionAdapterConfig['controlledFixtureSpawn'];
   private _signals: ThreadSignalBindings;
@@ -559,6 +566,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       },
     };
     this._controlledFixtureSpawn = config.controlledFixtureSpawn;
+    this._inSession = config.inSession;
     this._signals = new ThreadSignalBindings(config.signals);
   }
 
@@ -708,6 +716,15 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       if (!session.onToolRequest)
         throw Error('Installed agent-session lacks onToolRequest; no process started');
       session.onToolRequest(opts.toolGate);
+    }
+    // The thread's Wardens live in its executor's own process: the host attaches before it starts.
+    if (this._inSession && opts.tools !== false && !fixture && !opts.threadId.includes(':aux:')) {
+      const inSession = this._inSession;
+      const host = inSession.attach(opts.threadId);
+      session.extend(host);
+      session.onEvent((event) => {
+        if (event.kind === 'session_end') inSession.detached(opts.threadId, host);
+      });
     }
     this._constructions.set(
       session,

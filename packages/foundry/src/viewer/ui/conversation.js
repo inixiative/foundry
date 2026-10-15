@@ -232,6 +232,17 @@ function ContextBar() {
         }
       </div>
       ${
+        meta.setup?.status === 'starting'
+          ? html`<div class="context-bar-setup" role="status">
+              Setting up your thread (${meta.setup.wardens.held}/${meta.setup.wardens.expected} Wardens held); feel free to start typing; we'll tell you when it's ready.
+            </div>`
+          : meta.setup?.status === 'degraded' && meta.setup.wardens.failed.length
+            ? html`<div class="context-bar-setup context-bar-setup--degraded" role="status">
+                Thread ready; ${meta.setup.wardens.failed.length} Warden${meta.setup.wardens.failed.length === 1 ? '' : 's'} could not be held and run the slower way.
+              </div>`
+            : null
+      }
+      ${
         segments.length > 0
           ? html`
         <div class="context-bar-stack" title="Warm layers vs. model context window">

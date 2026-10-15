@@ -27,6 +27,8 @@ export function nativeTextEnvironment(input: Record<string, string | undefined>)
     'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
     // Foundry composes instruction files itself (prompts/instruction-stack.ts); not credentials.
     'CLAUDE_CODE_DISABLE_CLAUDE_MDS',
+    // In-session Wardens raise the main session's subagent cap (agent-session ClaudeInSessionDecisions).
+    'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS',
   ];
   return Object.fromEntries(
     keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]!]),

@@ -131,12 +131,14 @@ export class FoundryClient {
   }
 
   /** Accept a turn; its output arrives on `thread:<threadId>`, its full terminal to `clientId`. */
-  send(turn: {
-    threadId: string;
+  send(turn: { threadId: string; id: string; message: string; clientId?: string }): Promise<{
     id: string;
-    message: string;
-    clientId?: string;
-  }): Promise<{ id: string; threadId: string; status: 'accepted'; queued: boolean }> {
+    threadId: string;
+    status: 'accepted';
+    queued: boolean;
+    /** The thread is setting up its Wardens: the turn waits queued until it is ready. */
+    settingUp?: boolean;
+  }> {
     return this.request('POST', '/api/messages/send', turn);
   }
 

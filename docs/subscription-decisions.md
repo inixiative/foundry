@@ -15,7 +15,7 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `defaults.provider` | `claude-code` | The main-thread worker. Without API tokens it is a subscription harness: `claude-code` or `codex`. |
 | `defaults.nativeAuthenticationId` | absent: `~/.claude` or `~/.codex` | Optional explicit `native-profile` source for the worker; its runtime matches the worker. |
 | `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `claude-haiku-5-5` | New configurations record the decision profile here; `classifierModel` selects the decision model. A model registered only on the other runtime is refused rather than substituted. |
-| `subscriptionOnly.decisionRuntime` | `claude` | Decision runtime when no explicit source is named: `claude` (`~/.claude`) or `codex` (`~/.codex`). |
+| `subscriptionOnly.decisionRuntime` | `claude` | Decision runtime when no explicit source is named: `claude` (`~/.claude`) or `codex` (`~/.codex`). `claude-in-session` runs Claude decisions too, but holds each thread's Wardens as subagents inside the thread's own Claude Code process (below); it needs the Claude Code worker. |
 | `subscriptionOnly.decisionSourceId` | absent: the runtime's default login | Optional explicit `native-profile` source for decisions. It must match `decisionRuntime` when both are set. |
 | `subscriptionOnly.model` | `claude-haiku-5-5` for Claude, `gpt-6-luna` for Codex | Decision model; overrides `classifierModel`. Heavier roles can name `claude-opus-5-5` or `claude-fable-5-1`. |
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only: the id the CLI must report serving (for example the full id behind an alias). Codex does not acknowledge a different model. |
@@ -82,6 +82,16 @@ Claude decisions run on agent-session's `ClaudePrimedSessions`, with the same pe
 - **Bounds.** Every decision process launches text-only (`--safe-mode --tools "" --strict-mcp-config` with an empty MCP config, no slash commands, no Chrome) with `--setting-sources ""`, so the user's hooks, permissions and plugins never apply, and with paid credentials stripped. At most 16 roles stay primed (each holds one idle spare process, about 215 MB); idle roles are evicted after 30 minutes. Any tool activity is a violation that closes admission.
 - **Login.** Before the first decision the host checks `claude auth status --json` for a `claude.ai` subscription login (never an API key) and registers as a shared holder; a failed check dispatches nothing. The CLI reports the served model (`claude-haiku-5-5` for Haiku 5.5), and a substitution is refused.
 - **History.** Primed transcripts live in `~/.claude/projects/<private host cwd>` while their role is primed and are deleted when it is evicted or the host closes; the empty directory is removed on close. A crash leaves them there.
+
+## Wardens in the thread's own process (`claude-in-session`)
+
+Off by default (docs/THREAD-TREE.md spec C; numbers in §C.9). With `decisionRuntime: "claude-in-session"`:
+
+- **One process per thread.** Each executor session hosts its thread's Wardens through agent-session's `ClaudeInSessionDecisions`. The thread's session opens when its first turn is accepted; the turn waits `queued` while an internal setup turn starts the Warden tree, and `ThreadMeta.setup` drives "Setting up your thread" in the viewer and in foundry-acp.
+- **What runs there.** Warden advice, guard and review calls. Other decision roles (Cartographer, classifiers, routers, naming, feedback) stay on primed sessions. In-session calls take none of the `maxConcurrent` slots.
+- **Login.** In-session Wardens run on the thread's own login (and its Kingdom capacity pool), not on the decision profile.
+- **Fallback.** A thread whose Warden tree is not running (setup failed, or too many orphaned members) sends its Wardens to primed sessions, as if the setting were off.
+- **Subagents.** In this runtime only, the main thread's subagents' tool calls get the root thread's guard Wardens, journalled on the subagent's node.
 
 ## Codex decisions
 

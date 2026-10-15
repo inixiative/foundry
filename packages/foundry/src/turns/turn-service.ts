@@ -45,9 +45,21 @@ export interface TurnServiceDeps {
   namer?: ThreadNamer;
   /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
   feedback?: FeedbackService | null;
+  /**
+   * In-session Wardens (docs/THREAD-TREE.md spec C): opens the thread's native session and waits
+   * (bounded) until its Wardens are held. The turn stays queued meanwhile, so a stop cancels it.
+   */
+  threadSetup?: ThreadSetupHost;
   localStore?: LocalSessionStore | null;
   directory: ViewerThreadDirectory;
   streams: ViewerStreams;
+}
+
+/** Opens a thread's native session ahead of its turn and waits for its in-session Wardens. */
+export interface ThreadSetupHost {
+  open(threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }): Promise<void>;
+  /** The thread's Wardens are not held yet (setup not run, or still starting). */
+  pending(threadId: string): boolean;
 }
 
 export interface TurnRequest {
@@ -277,6 +289,16 @@ export class TurnService {
       .run(async () => {
         // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
         await this.deps.feedback?.held(turnId);
+        // A thread setting up its in-session Wardens holds the turn (still queued) until they are held.
+        if (state.phase !== 'settled' && this.deps.threadSetup)
+          await this.deps.threadSetup
+            .open(threadId, {
+              ...(harness.thread.meta.cwd ? { cwd: harness.thread.meta.cwd } : {}),
+              bridge: this.nativeBridge(harness.thread),
+            })
+            .catch((error) =>
+              console.warn(`[Turns] thread setup failed: ${(error as Error).message ?? error}`),
+            );
         // A queued turn cancelled while it waited has already settled.
         if (state.phase !== 'settled')
           resolveSettled(

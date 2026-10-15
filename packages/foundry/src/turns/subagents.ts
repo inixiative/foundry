@@ -22,6 +22,22 @@ export interface SubagentRecorderDeps {
   /** A new observed child thread: make it visible (directory, streams). */
   readonly adopt?: (child: ThreadRecord) => void;
   readonly events?: EventStream;
+  /**
+   * A subagent's tool call and its result: the root thread's Wardens guard it like the main
+   * thread's own, and journal on the subagent's node.
+   */
+  readonly observeTool?: (rootThreadId: string, call: SubagentToolCall) => void;
+}
+
+/** One finished tool call of an observed subagent, for the root thread's guard Wardens. */
+export interface SubagentToolCall {
+  readonly node: ThreadRecord;
+  readonly turnId: string | null;
+  readonly callId: string;
+  readonly tool: string;
+  readonly input: Record<string, unknown>;
+  readonly output?: string;
+  readonly ok?: boolean;
 }
 
 interface Run {
@@ -48,6 +64,8 @@ export class SubagentRecorder {
   private readonly byTask = new Map<string, Run>();
   /** A spawn issued inside a subagent: its call id, to the run that issued it (nesting). */
   private readonly spawnedInside = new Map<string, Run>();
+  /** Tool calls a subagent began, by `<root>:<call id>`, until their result. */
+  private readonly toolCalls = new Map<string, { tool: string; input: Record<string, unknown> }>();
 
   constructor(private readonly deps: SubagentRecorderDeps) {}
 
@@ -71,7 +89,39 @@ export class SubagentRecorder {
       run.lastText = evidence.text;
     this.deps.store.appendObservedNative(run.child, run.turnId!, evidence);
     this.changed(run.child, run.turnId!);
+    this.guard(root, run, evidence);
     // A Codex child turn's end comes as a lifecycle update; Claude's as `ended`.
+  }
+
+  /** Pair a subagent's tool call with its result and hand it to the root thread's guards. */
+  private guard(root: ThreadRecord, run: Run, evidence: NativeEvidence): void {
+    if (!this.deps.observeTool || !evidence.callId) return;
+    const key = `${root.id}:${evidence.callId}`;
+    if (evidence.kind === 'tool_use' && evidence.toolName) {
+      this.toolCalls.set(key, {
+        tool: evidence.toolServer
+          ? `${evidence.toolServer}/${evidence.toolName}`
+          : evidence.toolName,
+        input: (evidence.toolInput as Record<string, unknown> | undefined) ?? {},
+      });
+      return;
+    }
+    if (evidence.kind !== 'tool_result') return;
+    const call = this.toolCalls.get(key);
+    if (!call) return;
+    this.toolCalls.delete(key);
+    try {
+      this.deps.observeTool(root.id, {
+        node: run.child,
+        turnId: run.turnId ?? null,
+        callId: evidence.callId,
+        ...call,
+        ...(evidence.toolOutput !== undefined ? { output: evidence.toolOutput } : {}),
+        ...(evidence.toolError !== undefined ? { ok: !evidence.toolError } : {}),
+      });
+    } catch {
+      /* a guard's failure never touches the record */
+    }
   }
 
   private lifecycle(root: ThreadRecord, evidence: NativeEvidence): void {

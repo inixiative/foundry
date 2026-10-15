@@ -1250,6 +1250,28 @@ export class DomainLibrarian {
    * revision. Without it the live cache is read. A model failure is reported
    * on `error`, not swallowed; an empty cache is a skip with no call.
    */
+  /**
+   * Keep this Warden pre-started for its next advice or guard on this thread: its instructions,
+   * domain knowledge and current thread understanding, so the call starts at once (the thread state
+   * rides with the moment). A provider without pre-start ignores it; nothing is decided here.
+   */
+  prestart(): void {
+    const cacheContent = this._cache.content;
+    if (!cacheContent || !this._llm.prestart) return;
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
+    const threadPrefix = threadSection(this._threadKnowledge.content || undefined);
+    // Composed instructions serve advice and guard alike; a Warden without them has two shapes.
+    const systems = [...new Set([this.advisePrompt, this.guardPrompt])];
+    for (const system of systems)
+      this._llm.prestart(
+        [
+          { role: 'system', content: chartered(system, this._charter) },
+          { role: 'user', content: `${stablePrefix}${threadPrefix}` },
+        ],
+        { ...this._llmOpts, stablePrefix, threadPrefix },
+      );
+  }
+
   async advise(message: string, threadState?: string, opts?: AdviseOpts): Promise<AdviseResult> {
     const cacheContent = opts?.cache ?? this._cache.content;
     if (!cacheContent) {
@@ -1272,7 +1294,8 @@ export class DomainLibrarian {
     // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
     // so custom instructions never have to restate the schema and never get rewritten to carry it.
     // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
-    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
+    const threadPrefix = threadSection(opts?.threadKnowledge);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1301,6 +1324,7 @@ export class DomainLibrarian {
       const result = await this._llm.complete(messages, {
         ...this._llmOpts,
         stablePrefix,
+        threadPrefix,
         ...(opts?.timeoutMs !== undefined
           ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) }
           : {}),
@@ -1402,7 +1426,8 @@ export class DomainLibrarian {
       opts?.threadKnowledge !== undefined
         ? opts.threadKnowledgeRevision
         : this._threadKnowledge.revision;
-    const stablePrefix = `## Domain cache (${this.domain})\n${cacheContent}\n`;
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
+    const threadPrefix = threadSection(understanding);
     const messages: LLMMessage[] = [
       { role: 'system', content: chartered(system, this._charter) },
       {
@@ -1441,6 +1466,7 @@ export class DomainLibrarian {
         ...this._llmOpts,
         priority: DECISION_PRIORITY.guard,
         stablePrefix,
+        threadPrefix,
       });
       const served = servedModel(result);
       if (served) request = { ...request, served };
@@ -1558,6 +1584,21 @@ export const ADVICE_RESPONSE_PROTOCOL = [
   '"snippets" are short notes from your domain, one point each; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
   STRICT_RULE,
 ].join('\n');
+
+/**
+ * What follows the domain cache in an advice or guard message and changes only when this Warden's
+ * review lands: its understanding of the thread. A pre-started Warden holds it. The thread state
+ * comes next and moves with every action, so it rides with the moment. Exactly the bytes those
+ * messages carry.
+ */
+export function threadSection(understanding: string | undefined) {
+  return `${understanding ? `\n## Your understanding of this thread\n${understanding}` : ''}\n`;
+}
+
+/** The stable start of every phase's message: one primed session serves advice, guard and review. */
+export function domainCachePrefix(domain: string, domainKnowledge: string): string {
+  return `## Domain cache (${domain})\n${domainKnowledge}\n`;
+}
 
 /**
  * The post-work review phase's response contract. Sent with every review request, independent of

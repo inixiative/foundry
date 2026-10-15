@@ -115,6 +115,11 @@ export interface CompletionOpts {
    */
   stablePrefix?: string;
   /**
+   * Text right after `stablePrefix` that changes only between turns (a Warden's thread knowledge and
+   * the thread state). Providers that pre-start a call shape hold it; others ignore it.
+   */
+  threadPrefix?: string;
+  /**
    * The executor's context split into standing parts and per-turn text. A provider that keeps a
    * native session delivers standing parts once and then only what changed (session-delivery.ts);
    * others ignore it and send the messages unchanged.
@@ -175,6 +180,13 @@ export interface LLMProvider {
   };
   complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult>;
   stream?(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent>;
+  /**
+   * Keep this call shape pre-started, so a later `complete` with the same `stablePrefix` and
+   * `threadPrefix` starts at once. `messages` end at those prefixes; no decision is made. Optional.
+   */
+  prestart?(messages: LLMMessage[], opts: CompletionOpts): void;
+  /** A thread closed: release whatever the provider holds for it. Optional. */
+  releaseThread?(threadId: string): Promise<void>;
 }
 
 export interface EmbeddingProvider {
