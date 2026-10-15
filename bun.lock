@@ -16,7 +16,7 @@
     },
     "packages/acp": {
       "name": "@inixiative/foundry-acp",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "foundry-acp": "src/cli.ts",
       },
@@ -31,14 +31,14 @@
     },
     "packages/core": {
       "name": "@inixiative/foundry-core",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "dependencies": {
         "uuidv7": "^1.0.2",
       },
     },
     "packages/foundry": {
       "name": "@inixiative/foundry",
-      "version": "0.5.3",
+      "version": "0.5.4",
       "bin": {
         "foundry": "src/cli.ts",
       },
