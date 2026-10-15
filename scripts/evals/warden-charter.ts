@@ -454,6 +454,7 @@ try {
         session: values.session,
         model: wardenModel,
         effort: wardenEffort ?? 'low',
+        thinkingTokens: process.env.MAX_THINKING_TOKENS,
         budget: budgetOverride,
         inputCap,
         roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],

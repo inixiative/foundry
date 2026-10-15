@@ -29,6 +29,8 @@ export function nativeTextEnvironment(input: Record<string, string | undefined>)
     'CLAUDE_CODE_DISABLE_CLAUDE_MDS',
     // In-session Wardens raise the main session's subagent cap (agent-session ClaudeInSessionDecisions).
     'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS',
+    // The CLI's thinking budget, set by an eval that measures Wardens with more thinking; not credentials.
+    'MAX_THINKING_TOKENS',
   ];
   return Object.fromEntries(
     keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]!]),
