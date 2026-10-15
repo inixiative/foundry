@@ -1,6 +1,7 @@
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
+import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
 import { resolveLearningSettings, validateLearningSettings } from './learning-config';
 import type { LearningConfig, ThreadDomainConfig } from './thread-runtime';
@@ -112,6 +113,21 @@ export function configuredExperts(config: FoundryConfig): {
     experts.push({ agentId: id, domain: agent.domain, agent: structuredClone(agent) });
   }
   return { experts, claimedDomains };
+}
+
+/**
+ * The largest Warden roster any thread of this Foundry runs: the global roster, or an enabled
+ * project's view where it is bigger (a generated region roster, project Wardens). Sizes the primed
+ * decision pool, which every project's threads share.
+ */
+export function largestRoster(config: FoundryConfig): number {
+  let largest = configuredExperts(config).experts.length;
+  for (const [id, project] of Object.entries(config.projects ?? {})) {
+    if (project.enabled === false) continue;
+    const view = resolveProjectView(config, id);
+    if (view) largest = Math.max(largest, configuredExperts(view.config).experts.length);
+  }
+  return largest;
 }
 
 /** The Cartographer's role in the composition view: the enabled cartographer agent's id, else "cartographer". */

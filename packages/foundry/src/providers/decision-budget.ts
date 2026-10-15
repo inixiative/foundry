@@ -26,5 +26,10 @@ export const DECISION_LATENCY_BUDGET = {
   messageToWorkerP95Ms: 9_000,
 } as const;
 
-/** Characters a decision's serialized messages may take; a native decision call refuses more. */
-export const DECISION_INPUT_CAP = 100_000;
+/**
+ * Characters a decision's serialized messages may take; a native decision call refuses more. Above
+ * DEFAULT_ROLE_BUDGET (a region Warden at the 40k-token hard cap plus its instructions) by the charter,
+ * thread knowledge, thread state, the moment and its protocol, so the role budget's named error fires
+ * first and this cap is the structural backstop.
+ */
+export const DECISION_INPUT_CAP = 160_000;
