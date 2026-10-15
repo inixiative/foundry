@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { probeClaudeLimits } from '@inixiative/agent-session';
 import { starterConfig } from '../viewer/config';
 import { createSubscriptionDecisions } from './subscription-decisions';
-import { resolveSubscriptionPolicy } from './subscription-policy';
+import { resolveSubscriptionPolicy, type SubscriptionSettings } from './subscription-policy';
 
 /** A private (0700) directory, created when missing. */
 export function privateDirectory(path: string): string {
@@ -16,13 +16,19 @@ export function privateDirectory(path: string): string {
  * A standalone subscription decision host for an offline job (repeat reports, evals): one model on
  * the machine's own login, its receipts under `state`. No daemon, no thread. `overrides.inputCap`
  * lifts the decision input cap for an eval that measures larger Wardens; live never sets it.
+ * `overrides.effort` sets the decision effort (`'default'` leaves the model's own); live decisions
+ * run the subscription policy's default.
  */
 export function decisionHost(
   model: string,
   runtime: 'claude' | 'codex',
   concurrency: number,
   state: string,
-  overrides: { inputCap?: number; primedSessions?: number } = {},
+  overrides: {
+    inputCap?: number;
+    primedSessions?: number;
+    effort?: SubscriptionSettings['effort'] | 'default';
+  } = {},
 ) {
   const directory = privateDirectory(join(state, 'decision-receipts'));
   const config = starterConfig('claude-code', 'sonnet');
@@ -33,12 +39,14 @@ export function decisionHost(
     maxConcurrent: concurrency,
     maxQueued: 1_024,
     maxQueuedPerThread: 1_024,
+    ...(overrides.effort && overrides.effort !== 'default' ? { effort: overrides.effort } : {}),
   };
   const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd: state });
   if (!resolved) throw Error('Offline decisions run on subscription decisions only');
   return createSubscriptionDecisions({
     ...resolved.policy,
     source: resolved.decision,
+    ...(overrides.effort === 'default' ? { effort: undefined } : {}),
     ...(overrides.inputCap !== undefined ? { inputCap: overrides.inputCap } : {}),
     ...(overrides.primedSessions !== undefined ? { primedSessions: overrides.primedSessions } : {}),
   });

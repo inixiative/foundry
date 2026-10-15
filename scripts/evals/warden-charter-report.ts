@@ -6,7 +6,8 @@
  * probes.
  *
  *   bun scripts/evals/warden-charter-report.ts --run <run dir> --probes <probes.jsonl> \
- *     [--baseline <run dir>] [--judge-pointers] [--routing <scores.jsonl>] [--out <report.json>]
+ *     [--baseline <run dir>] [--judge-pointers] [--routing <scores.jsonl>] [--labels <labels.json>] \
+ *     [--out <report.json>]
  *
  * --routing takes a router run's per-moment scores (`warden-prefilter.ts measure`: one
  * `{fixtureId, wardenId, score}` row per probe and region) and scores the same answers again as if only
@@ -20,6 +21,13 @@
  * baseline is scored on the probes both runs asked, and the paired table (both / after only /
  * baseline only / neither) says whether the difference is more than noise. Reads the run; writes only
  * the pointer cache and the report (default <run>/report.json).
+ *
+ * --labels takes the region labels per probe (`warden-prefilter.ts label-regions`: for each targeted
+ * positive the regions `expected` to answer and those whose knowledge `held` the target) and adds the
+ * chorus's domain recognition, apart from what the judge made of the remarks: chorus recall = targeted
+ * positives where at least one labelled region said yes; chorus false-yes = moments where a region
+ * outside the labels (any region, on a negative) said yes; and per region, precision and recall of its
+ * yes over the probes it is labelled for.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -51,6 +59,7 @@ const { values } = parseArgs({
     baseline: { type: 'string' },
     'judge-pointers': { type: 'boolean' },
     routing: { type: 'string' },
+    labels: { type: 'string' },
     out: { type: 'string' },
   },
 });
@@ -535,6 +544,71 @@ if (values.routing) {
         ];
       }),
     ),
+  };
+}
+if (values.labels) {
+  // Labelled regions per probe: `expected` (judged routing destination) and `held` (knowledge holds the target).
+  const labels = JSON.parse(readFileSync(resolve(values.labels), 'utf8')) as {
+    probes: Record<string, { expected?: string[]; held?: string[] }>;
+  };
+  const labelled = (probeId: string) =>
+    new Set([...(labels.probes[probeId]?.expected ?? []), ...(labels.probes[probeId]?.held ?? [])]);
+  const positives = after.probes.filter((p) => p.kind === 'positive' && labelled(p.id).size);
+  const saidYes = (probeId: string, domain: string) =>
+    after.answers.some((a) => a.probeId === probeId && a.domain === domain && yes(a));
+  const recognised = positives.filter((p) => [...labelled(p.id)].some((r) => saidYes(p.id, r)));
+  const outsideYes = (t: WardenProbeTurn) =>
+    after.answers.filter(
+      (a) =>
+        a.probeId === t.probeId &&
+        (a.trigger ?? 'agent-action') === (t.trigger ?? 'agent-action') &&
+        yes(a) &&
+        !labelled(a.probeId).has(a.domain),
+    ).length;
+  const falseYesTurns = after.turns.filter((t) => outsideYes(t) > 0);
+  const negativeTurns = after.turns.filter((t) => probesById.get(t.probeId)?.kind === 'negative');
+  const regions = [...new Set(after.answers.map((a) => a.domain))].sort();
+  const perRegion = Object.fromEntries(
+    regions.map((region) => {
+      const relevant = positives.filter((p) => labelled(p.id).has(region));
+      const hits = relevant.filter((p) => saidYes(p.id, region));
+      const spoke = after.answers.filter((a) => a.domain === region && yes(a));
+      const right = spoke.filter((a) => labelled(a.probeId).has(region));
+      return [
+        region,
+        {
+          labelledFor: relevant.length,
+          recall: rate(hits.length, relevant.length),
+          yes: spoke.length,
+          precision: rate(right.length, spoke.length),
+        },
+      ];
+    }),
+  );
+  const speaking = Object.entries(perRegion).filter(([, r]) => r.yes > 0);
+  const owning = Object.entries(perRegion).filter(([, r]) => r.labelledFor > 0);
+  report.recognition = {
+    labels: resolve(values.labels),
+    labelledPositives: positives.length,
+    chorusRecall: withCI(recognised.length, positives.length),
+    chorusFalseYes: withCI(falseYesTurns.length, after.turns.length),
+    chorusFalseYesOnNegatives: withCI(
+      negativeTurns.filter((t) => outsideYes(t) > 0).length,
+      negativeTurns.length,
+    ),
+    outsideYesPerMoment: rate(
+      after.turns.reduce((n, t) => n + outsideYes(t), 0),
+      after.turns.length,
+    ),
+    macroRegionRecall: rate(
+      owning.reduce((n, [, r]) => n + (r.recall ?? 0), 0),
+      owning.length,
+    ),
+    macroRegionPrecision: rate(
+      speaking.reduce((n, [, r]) => n + (r.precision ?? 0), 0),
+      speaking.length,
+    ),
+    perRegion,
   };
 }
 const outFile = values.out ? resolve(values.out) : join(run, 'report.json');
