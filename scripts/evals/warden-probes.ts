@@ -36,6 +36,16 @@
  * filter. Its target goes into targets-raw.jsonl; run --label-targets next to merge it with the
  * session targets. Fetches, session evidence and readings are cached under sources/github/.
  * Periods: a project's existing test cut (manifest.testFrom) is kept; a new project gets its own.
+ *
+ * From the person's Linear workspace (read-only; the key is read from an env file, never printed):
+ *   bun scripts/evals/warden-probes.ts --linear --out ~/.foundry/evals/warden-corrections/probes.jsonl \
+ *     [--linear-env ~/code/zealot/.env.local] [--refresh] [--concurrency 3]
+ * The key's user's comments (read whole) and the issue and project descriptions they wrote (read when
+ * they carry a reuse hint, as directives). Same findings, probes and targets as --github, with
+ * `source: 'linear'`. A comment's moment is the issue it was written on; a directive's ask is the
+ * ticket's title, so the user-message trigger is tested on it. Authorship is labelled; agent-written
+ * items still count as the person's (Aron, 2026-10-15). Each finding's `scope` sets its `weight`:
+ * generic code-correctness findings count 0.75, architectural ones 1.
  */
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -55,6 +65,7 @@ import {
   type ReviewMoment,
   type ReviewReading,
   reviewFindingMessages,
+  SCOPE_WEIGHT,
   type SessionEvidence,
   scrubSecrets,
   type TokenCounts,
@@ -73,7 +84,9 @@ import {
   saveCache,
 } from '../../packages/foundry/src/feedback/repeats-cli';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
-import { fetchReviewedPrs, type ReviewedPr, sessionEvidence } from './sources/github';
+import { LINEAR_POSTING, sessionEvidence } from './sources/evidence';
+import { fetchReviewedPrs, type ReviewedPr } from './sources/github';
+import { envValue, fetchLinearItems, type LinearItem } from './sources/linear';
 
 const { values } = parseArgs({
   options: {
@@ -91,14 +104,20 @@ const { values } = parseArgs({
     repos: { type: 'string' },
     reviewer: { type: 'string' },
     refresh: { type: 'boolean' },
+    linear: { type: 'boolean' },
+    'linear-env': { type: 'string' },
   },
 });
 if (
-  (!values.work && !values.sessions && !values.github && !values['label-targets']) ||
+  (!values.work &&
+    !values.sessions &&
+    !values.github &&
+    !values.linear &&
+    !values['label-targets']) ||
   !values.out
 ) {
   console.error(
-    'usage: warden-probes.ts (--work <kit work dir> | --sessions --projects a,b | --github | --label-targets) --out <probes.jsonl>',
+    'usage: warden-probes.ts (--work <kit work dir> | --sessions --projects a,b | --github | --linear | --label-targets) --out <probes.jsonl>',
   );
   process.exit(2);
 }
@@ -441,74 +460,12 @@ async function fromGitHub() {
       text: item.body,
     };
   };
-  const readingsFile = join(cache, 'readings.jsonl');
-  const readings = new Map<string, ReviewReading>(
-    (existsSync(readingsFile) ? readFileSync(readingsFile, 'utf8').split('\n') : [])
-      .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as { id: string; reading: ReviewReading };
-        return [row.id, row.reading];
-      }),
+  const { readings, failed, model } = await readMoments(
+    join(cache, 'readings.jsonl'),
+    candidates.map((entry) => moment(entry)),
+    state,
+    `${items.length} comments on ${prs.length} PRs`,
   );
-  const pending = candidates.filter(({ item }) => !readings.has(item.id));
-  process.stderr.write(
-    `${items.length} comments on ${prs.length} PRs; ${candidates.length} to read, ${pending.length} new\n`,
-  );
-  const model = 'claude-opus-5-5';
-  const concurrency = Number(values.concurrency ?? 3);
-  let failed = 0;
-  if (pending.length) {
-    markEvalRun(state);
-    const host = decisionHost(model, 'claude', concurrency, state);
-    const save = () =>
-      writePrivate(
-        readingsFile,
-        [...readings].map(([id, reading]) => `${JSON.stringify({ id, reading })}\n`).join(''),
-      );
-    const read = async (batch: (typeof items)[number][]): Promise<void> => {
-      try {
-        const result = await host.provider.complete(reviewFindingMessages(batch.map(moment)), {
-          tools: false,
-          maxTurns: 1,
-          temperature: 0,
-        });
-        const parsed = parseReviewFindings(
-          result.content,
-          batch.map(({ item }) => item.id),
-        );
-        batch.forEach(({ item }, i) => {
-          if (parsed[i]) readings.set(item.id, parsed[i]!);
-        });
-        save();
-        const missing = batch.filter((_, i) => !parsed[i]);
-        if (missing.length && missing.length < batch.length)
-          for (const m of missing) await read([m]);
-        else if (missing.length === 1) failed++;
-      } catch (error) {
-        console.error(`read failed: ${String(error).slice(0, 160)}`);
-        if (batch.length > 1) for (const m of batch) await read([m]);
-        else failed++;
-      }
-    };
-    const batches: (typeof items)[number][][] = [];
-    for (let i = 0; i < pending.length; i += 6) batches.push(pending.slice(i, i + 6));
-    let next = 0;
-    let done = 0;
-    try {
-      await Promise.all(
-        Array.from({ length: concurrency }, async () => {
-          for (let batch = batches[next++]; batch; batch = batches[next++]) {
-            await read(batch);
-            done += batch.length;
-            process.stderr.write(`\rread ${done}/${pending.length}`);
-          }
-        }),
-      );
-      process.stderr.write('\n');
-    } finally {
-      await host.shutdown();
-    }
-  }
 
   // 4. Probes: one per finding, deduped within a PR by target name.
   const scrub = (text: string) => scrubSecrets(text).text;
@@ -546,6 +503,7 @@ async function fromGitHub() {
           ],
         },
         hidden: scrub(finding.excerpt || item.body.slice(0, 300)),
+        ...(finding.scope ? { weight: SCOPE_WEIGHT[finding.scope] } : {}),
         provenance: {
           url: item.url,
           repo: pr.repo,
@@ -560,31 +518,8 @@ async function fromGitHub() {
     }
   }
 
-  // 5. Periods: keep each project's existing cut; a project without one gets its own.
-  const manifest = readManifest();
-  const testShare = Number(values['test-share'] ?? manifest.testShare ?? 0.3);
-  const cuts: Record<string, string> = { ...(manifest.testFrom ?? {}) };
-  for (const project of new Set(probes.map((p) => p.project!))) {
-    if (cuts[project]) continue;
-    const times = probes
-      .filter((p) => p.project === project)
-      .map((p) => p.at!)
-      .sort();
-    cuts[project] = times[Math.min(times.length - 1, Math.floor(times.length * (1 - testShare)))]!;
-  }
-  const split = probes.map((p) => ({
-    ...p,
-    period: (p.at! >= cuts[p.project!]! ? 'test' : 'train') as 'train' | 'test',
-  }));
-  const kept = readProbes().filter((p) => p.source !== 'github');
-  writePrivate(
-    out,
-    `${[...kept, ...split]
-      .sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''))
-      .map((p) => JSON.stringify(p))
-      .join('\n')}\n`,
-  );
-  saveTargetsRaw(new Set(split.map((p) => p.id)));
+  // 5. Periods and the merge into probes.jsonl.
+  const { split, cuts, manifest } = writeSourceProbes('github', probes);
 
   const counts: Record<string, number> = {};
   for (const p of split) {
@@ -622,6 +557,256 @@ async function fromGitHub() {
     `${JSON.stringify({ ...manifest, testFrom: cuts, github }, null, 1)}\n`,
   );
   console.log(JSON.stringify({ testFrom: cuts, ...github }, null, 1));
+}
+
+/** Which eval project and context a Linear workspace belongs to. */
+const LINEAR_WORKSPACES: Record<string, { project: string; ctx: string }> = {
+  userevidence: { project: 'zealot', ctx: 'userevidence' },
+};
+
+async function fromLinear() {
+  const envFile = resolve(values['linear-env'] ?? join(homedir(), 'code', 'zealot', '.env.local'));
+  const key = envValue(envFile, 'LINEAR_API_KEY');
+  if (!key) {
+    console.error(`no LINEAR_API_KEY in ${envFile}`);
+    process.exit(2);
+  }
+  const state = privateDirectory(dirname(out));
+  const cache = privateDirectory(join(state, 'sources', 'linear'));
+  const now = Date.now();
+
+  // 1. Fetch everything the key's user wrote.
+  const file = join(cache, 'items.json');
+  if (values.refresh || !existsSync(file)) {
+    const fetched = await fetchLinearItems(key, (line) => process.stderr.write(`\r${line}`));
+    process.stderr.write('\n');
+    writePrivate(file, JSON.stringify(fetched));
+  }
+  const { workspace, items } = JSON.parse(readFileSync(file, 'utf8')) as {
+    workspace: string;
+    items: LinearItem[];
+  };
+  const place = LINEAR_WORKSPACES[workspace];
+  if (!place)
+    throw Error(`unknown Linear workspace ${workspace}: ${Object.keys(LINEAR_WORKSPACES)}`);
+
+  // 2. Authorship evidence: the text inside a session's Linear tool call, or a typed prompt.
+  const evidenceFile = join(cache, 'evidence.json');
+  let evidence: Record<string, SessionEvidence>;
+  if (values.refresh || !existsSync(evidenceFile)) {
+    process.stderr.write(`scanning sessions for ${items.length} Linear items…\n`);
+    const found = await sessionEvidence(
+      items,
+      [
+        join(homedir(), '.claude', 'projects'),
+        join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions'),
+      ],
+      (text) => evidenceSnippet(text),
+      LINEAR_POSTING,
+    );
+    evidence = Object.fromEntries(found);
+    writePrivate(evidenceFile, JSON.stringify(evidence));
+  } else
+    evidence = JSON.parse(readFileSync(evidenceFile, 'utf8')) as Record<string, SessionEvidence>;
+
+  // 3. Read: comments whole; issue and project descriptions as directives, when they carry a hint.
+  const candidates = items.filter((i) => i.kind === 'comment' || REUSE_HINT.test(i.body));
+  const moment = (i: LinearItem): ReviewMoment => ({
+    id: i.id,
+    where: `Linear ${workspace} ${i.kind === 'project' ? `project "${i.subject.title}"` : i.subject.ref} (${i.kind}${i.kind === 'comment' ? ` on an issue opened by ${i.subject.creator}` : ''})`,
+    work:
+      i.kind === 'comment'
+        ? `${i.subject.ref}: ${i.subject.title}\n\n${i.subject.description}`
+        : `${i.subject.ref === 'project' ? 'Project' : i.subject.ref}: ${i.subject.title}`,
+    ...(i.replyTo ? { replyTo: i.replyTo } : {}),
+    text: i.body,
+    mode: i.kind === 'comment' ? 'review' : 'directive',
+  });
+  const { readings, failed, model } = await readMoments(
+    join(cache, 'readings.jsonl'),
+    candidates.map(moment),
+    state,
+    `${items.length} Linear items in ${workspace}`,
+  );
+
+  // 4. Probes: one per finding, deduped within an issue by target name.
+  const scrub = (text: string) => scrubSecrets(text).text;
+  const seen = new Set<string>();
+  const probes: (WardenProbe & { provenance: Record<string, string | number | null> })[] = [];
+  for (const item of candidates) {
+    const reading = readings.get(item.id);
+    if (!reading?.findings.length) continue;
+    const authorship = authorshipOf(item.body, evidence[item.id], reading.voice);
+    const subject = item.kind === 'project' ? `project:${item.subject.title}` : item.subject.ref;
+    for (const finding of reading.findings) {
+      const dedupe = `${subject}|${finding.target.name.toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+      if (seen.has(dedupe)) continue;
+      seen.add(dedupe);
+      const id = `linear-${place.project}-${createHash('sha256').update(`${item.id}|${finding.target.name}`).digest('hex').slice(0, 12)}`;
+      const head = `${item.subject.ref === 'project' ? 'Project' : item.subject.ref}: ${item.subject.title}`;
+      probes.push({
+        id,
+        kind: 'positive',
+        ctx: place.ctx,
+        project: place.project,
+        source: 'linear',
+        authorship,
+        // A comment answers work in progress (the issue); a directive is tested on its ticket's ask.
+        moment:
+          item.kind === 'comment'
+            ? scrub(`${head}\n\n${item.subject.description.slice(0, 1500)}`)
+            : '',
+        ...(item.kind === 'comment' ? {} : { ask: scrub(head) }),
+        at: new Date(Date.parse(item.at)).toISOString(),
+        gold: {
+          domains: [],
+          statements: [
+            `Use ${finding.target.name}${finding.target.builtInstead ? ` instead of ${finding.target.builtInstead}` : ''}`,
+          ],
+        },
+        hidden: scrub(finding.excerpt || item.body.slice(0, 300)),
+        ...(finding.scope ? { weight: SCOPE_WEIGHT[finding.scope] } : {}),
+        provenance: { url: item.url, ref: item.subject.ref, item: item.kind },
+      });
+      targetsRaw.set(id, finding.target);
+    }
+  }
+
+  // 5. Periods and the merge into probes.jsonl.
+  const { split, cuts, manifest } = writeSourceProbes('linear', probes);
+  const tally = (key: (p: (typeof split)[number]) => string) => {
+    const counts: Record<string, number> = {};
+    for (const p of split) counts[key(p)] = (counts[key(p)] ?? 0) + 1;
+    return Object.fromEntries(Object.entries(counts).sort());
+  };
+  const linear = {
+    builtAt: new Date(now).toISOString(),
+    workspace,
+    model,
+    items: items.length,
+    byKind: Object.fromEntries(
+      ['comment', 'issue', 'project'].map((k) => [k, items.filter((i) => i.kind === k).length]),
+    ),
+    read: candidates.length,
+    readFailed: failed,
+    withFindings: candidates.filter((i) => readings.get(i.id)?.findings.length).length,
+    probes: split.length,
+    counts: tally((p) =>
+      [p.project, p.period, p.provenance.item, p.authorship!.by, p.authorship!.confidence].join(
+        ' ',
+      ),
+    ),
+    misses: tally((p) => targetsRaw.get(p.id)?.miss ?? 'unclear'),
+    weights: tally((p) => String(p.weight ?? 1)),
+  };
+  writePrivate(
+    join(dirname(out), 'manifest.json'),
+    `${JSON.stringify({ ...manifest, testFrom: cuts, linear }, null, 1)}\n`,
+  );
+  console.log(JSON.stringify({ testFrom: cuts, ...linear }, null, 1));
+}
+
+/** Opus reads each review moment for findings, resumable: readings are cached in `file` by id. */
+async function readMoments(
+  file: string,
+  moments: readonly ReviewMoment[],
+  state: string,
+  label: string,
+): Promise<{ readings: Map<string, ReviewReading>; failed: number; model: string }> {
+  const readings = new Map<string, ReviewReading>(
+    (existsSync(file) ? readFileSync(file, 'utf8').split('\n') : []).filter(Boolean).map((line) => {
+      const row = JSON.parse(line) as { id: string; reading: ReviewReading };
+      return [row.id, row.reading];
+    }),
+  );
+  const pending = moments.filter((m) => !readings.has(m.id));
+  process.stderr.write(`${label}; ${moments.length} to read, ${pending.length} new\n`);
+  const model = 'claude-opus-5-5';
+  const concurrency = Number(values.concurrency ?? 3);
+  let failed = 0;
+  if (!pending.length) return { readings, failed, model };
+  markEvalRun(state);
+  const host = decisionHost(model, 'claude', concurrency, state);
+  const save = () =>
+    writePrivate(
+      file,
+      [...readings].map(([id, reading]) => `${JSON.stringify({ id, reading })}\n`).join(''),
+    );
+  const read = async (batch: readonly ReviewMoment[]): Promise<void> => {
+    try {
+      const result = await host.provider.complete(reviewFindingMessages(batch), {
+        tools: false,
+        maxTurns: 1,
+        temperature: 0,
+      });
+      const parsed = parseReviewFindings(
+        result.content,
+        batch.map((m) => m.id),
+      );
+      batch.forEach((m, i) => {
+        if (parsed[i]) readings.set(m.id, parsed[i]!);
+      });
+      save();
+      const missing = batch.filter((_, i) => !parsed[i]);
+      if (missing.length && missing.length < batch.length) for (const m of missing) await read([m]);
+      else if (missing.length === 1) failed++;
+    } catch (error) {
+      console.error(`read failed: ${String(error).slice(0, 160)}`);
+      if (batch.length > 1) for (const m of batch) await read([m]);
+      else failed++;
+    }
+  };
+  const batches: ReviewMoment[][] = [];
+  for (let i = 0; i < pending.length; i += 6) batches.push(pending.slice(i, i + 6));
+  let next = 0;
+  let done = 0;
+  try {
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        for (let batch = batches[next++]; batch; batch = batches[next++]) {
+          await read(batch);
+          done += batch.length;
+          process.stderr.write(`\rread ${done}/${pending.length}`);
+        }
+      }),
+    );
+    process.stderr.write('\n');
+  } finally {
+    await host.shutdown();
+  }
+  return { readings, failed, model };
+}
+
+/**
+ * Merge one source's probes into probes.jsonl, replacing that source's earlier probes and stale
+ * targets. Periods keep each project's existing cut; a project without one gets its own.
+ */
+function writeSourceProbes<P extends WardenProbe>(source: ProbeSource, probes: readonly P[]) {
+  const manifest = readManifest();
+  const testShare = Number(values['test-share'] ?? manifest.testShare ?? 0.3);
+  const cuts: Record<string, string> = { ...(manifest.testFrom ?? {}) };
+  for (const project of new Set(probes.map((p) => p.project!))) {
+    if (cuts[project]) continue;
+    const times = probes
+      .filter((p) => p.project === project)
+      .map((p) => p.at!)
+      .sort();
+    cuts[project] = times[Math.min(times.length - 1, Math.floor(times.length * (1 - testShare)))]!;
+  }
+  const split = probes.map((p) => ({
+    ...p,
+    period: (p.at! >= cuts[p.project!]! ? 'test' : 'train') as 'train' | 'test',
+  }));
+  const kept = readProbes().filter((p) => (p.source ?? 'session') !== source);
+  writePrivate(
+    out,
+    `${[...kept, ...split]
+      .sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''))
+      .map((p) => JSON.stringify(p))
+      .join('\n')}\n`,
+  );
+  saveTargetsRaw(new Set(split.map((p) => p.id)), `${source}-`);
+  return { split, cuts, manifest };
 }
 
 /** targets-raw.jsonl: the target each positive pushed toward (null: none existed), by probe id. */
@@ -829,4 +1014,5 @@ async function labelTargets() {
 if (values['label-targets']) await labelTargets();
 else if (values.sessions) await fromSessions();
 else if (values.github) await fromGitHub();
+else if (values.linear) await fromLinear();
 else fromKit();

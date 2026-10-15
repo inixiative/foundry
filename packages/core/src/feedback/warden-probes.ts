@@ -34,6 +34,8 @@ export interface WardenProbe {
   readonly source?: ProbeSource;
   /** Who wrote the correction, for sources where the person's account also posts agent-written text. */
   readonly authorship?: Authorship;
+  /** How much the probe counts in weighted scores (default 1): generic code-correctness findings count less. */
+  readonly weight?: number;
   /** What the agent just did or said, as the Warden sees it ('' when only the user's ask was recorded). */
   readonly moment: string;
   /** The user's message the agent was answering: what the `user-message` trigger advises on. */
@@ -112,6 +114,8 @@ export interface CharterScore {
   readonly recall: number | null;
   /** The primary measure: of all positive probes, those where any Warden, at any trigger, said the correction first. */
   readonly anticipated: number | null;
+  /** `anticipated` with each positive counted at its `weight`. */
+  readonly weightedAnticipated: number | null;
   /** Remarks the judge did not match to a real correction (on negative probes, or saying something else). */
   readonly wrongRemarks: number;
   /** Wrong remarks per probe asked: how often the chorus speaks when the user would not have. */
@@ -250,6 +254,13 @@ export function scoreCharterRun(
     scopeViolations: scope,
     recall: ratio(recalled.size, owners),
     anticipated: ratio(anticipated.size, positives.length),
+    weightedAnticipated: (() => {
+      const total = positives.reduce((n, p) => n + (p.weight ?? 1), 0);
+      const said = positives
+        .filter((p) => anticipated.has(p.id))
+        .reduce((n, p) => n + (p.weight ?? 1), 0);
+      return total ? Math.round((said / total) * 1000) / 1000 : null;
+    })(),
     wrongRemarks: remarks - remarksRight,
     wrongPerProbe: ratio(remarks - remarksRight, probes.filter((p) => asked.has(p.id)).length),
     byTrigger,
