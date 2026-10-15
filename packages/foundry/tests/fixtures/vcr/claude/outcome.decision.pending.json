@@ -1,0 +1,27 @@
+{
+  "version": "2.1.300",
+  "status": 200,
+  "body": {
+    "content": "{\"category\":\"feature\"}",
+    "model": "haiku",
+    "tokens": true,
+    "native": {
+      "outcome": "completed",
+      "observedModel": "claude-haiku-5-5",
+      "terminal": "result"
+    },
+    "call": {
+      "valid": true,
+      "release": "released",
+      "processExit": "exited",
+      "statusProcessExit": "exited"
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:30:24.015Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}

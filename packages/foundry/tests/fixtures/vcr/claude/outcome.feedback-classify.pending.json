@@ -1,0 +1,18 @@
+{
+  "version": "2.1.300",
+  "status": 200,
+  "body": {
+    "isCorrection": true,
+    "sharp": true,
+    "rules": 1,
+    "lintClean": true,
+    "aboutMerging": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:30:28.881Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}

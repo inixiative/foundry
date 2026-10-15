@@ -1,0 +1,15 @@
+{
+  "version": "2.1.300",
+  "status": 200,
+  "body": {
+    "content": "{\"category\":\"feature\"}",
+    "observedModel": "claude-haiku-5-5"
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:32:24.028Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": "2.1.300",
+  "status": 200,
+  "body": {
+    "answers": [
+      "{\"category\":\"feature\"}",
+      "{\"category\":\"feature\"}"
+    ],
+    "observed": [
+      "unknown",
+      "completed"
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:32:30.905Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}

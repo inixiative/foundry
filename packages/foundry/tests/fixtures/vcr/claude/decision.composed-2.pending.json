@@ -1,0 +1,82 @@
+{
+  "version": "2.1.300",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "b0b648ea-e9c1-4a5e-80c2-e4aade48bb96",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-40294-cNEpje/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\n\\n\\n## Message\\nWhere do settings toggles live?\\n\\n## Response protocol (advice phase, trigger: user-message)\\nNothing to add is the expected answer, and the most common one. Then respond with exactly NO_COMMENT and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread.\\nOnly when your domain has something the user would otherwise have to say themselves, respond with JSON only, exactly this shape: { \\\"snippets\\\": string[], \\\"layers\\\": string[], \\\"confidence\\\": number }.\\n\\\"snippets\\\" are short notes from your domain, one point each; \\\"layers\\\" are IDs of your domain's layers to inject; at least one of them is non-empty. \\\"confidence\\\" is a number from 0 to 1.\\nAny other answer, including JSON with empty lists or extra fields, is an error, not a comment.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"85d83431-e320-4c9e-b91f-88132d90849a\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.300\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"e34f94d4-783c-4e13-ba98-32ce7d3a99a5\",\"messaging_socket_path\":\"/tmp/cc-socks/41544.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg4BcggTRB46JVAaPkss8\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"NO_COMMENT\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":710,\"cache_read_input_tokens\":4158,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":710},\"output_tokens\":8,\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":762}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"85d83431-e320-4c9e-b91f-88132d90849a\",\"uuid\":\"efa3d783-1326-49cc-bafc-e89bf46eed7c\",\"timestamp\":\"2026-10-15T14:30:54.112Z\",\"request_id\":\"req_011Cg4BcfiuDnWRZsj6HC6NQ\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1792078200,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.82,\"resetsAt\":1792078200},\"seven_day\":{\"utilization\":0.35,\"resetsAt\":1792537200}}},\"uuid\":\"d284e9fc-e7d5-471c-be83-3d9cc1179f96\",\"session_id\":\"85d83431-e320-4c9e-b91f-88132d90849a\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":3364,\"stop_reason\":\"end_turn\",\"session_id\":\"85d83431-e320-4c9e-b91f-88132d90849a\",\"total_cost_usd\":0.0009809600000000001,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":710,\"cache_read_input_tokens\":4158,\"output_tokens\":10,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":710,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":10,\"cache_read_input_tokens\":4158,\"cache_creation_input_tokens\":710,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":710},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":4,\"outputTokens\":14,\"thinkingTokens\":0,\"cacheReadInputTokens\":4816,\"cacheCreationInputTokens\":4627,\"webSearchRequests\":0,\"costUSD\":0.0009809600000000001,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"NO_COMMENT\",\"ttft_ms\":2398,\"type\":\"result\",\"duration_ms\":2414,\"uuid\":\"9b42ab73-a013-4b22-87d0-793e3930ad70\",\"ttft_stream_ms\":2386,\"time_to_request_ms\":33,\"first_content_frame_ms\":2386,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:30:54.965Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal",
+    "durationMs": 3945,
+    "model": "claude-haiku-5-5"
+  }
+}

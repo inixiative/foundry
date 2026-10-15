@@ -1,0 +1,36 @@
+{
+  "version": "2.1.300",
+  "status": 200,
+  "body": {
+    "contents": [
+      true,
+      true
+    ],
+    "observedModel": "claude-haiku-5-5",
+    "launches": 3,
+    "statusChecks": 1,
+    "primerCarriedContext": true,
+    "forks": 2,
+    "textOnly": true,
+    "cyclesSentOnlyTheMessage": true,
+    "receipts": [
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "cold"
+      },
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "warm"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-15T14:30:48.434Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}
