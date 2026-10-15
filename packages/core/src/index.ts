@@ -345,6 +345,7 @@ export {
   type ThreadMeta,
   type ThreadName,
   type ThreadReference,
+  type ThreadSpawn,
   type ThreadStatus,
   threadTitle,
 } from './thread';

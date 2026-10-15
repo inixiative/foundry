@@ -855,6 +855,8 @@ const viewer = await startViewer({
   assistTools: tools,
   acpCapability: acpLaunch?.capability,
   threadLaunch,
+  // The executor's subagents become observed child threads (docs/THREAD-TREE.md spec A).
+  subagentSources: provider instanceof SessionBackedProvider ? [provider] : [],
 });
 toolGateFor = viewer.toolGate;
 

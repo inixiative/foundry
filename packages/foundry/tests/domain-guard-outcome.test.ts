@@ -345,6 +345,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
         domain: 'architecture',
         status: 'completed',
         findings: 1,
+        notes: ['Add a migration test'],
         threadKnowledgeRevision: 1,
       },
       {

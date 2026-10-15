@@ -1,6 +1,6 @@
 # Thread tree: stitching, composition audit, start-up
 
-> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** Build order: B, then A, then C. C waits for the pre-filter re-measurement of the side-session draft (#67). Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
+> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** B is built (#72); A is built (§A.8). Build order: B, then A, then C. C waits for the pre-filter re-measurement of the side-session draft (#67). Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
 
 **Basis.** Foundry `origin/main` `0025354`; agent-session `feat/claude-subagent-prestart` (`fbb2cda`, PR #13); Archive `origin/main` `83bced1` (0.17.0); template `main`; Claude Code 2.1.296; codex-cli 0.155.1. Path prefixes are the same as [reference/SUBAGENTS.md](reference/SUBAGENTS.md): `pf/` = `packages/foundry/src`, `pc/` = `packages/core/src`, `as/` = agent-session `src`, `ar/` = Archive `src`, `tp/` = template. Anything not checked in code or run live is marked **[unverified]**.
 
@@ -156,6 +156,39 @@ Also: *"I think the Foundry needs to tie those things together somehow. If it's 
 6. **Lineage `kind: 'handoff'`** (RETENTION.md §3.3): is it needed for Foundry child threads (`foundry_delegate`), or is `subagent` with `spawn.via` enough?
 
 ---
+
+## A.8 As built (2026-10-15)
+
+**Observed subagents** (agent-session 0.6.5 passes subagent frames through):
+- Every subagent event carries `parentToolUseId`, plus a `subagent` lifecycle, and sits outside every admission. The executor's provider hands these events to its subagent observers (`SessionBackedProvider.observeSubagents`) instead of dropping them.
+- `SubagentRecorder` (`pf/turns/subagents.ts`) makes each run a child thread. Its `ThreadMeta` carries `parentThreadId`, `parentTurnId`, `depth` and `spawn {via, toolCallId, nativeTaskId, agentType, handoffId, observed}`.
+- The parent is the real one: the subagent that issued the spawn (found by `parentTaskId`, or by the spawning call seen in that subagent's stream), else the main thread.
+- The parent journals a `handoff` row (the task's hash and excerpt, `composition: null`, `observed: true`) and a `handoff-return` row (outcome, the answer's excerpt, usage).
+- The child holds its own activity as an observed turn: the task as the user message, its native events, and its answer.
+- A Codex child turn ends on its lifecycle update, and a later child turn opens a new turn.
+- Observed children appear in the viewer, under their parent. They are never dispatched to, and carry no runtime and no Wardens.
+
+**Compaction and retention:**
+- `completeTurn` and `failTurn` append one `middleware-reduced` row per middleware call of the turn: route, each advice participant, and each guard outcome with its request's versions. Each row has the A.3 shape.
+- Raw rows are immutable, and their checksums still verify.
+- On start, `compactClosedTurns` reduces every closed turn that has middleware rows newer than its reduced rows, `interrupted` turns included. That covers a late guard outcome too.
+- `journal.rawMiddlewareDays` (default 30, a setting) controls `pruneRawMiddleware`. It deletes raw rows of closed, reduced turns once they are older than the window, then sweeps journal content nothing references. It runs on start and every 6 hours.
+- Exposure (FEEDBACK-LOOP L5) is still counted after pruning: from the raw row while it exists, then from the reduced row's versions.
+- Gate rows stay raw: they are small and carry no composed input.
+
+**Capture:**
+- Archive gets reduced entries (`mw:<call id>`, `middleware:<call id>`, with model and effort) and never the raw middleware rows.
+- A child thread's snapshot carries `lineage {kind: subagent, parentSessionId, rootSessionId, parentEntryId: phase:<handoff id>, toolUseId, agentType, description, depth}`.
+
+**Claims** (Archive 0.20.0, Archive #16):
+- Capture holds a lease on the native sessions behind a thread before writing it: the executor's Claude session id or Codex thread id, plus an observed Codex child's own thread. The lease runs 10 minutes and is renewed every 2 minutes while the thread has an open turn.
+- After writing, capture fulfils the claim with the archive it wrote, so the collector leaves those transcripts alone.
+- A crash lets the lease lapse, and the collector then captures the raw transcript (Archive #16 tests the lapse).
+- An Archive without the claim routes answers 404, and capture goes on unclaimed.
+
+**Release order:**
+- Archive 0.20.0 must be published and blessed, and Kingdom and every hosted Archive must run it, before this ships.
+- Lineage `rootSessionId` and `parentEntryId` are refused by a 0.19 receiver's strict schema.
 
 # B. Audit for composed instructions
 

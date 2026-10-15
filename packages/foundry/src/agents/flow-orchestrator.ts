@@ -286,6 +286,8 @@ export interface GuardOutcome {
   readonly domain: string;
   readonly status: GuardStatus;
   readonly findings: number;
+  /** What this domain said (its findings' descriptions), when it spoke. */
+  readonly notes?: readonly string[];
   /** The check completed with NO_COMMENT: nothing to add. */
   readonly noComment?: true;
   readonly error?: string;
@@ -1183,6 +1185,9 @@ export class FlowOrchestrator {
         domain: domainsToCheck[i].domain,
         status: r.status,
         findings: r.status === 'completed' ? r.findings.length : 0,
+        ...(r.status === 'completed' && r.findings.length
+          ? { notes: r.findings.slice(0, 8).map((f) => f.description.slice(0, 500)) }
+          : {}),
         ...(r.status === 'completed' && r.noComment ? { noComment: true as const } : {}),
         ...(r.error !== undefined ? { error: r.error } : {}),
         ...(r.admission !== undefined ? { admission: r.admission } : {}),

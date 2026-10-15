@@ -307,6 +307,29 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
   };
   journal.registerNative(t, route);
   journal.appendNative(t, { ...route, text: 'routing', observedAt: 3 });
+  const supplied = (served?: object) => ({
+    status: 'supplied',
+    phase: 'advice',
+    providerId: 'decisions',
+    messages: [],
+    capturedAt: 1,
+    ...(served ? { served } : {}),
+  });
+  const phase = (id: string, record: Record<string, unknown>) =>
+    journal.appendPhase(t, {
+      id,
+      turnId: 'turn-a',
+      dispatchId: 'd',
+      phase: id as 'route' | 'advice',
+      record,
+    });
+  phase('route', { routing: { request: supplied({ model: 'gpt-6-luna', effort: 'low' }) } });
+  phase('advice', {
+    participants: [
+      { domain: 'architecture', request: supplied({ model: 'gpt-6-luna', effort: 'low' }) },
+      { domain: 'security', request: supplied({ model: 'claude-opus-5-5' }) },
+    ],
+  });
   journal.completeTurn(
     t,
     'turn-a',
@@ -327,29 +350,6 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     },
     { id: 'trace-a', messageId: 'turn-a', startedAt: 1, root: {}, summary: {}, spans: [] },
   );
-  const supplied = (served?: object) => ({
-    status: 'supplied',
-    phase: 'advice',
-    providerId: 'decisions',
-    messages: [],
-    capturedAt: 1,
-    ...(served ? { served } : {}),
-  });
-  const phase = (id: string, record: Record<string, unknown>) =>
-    journal.appendPhase(t, {
-      id,
-      turnId: 'turn-a',
-      dispatchId: 'd',
-      phase: id as 'route' | 'advice',
-      record,
-    });
-  phase('route', { routing: { request: supplied({ model: 'gpt-6-luna', effort: 'low' }) } });
-  phase('advice', {
-    participants: [
-      { id: 'architecture', request: supplied({ model: 'gpt-6-luna', effort: 'low' }) },
-      { id: 'security', request: supplied({ model: 'claude-opus-5-5' }) },
-    ],
-  });
   try {
     const snapshot = captureThread(journal, archive.sourceId, t.id);
     // The test preload stamps this process a test run (ARCHIVE_RUN), so its threads are exempt.
@@ -370,15 +370,27 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
       (e) => e.kind === 'assistant' && e.text.includes('routing'),
     );
     expect(routing).not.toHaveProperty('model');
-    expect(entry('phase:route')).toEqual({ model: 'gpt-6-luna', effort: 'low', kind: 'event' });
-    // Mixed participants name no single model for the record.
-    expect(entry('phase:advice').model).toBeUndefined();
+    // Middleware calls reach Archive reduced, one entry per call, each with the model that served it.
+    expect(entry('middleware:route')).toEqual({
+      model: 'gpt-6-luna',
+      effort: 'low',
+      kind: 'event',
+    });
+    expect(entry('middleware:advice:architecture')).toEqual({
+      model: 'gpt-6-luna',
+      effort: 'low',
+      kind: 'event',
+    });
+    expect(entry('middleware:advice:security').model).toBe('claude-opus-5-5');
+    expect(snapshot.entries.some((e) => e.sourceRef === 'phase:advice')).toBe(false);
     expect(snapshot.actor).toEqual({ kind: 'user', id: userInfo().username });
     await archive.client().capture(snapshot);
     expect((await archive.client().list())[0]?.models).toEqual(
       expect.arrayContaining([
         { model: 'claude-opus-5-5', effort: 'high', entries: 2 },
-        { model: 'gpt-6-luna', effort: 'low', entries: 1 },
+        // The Cartographer and one Warden on gpt-6-luna; the other Warden on Opus.
+        { model: 'gpt-6-luna', effort: 'low', entries: 2 },
+        { model: 'claude-opus-5-5', entries: 1 },
       ]),
     );
   } finally {

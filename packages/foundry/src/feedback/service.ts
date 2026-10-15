@@ -10,6 +10,7 @@ import {
   type Thread,
 } from '@inixiative/foundry-core';
 import type { Cartographer } from '../agents/cartographer';
+import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
@@ -345,33 +346,56 @@ export class FeedbackService {
         .filter(([, role]) => item.route?.roles.includes(role))
         .map(([domain]) => domain),
     );
-    const last = this.deps.store
-      .phaseHistory(threadId, { limit: 200 })
-      .filter((p) => p.phase === 'advice' && p.turnId !== turnId)
-      .at(-1);
-    if (!last || last.storedAt < since) return false;
+    type Versions = { instructions?: string; domainKnowledge?: string };
+    // The last turn's advice: its raw row while retention keeps it, else its reduced rows.
+    const rows = this.deps.store
+      .phaseHistory(threadId, { limit: 500 })
+      .filter(
+        (p) =>
+          p.turnId !== turnId &&
+          (p.phase === 'advice' ||
+            (p.phase === REDUCED_PHASE &&
+              (p.record as { trigger?: string }).trigger === 'user-message')),
+      );
+    const lastTurn = rows.at(-1)?.turnId;
+    if (!lastTurn) return false;
+    const ofTurn = rows.filter((p) => p.turnId === lastTurn);
+    const ranAt = Math.max(
+      ...ofTurn.map((p) =>
+        p.phase === REDUCED_PHASE
+          ? Number((p.record as { at?: number }).at ?? p.storedAt)
+          : p.storedAt,
+      ),
+    );
+    if (ranAt < since) return false;
     const marker = ruleMarker(item.id);
-    const participants =
-      (
-        last.record as {
-          participants?: Array<{
-            domain?: string;
-            segments?: unknown;
-            request?: { versions?: { instructions?: string; domainKnowledge?: string } };
-          }>;
-        }
-      ).participants ?? [];
     // Exposure is read from the versions a call was composed of; segment text where it was recorded.
     const holding = this.deps.store.compositionsHolding(marker);
-    return participants.some((p) => {
-      if (!p.domain || !domains.has(p.domain)) return false;
-      const versions = p.request?.versions;
-      if (
-        versions &&
-        [versions.instructions, versions.domainKnowledge].some((id) => !!id && holding.has(id))
-      )
-        return true;
-      return JSON.stringify(p.segments ?? '').includes(marker);
+    const held = (versions?: Versions) =>
+      !!versions &&
+      [versions.instructions, versions.domainKnowledge].some((id) => !!id && holding.has(id));
+    const raw = ofTurn.find((p) => p.phase === 'advice');
+    if (raw) {
+      const participants =
+        (
+          raw.record as {
+            participants?: Array<{
+              domain?: string;
+              segments?: unknown;
+              request?: { versions?: Versions };
+            }>;
+          }
+        ).participants ?? [];
+      return participants.some(
+        (p) =>
+          !!p.domain &&
+          domains.has(p.domain) &&
+          (held(p.request?.versions) || JSON.stringify(p.segments ?? '').includes(marker)),
+      );
+    }
+    return ofTurn.some((p) => {
+      const reduced = p.record as { role?: string; state?: { versions?: Versions } };
+      return !!reduced.role && domains.has(reduced.role) && held(reduced.state?.versions);
     });
   }
 

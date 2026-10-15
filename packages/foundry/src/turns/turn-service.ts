@@ -199,6 +199,13 @@ export class TurnService {
     if (!harness) return { ok: false, status: 404, body: { error: 'thread not found' } };
     if (harness.thread.disposed)
       return { ok: false, status: 409, body: { error: 'thread is archived or disposed' } };
+    // An observed subagent's thread is a record of native work, not a conversation Foundry runs.
+    if (harness.thread.meta.spawn?.observed)
+      return {
+        ok: false,
+        status: 409,
+        body: { error: 'an observed subagent thread takes no turns; message its parent thread' },
+      };
     if (localStore?.turn(turnId) || !streams.turns.canOpen(turnId))
       return {
         ok: false,
