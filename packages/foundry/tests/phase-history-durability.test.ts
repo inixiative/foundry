@@ -214,7 +214,9 @@ test("a held guard's exact request is durable before its answer; the late outcom
     'guard request journalled',
   );
   // Journalled while the guard provider is still holding: route, advice and the guard request, no outcome.
-  const before = f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' });
+  const before = f.store
+    .phaseHistory(f.thread.id, { turnId: 'turn-1' })
+    .filter((r) => r.phase !== 'middleware-reduced');
   expect(before.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request']);
   const request = before[2]!;
   expect(request.dispatchId).toBeTruthy();
@@ -279,7 +281,9 @@ test("a held guard's exact request is durable before its answer; the late outcom
         .some((r) => r.phase === 'guard-outcome'),
     'guard outcome journalled',
   );
-  const after = f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' });
+  const after = f.store
+    .phaseHistory(f.thread.id, { turnId: 'turn-1' })
+    .filter((r) => r.phase !== 'middleware-reduced');
   expect(after.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
   expect(after[2]).toEqual(request);
   const outcome = after[3]!.record as any;
@@ -459,12 +463,12 @@ test('an observation whose dispatch is no longer live stays explicitly uncorrela
         r.record.correlation === 'dispatch-not-live',
     ),
   ).toBe(true);
-  expect(f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' }).map((r) => r.phase)).toEqual([
-    'route',
-    'advice',
-    'guard-request',
-    'guard-outcome',
-  ]);
+  expect(
+    f.store
+      .phaseHistory(f.thread.id, { turnId: 'turn-1' })
+      .filter((r) => r.phase !== 'middleware-reduced')
+      .map((r) => r.phase),
+  ).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
   expect(f.store.phaseHistory(f.thread.id, { dispatchId: 'dispatch-gone' })).toHaveLength(2);
   const row = loose[0]!;
   f.store.appendPhase(f.thread, {

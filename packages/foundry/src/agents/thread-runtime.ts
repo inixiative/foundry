@@ -355,6 +355,9 @@ export interface PhaseRecordInput {
     | 'guard-outcome'
     | 'gate-request'
     | 'gate-outcome'
+    | 'middleware-reduced'
+    | 'handoff'
+    | 'handoff-return'
     | FeedbackPhase;
   readonly record: Record<string, unknown>;
 }
@@ -1063,6 +1066,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                 domain: c.domain,
                 decision: c.decision,
                 ...(c.reason ? { reason: c.reason } : {}),
+                // What it chimed in with (empty for NO_COMMENT).
+                snippets: c.snippets,
                 segments: c.segments,
                 request: c.request,
                 threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,

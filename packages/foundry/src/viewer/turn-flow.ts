@@ -1,5 +1,6 @@
 import type { NativeEvidence } from '@inixiative/foundry-core';
 import type { LearningState, ThreadKnowledgeBundle } from '../agents/thread-runtime';
+import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type {
   LocalSessionStore,
   StoredLearning,
@@ -187,7 +188,8 @@ export function slimTurn(record: TurnFlowRecord) {
         )
       : null,
     snippets: Array.isArray(plan?.snippets) ? plan.snippets.length : null,
-    phases: record.phases.map((row) => slim(row)),
+    // The live view shows the calls themselves; their reduced copies are for Archive.
+    phases: record.phases.filter((row) => row.phase !== REDUCED_PHASE).map((row) => slim(row)),
     ...(guards ? { guards } : {}),
     trace: record.trace
       ? {

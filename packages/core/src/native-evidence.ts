@@ -34,6 +34,26 @@ export interface OwnedAdmissionInspection {
   readonly cleanup: 'not-requested' | 'pending' | 'released' | 'unknown';
   readonly capacity: 'settled' | 'unknown';
 }
+/** A native subagent's lifecycle event (agent-session `SubagentLifecycle`, allowlisted). */
+export interface NativeSubagentLifecycle {
+  readonly phase: 'started' | 'progress' | 'updated' | 'ended';
+  readonly taskId: string;
+  readonly toolUseId?: string;
+  readonly parentTaskId?: string;
+  readonly agentType?: string;
+  readonly description?: string;
+  readonly depth?: number;
+  readonly backgrounded?: boolean;
+  readonly status?: string;
+  readonly summary?: string;
+  readonly prompt?: string;
+  readonly usage?: {
+    readonly totalTokens: number;
+    readonly toolUses?: number;
+    readonly durationMs?: number;
+  };
+}
+
 export interface NativeEvidence {
   readonly schema: 1;
   readonly executionMode?: 'controlled-fixture';
@@ -65,6 +85,10 @@ export interface NativeEvidence {
   readonly content?: string;
   readonly correlation?: string;
   readonly kind?: string;
+  /** The parent's tool call that spawned the subagent this came from (absent for the thread's own). */
+  readonly parentToolUseId?: string;
+  /** A subagent's lifecycle (kind `subagent`), as the runtime reported it. */
+  readonly subagent?: NativeSubagentLifecycle;
   readonly toolName?: string;
   readonly toolServer?: string;
   readonly toolMethod?: string;

@@ -2,8 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { type ArchiveClient, DEFAULT_URL } from '@inixiative/archive/remote';
 import type { ArchiveSettings } from '@inixiative/archive/schemas';
 
-/** What capture needs from this machine's Archive. */
-export type ArchiveWriter = Pick<ArchiveClient, 'sourceId' | 'capture'>;
+/** What capture needs from this machine's Archive: its writes, and claims on the native sessions Foundry drives. */
+export type ArchiveWriter = Pick<
+  ArchiveClient,
+  'sourceId' | 'capture' | 'holdClaims' | 'fulfilClaim'
+>;
 /** This machine's Archive client, or undefined until `archive up` has made a token. */
 export type ArchiveConnector = () => ArchiveClient | undefined;
 

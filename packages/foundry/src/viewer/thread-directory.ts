@@ -48,6 +48,34 @@ export class ViewerThreadDirectory {
     this.threads.set(thread.id, thread);
   }
 
+  /**
+   * An observed subagent's child thread (spec A): recorded from the native stream, viewable, never
+   * dispatched to — no runtime, no Wardens, no agents.
+   */
+  adoptObserved(record: { id: string; meta: ThreadMeta }): Thread {
+    const existing = this.get(record.id);
+    if (existing) {
+      Object.assign(existing.meta, structuredClone(record.meta));
+      return existing;
+    }
+    const thread = this.observedThread(record);
+    const project = record.meta.projectId ? this.projects?.get(record.meta.projectId) : undefined;
+    if (project) project.addThread(thread);
+    this.add(thread);
+    return thread;
+  }
+
+  private observedThread(record: { id: string; meta: ThreadMeta }): Thread {
+    const stack = this.main.stack.clone({
+      threadId: record.id,
+      projectId: record.meta.projectId,
+      cwd: record.meta.cwd,
+    });
+    const thread = new Thread(record.id, stack, record.meta);
+    Object.assign(thread.meta, structuredClone(record.meta));
+    return thread;
+  }
+
   restore(records: Array<{ id: string; meta: ThreadMeta }>): string[] {
     const warnings: string[] = [];
     for (const record of records) {
@@ -66,7 +94,8 @@ export class ViewerThreadDirectory {
         continue;
       }
       if (!thread) {
-        if (this.factory) thread = this.factory.create(record.id, record.meta);
+        if (record.meta.spawn?.observed) thread = this.observedThread(record);
+        else if (this.factory) thread = this.factory.create(record.id, record.meta);
         else {
           const stack = this.main.stack.clone({
             threadId: record.id,

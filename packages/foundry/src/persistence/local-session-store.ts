@@ -15,6 +15,11 @@ import {
 } from '@inixiative/foundry-core';
 import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
+import {
+  RAW_MIDDLEWARE_PHASES,
+  REDUCED_PHASE,
+  reduceMiddleware,
+} from '../archives/reduced-middleware';
 import type { CompositionBody } from '../audit/compositions';
 import { type CheckpointImport, checkpointSpans } from './checkpoint-import';
 import {
@@ -776,6 +781,101 @@ export class LocalSessionStore {
    * Advice and guard-request rows stored at or after `since` whose recorded input contains `marker`: the
    * calls that had a feedback rule in front of a Warden. Roles are the participants whose segments hold it.
    */
+  /**
+   * An observed subagent run (spec A): a turn of a child thread recorded from the native stream,
+   * opened with the task it was given. Idempotent for the same turn.
+   */
+  startObservedTurn(thread: Pick<Thread, 'id' | 'meta'>, turnId: string, task: string): void {
+    this.db.transaction(() => {
+      if (this.turn(turnId)) return;
+      this.saveThread(thread);
+      const timestamp = Date.now();
+      this.query(
+        "INSERT INTO session_turns(id, thread_id, status, started_at) VALUES (?, ?, 'active', ?)",
+      ).run(turnId, thread.id, timestamp);
+      this.insertMessage({
+        id: newId('msg'),
+        threadId: thread.id,
+        turnId,
+        actor: 'user',
+        kind: 'text',
+        content: task,
+        timestamp,
+        meta: { observed: true },
+      });
+    })();
+  }
+
+  /** A native observation of an observed subagent run, owned by its child thread and turn. */
+  appendObservedNative(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    turnId: string,
+    evidence: NativeEvidence,
+  ): void {
+    const owner: import('@inixiative/foundry-core').NativeOwner = {
+      threadId: thread.id,
+      ...(thread.meta.projectId ? { projectId: thread.meta.projectId } : {}),
+      generation: 'observed',
+      messageId: turnId,
+      dispatchId: `observed:${turnId}`,
+    };
+    this.query(
+      'INSERT INTO session_native(admission_id, thread_id, turn_id, record, stored_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(
+      `observed:${turnId}`,
+      thread.id,
+      turnId,
+      JSON.stringify({ ...evidence, owner }),
+      Date.now(),
+    );
+  }
+
+  /** The end of an observed subagent run: its answer as the agent message, and its outcome. */
+  endObservedTurn(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    turnId: string,
+    content: string,
+    outcome: 'completed' | 'failed',
+  ): void {
+    this.db.transaction(() => {
+      const turn = this.turn(turnId);
+      if (!turn || turn.threadId !== thread.id || !isOpenTurn(turn.status)) return;
+      this.saveThread(thread);
+      this.insertMessage({
+        id: newId('msg'),
+        threadId: thread.id,
+        turnId,
+        actor: 'agent',
+        kind: outcome === 'failed' ? 'error' : 'text',
+        content,
+        timestamp: Date.now(),
+        meta: { observed: true },
+      });
+      this.query('UPDATE session_turns SET status=?, ended_at=? WHERE id=?').run(
+        outcome,
+        Date.now(),
+        turnId,
+      );
+    })();
+  }
+
+  /** A thread's latest turn still queued or running. */
+  openTurn(threadId: string): StoredTurn | undefined {
+    const row = this.query(
+      "SELECT id FROM session_turns WHERE thread_id=? AND status IN ('queued', 'active') ORDER BY started_at DESC LIMIT 1",
+    ).get(threadId) as { id: string } | null;
+    return row ? this.turn(row.id) : undefined;
+  }
+
+  /** Threads with a turn queued or running. */
+  openTurnThreads(): string[] {
+    return (
+      this.query(
+        "SELECT DISTINCT thread_id FROM session_turns WHERE status IN ('queued', 'active')",
+      ).all() as Array<{ thread_id: string }>
+    ).map((row) => row.thread_id);
+  }
+
   /** Store text in the content store; returns its hash. */
   putContent(text: string): string {
     return this.content.put(text);
@@ -926,7 +1026,56 @@ export class LocalSessionStore {
           storedAt: row.stored_at,
         };
       })
-      .filter((row) => row.roles.length > 0);
+      .filter((row) => row.roles.length > 0)
+      .concat(this.reducedExposure(held, since, limit));
+  }
+
+  /**
+   * Exposure from reduced rows whose raw row retention removed: a call counts once, from its raw row
+   * while it exists, then from its reduced row. Matched by the versions the call was composed of.
+   */
+  private reducedExposure(held: ReadonlySet<string>, since: number, limit: number) {
+    if (!held.size) return [];
+    const out: Array<{
+      threadId: string;
+      turnId: string | null;
+      phase: string;
+      roles: string[];
+      storedAt: number;
+    }> = [];
+    const rawExists = this.query('SELECT 1 FROM session_phase WHERE id=?');
+    for (const row of this.query(
+      `SELECT thread_id, turn_id, record, stored_at FROM session_phase
+        WHERE phase='${REDUCED_PHASE}' AND stored_at >= ? ORDER BY seq`,
+    ).iterate(since) as Iterable<{
+      thread_id: string;
+      turn_id: string | null;
+      record: string;
+      stored_at: number;
+    }>) {
+      if (out.length >= limit) break;
+      if (![...held].some((id) => row.record.includes(id))) continue;
+      const reduced = this.decode<{
+        callId: string;
+        role: string;
+        state?: { versions?: { instructions?: string; domainKnowledge?: string } };
+      }>(row.record);
+      const versions = reduced.state?.versions;
+      if (
+        !versions ||
+        ![versions.instructions, versions.domainKnowledge].some((id) => !!id && held.has(id))
+      )
+        continue;
+      if (rawExists.get(reduced.callId.split(':')[0]!)) continue;
+      out.push({
+        threadId: row.thread_id,
+        turnId: row.turn_id,
+        phase: REDUCED_PHASE,
+        roles: [reduced.role],
+        storedAt: row.stored_at,
+      });
+    }
+    return out;
   }
 
   learningHistory(threadId: string, limit = 100): StoredLearning[] {
@@ -1043,6 +1192,7 @@ export class LocalSessionStore {
         Date.now(),
         id,
       );
+      this.compactTurn(thread, id);
     })();
   }
 
@@ -1060,7 +1210,154 @@ export class LocalSessionStore {
         this.insertTrace(thread.id, id, evidence.trace);
       }
       this.finishUncertain(id, thread.id, 'failed', error, evidence?.trace?.id, evidence?.meta);
+      this.compactTurn(thread, id);
     })();
+  }
+
+  /**
+   * Spec A (docs/THREAD-TREE.md): a closed turn's middleware calls as reduced rows, one per call
+   * (`middleware-reduced`, id `mw:<call id>`): state and result, never the message the call was
+   * sent. Raw rows are never rewritten; they age out under `pruneRawMiddleware`. Idempotent: a call
+   * already reduced is not reduced again, and a late call (a guard outcome after the turn closed)
+   * is reduced on the next sweep.
+   */
+  compactTurn(thread: Pick<Thread, 'id' | 'meta'>, turnId: string): number {
+    const rows = this.phaseHistory(thread.id, { turnId, limit: 1000 }).filter((row) =>
+      (RAW_MIDDLEWARE_PHASES as readonly string[]).includes(row.phase),
+    );
+    if (!rows.length) return 0;
+    const done = new Set(
+      (
+        this.query(
+          `SELECT id FROM session_phase WHERE thread_id=? AND turn_id=? AND phase='${REDUCED_PHASE}'`,
+        ).all(thread.id, turnId) as Array<{ id: string }>
+      ).map((row) => row.id),
+    );
+    let added = 0;
+    for (const reduced of reduceMiddleware(rows)) {
+      const id = `mw:${reduced.callId}`;
+      if (done.has(id)) continue;
+      this.appendPhase(thread, {
+        id,
+        turnId,
+        dispatchId: null,
+        phase: REDUCED_PHASE,
+        record: reduced as unknown as Record<string, unknown>,
+      });
+      added++;
+    }
+    return added;
+  }
+
+  /**
+   * Reduce every closed turn whose middleware rows are newer than its reduced rows: on start (a turn
+   * a restart interrupted, compacted before the first capture) and with each retention sweep.
+   */
+  compactClosedTurns(): number {
+    const raw = RAW_MIDDLEWARE_PHASES.map((phase) => `'${phase}'`).join(', ');
+    const pending = this.query(
+      `SELECT p.thread_id AS thread_id, p.turn_id AS turn_id FROM session_phase p
+        JOIN session_turns t ON t.id = p.turn_id
+        WHERE t.status IN ('completed', 'failed', 'interrupted')
+        GROUP BY p.thread_id, p.turn_id
+        HAVING MAX(CASE WHEN p.phase IN (${raw}) THEN p.stored_at END) >
+          COALESCE(MAX(CASE WHEN p.phase = '${REDUCED_PHASE}' THEN p.stored_at END), -1)`,
+    ).all() as Array<{ thread_id: string; turn_id: string }>;
+    const threads = new Map(this.threads().map((thread) => [thread.id, thread]));
+    let added = 0;
+    for (const { thread_id, turn_id } of pending) {
+      const thread = threads.get(thread_id);
+      if (thread) added += this.db.transaction(() => this.compactTurn(thread, turn_id))();
+    }
+    return added;
+  }
+
+  /**
+   * Retention for raw middleware rows (`journal.rawMiddlewareDays`): rows stored before `cutoff`
+   * whose turn is closed and reduced are deleted, and journal content nothing references any more
+   * is released. Reduced rows, and everything else, are kept.
+   */
+  pruneRawMiddleware(cutoff: number): { rows: number; content: number } {
+    this.compactClosedTurns();
+    const raw = RAW_MIDDLEWARE_PHASES.map((phase) => `'${phase}'`).join(', ');
+    const rows = this.db.transaction(
+      () =>
+        this.query(
+          `DELETE FROM session_phase WHERE phase IN (${raw}) AND stored_at < ?
+            AND turn_id IN (SELECT id FROM session_turns WHERE status IN ('completed', 'failed', 'interrupted'))
+            AND EXISTS (SELECT 1 FROM session_phase r WHERE r.turn_id = session_phase.turn_id
+              AND r.thread_id = session_phase.thread_id AND r.phase = '${REDUCED_PHASE}')`,
+        ).run(cutoff).changes,
+    )();
+    return { rows, content: rows ? this.collectContent() : 0 };
+  }
+
+  /**
+   * Release journal content no record references: a mark from every table's records (and the
+   * composition versions' parts) through the content references, then a sweep of the rest.
+   */
+  collectContent(): number {
+    const marked = new Set<string>();
+    // Every 64-hex string a record holds counts: content references, and plain hashes such as a
+    // call's retrieved text (`versions.retrieved[].hash`). Marking more than needed is safe.
+    const mark = (text: string | null | undefined) => {
+      if (!text) return;
+      for (const match of text.matchAll(/"([0-9a-f]{64})"/g)) marked.add(match[1]!);
+    };
+    for (const [table, column] of [
+      ['session_threads', 'meta'],
+      ['session_messages', 'record'],
+      ['session_traces', 'record'],
+      ['session_knowledge', 'record'],
+      ['session_learning', 'record'],
+      ['session_native', 'record'],
+      ['session_native_tools', 'record'],
+      ['checkpoint_traces', 'record'],
+      ['session_phase', 'record'],
+    ] as const)
+      for (const row of this.query(`SELECT ${column} AS text FROM ${table}`).iterate() as Iterable<{
+        text: string;
+      }>)
+        mark(row.text);
+    for (const row of this.query(
+      'SELECT parts_hash FROM composition_version',
+    ).iterate() as Iterable<{
+      parts_hash: string;
+    }>)
+      marked.add(row.parts_hash);
+    let frontier = [...marked];
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const parent of frontier)
+        for (const row of this.query('SELECT child FROM session_content_ref WHERE parent=?').all(
+          parent,
+        ) as Array<{ child: string }>)
+          if (!marked.has(row.child)) {
+            marked.add(row.child);
+            next.push(row.child);
+          }
+      frontier = next;
+    }
+    let released = 0;
+    this.db.transaction(() => {
+      for (const row of this.query('SELECT hash FROM session_content').all() as Array<{
+        hash: string;
+      }>) {
+        if (marked.has(row.hash)) continue;
+        this.query('DELETE FROM session_content_ref WHERE parent=? OR child=?').run(
+          row.hash,
+          row.hash,
+        );
+        this.query('DELETE FROM session_content WHERE hash=?').run(row.hash);
+        const cached = this.contentCache.get(row.hash);
+        if (cached !== undefined) {
+          this.contentCacheChars -= cached.length;
+          this.contentCache.delete(row.hash);
+        }
+        released++;
+      }
+    })();
+    return released;
   }
 
   /**
