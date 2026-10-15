@@ -12,7 +12,9 @@ import {
   type HierarchyRefusal,
   hierarchyFingerprint,
   type OwnershipScope,
+  type SourceSegment,
   type SourceSelectionReport,
+  segmentsText,
 } from '@inixiative/foundry-core';
 import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
 import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
@@ -315,14 +317,38 @@ function renderSlot(
   files: readonly InstructionStackFile[],
   labels: Readonly<Record<string, string>>,
 ): string {
+  return segmentsText(slotSegments(slot, files, labels));
+}
+
+/**
+ * `renderSlot` as segments: each file's composed text is a part attributed to `file:<path>`, its
+ * rung and tier, carrying the file as read (`raw`) when the composed text is a trimmed or cleaned
+ * form of it. Headings, the preamble and separators are glue.
+ */
+export function slotSegments(
+  slot: CompositionSlot,
+  files: readonly InstructionStackFile[],
+  labels: Readonly<Record<string, string>>,
+): SourceSegment[] {
   const sections = files
     .filter((file) => file.content.trim())
-    .map(
-      (file) =>
-        `Contents of ${file.path} (${labels[file.level] ?? file.level}):\n\n${file.content.trim()}`,
-    );
-  if (!sections.length) return '';
-  return (slot === 'instructions' ? [PREAMBLE, ...sections] : sections).join('\n\n');
+    .map((file): SourceSegment[] => {
+      const text = file.content.trim();
+      const raw = file.raw ?? file.content;
+      return [
+        `Contents of ${file.path} (${labels[file.level] ?? file.level}):\n\n`,
+        {
+          subject: `file:${file.path}`,
+          text,
+          ...(raw !== text ? { raw } : {}),
+          node: file.level,
+          tier: file.tier,
+        },
+      ];
+    });
+  if (!sections.length) return [];
+  const blocks = slot === 'instructions' ? [[PREAMBLE], ...sections] : sections;
+  return blocks.flatMap((block, i) => (i ? ['\n\n', ...block] : block));
 }
 
 /**
@@ -573,6 +599,11 @@ export function instructionStackSource(
       return view.slots[slot].text;
     },
     report: () => last,
+    segments: () => {
+      if (!loaded) return undefined;
+      const slot = options.slot ?? 'instructions';
+      return slotSegments(slot, loaded.view.slots[slot].files, loaded.view.stacks[slot].labels);
+    },
   };
 }
 

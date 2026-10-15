@@ -91,6 +91,14 @@ const LOGIN_METHODS = new Set(['chatgpt', 'apiKey', 'amazonBedrock']);
 const keptLoginMethod = (key: string | undefined, value: string) =>
   key === 'type' && LOGIN_METHODS.has(value);
 
+/**
+ * The claude.ai connectors an account has enabled (Gmail, Drive…) show up in every Claude session's
+ * `system:init` `mcp_servers`. They describe the account, not the protocol: dropped, so a cassette
+ * neither names them nor drifts when the account adds one.
+ */
+const isAccountConnector = (item: unknown) =>
+  !!item && typeof item === 'object' && (item as { source?: unknown }).source === 'claudeai';
+
 export function scrubValue<T>(value: T, context: ScrubContext = {}): T {
   // Under an identity or secret key every string leaf is identity, however deeply nested ({ account: { name } }).
   const walk = (node: unknown, key?: string, sensitive = false): unknown => {
@@ -102,7 +110,10 @@ export function scrubValue<T>(value: T, context: ScrubContext = {}): T {
       if (hidden) return redactIdentity(node);
       return scrubText(node, context);
     }
-    if (Array.isArray(node)) return node.map((item) => walk(item, undefined, hidden));
+    if (Array.isArray(node))
+      return (key === 'mcp_servers' ? node.filter((item) => !isAccountConnector(item)) : node).map(
+        (item) => walk(item, undefined, hidden),
+      );
     if (node && typeof node === 'object') {
       return Object.fromEntries(
         Object.entries(node).map(([childKey, child]) => [

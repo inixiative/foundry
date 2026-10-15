@@ -130,10 +130,16 @@ export const VOLATILE_KINDS = [
 ];
 const volatile = (kind: string) => VOLATILE_KINDS.some((pattern) => pattern.test(kind));
 
+/** Fields inside protocol events that follow transient service state: Claude's prompt-cache
+ * diagnostics (`cache_miss_reason` on a miss, `null` on a hit). Their changes are notices too. */
+export const VOLATILE_PATHS = [/^message\.diagnostics\b/];
+const volatilePath = (path: string) => VOLATILE_PATHS.some((pattern) => pattern.test(path));
+
 function differences(
   before: Signature,
   after: Signature,
   pick: (kind: string) => boolean,
+  pickPath: (path: string) => boolean = () => true,
 ): string[] {
   const out: string[] = [];
   const kinds = new Set([...Object.keys(before.shape), ...Object.keys(after.shape)]);
@@ -148,8 +154,8 @@ function differences(
       out.push(`missing ${kind}`);
       continue;
     }
-    const added = now.filter((path) => !was.includes(path)),
-      removed = was.filter((path) => !now.includes(path));
+    const added = now.filter((path) => !was.includes(path) && pickPath(path)),
+      removed = was.filter((path) => !now.includes(path) && pickPath(path));
     if (added.length) out.push(`${kind} added ${added.join(', ')}`);
     if (removed.length) out.push(`${kind} removed ${removed.join(', ')}`);
   }
@@ -160,11 +166,19 @@ function differences(
 export function compareSignatures(before: Signature, after: Signature): string[] {
   return [
     ...(before.status !== after.status ? [`status ${before.status} -> ${after.status}`] : []),
-    ...differences(before, after, (kind) => !volatile(kind)),
+    ...differences(
+      before,
+      after,
+      (kind) => !volatile(kind),
+      (path) => !volatilePath(path),
+    ),
   ];
 }
 
 /** Changes in volatile kinds: reported, never a reason to hold a recording back. */
 export function volatileDifferences(before: Signature, after: Signature): string[] {
-  return differences(before, after, volatile);
+  return [
+    ...differences(before, after, volatile),
+    ...differences(before, after, (kind) => !volatile(kind), volatilePath),
+  ];
 }

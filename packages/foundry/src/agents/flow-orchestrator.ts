@@ -57,6 +57,7 @@ import {
 import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
 import type {
   AdviceRequestEvidence,
+  CacheComposition,
   DomainLibrarian,
   GuardCallEvidence,
   GuardFinding,
@@ -375,6 +376,8 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
 interface Participant {
   lib: DomainLibrarian;
   cache: string;
+  /** What `cache` is composed of and left out, frozen with it. */
+  cacheComposition: CacheComposition;
   cacheHash: string;
   cacheState: LayerState;
   cacheLastWarmed: number | null;
@@ -549,6 +552,7 @@ export class FlowOrchestrator {
     const participants: Participant[] = [...this._domains.values()].map((lib) => ({
       lib,
       cache: lib.cache.content,
+      cacheComposition: lib.cacheComposition(),
       cacheHash: lib.cache.hash,
       cacheState: lib.cache.checkStaleness(),
       cacheLastWarmed: lib.cache.lastWarmed,
@@ -735,6 +739,7 @@ export class FlowOrchestrator {
             messages: observed.messages,
             capturedAt: observed.capturedAt,
             ...(served ? { served } : {}),
+            ...(observed.composition ? { composition: observed.composition } : {}),
           }
         : {
             status: 'not-sent',
@@ -771,6 +776,7 @@ export class FlowOrchestrator {
     const task = p.lib
       .advise(input.message, input.threadState, {
         cache: p.cache,
+        cacheComposition: p.cacheComposition,
         threadKnowledge: p.threadKnowledge,
         observeRequest: (evidence) => {
           observed = evidence;

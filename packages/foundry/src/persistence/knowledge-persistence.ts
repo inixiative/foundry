@@ -4,6 +4,7 @@ import type {
   ThreadRuntime,
   ThreadRuntimeManager,
 } from '../agents/thread-runtime';
+import { type CompositionAuditor, stripCompositions } from '../audit/compositions';
 import type { LocalSessionStore } from './local-session-store';
 
 /**
@@ -21,7 +22,23 @@ export class KnowledgePersistence {
     private readonly store: LocalSessionStore,
     private readonly events: EventStream,
     threads: Thread[],
+    /** Turns each call's composition into version ids (spec B); without one, compositions are dropped. */
+    private readonly auditor?: CompositionAuditor,
   ) {
+    // A call's composed text is journalled as the versions it was made of, never as a copy. The
+    // audit is a record, not a gate: if it fails, the call is journalled without versions.
+    const versioned = <T>(record: T): T => {
+      if (!this.auditor) return stripCompositions(record);
+      try {
+        return this.auditor.versionRecord(record);
+      } catch (error) {
+        this.events.pushError(
+          'audit:composition',
+          `composition versions not recorded: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return stripCompositions(record);
+      }
+    };
     // An owned invalidation, never the private phase input or a new model signal.
     const owners = new WeakMap<
       ThreadRuntime,
@@ -88,7 +105,7 @@ export class KnowledgePersistence {
     };
     const detachPhase = manager.setPhaseJournal((runtime, record) => {
       try {
-        store.appendPhase(runtime.thread, record);
+        store.appendPhase(runtime.thread, { ...record, record: versioned(record.record) });
       } catch (error) {
         notify(runtime, record.turnId, 'phase', 'failed');
         this.events.pushError(
@@ -111,7 +128,7 @@ export class KnowledgePersistence {
       if (withheld && (content as { decision?: string }).decision === 'requested')
         throw Error(withheld);
       try {
-        store.appendLearning(runtime.thread, signal);
+        store.appendLearning(runtime.thread, { ...signal, content: versioned(signal.content) });
       } catch (error) {
         this.quarantine(runtime.thread, error);
         notify(runtime, turnId, 'learning', 'failed');

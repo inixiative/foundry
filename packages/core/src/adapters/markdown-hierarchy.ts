@@ -617,7 +617,8 @@ export async function discoverHierarchy(
         continue;
       }
       if (statSync(real).size > INSTRUCTION_FILE_LIMIT) continue;
-      let content = readFileSync(unit.path, 'utf8');
+      const raw = readFileSync(unit.path, 'utf8');
+      let content = raw;
       if (unit.source.maxLines !== undefined)
         content = content.split('\n').slice(0, unit.source.maxLines).join('\n');
       if (unit.source.maxBytes !== undefined)
@@ -625,7 +626,14 @@ export async function discoverHierarchy(
       const final = tierOf(unit.path, node);
       seen.add(real);
       kept.set(real, { path: unit.path, node: final.id, index: files.length });
-      files.push({ path: unit.path, content, depth: 0, node: final.id, tier: final.tier });
+      files.push({
+        path: unit.path,
+        content,
+        ...(raw !== content ? { raw } : {}),
+        depth: 0,
+        node: final.id,
+        tier: final.tier,
+      });
       continue;
     }
     const allowed =
@@ -665,7 +673,13 @@ export async function discoverHierarchy(
       // Every file keeps the narrower tier of its node and any node owning its path, found or imported.
       const final = tierOf(file.path, node);
       kept.set(realOf(file.path), { path: file.path, node: final.id, index: files.length });
-      files.push({ ...file, content, node: final.id, tier: final.tier });
+      files.push({
+        ...file,
+        content,
+        ...(content !== file.content ? { raw: file.raw ?? file.content } : {}),
+        node: final.id,
+        tier: final.tier,
+      });
     }
   }
   return { files, duplicates, refused, probes: [...probes] };
@@ -850,7 +864,7 @@ export function dedupeHierarchy<F extends HierarchyFile>(
         continue;
       }
       const content = cut(file.content.split('\n'), dropped);
-      if (content.trim()) keep.unshift({ ...file, content });
+      if (content.trim()) keep.unshift({ ...file, content, raw: file.raw ?? file.content });
     }
     out = keep;
   }

@@ -1,5 +1,5 @@
 {
-  "version": "2.1.299",
+  "version": "2.1.300",
   "status": 0,
   "body": {
     "kind": "process",
@@ -29,7 +29,7 @@
       "--disable-slash-commands",
       "--no-chrome",
       "--append-system-prompt-file",
-      "{{tmp}}/agent-session-base-28174-d33oGW/append-system-prompt.md",
+      "{{tmp}}/agent-session-base-9464-3awb9g/append-system-prompt.md",
       "--setting-sources",
       ""
     ],
@@ -42,22 +42,22 @@
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"9857bf4c-79fe-4d08-ac87-dca5ac0b3760\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.299\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"59494cb1-e710-4cfa-aabf-203c6957a505\",\"messaging_socket_path\":\"/tmp/cc-socks/29847.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"4798e23d-cffd-4734-b4b0-e43021227b2f\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.300\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"8b457f13-b724-4a5e-8a58-fa21213943f5\",\"messaging_socket_path\":\"/tmp/cc-socks/11606.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
       },
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg1Pw6Ua2Z7rtERW3mc7R\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"OK\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":860,\"cache_read_input_tokens\":3607,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":860},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"9857bf4c-79fe-4d08-ac87-dca5ac0b3760\",\"uuid\":\"c3ea5a77-f525-4f84-9056-33f5a1a1c6c1\",\"timestamp\":\"2026-10-14T03:10:37.680Z\",\"request_id\":\"req_011Cg1Pw6GAjQvTRr4tAPdCC\"}"
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg3M8U82TCjF6Sg8oj2UW\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"OK\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":860,\"cache_read_input_tokens\":3721,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":860},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"global\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"4798e23d-cffd-4734-b4b0-e43021227b2f\",\"uuid\":\"2ffcd80c-5ade-41d6-9378-6bc484909ed6\",\"timestamp\":\"2026-10-15T03:55:02.525Z\",\"request_id\":\"req_011Cg3M8Tv82itSbEFR8VD9E\"}"
       },
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1791963600,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1791963600},\"seven_day\":{\"utilization\":0.01,\"resetsAt\":1792537200}}},\"uuid\":\"89c4de6c-4bc4-46db-89d6-a6f8586b4d6f\",\"session_id\":\"9857bf4c-79fe-4d08-ac87-dca5ac0b3760\"}"
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1792048800,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.18,\"resetsAt\":1792048800},\"seven_day\":{\"utilization\":0.14,\"resetsAt\":1792537200}}},\"uuid\":\"1110a836-e281-46db-b086-5be26c162f10\",\"session_id\":\"4798e23d-cffd-4734-b4b0-e43021227b2f\"}"
       },
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"duration_api_ms\":1261,\"stop_reason\":\"end_turn\",\"session_id\":\"9857bf4c-79fe-4d08-ac87-dca5ac0b3760\",\"total_cost_usd\":0.00021027,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":860,\"cache_read_input_tokens\":3607,\"output_tokens\":4,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":860,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":3607,\"cache_creation_input_tokens\":860,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":860},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":4,\"cacheReadInputTokens\":3607,\"cacheCreationInputTokens\":860,\"webSearchRequests\":0,\"costUSD\":0.00021027,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"OK\",\"ttft_ms\":1279,\"type\":\"result\",\"duration_ms\":1291,\"uuid\":\"b8954419-1ef2-47f5-9ebd-1f956be5da6a\",\"ttft_stream_ms\":1279,\"time_to_request_ms\":30,\"first_content_frame_ms\":1279,\"queued_turn_count\":0,\"result_index\":0}"
+        "data": "{\"duration_api_ms\":879,\"stop_reason\":\"end_turn\",\"session_id\":\"4798e23d-cffd-4734-b4b0-e43021227b2f\",\"total_cost_usd\":0.00021141,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":860,\"cache_read_input_tokens\":3721,\"output_tokens\":4,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":860,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":3721,\"cache_creation_input_tokens\":860,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":860},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":4,\"cacheReadInputTokens\":3721,\"cacheCreationInputTokens\":860,\"webSearchRequests\":0,\"costUSD\":0.00021141,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"OK\",\"ttft_ms\":967,\"type\":\"result\",\"duration_ms\":986,\"uuid\":\"e9650c36-d9ee-4b80-8cc4-3285d9ccb3ac\",\"ttft_stream_ms\":966,\"time_to_request_ms\":128,\"first_content_frame_ms\":967,\"queued_turn_count\":0,\"result_index\":0}"
       }
     ],
     "exit": {
@@ -69,10 +69,10 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-14T03:10:38.454Z",
-    "agentSession": "0.6.3",
+    "recordedAt": "2026-10-15T03:55:03.364Z",
+    "agentSession": "0.6.5",
     "environment": "terminal",
-    "durationMs": 2672,
+    "durationMs": 2839,
     "model": "claude-haiku-5-5"
   }
 }

@@ -118,7 +118,9 @@ A Warden is three parts: **instructions** and **domain knowledge**, both compose
 
 A project agent (`projects[id].agents`) is **standalone** (a full definition) or **`extends: <global agent id>`**. An extension appends its `prompt` (under a heading per chunk) and its `domainKnowledge` (source ids, each under its label) to the parent's, global first; `override: ["instructions" | "domainKnowledge"]` replaces that chunk instead. No entry means the global agent applies unchanged. `GET /api/projects/:id/resolved/agents` shows where each chunk came from.
 
-Settings edits apply live: every committed change is appended to `.foundry/settings-history.jsonl` (before/after per definition, `GET /api/settings/history`), and running threads take edited layers, agents and Cartographer/Warden instructions on their next turn. Adding or removing a Warden, and provider changes, apply to new threads.
+Settings edits apply live: every committed change is a row in Foundry's audit log, `.foundry/audit.jsonl` (before/after per definition, `GET /api/settings/history`), and running threads take edited layers, agents and Cartographer/Warden instructions on their next turn. Adding or removing a Warden, and provider changes, apply to new threads.
+
+Every Warden call records what its instructions and domain knowledge were composed from, as version ids, not text (`audit/`, docs/THREAD-TREE.md spec B). The audit log holds a **source version** for every change to a source: a settings definition, a ladder file (`file:<path>`), a settings prompt (`prompt:agent:<id>`), a configured source's text (`source-content:<id>`), a feedback-written line, or the charter. Each row records the actor and the cause. The journal's `composition_version` lists a slot's parts in order (glue, source version plus the text it contributed, per-message text), so `CompositionAuditor.recompose` returns the exact text. Advice, guard and review requests carry `versions: {charter, instructions, domainKnowledge, retrieved?}`; text chosen per message is stored raw with the call.
 
 ## Tech Stack
 

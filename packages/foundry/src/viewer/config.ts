@@ -18,6 +18,7 @@ import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
+import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import {
   type ModelCapability,
@@ -1078,6 +1079,8 @@ export interface SettingsEdit {
   subject: string;
   /** The store revision the edit produced. */
   revision: number;
+  /** Its row in the audit log, when it was written. */
+  auditId?: string;
   entry: VersionEntry<SettingsChange>;
 }
 
@@ -1204,33 +1207,14 @@ export class ConfigStore {
     return this._notified;
   }
 
-  /** Versioned edits, oldest first, grouped by subject; one subject when given. */
+  /** Versioned edits, oldest first, grouped by subject; one subject when given (from the audit log). */
   async history(subject?: string): Promise<VersionLog<SettingsChange>[]> {
-    let text = '';
-    try {
-      text = await readFile(join(this._dir, 'settings-history.jsonl'), 'utf8');
-    } catch {
-      return [];
-    }
-    const logs = new Map<string, VersionLog<SettingsChange>>();
-    for (const line of text.split('\n')) {
-      if (!line.trim()) continue;
-      let edit: SettingsEdit;
-      try {
-        edit = JSON.parse(line) as SettingsEdit;
-      } catch {
-        continue; // a torn final line from an interrupted append
-      }
-      if (subject !== undefined && edit.subject !== subject) continue;
-      const log = logs.get(edit.subject) ?? {
-        subject: edit.subject,
-        scope: 'definition',
-        entries: [],
-      };
-      log.entries.push(edit.entry);
-      logs.set(edit.subject, log);
-    }
-    return [...logs.values()];
+    return AuditLog.for(this._dir).settingsHistory(subject);
+  }
+
+  /** The audit log next to these settings (`audit.jsonl`). */
+  get audit(): AuditLog {
+    return AuditLog.for(this._dir);
   }
 
   /** Current committed config. Read-only: change it through update/save/patch/deleteItem. */
@@ -1397,32 +1381,46 @@ export class ConfigStore {
     return candidate;
   }
 
-  /** Append the edits to the history, then notify listeners in order. */
+  /** Append the edits to the audit log, then notify listeners in order. */
   private async _record(previous: FoundryConfig, next: FoundryConfig, author: string) {
-    const timestamp = new Date().toISOString();
-    const edits: SettingsEdit[] = settingsChanges(previous, next).map(
-      ({ subject, before, after }) => ({
-        subject,
-        revision: this._revision,
-        entry: {
-          hash: computeHash(JSON.stringify(after ?? null)),
-          timestamp,
-          trigger: 'settings',
-          author,
-          snapshot: { before, after },
-        },
-      }),
-    );
-    if (!edits.length) return;
+    const changes = settingsChanges(previous, next);
+    if (!changes.length) return;
+    let rows: SourceVersion[] = [];
     try {
-      await appendFile(
-        join(this._dir, 'settings-history.jsonl'),
-        edits.map((edit) => JSON.stringify(edit)).join('\n') + '\n',
-        { mode: 0o600 },
+      rows = AuditLog.for(this._dir).append(
+        changes.map(({ subject, before, after }) =>
+          settingsRow(subject, this._revision, before, after, author),
+        ),
       );
+      // An agent's prompt is composed text too: its version is this edit, by this author.
+      for (const { subject, before, after } of changes) {
+        if (!subject.startsWith('agent:')) continue;
+        const prompt = (value: unknown) => (value as { prompt?: unknown } | undefined)?.prompt;
+        const next = prompt(after);
+        if (typeof next !== 'string' || !next.trim() || next === prompt(before)) continue;
+        const row = rows.find((r) => r.subject === subject)!;
+        AuditLog.for(this._dir).observe(`prompt:${subject}`, next, {
+          record: true,
+          actor: row.actor,
+          cause: row.cause,
+        });
+      }
     } catch (error) {
-      console.warn(`[settings] history not written: ${(error as Error).message}`);
+      console.warn(`[settings] audit not written: ${(error as Error).message}`);
     }
+    const timestamp = new Date().toISOString();
+    const edits: SettingsEdit[] = changes.map(({ subject, before, after }, i) => ({
+      subject,
+      revision: this._revision,
+      ...(rows[i] ? { auditId: rows[i]!.id } : {}),
+      entry: {
+        hash: computeHash(JSON.stringify(after ?? null)),
+        timestamp,
+        trigger: 'settings',
+        author,
+        snapshot: { before, after },
+      },
+    }));
     const config = structuredClone(next);
     for (const listener of this._listeners)
       this._notified = this._notified
