@@ -190,6 +190,20 @@ export {
   type TranscriptTurn,
 } from './feedback/correction';
 export {
+  AUTHORSHIP_MARKERS,
+  authorshipOf,
+  evidenceSnippet,
+  parseReviewFindings,
+  REUSE_HINT,
+  REVIEW_FINDINGS_PROMPT,
+  type ReviewFinding,
+  type ReviewMoment,
+  type ReviewReading,
+  reviewFindingMessages,
+  type SessionEvidence,
+  styleOf,
+} from './feedback/review-findings';
+export {
   type DomainAgreement,
   fixtureProbe,
   labelAgreement,
@@ -222,11 +236,15 @@ export {
   scorePrefilter,
 } from './feedback/warden-prefilter';
 export {
+  type Authorship,
   type CharterScore,
   CONCEPT_CLUSTERS,
   CORRECTION_TARGET_PROMPT,
   type CorrectionTarget,
   correctionTargetMessages,
+  MISS_KINDS,
+  type MissKind,
+  type ProbeSource,
   parseCorrectionTargets,
   parseTargetCanonical,
   parseWardenJudgement,

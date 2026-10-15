@@ -1,5 +1,5 @@
 {
-  "version": "0.155.1",
+  "version": "0.162.1",
   "status": 200,
   "body": {
     "turns": [
@@ -15,8 +15,8 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-10-15T03:56:15.156Z",
-    "agentSession": "0.6.5",
+    "recordedAt": "2026-10-15T15:16:11.824Z",
+    "agentSession": "0.6.6",
     "environment": "terminal"
   }
 }
