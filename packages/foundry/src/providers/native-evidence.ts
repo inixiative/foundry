@@ -1,4 +1,9 @@
-import { freezeEvidence, type NativeEvidence, type NativeOwner } from '@inixiative/foundry-core';
+import {
+  freezeEvidence,
+  type NativeEvidence,
+  type NativeOwner,
+  type NativeSubagentLifecycle,
+} from '@inixiative/foundry-core';
 
 const strings = [
   'admissionId',
@@ -29,6 +34,13 @@ export function projectNative(value: unknown, owner?: NativeOwner): NativeEviden
     nativeOutcome: 'unknown',
   };
   for (const key of strings) if (typeof v[key] === 'string') out[key] = v[key];
+  if (typeof v.parentToolUseId === 'string' && v.parentToolUseId)
+    out.parentToolUseId = v.parentToolUseId;
+  const subagent = v.kind === 'subagent' ? subagentLifecycle(v.subagent) : undefined;
+  if (subagent) {
+    out.kind = 'subagent';
+    out.subagent = subagent;
+  }
   if (typeof v.timestamp === 'number' && Number.isFinite(v.timestamp)) out.observedAt = v.timestamp;
   const runtime =
     v.kind === 'native_status' && v.raw && typeof v.raw === 'object'
@@ -232,4 +244,41 @@ export function projectNative(value: unknown, owner?: NativeOwner): NativeEviden
     }
   }
   return freezeEvidence(out) as unknown as NativeEvidence;
+}
+
+const clipText = (value: unknown, max: number) =>
+  typeof value === 'string' && value ? value.slice(0, max) : undefined;
+
+/** A subagent lifecycle, allowlisted field by field; anything else stays behind. */
+function subagentLifecycle(value: unknown): NativeSubagentLifecycle | undefined {
+  const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+  const phase = v?.phase;
+  const taskId = clipText(v?.taskId, 256);
+  if (!taskId || !['started', 'progress', 'updated', 'ended'].includes(String(phase)))
+    return undefined;
+  const usage =
+    v?.usage && typeof v.usage === 'object' ? (v.usage as Record<string, unknown>) : undefined;
+  const count = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n : undefined);
+  const out: Record<string, unknown> = { phase, taskId };
+  for (const [key, max] of [
+    ['toolUseId', 256],
+    ['parentTaskId', 256],
+    ['agentType', 200],
+    ['description', 500],
+    ['status', 64],
+    ['summary', 4000],
+    ['prompt', 8000],
+  ] as const) {
+    const text = clipText(v?.[key], max);
+    if (text) out[key] = text;
+  }
+  if (count(v?.depth) !== undefined) out.depth = count(v?.depth);
+  if (typeof v?.backgrounded === 'boolean') out.backgrounded = v.backgrounded;
+  if (usage && count(usage.totalTokens) !== undefined)
+    out.usage = {
+      totalTokens: count(usage.totalTokens),
+      ...(count(usage.toolUses) !== undefined ? { toolUses: count(usage.toolUses) } : {}),
+      ...(count(usage.durationMs) !== undefined ? { durationMs: count(usage.durationMs) } : {}),
+    };
+  return out as unknown as NativeSubagentLifecycle;
 }

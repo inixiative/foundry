@@ -138,6 +138,18 @@ export class SessionBackedProvider implements LLMProvider {
   private _notAdmitted = new WeakSet<object>();
   private _attempted = new WeakSet<object>();
   private _observations = new WeakMap<HarnessSession, Map<string, NativeObservation>>();
+  private _subagentSinks = new Set<(threadId: string, evidence: NativeEvidence) => void>();
+
+  /**
+   * Observe the subagents the executor's sessions run: their lifecycle and their own activity,
+   * tagged with the spawning call, for the thread they run under. Returns an unsubscribe.
+   */
+  observeSubagents(sink: (threadId: string, evidence: NativeEvidence) => void): () => void {
+    this._subagentSinks.add(sink);
+    return () => {
+      this._subagentSinks.delete(sink);
+    };
+  }
   private _observerFailures = new WeakMap<NativeObservation, number>();
   private _registeredAdmissions = new Map<
     string,
@@ -954,6 +966,22 @@ export class SessionBackedProvider implements LLMProvider {
           if (event.kind === 'thinking') {
             if (!requested.textOnly && event.admissionId && event.text)
               observations.get(event.admissionId)?.thought?.(event.text);
+            return;
+          }
+          // A subagent's activity belongs to no admission (it can outlive the turn that spawned it):
+          // it goes to the thread's subagent observers, never into a turn.
+          if (
+            !requested.textOnly &&
+            (event.kind === 'subagent' || event.unattributedReason === 'subagent')
+          ) {
+            const observed = this._ownedProjection(session, event);
+            for (const sink of this._subagentSinks) {
+              try {
+                sink(threadId, observed);
+              } catch {
+                /* an observer's failure never touches the session */
+              }
+            }
             return;
           }
           const evidence = this._ownedProjection(session, event);

@@ -184,7 +184,10 @@ test('a configured phase-journal refusal at the guard boundary is not admitted: 
     'outcome row',
   );
   expect(guardCalls).toBe(0);
-  const rows = f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' });
+  // The turn's reduced rows (spec A) are left out: these assertions are about the calls.
+  const rows = f.store
+    .phaseHistory(f.thread.id, { turnId: 'turn-1' })
+    .filter((r) => r.phase !== 'middleware-reduced');
   expect(rows.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-outcome']); // no request row could be written
   const outcome = rows[2]!.record as any;
   expect(outcome.status).toBe('reported');
@@ -231,9 +234,12 @@ test("a configured journal refusal at plan seal is recorded as failed, the centr
     .meta as any;
   expect(meta.phases.journal).toEqual({ route: 'failed', advice: 'durable' });
   expect(meta.phases.routing.request.status).toBe('supplied'); // supplied input retained on the turn even though its durable row was refused
-  expect(f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' }).map((r) => r.phase)).not.toContain(
-    'route',
-  );
+  expect(
+    f.store
+      .phaseHistory(f.thread.id, { turnId: 'turn-1' })
+      .filter((r) => r.phase !== 'middleware-reduced')
+      .map((r) => r.phase),
+  ).not.toContain('route');
   const g = durabilityFixture(join(dir, 'absent.sqlite'), { journal: false });
   closes.push(() => g.store.close());
   expect((await g.turn('turn-1', 'Add preferred names')).ok).toBe(true);

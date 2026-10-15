@@ -44,6 +44,21 @@ export function threadTitle(
   return meta.description ? { text: meta.description, source: 'description' } : undefined;
 }
 
+/** How a subagent thread came to be: who spawned it, through what, and its native identity. */
+export interface ThreadSpawn {
+  readonly via: 'foundry' | 'native-claude' | 'native-codex' | 'host-paseo' | 'host-t3';
+  /** The parent's tool call that spawned it. */
+  readonly toolCallId?: string;
+  /** The native run's id (Claude task id, Codex child thread id). */
+  readonly nativeTaskId?: string;
+  readonly agentType?: string;
+  readonly description?: string;
+  /** The parent's `handoff` phase row for this spawn. */
+  readonly handoffId?: string;
+  /** Recorded from the native stream only: no Foundry middleware ran on it. */
+  readonly observed?: boolean;
+}
+
 export interface ThreadMeta {
   /** Living description — what this thread is doing right now. */
   description: string;
@@ -71,6 +86,15 @@ export interface ThreadMeta {
 
   /** Parent thread when this thread is a subagent spawned by another. */
   parentThreadId?: string;
+
+  /** The parent's turn that spawned this thread (a subagent). */
+  parentTurnId?: string;
+
+  /** How this subagent thread was spawned (docs/reference/SUBAGENTS.md §4.1). */
+  spawn?: ThreadSpawn;
+
+  /** 1 for a child of a main thread. */
+  depth?: number;
 
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;

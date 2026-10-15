@@ -97,6 +97,8 @@ export interface FoundryConfig {
   learning?: LearningSettings;
   /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
   feedback?: FeedbackSettings;
+  /** The local journal (docs/THREAD-TREE.md spec A). */
+  journal?: JournalSettings;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -997,6 +999,7 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);
+  validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
@@ -1262,6 +1265,8 @@ export class ConfigStore {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
       } else if (section === 'feedback') {
         next.feedback = { ...next.feedback, ...patch } as FeedbackSettings;
+      } else if (section === 'journal') {
+        next.journal = { ...next.journal, ...patch } as JournalSettings;
       } else if (section === 'toolRules') {
         next.toolRules = { ...next.toolRules, ...patch } as ToolRules;
       } else if (section === 'apiTokens') {
@@ -1437,4 +1442,26 @@ function deletableSection(
     section === 'projects'
   )
     return config[section];
+}
+
+/** The local journal's settings. */
+export interface JournalSettings {
+  /**
+   * Days a middleware call's raw rows (its full input) stay in the journal after its turn is
+   * reduced; Archive only ever gets the reduced entries. Default 30.
+   */
+  rawMiddlewareDays?: number;
+}
+
+export const DEFAULT_RAW_MIDDLEWARE_DAYS = 30;
+
+function validateJournalSettings(journal: JournalSettings | undefined): void {
+  if (journal === undefined) return;
+  if (!journal || typeof journal !== 'object' || Array.isArray(journal))
+    throw Error('journal must be an object');
+  for (const key of Object.keys(journal))
+    if (key !== 'rawMiddlewareDays') throw Error(`journal.${key} is not a journal setting`);
+  const days = journal.rawMiddlewareDays;
+  if (days !== undefined && (!Number.isFinite(days) || days < 0))
+    throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
 }

@@ -20,6 +20,8 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
   const sourceId = crypto.randomUUID();
   const archives = new Map<string, Revision[]>();
   const requests: string[] = [];
+  /** Claims Foundry holds on the native sessions it drives (Archive 0.20 claims). */
+  const claims = new Map<string, { claimant: string; expiresAt: number; fulfilledBy?: string }>();
   let failing = false;
   /** Libraries this Archive's paired Signet grants sessions.write on; connect refuses others. */
   const libraries: { integrationId: string; resourceId: string; name: string }[] = [];
@@ -74,6 +76,45 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
       if (failing) return json({ error: 'Archive operation failed' }, 500);
       const body = (await request.json()) as Record<string, unknown>;
       if (action === 'info') return json({ data: { sourceId, protocol: 2 } });
+      if (action === 'claims/hold') {
+        const input = body as {
+          claimant: string;
+          ttlMs: number;
+          sessions: Array<{ source: string; sessionId: string }>;
+        };
+        const expiresAt = Date.now() + input.ttlMs;
+        // As Archive does: another writer's live, unfulfilled lease is never taken over.
+        for (const session of input.sessions) {
+          const held = claims.get(`${session.source}:${session.sessionId}`);
+          if (
+            held &&
+            held.claimant !== input.claimant &&
+            held.expiresAt > Date.now() &&
+            !held.fulfilledBy
+          )
+            return json({ error: 'claimed by another writer' }, 409);
+        }
+        for (const session of input.sessions)
+          claims.set(`${session.source}:${session.sessionId}`, {
+            claimant: input.claimant,
+            expiresAt,
+          });
+        return json({ data: { expiresAt } });
+      }
+      if (action === 'claims/fulfil') {
+        const input = body as {
+          claimant: string;
+          source: string;
+          sessionId: string;
+          archiveId: string;
+        };
+        const claim = claims.get(`${input.source}:${input.sessionId}`);
+        if (!claim) return json({ error: 'Claim unavailable' }, 404);
+        if (claim.claimant !== input.claimant)
+          return json({ error: 'claimed by another writer' }, 409);
+        claim.fulfilledBy = input.archiveId;
+        return json({ data: { fulfilledBy: input.archiveId, superseded: [] } });
+      }
       if (action === 'settings/read') return json({ data: defaultSettings });
       if (action === 'head' || action === 'read') {
         const revisions = archives.get(String(body.archiveId));
@@ -183,6 +224,7 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
     token,
     sourceId,
     requests,
+    claims,
     client: () => new ArchiveClient({ url, token }),
     snapshots: (id: string) => (archives.get(id) ?? []).map((r) => r.snapshot),
     listings,

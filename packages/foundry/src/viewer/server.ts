@@ -31,6 +31,7 @@ import {
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { SubagentRecorder } from '../turns/subagents';
 import {
   createToolGate,
   enforces,
@@ -45,7 +46,7 @@ import { makeUnrefInterval } from '../ws/unref-interval';
 import { ActionHandler } from './actions';
 import { AIAssist } from './ai-assist';
 import { AnalyticsStore } from './analytics';
-import { ConfigStore } from './config';
+import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS } from './config';
 import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin, sameSecret } from './request-auth';
 import { registerControlRoutes } from './routes/control';
@@ -105,6 +106,12 @@ export interface ViewerConfig {
   acpCapability?: string;
   /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
   threadLaunch?: ThreadLaunchSettings;
+  /** Executor providers whose sessions report their subagents (spec A: observed child threads). */
+  subagentSources?: ReadonlyArray<{
+    observeSubagents(
+      sink: (threadId: string, evidence: import('@inixiative/foundry-core').NativeEvidence) => void,
+    ): () => void;
+  }>;
 }
 
 /**
@@ -269,6 +276,25 @@ export function createViewer(config: ViewerConfig) {
     for (const warning of directory.restore(localStore.threads()))
       log.warn(`[Recovery] ${warning}`);
     for (const thread of directory.all()) localStore.saveThread(thread);
+    // A turn a restart closed is reduced before its first capture (spec A).
+    localStore.compactClosedTurns();
+    const subagents = new SubagentRecorder({
+      store: localStore,
+      thread: (id) => directory.get(id),
+      adopt: (child) => {
+        directory.adoptObserved(child);
+        streams.threadsChanged(child.id);
+      },
+      events: eventStream,
+    });
+    for (const source of config.subagentSources ?? [])
+      source.observeSubagents((threadId, evidence) => {
+        try {
+          subagents.observe(threadId, evidence);
+        } catch (error) {
+          log.warn(`[Subagents] ${threadId}: ${(error as Error).message}`);
+        }
+      });
   }
   const threadChanged = (thread: Thread) => {
     try {
@@ -292,6 +318,25 @@ export function createViewer(config: ViewerConfig) {
     });
   else for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
+  // Raw middleware rows age out once reduced (`journal.rawMiddlewareDays`, default 30).
+  if (localStore) {
+    const prune = () => {
+      try {
+        const days = configStore.config.journal?.rawMiddlewareDays ?? DEFAULT_RAW_MIDDLEWARE_DAYS;
+        const pruned = localStore.pruneRawMiddleware(Date.now() - days * 86_400_000);
+        if (pruned.rows)
+          log.info(
+            `[Journal] pruned ${pruned.rows} raw middleware row(s), ${pruned.content} content`,
+          );
+      } catch (error) {
+        log.warn(`[Journal] raw middleware retention failed: ${(error as Error).message}`);
+      }
+    };
+    prune();
+    const timer = setInterval(prune, 6 * 3_600_000);
+    timer.unref();
+    localStore.onClose(() => clearInterval(timer));
+  }
   // Every Warden call journals the versions its instructions and domain knowledge were composed from.
   const compositionAuditor = localStore
     ? new CompositionAuditor(configStore.audit, localStore, {

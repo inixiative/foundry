@@ -1,4 +1,5 @@
 import { userInfo } from 'node:os';
+import { resolve } from 'node:path';
 import {
   type ArchiveActor,
   type ArchiveEntry,
@@ -11,10 +12,13 @@ import {
   type EventStream,
   type NativeEvidence,
   type ServedModel,
+  type ThreadMeta,
   threadTitle,
 } from '@inixiative/foundry-core';
+import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import type { ArchiveWriter } from './local';
+import { RAW_MIDDLEWARE_PHASES, REDUCED_PHASE, type ReducedMiddleware } from './reduced-middleware';
 
 /** The person operating this Foundry: its local account. */
 export function localActor(): ArchiveActor | undefined {
@@ -53,6 +57,37 @@ function phaseServed(record: unknown): ServedModel | undefined {
   };
   walk(record);
   return found.size === 1 ? [...found.values()][0] : undefined;
+}
+
+/**
+ * A child thread's lineage (spec A): its direct parent, the tree's root, and the parent's entry that
+ * spawned it (the parent's `handoff` row). A main thread has none.
+ */
+function lineageOf(
+  journal: LocalSessionStore,
+  meta: ThreadMeta,
+): { lineage: NonNullable<ArchiveSnapshot['lineage']> } | undefined {
+  if (!meta.parentThreadId) return undefined;
+  const parents = new Map(journal.threads().map((t) => [t.id, t.meta.parentThreadId]));
+  let root = meta.parentThreadId;
+  for (let hops = 0; parents.get(root) && hops < 100; hops++) root = parents.get(root)!;
+  const spawn = meta.spawn;
+  const clip = (value: string | undefined, max: number) =>
+    value ? value.slice(0, max) : undefined;
+  const agentType = clip(spawn?.agentType, 200);
+  const description = clip(spawn?.description, 500);
+  return {
+    lineage: {
+      kind: 'subagent',
+      parentSessionId: meta.parentThreadId,
+      rootSessionId: root,
+      ...(spawn?.handoffId ? { parentEntryId: `phase:${spawn.handoffId}` } : {}),
+      ...(spawn?.toolCallId ? { toolUseId: spawn.toolCallId.slice(0, 256) } : {}),
+      ...(agentType ? { agentType } : {}),
+      ...(description ? { description } : {}),
+      ...(typeof meta.depth === 'number' ? { depth: Math.min(meta.depth, 100) } : {}),
+    },
+  };
 }
 
 export function captureThread(
@@ -162,7 +197,22 @@ export function captureThread(
       ...(kind === 'tool-call' ? stamp(servedFor(evidence)) : {}),
     });
   }
-  for (const phase of records.phases)
+  for (const phase of records.phases) {
+    // A middleware call reaches Archive only reduced (spec A): its state and its result.
+    if ((RAW_MIDDLEWARE_PHASES as readonly string[]).includes(phase.phase)) continue;
+    if (phase.phase === REDUCED_PHASE) {
+      const reduced = phase.record as unknown as ReducedMiddleware;
+      entries.push({
+        id: `mw:${reduced.callId}`,
+        ...(phase.turnId ? { turnId: phase.turnId } : {}),
+        kind: 'event',
+        text: JSON.stringify(reduced),
+        timestamp: reduced.at,
+        sourceRef: `middleware:${reduced.callId}`,
+        ...stamp(reduced.served),
+      });
+      continue;
+    }
     entries.push({
       id: `phase:${phase.id}`,
       ...(phase.turnId ? { turnId: phase.turnId } : {}),
@@ -170,9 +220,9 @@ export function captureThread(
       text: JSON.stringify({ phase: phase.phase, record: phase.record }),
       timestamp: phase.storedAt,
       sourceRef: `phase:${phase.id}`,
-      // Decision roles' answers: route, advice and guard outcomes record what served them.
       ...stamp(phaseServed(phase.record)),
     });
+  }
   for (const turn of records.turns)
     entries.push({
       id: `turn:${turn.id}`,
@@ -191,6 +241,7 @@ export function captureThread(
     title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
     ...(actor ? { actor } : {}),
+    ...(lineageOf(journal, thread.meta) ?? {}),
     // A test or eval harness running this Foundry stamps its threads (ARCHIVE_RUN).
     tags: [...new Set([...(run ? [run] : []), ...thread.meta.tags])],
     capturedAt: Date.now(),
@@ -198,7 +249,7 @@ export function captureThread(
       reasoning: 'unavailable',
       completeness: 'partial',
       omissions: [
-        'Recorded messages, turn outcomes, public native text observations, tools and phase events only; phase request context is included where recorded; central injected context, checkpoint traces, private reasoning and unrecorded activity are unavailable',
+        'Recorded messages, turn outcomes, public native text observations, tools and phase events only; middleware calls are reduced to their state and result (their input is not archived); central injected context, checkpoint traces, private reasoning and unrecorded activity are unavailable',
       ],
     },
     entries,
@@ -220,7 +271,12 @@ export class ArchiveCapture {
   /** Stands in for the Archive's source id while it is unreachable; such snapshots are never written. */
   private readonly unsentSourceId = crypto.randomUUID();
   private closed = false;
+  private readonly renewal: ReturnType<typeof setInterval>;
+  /** This Foundry's name on its claims: one per journal, so two Foundries never share one. */
+  private readonly claimant: string;
   readonly errors = new Map<string, string>();
+  /** The last claim refusal per session (or `hold`), for diagnosis; capture goes on regardless. */
+  readonly claimErrors = new Map<string, string>();
   constructor(
     readonly journal: LocalSessionStore,
     private readonly writer: () => ArchiveWriter | undefined,
@@ -235,6 +291,9 @@ export class ArchiveCapture {
       for (const threadId of this.errors.keys()) this.schedule(threadId);
     }, RETRY_MS);
     this.retry.unref();
+    this.claimant = `foundry:${contentHash(resolve(journal.path)).slice(0, 16)}`;
+    this.renewal = setInterval(() => void this.renew().catch(() => {}), RENEW_MS);
+    this.renewal.unref();
     for (const thread of journal.threads()) this.schedule(thread.id);
     journal.onClose(() => this.close());
   }
@@ -276,7 +335,12 @@ export class ArchiveCapture {
       }
       try {
         if (!sourceId) throw Error('Archive unreachable');
-        await writer.capture(snapshot);
+        // The native sessions behind this thread are Foundry's to record: claimed while it writes
+        // them, fulfilled by the archive it wrote (the collector then leaves the raw transcript).
+        const sessions = nativeSessions(this.journal, threadId);
+        await this.claim(writer, sessions);
+        const stored = await writer.capture(snapshot);
+        await this.fulfil(writer, sessions, stored.id);
         this.errors.delete(threadId);
       } catch {
         this.errors.set(
@@ -286,11 +350,82 @@ export class ArchiveCapture {
       }
     }
   }
+  /**
+   * Renew the lease on every thread with an open turn: a thread at work keeps its native sessions
+   * claimed; once its turn closes, its last capture fulfils them, and a crash lets the lease lapse
+   * so the collector keeps the raw transcript. Runs in the capture chain, so a renewal never lands
+   * after (and undoes) the fulfilment of a turn that closed meanwhile.
+   */
+  renew(): Promise<void> {
+    const run = this.flushing.then(async () => {
+      const writer = this.writer();
+      if (!writer || this.closed) return;
+      await this.claim(
+        writer,
+        this.journal
+          .openTurnThreads()
+          .flatMap((threadId) => nativeSessions(this.journal, threadId)),
+      );
+    });
+    this.flushing = run.catch(() => {});
+    return run;
+  }
+  /** Claims are a courtesy to the collector: a refused claim never stops Foundry writing its journal. */
+  private async claim(writer: ArchiveWriter, sessions: NativeSession[]) {
+    if (!sessions.length) return;
+    try {
+      await writer.holdClaims({ claimant: this.claimant, ttlMs: CLAIM_TTL_MS, sessions });
+    } catch (error) {
+      this.claimErrors.set('hold', (error as Error).message);
+    }
+  }
+  private async fulfil(writer: ArchiveWriter, sessions: NativeSession[], archiveId: string) {
+    for (const session of sessions)
+      try {
+        await writer.fulfilClaim({ claimant: this.claimant, ...session, archiveId });
+      } catch (error) {
+        this.claimErrors.set(`${session.source}:${session.sessionId}`, (error as Error).message);
+      }
+  }
   close() {
     if (this.closed) return;
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     clearInterval(this.retry);
+    clearInterval(this.renewal);
     this.unsubscribe();
   }
+}
+
+/** A native session Foundry drives, as the Archive collector names it. */
+interface NativeSession {
+  readonly source: 'claude-code' | 'codex';
+  readonly sessionId: string;
+}
+
+/** How long a claim holds without renewal: a crashed Foundry's sessions are captured raw after it. */
+const CLAIM_TTL_MS = 10 * 60_000;
+const RENEW_MS = 2 * 60_000;
+
+/**
+ * The native sessions behind a thread: the executor's (a Claude session id, or a Codex thread id)
+ * and, for an observed Codex sub-agent thread, its own thread. A Claude subagent's transcript
+ * follows its session's claim.
+ */
+function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSession[] {
+  const meta = journal.threads().find((t) => t.id === threadId)?.meta;
+  // An observed subagent's own native session: a Codex child's thread (a Claude subagent's
+  // transcript follows its session's claim, so it has none of its own).
+  if (meta?.spawn?.observed)
+    return meta.spawn.via === 'native-codex' && meta.spawn.nativeTaskId
+      ? [{ source: 'codex', sessionId: meta.spawn.nativeTaskId }]
+      : [];
+  const found = new Map<string, NativeSession>();
+  for (const id of journal.nativeSessionIds(threadId)) {
+    const session: NativeSession = id.threadId
+      ? { source: 'codex', sessionId: id.threadId }
+      : { source: 'claude-code', sessionId: id.sessionId! };
+    found.set(`${session.source}:${session.sessionId}`, session);
+  }
+  return [...found.values()];
 }
