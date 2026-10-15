@@ -94,4 +94,11 @@ test('fixtureProbe turns a fixture into a charter probe', () => {
   expect(probe.kind).toBe('positive');
   expect(probe.gold).toEqual({ domains: ['reuse'], statements: ['x'] });
   expect(fixtureProbe({ ...fixture, labels: {} }, (id) => id).kind).toBe('negative');
+  expect(probe).toMatchObject({ moment: 'plan' });
+  // A user's message is asked at the user-message trigger, not passed off as an agent turn.
+  const ask = fixtureProbe(
+    { ...fixture, trigger: { kind: 'user-message', text: 'add a retry flag' } },
+    (id) => id,
+  );
+  expect(ask).toMatchObject({ moment: '', ask: 'add a retry flag' });
 });

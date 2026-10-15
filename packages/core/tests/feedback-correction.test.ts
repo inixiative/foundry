@@ -82,6 +82,22 @@ describe('extractCorrections', () => {
       correction: 'use a named export not default',
     });
     expect(corrections[0]!.before).toContain('util.ts');
+    // The ask the agent was answering: what a Warden advises on at the user-message trigger.
+    expect(corrections[0]!.ask).toBe('add a util module with a constant');
+  });
+
+  test('the ask is the previous message, scrubbed, and absent at the start of a session', () => {
+    const { corrections } = extractCorrections('s1', [
+      user('stop adding flags', { id: 'm0' }),
+      agent('Added a flag.'),
+      user('deploy with API_TOKEN=abcdefghijklmnop', { id: 'm1' }),
+      agent('Deployed with a new retry flag.'),
+      user('no, never add a flag for this', { id: 'm2' }),
+    ]);
+    expect(corrections.find((c) => c.id === 's1:m0')?.ask).toBeUndefined();
+    const last = corrections.find((c) => c.id === 's1:m2');
+    expect(last?.ask).toContain('[REDACTED:value]');
+    expect(last?.ask).not.toContain('abcdefghijklmnop');
   });
 
   test('an identical resend within ten minutes counts once', () => {

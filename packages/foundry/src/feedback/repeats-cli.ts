@@ -59,7 +59,8 @@ export async function reachableArchive() {
   }
 }
 
-function loadCache() {
+/** The classifications `foundry repeats` keeps across runs (`classificationKey`); evals share them. */
+export function loadCache() {
   const cache = new Map<string, CorrectionClassification>();
   if (!existsSync(CACHE)) return cache;
   for (const line of readFileSync(CACHE, 'utf8').split('\n')) {
@@ -73,7 +74,7 @@ function loadCache() {
 }
 
 /** Written whole to a temporary file and renamed, so an interrupted run never truncates it. */
-function saveCache(cache: Map<string, CorrectionClassification>) {
+export function saveCache(cache: Map<string, CorrectionClassification>) {
   privateDirectory(STATE);
   const temporary = `${CACHE}.${process.pid}.tmp`;
   writeFileSync(
