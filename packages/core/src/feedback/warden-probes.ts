@@ -7,6 +7,8 @@
 // of the moment: `user-message` about the user's ask (advise), `agent-action` about the agent's turn
 // (guard). A Warden anticipated a correction when it said it first, at either trigger.
 
+import type { TokenCounts } from '../token-counts';
+
 /** Where the Prospector found a probe. */
 export type ProbeSource = 'session' | 'github' | 'linear';
 
@@ -52,6 +54,8 @@ export interface WardenProbe {
   };
   /** The user's actual next message. The judge sees it; Wardens never do. */
   readonly hidden?: string;
+  /** The Warden's own understanding of the thread at this moment, as a live call supplies it. */
+  readonly threadKnowledge?: string;
 }
 
 /** The trigger points that can ask about a probe: those whose input it recorded. */
@@ -73,6 +77,10 @@ export interface WardenProbeAnswer {
   readonly error?: string;
   readonly text?: string;
   readonly elapsedMs?: number;
+  /** What the call used, as the provider reported it (cache reads show a warm, primed prefix). */
+  readonly tokens?: Omit<TokenCounts, 'providerUsage'>;
+  /** Transport failures of earlier attempts at this call, re-asked before this answer. */
+  readonly retried?: readonly string[];
   readonly judged?: WardenJudgement;
 }
 
@@ -498,6 +506,62 @@ export function parseWardenJudgement(text: string): WardenJudgement | undefined 
     return {
       matches: value.matches,
       inDomain: value.inDomain,
+      ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, 300) } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The pointer judge: a Warden that classifies (relevant, and if so "look over here") is graded on
+ * where its pointer leads, not on advice quality. A pointer is as specific as the Warden can make
+ * it, and a general one is better than none (Aron, 2026-10-15): the exact thing, the target among a
+ * few candidates, or the right class.
+ */
+export const WARDEN_POINTER_JUDGE_PROMPT = `You grade one pointer a narrow classifier (a "Warden") gave a coding agent. The Warden only says whether something it knows applies to the agent's moment and, if so, points at it ("look over here: ..."); the agent then follows the pointer itself.
+You see the agent's moment, the TARGET (the existing thing that actually applies, with where it is written) and the pointer.
+Place the pointer on this ladder, leniently on wording (a doc section that holds the TARGET counts as naming it):
+- "exact": it points at the TARGET itself, alone or clearly first.
+- "candidates": it names at most three specific things to choose between, and the TARGET is one of them.
+- "class": it names no specific TARGET but points at the right class or area (the family, doc or section the TARGET belongs to), near enough to find it.
+- "wrong": it steers away from the TARGET (a different specific thing, an unrelated area, more than three candidates without the TARGET singled out).
+Respond with JSON only: { "level": "exact" | "candidates" | "class" | "wrong", "reason": string } where reason is one short sentence.`;
+
+export const POINTER_LEVELS = ['exact', 'candidates', 'class', 'wrong'] as const;
+export type PointerLevel = (typeof POINTER_LEVELS)[number];
+
+export interface WardenPointerJudgement {
+  readonly level: PointerLevel;
+  readonly reason?: string;
+}
+
+/** The pointer judge's input for one pointer. */
+export function wardenPointerJudgeMessage(input: {
+  moment: string;
+  target: CorrectionTarget;
+  pointer: string;
+}): string {
+  return [
+    '## Agent moment',
+    input.moment,
+    '## TARGET',
+    `${input.target.canonical ?? input.target.name} (${input.target.kind}${input.target.where ? `, ${input.target.where}` : ''})`,
+    '## Pointer',
+    input.pointer,
+  ].join('\n\n');
+}
+
+/** Parse a pointer judgement strictly; undefined when it is not the shape. */
+export function parseWardenPointerJudgement(text: string): WardenPointerJudgement | undefined {
+  const trimmed = text.trim();
+  const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n?\s*```$/.exec(trimmed);
+  try {
+    const value = JSON.parse(fenced ? fenced[1]! : trimmed) as Record<string, unknown>;
+    const level = POINTER_LEVELS.find((l) => l === value.level);
+    if (!level) return undefined;
+    return {
+      level,
       ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, 300) } : {}),
     };
   } catch {

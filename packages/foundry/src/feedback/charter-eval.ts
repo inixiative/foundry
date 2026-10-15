@@ -33,6 +33,11 @@ export interface EvalWarden {
   readonly domainKnowledge: string;
   /** The role's composition budget, as live (`roleComposition(...).budget`). */
   readonly budget?: number;
+  /**
+   * The logical session its calls run under, as a live thread's Warden runs under its thread: its
+   * knowledge is primed once and read from the prompt cache after. One-shot calls when omitted.
+   */
+  readonly session?: string;
 }
 
 /** The tool name a probe's moment arrives under: the agent's finished turn, before the user answers. */
@@ -44,8 +49,8 @@ export interface CharterEvalOptions {
   readonly wardensFor: (probe: WardenProbe) => readonly EvalWarden[];
   /** Haiku on the subscription, as live Wardens run. */
   readonly warden: LLMProvider;
-  /** The grader of remarks. */
-  readonly judge: LLMProvider;
+  /** The grader of remarks; remarks are left unjudged when omitted (graded later, e.g. as pointers). */
+  readonly judge?: LLMProvider;
   /** The wording under test; the shipped WARDEN_CHARTER when omitted. */
   readonly charter?: string;
   /** Wardens in flight at once: the decision queue's size. */
@@ -108,7 +113,7 @@ export async function runCharterEval(
       });
       for (const answer of asked) {
         const judged =
-          !answer.noComment && !answer.error && answer.text
+          options.judge && !answer.noComment && !answer.error && answer.text
             ? await judge(options.judge, {
                 domain: answer.domain,
                 domainDescription: wardens
@@ -142,15 +147,17 @@ async function askWithRetries(
   trigger: WardenProbeTrigger,
 ): Promise<WardenProbeAnswer> {
   let answer = await ask(options, probe, warden, trigger);
+  const retried: string[] = [];
   for (
     let attempt = 0;
     attempt < (options.retries ?? 2) && answer.error && TRANSPORT_FAILURE.test(answer.error);
     attempt++
   ) {
+    retried.push(answer.error);
     await Bun.sleep((options.retryDelayMs ?? 5_000) * (attempt + 1));
     answer = await ask(options, probe, warden, trigger);
   }
-  return answer;
+  return retried.length ? { ...answer, retried } : answer;
 }
 
 async function ask(
@@ -163,13 +170,29 @@ async function ask(
   cache.set(warden.domainKnowledge);
   const instructions = new ContextLayer({ id: `eval:${warden.domain}:instructions` });
   instructions.set(warden.instructions);
+  // The provider's usage report for this call: cache reads show whether the primed prefix was warm.
+  let tokens: WardenProbeAnswer['tokens'];
+  const llm: LLMProvider = Object.assign(Object.create(options.warden) as LLMProvider, {
+    complete: async (...args: Parameters<LLMProvider['complete']>) => {
+      const result = await options.warden.complete(...args);
+      if (result.tokens) {
+        const { providerUsage: _usage, ...counts } = result.tokens;
+        tokens = counts;
+      }
+      return result;
+    },
+  });
   const lib = new DomainLibrarian({
     domain: warden.domain,
     cache,
     instructions,
     signals: new SignalBus(0),
-    llm: options.warden,
-    llmOpts: { maxTokens: 512, temperature: 0 },
+    llm,
+    llmOpts: {
+      maxTokens: 512,
+      temperature: 0,
+      ...(warden.session ? { threadId: warden.session } : {}),
+    },
     guardTriggers: [PROBE_MOMENT_TOOL],
     ...(warden.budget !== undefined ? { budget: warden.budget } : {}),
     ...(options.charter !== undefined ? { charter: options.charter } : {}),
@@ -182,10 +205,15 @@ async function ask(
     domain: warden.domain,
     trigger,
     elapsedMs: Date.now() - started,
+    ...(tokens ? { tokens } : {}),
     ...rest,
   });
   if (trigger === 'user-message') {
-    const advice = await lib.advise(probe.ask ?? '');
+    const advice = await lib.advise(
+      probe.ask ?? '',
+      undefined,
+      probe.threadKnowledge ? { threadKnowledge: probe.threadKnowledge } : undefined,
+    );
     if (advice.notStarted) return answer({ noComment: false, error: 'not-admitted' });
     if (advice.error || advice.skipped)
       return answer({ noComment: false, error: advice.error ?? advice.skipped! });
@@ -193,7 +221,11 @@ async function ask(
     if (advice.noComment || !advice.snippets.length) return answer({ noComment: true });
     return answer({ noComment: false, text: advice.snippets.join('\n') });
   }
-  const result = await lib.guard({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } });
+  const result = await lib.guard(
+    { tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } },
+    undefined,
+    probe.threadKnowledge ? { threadKnowledge: probe.threadKnowledge } : undefined,
+  );
   if (result.status !== 'completed')
     return answer({
       noComment: false,

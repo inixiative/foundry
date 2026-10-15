@@ -724,3 +724,46 @@ test('the charter eval asks a Warden again when the transport lost the call, nev
   expect(calls).toBe(3);
   expect(answers).toEqual([expect.objectContaining({ domain: 'ship', noComment: true })]);
 });
+
+test('the charter eval runs a Warden under its session, with the probe thread knowledge, and keeps usage and lost attempts', async () => {
+  const { runCharterEval } = await import('../src/feedback/charter-eval');
+  const seen: { threadId?: string; body: string }[] = [];
+  let calls = 0;
+  const { answers } = await runCharterEval({
+    probes: [
+      {
+        id: 'p',
+        kind: 'positive',
+        ctx: 'x',
+        moment: 'Wrote a SET NX lock.',
+        threadKnowledge: 'Bot ownership across instances is the open question.',
+      },
+    ],
+    wardensFor: () => [
+      { domain: 'region', instructions: 'Region Warden', domainKnowledge: 'k', session: 's1' },
+    ],
+    retryDelayMs: 1,
+    warden: {
+      id: 'w',
+      async complete(messages, opts) {
+        seen.push({ ...(opts?.threadId ? { threadId: opts.threadId } : {}), body: text(messages) });
+        if (++calls < 2) throw Error('Subscription decision timed out');
+        return {
+          model: 'x',
+          content: NO_COMMENT,
+          tokens: { input: 2, output: 3, cacheRead: 900, providerUsage: { raw: true } },
+        };
+      },
+    },
+  });
+  expect(seen.map((s) => s.threadId)).toEqual(['s1', 's1']);
+  expect(seen[1]!.body).toContain('Bot ownership across instances is the open question.');
+  // No judge: the remark (here a silence) is left unjudged; usage drops the provider's raw payload.
+  expect(answers).toEqual([
+    expect.objectContaining({
+      noComment: true,
+      tokens: { input: 2, output: 3, cacheRead: 900 },
+      retried: ['Subscription decision timed out'],
+    }),
+  ]);
+});

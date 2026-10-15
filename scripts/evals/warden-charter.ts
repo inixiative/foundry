@@ -6,7 +6,9 @@
  *     [--foundry-dir ~/code/inixiative/foundry/.foundry] [--charter <file>] [--per-kind 40] \
  *     [--ctx inixiative | --projects template,zealot] [--period test] \
  *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>] [--resume] \
- *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>]
+ *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
+ *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
+ *     [--no-judge]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -16,6 +18,12 @@
  * decisions in flight; remarks are judged by Opus. Prints the primary measure (positives some Warden
  * said first), wrong remarks, silence and speak precision, scope violations and per-turn load; writes
  * every answer under --out as it lands.
+ *
+ * --roles asks only those Wardens. --session runs each Warden under one logical session, as a live
+ * thread does, so its knowledge is primed once and read from the prompt cache. --budget and
+ * --input-cap lift the role budget and the decision input cap for this run only (the size test);
+ * shipped defaults never change. A probe's `threadKnowledge` reaches the Warden as live supplies it.
+ * --no-judge leaves remarks unjudged for a caller that grades them its own way (warden-size.ts).
  */
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -62,8 +70,22 @@ const { values } = parseArgs({
     resume: { type: 'boolean' },
     knowledge: { type: 'string' },
     rejudge: { type: 'string' },
+    roles: { type: 'string' },
+    session: { type: 'string' },
+    budget: { type: 'string' },
+    'input-cap': { type: 'string' },
+    'no-judge': { type: 'boolean' },
   },
 });
+const positive = (flag: string, value: string | undefined) => {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 1) throw Error(`--${flag} must be a positive whole number`);
+  return n;
+};
+const budgetOverride = positive('budget', values.budget);
+const inputCap = positive('input-cap', values['input-cap']);
+const onlyRoles = values.roles?.split(',').filter(Boolean);
 if (!values.probes) {
   console.error('usage: warden-charter.ts --probes <jsonl> [--foundry-dir <daemon .foundry dir>]');
   process.exit(2);
@@ -114,7 +136,11 @@ const foundryDir = resolve(
 );
 const config = await new ConfigStore(foundryDir).load();
 const resolveSource = createSourceResolver({ memory: new FileMemory(join(foundryDir, 'memory')) });
-const roster = configuredExperts(config).experts;
+const roster = configuredExperts(config).experts.filter(
+  (r) => !onlyRoles || onlyRoles.includes(r.agentId),
+);
+if (onlyRoles && roster.length !== onlyRoles.length)
+  throw Error(`--roles names Wardens not in the roster: ${onlyRoles.join(', ')}`);
 /** The project and working directory a probe's thread would have run in. */
 const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
   const entry = Object.entries(config.projects ?? {}).find(
@@ -131,15 +157,17 @@ const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
 /**
  * --knowledge <dir>: score another knowledge set (e.g. the catalog) against the same probes. A role's
  * `<dir>/<project>/<role>/domainKnowledge.md`, else `<dir>/<role>/domainKnowledge.md`, replaces its
- * composed domain knowledge; roles without a file keep the live composition.
+ * composed domain knowledge; roles without a file keep the live composition. An `instructions.md`
+ * beside it replaces the composed instructions the same way (e.g. a region Warden's).
  */
-const alternateKnowledge = (role: string, project?: string): string | undefined => {
+const alternate = (
+  file: 'domainKnowledge.md' | 'instructions.md',
+  role: string,
+  project?: string,
+): string | undefined => {
   if (!values.knowledge) return undefined;
   const dir = resolve(values.knowledge);
-  for (const path of [
-    ...(project ? [join(dir, project, role, 'domainKnowledge.md')] : []),
-    join(dir, role, 'domainKnowledge.md'),
-  ])
+  for (const path of [...(project ? [join(dir, project, role, file)] : []), join(dir, role, file)])
     if (existsSync(path)) return readFileSync(path, 'utf8');
   return undefined;
 };
@@ -153,16 +181,19 @@ for (const probe of probes) {
   for (const { agentId, domain } of roster) {
     const slots = buildRoleLayers(config, agentId, { resolveSource, scope: place });
     await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm()]);
-    const knowledge = alternateKnowledge(agentId, probe.project) ?? slots.domainKnowledge.content;
+    const knowledge =
+      alternate('domainKnowledge.md', agentId, probe.project) ?? slots.domainKnowledge.content;
     if (!knowledge.trim()) {
       cold.set(key, [...(cold.get(key) ?? []), domain]);
       continue;
     }
     wardens.push({
       domain,
-      instructions: slots.instructions.content,
+      instructions:
+        alternate('instructions.md', agentId, probe.project) ?? slots.instructions.content,
       domainKnowledge: knowledge,
-      budget: roleComposition(config.composition, agentId).budget,
+      budget: budgetOverride ?? roleComposition(config.composition, agentId).budget,
+      ...(values.session ? { session: `${values.session}:${agentId}` } : {}),
     });
   }
   composed.set(key, wardens);
@@ -264,8 +295,9 @@ const wardens = decisionHost(
   'claude',
   concurrency,
   join(homedir(), '.foundry', 'evals'),
+  inputCap !== undefined ? { inputCap } : {},
 );
-const judges = decisionHost('claude-opus-5-5', 'claude', 4, state);
+const judges = values['no-judge'] ? undefined : decisionHost('claude-opus-5-5', 'claude', 4, state);
 const started = Date.now();
 const answersFile = join(out, 'answers.jsonl');
 const turnsFile = join(out, 'turns.jsonl');
@@ -297,7 +329,7 @@ try {
     probes,
     wardensFor,
     warden: wardens.provider,
-    judge: judges.provider,
+    ...(judges ? { judge: judges.provider } : {}),
     charter,
     concurrency,
     triggers,
@@ -326,6 +358,9 @@ try {
         perKind,
         foundryDir,
         knowledge: values.knowledge,
+        session: values.session,
+        budget: budgetOverride,
+        inputCap,
         roster: roster.map((r) => r.domain),
         cold: Object.fromEntries(cold),
         score,
@@ -341,5 +376,5 @@ try {
   console.log(`answers: ${out}`);
 } finally {
   await wardens.shutdown();
-  await judges.shutdown();
+  await judges?.shutdown();
 }

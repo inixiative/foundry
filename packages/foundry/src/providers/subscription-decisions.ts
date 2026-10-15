@@ -35,6 +35,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   effort?: string;
   /** Codex decisions: hedge a decision still running after this long (off when omitted). */
   hedgeAfterMs?: number;
+  /** Characters a decision's input may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
+  inputCap?: number;
   /** `claude-in-session`: each thread's Wardens are held inside its own Claude Code process. */
   inSession?: InSessionWardens;
 }
@@ -87,6 +89,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     maxConcurrent: config.maxConcurrent ?? 1,
     ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
     callTimeoutMs: config.callTimeoutMs,
+    ...(config.inputCap !== undefined ? { inputCap: config.inputCap } : {}),
     onEvent: onPrimedEvent,
     ...(config.inSession ? { inSession: config.inSession } : {}),
   });
