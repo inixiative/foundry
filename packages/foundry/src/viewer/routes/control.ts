@@ -11,6 +11,7 @@ import {
   writeFileRef,
 } from '../../prompts/composer';
 import { providerAccounts } from '../../providers/provider-accounts';
+import { describeReadinessChorus } from '../../readiness';
 import type { ActionHandler, OperatorAction } from '../actions';
 import type { AIAssist, AssistRequest } from '../ai-assist';
 import type { AnalyticsStore, RollupPeriod } from '../analytics';
@@ -506,6 +507,15 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const view = configStore.resolveProjectView(id);
     if (!view) return c.json({ error: 'project not found' }, 404);
     return c.json({ projectId: id, agents: view.agents });
+  });
+
+  // The project's chorus, read-only: what runs, its layers, each region's size and warm-cache key.
+  app.get('/api/projects/:id/chorus', async (c) => {
+    const id = c.req.param('id');
+    await configStore.load();
+    const view = configStore.resolveProjectView(id);
+    if (!view) return c.json({ error: 'project not found' }, 404);
+    return c.json({ projectId: id, chorus: await describeReadinessChorus(id, view.chorus) });
   });
 
   app.get('/api/settings/history', async (c) => {

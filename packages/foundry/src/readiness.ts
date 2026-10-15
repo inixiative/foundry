@@ -3,6 +3,7 @@ import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
+import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { MODEL_REGISTRY } from './models/registry';
 import { resolveDecisionModel } from './providers/decision-provider';
@@ -22,7 +23,7 @@ import {
 } from './providers/subscription-policy';
 import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
-import { resolveProjectView } from './viewer/config-resolve';
+import { type ResolvedChorus, resolveProjectView } from './viewer/config-resolve';
 
 export interface ReadinessIssue {
   severity: 'error' | 'warning';
@@ -51,6 +52,26 @@ export interface ReadinessPrefilter {
   status: 'off' | 'not-installed' | 'installed' | 'ready' | 'unavailable';
   url: string;
 }
+/** A project's chorus as the doctor shows it: what runs, from which layers, each region's size and key. */
+export interface ReadinessChorus {
+  scope: string;
+  source: ResolvedChorus['source'];
+  requested: ResolvedChorus['requested'];
+  reason?: string;
+  layers: Array<{ label: string; regionsDir: string; regions: number }>;
+  regions: Array<{
+    id: string;
+    title: string;
+    layer: string;
+    replaces: string[];
+    bytes: number;
+    tokens?: number;
+    /** The region's warm-cache key (`regionKey`): the content hash of its composed knowledge. */
+    key?: string;
+    /** Why the key could not be computed (the knowledge file could not be read). */
+    keyError?: string;
+  }>;
+}
 export interface ReadinessArchive {
   status: 'not-set-up' | 'unverified' | 'reachable' | 'unreachable';
   url: string;
@@ -66,6 +87,8 @@ export interface ReadinessReport {
   archive?: ReadinessArchive;
   /** The Warden pre-filter's model. */
   prefilter?: ReadinessPrefilter;
+  /** Each project's chorus, read-only; present when the configuration validated. */
+  chorus?: ReadinessChorus[];
 }
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
 export async function inspectReadiness(
@@ -96,7 +119,8 @@ export async function inspectReadiness(
   ) => issues.push({ severity, scope, code, message });
   let kingdoms: ReadinessKingdom[] | undefined,
     archive: ReadinessArchive | undefined,
-    prefilter: ReadinessPrefilter | undefined;
+    prefilter: ReadinessPrefilter | undefined,
+    chorus: ReadinessChorus[] | undefined;
   const result = (): ReadinessReport => ({
     configurationReady: !issues.some((item) => item.severity === 'error'),
     liveAccess: 'unverified',
@@ -105,6 +129,7 @@ export async function inspectReadiness(
     ...(kingdoms ? { kingdoms } : {}),
     ...(archive ? { archive } : {}),
     ...(prefilter ? { prefilter } : {}),
+    ...(chorus ? { chorus } : {}),
   });
   let subscription: SubscriptionResolution | undefined;
   try {
@@ -206,9 +231,12 @@ export async function inspectReadiness(
     );
   }
   const scopes: Array<readonly [string, FoundryConfig]> = [['global', config]];
+  const choruses: Array<readonly [string, ResolvedChorus]> = [];
   for (const id of Object.keys(config.projects)) {
     try {
-      scopes.push([id, resolveProjectView(config, id)!.config]);
+      const view = resolveProjectView(config, id)!;
+      scopes.push([id, view.config]);
+      choruses.push([id, view.chorus]);
     } catch {
       issue(
         'error',
@@ -394,7 +422,59 @@ export async function inspectReadiness(
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
+  chorus = await Promise.all(
+    choruses.map(([scope, c]) =>
+      describeReadinessChorus(scope, c, (region, message) =>
+        issue(
+          'error',
+          scope,
+          'region-knowledge-unreadable',
+          `Region ${region} knowledge could not be read (${message}); its Warden would run without it.`,
+        ),
+      ),
+    ),
+  );
   return result();
+}
+
+/**
+ * A project's chorus with each region's key computed (the file is read once per region). A region
+ * whose knowledge cannot be read gets `keyError` instead of a key, and `onError` hears of it.
+ */
+export async function describeReadinessChorus(
+  scope: string,
+  chorus: ResolvedChorus,
+  onError: (region: string, message: string) => void = () => {},
+): Promise<ReadinessChorus> {
+  return {
+    scope,
+    source: chorus.source,
+    requested: chorus.requested,
+    ...(chorus.reason ? { reason: chorus.reason } : {}),
+    layers: chorus.layers.map((layer) => ({
+      label: layer.label,
+      regionsDir: layer.regionsDir,
+      regions: layer.regions.length,
+    })),
+    regions: await Promise.all(
+      chorus.regions.map(async (region) => ({
+        id: region.id,
+        title: region.title,
+        layer: region.layer,
+        replaces: [...region.replaces],
+        bytes: region.bytes,
+        ...(region.tokens !== undefined ? { tokens: region.tokens } : {}),
+        ...(await regionKey(region).then(
+          (key) => ({ key }),
+          (error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            onError(region.id, message);
+            return { keyError: message };
+          },
+        )),
+      })),
+    ),
+  };
 }
 
 /** A missing or silent model is a warning, never an error: every Warden is then asked. */

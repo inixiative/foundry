@@ -53,6 +53,7 @@ import {
 } from './agents';
 import { largestRoster } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
+import { describeChorus } from './agents/region-roster';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
@@ -176,17 +177,13 @@ if (subscription) {
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
-// Which roster each project's threads run (`wardens`): said at startup, so a regions directory that
-// did not resolve is never a silent fall-back to the hand-named roster.
+// Each project's chorus: said at startup, so a regions directory that did not resolve is never a
+// silent fall-back to the hand-named roster.
 for (const [projectId, project] of Object.entries(config.projects ?? {})) {
   if (project.enabled === false) continue;
   const view = resolveProjectView(config, projectId);
-  if (!view || view.wardens.requested !== 'regions') continue;
-  console.log(
-    view.wardens.mode === 'regions'
-      ? `Wardens: project ${project.label ?? projectId} runs ${view.wardens.regions!.length} region Wardens from ${view.wardens.regionsDir} (classifier charter)`
-      : `Wardens: project ${project.label ?? projectId} asked for regions but ${view.wardens.reason}`,
-  );
+  if (!view || view.chorus.requested !== 'regions') continue;
+  console.log(describeChorus(project.label ?? projectId, view.chorus));
 }
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
 // process (docs/THREAD-TREE.md spec C). Off by default.

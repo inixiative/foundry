@@ -1,15 +1,18 @@
 import {
+  type ChorusLayerRegions,
+  type ChorusRegion,
+  chorusLayers,
+  composeChorus,
   type RegionSummary,
-  readRegions,
-  regionsDirectory,
   regionWardens,
 } from '../agents/region-roster';
-import type { WardensMode } from '../agents/warden-charter';
+import type { ChorusSource } from '../agents/warden-charter';
 import {
   type AgentExtension,
   type AgentSettingsConfig,
   type BrowserConfig,
   type BrowserConfigOverride,
+  type ChorusSettings,
   type FoundryConfig,
   type InvocationCondition,
   type InvocationConditionOverride,
@@ -62,17 +65,17 @@ export interface ResolvedAgentDefinition {
   fields: Record<string, FieldProvenance>;
 }
 
-/** Which Warden roster a project view carries, and why. */
-export interface ResolvedWardens {
-  /** The effective mode: `regions` only when a roster was generated. */
-  mode: WardensMode;
-  /** The mode the settings asked for (global `wardens`, or the project's own). */
-  requested: WardensMode;
-  /** Under `regions`: the directory read. */
-  regionsDir?: string;
-  /** The regions the roster was generated from, in roster order. */
-  regions?: RegionSummary[];
-  /** Why `regions` was requested but the hand-named roster runs: nothing is skipped silently. */
+/** The chorus a project view carries: what it was built from, and why. */
+export interface ResolvedChorus {
+  /** What runs: `regions` only when the layers held regions. */
+  source: ChorusSource;
+  /** What the settings asked for (`chorus.source`; `regions` when unset). */
+  requested: ChorusSource;
+  /** Under a `regions` request: each layer as read, in order, missing or empty directories included. */
+  layers: ChorusLayerRegions[];
+  /** The composed chorus, in id order: each region with the layer it came from. */
+  regions: ChorusRegion[];
+  /** Why `regions` was asked for but the hand-named roster runs: nothing is skipped silently. */
   reason?: string;
 }
 
@@ -87,7 +90,7 @@ export interface ResolvedProjectView {
   config: FoundryConfig;
   layers: ResolvedLayerDefinition[];
   agents: ResolvedAgentDefinition[];
-  wardens: ResolvedWardens;
+  chorus: ResolvedChorus;
 }
 
 const isWarden = (agent: Pick<AgentSettingsConfig, 'flowRole'>) =>
@@ -778,42 +781,52 @@ export function resolveProjectView(
     projects: config.projects,
   };
 
-  // The Warden roster: the settings' domain-advising agents, or one generated Warden per region.
-  const requested: WardensMode = project.wardens ?? config.wardens ?? 'roster';
-  let wardens: ResolvedWardens = { mode: 'roster', requested };
+  // The chorus: one generated Warden per composed region, or the settings' domain-advising agents.
+  const requested: ChorusSource = project.chorus?.source ?? 'regions';
+  const configuredLayers = chorusLayers(project);
+  let chorus: ResolvedChorus = { source: 'roster', requested, layers: [], regions: [] };
   let generated: ReturnType<typeof regionWardens> = [];
   if (requested === 'regions') {
-    const regionsDir = regionsDirectory(project);
-    const regions = readRegions(regionsDir);
-    wardens = regions.length
-      ? { mode: 'regions', requested, regionsDir, regions }
+    const composed = composeChorus(configuredLayers);
+    chorus = composed.regions.length
+      ? { source: 'regions', requested, ...composed }
       : {
-          mode: 'roster',
+          source: 'roster',
           requested,
-          regionsDir,
-          reason: `no regions at ${regionsDir} (no <id>/region.json); the hand-named roster runs`,
+          ...composed,
+          reason: `no regions at ${configuredLayers.map((l) => l.regionsDir).join(', ')} (no <id>/region.json); the hand-named roster runs`,
         };
-    generated = regionWardens(regions);
+    generated = regionWardens(composed.regions);
   }
-  resolved.wardens = wardens.mode;
+  // The view's project entry carries the effective chorus, normalized: what `chorusSource` reads. The
+  // setting is valid and, on a raw config, resolves to the same chorus (a roster, from a request or a
+  // fall-back, names no layers; the layers read stay on `view.chorus`). A view config itself is not
+  // re-resolvable: it carries the generated agents.
+  const effectiveChorus: ChorusSettings =
+    chorus.source === 'regions'
+      ? {
+          source: 'regions',
+          layers: configuredLayers.map((l) => ({ label: l.label, regions: l.regionsDir })),
+        }
+      : { source: 'roster' };
   const agents = new Map<string, ResolvedAgentDefinition>(
     Object.entries(config.agents)
-      // Under a generated roster the hand-named Wardens are not this project's Wardens.
-      .filter(([, agent]) => wardens.mode !== 'regions' || !isWarden(agent))
+      // Under a chorus of regions the hand-named Wardens are not this project's Wardens.
+      .filter(([, agent]) => chorus.source !== 'regions' || !isWarden(agent))
       .map(([id, agent]) => [id, globalAgent(id, agent)]),
   );
   const extended = new Set<string>();
   /** Superseded parent id → the project agent that replaces it as a layer writer. */
   const renamed = new Map<string, string>();
   const entries = Object.entries(project.agents ?? {});
-  if (wardens.mode === 'regions') {
+  if (chorus.source === 'regions') {
     for (const [id, entry] of entries) {
       const warden = isAgentExtension(entry)
         ? isWarden(config.agents[entry.extends] ?? {})
         : isWarden(entry);
       if (warden)
         throw new Error(
-          `[config] project.agents.${id} is a Warden, but this project's roster is generated from ${wardens.regionsDir} (wardens: regions); overlay a region through .foundry/roles/<region id>/ instead`,
+          `[config] project.agents.${id} is a Warden, but this project's chorus is its regions (${configuredLayers.map((l) => l.regionsDir).join(', ')}); overlay a region through .foundry/roles/<region id>/ instead`,
         );
     }
     for (const { agent, source, region } of generated) {
@@ -835,19 +848,24 @@ export function resolveProjectView(
     for (const { agent } of generated)
       roles[agent.id] = { instructions: { general: [] }, ...roles[agent.id] };
     resolved.composition = { ...resolved.composition, roles };
-    // The view's project carries the generated agents too, so a region's settings prompt is
-    // attributed per project (`prompt:agent:<region>@project:<id>`) like any project agent's.
-    resolved.projects = {
-      ...config.projects,
-      [projectId]: {
-        ...project,
-        agents: {
-          ...project.agents,
-          ...Object.fromEntries(generated.map((g) => [g.agent.id, g.agent])),
-        },
-      },
-    };
   }
+  // The view's project carries the effective chorus and the generated agents, so a region's settings
+  // prompt is attributed per project (`prompt:agent:<region>@project:<id>`) like any project agent's.
+  resolved.projects = {
+    ...config.projects,
+    [projectId]: {
+      ...project,
+      chorus: effectiveChorus,
+      ...(generated.length
+        ? {
+            agents: {
+              ...project.agents,
+              ...Object.fromEntries(generated.map((g) => [g.agent.id, g.agent])),
+            },
+          }
+        : {}),
+    },
+  };
   const targets = new Set(
     entries.flatMap(([, entry]) => (isAgentExtension(entry) ? [entry.extends] : [])),
   );
@@ -898,5 +916,5 @@ export function resolveProjectView(
   });
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
-  return { config: resolved, layers, agents: [...agents.values()], wardens };
+  return { config: resolved, layers, agents: [...agents.values()], chorus };
 }

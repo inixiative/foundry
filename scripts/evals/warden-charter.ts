@@ -32,7 +32,7 @@
  * sets the Wardens' reasoning effort (low | medium | high | xhigh | max, or `default` for the model's
  * own); omitted, the subscription policy's decision default applies, as live.
  *
- * --regions <dir> scores the region roster: the --projects project runs `wardens: regions` with that
+ * --regions <dir> scores a chorus of regions: the --projects project runs a one-layer chorus from that
  * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
  * instructions, knowledge and charter are generated and composed exactly as a live thread of that
  * project composes them (`resolveProjectView`, `buildRoleLayers`, `wardenCharter`). The daemon's
@@ -52,9 +52,10 @@ import {
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { configuredExperts } from '../../packages/foundry/src/agents/configured-experts';
+import { describeChorus } from '../../packages/foundry/src/agents/region-roster';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
-import { rosterMode, wardenCharter } from '../../packages/foundry/src/agents/warden-charter';
+import { chorusSource, wardenCharter } from '../../packages/foundry/src/agents/warden-charter';
 import {
   type EvalWarden,
   judge,
@@ -173,14 +174,11 @@ const projectEntry = (name: string | undefined) =>
 if (values.regions) {
   const entry = projectEntry(projects![0]);
   if (!entry) throw Error(`--regions: project ${projects![0]} is not registered in ${foundryDir}`);
-  // In memory only: this run's view of the project runs the region roster from --regions.
-  entry[1].wardens = 'regions';
-  entry[1].regions = resolve(values.regions);
+  // In memory only: this run's view of the project runs a one-layer chorus from --regions.
+  entry[1].chorus = { source: 'regions', regions: resolve(values.regions) };
   const view = resolveProjectView(config, entry[0])!;
-  if (view.wardens.mode !== 'regions') throw Error(`--regions: ${view.wardens.reason}`);
-  console.error(
-    `regions: ${view.wardens.regions!.length} region Wardens from ${view.wardens.regionsDir}`,
-  );
+  if (view.chorus.source !== 'regions') throw Error(`--regions: ${view.chorus.reason}`);
+  console.error(describeChorus(projects![0]!, view.chorus));
 }
 /** The config a thread of `projectId` composes under: its project view (generated roster included), else the global settings. */
 const viewOf = (projectId: string | undefined): FoundryConfig =>
@@ -199,7 +197,7 @@ const rosterOf = (projectId: string | undefined) => {
  */
 const scoredProject = projects?.length === 1 ? projectEntry(projects[0])?.[0] : undefined;
 const charter =
-  explicitCharter ?? wardenCharter(rosterMode(viewOf(scoredProject), scoredProject)).text;
+  explicitCharter ?? wardenCharter(chorusSource(viewOf(scoredProject), scoredProject)).text;
 /** The project and working directory a probe's thread would have run in. */
 const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
   const entry = projectEntry(probe.project);

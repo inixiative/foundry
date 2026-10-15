@@ -596,6 +596,98 @@ function TunnelEditor() {
 }
 
 // ---------------------------------------------------------------------------
+// Project chorus (read-only)
+// ---------------------------------------------------------------------------
+
+const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** The project's chorus: what runs, its layers in order, and each region with its size and key. */
+function ProjectChorus({ projectId }) {
+  const [chorus, setChorus] = useState(undefined);
+  useEffect(() => {
+    let live = true;
+    setChorus(undefined);
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/chorus`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => live && setChorus(body?.chorus ?? null))
+      .catch(() => live && setChorus(null));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+  if (chorus === undefined) return html`<div class="settings-empty">Reading the chorus…</div>`;
+  if (chorus === null)
+    return html`<div class="settings-empty">The chorus could not be read; check the project's settings.</div>`;
+  const total = chorus.regions.reduce((sum, r) => sum + r.bytes, 0);
+  return html`
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <span class="settings-card-title">Chorus</span>
+        <span class="settings-desc">${
+          chorus.source === 'regions'
+            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge, classifier charter`
+            : chorus.requested === 'roster'
+              ? 'The hand-named roster (chorus.source: roster)'
+              : 'The hand-named roster'
+        }</span>
+      </div>
+      ${
+        chorus.reason
+          ? html`<p class="settings-desc">Regions were asked for, but ${chorus.reason}.</p>`
+          : null
+      }
+      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Edit the regions themselves, or <code>projects[id].chorus</code> in settings.json.</p>
+      ${
+        chorus.layers.length
+          ? html`
+        <div class="settings-section-label">Layers (${chorus.layers.length}, in order)</div>
+        <table class="settings-table chorus-table">
+          <thead><tr><th>#</th><th>Label</th><th>Regions directory</th><th>Regions</th></tr></thead>
+          <tbody>
+            ${chorus.layers.map(
+              (layer, i) => html`<tr key=${layer.label}>
+                <td>${i + 1}</td><td>${layer.label}</td>
+                <td class="chorus-path">${layer.regionsDir}</td><td>${layer.regions}</td>
+              </tr>`,
+            )}
+          </tbody>
+        </table>
+      `
+          : null
+      }
+      ${
+        chorus.regions.length
+          ? html`
+        <div class="settings-section-label">Regions (${chorus.regions.length})</div>
+        <table class="settings-table chorus-table">
+          <thead><tr><th>Region</th><th>Layer</th><th>Size</th><th>Key</th></tr></thead>
+          <tbody>
+            ${chorus.regions.map(
+              (region) => html`<tr key=${region.id}>
+                <td><strong>${region.id}</strong><div class="settings-desc">${region.title}</div></td>
+                <td>${region.layer}${
+                  region.replaces.length
+                    ? html`<div class="settings-desc">replaces ${region.replaces.join(', ')}</div>`
+                    : null
+                }</td>
+                <td>${kb(region.bytes)}${region.tokens ? html`<div class="settings-desc">~${region.tokens.toLocaleString()} tokens</div>` : null}</td>
+                <td>${
+                  region.key
+                    ? html`<code title=${region.key}>${region.key.slice(0, 12)}</code>`
+                    : html`<span class="settings-desc" title=${region.keyError}>unreadable</span>`
+                }</td>
+              </tr>`,
+            )}
+          </tbody>
+        </table>
+      `
+          : null
+      }
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
 // Project overrides preview
 // ---------------------------------------------------------------------------
 
@@ -768,6 +860,8 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
     return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
     return html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+  if (section === 'chorus')
+    return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
   if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
   if (section === 'sources') {
     const sources = Object.values(project.sources || {});
