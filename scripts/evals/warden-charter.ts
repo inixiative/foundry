@@ -8,7 +8,7 @@
  *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>] [--resume] \
  *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
- *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>]
+ *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -26,7 +26,11 @@
  * --no-judge leaves remarks unjudged for a caller that grades them its own way (warden-size.ts).
  * --primed-sessions sizes the primed pool (default under --session: the largest roster + 8, so no
  * Warden is evicted between turns). --pause-at waits out the Claude login's five-hour window while
- * it is at or above that percent; every window probe lands in <out>/quota.jsonl.
+ * it is at or above that percent; every window probe lands in <out>/quota.jsonl. --model runs the
+ * Wardens on another Claude model for this run only (the model round: does a stronger model recognise
+ * a domain better?); the shipped decision model stays Haiku 5.5 and the judges stay on Opus. --effort
+ * sets the Wardens' reasoning effort (low | medium | high | xhigh | max, or `default` for the model's
+ * own); omitted, the subscription policy's decision default applies, as live.
  *
  * --regions <dir> scores the region roster: the --projects project runs `wardens: regions` with that
  * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
@@ -89,6 +93,8 @@ const { values } = parseArgs({
     regions: { type: 'string' },
     'primed-sessions': { type: 'string' },
     'pause-at': { type: 'string' },
+    model: { type: 'string' },
+    effort: { type: 'string' },
   },
 });
 const positive = (flag: string, value: string | undefined) => {
@@ -101,6 +107,11 @@ const budgetOverride = positive('budget', values.budget);
 const inputCap = positive('input-cap', values['input-cap']);
 const primedSessionsOverride = positive('primed-sessions', values['primed-sessions']);
 const pauseAt = positive('pause-at', values['pause-at']);
+const wardenModel = values.model ?? 'claude-haiku-5-5';
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'default'] as const;
+const wardenEffort = values.effort as (typeof EFFORTS)[number] | undefined;
+if (wardenEffort !== undefined && !EFFORTS.includes(wardenEffort))
+  throw Error(`--effort must be one of ${EFFORTS.join(', ')}`);
 const onlyRoles = values.roles?.split(',').filter(Boolean);
 if (!values.probes) {
   console.error('usage: warden-charter.ts --probes <jsonl> [--foundry-dir <daemon .foundry dir>]');
@@ -344,11 +355,13 @@ markEvalRun(state);
 const largestComposed = Math.max(0, ...[...composed.values()].map((w) => w.length));
 const primedSessions =
   primedSessionsOverride ?? (values.session ? Math.max(16, largestComposed + 8) : undefined);
-const wardens = decisionHost('claude-haiku-5-5', 'claude', concurrency, state, {
+const wardens = decisionHost(wardenModel, 'claude', concurrency, state, {
   ...(inputCap !== undefined ? { inputCap } : {}),
   ...(primedSessions !== undefined ? { primedSessions } : {}),
+  ...(wardenEffort !== undefined ? { effort: wardenEffort } : {}),
 });
 if (primedSessions !== undefined) console.error(`primed sessions: ${primedSessions}`);
+console.error(`warden model: ${wardenModel}, effort: ${wardenEffort ?? 'policy default (low)'}`);
 /**
  * --pause-at <percent>: before a turn, while the Claude login's five-hour window is at or above it,
  * wait (10 min between checks; the window is probed at most every 2 min). Every probe of the window
@@ -441,6 +454,8 @@ try {
         foundryDir,
         knowledge: values.knowledge,
         session: values.session,
+        model: wardenModel,
+        effort: wardenEffort ?? 'low',
         budget: budgetOverride,
         inputCap,
         roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],
