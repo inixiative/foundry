@@ -7,6 +7,19 @@
 // of the moment: `user-message` about the user's ask (advise), `agent-action` about the agent's turn
 // (guard). A Warden anticipated a correction when it said it first, at either trigger.
 
+/** Where the Prospector found a probe. */
+export type ProbeSource = 'session' | 'github' | 'linear';
+
+/**
+ * Whether the person wrote a correction or an agent wrote it under their account. `strong` rests on
+ * a marker (an agent footer, a posting command in a session, text typed in the web UI); `weak` on style.
+ */
+export interface Authorship {
+  readonly by: 'human' | 'agent';
+  readonly confidence: 'strong' | 'weak';
+  readonly signals: readonly string[];
+}
+
 /** The trigger points a probe is asked at (live: `user-message` advises, `agent-action` guards). */
 export type WardenProbeTrigger = 'user-message' | 'agent-action';
 
@@ -17,6 +30,10 @@ export interface WardenProbe {
   /** Which context's Wardens may see it (UserEvidence probes only ever see the UserEvidence ladder). */
   readonly ctx: string;
   readonly project?: string;
+  /** Where the Prospector found it: a session, a GitHub PR review, a Linear issue. Absent means session. */
+  readonly source?: ProbeSource;
+  /** Who wrote the correction, for sources where the person's account also posts agent-written text. */
+  readonly authorship?: Authorship;
   /** What the agent just did or said, as the Warden sees it ('' when only the user's ask was recorded). */
   readonly moment: string;
   /** The user's message the agent was answering: what the `user-message` trigger advises on. */
@@ -269,7 +286,17 @@ export interface CorrectionTarget {
   readonly where?: string;
   /** The canonical name shared by every correction that pushed toward the same thing. */
   readonly canonical?: string;
+  /** What was built instead of using it, when the source says (PR reviews do). */
+  readonly builtInstead?: string;
+  /**
+   * Why it was missed, from the thread: `unaware` (didn't know it existed), `misfit` (knew it and
+   * worked around a gap instead of extending it), `wrapper` (wrapped it under a new name), `unclear`.
+   */
+  readonly miss?: MissKind;
 }
+
+export const MISS_KINDS = ['unaware', 'misfit', 'wrapper', 'unclear'] as const;
+export type MissKind = (typeof MISS_KINDS)[number];
 
 /** Concept clusters the labeler starts from; it may add one when none fits. */
 export const CONCEPT_CLUSTERS = [

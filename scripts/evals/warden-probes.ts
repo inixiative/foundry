@@ -23,16 +23,39 @@
  *   bun scripts/evals/warden-probes.ts --label-targets --out ~/.foundry/evals/warden-corrections/probes.jsonl
  * Writes targets.json beside the probes: every distinct target by cluster, with counts and probe ids
  * (the catalog's checklist: a target the catalog lacks is a catalog gap).
+ *
+ * From the person's PR reviews on GitHub (read-only, through the caller's `gh` login):
+ *   bun scripts/evals/warden-probes.ts --github --out ~/.foundry/evals/warden-corrections/probes.jsonl \
+ *     [--repos inixiative/template,inixiative/kingdom,inixiative/foundry,userevidence/Zealot-Monorepo] \
+ *     [--reviewer agreenspan] [--refresh] [--concurrency 3]
+ * Every review, inline review comment and PR comment the reviewer wrote. Change-request reviews are
+ * read whole, the rest when they carry a reuse hint; Opus names each place the review pushed toward
+ * something that already existed (the target, what was built instead, why it was missed). Each
+ * finding is a positive probe (`source: 'github'`), its moment the diff hunk or the PR, labelled with
+ * who wrote it (`authorship`: the person, or an agent posting under their account) so scoring can
+ * filter. Its target goes into targets-raw.jsonl; run --label-targets next to merge it with the
+ * session targets. Fetches, session evidence and readings are cached under sources/github/.
+ * Periods: a project's existing test cut (manifest.testFrom) is kept; a new project gets its own.
  */
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  authorshipOf,
   type CorrectionTarget,
   correctionTargetMessages,
+  evidenceSnippet,
+  type ProbeSource,
   parseCorrectionTargets,
+  parseReviewFindings,
   parseTargetCanonical,
+  REUSE_HINT,
+  type ReviewMoment,
+  type ReviewReading,
+  reviewFindingMessages,
+  type SessionEvidence,
   scrubSecrets,
   type TokenCounts,
   targetCanonicalMessages,
@@ -50,6 +73,7 @@ import {
   saveCache,
 } from '../../packages/foundry/src/feedback/repeats-cli';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
+import { fetchReviewedPrs, type ReviewedPr, sessionEvidence } from './sources/github';
 
 const { values } = parseArgs({
   options: {
@@ -63,11 +87,18 @@ const { values } = parseArgs({
     'min-score': { type: 'string' },
     concurrency: { type: 'string' },
     'label-targets': { type: 'boolean' },
+    github: { type: 'boolean' },
+    repos: { type: 'string' },
+    reviewer: { type: 'string' },
+    refresh: { type: 'boolean' },
   },
 });
-if ((!values.work && !values.sessions && !values['label-targets']) || !values.out) {
+if (
+  (!values.work && !values.sessions && !values.github && !values['label-targets']) ||
+  !values.out
+) {
   console.error(
-    'usage: warden-probes.ts (--work <kit work dir> | --sessions --projects a,b) --out <probes.jsonl>',
+    'usage: warden-probes.ts (--work <kit work dir> | --sessions --projects a,b | --github | --label-targets) --out <probes.jsonl>',
   );
   process.exit(2);
 }
@@ -262,6 +293,7 @@ async function fromSessions() {
       kind,
       ctx: PROJECTS[project]!.ctx,
       project,
+      source: 'session',
       moment: turn.length >= 100 ? scrub(turn.slice(-4000)) : '',
       ...(ask.length >= 20 ? { ask: scrub(ask.slice(0, 3000)) } : {}),
       at: new Date(Date.parse(c.event.timestamp)).toISOString(),
@@ -291,14 +323,18 @@ async function fromSessions() {
       period: (p.at! >= (cuts[p.project!] ?? '9999') ? 'test' : 'train') as 'train' | 'test',
     }))
     .sort((a, b) => a.at!.localeCompare(b.at!));
-  writePrivate(out, `${split.map((p) => JSON.stringify(p)).join('\n')}\n`);
+  // Other sources' probes stay; their periods follow the cut they were built against.
+  const others = readProbes().filter((p) => (p.source ?? 'session') !== 'session');
+  writePrivate(out, `${[...split, ...others].map((p) => JSON.stringify(p)).join('\n')}\n`);
   const counts: Record<string, number> = {};
   for (const p of split) {
     const triggers = [p.ask ? 'ask' : '', p.moment ? 'turn' : ''].filter(Boolean).join('+');
     const key = [p.project, p.period, p.kind, p.provenance.harness, triggers].join(' ');
     counts[key] = (counts[key] ?? 0) + 1;
   }
+  const previous = readManifest();
   const manifest = {
+    ...previous,
     builtAt: new Date(now).toISOString(),
     since: new Date(since).toISOString(),
     projects: wanted,
@@ -315,9 +351,299 @@ async function fromSessions() {
   console.log(JSON.stringify(manifest, null, 1));
 }
 
-if (values['label-targets']) await labelTargets();
-else if (values.sessions) await fromSessions();
-else fromKit();
+function readProbes(): WardenProbe[] {
+  if (!existsSync(out)) return [];
+  return readFileSync(out, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as WardenProbe);
+}
+
+type Manifest = { testShare?: number; testFrom?: Record<string, string> } & Record<string, unknown>;
+function readManifest(): Manifest {
+  const file = join(dirname(out), 'manifest.json');
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Manifest) : {};
+}
+
+/** Which eval project and context a reviewed repository belongs to. */
+const REPO_PROJECTS: Record<string, { project: string; ctx: string }> = {
+  'inixiative/template': { project: 'template', ctx: 'inixiative' },
+  'inixiative/kingdom': { project: 'kingdom', ctx: 'inixiative' },
+  'inixiative/foundry': { project: 'foundry', ctx: 'inixiative' },
+  'userevidence/Zealot-Monorepo': { project: 'zealot', ctx: 'userevidence' },
+};
+
+async function fromGitHub() {
+  const repos = (values.repos ?? Object.keys(REPO_PROJECTS).join(',')).split(',').filter(Boolean);
+  for (const repo of repos)
+    if (!REPO_PROJECTS[repo]) throw Error(`unknown repo ${repo}: ${Object.keys(REPO_PROJECTS)}`);
+  const reviewer = values.reviewer ?? 'agreenspan';
+  const state = privateDirectory(dirname(out));
+  const cache = privateDirectory(join(state, 'sources', 'github'));
+  const now = Date.now();
+
+  // 1. Fetch: every PR the reviewer wrote on. Repos where the reviewer also authors are listed whole.
+  const prs: ReviewedPr[] = [];
+  for (const repo of repos) {
+    const file = join(cache, `${repo.replace('/', '__')}.json`);
+    if (values.refresh || !existsSync(file)) {
+      const fetched = await fetchReviewedPrs(repo, reviewer, {
+        all: repo.startsWith('inixiative/'),
+        progress: (line) => process.stderr.write(`\r${line}`),
+      });
+      process.stderr.write('\n');
+      writePrivate(file, JSON.stringify(fetched));
+    }
+    prs.push(...(JSON.parse(readFileSync(file, 'utf8')) as ReviewedPr[]));
+  }
+  const items = prs.flatMap((pr) => pr.items.map((item) => ({ pr, item })));
+
+  // 2. Authorship evidence from the person's own sessions (cached; --refresh rescans).
+  const evidenceFile = join(cache, 'evidence.json');
+  let evidence: Record<string, SessionEvidence>;
+  if (values.refresh || !existsSync(evidenceFile)) {
+    process.stderr.write(`scanning sessions for ${items.length} comments…\n`);
+    const found = await sessionEvidence(
+      items.map(({ item }) => item),
+      [
+        join(homedir(), '.claude', 'projects'),
+        join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions'),
+      ],
+      (text) => evidenceSnippet(text),
+    );
+    evidence = Object.fromEntries(found);
+    writePrivate(evidenceFile, JSON.stringify(evidence));
+  } else
+    evidence = JSON.parse(readFileSync(evidenceFile, 'utf8')) as Record<string, SessionEvidence>;
+
+  // 3. Read: change-request reviews whole, everything else with a reuse hint.
+  const byId = new Map(items.map((entry) => [entry.item.id, entry]));
+  const commentText = (id?: string) =>
+    id
+      ? (byId.get(id)?.item.body ??
+        items.flatMap(({ pr }) => pr.thread).find((t) => t.id === id)?.body)
+      : undefined;
+  const candidates = items.filter(
+    ({ item }) =>
+      item.state !== 'PENDING' &&
+      (item.state === 'CHANGES_REQUESTED' || REUSE_HINT.test(item.body)),
+  );
+  const moment = ({ pr, item }: (typeof items)[number]): ReviewMoment => {
+    const replyTo = commentText(item.replyTo);
+    return {
+      id: item.id,
+      where: `${pr.repo} PR #${pr.number} by ${pr.author === reviewer ? 'the reviewer (an agent working for him)' : pr.author} (${item.kind}${item.state ? `, ${item.state} review` : ''})`,
+      work: `${pr.title}\n\n${pr.body}`,
+      ...(item.diffHunk
+        ? { code: `${item.path ?? ''}${item.line ? `:${item.line}` : ''}\n${item.diffHunk}` }
+        : {}),
+      ...(replyTo ? { replyTo } : {}),
+      text: item.body,
+    };
+  };
+  const readingsFile = join(cache, 'readings.jsonl');
+  const readings = new Map<string, ReviewReading>(
+    (existsSync(readingsFile) ? readFileSync(readingsFile, 'utf8').split('\n') : [])
+      .filter(Boolean)
+      .map((line) => {
+        const row = JSON.parse(line) as { id: string; reading: ReviewReading };
+        return [row.id, row.reading];
+      }),
+  );
+  const pending = candidates.filter(({ item }) => !readings.has(item.id));
+  process.stderr.write(
+    `${items.length} comments on ${prs.length} PRs; ${candidates.length} to read, ${pending.length} new\n`,
+  );
+  const model = 'claude-opus-5-5';
+  const concurrency = Number(values.concurrency ?? 3);
+  let failed = 0;
+  if (pending.length) {
+    markEvalRun(state);
+    const host = decisionHost(model, 'claude', concurrency, state);
+    const save = () =>
+      writePrivate(
+        readingsFile,
+        [...readings].map(([id, reading]) => `${JSON.stringify({ id, reading })}\n`).join(''),
+      );
+    const read = async (batch: (typeof items)[number][]): Promise<void> => {
+      try {
+        const result = await host.provider.complete(reviewFindingMessages(batch.map(moment)), {
+          tools: false,
+          maxTurns: 1,
+          temperature: 0,
+        });
+        const parsed = parseReviewFindings(
+          result.content,
+          batch.map(({ item }) => item.id),
+        );
+        batch.forEach(({ item }, i) => {
+          if (parsed[i]) readings.set(item.id, parsed[i]!);
+        });
+        save();
+        const missing = batch.filter((_, i) => !parsed[i]);
+        if (missing.length && missing.length < batch.length)
+          for (const m of missing) await read([m]);
+        else if (missing.length === 1) failed++;
+      } catch (error) {
+        console.error(`read failed: ${String(error).slice(0, 160)}`);
+        if (batch.length > 1) for (const m of batch) await read([m]);
+        else failed++;
+      }
+    };
+    const batches: (typeof items)[number][][] = [];
+    for (let i = 0; i < pending.length; i += 6) batches.push(pending.slice(i, i + 6));
+    let next = 0;
+    let done = 0;
+    try {
+      await Promise.all(
+        Array.from({ length: concurrency }, async () => {
+          for (let batch = batches[next++]; batch; batch = batches[next++]) {
+            await read(batch);
+            done += batch.length;
+            process.stderr.write(`\rread ${done}/${pending.length}`);
+          }
+        }),
+      );
+      process.stderr.write('\n');
+    } finally {
+      await host.shutdown();
+    }
+  }
+
+  // 4. Probes: one per finding, deduped within a PR by target name.
+  const scrub = (text: string) => scrubSecrets(text).text;
+  const seen = new Set<string>();
+  const probes: (WardenProbe & { provenance: Record<string, string | number | null> })[] = [];
+  for (const entry of candidates) {
+    const { pr, item } = entry;
+    const reading = readings.get(item.id);
+    if (!reading?.findings.length) continue;
+    const { project, ctx } = REPO_PROJECTS[pr.repo]!;
+    const authorship = authorshipOf(item.body, evidence[item.id], reading.voice);
+    for (const finding of reading.findings) {
+      const key = `${pr.repo}#${pr.number}|${finding.target.name.toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const id = `github-${project}-${pr.number}-${createHash('sha256').update(`${item.id}|${finding.target.name}`).digest('hex').slice(0, 10)}`;
+      const head = `${pr.repo} PR #${pr.number}: ${pr.title}`;
+      probes.push({
+        id,
+        kind: 'positive',
+        ctx,
+        project,
+        source: 'github',
+        authorship,
+        moment: scrub(
+          item.diffHunk
+            ? `${head}\n\n${item.path ?? ''}${item.line ? `:${item.line}` : ''}\n${item.diffHunk.slice(-1500)}`
+            : `${head}\n\n${pr.body.slice(0, 1500)}`,
+        ),
+        at: new Date(Date.parse(item.at)).toISOString(),
+        gold: {
+          domains: [],
+          statements: [
+            `Use ${finding.target.name}${finding.target.builtInstead ? ` instead of ${finding.target.builtInstead}` : ''}`,
+          ],
+        },
+        hidden: scrub(finding.excerpt || item.body.slice(0, 300)),
+        provenance: {
+          url: item.url,
+          repo: pr.repo,
+          pr: pr.number,
+          prAuthor: pr.author,
+          item: item.kind,
+          state: item.state ?? null,
+        },
+      });
+      // The target is already named: it joins the session targets at --label-targets.
+      targetsRaw.set(id, finding.target);
+    }
+  }
+
+  // 5. Periods: keep each project's existing cut; a project without one gets its own.
+  const manifest = readManifest();
+  const testShare = Number(values['test-share'] ?? manifest.testShare ?? 0.3);
+  const cuts: Record<string, string> = { ...(manifest.testFrom ?? {}) };
+  for (const project of new Set(probes.map((p) => p.project!))) {
+    if (cuts[project]) continue;
+    const times = probes
+      .filter((p) => p.project === project)
+      .map((p) => p.at!)
+      .sort();
+    cuts[project] = times[Math.min(times.length - 1, Math.floor(times.length * (1 - testShare)))]!;
+  }
+  const split = probes.map((p) => ({
+    ...p,
+    period: (p.at! >= cuts[p.project!]! ? 'test' : 'train') as 'train' | 'test',
+  }));
+  const kept = readProbes().filter((p) => p.source !== 'github');
+  writePrivate(
+    out,
+    `${[...kept, ...split]
+      .sort((a, b) => (a.at ?? '').localeCompare(b.at ?? ''))
+      .map((p) => JSON.stringify(p))
+      .join('\n')}\n`,
+  );
+  saveTargetsRaw(new Set(split.map((p) => p.id)));
+
+  const counts: Record<string, number> = {};
+  for (const p of split) {
+    const key = [p.project, p.period, p.authorship!.by, p.authorship!.confidence].join(' ');
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  const misses: Record<string, number> = {};
+  for (const p of split) {
+    const miss = targetsRaw.get(p.id)?.miss ?? 'unclear';
+    misses[miss] = (misses[miss] ?? 0) + 1;
+  }
+  const comments: Record<string, number> = {};
+  for (const { pr, item } of items) {
+    const a = authorshipOf(item.body, evidence[item.id], readings.get(item.id)?.voice);
+    const key = `${REPO_PROJECTS[pr.repo]!.project} ${a.by} ${a.confidence}`;
+    comments[key] = (comments[key] ?? 0) + 1;
+  }
+  const github = {
+    builtAt: new Date(now).toISOString(),
+    reviewer,
+    repos,
+    model,
+    prs: prs.length,
+    comments: items.length,
+    read: candidates.length,
+    readFailed: failed,
+    withFindings: candidates.filter(({ item }) => readings.get(item.id)?.findings.length).length,
+    probes: split.length,
+    authorshipOfComments: Object.fromEntries(Object.entries(comments).sort()),
+    misses,
+    counts: Object.fromEntries(Object.entries(counts).sort()),
+  };
+  writePrivate(
+    join(dirname(out), 'manifest.json'),
+    `${JSON.stringify({ ...manifest, testFrom: cuts, github }, null, 1)}\n`,
+  );
+  console.log(JSON.stringify({ testFrom: cuts, ...github }, null, 1));
+}
+
+/** targets-raw.jsonl: the target each positive pushed toward (null: none existed), by probe id. */
+const targetsRawFile = join(dirname(out), 'targets-raw.jsonl');
+const targetsRaw = new Map<string, CorrectionTarget | null>(
+  (existsSync(targetsRawFile) ? readFileSync(targetsRawFile, 'utf8').split('\n') : [])
+    .filter(Boolean)
+    .map((line) => {
+      const row = JSON.parse(line) as { id: string; target: CorrectionTarget | null };
+      return [row.id, row.target];
+    }),
+);
+/** Write targets-raw.jsonl; a source's rebuild drops its stale ids (those not in `keep`). */
+function saveTargetsRaw(keep?: Set<string>, source = 'github-') {
+  writePrivate(
+    targetsRawFile,
+    [...targetsRaw]
+      .filter(([id]) => !keep || !id.startsWith(source) || keep.has(id))
+      .map(([id, target]) => `${JSON.stringify({ id, target })}\n`)
+      .join(''),
+  );
+}
 
 /** Opus labels each positive's target over the subscription; answers are kept in targets-raw.jsonl. */
 async function labelTargets() {
@@ -325,26 +651,14 @@ async function labelTargets() {
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as WardenProbe);
-  const rawFile = join(dirname(out), 'targets-raw.jsonl');
-  const raw = new Map<string, CorrectionTarget | null>(
-    (existsSync(rawFile) ? readFileSync(rawFile, 'utf8').split('\n') : [])
-      .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as { id: string; target: CorrectionTarget | null };
-        return [row.id, row.target];
-      }),
-  );
+  const raw = targetsRaw;
   const pending = probes.filter((p) => p.kind === 'positive' && !raw.has(p.id));
   const model = 'claude-opus-5-5';
   const state = privateDirectory(dirname(out));
   markEvalRun(state);
   const concurrency = Number(values.concurrency ?? 3);
   const host = decisionHost(model, 'claude', concurrency, state);
-  const save = () =>
-    writePrivate(
-      rawFile,
-      [...raw].map(([id, target]) => `${JSON.stringify({ id, target })}\n`).join(''),
-    );
+  const save = () => saveTargetsRaw();
   const ask = async (batch: WardenProbe[]): Promise<void> => {
     try {
       const result = await host.provider.complete(correctionTargetMessages(batch), {
@@ -433,6 +747,9 @@ async function labelTargets() {
       corrections: number;
       byPeriod: Record<string, number>;
       byProject: Record<string, number>;
+      bySource: Record<string, number>;
+      /** Corrections from sources where agents also post under the person's account, by who wrote them. */
+      byAuthorship: Record<string, number>;
       names: string[];
       probes: string[];
     };
@@ -449,6 +766,8 @@ async function labelTargets() {
         corrections: 0,
         byPeriod: {},
         byProject: {},
+        bySource: {},
+        byAuthorship: {},
         names: [],
         probes: [],
       };
@@ -457,6 +776,12 @@ async function labelTargets() {
       if (!e.names.includes(t.name)) e.names.push(t.name);
       e.byPeriod[p.period ?? '?'] = (e.byPeriod[p.period ?? '?'] ?? 0) + 1;
       e.byProject[p.project ?? '?'] = (e.byProject[p.project ?? '?'] ?? 0) + 1;
+      const source: ProbeSource = p.source ?? 'session';
+      e.bySource[source] = (e.bySource[source] ?? 0) + 1;
+      if (p.authorship) {
+        const who = `${p.authorship.by}/${p.authorship.confidence}`;
+        e.byAuthorship[who] = (e.byAuthorship[who] ?? 0) + 1;
+      }
       e.probes.push(p.id);
       entries.set(key, e);
     }
@@ -470,6 +795,17 @@ async function labelTargets() {
       noExistingTarget: positives.filter((p) => raw.get(p.id) === null).length,
       unlabelled: positives.filter((p) => !raw.has(p.id)).length,
       distinctTargets: list.length,
+      bySource: Object.fromEntries(
+        [...new Set(positives.map((p) => p.source ?? 'session'))].map((source) => [
+          source,
+          {
+            positives: positives.filter((p) => (p.source ?? 'session') === source).length,
+            targets: list.filter((e) => e.bySource[source]).length,
+            onlyHere: list.filter((e) => e.bySource[source] && Object.keys(e.bySource).length === 1)
+              .length,
+          },
+        ]),
+      ),
       concepts: Object.fromEntries(
         [...new Set(list.map((e) => e.concept))].map((c) => [
           c,
@@ -489,3 +825,8 @@ async function labelTargets() {
     await host.shutdown();
   }
 }
+
+if (values['label-targets']) await labelTargets();
+else if (values.sessions) await fromSessions();
+else if (values.github) await fromGitHub();
+else fromKit();
