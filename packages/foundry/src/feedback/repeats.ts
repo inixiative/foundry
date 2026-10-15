@@ -179,7 +179,14 @@ interface Candidate {
 }
 
 /** Candidates from Archive, the harness files it lacks, and prompt history, deduplicated, in the window. */
-export async function collectCandidates(options: RepeatOptions, since: number, until: number) {
+export async function collectCandidates(
+  options: Pick<
+    RepeatOptions,
+    'archive' | 'claudeProjects' | 'codexSessions' | 'history' | 'minScore'
+  >,
+  since: number,
+  until: number,
+) {
   const sources: Record<Harness, number> = { 'claude-code': 0, codex: 0, foundry: 0, history: 0 };
   let failedSources = 0;
   let fromArchive = 0;

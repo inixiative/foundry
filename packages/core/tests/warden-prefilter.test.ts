@@ -1,12 +1,10 @@
 import { expect, test } from 'bun:test';
 import {
   type PrefilterPair,
-  parsePrefilterFixture,
   prefilterConsistency,
   prefilterDescription,
   prefilterSkips,
   prefilterState,
-  probeFixture,
   scorePrefilter,
 } from '../src/feedback/warden-prefilter';
 
@@ -62,42 +60,6 @@ test('consistency counts pairs whose decision never flipped', () => {
     sameDecision: 0.667,
     meanSpread: 0.04,
   });
-});
-
-test('a probe labels only its gold Wardens', () => {
-  const ids: Record<string, string> = { reuse: 'librarian-reuse' };
-  const positive = probeFixture(
-    {
-      id: 'p',
-      kind: 'positive',
-      ctx: 'x',
-      moment: 'turn',
-      gold: { domains: ['reuse', 'gone'], statements: [] },
-    },
-    (d) => ids[d],
-  );
-  expect(positive.labels).toEqual({ 'librarian-reuse': { relevant: true } });
-  expect(positive.trigger).toEqual({ kind: 'post-turn', text: 'turn' });
-  expect(
-    probeFixture({ id: 'n', kind: 'negative', ctx: 'x', moment: 't' }, (d) => ids[d]).labels,
-  ).toEqual({});
-});
-
-test('fixture lines parse strictly', () => {
-  const row = {
-    id: 'f1',
-    source: 'git',
-    trigger: { kind: 'agent-action', text: 'add a column' },
-    labels: { 'librarian-schema': { relevant: true }, 'librarian-voice': { relevant: false } },
-  };
-  expect(parsePrefilterFixture(JSON.stringify(row))?.id).toBe('f1');
-  expect(
-    parsePrefilterFixture(JSON.stringify({ ...row, trigger: { kind: 'x', text: 'a' } })),
-  ).toBeUndefined();
-  expect(
-    parsePrefilterFixture(JSON.stringify({ ...row, labels: { a: { relevant: 'yes' } } })),
-  ).toBeUndefined();
-  expect(parsePrefilterFixture('not json')).toBeUndefined();
 });
 
 test('the state and description stay inside the decision model window', () => {

@@ -3,28 +3,13 @@
 // open: a Warden is skipped only on a confident no, and anything else (an unsure score, an error, no
 // answer) asks the Warden as before.
 
-import type { WardenProbe } from './warden-probes';
-
-/** Where a moment arrives: before (the user's message) or after (the agent's action, its work). */
-export type PrefilterTrigger = 'user-message' | 'agent-action' | 'agent-plan' | 'post-turn';
+import type { WardenTriggerKind } from './warden-labels';
 
 /**
- * One labelled moment: the Prospector's fixture contract
- * (`~/.foundry/evals/warden-prefilter/fixtures.jsonl`). Labels are keyed by Warden agent id. Never
- * commit fixtures built from sessions or repositories: they hold their text.
+ * Where a moment arrives: before (the user's message) or after (the agent's action or plan, and its
+ * finished turn). The labelled moments are `WardenFixture`s (`warden-labels`).
  */
-export interface PrefilterFixture {
-  readonly id: string;
-  readonly source: string;
-  /** Which context's roster sees it (UserEvidence never mixes with inixiative), and its project. */
-  readonly ctx?: string;
-  readonly project?: string;
-  readonly trigger: { readonly kind: PrefilterTrigger; readonly text: string };
-  /** What the thread already holds that bears on the moment. */
-  readonly context?: string;
-  readonly labels: Readonly<Record<string, { readonly relevant: boolean }>>;
-  readonly handChecked?: boolean;
-}
+export type PrefilterTrigger = WardenTriggerKind | 'post-turn';
 
 /** One (moment, Warden) pair as a run scored it. */
 export interface PrefilterPair {
@@ -155,53 +140,6 @@ export function percentiles(values: readonly number[]) {
   const pick = (p: number) =>
     sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] ?? 0;
   return { p50: pick(50), p95: pick(95), max: sorted.at(-1) ?? 0 };
-}
-
-/**
- * Harvested Warden probes as fixtures. A probe is the agent's finished turn (`post-turn`); a
- * positive probe labels its gold Wardens relevant. Every other (probe, Warden) pair is left
- * unlabelled: it counts toward the skip rate, never toward recall, because a turn the user let pass
- * may still have touched a Warden's domain.
- */
-export function probeFixture(
-  probe: WardenProbe,
-  wardenIdOfDomain: (domain: string) => string | undefined,
-): PrefilterFixture {
-  const labels: Record<string, { relevant: boolean }> = {};
-  if (probe.kind === 'positive')
-    for (const domain of probe.gold?.domains ?? []) {
-      const id = wardenIdOfDomain(domain);
-      if (id) labels[id] = { relevant: true };
-    }
-  return {
-    id: probe.id,
-    source: 'probe',
-    trigger: { kind: 'post-turn', text: probe.moment },
-    labels,
-  };
-}
-
-/** Parse one fixture line strictly; undefined when it is not the shape. */
-export function parsePrefilterFixture(line: string): PrefilterFixture | undefined {
-  try {
-    const v = JSON.parse(line) as Record<string, unknown>;
-    const trigger = v.trigger as Record<string, unknown> | undefined;
-    const labels = v.labels as Record<string, { relevant?: unknown }> | undefined;
-    if (
-      typeof v.id !== 'string' ||
-      typeof trigger?.text !== 'string' ||
-      !['user-message', 'agent-action', 'agent-plan', 'post-turn'].includes(
-        trigger.kind as string,
-      ) ||
-      !labels ||
-      typeof labels !== 'object' ||
-      Object.values(labels).some((l) => typeof l?.relevant !== 'boolean')
-    )
-      return undefined;
-    return v as unknown as PrefilterFixture;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Characters of a Warden's instructions a question carries: the decision model reads 192 tokens of it. */
