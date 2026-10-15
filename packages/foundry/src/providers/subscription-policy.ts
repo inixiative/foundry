@@ -25,8 +25,12 @@ const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 /** Optional overrides of subscription mode. Every field has a default. */
 export const subscriptionSettingsSchema = z
   .object({
-    /** Decision runtime when no explicit source is named. Default claude. */
-    decisionRuntime: z.enum(['claude', 'codex']).optional(),
+    /**
+     * Decision runtime when no explicit source is named. Default claude. `claude-in-session` runs
+     * Claude decisions too, but holds each thread's Wardens as subagents inside the thread's own
+     * Claude Code process (docs/THREAD-TREE.md spec C); it needs the Claude Code main thread.
+     */
+    decisionRuntime: z.enum(['claude', 'codex', 'claude-in-session']).optional(),
     decisionSourceId: z.string().uuid().optional(),
     model: model.optional(),
     expectedObservedModel: model.optional(),
@@ -80,6 +84,8 @@ export interface SubscriptionPolicy {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
+  /** Where a thread's Wardens run: primed sessions (default), or inside the thread's own process. */
+  wardens: 'primed' | 'in-session';
 }
 /**
  * Sized for a full Warden roster: every Warden is asked on every user message, and every
@@ -158,10 +164,17 @@ export function resolveSubscriptionPolicy(
     : defaultProfileSource(workerRuntime);
   if (worker.runtime !== workerRuntime)
     throw Error(`The ${workerProvider} subscription worker runs on a ${workerRuntime} profile`);
+  const inSession = settings.decisionRuntime === 'claude-in-session';
+  if (inSession && workerRuntime !== 'claude')
+    throw Error(
+      'subscriptionOnly.decisionRuntime claude-in-session holds Wardens inside the Claude Code main thread; the worker must be claude-code',
+    );
+  const decisionRuntime =
+    settings.decisionRuntime === 'claude-in-session' ? 'claude' : settings.decisionRuntime;
   const decision = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
-    : defaultProfileSource(settings.decisionRuntime ?? 'claude');
-  if (settings.decisionRuntime && settings.decisionRuntime !== decision.runtime)
+    : defaultProfileSource(decisionRuntime ?? 'claude');
+  if (decisionRuntime && decisionRuntime !== decision.runtime)
     throw Error('subscriptionOnly.decisionRuntime does not match the decision source runtime');
   if (
     decision.runtime === 'codex' &&
@@ -194,6 +207,7 @@ export function resolveSubscriptionPolicy(
     ...(decision.runtime === 'codex'
       ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
       : {}),
+    wardens: inSession ? 'in-session' : 'primed',
   };
   // A model registered only on the other runtime cannot run here, e.g. a recorded Claude model after switching to Codex.
   const runtimeProvider = { claude: 'claude-code', codex: 'codex' } as const;

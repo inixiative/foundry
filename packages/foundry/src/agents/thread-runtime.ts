@@ -6,6 +6,7 @@ import {
   type DispatchObservation,
   type EventStream,
   type InjectionArtifact,
+  type LLMMessage,
   type LLMProvider,
   type NativeEvidence,
   type NativeOwner,
@@ -17,6 +18,7 @@ import {
   SignalBus,
   sameNativeOwner,
   type Thread,
+  type ThreadMeta,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
 import type { FeedbackPhase } from '../feedback/types';
@@ -72,6 +74,11 @@ import type { TriggerPoint } from './warden-triggers';
  * id; auxiliaries never share it, so their compaction and history never touch
  * the central session.
  */
+/** A landed turn and the reviews that follow it coalesce into one Warden pre-start. */
+const PRESTART_DEBOUNCE_MS = 250;
+/** How long a landed turn's pre-start waits for its reviews before going out with what it has. */
+const PRESTART_REVIEW_WAIT_MS = 30_000;
+
 export function auxiliarySessionId(threadId: string, role: string): string {
   return `${threadId}:aux:${role}`;
 }
@@ -107,6 +114,15 @@ export function scopedProvider(
         completedScope = owner;
       }
     },
+    ...(provider.prestart
+      ? {
+          prestart: (messages: LLMMessage[], opts: CompletionOpts) =>
+            provider.prestart!(messages, scope(opts)),
+        }
+      : {}),
+    ...(provider.releaseThread
+      ? { releaseThread: (id: string) => provider.releaseThread!(id) }
+      : {}),
   };
   if (provider.completionLifecycle) {
     const lifecycle = provider.completionLifecycle;
@@ -352,6 +368,8 @@ export type KnowledgeCommitter = (
  * says so. Recording an input is not evidence of native receipt.
  */
 export interface PhaseRecordInput {
+  /** The tree node the row belongs to when it is not this thread: an observed subagent's guards. */
+  readonly node?: { readonly id: string; readonly meta: ThreadMeta };
   readonly id: string;
   readonly turnId: string | null;
   readonly dispatchId: string | null;
@@ -706,6 +724,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
   private _unsubs: Array<() => void> = [];
   private _disposed = false;
+  private _prestartTimer?: ReturnType<typeof setTimeout>;
+  /** Providers that may hold pre-started work for this thread (released on dispose). */
+  private _wardenProviders = new Set<LLMProvider>();
   private _eventStream: EventStream | undefined;
   private _onDisposed: () => void;
   private _knowledgeLayers: ContextLayer[] = [];
@@ -929,6 +950,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       ...(deps.prefilter ? { prefilter: deps.prefilter, threadId: thread.id } : {}),
     });
 
+    for (const dc of domains) this._wardenProviders.add(dc.adviseProvider ?? deps.llm);
+    // Pre-start every Warden as soon as its composed context is warm, so the first trigger starts at
+    // once. Only a provider that pre-starts warms anything here; otherwise caches warm on first use.
+    if ([...this._wardenProviders].some((provider) => provider.prestart))
+      void Promise.all(
+        [...this.domainLibrarians.values()].map((lib) => lib.warm().catch(() => undefined)),
+      ).then(() => this._schedulePrestart());
+
     this.reactive = new ReactiveMiddleware({ stack, signals });
     this.reactive.addRule(lowConfidenceRule(deps.lowConfidenceThreshold ?? 0.5));
     thread.middleware.use(REACTIVE_MIDDLEWARE_ID, this.reactive.asMiddleware());
@@ -1121,6 +1150,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
         const ledgerEpoch = this.librarian.ledgerEpoch;
         const result = await next();
+        // The turn landed: Wardens are pre-started again with the thread as it now stands.
+        this._schedulePrestart();
 
         // Historical phase record carried on the turn's own result meta (the journalled agent message):
         // the sealed routing outcome with its request, and the guard entries recorded on this live
@@ -1260,16 +1291,20 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               dispatchId?: string;
               callId?: string;
               agentId?: string;
+              /** An observed subagent's call: its guard rows go on the subagent's node. */
+              subagent?: { node: { id: string; meta: ThreadMeta }; turnId: string | null };
             }
           | undefined;
         if (!content?.tool) return;
+        const node = content.subagent?.node;
         // Guard outcomes are recorded on the originating dispatch's trace annotations under the source
         // observation's identity, first as pending, then as reported. A dispatch that has already left
         // the runtime has no live annotations; nothing is guessed, and the report stays in memory only.
         const dispatchId = typeof content.dispatchId === 'string' ? content.dispatchId : null;
         const live = dispatchId ? this._liveDispatches.get(dispatchId) : undefined;
         // Correlation is the live dispatch's own turn id or nothing; never the latest turn or the tool name.
-        const turnId = live?.messageId ?? null;
+        // A subagent's call belongs to the subagent's own turn.
+        const turnId = content.subagent ? content.subagent.turnId : (live?.messageId ?? null);
         const correlation = live
           ? 'live-dispatch'
           : dispatchId
@@ -1308,6 +1343,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const journalOutcome = (record: Record<string, unknown>): PhaseJournalOutcome => {
           try {
             return this._journalPhase({
+              ...(node ? { node } : {}),
               id: newId('phase'),
               turnId,
               dispatchId,
@@ -1334,6 +1370,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                 const id = newId('phase');
                 try {
                   const journal = this._journalPhase({
+                    ...(node ? { node } : {}),
                     id,
                     turnId,
                     dispatchId,
@@ -1448,6 +1485,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._unsubs.push(
       signals.on('tool_observation', (signal) => {
         if (signal.source === 'flow-orchestrator') return;
+        // A subagent's call is guarded here, never learned from (its own thread records it).
+        if ((signal.content as { subagent?: unknown } | undefined)?.subagent) return;
         if (deps.learning?.enabled === false || deps.config.learning?.enabled === false) return;
         this._recordToolObservation(signal);
       }),
@@ -1903,6 +1942,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         .threadKnowledge.restore(snapshot, `bundle:${bundle.capturedAt}`, owner);
       void this._emitLearning(domain, record);
     }
+    this._schedulePrestart();
   }
 
   /** Route one completed executor observation to every domain reviewer, exactly once. */
@@ -2639,6 +2679,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         return;
       }
       state.status = 'learned';
+      // This Warden's understanding of the thread changed: its pre-started context follows.
+      this._schedulePrestart();
       const entry = knowledge.record({ ...learned, persistence });
       if (state.capacity === 'unknown' && !inspectable)
         this._closeReview(domain, 'completed local result; native capacity remains unacknowledged');
@@ -2820,9 +2862,36 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (!next.has(domain)) deferred.push(`Warden ${domain} stays until the thread is replaced`);
     return deferred;
   }
+  /**
+   * Ask every Warden to stay pre-started with its current thread understanding (debounced: a landed
+   * turn and its reviews coalesce). A provider without pre-start ignores it.
+   */
+  private _schedulePrestart(since = Date.now()): void {
+    // Nothing pre-starts unless a Warden's provider does (the in-session runtime only).
+    if (this._disposed || ![...this._wardenProviders].some((provider) => provider.prestart)) return;
+    clearTimeout(this._prestartTimer);
+    this._prestartTimer = setTimeout(() => {
+      if (this._disposed) return;
+      // Reviews of the landed turn change what the Wardens know: pre-start once they settle (bounded).
+      const reviewing = [...this.domainLibrarians.keys()].some(
+        (domain) =>
+          (this._queuedEvidence.get(domain)?.length ?? 0) > 0 ||
+          ['pending', 'delayed'].includes(this._reviewStates.get(domain)?.status ?? ''),
+      );
+      if (reviewing && Date.now() - since < PRESTART_REVIEW_WAIT_MS) {
+        this._schedulePrestart(since);
+        return;
+      }
+      for (const lib of this.domainLibrarians.values()) lib.prestart();
+    }, PRESTART_DEBOUNCE_MS);
+    (this._prestartTimer as { unref?: () => void }).unref?.();
+  }
+
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
+    clearTimeout(this._prestartTimer);
+    for (const provider of this._wardenProviders) void provider.releaseThread?.(this.thread.id);
     for (const [domain, lib] of this.domainLibrarians) {
       this._closeReview(domain, 'runtime disposed; queued work was not admitted');
       if (this._reviewStates.get(domain)?.capacity === 'settled')

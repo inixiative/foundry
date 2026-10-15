@@ -21,13 +21,15 @@ import {
   type ThreadLaunchPatch,
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
-import { TurnService } from '../../turns/turn-service';
+import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
 import { ViewerThreadDirectory } from '../thread-directory';
 
 export interface RuntimeRoutesDeps {
+  /** In-session Wardens: a turn waits (queued) while its thread sets up. */
+  threadSetup?: ThreadSetupHost;
   harness: Harness;
   eventStream: EventStream;
   interventions: InterventionLog;
@@ -104,6 +106,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     directory,
     streams,
     feedback: deps.feedback ?? null,
+    ...(deps.threadSetup ? { threadSetup: deps.threadSetup } : {}),
   });
 
   app.get('/api/health', async (c) => {
@@ -213,6 +216,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
         threadId: accepted.threadId,
         status: 'accepted',
         queued: accepted.queued,
+        ...(deps.threadSetup?.pending(accepted.threadId) ? { settingUp: true } : {}),
       },
       202,
     );

@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  type ClaudeInSessionDecisions,
   ClaudePrimedSessions,
   CodexPrimedSessions,
   type CodexSpawn,
   DecisionError,
   type DecisionResult,
   type PrimedEvent,
+  type PrimedSessions,
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import {
@@ -20,6 +22,7 @@ import {
 } from '@inixiative/foundry-core';
 import { DECISION_INPUT_CAP } from './decision-budget';
 import { type NativeProfileSource, withProfile } from './default-profiles';
+import type { InSessionWardens } from './in-session-wardens';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
@@ -36,6 +39,8 @@ type DecisionProcess = ReturnType<CodexSpawn>;
 /** Primed Claude keys kept warm by default; each holds one spare CLI process (~130-230 MB). */
 const CLAUDE_PRIMED_SESSIONS = 16;
 const STATUS_DEADLINE_MS = 20_000;
+/** A thread's Wardens ask to be pre-started within this window of each other. */
+const PRESTART_BATCH_MS = 25;
 /** Re-check the Claude login at most this often, like the subscription worker. */
 const STATUS_TTL_MS = 5 * 60_000;
 
@@ -76,6 +81,11 @@ export interface PrimedDecisionHostConfig {
   /** Test seam: Claude subscription status check, in place of `claude auth status --json`. */
   statusSpawn?: (env: Record<string, string | undefined>) => StatusProcess;
   onEvent?: (event: PrimedEvent) => void;
+  /**
+   * `decisionRuntime: claude-in-session`: each thread's Wardens are held inside its own Claude Code
+   * process; their calls go there while it serves, and to the primed host otherwise.
+   */
+  inSession?: InSessionWardens;
 }
 
 /**
@@ -87,7 +97,7 @@ export function primedRequest(
   messages: LLMMessage[],
   opts: CompletionOpts,
   sessionKey: string,
-): { spec: PrimeSpec; input: string } {
+): { spec: PrimeSpec; input: string; standby?: string } {
   const instructions = messages
     .filter((m) => m.role === 'system')
     .map((m) => m.content.trim())
@@ -108,6 +118,11 @@ export function primedRequest(
     : turns;
   const input = rest.length === 1 ? rest[0]!.content : formatMessagesForNativeSession(rest);
   const context = primed ? prefix! : '';
+  // The per-thread part right after the stable prefix: a pre-started Warden holds it.
+  const standby =
+    primed && opts.threadPrefix && rest.length === 1 && input.startsWith(opts.threadPrefix)
+      ? opts.threadPrefix
+      : undefined;
   return {
     spec: {
       key: `${sessionKey}#${hash(instructions).slice(0, 16)}`,
@@ -116,7 +131,33 @@ export function primedRequest(
       hash: hash(`${instructions}\0${context}`),
     },
     input,
+    ...(standby !== undefined ? { standby } : {}),
   };
+}
+
+/** Auxiliary session ids are `<thread>:aux:<role>` (agents/thread-runtime auxiliarySessionId). */
+const AUXILIARY = ':aux:';
+/** The Foundry thread an auxiliary session belongs to; undefined for a call outside any thread. */
+export function decisionThread(sessionKey: string): string | undefined {
+  const at = sessionKey.indexOf(AUXILIARY);
+  return at > 0 ? sessionKey.slice(0, at) : undefined;
+}
+/** A Warden phase: advice and guard (`domain:<d>`) or post-work review (`review:<generation>:domain:<d>`). */
+export function isWardenSession(sessionKey: string): boolean {
+  const at = sessionKey.indexOf(AUXILIARY);
+  if (at <= 0) return false;
+  const role = sessionKey.slice(at + AUXILIARY.length);
+  return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
+}
+
+/** The in-session host serving this decision, when its thread's Wardens run in-session. */
+export function inSessionTarget(
+  inSession: InSessionWardens | undefined,
+  sessionKey: string | undefined,
+): ClaudeInSessionDecisions | undefined {
+  if (!inSession || !sessionKey || !isWardenSession(sessionKey)) return undefined;
+  const thread = decisionThread(sessionKey);
+  return thread ? inSession.serving(thread) : undefined;
 }
 
 /**
@@ -442,16 +483,23 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         calls.push(call);
         let spec: PrimeSpec,
           input: string,
+          target: PrimedSessions = host,
           admission: NativeEvidence | undefined,
           result: DecisionResult | undefined,
           failedHedge = false;
         try {
-          ({ spec, input } = primedRequest(messages, opts, sessionKey));
+          let standby: string | undefined;
+          ({ spec, input, standby } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
           await claude?.ready();
           if (closed) throw Error('Decision admission closed');
-          result = await host.decide(spec, {
-            input,
+          // A Warden of an in-session thread: a spare holding the standby context gets only the rest.
+          const inSession = inSessionTarget(config.inSession, sessionKey);
+          if (inSession) target = inSession;
+          const split = !!inSession && standby !== undefined;
+          result = await target.decide(spec, {
+            ...(split ? { standby } : {}),
+            input: split ? input.slice(standby!.length) : input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
             signal: abort.signal,
             onAdmission: async (a) => {
@@ -549,7 +597,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
                 ? { hedged: true }
                 : {},
           );
-          if (oneShot && spec!) void host.evict(spec.key).catch(() => undefined);
+          if (oneShot && spec!) void target.evict(spec.key).catch(() => undefined);
         }
       },
     };
@@ -563,13 +611,54 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     };
   };
 
+  /** Keep a thread's Wardens pre-started in its own process (in-session threads only). */
+  const prestart = (messages: LLMMessage[], opts: CompletionOpts) => {
+    const sessionKey = opts.threadId;
+    if (!config.inSession || !sessionKey || !isWardenSession(sessionKey)) return;
+    const thread = decisionThread(sessionKey)!;
+    const { spec, standby } = primedRequest(messages, opts, sessionKey);
+    if (standby === undefined) return;
+    let batch = prestarting.get(thread);
+    if (!batch) {
+      const entries = new Map<string, { spec: PrimeSpec; standby: string }>();
+      batch = {
+        entries,
+        // A thread's Wardens ask together: they go out as one roster.
+        timer: setTimeout(() => {
+          prestarting.delete(thread);
+          config.inSession?.prestart(thread, [...entries.values()]);
+        }, PRESTART_BATCH_MS),
+      };
+      prestarting.set(thread, batch);
+    }
+    batch.entries.set(sessionKey, { spec, standby });
+  };
+  const prestarting = new Map<
+    string,
+    {
+      entries: Map<string, { spec: PrimeSpec; standby: string }>;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const releaseThread = async (thread: string) => {
+    const batch = prestarting.get(thread);
+    if (batch) {
+      clearTimeout(batch.timer);
+      prestarting.delete(thread);
+    }
+    await config.inSession?.release(thread);
+  };
+
   return {
     host,
     hostId,
     receiptsPath,
     createRun,
+    ...(config.inSession ? { prestart, releaseThread } : {}),
     releaseFailures: () => releaseFailures,
     close: async () => {
+      for (const batch of prestarting.values()) clearTimeout(batch.timer);
+      prestarting.clear();
       try {
         await host.close();
       } finally {

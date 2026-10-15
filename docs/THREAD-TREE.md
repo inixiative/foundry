@@ -1,6 +1,6 @@
 # Thread tree: stitching, composition audit, start-up
 
-> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** B is built (#72); A is built (§A.8). Build order: B, then A, then C. C waits for the pre-filter re-measurement of the side-session draft (#67). Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
+> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** B is built (#72); A is built (§A.8). C is built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`, **off by default** until Aron has seen the numbers (§C.9). Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
 
 **Basis.** Foundry `origin/main` `0025354`; agent-session `feat/claude-subagent-prestart` (`fbb2cda`, PR #13); Archive `origin/main` `83bced1` (0.17.0); template `main`; Claude Code 2.1.296; codex-cli 0.155.1. Path prefixes are the same as [reference/SUBAGENTS.md](reference/SUBAGENTS.md): `pf/` = `packages/foundry/src`, `pc/` = `packages/core/src`, `as/` = agent-session `src`, `ar/` = Archive `src`, `tp/` = template. Anything not checked in code or run live is marked **[unverified]**.
 
@@ -514,6 +514,13 @@ At 15:36: *"When you start a new thread, start all of them. When you get a messa
 
 ## C.8 Open questions
 
+**Defaults taken (coordinator, 2026-10-15), as proposed below:**
+- (1) the setup turn is hidden from the viewer and the ACP transcript;
+- (2) it ships as `decisionRuntime: 'claude-in-session'` next to the existing runtime, and both are measured;
+- (3) a dispatcher recycles without any main turn: the depth-3 option proved out cheaply (§C.9);
+- (4) Foundry keeps its own "this Warden chimed in with…" append.
+- Codex questions 5 and 6 are out of scope: Codex Wardens stay on the per-account decision app-server (already bounded).
+
 1. **Setup-turn visibility.** The setup turn costs the main context about 2k tokens once per thread (measured: 1,979 cache-write tokens and 134 output). Should it be hidden from the viewer and ACP transcript (proposed), or shown as a "Foundry set up N Wardens" line?
 2. **How far to go in-session.** Moving Claude Wardens from the side session into the main session trades 1 process for:
    - a dispatcher that lives in the user's session, so the main model sees one background agent;
@@ -527,3 +534,76 @@ At 15:36: *"When you start a new thread, start all of them. When you get a messa
 5. **Codex sub-agent threads or Foundry threads?** The experiment shows Foundry-started threads in the same app-server are enough. Is there any reason to prefer Codex's own `spawnAgent`, for example so the Codex UI shows the Wardens?
 6. **Codex in the main app-server:** accept the main thread's `CODEX_HOME` and per-thread violation handling (C.2 Q6), or keep Codex Wardens on the per-account decision app-server? Keeping them gives one Codex decision process per account, not per thread, which is already bounded.
 7. **DECIDED: generic definition plus composition** (see C.3, fixed definitions).
+
+## C.9 As built (2026-10-15)
+
+Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`, **off by default**. agent-session 0.6.6 (`ClaudeInSessionDecisions`), Foundry (`providers/in-session-wardens.ts`).
+
+**Shape.**
+- **Setup.** The thread's session opens when its first turn is accepted, through `SessionBackedProvider.open`.
+  - The open is provisional: if the first turn asks for another model or launch settings, the session relaunches, and the setup with it.
+  - Its first turn delivers every standing part, since the session starts with no base context.
+  - An internal setup turn asks the main model to start `foundry-root` in the background. The turn waits `queued` meanwhile. `ThreadMeta.setup` streams on `threads`, the viewer shows a banner, and foundry-acp shows "Setting up your thread…" and then "Your thread is ready."
+- **The tree.** Three levels deep, all agents in the background, all through the host's `next` tool:
+  - the root never ends;
+  - it starts dispatcher generations (`foundry-dispatch`);
+  - they start Wardens (`foundry-warden`).
+  - Agent definitions are generic. Each spawn's prompt is pinned by the session's PreToolUse callback to the composed charter, instructions, domain knowledge and thread understanding.
+- **Calls.** A Warden holds `moment` and answers through `answer`.
+  - Advice, guard and review calls go to a held spare, or, with no spare, start a member with the moment inline.
+  - These calls take none of the shared decision slots.
+  - Other decision roles stay on primed sessions.
+  - A thread whose tree is not running falls back to primed sessions.
+- **Recycle (C.8 question 3).** Past 100k tokens of dispatcher context, a new generation starts. The old one's spares are retired as their replacements hold, and it ends into the root once empty, with no main turn.
+- **Orphans.** A nested agent whose parent has ended reports its own end, whether completed or stopped, to the main thread, which wakes the main model (verified live).
+  - This was the cause of the unprompted main turns first seen at 5 threads (24, 43, 3 and 25 per thread), when dispatchers ended under load.
+  - Members of a dispatcher that ended unasked are therefore never retired or stopped, and an orphan's `answer` call is held for the session's life.
+  - Past 40 orphans the thread stops serving in-session.
+  - A root that dies is set up again at most twice per session; each setup is a main turn.
+- **Close.** Members and dispatchers are drained; the root is never ended.
+- **Subagents.** Their own Wardens are parked (§C.10). In this runtime only, the main thread's subagents' tool calls are guarded from the main thread's Wardens, and the rows are journalled on the subagent's node.
+- **Launch.**
+  - Claude Code runs 20 subagents at once by default, so the launch raises `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` by 76 on top of the user's own cap.
+  - The SDK MCP server is declared in `initialize` (no extra `--mcp-config`) and answers its connect before `initialize` returns. An unanswered connect cost a 30 s retry, which was the first build's ~28 s stall.
+
+**Measured on this machine** (Claude Code 2.1.300):
+- Setup: 23 synthetic Wardens with ~12 KB of composed context each, an Opus main thread, the user's own settings and MCP servers.
+- Fan-outs: three full fan-outs of every Warden at once in all threads, plus one while a subagent ran in each main thread.
+- Memory: the RSS of every process tree involved.
+
+| Threads | Runtime | Setup to all held (from root start) | Fan-out p50 / p95 | Failures | Memory idle → after fan-outs (subagent running) | Processes | Unprompted main turns |
+|---|---|---|---|---|---|---|---|
+| 1 | in-session | 19.6 s (16.4 s) | 1.9 s / 5.5 s | 0 | 0.6 → 1.3 GB (0.7 GB) | 1 | 0 |
+| 3 | in-session | 20–24 s (15–19 s) | 4.2 s / 4.6 s | 0 | 1.7 → 3.0 GB (2.0 GB) | 3 | 0 |
+| 5 | in-session | 17–19 s (13–14 s) | 4.4 s / 7.7 s | 69 of 345, all one thread (rerun: 0) | 2.5 → 2.3 GB (2.4 GB) | 5 | 0 |
+| 1 | primed (today) | none; Wardens prime on first use | warm 3.2 s / 4.6 s; cold 10.9 / 18.9 s | 0 | 0.6 → 4.0 GB (5.4 GB) | 136 | 0 |
+| 3 | primed | — | warm 13.8 s / 21.6 s | 46 of 207 | 1.7 → 14.8 GB (14.3 GB) | 416 | 0 |
+| 5 | primed | — | warm 5.2 s / 15.9 s; cold 20.9 / 27.8 s | 206 of 345 | 2.9 → 9.5 GB (10.3 GB) | 523 | 0 |
+
+- **Load and timing.** Load averages were 15–55 for the in-session runs and 40–90 for the primed ones (the machine is shared and was heavily loaded earlier in the day).
+- **5-thread outliers.** One in-session run at 5 threads had a thread whose dispatcher never started: 69 failures, none in a rerun. Two fixes followed: a skipped dispatcher is re-issued, and a thread without a running dispatcher falls back to primed sessions.
+- **Fan-out during a subagent:** p50 2.0–3.6 s, p95 3.1–5.0 s.
+- **CPU stress.** Under artificial CPU load (load average 266), 5 in-session threads had 0 failures and 0 main-model wakes.
+- **Earlier build.** Before the connect fix, setup took 47–54 s.
+- **[unverified]:**
+  - an end-to-end run through a Foundry daemon with the live Warden roster (the numbers above drive agent-session directly);
+  - growth over a long thread;
+  - user hooks firing on Warden tool calls.
+
+**Deviations from §C.4–C.5:**
+- The setup turn is not journalled as a turn: it has no admission, and `ThreadMeta.setup` records it.
+- No dispatcher or spare nodes are journalled, and calls carry no `servedBy`.
+- Close uses STOP through `next` and drains; it never uses `stop_task`.
+- A degraded setup is never upgraded to `ready` later.
+- Codex in-process is not built (C.8 question 6).
+
+## C.10 Next: a warm set of concept-region Wardens (design note, not built)
+
+The roster is moving from 23 fixed Wardens to Wardens built per concept region (plan step 8, "T7 warm set"). A project then has many more Wardens than a thread can hold, so the main thread keeps a **warm set**, not the whole roster.
+
+- **What is warm.** The regions routed for the thread's recent moments (R1), kept by recency (LRU), bounded by `warmWardens` (proposed 6–8). `prestart` already takes the roster as a list: the warm set is just a shorter, changing list. A region leaving it has its spare retired normally (it ends into its dispatcher, so no main turn). A region joining it starts a spare.
+- **Slots.** Claude Code runs 20 subagents per session by default, and the main thread's own subagents count against the same cap. In-session use is: root + 1–2 dispatchers + the warm set + a replacement while a used spare finishes (up to 2 × warm set). With a warm set of 8 that is at most about 20, so instead of today's flat `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=96`, the launch should raise the cap by exactly that: the user's own cap (default 20) plus `2 + 2 × warmWardens`. The main thread's own subagents then keep all of their slots.
+- **Cold regions.** A routed region outside the warm set starts its member with the moment inline (the existing direct path, 2–4 s at normal load, measured by its prime `cold`), then joins the warm set.
+- **Orphans.** A smaller warm set also bounds the cost of a dispatcher dying (§C.9): at most a warm set's worth of orphans per dead generation, against `maxOrphans`.
+- **Subagents' own Wardens stay parked.** Subagents get no warm set of their own. In the `claude-in-session` runtime their tool calls are guarded from the main thread's set (§C.9) and this is not extended. The handoff trigger (plan step 10) uses the main thread's warm set to brief a subagent at spawn.
+- **Open:** the warm-set size, from the R1 re-test (how many regions a moment routes to at k = 1, 2, 4); whether review calls (post-turn) should take warm spares or always start cold.

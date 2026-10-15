@@ -837,6 +837,14 @@ body {
   align-items: center;
   gap: 8px;
 }
+.context-bar-setup {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.context-bar-setup--degraded {
+  color: var(--warn);
+}
 .context-bar-status {
   width: 8px;
   height: 8px;

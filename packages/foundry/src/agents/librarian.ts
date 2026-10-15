@@ -184,7 +184,9 @@ export class Librarian {
 
       case 'tool_observation':
         if (source === 'flow-orchestrator') this._handleGuardObservation(content as any);
-        else this._handleToolObservation(content as any);
+        // A subagent's own call belongs to its thread, not this thread's state.
+        else if (!(content as { subagent?: unknown } | undefined)?.subagent)
+          this._handleToolObservation(content as any);
         break;
 
       case 'context_loaded':

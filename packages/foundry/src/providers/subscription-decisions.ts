@@ -11,8 +11,9 @@ import {
   sameNativeOwner,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from './decision-priority';
+import type { InSessionWardens } from './in-session-wardens';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import { createPrimedDecisionHost } from './primed-decisions';
+import { createPrimedDecisionHost, inSessionTarget } from './primed-decisions';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
   maxCalls: number;
@@ -34,6 +35,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   effort?: string;
   /** Codex decisions: hedge a decision still running after this long (off when omitted). */
   hedgeAfterMs?: number;
+  /** `claude-in-session`: each thread's Wardens are held inside its own Claude Code process. */
+  inSession?: InSessionWardens;
 }
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
@@ -58,6 +61,8 @@ type Pending = {
   priority: number;
   thread: string;
   seq: number;
+  /** Served inside its thread's own process: it takes none of the shared decision slots. */
+  unbounded?: boolean;
   resolve(value: CompletionResult): void;
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
@@ -83,8 +88,19 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
     callTimeoutMs: config.callTimeoutMs,
     onEvent: onPrimedEvent,
+    ...(config.inSession ? { inSession: config.inSession } : {}),
   });
-  const decisions = buildSubscriptionDecisions(options, primed.createRun);
+  const { inSession, ...bounds } = options;
+  const decisions = buildSubscriptionDecisions(
+    {
+      ...bounds,
+      ...(inSession ? { unbounded: (key: string) => !!inSessionTarget(inSession, key) } : {}),
+    },
+    primed.createRun,
+  );
+  // Pre-starting is not a decision: it bypasses the queue and costs no admission.
+  if (primed.prestart) decisions.provider.prestart = primed.prestart;
+  if (primed.releaseThread) decisions.provider.releaseThread = primed.releaseThread;
   return {
     ...decisions,
     close: () => {
@@ -96,15 +112,22 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       await decisions.shutdown(timeoutMs);
       await primed.close();
     },
-    snapshot: () => ({ ...decisions.snapshot(), primed: primed.host.snapshot() }),
+    snapshot: () => ({
+      ...decisions.snapshot(),
+      primed: primed.host.snapshot(),
+      ...(inSession ? { inSession: inSession.snapshot() } : {}),
+    }),
   };
 }
 
 export function buildSubscriptionDecisions(
-  options: SubscriptionDecisionConfig,
+  options: Omit<SubscriptionDecisionConfig, 'inSession'> & {
+    /** Calls (by provider session key) served in their thread's own process: no shared slot. */
+    unbounded?: (sessionKey: string) => boolean;
+  },
   createRun: (config: NativeTextConfig) => TextRun,
 ) {
-  const { onPressure, ...bounds } = options;
+  const { onPressure, unbounded, ...bounds } = options;
   const config = structuredClone(bounds);
   if (
     !Number.isSafeInteger(config.maxCalls) ||
@@ -211,8 +234,10 @@ export function buildSubscriptionDecisions(
     }
   };
   const start = async (pending: Pending) => {
-    active++;
-    runningPriorities.push(pending.priority);
+    if (!pending.unbounded) {
+      active++;
+      runningPriorities.push(pending.priority);
+    }
     lastServed.set(pending.thread, ++seq);
     clearTimeout(pending.timer);
     let finalized = false;
@@ -424,8 +449,10 @@ export function buildSubscriptionDecisions(
         }
       }
       if (run) running.delete(run);
-      active--;
-      runningPriorities.splice(runningPriorities.indexOf(pending.priority), 1);
+      if (!pending.unbounded) {
+        active--;
+        runningPriorities.splice(runningPriorities.indexOf(pending.priority), 1);
+      }
       pump();
     }
   };
@@ -533,6 +560,11 @@ export function buildSubscriptionDecisions(
             Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs),
           ),
         };
+        if (unbounded?.(threadId)) {
+          pending.unbounded = true;
+          void start(pending);
+          return;
+        }
         queue.push(pending);
         pump();
       });

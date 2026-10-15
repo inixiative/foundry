@@ -902,13 +902,14 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       try {
         turn.open();
         try {
-          await foundry.http.send({
+          const sent = await foundry.http.send({
             threadId: session.threadId,
             id: turnId,
             message: text,
             clientId: foundry.streams.clientId,
           });
           turn.accepted = true;
+          if (sent.settingUp) turn.settingUp();
           // A cancel that arrived while the send was in flight could not name an accepted turn.
           if (turn.cancelRequested)
             void foundry.http

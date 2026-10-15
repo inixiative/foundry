@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
+import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import {
   heldSignetFile,
@@ -28,7 +29,13 @@ import { resolveSubscriptionPolicy } from './providers/subscription-policy';
  * Open:     http://localhost:${VIEWER_PORT || 4500}
  */
 
-import { ContextStack, type SignalBus, ToolRegistry } from '@inixiative/foundry-core';
+import {
+  ContextStack,
+  type NativeBridgeSource,
+  type SignalBus,
+  type ThreadSetup,
+  ToolRegistry,
+} from '@inixiative/foundry-core';
 import { existsSync, mkdirSync } from 'fs';
 import { FileMemory, PostgresMemory } from './adapters';
 import {
@@ -168,10 +175,33 @@ if (subscription) {
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
+// decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
+// process (docs/THREAD-TREE.md spec C). Off by default.
+const setupListeners: Array<(threadId: string, setup: ThreadSetup) => void> = [];
+/** Threads whose session was opened ahead of a turn (in-session Wardens). */
+const opened = new Set<string>();
+const inSession =
+  subscription?.policy.wardens === 'in-session'
+    ? new InSessionWardens({
+        model: subscription.policy.model,
+        ...(subscription.policy.effort ? { effort: subscription.policy.effort } : {}),
+        timeoutMs: subscription.policy.callTimeoutMs,
+        onSetup: (threadId, setup) => {
+          for (const listener of setupListeners) listener(threadId, setup);
+          if (setup.status !== 'starting')
+            console.log(
+              `[in-session] thread ${threadId} ${setup.status}: ${setup.wardens.held}/${setup.wardens.expected} Wardens held in ${(setup.readyAt ?? Date.now()) - setup.startedAt} ms`,
+            );
+        },
+      })
+    : undefined;
+if (inSession)
+  console.log("Wardens: held inside each thread's own Claude Code process (claude-in-session)");
 const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
       source: subscription.decision,
+      ...(inSession ? { inSession } : {}),
       // Every decision role stays primed: an advice and a review key per Warden, plus the
       // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
       primedSessions: Math.max(16, 2 * configuredExperts(config).experts.length + 8),
@@ -351,6 +381,7 @@ function createProvider(config: FoundryConfig): {
         contextBudget: config.providers[providerId]?.contextBudget,
         store: sessionStore,
         authentication: routed,
+        ...(inSession ? { inSession } : {}),
         defaults: {
           model: config.defaults.model,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
@@ -857,6 +888,24 @@ const viewer = await startViewer({
   threadLaunch,
   // The executor's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: provider instanceof SessionBackedProvider ? [provider] : [],
+  ...(inSession && provider instanceof SessionBackedProvider
+    ? {
+        threadSetup: {
+          open: async (threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }) => {
+            opened.add(threadId);
+            await provider.open(threadId, opts);
+            await inSession.ready(threadId);
+          },
+          // Setting up: a host is starting, or the thread's session has not been opened yet.
+          pending: (threadId: string) =>
+            inSession.setup(threadId)?.status === 'starting' ||
+            (!inSession.attached(threadId) && !opened.has(threadId)),
+          onSetup: (listener: (threadId: string, setup: ThreadSetup) => void) => {
+            setupListeners.push(listener);
+          },
+        },
+      }
+    : {}),
 });
 toolGateFor = viewer.toolGate;
 
@@ -907,7 +956,7 @@ const shutdown = async () => {
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
-    Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown()]),
+    Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown(), inSession?.close()]),
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();
