@@ -11,7 +11,7 @@
  * Prints silence precision, speak precision, scope violations, recall, and per-turn calls and
  * latency at roster scale; writes every answer under --out.
  */
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -26,6 +26,7 @@ import {
   runCharterEval,
 } from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
+import { loadRoster } from './warden-roster';
 
 const { values } = parseArgs({
   options: {
@@ -74,43 +75,9 @@ const pick = (kind: string) =>
 const probes = [...pick('positive'), ...pick('negative')];
 
 // The roster's Wardens, composed from the role files of the probe's ladder.
-const settings = JSON.parse(readFileSync(values.settings, 'utf8'));
-const roster = Object.entries(
-  settings.agents as Record<
-    string,
-    { flowRole?: string; enabled?: boolean; domain?: string; prompt?: string }
-  >,
-).filter(([, a]) => a.flowRole === 'domain-advising' && a.enabled && a.domain && a.prompt);
-const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
-const ladder = (probe: WardenProbe) =>
-  probe.ctx === 'userevidence'
-    ? ['org-userevidence', 'project-zealot']
-    : ['personal', 'org-inixiative', ...(probe.project ? [`project-${probe.project}`] : [])];
-const cache = new Map<string, EvalWarden[]>();
-const wardensFor = (probe: WardenProbe): EvalWarden[] => {
-  const nodes = ladder(probe);
-  const key = nodes.join('|');
-  if (!cache.has(key))
-    cache.set(
-      key,
-      roster
-        .map(([id, agent]) => ({
-          domain: agent.domain!,
-          instructions: [
-            agent.prompt!,
-            ...nodes.map((n) => read(join(values.knowledge!, n, id, 'instructions.md'))),
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
-          domainKnowledge: nodes
-            .map((n) => read(join(values.knowledge!, n, id, 'domainKnowledge.md')))
-            .filter(Boolean)
-            .join('\n\n'),
-        }))
-        .filter((w) => w.domainKnowledge.trim()),
-    );
-  return cache.get(key)!;
-};
+const roster = loadRoster(values.settings, values.knowledge);
+const wardensFor = (probe: WardenProbe): EvalWarden[] =>
+  roster.wardensFor(probe.ctx, probe.project);
 
 const concurrency = Number(values.concurrency ?? 16);
 // An eval run, not work: Archive and the repeat report leave its sessions out.

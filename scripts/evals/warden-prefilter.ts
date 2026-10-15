@@ -10,20 +10,39 @@
  *   bun scripts/evals/warden-prefilter.ts assemble --dir <dir> --run r1
  *   bun scripts/evals/warden-prefilter.ts sample --dir <dir> --run r1 --n 150 --out <ids file>
  *   bun scripts/evals/warden-prefilter.ts agree --dir <dir> --a r1 --b r2|hand
+ *   bun scripts/evals/warden-prefilter.ts measure --dir <dir> --settings <settings.json> \
+ *     --knowledge <ladder dir> [--scores <earlier run dir>] [--repeat 3] [--base-url <url>]
  *
  * build: candidates.jsonl from git cases (raw/git-*.jsonl, mined by hand from repo history), the
  * charter probe pool (warden-probes.ts), the kit's sharp corrections the pool left out (agent turn
  * or, for history-only rows, the ask before the correction), and `foundry repeats`' collector over
  * the last --fresh-days. label: Opus over the subscription (decisionHost), resumable per run.
+ * measure: the shipped pre-filter (providers/warden-prefilter.ts) against the local model server,
+ * over every fixture with its context's roster (never `hidden`). Reports recall of relevant pairs
+ * against skip rate on the r1 labels (primary: broad, so the conservative bar for a fail-open
+ * filter), on the pairs r1 and r2 agree on, and on the hand check; per Warden; the sweep;
+ * consistency over repeats; latency and the server's memory. `--scores` rescores an earlier run.
  */
-import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   computeHash,
   labelAgreement,
+  type PrefilterPair,
+  type PrefilterTrigger,
   parseWardenLabels,
+  percentiles,
+  prefilterConsistency,
+  scorePrefilter,
   scrubSecrets,
   type UnlabelledFixture,
   type WardenFixture,
@@ -37,6 +56,8 @@ import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import { collectCandidates } from '../../packages/foundry/src/feedback/repeats';
 import { reachableArchive } from '../../packages/foundry/src/feedback/repeats-cli';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
+import { WardenPrefilter } from '../../packages/foundry/src/providers/warden-prefilter';
+import { loadRoster } from './warden-roster';
 
 const [command, ...rest] = process.argv.slice(2);
 const { values } = parseArgs({
@@ -59,6 +80,11 @@ const { values } = parseArgs({
     out: { type: 'string' },
     a: { type: 'string' },
     b: { type: 'string' },
+    knowledge: { type: 'string' },
+    scores: { type: 'string' },
+    repeat: { type: 'string' },
+    'repeat-sample': { type: 'string' },
+    'base-url': { type: 'string' },
   },
 });
 const dir = resolve(values.dir ?? join(homedir(), '.foundry', 'evals', 'warden-prefilter'));
@@ -574,10 +600,236 @@ function agree() {
     );
 }
 
-const commands: Record<string, () => unknown> = { build, label, assemble, sample, agree };
+type Scored = { fixtureId: string; wardenId: string; score?: number };
+
+async function measure() {
+  if (!values.settings || !values.knowledge)
+    throw Error('measure needs --settings and --knowledge');
+  const fixtures = readJsonl<WardenFixture>(join(dir, 'fixtures.jsonl'));
+  // The charter probe pool too: the agent's finished turn, its gold Wardens labelled relevant and
+  // every other Warden unlabelled (counted toward the skip rate, never toward recall).
+  const probes = values.pool ? readJsonl<WardenProbe>(resolve(values.pool)) : [];
+  type Moment = {
+    id: string;
+    ctx: string;
+    project?: string;
+    kind: PrefilterTrigger;
+    text: string;
+    context?: string;
+  };
+  const moments: Moment[] = [
+    ...fixtures.map((f) => ({
+      id: f.id,
+      ctx: f.ctx,
+      ...(f.project ? { project: f.project } : {}),
+      kind: f.trigger.kind,
+      text: f.trigger.text,
+      context: f.context,
+    })),
+    ...probes.map((p) => ({
+      id: `pool:${p.id}`,
+      ctx: p.ctx,
+      ...(p.project ? { project: p.project } : {}),
+      kind: 'post-turn' as const,
+      text: p.moment,
+    })),
+  ];
+  // --ids: score only these moments (fixture ids, `pool:<probe id>`), e.g. a slow model on a subset.
+  const only = values.ids
+    ? new Set(readFileSync(resolve(values.ids), 'utf8').split('\n').filter(Boolean))
+    : undefined;
+  if (only) moments.splice(0, moments.length, ...moments.filter((m) => only.has(m.id)));
+  const out = join(dir, 'runs', `${Date.now()}`);
+  privateDirectory(out);
+  let scored: Scored[];
+  const latencies: number[] = [];
+  let consistency: Record<string, ReturnType<typeof prefilterConsistency>> = {};
+  let rssMb = 0;
+  if (values.scores) scored = readJsonl<Scored>(join(resolve(values.scores), 'scores.jsonl'));
+  else {
+    const roster = loadRoster(values.settings, values.knowledge);
+    const prefilter = new WardenPrefilter({
+      ...(values.model ? { model: values.model } : {}),
+      ...(values['base-url'] ? { baseUrl: values['base-url'] } : {}),
+      timeoutMs: 30_000,
+    });
+    const health = await prefilter.waitReady(60_000);
+    if (!health.ok) throw Error(`model server unavailable: ${health.reason}`);
+    // The first call compiles the model on its device: not a measured latency.
+    await prefilter.score(
+      'user-message',
+      'warm up',
+      undefined,
+      roster.wardensFor('inixiative'),
+      'eval',
+    );
+    // What a Warden sees at the moment: the trigger and the context, never `hidden`.
+    const scoreOne = async (f: Moment) => {
+      const wardens = roster.wardensFor(f.ctx, f.project);
+      const outcome = await prefilter.score(f.kind, f.text, f.context, wardens, 'eval');
+      return wardens.map((w) => ({
+        fixtureId: f.id,
+        wardenId: w.id,
+        ...(outcome.status === 'scored' && outcome.scores.has(w.domain)
+          ? { score: outcome.scores.get(w.domain) }
+          : {}),
+        elapsedMs: outcome.elapsedMs,
+      }));
+    };
+    scored = [];
+    // Written as it goes, so a long run can be rescored (`--scores`) before it finishes.
+    const partial = join(out, 'scores.jsonl');
+    writePrivate(partial, '');
+    for (const [i, f] of moments.entries()) {
+      const rows = await scoreOne(f);
+      latencies.push(rows[0]?.elapsedMs ?? 0);
+      const kept = rows.map(({ elapsedMs: _e, ...r }) => r);
+      scored.push(...kept);
+      appendFileSync(partial, `${kept.map((r) => JSON.stringify(r)).join('\n')}\n`);
+      if ((i + 1) % 50 === 0) console.error(`  ${i + 1}/${moments.length}`);
+    }
+    const repeats = new Map<string, (number | undefined)[]>();
+    const sample = moments.slice(0, Number(values['repeat-sample'] ?? 40));
+    for (const r of scored.filter((r) => sample.some((f) => f.id === r.fixtureId)))
+      repeats.set(`${r.fixtureId}|${r.wardenId}`, [r.score]);
+    for (let n = 1; n < Number(values.repeat ?? 3); n++)
+      for (const f of sample)
+        for (const r of await scoreOne(f))
+          repeats.get(`${r.fixtureId}|${r.wardenId}`)?.push(r.score);
+    consistency = Object.fromEntries(
+      [0.05, 0.1, 0.2, 0.3].map((t) => [String(t), prefilterConsistency(repeats, t)]),
+    );
+    // The model server's physical footprint (Metal memory included; `ps` RSS leaves MLX's out): whatever
+    // listens on the pre-filter's port.
+    const port = new URL(prefilter.settings.baseUrl).port;
+    for (const pid of Bun.spawnSync(['lsof', '-ti', `tcp:${port}`, '-sTCP:LISTEN'])
+      .stdout.toString()
+      .split('\n')
+      .filter((p) => p.trim())) {
+      const footprint = /phys_footprint:\s+([\d.]+)\s*(KB|MB|GB)/.exec(
+        Bun.spawnSync(['footprint', pid.trim()]).stdout.toString(),
+      );
+      if (footprint)
+        rssMb += Number(footprint[1]) * ({ KB: 1 / 1024, MB: 1, GB: 1024 }[footprint[2]!] ?? 1);
+    }
+    writeJsonl(join(out, 'scores.jsonl'), scored);
+  }
+
+  // Label sets: r1 (the fixtures' labels), the pairs r1 and r2 agree on, the hand check.
+  const r1 = new Map(fixtures.map((f) => [f.id, f.labels]));
+  const r2 = labelsOf('r2');
+  const hand = labelsOf('hand');
+  const pairsFor = (label: (fixtureId: string, wardenId: string) => boolean | undefined) =>
+    scored.flatMap((r): PrefilterPair[] => {
+      const relevant = label(r.fixtureId, r.wardenId);
+      return relevant === undefined
+        ? []
+        : [
+            {
+              momentId: r.fixtureId,
+              wardenId: r.wardenId,
+              relevant,
+              ...(r.score !== undefined ? { score: r.score } : {}),
+            },
+          ];
+    });
+  const sets: Record<string, PrefilterPair[]> = {
+    r1: pairsFor((f, w) => r1.get(f)?.[w]?.relevant),
+    'r1=r2': pairsFor((f, w) => {
+      const a = r1.get(f)?.[w]?.relevant;
+      const b = r2.get(f)?.[w]?.relevant;
+      return a !== undefined && a === b ? a : undefined;
+    }),
+    hand: pairsFor((f, w) => hand.get(f)?.[w]?.relevant),
+  };
+  const gold = new Map(
+    probes.map((p) => [
+      `pool:${p.id}`,
+      new Set(p.kind === 'positive' ? (p.gold?.domains ?? []) : []),
+    ]),
+  );
+  const domainOf = new Map(
+    [...loadRoster(values.settings, values.knowledge).ids].map(([domain, id]) => [id, domain]),
+  );
+  const probePairs = scored
+    .filter((r) => gold.has(r.fixtureId))
+    .map(
+      (r): PrefilterPair => ({
+        momentId: r.fixtureId,
+        wardenId: r.wardenId,
+        ...(gold.get(r.fixtureId)!.has(domainOf.get(r.wardenId) ?? '') ? { relevant: true } : {}),
+        ...(r.score !== undefined ? { score: r.score } : {}),
+      }),
+    );
+  if (probePairs.length) Object.assign(sets, { probes: probePairs });
+  const scores = Object.fromEntries(
+    Object.entries(sets).map(([k, pairs]) => [k, scorePrefilter(pairs)]),
+  );
+  const byTrigger = Object.fromEntries(
+    [...new Set(fixtures.map((f) => f.trigger.kind))].map((kind) => {
+      const ids = new Set(fixtures.filter((f) => f.trigger.kind === kind).map((f) => f.id));
+      return [kind, scorePrefilter(sets.r1.filter((p) => ids.has(p.momentId)))];
+    }),
+  );
+  // Per Warden, at the r1 thresholds that hold 80% and 90% recall overall.
+  const at = (t: number | undefined, pairs: readonly PrefilterPair[]) => {
+    if (t === undefined) return null;
+    const relevant = pairs.filter((p) => p.relevant);
+    const asked = (p: PrefilterPair) => p.score === undefined || p.score >= t;
+    return {
+      recall: relevant.length
+        ? Math.round((relevant.filter(asked).length / relevant.length) * 1000) / 1000
+        : null,
+      skip: Math.round((pairs.filter((p) => !asked(p)).length / (pairs.length || 1)) * 1000) / 1000,
+    };
+  };
+  const t80 = scores.r1!.skipAtRecall['0.8']?.threshold;
+  const t90 = scores.r1!.skipAtRecall['0.9']?.threshold;
+  const perWarden = Object.fromEntries(
+    [...new Set(sets.r1.map((p) => p.wardenId))].sort().map((w) => {
+      const pairs = sets.r1.filter((p) => p.wardenId === w);
+      return [
+        w,
+        {
+          relevant: pairs.filter((p) => p.relevant).length,
+          at80: at(t80, pairs),
+          at90: at(t90, pairs),
+        },
+      ];
+    }),
+  );
+  const summary = {
+    fixtures: fixtures.length,
+    unscored: scored.filter((r) => r.score === undefined).length,
+    scores,
+    byTrigger,
+    perWarden,
+    consistency,
+    ...(latencies.length ? { latencyMs: percentiles(latencies) } : {}),
+    ...(rssMb ? { serverFootprintMb: Math.round(rssMb) } : {}),
+  };
+  writePrivate(join(out, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);
+  const line = (name: string, s: ReturnType<typeof scorePrefilter>) =>
+    `${name.padEnd(13)} pairs ${String(s.pairs).padStart(6)} relevant ${String(s.relevant).padStart(5)}  auroc ${s.auroc ?? '-'}  recall@skip50 ${s.recallAtSkip['0.5'] ?? '-'}  skip@recall80 ${s.skipAtRecall['0.8']?.skipRate ?? '-'} (t ${s.skipAtRecall['0.8']?.threshold ?? '-'})  skip@recall90 ${s.skipAtRecall['0.9']?.skipRate ?? '-'} (t ${s.skipAtRecall['0.9']?.threshold ?? '-'})`;
+  for (const [name, s] of Object.entries(scores)) console.log(line(name, s));
+  for (const [name, s] of Object.entries(byTrigger)) console.log(line(name, s));
+  console.log(`per Warden at t80=${t80} / t90=${t90} (relevant, recall/skip):`);
+  for (const [w, r] of Object.entries(perWarden))
+    console.log(
+      `  ${w.padEnd(24)} ${String(r.relevant).padStart(4)}  ${r.at80?.recall}/${r.at80?.skip}  ${r.at90?.recall}/${r.at90?.skip}`,
+    );
+  if (Object.keys(consistency).length) console.log(`consistency ${JSON.stringify(consistency)}`);
+  if (summary.latencyMs)
+    console.log(
+      `latency per trigger ${JSON.stringify(summary.latencyMs)} ms; server footprint ${summary.serverFootprintMb} MB`,
+    );
+  console.log(`run: ${out}`);
+}
+
+const commands: Record<string, () => unknown> = { build, label, assemble, sample, agree, measure };
 const run = command ? commands[command] : undefined;
 if (!run) {
-  console.error('usage: warden-prefilter.ts build|label|assemble|sample|agree [options]');
+  console.error('usage: warden-prefilter.ts build|label|assemble|sample|agree|measure [options]');
   process.exit(2);
 }
 await run();

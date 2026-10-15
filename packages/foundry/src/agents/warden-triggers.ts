@@ -1,15 +1,17 @@
 // ---------------------------------------------------------------------------
 // Warden trigger points — the moments a Warden is asked
 //
-// Every Warden a trigger point reaches is asked, and decides under the fixed charter
-// (`warden-charter.ts`) whether it has anything to add. NO_COMMENT is the default answer and adds
-// nothing to the thread. There is no relevance prefilter: deciding what is in a domain is the
-// Warden's job, for any system, language or preference, and a missed ask would fail silently. Load is
-// handled by sizing the decision queue, not by asking fewer Wardens.
+// Every Warden a trigger point reaches is asked, unless the pre-filter (`prefilter` in settings, off
+// by default; providers/warden-prefilter.ts) is on and confident the moment is outside its domain, and
+// decides under the fixed charter (`warden-charter.ts`) whether it has anything to add. NO_COMMENT
+// is the default answer and adds nothing to the thread. The pre-filter fails open: an unsure score,
+// a failed call or a missing model asks the Warden, and every skip is journalled with its score, so a
+// missed ask is auditable.
 //
 // Implemented:
 //   - `user-message` (advice phase): every Warden, on every user message;
-//   - `agent-action` (guard phase): every Warden whose `guardTriggers` names the tool.
+//   - `agent-action` (guard phase): every Warden whose `guardTriggers` names the tool;
+//   - after the work, every Warden's post-work review (pre-filtered as `post-turn`).
 // Next, each with its own input, protocol text and NO_COMMENT default:
 //   - `subagent-spawn`: brief the handoff when the agent delegates;
 //   - `agent-question`: answer on the user's behalf when confident and backed by a recorded ruling;

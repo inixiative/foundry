@@ -296,6 +296,8 @@ test('full subscription startup reaches viewer with no API provider requests or 
         ...env,
         VIEWER_PORT: '0',
         FOUNDRY_STARTUP_SELF_TEST: '0',
+        // No pre-filter model, whatever this machine has installed: its server is probed only when present.
+        FOUNDRY_MODELS: join(f.root, 'models'),
         ARCHIVE_URL: process.env.ARCHIVE_URL,
         ARCHIVE_TOKEN: process.env.ARCHIVE_TOKEN,
         OPENAI_API_KEY: 'synthetic-never-send',

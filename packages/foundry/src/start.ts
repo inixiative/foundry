@@ -66,7 +66,9 @@ import {
   type SessionAdapter,
   SessionBackedProvider,
 } from './providers';
+import { startPrefilterServer } from './providers/prefilter-model';
 import { ThreadLaunchSettings } from './providers/thread-launch';
+import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
 import { BunScript } from './tools/bun-script';
@@ -520,6 +522,31 @@ const templateAgents = buildAgents(config, templateStack, { provider, tokenTrack
 
 const eventStream = new EventStream();
 
+// The Warden pre-filter (settings `prefilter`, off by default): when turned on, a local decision model
+// skips a Warden on a confident "not my domain". Off, no model server starts and every Warden is
+// asked. On with its model missing or down, every Warden is asked and the viewer and log say so.
+const prefilterSettings = resolvePrefilterSettings(config.prefilter);
+const prefilterServer = prefilterSettings.enabled
+  ? await startPrefilterServer(prefilterSettings)
+  : undefined;
+const prefilter = prefilterSettings.enabled
+  ? new WardenPrefilter(config.prefilter, {
+      onHealth: (health) => {
+        if (health.ok) return console.log('Warden pre-filter: ready');
+        const message = `Warden pre-filter unavailable (${health.reason}); every Warden is asked`;
+        console.warn(`[warden-prefilter] ${message}`);
+        eventStream.pushError('warden-prefilter', message, 'warn');
+      },
+    })
+  : undefined;
+if (prefilterServer?.status === 'not-installed') {
+  // Every Warden is asked; say so in the log and the viewer without probing the network.
+  const message =
+    'Warden pre-filter model not installed (run `foundry-acp setup`); every Warden is asked';
+  console.warn(`[warden-prefilter] ${message}`);
+  eventStream.pushError('warden-prefilter', message, 'warn');
+} else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
+
 // atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
 const atlasRoot =
   Object.values(config.projects)
@@ -544,6 +571,7 @@ const runtimeManager = new ThreadRuntimeManager({
     decisionModel,
   ),
   eventStream,
+  ...(prefilter ? { prefilter } : {}),
   atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
@@ -883,6 +911,7 @@ const shutdown = async () => {
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();
+  prefilterServer?.stop();
   viewer.server.stop();
   viewer.localStore?.close();
   await shutdownWorker();

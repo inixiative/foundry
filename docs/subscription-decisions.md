@@ -133,11 +133,42 @@ The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. A
 
 The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
-## Warden pre-filtering (not built)
+## Warden pre-filter
 
-Every Warden runs on every message; nothing decides beforehand which Wardens a message needs. Pre-filtering was considered and set aside (2026-10-12) because it is not easy to do well.
+**Off by default** (Aron, 2026-10-15: "leave pre-filtering on but switch it off for now until we figure out if we can make it work"). The code stays in Foundry; no local model clears the bar yet (below). Off, every Warden is asked on every trigger, no model server starts, `foundry-acp setup` downloads nothing, and neither `bun run doctor` nor the viewer mentions a model.
 
-If it returns to the roadmap, the natural shape is a dedicated classification model rather than another chat decision: one bounded "which domains does this message touch?" judgment per message, gating the Warden fan-out. Jev ([TypeSafe / Jev decisions](typesafe-jev.md)) is one candidate; its Choice and Noul primitives fit that question, and its shadow runner already measures a gate-then-choose policy. This does not have to be hosted. Open-weight classifiers that run locally are reportedly as good or better and faster; evaluate them against the same fixtures before choosing.
+When turned on (`prefilter.enabled: true`), before a trigger point fans out to the Wardens, one local decision-model call asks, per Warden, whether the moment is about its domain. A Warden is skipped only on a confident no (its score below `skipBelow`); an unsure score, a failed call or a missing model asks it, as without the pre-filter. It runs at both ends of a turn: before (the user's message, the advice phase) and after (each agent action that reaches a Warden's guard, and the post-work review of the finished turn).
+
+- **Model.** Kev-4B (Jared Palmer, Apache-2.0: a LoRA and pointer head on Qwen3.5-4B-Base, MLX on Apple Silicon), served on this machine on TypeSafe's System One API (`POST /v1/systemone`), so the call is `TypeSafeDecisionClient` with a `baseUrl` (`providers/warden-prefilter.ts`). One request per trigger carries one yes/no question per Warden: "Is this about <the Warden's instructions, without its opener>?" over a bounded view of the moment and the thread state (core `feedback/warden-prefilter.ts`). The moment never leaves the machine: `baseUrl` must be loopback.
+- **Install.** Opt-in: `foundry-acp setup` installs it only when the daemon's settings turn the pre-filter on (`providers/prefilter-model.ts`): the pinned server source, its uv environment and the pinned weights, all under `~/.foundry/models` (`FOUNDRY_MODELS` overrides), about 9 GB. It needs `uv` (`brew install uv`) and `git`. The daemon starts the server at its own start (so turning it on needs a daemon restart) on the `decisions` port, 8680 in Foundry's block (registry entry pending in inixiative/config#8; the code's default does not read the registry), and stops it on shutdown; a server already answering there is used as is.
+- **On, but missing or down.** Every Warden is asked, exactly as without it. The daemon log, the viewer's event stream (`warden-prefilter`, a warning) and `bun run doctor` (`prefilter-not-installed` or `prefilter-unavailable`, warnings, never errors) say so. Nothing is silent.
+- **Journal.** Every skip is recorded with its score: the advice row's `prefiltered` list and `prefilter` call (`status`, `elapsedMs`, `skipped`), the guard outcome's `prefiltered`, and a review's `prefiltered` learning record (`pre-filter score 0.031 < 0.1`). Oracle can audit the misses.
+- **Settings.** `prefilter`, off by default:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `prefilter.enabled` | `false` | Off asks every Warden on every trigger, makes no pre-filter call and starts no model server. `true` opts in. |
+| `prefilter.baseUrl` | `http://127.0.0.1:8680` | The local System One server; loopback only. |
+| `prefilter.model` | `kev-latest` | The server's model name. |
+| `prefilter.skipBelow` | `0.26` | Skip a Warden when its score is below this. |
+| `prefilter.timeoutMs` | `3000` | One call per trigger; past it every Warden is asked. |
+
+**Measured** (`bun scripts/evals/warden-prefilter.ts measure`, 2026-10-14; the Prospector's 740 labelled moments, Opus run-1 labels, plus the 599 charter probes; this MacBook Pro M1 Max, 64 GB):
+
+Recall is the share of (moment, Warden) pairs labelled relevant that are still asked; skip is the share of all pairs not asked. "r1" is the Opus run-1 labels on the 740 fixtures (the primary bar: broad, so conservative for a fail-open filter); "hand" is the 50 hand-checked fixtures; "probes" labels only each probe's gold Wardens (the rest count toward skips). Chance would skip 20% at 80% recall.
+
+| Model (local, System One API) | Pairs | AUROC (r1) | Recall at 50% skip (r1) | Skip at 80% recall: r1 / hand / probes | Skip at 90% recall: r1 / hand / probes | Same decision on repeat | Latency per trigger p50 / p95 | Memory (physical) |
+|---|---|---|---|---|---|---|---|---|
+| Kev-4B (Qwen3.5-4B + LoRA, MLX bf16) | subset: 150 fixtures + 100 probes | 0.673 | 0.708 | 38% / 45% / 18% | 26% / 34% / 6% | 100% | 3.98 s / 4.62 s | 9.9 GB |
+| Kev-0.8B (same subset) | 150 + 100 | 0.575 | 0.582 | 28% / 28% / 23% | 16% / 15% / 12% | 100% | 0.74 s / 0.88 s | 3.1 GB |
+| Kev-0.8B (all) | 740 fixtures + 599 probes | 0.582 | 0.596 | 28% / 28% / 27% | 17% / 15% / 15% | 100% | 0.75 s / 0.88 s | 3.1 GB |
+| Laya (ModernBERT-large) | 740 + 599 | 0.553 | 0.568 | 25% / 15% / 23% | 13% / 9% / 11% | 100% | 0.91 s / 1.25 s | 0.3 GB RSS |
+
+By trigger, Kev-4B is best on the user's message (51% skipped at 80% recall, AUROC 0.74) and agent plans (45%), and weak on agent actions (25%) and finished turns (the probes, 18%). Within a Warden the topic Wardens separate (frontend, schema, security, types) and the process Wardens (intent, surface, verify, assumptions) do not.
+
+**Status: not passing.** No model clears 80% recall with a skip rate worth its cost on this machine: Kev-0.8B is fast but barely beats chance, and Kev-4B adds 4–4.6 s before any Warden can start and about 10 GB. So the setting ships off by default.
+
+Laya (ConvAI's ModernBERT-large decision model) was tried first and dropped: on the probes it recalled 0.53 of relevant Wardens while skipping half (chance is 0.5) and skipped only 23% at 80% recall; on the fixtures its AUROC was 0.55.
 
 ## Ownership and bounds
 

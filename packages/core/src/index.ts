@@ -205,6 +205,23 @@ export {
   wardenLabelPrefix,
 } from './feedback/warden-labels';
 export {
+  PREFILTER_CONTEXT_CHARS,
+  PREFILTER_DESCRIPTION_CHARS,
+  PREFILTER_MOMENT_CHARS,
+  PREFILTER_SWEEP,
+  type PrefilterPair,
+  type PrefilterPoint,
+  type PrefilterScore,
+  type PrefilterTrigger,
+  percentiles,
+  prefilterConsistency,
+  prefilterDescription,
+  prefilterQuestion,
+  prefilterSkips,
+  prefilterState,
+  scorePrefilter,
+} from './feedback/warden-prefilter';
+export {
   type CharterScore,
   parseWardenJudgement,
   scoreCharterRun,
