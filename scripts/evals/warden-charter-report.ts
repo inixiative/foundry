@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { createHash } from 'node:crypto';
 /**
  * Report a charter eval run (scripts/evals/warden-charter.ts) the way the Warden "after" score is read:
  * anticipated corrections with confidence intervals, the pointer ladder, how many Wardens fire per
@@ -7,7 +6,13 @@ import { createHash } from 'node:crypto';
  * probes.
  *
  *   bun scripts/evals/warden-charter-report.ts --run <run dir> --probes <probes.jsonl> \
- *     [--baseline <run dir>] [--judge-pointers] [--out <report.json>]
+ *     [--baseline <run dir>] [--judge-pointers] [--routing <scores.jsonl>] [--out <report.json>]
+ *
+ * --routing takes a router run's per-moment scores (`warden-prefilter.ts measure`: one
+ * `{fixtureId, wardenId, score}` row per probe and region) and scores the same answers again as if only
+ * the routed regions had been asked: at k = 2, 4, 8 the routed set is the top-k regions by score, among
+ * those scored above zero. "Anticipated when routed" beside the full fan-out number is what routing
+ * costs; the regions firing per moment sizes the live warm set.
  *
  * --judge-pointers grades every remark made on a positive probe with a labelled target on the pointer
  * ladder (exact / candidates / class / wrong; Opus, as the size test does), cached in the run's
@@ -16,6 +21,7 @@ import { createHash } from 'node:crypto';
  * baseline only / neither) says whether the difference is more than noise. Reads the run; writes only
  * the pointer cache and the report (default <run>/report.json).
  */
+import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -44,6 +50,7 @@ const { values } = parseArgs({
     probes: { type: 'string' },
     baseline: { type: 'string' },
     'judge-pointers': { type: 'boolean' },
+    routing: { type: 'string' },
     out: { type: 'string' },
   },
 });
@@ -262,6 +269,14 @@ function measure(r: ReturnType<typeof loadRun>, probes: readonly WardenProbe[]) 
       ).length,
   );
   const sortedYes = [...yesPerTurn].sort((a, b) => a - b);
+  const buckets: [string, (n: number) => boolean][] = [
+    ['0', (n) => n === 0],
+    ['1', (n) => n === 1],
+    ['2', (n) => n === 2],
+    ['3-4', (n) => n >= 3 && n <= 4],
+    ['5-8', (n) => n >= 5 && n <= 8],
+    ['9+', (n) => n >= 9],
+  ];
   const negativeTurns = turns.filter((t) => negatives.some((p) => p.id === t.probeId));
   const negYes = negativeTurns.map(
     (t) =>
@@ -335,6 +350,7 @@ function measure(r: ReturnType<typeof loadRun>, probes: readonly WardenProbe[]) 
       p95: pct(sortedYes, 95),
       max: sortedYes.at(-1) ?? null,
       silentMoments: yesPerTurn.filter((n) => n === 0).length,
+      histogram: Object.fromEntries(buckets.map(([b, f]) => [b, yesPerTurn.filter(f).length])),
     },
     perWarden: Object.fromEntries(
       [...perWarden].sort((a, b) => b[1].yes - a[1].yes).map(([d, w]) => [d, w]),
@@ -444,6 +460,81 @@ if (values.baseline) {
       baselineOnly: pos.filter((p) => !a.has(p.id) && b.has(p.id)).length,
       neither: pos.filter((p) => !a.has(p.id) && !b.has(p.id)).length,
     },
+  };
+}
+if (values.routing) {
+  // Ranked regions per probe: those the router scored above zero, best first.
+  const scores = new Map<string, { region: string; score: number }[]>();
+  for (const row of readJsonl<{ fixtureId: string; wardenId: string; score: number }>(
+    resolve(values.routing),
+  )) {
+    if (!(row.score > 0)) continue;
+    scores.set(row.fixtureId, [
+      ...(scores.get(row.fixtureId) ?? []),
+      { region: row.wardenId, score: row.score },
+    ]);
+  }
+  const ranked = (probeId: string) =>
+    (scores.get(probeId) ?? [])
+      .sort((a, b) => b.score - a.score || a.region.localeCompare(b.region))
+      .map((r) => r.region);
+  const routedIds = new Set(
+    readJsonl<{ fixtureId: string }>(resolve(values.routing)).map((r) => r.fixtureId),
+  );
+  const probes = after.probes.filter((p) => routedIds.has(p.id));
+  const positives = probes.filter((p) => p.kind === 'positive');
+  const fullFanOut = new Set(after.answers.filter(matched).map((a) => a.probeId));
+  report.routed = {
+    scores: resolve(values.routing),
+    probesWithRouting: probes.length,
+    positivesWithRouting: positives.length,
+    fullFanOutOnThese: withCI(
+      positives.filter((p) => fullFanOut.has(p.id)).length,
+      positives.length,
+    ),
+    atK: Object.fromEntries(
+      [2, 4, 8].map((k) => {
+        const routedFor = (probeId: string) => new Set(ranked(probeId).slice(0, k));
+        const said = new Set(
+          after.answers
+            .filter((a) => matched(a) && routedFor(a.probeId).has(a.domain))
+            .map((a) => a.probeId),
+        );
+        const turns = after.turns.filter((t) => routedIds.has(t.probeId));
+        const perTurn = turns.map(
+          (t) =>
+            after.answers.filter(
+              (a) =>
+                a.probeId === t.probeId &&
+                (a.trigger ?? 'agent-action') === (t.trigger ?? 'agent-action') &&
+                yes(a) &&
+                routedFor(a.probeId).has(a.domain),
+            ).length,
+        );
+        const wrong = after.answers.filter(
+          (a) =>
+            routedIds.has(a.probeId) &&
+            yes(a) &&
+            !a.judged?.matches &&
+            routedFor(a.probeId).has(a.domain),
+        ).length;
+        return [
+          k,
+          {
+            anticipated: withCI(positives.filter((p) => said.has(p.id)).length, positives.length),
+            askedPerMoment: rate(
+              turns.reduce((n, t) => n + Math.min(k, ranked(t.probeId).length), 0),
+              turns.length,
+            ),
+            yesPerMoment: rate(
+              perTurn.reduce((a, b) => a + b, 0),
+              perTurn.length,
+            ),
+            wrongRemarksPerMoment: rate(wrong, turns.length),
+          },
+        ];
+      }),
+    ),
   };
 }
 const outFile = values.out ? resolve(values.out) : join(run, 'report.json');
