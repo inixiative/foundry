@@ -31,6 +31,8 @@ export interface CorrectionEvent {
   readonly timestamp: string;
   /** What the agent said right before the correction ('' at the start of a session). */
   readonly before: string;
+  /** The person's previous message: what the agent was answering when it earned the correction. */
+  readonly ask?: string;
   /** The person's message. */
   readonly correction: string;
   /** The strongest signal, and every signal that fired. */
@@ -167,6 +169,7 @@ export function extractCorrections(
   const minScore = options.minScore ?? 0;
   const corrections: CorrectionEvent[] = [];
   let before = '';
+  let ask = '';
   let pendingInterruption = false;
   let secretsScrubbed = 0;
   // An identical message resent within ten minutes is one correction, not a repeat.
@@ -181,6 +184,8 @@ export function extractCorrections(
     if (!text.trim()) continue;
     const detection = detectCorrection(text, before, { interrupted: pendingInterruption });
     pendingInterruption = false;
+    const previousAsk = ask;
+    ask = text.trim();
     const key = text.toLowerCase().replace(/\s+/g, ' ').trim();
     const at = Date.parse(turn.timestamp);
     const sent = recent.get(key);
@@ -190,12 +195,14 @@ export function extractCorrections(
     // Scrub before truncating, so a cut can't leave part of a secret unmatched.
     const scrubbedBefore = scrubSecrets(before);
     const scrubbedText = scrubSecrets(text.trim());
-    secretsScrubbed += scrubbedBefore.hits + scrubbedText.hits;
+    const scrubbedAsk = scrubSecrets(previousAsk);
+    secretsScrubbed += scrubbedBefore.hits + scrubbedText.hits + scrubbedAsk.hits;
     const event = {
       ...(turn.id ? { messageId: turn.id } : {}),
       ...(turn.sourceRef ? { sourceRef: turn.sourceRef } : {}),
       timestamp: turn.timestamp,
       before: scrubbedBefore.text.slice(-2000),
+      ...(scrubbedAsk.text ? { ask: scrubbedAsk.text.slice(0, 4000) } : {}),
       correction: scrubbedText.text.slice(0, 4000),
       signal: detection.signal,
       signals: detection.signals,

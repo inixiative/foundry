@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test';
 import {
   parseWardenJudgement,
+  probeTriggers,
   scoreCharterRun,
   type WardenProbe,
   type WardenProbeAnswer,
+  wardenJudgeMessage,
 } from '../src/feedback/warden-probes';
 
 const probes: WardenProbe[] = [
@@ -85,6 +87,65 @@ test('silence, speech, scope and recall are scored against who owns the correcti
     maxMs: 300,
     notAdmitted: 1,
   });
+});
+
+test('anticipation counts any Warden at any trigger; wrong remarks are counted per trigger', () => {
+  const asked: WardenProbe[] = [
+    { id: 'a1', kind: 'positive', ctx: 'x', moment: '', ask: 'add retries', hidden: 'h' },
+    { id: 'a2', kind: 'positive', ctx: 'x', moment: 'turn', ask: 'ship it', hidden: 'h' },
+    { id: 'a3', kind: 'negative', ctx: 'x', moment: 'turn' },
+  ];
+  expect(probeTriggers(asked[0]!)).toEqual(['user-message']);
+  expect(probeTriggers(asked[1]!)).toEqual(['user-message', 'agent-action']);
+  expect(probeTriggers(asked[2]!)).toEqual(['agent-action']);
+  const score = scoreCharterRun(asked, [
+    { ...said('a1', 'reuse', true), trigger: 'user-message' }, // said first, before the agent worked
+    { ...said('a2', 'ship', false), trigger: 'user-message' },
+    { ...quiet('a2', 'ship'), trigger: 'agent-action' },
+    { ...said('a3', 'lean', false), trigger: 'agent-action' },
+  ]);
+  expect(score).toMatchObject({
+    anticipated: 0.5,
+    recall: null, // no gold domains: owner recall does not apply
+    wrongRemarks: 2,
+    wrongPerProbe: 0.667,
+  });
+  expect(score.byTrigger['user-message']).toEqual({
+    probes: 2,
+    positives: 2,
+    anticipated: 0.5,
+    remarks: 2,
+    speakPrecision: 0.5,
+    wrongRemarks: 1,
+  });
+  expect(score.byTrigger['agent-action']).toMatchObject({
+    probes: 2,
+    positives: 1,
+    anticipated: 0,
+  });
+});
+
+test('the judge sees what the Warden saw at its trigger', () => {
+  const before = wardenJudgeMessage({
+    domain: 'reuse',
+    domainDescription: 'd',
+    moment: 'agent turn',
+    ask: 'user ask',
+    trigger: 'user-message',
+    remark: 'r',
+    hidden: 'h',
+  });
+  expect(before).toContain("## The user's message\n\nuser ask");
+  expect(before).toContain('the Warden did not see it');
+  const after = wardenJudgeMessage({
+    domain: 'reuse',
+    domainDescription: 'd',
+    moment: 'agent turn',
+    remark: 'r',
+    hidden: '',
+  });
+  expect(after).toContain('## Agent turn\n\nagent turn');
+  expect(after).toContain('without correcting it');
 });
 
 test('a judge answer parses strictly', () => {

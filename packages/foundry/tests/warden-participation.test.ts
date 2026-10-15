@@ -647,3 +647,80 @@ test('the charter eval asks every Warden per probe as one turn, under the candid
     }),
   ]);
 });
+
+test('the charter eval advises on the user ask at the user-message trigger and guards the turn at agent-action', async () => {
+  const { runCharterEval } = await import('../src/feedback/charter-eval');
+  const judged: string[] = [];
+  const { answers, turns } = await runCharterEval({
+    probes: [
+      { id: 'h1', kind: 'positive', ctx: 'x', moment: '', ask: 'Add makeApiError', hidden: 'no' },
+      { id: 's1', kind: 'positive', ctx: 'x', moment: 'Added it.', ask: 'Add it', hidden: 'no' },
+    ],
+    wardensFor: () => [
+      { domain: 'reuse', instructions: 'Reuse Warden', domainKnowledge: '`makeError` exists.' },
+      { domain: 'prose', instructions: 'Prose Warden', domainKnowledge: '' },
+    ],
+    triggers: ['user-message', 'agent-action'],
+    warden: {
+      id: 'w',
+      async complete(messages) {
+        const advice = text(messages).includes('advice phase');
+        return {
+          model: 'x',
+          content:
+            advice && text(messages).includes('makeApiError')
+              ? JSON.stringify({ snippets: ['Use makeError.'], layers: [], confidence: 0.9 })
+              : NO_COMMENT,
+        };
+      },
+    },
+    judge: {
+      id: 'j',
+      async complete(messages) {
+        judged.push(text(messages));
+        return { model: 'x', content: '{"matches":true,"inDomain":true}' };
+      },
+    },
+  });
+  // h1 recorded only the ask; s1 recorded both, so it is asked twice.
+  expect(turns.map((t) => [t.probeId, t.trigger])).toEqual([
+    ['h1', 'user-message'],
+    ['s1', 'user-message'],
+    ['s1', 'agent-action'],
+  ]);
+  expect(answers.filter((a) => !a.noComment && !a.error)).toEqual([
+    expect.objectContaining({
+      probeId: 'h1',
+      domain: 'reuse',
+      trigger: 'user-message',
+      text: 'Use makeError.',
+    }),
+  ]);
+  // A Warden with no domain knowledge is cold: reported, never counted as silence.
+  expect(answers.filter((a) => a.error).map((a) => a.error)).toEqual([
+    'cold-cache',
+    'cold-cache',
+    'cold-cache',
+  ]);
+  expect(judged[0]).toContain("## The user's message");
+});
+
+test('the charter eval asks a Warden again when the transport lost the call, never for its answer', async () => {
+  const { runCharterEval } = await import('../src/feedback/charter-eval');
+  let calls = 0;
+  const { answers } = await runCharterEval({
+    probes: [{ id: 'p', kind: 'negative', ctx: 'x', moment: 'Ran the check.' }],
+    wardensFor: () => [{ domain: 'ship', instructions: 'Ship Warden', domainKnowledge: 'k' }],
+    retryDelayMs: 1,
+    warden: {
+      id: 'w',
+      async complete() {
+        if (++calls < 3) throw Error('Subscription decision failed; no fallback or retry');
+        return { model: 'x', content: NO_COMMENT };
+      },
+    },
+    judge: { id: 'j', complete: async () => ({ model: 'x', content: '{}' }) },
+  });
+  expect(calls).toBe(3);
+  expect(answers).toEqual([expect.objectContaining({ domain: 'ship', noComment: true })]);
+});

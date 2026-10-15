@@ -224,11 +224,13 @@ export {
 export {
   type CharterScore,
   parseWardenJudgement,
+  probeTriggers,
   scoreCharterRun,
   WARDEN_JUDGE_PROMPT,
   type WardenJudgement,
   type WardenProbe,
   type WardenProbeAnswer,
+  type WardenProbeTrigger,
   type WardenProbeTurn,
   wardenJudgeMessage,
 } from './feedback/warden-probes';
