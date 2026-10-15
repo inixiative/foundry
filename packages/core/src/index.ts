@@ -267,6 +267,7 @@ export {
   type WardenProbeTurn,
   wardenJudgeMessage,
   wardenPointerJudgeMessage,
+  wilsonInterval,
 } from './feedback/warden-probes';
 export {
   type FlowConfig,
