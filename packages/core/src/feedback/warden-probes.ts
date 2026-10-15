@@ -163,6 +163,16 @@ function percentile(sorted: readonly number[], p: number): number {
 
 const ratio = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 1000 : null);
 
+/** The 95% Wilson interval of `n` successes in `d` trials, to three places; null when nothing was tried. */
+export function wilsonInterval(n: number, d: number): [number, number] | null {
+  if (!d) return null;
+  const z = 1.96;
+  const p = n / d;
+  const centre = (p + (z * z) / (2 * d)) / (1 + (z * z) / d);
+  const half = (z * Math.sqrt((p * (1 - p)) / d + (z * z) / (4 * d * d))) / (1 + (z * z) / d);
+  return [Math.round((centre - half) * 1000) / 1000, Math.round((centre + half) * 1000) / 1000];
+}
+
 /**
  * Score one charter run. "Nothing applied" means a negative probe, or a positive probe whose gold
  * domains do not include this Warden; a remark there that the judge matched to the real correction

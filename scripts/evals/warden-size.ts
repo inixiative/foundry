@@ -44,6 +44,7 @@ import {
   type WardenProbe,
   type WardenProbeAnswer,
   wardenPointerJudgeMessage,
+  wilsonInterval as wilson,
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
@@ -858,15 +859,6 @@ const pct = (sorted: readonly number[], p: number) =>
     ? sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!
     : null;
 const rate = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 1000 : null);
-/** 95% Wilson interval. */
-const wilson = (n: number, d: number): [number, number] | null => {
-  if (!d) return null;
-  const z = 1.96;
-  const p = n / d;
-  const centre = (p + (z * z) / (2 * d)) / (1 + (z * z) / d);
-  const half = (z * Math.sqrt((p * (1 - p)) / d + (z * z) / (4 * d * d))) / (1 + (z * z) / d);
-  return [Math.round((centre - half) * 1000) / 1000, Math.round((centre + half) * 1000) / 1000];
-};
 
 function report() {
   const judged = new Map(

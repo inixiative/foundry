@@ -8,7 +8,7 @@
  *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>] [--resume] \
  *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
- *     [--no-judge] [--regions <dir>]
+ *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -24,6 +24,9 @@
  * --input-cap lift the role budget and the decision input cap for this run only (the size test);
  * shipped defaults never change. A probe's `threadKnowledge` reaches the Warden as live supplies it.
  * --no-judge leaves remarks unjudged for a caller that grades them its own way (warden-size.ts).
+ * --primed-sessions sizes the primed pool (default under --session: the largest roster + 8, so no
+ * Warden is evicted between turns). --pause-at waits out the Claude login's five-hour window while
+ * it is at or above that percent; every window probe lands in <out>/quota.jsonl.
  *
  * --regions <dir> scores the region roster: the --projects project runs `wardens: regions` with that
  * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
@@ -55,7 +58,11 @@ import {
   runCharterEval,
 } from '../../packages/foundry/src/feedback/charter-eval';
 import { roleComposition } from '../../packages/foundry/src/prompts/instruction-settings';
-import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
+import {
+  claudeUsageWindows,
+  decisionHost,
+  privateDirectory,
+} from '../../packages/foundry/src/providers/decision-host';
 import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
 
@@ -80,6 +87,8 @@ const { values } = parseArgs({
     'input-cap': { type: 'string' },
     'no-judge': { type: 'boolean' },
     regions: { type: 'string' },
+    'primed-sessions': { type: 'string' },
+    'pause-at': { type: 'string' },
   },
 });
 const positive = (flag: string, value: string | undefined) => {
@@ -90,6 +99,8 @@ const positive = (flag: string, value: string | undefined) => {
 };
 const budgetOverride = positive('budget', values.budget);
 const inputCap = positive('input-cap', values['input-cap']);
+const primedSessionsOverride = positive('primed-sessions', values['primed-sessions']);
+const pauseAt = positive('pause-at', values['pause-at']);
 const onlyRoles = values.roles?.split(',').filter(Boolean);
 if (!values.probes) {
   console.error('usage: warden-charter.ts --probes <jsonl> [--foundry-dir <daemon .foundry dir>]');
@@ -326,13 +337,47 @@ const concurrency = Number(values.concurrency ?? 16);
 // An eval run, not work: Archive and the repeat report leave its sessions out.
 const state = privateDirectory(join(homedir(), '.foundry', 'evals'));
 markEvalRun(state);
-const wardens = decisionHost(
-  'claude-haiku-5-5',
-  'claude',
-  concurrency,
-  join(homedir(), '.foundry', 'evals'),
-  inputCap !== undefined ? { inputCap } : {},
-);
+/**
+ * Under --session every Warden holds one primed key; a pool smaller than the roster evicts and
+ * re-primes cold every turn. Sized as the daemon sizes its pool for its largest roster.
+ */
+const largestComposed = Math.max(0, ...[...composed.values()].map((w) => w.length));
+const primedSessions =
+  primedSessionsOverride ?? (values.session ? Math.max(16, largestComposed + 8) : undefined);
+const wardens = decisionHost('claude-haiku-5-5', 'claude', concurrency, state, {
+  ...(inputCap !== undefined ? { inputCap } : {}),
+  ...(primedSessions !== undefined ? { primedSessions } : {}),
+});
+if (primedSessions !== undefined) console.error(`primed sessions: ${primedSessions}`);
+/**
+ * --pause-at <percent>: before a turn, while the Claude login's five-hour window is at or above it,
+ * wait (10 min between checks; the window is probed at most every 2 min). Every probe of the window
+ * is appended to <out>/quota.jsonl with the machine's load, so the run's quota cost can be read off.
+ */
+const quotaFile = join(out, 'quota.jsonl');
+let lastWindowCheck = 0;
+const recordWindow = async (phase: string) => {
+  const windows = await claudeUsageWindows(state);
+  lastWindowCheck = Date.now();
+  appendFileSync(
+    quotaFile,
+    `${JSON.stringify({ at: new Date().toISOString(), phase, windows, load: Bun.spawnSync(['uptime']).stdout.toString().trim() })}\n`,
+    { mode: 0o600 },
+  );
+  return windows;
+};
+const quotaGate = async () => {
+  if (pauseAt === undefined) return;
+  if (Date.now() - lastWindowCheck < 120_000) return;
+  for (;;) {
+    const windows = await recordWindow('gate');
+    const used = windows?.five_hour;
+    if (used === undefined || used < pauseAt) return;
+    console.error(`${new Date().toISOString()} five-hour window at ${used}%: pausing 10 min`);
+    await Bun.sleep(600_000);
+  }
+};
+await recordWindow('start');
 const judges = values['no-judge'] ? undefined : decisionHost('claude-opus-5-5', 'claude', 4, state);
 const started = Date.now();
 const answersFile = join(out, 'answers.jsonl');
@@ -370,6 +415,7 @@ try {
     concurrency,
     triggers,
     done: (probeId, trigger) => finished.has(turnKey(probeId, trigger)),
+    beforeTurn: quotaGate,
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
     onAnswer: (answer) => {
       appendFileSync(answersFile, `${JSON.stringify(answer)}\n`);
@@ -413,4 +459,5 @@ try {
 } finally {
   await wardens.shutdown();
   await judges?.shutdown();
+  await recordWindow('end');
 }

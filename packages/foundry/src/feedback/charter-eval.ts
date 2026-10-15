@@ -67,6 +67,8 @@ export interface CharterEvalOptions {
   readonly retryDelayMs?: number;
   /** Turns an earlier run already finished (`--resume`): skipped. */
   readonly done?: (probeId: string, trigger: WardenProbeTrigger) => boolean;
+  /** Awaited before each turn is asked: a long run waits out the subscription's window here. */
+  readonly beforeTurn?: (probeId: string, trigger: WardenProbeTrigger) => Promise<void>;
   readonly onAnswer?: (answer: WardenProbeAnswer) => void;
   /** Called once a turn's answers are all judged and passed to `onAnswer`. */
   readonly onTurn?: (turn: WardenProbeTurn) => void;
@@ -90,6 +92,7 @@ export async function runCharterEval(
     for (const trigger of probeTriggers(probe).filter(
       (t) => wanted.includes(t) && !options.done?.(probe.id, t),
     )) {
+      await options.beforeTurn?.(probe.id, trigger);
       const started = Date.now();
       const asked: WardenProbeAnswer[] = new Array(wardens.length);
       let next = 0;
