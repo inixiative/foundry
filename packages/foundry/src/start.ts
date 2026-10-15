@@ -51,7 +51,7 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
-import { configuredExperts } from './agents/configured-experts';
+import { largestRoster } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
@@ -93,6 +93,7 @@ import {
   projectSources,
   starterConfig,
 } from './viewer/config';
+import { resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 
 // ---------------------------------------------------------------------------
@@ -175,6 +176,18 @@ if (subscription) {
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
+// Which roster each project's threads run (`wardens`): said at startup, so a regions directory that
+// did not resolve is never a silent fall-back to the hand-named roster.
+for (const [projectId, project] of Object.entries(config.projects ?? {})) {
+  if (project.enabled === false) continue;
+  const view = resolveProjectView(config, projectId);
+  if (!view || view.wardens.requested !== 'regions') continue;
+  console.log(
+    view.wardens.mode === 'regions'
+      ? `Wardens: project ${project.label ?? projectId} runs ${view.wardens.regions!.length} region Wardens from ${view.wardens.regionsDir} (classifier charter)`
+      : `Wardens: project ${project.label ?? projectId} asked for regions but ${view.wardens.reason}`,
+  );
+}
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
 // process (docs/THREAD-TREE.md spec C). Off by default.
 const setupListeners: Array<(threadId: string, setup: ThreadSetup) => void> = [];
@@ -204,7 +217,8 @@ const decisions = subscription
       ...(inSession ? { inSession } : {}),
       // Every decision role stays primed: an advice and a review key per Warden, plus the
       // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      primedSessions: Math.max(16, 2 * configuredExperts(config).experts.length + 8),
+      // Sized for the largest roster any project runs (a generated region roster is per project).
+      primedSessions: Math.max(16, 2 * largestRoster(config) + 8),
       onPressure: (event) => {
         const message =
           event.kind === 'shed'

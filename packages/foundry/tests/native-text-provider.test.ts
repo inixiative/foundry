@@ -2,6 +2,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
 import {
   buildNativeTextProvider,
   type NativeTextConfig,
@@ -285,7 +286,7 @@ test('scope and oversized input fail before spawning or consuming a call', async
     run.provider.complete([{ role: 'user', content: 'test' }], { model: 'other' }),
   ).rejects.toThrow('scope');
   await expect(
-    run.provider.complete([{ role: 'user', content: 'x'.repeat(100_001) }]),
+    run.provider.complete([{ role: 'user', content: 'x'.repeat(DECISION_INPUT_CAP + 1) }]),
   ).rejects.toThrow('input cap');
   expect(t.launches).toHaveLength(0);
   expect(run.snapshot().calls).toHaveLength(0);

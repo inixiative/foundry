@@ -8,7 +8,7 @@
  *     [--triggers user-message,agent-action] [--concurrency 16] [--out <dir>] [--resume] \
  *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
- *     [--no-judge]
+ *     [--no-judge] [--regions <dir>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -24,6 +24,12 @@
  * --input-cap lift the role budget and the decision input cap for this run only (the size test);
  * shipped defaults never change. A probe's `threadKnowledge` reaches the Warden as live supplies it.
  * --no-judge leaves remarks unjudged for a caller that grades them its own way (warden-size.ts).
+ *
+ * --regions <dir> scores the region roster: the --projects project runs `wardens: regions` with that
+ * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
+ * instructions, knowledge and charter are generated and composed exactly as a live thread of that
+ * project composes them (`resolveProjectView`, `buildRoleLayers`, `wardenCharter`). The daemon's
+ * settings file is read, never written. Requires exactly one --projects entry.
  */
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -41,10 +47,7 @@ import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { configuredExperts } from '../../packages/foundry/src/agents/configured-experts';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
-import {
-  WARDEN_CHARTER,
-  WARDEN_CHARTER_VERSION,
-} from '../../packages/foundry/src/agents/warden-charter';
+import { rosterMode, wardenCharter } from '../../packages/foundry/src/agents/warden-charter';
 import {
   type EvalWarden,
   judge,
@@ -53,7 +56,8 @@ import {
 } from '../../packages/foundry/src/feedback/charter-eval';
 import { roleComposition } from '../../packages/foundry/src/prompts/instruction-settings';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
-import { ConfigStore } from '../../packages/foundry/src/viewer/config';
+import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
+import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
 
 const { values } = parseArgs({
   options: {
@@ -75,6 +79,7 @@ const { values } = parseArgs({
     budget: { type: 'string' },
     'input-cap': { type: 'string' },
     'no-judge': { type: 'boolean' },
+    regions: { type: 'string' },
   },
 });
 const positive = (flag: string, value: string | undefined) => {
@@ -96,10 +101,14 @@ const perKind = Number(values['per-kind'] ?? 40);
 const triggers = (values.triggers ?? 'agent-action').split(',') as WardenProbeTrigger[];
 for (const t of triggers)
   if (t !== 'user-message' && t !== 'agent-action') throw Error(`unknown trigger ${t}`);
-const charter = values.charter ? readFileSync(values.charter, 'utf8').trim() : WARDEN_CHARTER;
-const label = values.charter
-  ? `charter-${computeHash(charter).slice(0, 12)}`
-  : WARDEN_CHARTER_VERSION;
+if (values.regions && projects?.length !== 1)
+  throw Error('--regions needs exactly one --projects entry: the project whose regions these are');
+const explicitCharter = values.charter ? readFileSync(values.charter, 'utf8').trim() : undefined;
+const label = explicitCharter
+  ? `charter-${computeHash(explicitCharter).slice(0, 12)}`
+  : values.regions
+    ? 'charter-regions'
+    : 'charter-roster';
 const out = values.out ?? join(homedir(), '.foundry', 'evals', `charter-${label}-${Date.now()}`);
 if (resolve(out).startsWith(`${resolve(import.meta.dir, '..', '..')}/`)) {
   console.error('--out must be outside the repository: answers hold session text');
@@ -136,16 +145,42 @@ const foundryDir = resolve(
 );
 const config = await new ConfigStore(foundryDir).load();
 const resolveSource = createSourceResolver({ memory: new FileMemory(join(foundryDir, 'memory')) });
-const roster = configuredExperts(config).experts.filter(
-  (r) => !onlyRoles || onlyRoles.includes(r.agentId),
-);
-if (onlyRoles && roster.length !== onlyRoles.length)
-  throw Error(`--roles names Wardens not in the roster: ${onlyRoles.join(', ')}`);
+/** The registered project a probe's project name (its directory's basename) refers to. */
+const projectEntry = (name: string | undefined) =>
+  Object.entries(config.projects ?? {}).find(([, p]) => name && basename(p.path ?? '') === name);
+if (values.regions) {
+  const entry = projectEntry(projects![0]);
+  if (!entry) throw Error(`--regions: project ${projects![0]} is not registered in ${foundryDir}`);
+  // In memory only: this run's view of the project runs the region roster from --regions.
+  entry[1].wardens = 'regions';
+  entry[1].regions = resolve(values.regions);
+  const view = resolveProjectView(config, entry[0])!;
+  if (view.wardens.mode !== 'regions') throw Error(`--regions: ${view.wardens.reason}`);
+  console.error(
+    `regions: ${view.wardens.regions!.length} region Wardens from ${view.wardens.regionsDir}`,
+  );
+}
+/** The config a thread of `projectId` composes under: its project view (generated roster included), else the global settings. */
+const viewOf = (projectId: string | undefined): FoundryConfig =>
+  (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config;
+const rosterOf = (projectId: string | undefined) => {
+  const roster = configuredExperts(viewOf(projectId)).experts.filter(
+    (r) => !onlyRoles || onlyRoles.includes(r.agentId),
+  );
+  if (onlyRoles && roster.length !== onlyRoles.length)
+    throw Error(`--roles names Wardens not in the roster: ${onlyRoles.join(', ')}`);
+  return roster;
+};
+/**
+ * The charter the run scores: an explicit wording, else the one the scored roster runs under live (one
+ * run, one charter: with --regions that project's; otherwise the roster's, which every place shares).
+ */
+const scoredProject = projects?.length === 1 ? projectEntry(projects[0])?.[0] : undefined;
+const charter =
+  explicitCharter ?? wardenCharter(rosterMode(viewOf(scoredProject), scoredProject)).text;
 /** The project and working directory a probe's thread would have run in. */
 const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
-  const entry = Object.entries(config.projects ?? {}).find(
-    ([, p]) => probe.project && basename(p.path ?? '') === probe.project,
-  );
+  const entry = projectEntry(probe.project);
   if (entry?.[1].path) return { projectId: entry[0], cwd: entry[1].path };
   return {
     cwd:
@@ -178,8 +213,9 @@ for (const probe of probes) {
   const key = `${place.projectId ?? ''}|${place.cwd}`;
   if (composed.has(key)) continue;
   const wardens: EvalWarden[] = [];
-  for (const { agentId, domain } of roster) {
-    const slots = buildRoleLayers(config, agentId, { resolveSource, scope: place });
+  const view = viewOf(place.projectId);
+  for (const { agentId, domain } of rosterOf(place.projectId)) {
+    const slots = buildRoleLayers(view, agentId, { resolveSource, scope: place });
     await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm()]);
     const knowledge =
       alternate('domainKnowledge.md', agentId, probe.project) ?? slots.domainKnowledge.content;
@@ -192,7 +228,7 @@ for (const probe of probes) {
       instructions:
         alternate('instructions.md', agentId, probe.project) ?? slots.instructions.content,
       domainKnowledge: knowledge,
-      budget: budgetOverride ?? roleComposition(config.composition, agentId).budget,
+      budget: budgetOverride ?? roleComposition(view.composition, agentId).budget,
       ...(values.session ? { session: `${values.session}:${agentId}` } : {}),
     });
   }
@@ -361,7 +397,7 @@ try {
         session: values.session,
         budget: budgetOverride,
         inputCap,
-        roster: roster.map((r) => r.domain),
+        roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],
         cold: Object.fromEntries(cold),
         score,
         byProject,

@@ -31,7 +31,12 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
-import { chartered } from './warden-charter';
+import {
+  chartered,
+  parseWardenPointer,
+  WARDEN_CHARTER_CLASSIFY,
+  type WardenPointer,
+} from './warden-charter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +50,8 @@ export interface AdviseResult {
   snippets: string[];
   /** Confidence in the recommendation (0-1). Low confidence = might be wrong. */
   confidence: number;
+  /** Under the classifier charter: the output contract read off the first snippet (`Look over here: …`). */
+  pointer?: WardenPointer;
   /** The Warden answered NO_COMMENT: it has nothing to add, and nothing reaches the thread. */
   noComment?: true;
   /** Why no call was made, when none was (e.g. a cold cache). */
@@ -558,6 +565,8 @@ export interface GuardFinding {
   location?: string;
   /** Suggested fix, if any. */
   suggestion?: string;
+  /** Under the classifier charter: the output contract read off the description (`Look over here: …`). */
+  pointer?: WardenPointer;
 }
 
 /** A tool call observation that guards evaluate. */
@@ -746,7 +755,7 @@ export interface DomainLibrarianConfig {
   reviewPrompt?: string;
   /** Maximum characters a reviewer may write as thread knowledge. Default 4 000. */
   maxKnowledgeChars?: number;
-  /** A candidate charter wording, for the charter eval only. Production runs WARDEN_CHARTER. */
+  /** The charter this Warden runs under (`wardenCharter`), or a candidate wording under evaluation. Default WARDEN_CHARTER. */
   charter?: string;
 }
 
@@ -1355,7 +1364,9 @@ export class DomainLibrarian {
     const validated = validateAdviceResponse(content);
     if ('error' in validated)
       return { layers: [], snippets: [], confidence: 0, error: validated.error };
-    return validated;
+    if (this._charter !== WARDEN_CHARTER_CLASSIFY || !validated.snippets.length) return validated;
+    // The classifier charter's contract: the first snippet is the pointer, read into its parts.
+    return { ...validated, pointer: parseWardenPointer(validated.snippets[0]!) };
   }
 
   // -----------------------------------------------------------------------
@@ -1507,9 +1518,13 @@ export class DomainLibrarian {
         ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
       };
     }
-    await this._emitFindings(validated.findings, observation);
+    const findings =
+      this._charter === WARDEN_CHARTER_CLASSIFY
+        ? validated.findings.map((f) => ({ ...f, pointer: parseWardenPointer(f.description) }))
+        : validated.findings;
+    await this._emitFindings(findings, observation);
     return {
-      findings: validated.findings,
+      findings,
       ...(validated.noComment ? { noComment: true as const } : {}),
       ran: true,
       status: 'completed',

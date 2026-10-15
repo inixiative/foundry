@@ -18,6 +18,7 @@ import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
+import type { WardensMode } from '../agents/warden-charter';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import {
@@ -105,6 +106,13 @@ export interface FoundryConfig {
    * Off by default (every Warden is asked); `{ "enabled": true }` opts in. See docs/subscription-decisions.md.
    */
   prefilter?: PrefilterSettings;
+  /**
+   * Which Warden roster runs: `roster` (default), the domain-advising agents in settings; or `regions`,
+   * one Warden per concept region of the project (`<project>/.foundry/regions/<id>/`), generated into
+   * the project view under the classifier charter. A project may set its own (`projects[id].wardens`).
+   * In a resolved project view this is the effective mode (docs/usage-and-context.md, "Region Wardens").
+   */
+  wardens?: WardensMode;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -223,6 +231,10 @@ export interface ProjectSettingsConfig {
   sources?: Record<string, DataSourceConfig>;
   /** Whether this project is enabled. Default: true. */
   enabled?: boolean;
+  /** This project's Warden roster mode; overrides the global `wardens`. */
+  wardens?: WardensMode;
+  /** Its regions directory under `wardens: "regions"`: absolute, or relative to `path`. Default `.foundry/regions`. */
+  regions?: string;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
   /** Required when `capacity` is `kingdom`. */
@@ -928,6 +940,11 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
   }
 }
 
+function validateWardensMode(where: string, mode: unknown): void {
+  if (mode !== undefined && mode !== 'roster' && mode !== 'regions')
+    throw Error(`${where} must be "roster" or "regions"`);
+}
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateProjectCapacity(config: FoundryConfig, project: ProjectSettingsConfig) {
@@ -1008,8 +1025,13 @@ export function validateConfig(config: FoundryConfig): void {
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   validatePrefilterSettings('prefilter', config.prefilter);
-  for (const [pid, project] of Object.entries(config.projects ?? {}))
+  validateWardensMode('wardens', config.wardens);
+  for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
+    validateWardensMode(`projects.${pid}.wardens`, project?.wardens);
+    if (project?.regions !== undefined && (typeof project.regions !== 'string' || !project.regions))
+      throw Error(`projects.${pid}.regions must be a path (absolute, or relative to the project)`);
+  }
   if ('instructions' in config)
     throw Error(
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',

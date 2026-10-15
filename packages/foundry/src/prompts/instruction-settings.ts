@@ -15,10 +15,12 @@ export const MAIN_ROLE = 'main';
 
 /**
  * Default budget for a middleware role's composed instructions plus domain knowledge, in characters:
- * under the decision input cap (DECISION_INPUT_CAP, 100,000 serialized), leaving room for thread
- * knowledge, thread state and the turn, so an overflow is this budget's named error, not the cap's.
+ * under the decision input cap (DECISION_INPUT_CAP, 160,000 serialized), leaving room for the
+ * charter, thread knowledge, thread state and the turn, so an overflow is this budget's named error,
+ * not the cap's. Sized so a region Warden at the hard cap of the healthy-size test (40k tokens of
+ * knowledge, about 100,000 characters; H itself is 20k) is admitted with its instructions.
  */
-export const DEFAULT_ROLE_BUDGET = 80_000;
+export const DEFAULT_ROLE_BUDGET = 120_000;
 
 /** How narrow an audience is: one sees every tier its rank or above. */
 const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {

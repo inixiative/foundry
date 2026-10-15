@@ -1,4 +1,11 @@
 import {
+  type RegionSummary,
+  readRegions,
+  regionsDirectory,
+  regionWardens,
+} from '../agents/region-roster';
+import type { WardensMode } from '../agents/warden-charter';
+import {
   type AgentExtension,
   type AgentSettingsConfig,
   type BrowserConfig,
@@ -21,7 +28,9 @@ export type MergeStrategy =
   | 'merge'
   | 'extend'
   | 'clear'
-  | 'project-only';
+  | 'project-only'
+  /** Derived from the project's regions directory, never written in settings. */
+  | 'generated';
 
 /** Where one composed chunk of a resolved value came from. */
 export interface ChunkProvenance {
@@ -44,11 +53,27 @@ export interface FieldProvenance {
 
 export interface ResolvedAgentDefinition {
   id: string;
-  scope: 'global' | 'project-extension' | 'project-standalone';
+  scope: 'global' | 'project-extension' | 'project-standalone' | 'project-generated';
   /** The global agent a project extension composes with. */
   extends?: string;
+  /** A generated region Warden: the `region.json` it was derived from. */
+  generatedFrom?: string;
   config: AgentSettingsConfig;
   fields: Record<string, FieldProvenance>;
+}
+
+/** Which Warden roster a project view carries, and why. */
+export interface ResolvedWardens {
+  /** The effective mode: `regions` only when a roster was generated. */
+  mode: WardensMode;
+  /** The mode the settings asked for (global `wardens`, or the project's own). */
+  requested: WardensMode;
+  /** Under `regions`: the directory read. */
+  regionsDir?: string;
+  /** The regions the roster was generated from, in roster order. */
+  regions?: RegionSummary[];
+  /** Why `regions` was requested but the hand-named roster runs: nothing is skipped silently. */
+  reason?: string;
 }
 
 export interface ResolvedLayerDefinition {
@@ -62,6 +87,37 @@ export interface ResolvedProjectView {
   config: FoundryConfig;
   layers: ResolvedLayerDefinition[];
   agents: ResolvedAgentDefinition[];
+  wardens: ResolvedWardens;
+}
+
+const isWarden = (agent: Pick<AgentSettingsConfig, 'flowRole'>) =>
+  agent.flowRole === 'domain-advising';
+
+/**
+ * A region Warden in the project view: a standalone project agent whose every field was derived from
+ * its region (`region.json`, `knowledge.md`); its provenance says so, per field.
+ */
+function generatedAgent(
+  agent: AgentSettingsConfig,
+  region: RegionSummary,
+): ResolvedAgentDefinition {
+  const fields: Record<string, FieldProvenance> = {};
+  for (const [key, value] of Object.entries(agent))
+    if (key !== 'id')
+      fields[key] = {
+        origin: 'project',
+        strategy: 'generated',
+        projectValue: value,
+        resolvedValue: value,
+        chunks: [{ origin: 'project', from: region.path, heading: `Region ${region.id}`, value }],
+      };
+  return {
+    id: agent.id,
+    scope: 'project-generated',
+    generatedFrom: region.path,
+    config: agent,
+    fields,
+  };
 }
 
 function dedupe<T>(items: readonly T[]): T[] {
@@ -722,13 +778,76 @@ export function resolveProjectView(
     projects: config.projects,
   };
 
+  // The Warden roster: the settings' domain-advising agents, or one generated Warden per region.
+  const requested: WardensMode = project.wardens ?? config.wardens ?? 'roster';
+  let wardens: ResolvedWardens = { mode: 'roster', requested };
+  let generated: ReturnType<typeof regionWardens> = [];
+  if (requested === 'regions') {
+    const regionsDir = regionsDirectory(project);
+    const regions = readRegions(regionsDir);
+    wardens = regions.length
+      ? { mode: 'regions', requested, regionsDir, regions }
+      : {
+          mode: 'roster',
+          requested,
+          regionsDir,
+          reason: `no regions at ${regionsDir} (no <id>/region.json); the hand-named roster runs`,
+        };
+    generated = regionWardens(regions);
+  }
+  resolved.wardens = wardens.mode;
   const agents = new Map<string, ResolvedAgentDefinition>(
-    Object.entries(config.agents).map(([id, agent]) => [id, globalAgent(id, agent)]),
+    Object.entries(config.agents)
+      // Under a generated roster the hand-named Wardens are not this project's Wardens.
+      .filter(([, agent]) => wardens.mode !== 'regions' || !isWarden(agent))
+      .map(([id, agent]) => [id, globalAgent(id, agent)]),
   );
   const extended = new Set<string>();
   /** Superseded parent id → the project agent that replaces it as a layer writer. */
   const renamed = new Map<string, string>();
   const entries = Object.entries(project.agents ?? {});
+  if (wardens.mode === 'regions') {
+    for (const [id, entry] of entries) {
+      const warden = isAgentExtension(entry)
+        ? isWarden(config.agents[entry.extends] ?? {})
+        : isWarden(entry);
+      if (warden)
+        throw new Error(
+          `[config] project.agents.${id} is a Warden, but this project's roster is generated from ${wardens.regionsDir} (wardens: regions); overlay a region through .foundry/roles/<region id>/ instead`,
+        );
+    }
+    for (const { agent, source, region } of generated) {
+      if (config.agents[agent.id] && !isWarden(config.agents[agent.id]!))
+        throw new Error(
+          `[config] region ${region.id} (${region.path}) has the id of global agent ${JSON.stringify(agent.id)}, which is not a Warden`,
+        );
+      if (project.agents?.[agent.id] || resolved.sources[source.id])
+        throw new Error(
+          `[config] region ${region.id} (${region.path}) collides with project agent or source ${JSON.stringify(agent.id)}`,
+        );
+      agents.set(agent.id, generatedAgent(agent, region));
+      resolved.sources[source.id] = source;
+    }
+    // A region Warden's instructions are its prompt and the role files for its region, not the whole
+    // CLAUDE.md stack (the ladder's default for the instructions slot); its knowledge is the region.
+    // A role entry written in settings for the region wins, field by field.
+    const roles = { ...resolved.composition?.roles };
+    for (const { agent } of generated)
+      roles[agent.id] = { instructions: { general: [] }, ...roles[agent.id] };
+    resolved.composition = { ...resolved.composition, roles };
+    // The view's project carries the generated agents too, so a region's settings prompt is
+    // attributed per project (`prompt:agent:<region>@project:<id>`) like any project agent's.
+    resolved.projects = {
+      ...config.projects,
+      [projectId]: {
+        ...project,
+        agents: {
+          ...project.agents,
+          ...Object.fromEntries(generated.map((g) => [g.agent.id, g.agent])),
+        },
+      },
+    };
+  }
   const targets = new Set(
     entries.flatMap(([, entry]) => (isAgentExtension(entry) ? [entry.extends] : [])),
   );
@@ -779,5 +898,5 @@ export function resolveProjectView(
   });
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
-  return { config: resolved, layers, agents: [...agents.values()] };
+  return { config: resolved, layers, agents: [...agents.values()], wardens };
 }

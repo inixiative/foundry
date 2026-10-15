@@ -361,12 +361,15 @@ not receive is not composed, so dedupe never moves text into it:
 - the main thread receives the slots its enabled `instructions` sources name.
 
 **Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
-characters. The default is none for `main` and 80,000 for middleware roles. A
-decision call refuses more than 100,000 serialized characters
-(`DECISION_INPUT_CAP`), so the default leaves room for thread knowledge,
-thread state and the turn, and an overflow is reported as this budget's named
-error. Aron's stacks compose to 30,000–56,000 characters per role. Over budget, the phase does
-not run and nothing is truncated:
+characters. The default is none for `main` and 120,000 for middleware roles
+(`DEFAULT_ROLE_BUDGET`): a region Warden at the healthy-size test's hard cap,
+40k tokens of knowledge (about 100,000 characters; H itself is 20k), is
+admitted with its instructions. A decision call refuses more than 160,000
+serialized characters (`DECISION_INPUT_CAP`), so the default leaves room for
+the charter, thread knowledge, thread state and the turn, and an overflow is
+reported as this budget's named error, not the cap's. Aron's hand-named stacks
+compose to 30,000–56,000 characters per role. Over budget, the phase does not
+run and nothing is truncated:
 
 - advice reports `error`;
 - guard reports `not-admitted`;
@@ -376,8 +379,64 @@ not run and nothing is truncated:
 The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "conventions Warden (role
 librarian-convention): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
-budget of 80000 (composition.roles.librarian-convention.budget); largest:
+budget of 120000 (composition.roles.librarian-convention.budget); largest:
 .../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
+
+### Region Wardens (`wardens: "regions"`)
+
+The roster above is hand-named: each Warden is a `domain-advising` agent in
+settings. The `wardens` setting (default `"roster"`) switches a project to a
+roster **generated from its concept regions**, the shards the template's region
+builder writes (plan: "Wardens built from docs"):
+
+```
+<project>/.foundry/regions/
+  registry.json, GLOSSARY.md, ERRORS.md, ECOSYSTEM.md   corpus-level; composed into no Warden
+  <region id>/region.json      id, title, routing line, concepts, sources, tokens
+  <region id>/knowledge.md     the region's knowledge, in full (covers, domain,
+                               every example by name, the specifics)
+```
+
+- **Setting.** Global `wardens` applies to every project; `projects[id].wardens`
+  overrides it, and `projects[id].regions` points at another regions directory
+  (absolute, or relative to the project). A thread without a project composes
+  from the settings themselves and always runs the hand-named roster.
+- **Generated roster.** `resolveProjectView` reads `<regions>/<id>/region.json`
+  and generates one standalone project agent per region (`agents/region-roster.ts`):
+  kind `domain-librarian`, domain `<region id>`, `invocation: always`,
+  `guardTriggers` the write and exec tools (`REGION_GUARD_TRIGGERS`), its prompt
+  the generic region instructions (`REGION_WARDEN_INSTRUCTIONS`) plus the
+  region's title and routing line. Its composition defaults to
+  `instructions: {general: []}` (the region is its knowledge; it does not read
+  the CLAUDE.md stack), and a `composition.roles.<region id>` entry in settings
+  still wins field by field. The settings' hand-named Wardens are not
+  that project's Wardens; a hand-written project Warden entry is refused under
+  `regions`, since overlays go through role files. The view reports the result
+  (`view.wardens`: effective mode, directory, regions, or the reason it fell
+  back), `GET /api/projects/:id/resolved/agents` shows each generated agent with
+  `scope: "project-generated"` and `generatedFrom`, and the daemon logs each
+  project's effective mode at startup. A regions directory that is missing or
+  empty falls back to the roster and says so; a malformed region is an error
+  that names it.
+- **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
+  slot, whole, through a generated `markdown` source (`region:<id>`), so the
+  audit log versions it as `source-content:region:<id>@project:<project>` and
+  every call records the exact text. The ladder then applies as for any role:
+  `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
+  project and personal rungs overlay the region, with their own `file:` versions.
+- **Charter.** Region Wardens run under the classifier charter
+  (`WARDEN_CHARTER_CLASSIFY`, measured in the healthy-size test): two yes/no
+  questions, `NO_COMMENT` when either is no, else one pointer, `Look over here:
+  <name(s) or class> (<where it is written>)`. It is parsed into
+  `{ relevant, pointer, where, level: exact | candidates | class }` on the advice
+  result, each guard finding and the advice journal, and reaches the thread as
+  "The <region> Warden chimed in:\n- Look over here: …". The charter version is
+  journalled with every call; a `wardens` change applies to new threads.
+- **Pool.** The primed decision pool is sized for the largest roster any
+  project runs (`largestRoster`), so a 53-region project primes 2 × 53 + 8 keys.
+- **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
+  scores the generated roster composed exactly as live (project view, role
+  layers, charter), without touching the daemon's settings.
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to

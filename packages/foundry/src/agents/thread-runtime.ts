@@ -61,7 +61,7 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import { WARDEN_CHARTER_VERSION } from './warden-charter';
+import { rosterMode, type WardenCharter, wardenCharter } from './warden-charter';
 import type { TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
@@ -736,6 +736,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _cartographerInstructions!: ContextLayer;
   /** Each configured Warden's composed slots, by domain. */
   private _roleLayers = new Map<string, { role: string } & RoleLayers>();
+  /** The charter this thread's Wardens run under (`wardens` setting), journalled with every call. */
+  private _charter!: WardenCharter;
   private _learningTimeoutMs = 10_000;
   private _hardTimeoutMs = 60_000;
   private _epoch = 0;
@@ -859,6 +861,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this.cartographer.buildMap();
 
     this.domainLibrarians = new Map();
+    const charter = wardenCharter(
+      rosterMode(deps.config, thread.meta.projectId as string | undefined),
+    );
+    this._charter = charter;
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
     // Retained configuration is validated for compatibility, but never adds a central wait.
     positiveMs('learning.barrierMs', deps.learning?.barrierMs, 5_000);
@@ -910,6 +916,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           cache,
           ...(slots ? { instructions: slots.instructions, role } : {}),
           ...(dc.budget !== undefined ? { budget: dc.budget } : {}),
+          charter: charter.text,
           signals,
           llm: scopedProvider(dc.adviseProvider ?? deps.llm, { threadId: domainId, cwd }),
           llmOpts: dc.adviseOpts ?? { maxTokens: 512, temperature: 0 },
@@ -1096,7 +1103,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
           const adviceJournal = journalSealed('advice', {
             trigger: 'user-message' satisfies TriggerPoint,
-            charter: WARDEN_CHARTER_VERSION,
+            charter: charter.version,
             inputHash: plan.input.hash,
             sealedAt: plan.sealedAt,
             participants: plan.contributions
@@ -1400,7 +1407,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           );
           const outcomeJournal = journalOutcome({
             trigger: 'agent-action' satisfies TriggerPoint,
-            charter: WARDEN_CHARTER_VERSION,
+            charter: charter.version,
             observation,
             correlation,
             status: 'reported',
@@ -2818,6 +2825,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const next = new Set<string>();
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
     const swaps: Array<() => void> = [];
+    if (
+      wardenCharter(rosterMode(config, this.thread.meta.projectId as string | undefined))
+        .version !== this._charter.version
+    )
+      deferred.push('Warden charter change (wardens setting) applies to new threads');
     const cartographerRole = cartographerRoleId(config);
     if (cartographerRole === this._cartographerRole) {
       const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {

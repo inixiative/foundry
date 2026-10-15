@@ -67,6 +67,7 @@ import type {
   ToolObservation,
 } from './domain-librarian';
 import type { Librarian } from './librarian';
+import type { WardenPointer } from './warden-charter';
 import type { TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,8 @@ export interface DomainContribution {
   readonly layers: string[];
   readonly snippets: string[];
   readonly confidence: number;
+  /** Under the classifier charter: the pointer read off the snippets (`Look over here: …`). */
+  readonly pointer?: WardenPointer;
   readonly segments: ContributionSegments;
   readonly provenance: ContributionProvenance;
   /**
@@ -751,7 +754,10 @@ export class FlowOrchestrator {
     const decided = (
       decision: ContributionDecision,
       extra: Partial<
-        Pick<DomainContribution, 'reason' | 'layers' | 'snippets' | 'confidence' | 'prefilter'>
+        Pick<
+          DomainContribution,
+          'reason' | 'layers' | 'snippets' | 'confidence' | 'prefilter' | 'pointer'
+        >
       > = {},
     ): DomainContribution => ({
       domain: p.lib.domain,
@@ -815,6 +821,7 @@ export class FlowOrchestrator {
       layers: [...result.layers],
       snippets: [...result.snippets],
       confidence: result.confidence,
+      ...(result.pointer ? { pointer: result.pointer } : {}),
     });
   }
 
@@ -1427,6 +1434,7 @@ function composeDecoration(
           layers: c.layers,
           snippets: c.snippets,
           confidence: c.confidence,
+          ...(c.pointer ? { pointer: c.pointer } : {}),
           ...(deliveredCacheHash !== undefined
             ? { deliveredCacheHash, revisionDrift: deliveredCacheHash !== c.provenance.cacheHash }
             : {}),
