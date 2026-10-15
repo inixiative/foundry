@@ -35,7 +35,7 @@ export const DEFAULT_PREFILTER: Required<PrefilterSettings> = Object.freeze({
   enabled: true,
   baseUrl: `http://127.0.0.1:${PREFILTER_PORT}`,
   model: 'kev-latest',
-  skipBelow: 0.1,
+  skipBelow: 0.26,
   timeoutMs: 3_000,
 });
 

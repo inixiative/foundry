@@ -98,13 +98,14 @@ export async function startPrefilterServer(
   dir = prefilterModelsDir(),
 ): Promise<PrefilterServer> {
   const none = () => {};
+  // Not installed: no request at all (a fresh install starts without touching the network).
+  if (!prefilterInstalled(dir)) return { status: 'not-installed', stop: none };
   try {
     const models = await fetch(`${settings.baseUrl}/v1/models`, {
       signal: AbortSignal.timeout(1_000),
     });
     if (models.ok) return { status: 'running', stop: none };
   } catch {}
-  if (!prefilterInstalled(dir)) return { status: 'not-installed', stop: none };
   const p = paths(dir);
   const url = new URL(settings.baseUrl);
   const [adapter] = PREFILTER_WEIGHTS;

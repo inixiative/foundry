@@ -539,9 +539,13 @@ const prefilter = prefilterSettings.enabled
       },
     })
   : undefined;
-if (prefilterServer?.status === 'not-installed')
-  console.warn('[warden-prefilter] model not installed: run `foundry-acp setup`');
-void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
+if (prefilterServer?.status === 'not-installed') {
+  // Every Warden is asked; say so in the log and the viewer without probing the network.
+  const message =
+    'Warden pre-filter model not installed (run `foundry-acp setup`); every Warden is asked';
+  console.warn(`[warden-prefilter] ${message}`);
+  eventStream.pushError('warden-prefilter', message, 'warn');
+} else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
 
 // atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
 const atlasRoot =

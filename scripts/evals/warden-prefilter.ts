@@ -699,14 +699,19 @@ async function measure() {
     consistency = Object.fromEntries(
       [0.05, 0.1, 0.2, 0.3].map((t) => [String(t), prefilterConsistency(repeats, t)]),
     );
-    // The model server's resident memory: whatever listens on the pre-filter's port.
+    // The model server's physical footprint (Metal memory included; `ps` RSS leaves MLX's out): whatever
+    // listens on the pre-filter's port.
     const port = new URL(prefilter.settings.baseUrl).port;
     for (const pid of Bun.spawnSync(['lsof', '-ti', `tcp:${port}`, '-sTCP:LISTEN'])
       .stdout.toString()
-      .split('\n'))
-      if (pid.trim())
-        rssMb +=
-          Number(Bun.spawnSync(['ps', '-o', 'rss=', '-p', pid.trim()]).stdout.toString()) / 1024;
+      .split('\n')
+      .filter((p) => p.trim())) {
+      const footprint = /phys_footprint:\s+([\d.]+)\s*(KB|MB|GB)/.exec(
+        Bun.spawnSync(['footprint', pid.trim()]).stdout.toString(),
+      );
+      if (footprint)
+        rssMb += Number(footprint[1]) * ({ KB: 1 / 1024, MB: 1, GB: 1024 }[footprint[2]!] ?? 1);
+    }
     writeJsonl(join(out, 'scores.jsonl'), scored);
   }
 
@@ -801,7 +806,7 @@ async function measure() {
     perWarden,
     consistency,
     ...(latencies.length ? { latencyMs: percentiles(latencies) } : {}),
-    ...(rssMb ? { serverRssMb: Math.round(rssMb) } : {}),
+    ...(rssMb ? { serverFootprintMb: Math.round(rssMb) } : {}),
   };
   writePrivate(join(out, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);
   const line = (name: string, s: ReturnType<typeof scorePrefilter>) =>
@@ -816,7 +821,7 @@ async function measure() {
   if (Object.keys(consistency).length) console.log(`consistency ${JSON.stringify(consistency)}`);
   if (summary.latencyMs)
     console.log(
-      `latency per trigger ${JSON.stringify(summary.latencyMs)} ms; server RSS ${summary.serverRssMb} MB`,
+      `latency per trigger ${JSON.stringify(summary.latencyMs)} ms; server footprint ${summary.serverFootprintMb} MB`,
     );
   console.log(`run: ${out}`);
 }
