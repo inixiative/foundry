@@ -13,6 +13,7 @@ test('parseReviewFindings reads findings, voice and empty items; malformed items
 {"results": {
   "a": {"voice": "human", "findings": [{"name": "Skeleton component", "kind": "primitive", "concept": "Frontend UI", "where": "packages/ui", "builtInstead": "static bg-muted bars", "miss": "unaware", "excerpt": "Use Skeleton."}]},
   "b": {"voice": "agent", "findings": []},
+  "s": {"findings": [{"name": "withRule", "kind": "primitive", "concept": "x", "miss": "misfit", "excerpt": "e", "scope": "architectural"}, {"name": "lodash", "concept": "x", "scope": "other"}]},
   "c": {"findings": [{"name": "", "concept": "x"}, {"name": "lodash omit", "kind": "weird", "concept": "shared-helpers-utils", "miss": "nope"}]},
   "d": {"voice": "human"}
 }}`;
@@ -48,6 +49,8 @@ test('parseReviewFindings reads findings, voice and empty items; malformed items
   expect(d).toBeUndefined();
   expect(e).toBeUndefined();
   expect(parseReviewFindings('not json', ['a'])).toEqual([undefined]);
+  const [scoped] = parseReviewFindings(content, ['s']);
+  expect(scoped?.findings.map((f) => f.scope)).toEqual(['architectural', undefined]);
 });
 
 test('reviewFindingMessages carries the work, the code and the reply', () => {
@@ -60,7 +63,16 @@ test('reviewFindingMessages carries the work, the code and the reply', () => {
       replyTo: 'why not paginate?',
       text: 'use paginate()',
     },
+    {
+      id: 'x2',
+      where: 'ZLT-1 issue',
+      work: 'ZLT-1: Add rewards',
+      text: 'build on withRule',
+      mode: 'directive',
+    },
   ]);
+  expect(user!.content).toContain('## x2\nWhere: ZLT-1 issue\nMode: directive');
+  expect(user!.content).not.toContain('## x1\nWhere: repo PR #1 (inline)\nMode');
   expect(system!.content).toContain('ALREADY EXISTS');
   expect(user!.content).toContain('## x1');
   expect(user!.content).toContain('@@ hunk');

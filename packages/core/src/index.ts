@@ -193,6 +193,7 @@ export {
   AUTHORSHIP_MARKERS,
   authorshipOf,
   evidenceSnippet,
+  type FindingScope,
   parseReviewFindings,
   REUSE_HINT,
   REVIEW_FINDINGS_PROMPT,
@@ -200,6 +201,7 @@ export {
   type ReviewMoment,
   type ReviewReading,
   reviewFindingMessages,
+  SCOPE_WEIGHT,
   type SessionEvidence,
   styleOf,
 } from './feedback/review-findings';

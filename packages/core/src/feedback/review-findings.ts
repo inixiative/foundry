@@ -22,13 +22,25 @@ export interface ReviewMoment {
   /** The message it replies to, when it is a reply. */
   readonly replyTo?: string;
   readonly text: string;
+  /** `directive`: a description the person wrote of work still to do (a ticket, a project), not a review of done work. */
+  readonly mode?: 'review' | 'directive';
 }
+
+export type FindingScope = 'architectural' | 'code';
+
+/** How much a finding counts in scoring: generic code-correctness findings are lightly down-weighted (Aron, 2026-10-15). */
+export const SCOPE_WEIGHT: Readonly<Record<FindingScope, number>> = {
+  architectural: 1,
+  code: 0.75,
+};
 
 /** One place the reviewer pushed toward something that already existed. */
 export interface ReviewFinding {
   readonly target: CorrectionTarget;
   /** The reviewer's own words that say it, verbatim, at most 300 characters. */
   readonly excerpt: string;
+  /** `architectural`: about which system, primitive or boundary to build on; `code`: a generic code-correctness fix. */
+  readonly scope?: FindingScope;
 }
 
 export interface ReviewReading {
@@ -53,13 +65,16 @@ For each finding:
 - kind: "primitive" | "system" | "pattern" | "rule"
 - concept: its concept cluster; use one of the given clusters when one fits, else a new short kebab-case cluster.
 - where: the file, package or doc it lives in, only when the item says so.
-- builtInstead: what the work did instead, one line, at most 160 characters.
+- builtInstead: what the work did instead, one line, at most 160 characters. For a directive item, what the work would otherwise have built, or "" when the item doesn't say.
 - miss: why it was missed, judged from the item: "unaware" (didn't know it existed), "misfit" (knew it, worked around a gap instead of extending it), "wrapper" (wrapped it under a new name), "unclear".
 - excerpt: Aron's words that say it, verbatim, at most 300 characters.
+- scope: "architectural" when it is about which system, primitive, module boundary or pattern to build on; "code" when it is a generic code-correctness fix (a library call, a small helper, an idiom).
+
+Items marked "Mode: directive" are descriptions Aron wrote of work still to be done (a ticket, a project). There a finding is a place where he directs the work to use, extend or port something that already exists, by name.
 
 Also judge the voice of each item: "human" when it reads as typed by a person (terse, informal, lowercase, typos, first-person asides), "agent" when it reads as written by an AI coding agent (headed sections, bold labels, numbered findings, dense backticked citations, "Fixed in <sha>" replies, polished em-dash prose).
 
-Respond with JSON only: { "results": { "<id>": { "voice": "human" | "agent", "findings": [ { "name": string, "kind": string, "concept": string, "where"?: string, "builtInstead": string, "miss": string, "excerpt": string } ] } } } with "findings": [] when there are none.`;
+Respond with JSON only: { "results": { "<id>": { "voice": "human" | "agent", "findings": [ { "name": string, "kind": string, "concept": string, "where"?: string, "builtInstead": string, "miss": string, "excerpt": string, "scope": "architectural" | "code" } ] } } } with "findings": [] when there are none.`;
 
 /** The reader's input for a batch of review moments. */
 export function reviewFindingMessages(
@@ -70,6 +85,7 @@ export function reviewFindingMessages(
       [
         `## ${m.id}`,
         `Where: ${m.where}`,
+        ...(m.mode === 'directive' ? ['Mode: directive'] : []),
         `### The work\n${m.work.slice(0, 1200)}`,
         ...(m.code ? [`### Code it was written on\n${m.code.slice(-1500)}`] : []),
         ...(m.replyTo ? [`### Replying to\n${m.replyTo.slice(0, 800)}`] : []),
@@ -132,6 +148,7 @@ export function parseReviewFindings(
           miss,
         },
         excerpt: typeof raw.excerpt === 'string' ? raw.excerpt.trim().slice(0, 300) : '',
+        ...(raw.scope === 'architectural' || raw.scope === 'code' ? { scope: raw.scope } : {}),
       });
     }
     return {
