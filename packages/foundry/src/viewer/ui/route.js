@@ -19,6 +19,7 @@ export const FOUNDRY_SETTINGS = [
 
 export const PROJECT_SETTINGS = [
   ['integrations', 'Integrations'],
+  ['chorus', 'Chorus'],
   ['archive', 'Archive'],
   ['sources', 'Sources'],
   ['gloss', 'Gloss'],

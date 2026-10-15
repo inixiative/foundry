@@ -4,6 +4,7 @@ import {
   type SourceSegment,
   segmentsText,
 } from '@inixiative/foundry-core';
+import { regionOfSubject } from '../agents/region-roster';
 import { WARDEN_CHARTER } from '../agents/warden-charter';
 import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
@@ -44,6 +45,12 @@ export interface CallVersions {
     readonly subject: string;
     readonly hash: string;
   }>;
+  /**
+   * A region Warden: its region and the region's warm-cache key, the content hash of the region
+   * knowledge this call composed (`regionKey`). Equal across projects whose region text is equal,
+   * whatever layer it came from; the key a shared primed prefix would be looked up by.
+   */
+  readonly chorus?: { readonly region: string; readonly key: string };
 }
 
 export interface CompositionAuditorOptions {
@@ -84,6 +91,7 @@ export class CompositionAuditor {
       this.record(role, name, snapshot[name], snapshot.omitted?.[name] ?? [], (subject, hash) =>
         retrieved.push({ slot: name, subject, hash }),
       );
+    const chorus = regionPart(snapshot.domainKnowledge);
     return {
       charter: this.charter(),
       instructions: slot('instructions'),
@@ -93,6 +101,7 @@ export class CompositionAuditor {
         domainKnowledge: contentHash(segmentsText(snapshot.domainKnowledge)),
       },
       ...(retrieved.length ? { retrieved } : {}),
+      ...(chorus ? { chorus } : {}),
     };
   }
 
@@ -164,6 +173,18 @@ export class CompositionAuditor {
   versionRecord<T>(record: T): T {
     return replaceCompositions(record, (role, snapshot) => this.versions(role, snapshot));
   }
+}
+
+/** The region knowledge part of a domain-knowledge slot, as the region and its key (`regionKey`). */
+function regionPart(
+  segments: readonly SourceSegment[],
+): { region: string; key: string } | undefined {
+  for (const segment of segments) {
+    if (typeof segment === 'string') continue;
+    const region = regionOfSubject(segment.subject);
+    if (region) return { region, key: contentHash(segment.text) };
+  }
+  return undefined;
 }
 
 /** The same record without composition snapshots (no auditor configured). */

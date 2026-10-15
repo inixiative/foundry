@@ -2857,6 +2857,32 @@ body {
   margin: 4px 0 8px;
 }
 
+.chorus-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0 12px;
+}
+
+.chorus-table th,
+.chorus-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chorus-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.chorus-table .chorus-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .settings-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);

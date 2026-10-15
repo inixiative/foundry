@@ -61,7 +61,7 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import { rosterMode, type WardenCharter, wardenCharter } from './warden-charter';
+import { chorusSource, type WardenCharter, wardenCharter } from './warden-charter';
 import type { TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
@@ -736,7 +736,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _cartographerInstructions!: ContextLayer;
   /** Each configured Warden's composed slots, by domain. */
   private _roleLayers = new Map<string, { role: string } & RoleLayers>();
-  /** The charter this thread's Wardens run under (`wardens` setting), journalled with every call. */
+  /** The charter this thread's Wardens run under (what its chorus is built from), journalled with every call. */
   private _charter!: WardenCharter;
   private _learningTimeoutMs = 10_000;
   private _hardTimeoutMs = 60_000;
@@ -862,7 +862,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
     this.domainLibrarians = new Map();
     const charter = wardenCharter(
-      rosterMode(deps.config, thread.meta.projectId as string | undefined),
+      chorusSource(deps.config, thread.meta.projectId as string | undefined),
     );
     this._charter = charter;
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
@@ -2826,10 +2826,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
     const swaps: Array<() => void> = [];
     if (
-      wardenCharter(rosterMode(config, this.thread.meta.projectId as string | undefined))
+      wardenCharter(chorusSource(config, this.thread.meta.projectId as string | undefined))
         .version !== this._charter.version
     )
-      deferred.push('Warden charter change (wardens setting) applies to new threads');
+      deferred.push('Warden charter change (chorus setting) applies to new threads');
     const cartographerRole = cartographerRoleId(config);
     if (cartographerRole === this._cartographerRole) {
       const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {

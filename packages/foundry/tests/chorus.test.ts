@@ -1,7 +1,7 @@
-// Region Wardens (`wardens: "regions"`): a project's roster generated from its concept regions, each
-// Warden's knowledge the region's knowledge.md in full, under the classifier charter.
+// A project's chorus (`projects[id].chorus`): its Wardens generated from layers of concept regions, each
+// Warden's knowledge the region's knowledge.md in full, under the classifier charter, with a warm-cache key.
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -17,10 +17,15 @@ import {
 import { configuredExperts, largestRoster } from '../src/agents/configured-experts';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import {
+  chorusLayers,
+  composeChorus,
+  DEFAULT_LAYER_LABEL,
+  describeChorus,
   REGION_GUARD_TRIGGERS,
   readRegions,
+  regionKey,
+  regionOfSubject,
   regionSourceId,
-  regionsDirectory,
 } from '../src/agents/region-roster';
 import { buildRoleLayers } from '../src/agents/role-layers';
 import {
@@ -32,15 +37,19 @@ import {
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
   chartered,
+  chorusSource,
   parseWardenPointer,
   REGION_WARDEN_INSTRUCTIONS,
-  rosterMode,
   WARDEN_CHARTER,
   WARDEN_CHARTER_CLASSIFY,
   WARDEN_CHARTER_CLASSIFY_VERSION,
   WARDEN_CHARTER_VERSION,
   wardenCharter,
 } from '../src/agents/warden-charter';
+import { AuditLog } from '../src/audit/audit-log';
+import { CompositionAuditor } from '../src/audit/compositions';
+import { contentHash } from '../src/persistence/journal-content';
+import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';
 import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
 import {
@@ -215,23 +224,39 @@ function config(project: string): FoundryConfig {
       enabled: true,
     },
   };
-  c.wardens = 'regions';
   c.projects.P = { id: 'P', path: project };
   return c;
 }
 
-test('under wardens: regions a project runs one generated Warden per region, from region.json', () => {
+test("a project's chorus is one generated Warden per region of .foundry/regions, by default", () => {
   const { project, regions } = projectWithRegions();
   const c = config(project);
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
-  expect(view.wardens).toMatchObject({
-    mode: 'regions',
-    requested: 'regions',
-    regionsDir: regions,
+  expect(view.chorus).toMatchObject({ source: 'regions', requested: 'regions' });
+  expect(view.chorus.layers).toMatchObject([
+    {
+      label: DEFAULT_LAYER_LABEL,
+      regionsDir: regions,
+      regions: [{ id: 'concurrency-locks' }, { id: 'lens-model' }],
+    },
+  ]);
+  expect(view.chorus.regions.map((r) => [r.id, r.layer, r.replaces])).toEqual([
+    ['concurrency-locks', 'project', []],
+    ['lens-model', 'project', []],
+  ]);
+  expect(view.chorus.regions[0]!.bytes).toBeGreaterThan(60_000);
+  // The view's project carries the effective chorus, normalized: what the charter selection reads.
+  expect(view.config.projects.P!.chorus).toEqual({
+    source: 'regions',
+    layers: [{ label: 'project', regions }],
   });
-  expect(view.wardens.regions!.map((r) => r.id)).toEqual(['concurrency-locks', 'lens-model']);
-  expect(view.config.wardens).toBe('regions');
+  expect(c.projects.P!.chorus).toBeUndefined();
+  // The normalized entry is a valid setting that resolves to the same chorus.
+  c.projects.P!.chorus = view.config.projects.P!.chorus;
+  validateConfig(c);
+  expect(resolveProjectView(c, 'P')!.chorus).toEqual(view.chorus);
+  delete c.projects.P!.chorus;
 
   // The roster is exactly the regions: the hand-named Warden is not this project's Warden.
   expect(configuredExperts(view.config).experts.map((e) => e.domain)).toEqual([
@@ -292,62 +317,277 @@ test('under wardens: regions a project runs one generated Warden per region, fro
   expect(tuned['concurrency-locks']).toEqual({ instructions: { general: [] } });
 });
 
-test('the default is the hand-named roster; regions asked for without a regions directory says so and keeps the roster', () => {
+test('without regions the hand-named roster runs and the view says why; source "roster" asks for it; regions points the layer elsewhere', () => {
   const { project } = projectWithRegions();
   const c = config(project);
-  delete c.wardens;
   validateConfig(c);
-  const byDefault = resolveProjectView(c, 'P')!;
-  expect(byDefault.wardens).toEqual({ mode: 'roster', requested: 'roster' });
-  expect(byDefault.config.wardens).toBe('roster');
-  expect(configuredExperts(byDefault.config).experts.map((e) => e.domain)).toEqual(['reuse']);
-  expect(byDefault.agents.map((a) => a.scope)).not.toContain('project-generated');
-
-  // A project may opt in on its own.
-  c.projects.P!.wardens = 'regions';
-  validateConfig(c);
-  expect(resolveProjectView(c, 'P')!.wardens.mode).toBe('regions');
-
-  // Regions asked for, none there: the roster runs, and the view says why.
+  // Regions asked for (the default), none there: the roster runs, and the view says why.
   const empty = tempDir('no-regions');
-  c.projects.Q = { id: 'Q', path: empty, wardens: 'regions' };
+  c.projects.Q = { id: 'Q', path: empty };
   validateConfig(c);
   const q = resolveProjectView(c, 'Q')!;
-  expect(q.wardens).toMatchObject({ mode: 'roster', requested: 'regions' });
-  expect(q.wardens.reason).toContain(`no regions at ${join(empty, '.foundry', 'regions')}`);
-  expect(q.config.wardens).toBe('roster');
+  expect(q.chorus).toMatchObject({ source: 'roster', requested: 'regions', regions: [] });
+  expect(q.chorus.layers).toEqual([
+    { label: 'project', regionsDir: join(empty, '.foundry', 'regions'), regions: [] },
+  ]);
+  expect(q.chorus.reason).toContain(`no regions at ${join(empty, '.foundry', 'regions')}`);
+  expect(q.config.projects.Q!.chorus).toEqual({ source: 'roster' });
+  // The view's project entry is a valid setting that resolves to the same chorus.
+  expect(resolveProjectView(q.config, 'Q')!.chorus.source).toBe('roster');
   expect(configuredExperts(q.config).experts.map((e) => e.domain)).toEqual(['reuse']);
+  expect(q.agents.map((a) => a.scope)).not.toContain('project-generated');
+  expect(describeChorus('Q', q.chorus)).toContain('asked for regions but no regions at');
 
-  // `regions` points the project at another directory, absolute or relative to it.
+  // A project may ask for the hand-named roster whatever regions it has.
+  c.projects.P!.chorus = { source: 'roster' };
+  validateConfig(c);
+  const roster = resolveProjectView(c, 'P')!;
+  expect(roster.chorus).toEqual({ source: 'roster', requested: 'roster', layers: [], regions: [] });
+  expect(configuredExperts(roster.config).experts.map((e) => e.domain)).toEqual(['reuse']);
+  expect(roster.config.projects.P!.chorus).toMatchObject({ source: 'roster' });
+  delete c.projects.P!.chorus;
+
+  // `regions` points the one layer at another directory, absolute or relative to the project.
   const elsewhere = tempDir('regions-elsewhere');
   write(
     join(elsewhere, 'only', 'region.json'),
     JSON.stringify({ id: 'only', title: 'Only', routing: 'Is this about the only thing?' }),
   );
   write(join(elsewhere, 'only', 'knowledge.md'), '# Only\n\nONLY_KNOWLEDGE.');
-  c.projects.Q!.regions = elsewhere;
-  expect(regionsDirectory(c.projects.Q!)).toBe(elsewhere);
-  expect(resolveProjectView(c, 'Q')!.wardens.regions!.map((r) => r.id)).toEqual(['only']);
-  c.projects.Q = {
-    id: 'Q',
-    path: project,
-    wardens: 'regions',
-    regions: 'docs/../.foundry/regions',
-  };
-  expect(resolveProjectView(c, 'Q')!.wardens.regions!.length).toBe(2);
+  c.projects.Q!.chorus = { regions: elsewhere };
+  validateConfig(c);
+  expect(chorusLayers(c.projects.Q!)).toEqual([{ label: 'project', regionsDir: elsewhere }]);
+  expect(resolveProjectView(c, 'Q')!.chorus.regions.map((r) => r.id)).toEqual(['only']);
+  c.projects.Q = { id: 'Q', path: project, chorus: { regions: 'docs/../.foundry/regions' } };
+  expect(resolveProjectView(c, 'Q')!.chorus.regions.length).toBe(2);
+  expect(describeChorus('Q', resolveProjectView(c, 'Q')!.chorus)).toBe(
+    `Chorus: project Q runs 2 region Wardens (${Math.round(resolveProjectView(c, 'Q')!.chorus.regions.reduce((n, r) => n + r.bytes, 0) / 1024)} KB of knowledge) from 1 layer (project: 2 at ${join(project, '.foundry', 'regions')}); classifier charter`,
+  );
 
-  for (const bad of ['always', 'regions ', 1]) {
-    c.wardens = bad as never;
-    expect(() => validateConfig(c)).toThrow('wardens must be "roster" or "regions"');
+  // The setting is checked, and the old keys are refused by name.
+  for (const [bad, message] of [
+    [{ source: 'always' }, 'chorus.source must be "regions" or "roster"'],
+    [{ regions: '' }, 'chorus.regions must be a path'],
+    [{ regions: 'x', layers: [{ regions: 'y' }] }, 'names both regions and layers'],
+    [{ layers: [] }, 'chorus.layers must be a non-empty list'],
+    [
+      {
+        layers: [
+          { regions: 'a', label: 'same' },
+          { regions: 'b', label: 'same' },
+        ],
+      },
+      'two layers are labelled "same"',
+    ],
+    [{ layers: [{ regions: 'a', extra: 1 }] }, 'layers[0].extra is not a layer setting'],
+    [{ source: 'roster', regions: 'x' }, 'takes no regions or layers'],
+    [{ mode: 'regions' }, 'chorus.mode is not a chorus setting'],
+    ['regions', 'chorus must be an object'],
+  ] as const) {
+    c.projects.Q = { id: 'Q', path: project, chorus: bad as never };
+    expect(() => validateConfig(c)).toThrow(message);
   }
+  c.projects.Q = { id: 'Q', path: project, wardens: 'regions' } as never;
+  expect(() => validateConfig(c)).toThrow('projects.Q.wardens is now projects.Q.chorus');
+  c.projects.Q = { id: 'Q', path: project, regions: 'x' } as never;
+  expect(() => validateConfig(c)).toThrow('projects.Q.regions is now projects.Q.chorus');
+  delete c.projects.Q;
+  (c as unknown as Record<string, unknown>).wardens = 'regions';
+  expect(() => validateConfig(c)).toThrow('settings key "wardens" is gone');
 });
 
-test('a hand-written project Warden is refused under regions, and a malformed region names itself', () => {
+test('a chorus composes from layers in order: a later region replaces an earlier one whole, unique ids union', async () => {
+  const { project, regions: base } = projectWithRegions();
+  const c = config(project);
+  // The project's delta: its own lens-model (replacing the base one whole) and a new region.
+  const delta = join(project, '.foundry', 'regions-delta');
+  write(
+    join(delta, 'lens-model', 'region.json'),
+    JSON.stringify({
+      id: 'lens-model',
+      title: 'The lens model (here)',
+      routing: 'Is this about our lens?',
+    }),
+  );
+  write(
+    join(delta, 'lens-model', 'knowledge.md'),
+    '# Lens (here)\n\nDELTA_LENS: layers narrow, and ours adds a scope.',
+  );
+  write(
+    join(delta, 'kingdom-signets', 'region.json'),
+    JSON.stringify({ id: 'kingdom-signets', title: 'Signets', routing: 'Is this about a Signet?' }),
+  );
+  write(
+    join(delta, 'kingdom-signets', 'knowledge.md'),
+    '# Signets\n\nDELTA_SIGNETS: one presentation, an enrolled key.',
+  );
+  const missing = join(project, 'nowhere');
+  c.projects.P!.chorus = {
+    layers: [
+      { regions: base, label: 'template' },
+      { regions: missing },
+      { regions: '.foundry/regions-delta', label: 'kingdom' },
+    ],
+  };
+  validateConfig(c);
+  expect(chorusLayers(c.projects.P!)).toEqual([
+    { label: 'template', regionsDir: base },
+    { label: 'layer-2', regionsDir: missing },
+    { label: 'kingdom', regionsDir: delta },
+  ]);
+  const view = resolveProjectView(c, 'P')!;
+  expect(view.chorus.source).toBe('regions');
+  // Every layer is listed as read, the missing one as empty.
+  expect(view.chorus.layers.map((l) => [l.label, l.regions.map((r) => r.id)])).toEqual([
+    ['template', ['concurrency-locks', 'lens-model']],
+    ['layer-2', []],
+    ['kingdom', ['kingdom-signets', 'lens-model']],
+  ]);
+  expect(view.chorus.regions.map((r) => [r.id, r.layer, r.replaces])).toEqual([
+    ['concurrency-locks', 'template', []],
+    ['kingdom-signets', 'kingdom', []],
+    ['lens-model', 'kingdom', ['template']],
+  ]);
+  // The replaced region is the later layer's, whole: its files, its prompt, its knowledge.
+  const lens = view.chorus.regions.find((r) => r.id === 'lens-model')!;
+  expect(lens.knowledgePath).toBe(join(delta, 'lens-model', 'knowledge.md'));
+  expect(view.config.agents['lens-model']!.prompt).toContain('Your region: The lens model (here)');
+  expect(view.config.sources['region:lens-model']!.uri).toBe(lens.knowledgePath);
+  expect(view.agents.find((a) => a.id === 'lens-model')!.generatedFrom).toBe(lens.path);
+  expect(configuredExperts(view.config).experts.map((e) => e.domain)).toEqual([
+    'concurrency-locks',
+    'kingdom-signets',
+    'lens-model',
+  ]);
+  expect(view.config.projects.P!.chorus).toEqual({
+    source: 'regions',
+    layers: [
+      { label: 'template', regions: base },
+      { label: 'layer-2', regions: missing },
+      { label: 'kingdom', regions: delta },
+    ],
+  });
+  expect(describeChorus('P', view.chorus)).toContain(
+    `from 3 layers (template: 2 at ${base}; layer-2: 0 at ${missing}; kingdom: 2 at ${delta})`,
+  );
+  const resolveSource = createSourceResolver({
+    memory: new FileMemory(join(tempDir('memory'), 'm')),
+  });
+  const slots = buildRoleLayers(view.config, 'lens-model', {
+    resolveSource,
+    scope: { threadId: 't', projectId: 'P', cwd: project },
+  });
+  await slots.domainKnowledge.warm();
+  expect(slots.domainKnowledge.content).toContain('DELTA_LENS');
+  expect(slots.domainKnowledge.content).not.toContain('DEEP_FACT_LENS');
+  // Same layers, no regions anywhere: the roster, naming every directory looked in.
+  c.projects.P!.chorus = { layers: [{ regions: 'none-a' }, { regions: 'none-b' }] };
+  const none = resolveProjectView(c, 'P')!;
+  expect(none.chorus.source).toBe('roster');
+  expect(none.chorus.reason).toContain(`${join(project, 'none-a')}, ${join(project, 'none-b')}`);
+  expect(none.chorus.layers.map((l) => l.label)).toEqual(['layer-1', 'layer-2']);
+  // composeChorus alone, the same way.
+  const composed = composeChorus([
+    { label: 'a', regionsDir: base },
+    { label: 'b', regionsDir: delta },
+  ]);
+  expect(composed.regions.map((r) => `${r.id}@${r.layer}`)).toEqual([
+    'concurrency-locks@a',
+    'kingdom-signets@b',
+    'lens-model@b',
+  ]);
+});
+
+test("a region's warm-cache key is the content hash of its composed knowledge: equal across projects and layers, journalled with the Warden's versions", async () => {
+  const { project, regions } = projectWithRegions();
+  const c = config(project);
+  // Another project with a byte-identical copy of the locks region, in a differently named layer.
+  const other = tempDir('other-project');
+  const copy = join(other, 'shared-regions');
+  for (const file of ['region.json', 'knowledge.md'])
+    write(
+      join(copy, 'concurrency-locks', file),
+      readFileSync(join(regions, 'concurrency-locks', file), 'utf8'),
+    );
+  c.projects.O = {
+    id: 'O',
+    path: other,
+    chorus: { layers: [{ regions: copy, label: 'template-base' }] },
+  };
+  validateConfig(c);
+  const here = resolveProjectView(c, 'P')!.chorus.regions.find(
+    (r) => r.id === 'concurrency-locks',
+  )!;
+  const there = resolveProjectView(c, 'O')!.chorus.regions.find(
+    (r) => r.id === 'concurrency-locks',
+  )!;
+  expect(there.layer).toBe('template-base');
+  expect(there.knowledgePath).not.toBe(here.knowledgePath);
+  const key = await regionKey(here);
+  expect(key).toMatch(/^[0-9a-f]{64}$/);
+  expect(await regionKey(there)).toBe(key);
+  // The key is of the composed knowledge (comments stripped), not the file's bytes: a comment-only
+  // edit keeps it; a knowledge edit changes it.
+  writeFileSync(
+    there.knowledgePath,
+    `${readFileSync(there.knowledgePath, 'utf8')}\n<!-- a note -->\n`,
+  );
+  expect(await regionKey(there)).toBe(key);
+  writeFileSync(
+    there.knowledgePath,
+    `${readFileSync(there.knowledgePath, 'utf8')}\nONE MORE FACT.\n`,
+  );
+  expect(await regionKey(there)).not.toBe(key);
+
+  // Every call of the region's Warden journals the key with its versions (spec B).
+  const view = resolveProjectView(c, 'P')!;
+  const resolveSource = createSourceResolver({
+    memory: new FileMemory(join(tempDir('memory'), 'm')),
+  });
+  const slots = buildRoleLayers(view.config, 'concurrency-locks', {
+    resolveSource,
+    scope: { threadId: 't', projectId: 'P', cwd: project },
+  });
+  await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm()]);
+  const store = new LocalSessionStore(':memory:');
+  try {
+    const auditor = new CompositionAuditor(AuditLog.for(tempDir('chorus-audit')), store);
+    const versions = auditor.versions('concurrency-locks', {
+      role: 'concurrency-locks',
+      instructions: slots.instructions.segments(),
+      domainKnowledge: slots.domainKnowledge.segments(),
+    });
+    expect(versions.chorus).toEqual({ region: 'concurrency-locks', key });
+    // The key is the region part's text hash, so the audit's source version carries the same hash.
+    const subject = `source-content:${regionSourceId('concurrency-locks')}@project:P`;
+    expect(auditor.audit.rows(subject).at(-1)!.afterHash).toBe(key);
+    expect(contentHash(auditor.recompose(versions.domainKnowledge))).toBe(
+      versions.composedHash.domainKnowledge,
+    );
+    // A hand-named Warden's call has no chorus key.
+    expect(
+      auditor.versions('librarian-reuse', {
+        instructions: [{ subject: 'prompt:agent:librarian-reuse', text: 'REUSE' }],
+        domainKnowledge: [{ subject: 'source-content:reuse-knowledge', text: 'K' }],
+      }).chorus,
+    ).toBeUndefined();
+  } finally {
+    store.close();
+  }
+  expect(regionOfSubject('source-content:region:concurrency-locks@project:P')).toBe(
+    'concurrency-locks',
+  );
+  expect(regionOfSubject('source-content:region:lens-model')).toBe('lens-model');
+  expect(regionOfSubject('source-content:regional-notes')).toBeUndefined();
+  expect(regionOfSubject('file:/x/region:y.md')).toBeUndefined();
+});
+
+test('a hand-written project Warden is refused under a chorus of regions, and a malformed region names itself', () => {
   const { project, regions } = projectWithRegions();
   const c = config(project);
   c.projects.P!.agents = { 'librarian-reuse': { extends: 'librarian-reuse', prompt: 'Use Bun' } };
   expect(() => validateConfig(c)).toThrow(
-    /project.agents.librarian-reuse is a Warden.*wardens: regions/,
+    /project.agents.librarian-reuse is a Warden.*chorus is its regions/,
   );
   c.projects.P!.agents = {
     tooling: {
@@ -451,7 +691,7 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
     DEFAULT_ROLE_BUDGET,
   );
   expect(instructions.length + text.length).toBeLessThan(DEFAULT_ROLE_BUDGET);
-  expect(regions).toBe(view.wardens.regionsDir!);
+  expect(view.chorus.layers[0]!.regionsDir).toBe(regions);
 });
 
 interface Call {
@@ -521,14 +761,14 @@ test('region Wardens run under the classifier charter, and their pointer reaches
   const c = config(project);
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
-  expect(rosterMode(view.config, 'P')).toBe('regions');
-  expect(wardenCharter(rosterMode(view.config, 'P'))).toEqual({
+  expect(chorusSource(view.config, 'P')).toBe('regions');
+  expect(wardenCharter(chorusSource(view.config, 'P'))).toEqual({
     text: WARDEN_CHARTER_CLASSIFY,
     version: WARDEN_CHARTER_CLASSIFY_VERSION,
   });
   // A thread without a project composes from the settings: the hand-named roster, its charter.
-  expect(rosterMode(c)).toBe('roster');
-  expect(wardenCharter(rosterMode(c))).toEqual({
+  expect(chorusSource(c)).toBe('roster');
+  expect(wardenCharter(chorusSource(c))).toEqual({
     text: WARDEN_CHARTER,
     version: WARDEN_CHARTER_VERSION,
   });
@@ -536,9 +776,9 @@ test('region Wardens run under the classifier charter, and their pointer reaches
   expect(WARDEN_CHARTER_CLASSIFY).toContain(
     'Look over here: <name(s) or class> (<where it is written>)',
   );
-  // The roster's charter in a regions-asked project without regions.
+  // The roster's charter in a project without regions.
   c.projects.Q = { id: 'Q', path: tempDir('q') };
-  expect(wardenCharter(rosterMode(resolveProjectView(c, 'Q')!.config, 'Q')).text).toBe(
+  expect(wardenCharter(chorusSource(resolveProjectView(c, 'Q')!.config, 'Q')).text).toBe(
     WARDEN_CHARTER,
   );
 
@@ -695,12 +935,12 @@ test('the primed pool is sized for the largest roster any project runs', () => {
   const { project } = projectWithRegions();
   const c = config(project);
   validateConfig(c);
-  // Global roster: one Warden. Project P under regions: two.
+  // Global roster: one Warden. Project P's chorus: two.
   expect(configuredExperts(c).experts.length).toBe(1);
   expect(largestRoster(c)).toBe(2);
   c.projects.P!.enabled = false;
   expect(largestRoster(c)).toBe(1);
   c.projects.P!.enabled = true;
-  c.wardens = 'roster';
+  c.projects.P!.chorus = { source: 'roster' };
   expect(largestRoster(c)).toBe(1);
 });

@@ -18,7 +18,7 @@ import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
-import type { WardensMode } from '../agents/warden-charter';
+import type { ChorusSource } from '../agents/warden-charter';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import {
@@ -106,13 +106,6 @@ export interface FoundryConfig {
    * Off by default (every Warden is asked); `{ "enabled": true }` opts in. See docs/subscription-decisions.md.
    */
   prefilter?: PrefilterSettings;
-  /**
-   * Which Warden roster runs: `roster` (default), the domain-advising agents in settings; or `regions`,
-   * one Warden per concept region of the project (`<project>/.foundry/regions/<id>/`), generated into
-   * the project view under the classifier charter. A project may set its own (`projects[id].wardens`).
-   * In a resolved project view this is the effective mode (docs/usage-and-context.md, "Region Wardens").
-   */
-  wardens?: WardensMode;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -231,14 +224,39 @@ export interface ProjectSettingsConfig {
   sources?: Record<string, DataSourceConfig>;
   /** Whether this project is enabled. Default: true. */
   enabled?: boolean;
-  /** This project's Warden roster mode; overrides the global `wardens`. */
-  wardens?: WardensMode;
-  /** Its regions directory under `wardens: "regions"`: absolute, or relative to `path`. Default `.foundry/regions`. */
-  regions?: string;
+  /**
+   * This project's chorus: the set of Wardens its threads run. Absent: the chorus from
+   * `.foundry/regions` when that directory holds regions, else the hand-named roster. In a resolved
+   * project view this is normalized (`source` effective, `layers` absolute); see
+   * docs/usage-and-context.md, "Chorus".
+   */
+  chorus?: ChorusSettings;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
   /** Required when `capacity` is `kingdom`. */
   kingdomCapacity?: ProjectKingdomCapacity;
+}
+
+/** One layer of a project's chorus: a regions directory (`<dir>/<region id>/{region.json,knowledge.md}`). */
+export interface ChorusLayerSettings {
+  /** Absolute, or relative to the project. */
+  regions: string;
+  /** Names the layer in the view, the startup log and the journal; default `layer-<n>`. */
+  label?: string;
+}
+
+/**
+ * A project's chorus, the set of region Wardens its threads run (Aron, 2026-10-15: "each project needs
+ * its own chorus"). `source: "regions"` (the default) builds it from layers of regions, in order: a
+ * region id present in a later layer replaces the earlier one whole; unique ids union. One layer is
+ * `regions` (default `.foundry/regions`); several are `layers`, e.g. a template base then this
+ * project's delta. With no regions found the hand-named roster runs and the view says why.
+ * `source: "roster"` runs the hand-named roster whatever regions exist.
+ */
+export interface ChorusSettings {
+  source?: ChorusSource;
+  regions?: string;
+  layers?: ChorusLayerSettings[];
 }
 
 /** A Kingdom-capacity project: the paired Kingdom, the Signet (`subscription.use`) it runs under, and the
@@ -940,9 +958,46 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
   }
 }
 
-function validateWardensMode(where: string, mode: unknown): void {
-  if (mode !== undefined && mode !== 'roster' && mode !== 'regions')
-    throw Error(`${where} must be "roster" or "regions"`);
+function validateChorusSettings(where: string, chorus: unknown): void {
+  if (chorus === undefined) return;
+  if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
+    throw Error(`${where} must be an object: { source?, regions? | layers? }`);
+  const c = chorus as Record<string, unknown>;
+  for (const key of Object.keys(c))
+    if (!['source', 'regions', 'layers'].includes(key))
+      throw Error(`${where}.${key} is not a chorus setting (source, regions, layers)`);
+  if (c.source !== undefined && c.source !== 'regions' && c.source !== 'roster')
+    throw Error(`${where}.source must be "regions" or "roster"`);
+  if (c.regions !== undefined && (typeof c.regions !== 'string' || !c.regions))
+    throw Error(`${where}.regions must be a path (absolute, or relative to the project)`);
+  if (c.layers !== undefined) {
+    if (c.regions !== undefined)
+      throw Error(`${where} names both regions and layers; regions is the one-layer form`);
+    if (!Array.isArray(c.layers) || !c.layers.length)
+      throw Error(`${where}.layers must be a non-empty list of { regions, label? }`);
+    const labels = new Set<string>();
+    c.layers.forEach((layer: unknown, index: number) => {
+      const at = `${where}.layers[${index}]`;
+      if (!layer || typeof layer !== 'object' || Array.isArray(layer))
+        throw Error(`${at} must be { regions, label? }`);
+      const l = layer as Record<string, unknown>;
+      for (const key of Object.keys(l))
+        if (key !== 'regions' && key !== 'label')
+          throw Error(`${at}.${key} is not a layer setting`);
+      if (typeof l.regions !== 'string' || !l.regions)
+        throw Error(`${at}.regions must be a path (absolute, or relative to the project)`);
+      if (l.label !== undefined && (typeof l.label !== 'string' || !l.label.trim()))
+        throw Error(`${at}.label must be a non-empty name`);
+      const label = typeof l.label === 'string' ? l.label : `layer-${index + 1}`;
+      if (labels.has(label))
+        throw Error(`${where}.layers: two layers are labelled ${JSON.stringify(label)}`);
+      labels.add(label);
+    });
+  }
+  if (c.source === 'roster' && (c.regions !== undefined || c.layers !== undefined))
+    throw Error(
+      `${where}: source "roster" runs the hand-named Wardens and takes no regions or layers`,
+    );
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1025,12 +1080,18 @@ export function validateConfig(config: FoundryConfig): void {
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   validatePrefilterSettings('prefilter', config.prefilter);
-  validateWardensMode('wardens', config.wardens);
+  if ('wardens' in config)
+    throw Error(
+      'settings key "wardens" is gone: a project\'s Wardens are its chorus, projects[id].chorus (docs/usage-and-context.md, "Chorus")',
+    );
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
-    validateWardensMode(`projects.${pid}.wardens`, project?.wardens);
-    if (project?.regions !== undefined && (typeof project.regions !== 'string' || !project.regions))
-      throw Error(`projects.${pid}.regions must be a path (absolute, or relative to the project)`);
+    for (const key of ['wardens', 'regions'] as const)
+      if (project && key in project)
+        throw Error(
+          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ source }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
+        );
+    validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
   }
   if ('instructions' in config)
     throw Error(

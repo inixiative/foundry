@@ -382,12 +382,15 @@ librarian-convention): instructions 4010 + domain knowledge 86182 = 90192 chars 
 budget of 120000 (composition.roles.librarian-convention.budget); largest:
 .../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
 
-### Region Wardens (`wardens: "regions"`)
+### Chorus (`projects[id].chorus`)
 
-The roster above is hand-named: each Warden is a `domain-advising` agent in
-settings. The `wardens` setting (default `"roster"`) switches a project to a
-roster **generated from its concept regions**, the shards the template's region
-builder writes (plan: "Wardens built from docs"):
+Aron, 2026-10-15: "Each project needs its own chorus, which is what we should
+call the set of wardens... you need it per project because all those docs are
+per project. The default should be per-project chorus."
+
+A project's **chorus** is the set of Wardens its threads run. By default it is
+built from the project's concept regions, the shards the template's region
+builder writes (plan: "Wardens built from docs"), one Warden per region:
 
 ```
 <project>/.foundry/regions/
@@ -397,33 +400,67 @@ builder writes (plan: "Wardens built from docs"):
                                every example by name, the specifics)
 ```
 
-- **Setting.** Global `wardens` applies to every project; `projects[id].wardens`
-  overrides it, and `projects[id].regions` points at another regions directory
-  (absolute, or relative to the project). A thread without a project composes
-  from the settings themselves and always runs the hand-named roster.
-- **Generated roster.** `resolveProjectView` reads `<regions>/<id>/region.json`
-  and generates one standalone project agent per region (`agents/region-roster.ts`):
-  kind `domain-librarian`, domain `<region id>`, `invocation: always`,
-  `guardTriggers` the write and exec tools (`REGION_GUARD_TRIGGERS`), its prompt
-  the generic region instructions (`REGION_WARDEN_INSTRUCTIONS`) plus the
-  region's title and routing line. Its composition defaults to
-  `instructions: {general: []}` (the region is its knowledge; it does not read
-  the CLAUDE.md stack), and a `composition.roles.<region id>` entry in settings
-  still wins field by field. The settings' hand-named Wardens are not
-  that project's Wardens; a hand-written project Warden entry is refused under
-  `regions`, since overlays go through role files. The view reports the result
-  (`view.wardens`: effective mode, directory, regions, or the reason it fell
-  back), `GET /api/projects/:id/resolved/agents` shows each generated agent with
-  `scope: "project-generated"` and `generatedFrom`, and the daemon logs each
-  project's effective mode at startup. A regions directory that is missing or
-  empty falls back to the roster and says so; a malformed region is an error
-  that names it.
+- **Setting.** `projects[id].chorus` is `{ source?, regions? | layers? }`.
+  `source` is `"regions"` (the default) or `"roster"`, the hand-named
+  `domain-advising` agents in settings, whatever regions exist. `regions` points
+  the one layer at another directory (absolute, or relative to the project;
+  default `.foundry/regions`). No setting means the chorus from
+  `.foundry/regions` when that directory holds regions; otherwise the hand-named
+  roster runs and the view, the startup log and the doctor say why. A thread
+  without a project composes from the settings themselves and always runs the
+  hand-named roster. There is no global setting: a chorus is per project
+  because its docs are.
+- **Layers.** A chorus may be built from layers, in order:
+
+  ```json
+  "chorus": { "layers": [
+    { "regions": "../template/.foundry/regions", "label": "template" },
+    { "regions": ".foundry/regions", "label": "kingdom" }
+  ] }
+  ```
+
+  Each layer is a regions directory. A region id present in a later layer
+  replaces the earlier one **whole** (its knowledge is not merged); ids present
+  once union. Labels default to `layer-<n>` and must be unique. A layer whose
+  directory is missing or empty contributes nothing and is still listed, so
+  what each layer gave is visible. How a project's delta composes *into* a base
+  region (rather than replacing it) is not built yet; the layer shape is where
+  it will go.
+- **Generated Wardens.** `resolveProjectView` composes the layers
+  (`agents/region-roster.ts`: `chorusLayers`, `composeChorus`) and generates one
+  standalone project agent per region: kind `domain-librarian`, domain
+  `<region id>`, `invocation: always`, `guardTriggers` the write and exec tools
+  (`REGION_GUARD_TRIGGERS`), its prompt the generic region instructions
+  (`REGION_WARDEN_INSTRUCTIONS`) plus the region's title and routing line. Its
+  composition defaults to `instructions: {general: []}` (the region is its
+  knowledge; it does not read the CLAUDE.md stack), and a
+  `composition.roles.<region id>` entry in settings still wins field by field.
+  The settings' hand-named Wardens are not that project's Wardens; a
+  hand-written project Warden entry is refused under a chorus of regions, since
+  overlays go through role files. The view reports the result (`view.chorus`:
+  effective `source`, what was `requested`, each layer as read, the composed
+  regions with the layer each came from, or the `reason` it fell back), and the
+  view's project entry carries the effective chorus normalized
+  (`chorus.source`, absolute `layers`), which is what `chorusSource` and the
+  charter read. `GET /api/projects/:id/resolved/agents` shows each generated
+  agent with `scope: "project-generated"` and `generatedFrom`;
+  `GET /api/projects/:id/chorus` and the doctor's `chorus` report list the
+  layers and regions with sizes and keys; the viewer's project settings have a
+  read-only **Chorus** page; the daemon logs each project's chorus at startup.
+  A malformed region is an error that names it.
 - **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
   slot, whole, through a generated `markdown` source (`region:<id>`), so the
   audit log versions it as `source-content:region:<id>@project:<project>` and
   every call records the exact text. The ladder then applies as for any role:
   `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
+- **Warm-cache key.** Each region has a key, the content hash of its composed
+  knowledge (`regionKey`: `knowledge.md` as its source loads it). It does not
+  depend on the project, the layer or the directory, so two projects whose
+  template-base region is identical have the same key, and a primed prefix
+  could be shared between them. Every Warden call journals it with its versions
+  (`versions.chorus: { region, key }`, THREAD-TREE spec B). The sharing itself
+  is not built; the key is what it will be looked up by.
 - **Charter.** Region Wardens run under the classifier charter
   (`WARDEN_CHARTER_CLASSIFY`, measured in the healthy-size test): two yes/no
   questions, `NO_COMMENT` when either is no, else one pointer, `Look over here:
@@ -431,12 +468,12 @@ builder writes (plan: "Wardens built from docs"):
   `{ relevant, pointer, where, level: exact | candidates | class }` on the advice
   result, each guard finding and the advice journal, and reaches the thread as
   "The <region> Warden chimed in:\n- Look over here: …". The charter version is
-  journalled with every call; a `wardens` change applies to new threads.
-- **Pool.** The primed decision pool is sized for the largest roster any
+  journalled with every call; a chorus change applies to new threads.
+- **Pool.** The primed decision pool is sized for the largest chorus any
   project runs (`largestRoster`), so a 53-region project primes 2 × 53 + 8 keys.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
-  scores the generated roster composed exactly as live (project view, role
-  layers, charter), without touching the daemon's settings.
+  scores a one-layer chorus from that directory, composed exactly as live
+  (project view, role layers, charter), without touching the daemon's settings.
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to
