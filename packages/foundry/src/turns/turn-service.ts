@@ -312,7 +312,9 @@ export class TurnService {
               console.warn(`[Turns] thread setup failed: ${(error as Error).message ?? error}`),
             );
         // A queued turn cancelled while it waited has already settled.
-        if (state.phase !== 'settled')
+        if (state.phase !== 'settled') {
+          // Out of the queue: the live turn reads running from here, not once the runtime first answers.
+          buffer.start();
           resolveSettled(
             await this.run(
               harness,
@@ -325,6 +327,7 @@ export class TurnService {
               images,
             ),
           );
+        }
       })
       .finally(() => {
         state.phase = 'settled';

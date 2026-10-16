@@ -28,7 +28,7 @@ export interface StreamBufferSnapshot {
   readonly startedAt: number;
   readonly completedAt?: number;
   readonly error?: string;
-  /** `queued`: accepted, nothing sent to the runtime yet (the journal's `queued`). */
+  /** `queued`: accepted, waiting its turn (a turn ahead of it, a held prompt, thread setup). */
   readonly status: 'queued' | 'running' | 'completed' | 'failed';
   readonly activity: readonly LiveActivity[];
   readonly truncated: boolean;
@@ -111,6 +111,12 @@ export class StreamBuffer {
       traceId: typeof value.traceId === 'string' ? value.traceId : undefined,
       meta,
     };
+  }
+  /** The turn left its queue (a turn ahead of it, a held prompt, thread setup): it is running now. */
+  start() {
+    if (this.done || this._status !== 'queued') return;
+    this._status = 'running';
+    this.touch();
   }
   append(text: string) {
     if (this.done || this._admissions.size) return;
