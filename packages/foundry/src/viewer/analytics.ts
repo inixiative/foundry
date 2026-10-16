@@ -14,6 +14,7 @@ import { appendFile, readFile } from 'node:fs/promises';
 import type {
   TokenCounts,
   TokenTracker,
+  UsageAttribution,
   UsageBreakdown,
   UsageEntry,
   UsageSummary,
@@ -92,9 +93,12 @@ export interface CallRecord extends Omit<TokenCounts, 'input' | 'output'> {
   readonly timestamp: number;
   readonly provider: string;
   readonly model: string;
+  readonly effort?: string;
   readonly agentId?: string;
   readonly threadId?: string;
   readonly spanId?: string;
+  readonly integrationId?: string;
+  readonly attribution?: UsageAttribution;
   readonly input: number | null;
   readonly output: number | null;
   readonly cost: number | null;
@@ -159,9 +163,12 @@ export class AnalyticsStore {
       timestamp: entry.timestamp,
       provider: entry.provider,
       model: entry.model,
+      effort: entry.effort,
       agentId: entry.agentId,
       threadId: entry.threadId,
       spanId: entry.spanId,
+      integrationId: entry.integrationId,
+      attribution: entry.attribution,
       ...entry.tokens,
       cost: entry.costKnown === false ? null : entry.cost,
       durationMs: extra?.durationMs,

@@ -51,6 +51,21 @@ describe('AnalyticsStore', () => {
       expect(store.totalCalls).toBe(1);
     });
 
+    test('a call keeps its effort, login and attribution', () => {
+      const call = store.recordCall(
+        makeUsageEntry({
+          effort: 'high',
+          integrationId: 'setup-token:abc123',
+          attribution: { runId: 'r1', role: 'implementer' },
+        }),
+      );
+      expect(call).toMatchObject({
+        effort: 'high',
+        integrationId: 'setup-token:abc123',
+        attribution: { runId: 'r1', role: 'implementer' },
+      });
+    });
+
     test('records multiple calls and increments counter', () => {
       store.recordCall(makeUsageEntry());
       store.recordCall(makeUsageEntry());

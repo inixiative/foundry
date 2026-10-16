@@ -416,6 +416,7 @@ export {
   type UsageFilter,
   type UsageRecord,
   type UsageSummary,
+  type UsageWindow,
   type WindowReading,
   windowDelta,
 } from './token-tracker';

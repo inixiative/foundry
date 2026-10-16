@@ -33,7 +33,7 @@ describe('usage attribution', () => {
 
     const none = tracker.usageRecord({ attribution: { fixtureId: '695', arm: 'none' } });
     expect(none.calls).toBe(2);
-    expect(none.usage).toMatchObject({ input: 13, output: 7, cacheRead: 100, total: 120 });
+    expect(none.totals).toMatchObject({ input: 13, output: 7, cacheRead: 100, total: 120 });
     expect(none.entries.every((e) => e.attribution?.arm === 'none')).toBe(true);
 
     expect(tracker.entries({ integrationId: 'setup-token:def456' })).toHaveLength(1);
@@ -50,7 +50,7 @@ describe('usage attribution', () => {
       integrationId: login,
       phase: 'before',
       source: 'session',
-      windows: { five_hour: 10, seven_day: 4 },
+      windows: { five_hour: { usedPercent: 10 }, seven_day: { usedPercent: 4 } },
       attribution: run('none'),
       timestamp: 1,
     });
@@ -59,7 +59,12 @@ describe('usage attribution', () => {
       integrationId: login,
       phase: 'after',
       source: 'session',
-      windows: { five_hour: 12.5, seven_day: 4.25, opus: 1 },
+      windows: {
+        five_hour: { usedPercent: 12.5 },
+        seven_day: { usedPercent: 4.25 },
+        opus: { usedPercent: 1 },
+      },
+      blocked: false,
       plan: 'max',
       attribution: run('none'),
     });
@@ -68,7 +73,7 @@ describe('usage attribution', () => {
       integrationId: 'setup-token:other',
       phase: 'before',
       source: 'probe',
-      windows: { five_hour: 50 },
+      windows: { five_hour: { usedPercent: 50 } },
       attribution: run('correction'),
     });
     const record = tracker.usageRecord({ attribution: { arm: 'none' } });
@@ -82,10 +87,21 @@ describe('usage attribution', () => {
     expect(tracker.windowReadings()).toHaveLength(0);
   });
 
-  test('windowDelta covers ids present in both readings', () => {
-    expect(windowDelta({ five_hour: 10, seven_day: 4 }, { five_hour: 12.5, opus: 1 })).toEqual({
-      five_hour: 2.5,
+  test('windowDelta covers ids present in both readings, and sets aside a window that reset', () => {
+    const w = (usedPercent: number, resetsAt?: number) => ({ usedPercent, resetsAt });
+    expect(
+      windowDelta({ five_hour: w(10), seven_day: w(4) }, { five_hour: w(12.5), opus: w(1) }),
+    ).toEqual({
+      delta: { five_hour: 2.5 },
+      reset: [],
     });
-    expect(windowDelta({ a: 0.1 }, { a: 0.3 })).toEqual({ a: 0.2 });
+    expect(windowDelta({ a: w(0.1) }, { a: w(0.3) }).delta).toEqual({ a: 0.2 });
+    const hour = 3_600_000;
+    expect(
+      windowDelta(
+        { five_hour: w(90, 5 * hour), seven_day: w(40, 100 * hour) },
+        { five_hour: w(3, 10 * hour), seven_day: w(41, 100 * hour + 1_000) },
+      ),
+    ).toEqual({ delta: { seven_day: 1 }, reset: ['five_hour'] });
   });
 });

@@ -42,12 +42,15 @@ cannot overwrite each other; a call that crosses a token budget is still saved.
 on (`integrationId`: a Kingdom Integration id or a local label such as
 `setup-token:<sha256 prefix>`, never the credential) and free `attribution` keys
 (an Oracle replay sets `fixtureId`, `arm`, `runId`, `role`).
-`recordWindows` stores a reading of the login's usage windows (percent per window
-id, its phase and how it was read) beside the calls; it spends nothing.
-`usageRecord(filter)` returns the selected calls, their totals and readings, and
-`windowDelta` gives the growth between two readings. A window covers the whole
-login, so its growth is an upper bound on what the calls between the readings
-spent.
+`recordWindows` stores a reading of the login's usage windows (percent used and
+reset time per window id, blocked/reached flags, its phase and how it was read)
+beside the calls; it spends nothing. `usageRecord(filter)` returns the selected
+calls, their `totals` and readings. `windowDelta` gives the growth between two
+readings and lists a window whose reset time moved under `reset` instead, since
+its growth is unknown. A window covers the whole login, so its growth is an upper
+bound on what the calls between the readings spent. A login that reports no
+windows (a `claude setup-token` over get_usage) has token counts only. The
+viewer's call log keeps each call's effort, login and attribution.
 
 ## Native compaction
 

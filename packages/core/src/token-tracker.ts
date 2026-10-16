@@ -50,6 +50,15 @@ export interface UsageEntry {
  * whole login, so its growth between two readings is an upper bound on what the calls between them
  * spent.
  */
+/** One usage window in a reading. */
+export interface UsageWindow {
+  /** 0–100. */
+  readonly usedPercent: number;
+  /** When the window resets (epoch ms); a different value in a later reading means it reset. */
+  readonly resetsAt?: number;
+  readonly windowMinutes?: number;
+}
+
 export interface WindowReading {
   /** When the provider observed it (epoch ms). */
   readonly timestamp: number;
@@ -59,8 +68,11 @@ export interface WindowReading {
   readonly phase: string;
   /** How it was read, e.g. `session` (the work's own session) or `probe` (a separate one). */
   readonly source: string;
-  /** 0–100 per window id. */
-  readonly windows: Readonly<Record<string, number>>;
+  readonly windows: Readonly<Record<string, UsageWindow>>;
+  /** The provider reports ordinary usage blocked. Absent means not reported. */
+  readonly blocked?: boolean;
+  /** The provider's reason label when a limit is reached. */
+  readonly reachedType?: string;
   readonly plan?: string;
   readonly attribution?: UsageAttribution;
 }
@@ -84,21 +96,37 @@ export interface UsageFilter {
 /** The usage a filter selects: its calls, their totals and the window readings, as recorded. */
 export interface UsageRecord {
   readonly calls: number;
-  readonly usage: TokenUsage;
+  readonly totals: TokenUsage;
   readonly entries: ReadonlyArray<UsageEntry>;
   readonly windowReadings: ReadonlyArray<WindowReading>;
 }
 
-/** Growth per window id present in both readings, in percentage points (2 decimals). */
+/** Two readings of one reset time this far apart are different windows (reset times jitter). */
+const RESET_TOLERANCE_MS = 60_000;
+
+/**
+ * Growth per window id present in both readings, in percentage points (2 decimals). A window
+ * whose reset time moved between the readings reset in between: its growth is unknown, so it is
+ * listed under `reset` instead of `delta`.
+ */
 export function windowDelta(
-  before: Readonly<Record<string, number>>,
-  after: Readonly<Record<string, number>>,
-): Record<string, number> {
-  return Object.fromEntries(
-    Object.keys(after)
-      .filter((id) => before[id] !== undefined)
-      .map((id) => [id, Number(((after[id] as number) - (before[id] as number)).toFixed(2))]),
-  );
+  before: WindowReading['windows'],
+  after: WindowReading['windows'],
+): { delta: Record<string, number>; reset: string[] } {
+  const delta: Record<string, number> = {};
+  const reset: string[] = [];
+  for (const [id, a] of Object.entries(after)) {
+    const b = before[id];
+    if (!b) continue;
+    if (
+      b.resetsAt !== undefined &&
+      a.resetsAt !== undefined &&
+      Math.abs(a.resetsAt - b.resetsAt) > RESET_TOLERANCE_MS
+    )
+      reset.push(id);
+    else delta[id] = Number((a.usedPercent - b.usedPercent).toFixed(2));
+  }
+  return { delta, reset };
 }
 
 const attributionMatches = (
@@ -352,7 +380,7 @@ export class TokenTracker {
     const entries = this.entries(filter);
     return {
       calls: entries.length,
-      usage: this._aggregate(entries),
+      totals: this._aggregate(entries),
       entries,
       windowReadings: this.windowReadings(filter),
     };
