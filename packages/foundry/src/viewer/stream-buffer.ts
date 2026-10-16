@@ -17,6 +17,7 @@ export interface LiveActivity {
   output?: string;
 }
 const TOOL_DETAIL_LIMIT = 4096;
+const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
 const boundedInput = (input: Readonly<Record<string, unknown>> | undefined) =>
   input && JSON.stringify(input).length <= TOOL_DETAIL_LIMIT ? structuredClone(input) : undefined;
 export interface StreamBufferSnapshot {
@@ -255,7 +256,14 @@ export class StreamBuffer {
     this._terminal = this.terminal(terminal);
     this._content =
       typeof terminal?.content === 'string' ? this.bound(terminal.content) : this._content;
-    this._activity = this._activity.filter((a) => a.phase !== 'final_answer'); // original preview remains in the native journal
+    // A text row the terminal content already carries is the answer itself, whatever phase the runtime
+    // labelled it (Claude's text rows carry none); the original preview remains in the native journal.
+    const answer = normalizeText(this._content);
+    this._activity = this._activity.filter(
+      (a) =>
+        a.kind !== 'text' ||
+        (a.phase !== 'final_answer' && !(answer && answer.includes(normalizeText(a.text ?? '')))),
+    );
     this._completedAt = Date.now();
     this._status = 'completed';
     this.touch();

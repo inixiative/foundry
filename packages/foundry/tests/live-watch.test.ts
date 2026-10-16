@@ -370,6 +370,50 @@ test('protocol-labelled final answer preview is not repeated as activity after c
   expect(b.snapshot().activity).toHaveLength(0);
 });
 
+test('text rows the terminal content carries are dropped whatever their phase; narration is kept', () => {
+  const r = new StreamBufferRegistry(),
+    b = r.open('M', 'T'),
+    owner = {
+      threadId: 'T',
+      messageId: 'M',
+      dispatchId: 'D',
+      generation: 'G',
+      providerSessionKey: 'T',
+    };
+  b.register({ schema: 1, owner, admissionId: 'A', nativeOutcome: 'unknown' });
+  const text = (itemId: string, value: string) =>
+    b.observe({
+      schema: 1,
+      owner,
+      admissionId: 'A',
+      nativeOutcome: 'unknown',
+      kind: 'text',
+      itemId,
+      text: value,
+    });
+  text('narration', 'Let me check the tests first.');
+  b.observe({
+    schema: 1,
+    owner,
+    admissionId: 'A',
+    nativeOutcome: 'unknown',
+    kind: 'tool_use',
+    callId: 'c1',
+    toolName: 'Bash',
+  });
+  text('answer', 'All  tests\npass.');
+  expect(b.snapshot().activity.map((a) => a.phase)).toEqual([
+    'unavailable',
+    undefined,
+    'unavailable',
+  ]);
+  b.complete({ content: 'All tests pass.' });
+  expect(b.snapshot().activity.map((a) => a.text ?? a.toolName)).toEqual([
+    'Let me check the tests first.',
+    'Bash',
+  ]);
+});
+
 test('plain external POST has the same live turn; its full result stays in its HTTP response', async () => {
   const dir = await mkdtemp(resolve('.foundry/qa/lw-source-'));
   const f = await liveWatchFixture(dir);
