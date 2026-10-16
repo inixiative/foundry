@@ -35,6 +35,20 @@ response-cache flag. Hover cache writes for the TTL breakdown and cache reads
 for the original usage tags. JSONL appends are serialized so concurrent calls
 cannot overwrite each other; a call that crosses a token budget is still saved.
 
+## Attribution and window readings
+
+`TokenTracker` (foundry-core) is the one usage record. A `UsageEntry` carries
+`provider`, `model`, `effort`, `agentId`, `threadId`, `spanId`, the login it ran
+on (`integrationId`: a Kingdom Integration id or a local label such as
+`setup-token:<sha256 prefix>`, never the credential) and free `attribution` keys
+(an Oracle replay sets `fixtureId`, `arm`, `runId`, `role`).
+`recordWindows` stores a reading of the login's usage windows (percent per window
+id, its phase and how it was read) beside the calls; it spends nothing.
+`usageRecord(filter)` returns the selected calls, their totals and readings, and
+`windowDelta` gives the growth between two readings. A window covers the whole
+login, so its growth is an upper bound on what the calls between the readings
+spent.
+
 ## Native compaction
 
 `ClaudeCodeSessionAdapter` defaults to:

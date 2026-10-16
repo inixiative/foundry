@@ -410,9 +410,14 @@ export {
   type ModelPricing,
   TokenTracker,
   type TokenUsage,
+  type UsageAttribution,
   type UsageBreakdown,
   type UsageEntry,
+  type UsageFilter,
+  type UsageRecord,
   type UsageSummary,
+  type WindowReading,
+  windowDelta,
 } from './token-tracker';
 // Tools — typed execution interfaces
 export {

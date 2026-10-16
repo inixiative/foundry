@@ -15,21 +15,96 @@ export interface TokenUsage extends TokenCounts {
 }
 
 /**
- * A single recorded usage entry — one LLM call.
+ * What a usage entry or window reading is for, beyond the built-in dimensions: e.g. a replay's
+ * `fixtureId`, `arm`, `runId` and `role`. Filters match on these keys exactly.
+ */
+export type UsageAttribution = Readonly<Record<string, string>>;
+
+/**
+ * A single recorded usage entry — one LLM call (for a native session, one turn).
  */
 export interface UsageEntry {
   readonly timestamp: number;
   readonly provider: string;
   readonly model: string;
+  readonly effort?: string;
   readonly agentId?: string;
   readonly threadId?: string;
   readonly spanId?: string;
+  /**
+   * The subscription login the call ran on, by a non-secret id: a Kingdom Integration id, or a
+   * local label (`local`, `setup-token:<sha256 prefix>`). Never the credential itself.
+   */
+  readonly integrationId?: string;
+  readonly attribution?: UsageAttribution;
   readonly tokens: Readonly<TokenCounts>;
   readonly cost: number;
   /** False means cost is an unpriced subtotal, not a zero-price acknowledgment. */
   readonly costKnown?: boolean;
   readonly cached?: boolean;
 }
+
+/**
+ * One reading of a subscription login's usage windows (percent used per window id, e.g.
+ * `five_hour`), taken over the provider's control channel, not a model call. A window covers the
+ * whole login, so its growth between two readings is an upper bound on what the calls between them
+ * spent.
+ */
+export interface WindowReading {
+  /** When the provider observed it (epoch ms). */
+  readonly timestamp: number;
+  readonly provider: string;
+  readonly integrationId?: string;
+  /** Where in the work it was taken, e.g. `before`, `after`, `gate`. */
+  readonly phase: string;
+  /** How it was read, e.g. `session` (the work's own session) or `probe` (a separate one). */
+  readonly source: string;
+  /** 0–100 per window id. */
+  readonly windows: Readonly<Record<string, number>>;
+  readonly plan?: string;
+  readonly attribution?: UsageAttribution;
+}
+
+/**
+ * Selects entries and readings: every given field must match, and every given attribution key.
+ * Window readings carry no model, effort, agent, thread or span, so only `provider`,
+ * `integrationId` and `attribution` select them.
+ */
+export interface UsageFilter {
+  readonly provider?: string;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly agentId?: string;
+  readonly threadId?: string;
+  readonly spanId?: string;
+  readonly integrationId?: string;
+  readonly attribution?: UsageAttribution;
+}
+
+/** The usage a filter selects: its calls, their totals and the window readings, as recorded. */
+export interface UsageRecord {
+  readonly calls: number;
+  readonly usage: TokenUsage;
+  readonly entries: ReadonlyArray<UsageEntry>;
+  readonly windowReadings: ReadonlyArray<WindowReading>;
+}
+
+/** Growth per window id present in both readings, in percentage points (2 decimals). */
+export function windowDelta(
+  before: Readonly<Record<string, number>>,
+  after: Readonly<Record<string, number>>,
+): Record<string, number> {
+  return Object.fromEntries(
+    Object.keys(after)
+      .filter((id) => before[id] !== undefined)
+      .map((id) => [id, Number(((after[id] as number) - (before[id] as number)).toFixed(2))]),
+  );
+}
+
+const attributionMatches = (
+  attribution: UsageAttribution | undefined,
+  want: UsageAttribution | undefined,
+): boolean => !want || Object.entries(want).every(([key, value]) => attribution?.[key] === value);
 
 /**
  * Per-model pricing: cost in dollars per 1 million tokens.
@@ -188,6 +263,7 @@ type EventHandler = (status: BudgetStatus) => void;
 
 export class TokenTracker {
   private readonly _entries: UsageEntry[] = [];
+  private readonly _windowReadings: WindowReading[] = [];
   private readonly _costTable: CostTable;
   private readonly _budget: BudgetConfig;
   private readonly _warningHandlers: EventHandler[] = [];
@@ -232,9 +308,55 @@ export class TokenTracker {
     return full;
   }
 
+  /**
+   * Record a reading of a login's usage windows. It spends nothing, so no budget is checked.
+   * `timestamp` defaults to now.
+   */
+  recordWindows(reading: Omit<WindowReading, 'timestamp'> & { timestamp?: number }): WindowReading {
+    const full: WindowReading = { ...reading, timestamp: reading.timestamp ?? Date.now() };
+    this._windowReadings.push(full);
+    return full;
+  }
+
   // -----------------------------------------------------------------------
   // Queries
   // -----------------------------------------------------------------------
+
+  /** Every entry the filter selects, in recording order. */
+  entries(filter: UsageFilter = {}): ReadonlyArray<UsageEntry> {
+    return this._entries.filter(
+      (e) =>
+        (filter.provider === undefined || e.provider === filter.provider) &&
+        (filter.model === undefined || e.model === filter.model) &&
+        (filter.effort === undefined || e.effort === filter.effort) &&
+        (filter.agentId === undefined || e.agentId === filter.agentId) &&
+        (filter.threadId === undefined || e.threadId === filter.threadId) &&
+        (filter.spanId === undefined || e.spanId === filter.spanId) &&
+        (filter.integrationId === undefined || e.integrationId === filter.integrationId) &&
+        attributionMatches(e.attribution, filter.attribution),
+    );
+  }
+
+  /** Every window reading the filter selects (by provider, integrationId and attribution). */
+  windowReadings(filter: UsageFilter = {}): ReadonlyArray<WindowReading> {
+    return this._windowReadings.filter(
+      (r) =>
+        (filter.provider === undefined || r.provider === filter.provider) &&
+        (filter.integrationId === undefined || r.integrationId === filter.integrationId) &&
+        attributionMatches(r.attribution, filter.attribution),
+    );
+  }
+
+  /** The calls, totals and window readings a filter selects, as one record. */
+  usageRecord(filter: UsageFilter = {}): UsageRecord {
+    const entries = this.entries(filter);
+    return {
+      calls: entries.length,
+      usage: this._aggregate(entries),
+      entries,
+      windowReadings: this.windowReadings(filter),
+    };
+  }
 
   get totalTokens(): TokenUsage {
     return this._aggregate(this._entries);
@@ -291,9 +413,10 @@ export class TokenTracker {
     };
   }
 
-  /** Clear all recorded entries and reset warning state. */
+  /** Clear all recorded entries and window readings, and reset warning state. */
   reset(): void {
     this._entries.length = 0;
+    this._windowReadings.length = 0;
     this._warningEmitted = false;
   }
 
@@ -340,7 +463,7 @@ export class TokenTracker {
     );
   }
 
-  private _aggregate(entries: UsageEntry[]): TokenUsage {
+  private _aggregate(entries: ReadonlyArray<UsageEntry>): TokenUsage {
     const tokens = sumTokenCounts(entries.map((e) => e.tokens));
     return {
       ...tokens,
