@@ -233,6 +233,14 @@ export class FoundryClient {
     return this.request('GET', `/api/feedback${query}`);
   }
 
+  /** `/feedback <text>`: an explicit feedback item on a thread, pointing at its last turn unless one is named. */
+  giveFeedback(
+    threadId: string,
+    body: { text: string; surface: string; turnId?: string; messageId?: string; tags?: string[] },
+  ): Promise<{ item: FeedbackView }> {
+    return this.request('POST', `/api/threads/${encodeURIComponent(threadId)}/feedback`, body);
+  }
+
   /** Record a correction against a turn's span: it reaches the thread's feedback capture. */
   intervene(
     threadId: string,

@@ -485,31 +485,35 @@ export function createViewer(config: ViewerConfig) {
       streams.threadsChanged(thread.id);
     },
   });
-  // Feedback lifecycle: capture → tune → change, journalled; needs the journal and a decision provider.
+  // Feedback, journalled: explicit items need only the journal; detection and tuning (capture → tune →
+  // change) also need a decision provider.
   const feedbackProvider = config.feedbackProvider;
-  const feedback: FeedbackService | null =
-    localStore && feedbackProvider
-      ? new FeedbackService({
-          store: localStore,
-          config: () => configStore.config,
-          queue: config.actionQueue ?? null,
-          thread: (id) => directory.get(id),
-          cartographer: (id) => config.threadFactory?.runtime?.get(id)?.cartographer,
-          classify: (input) => classifyCorrection(feedbackProvider, input),
-          match: (statement, candidates, priority) =>
-            matchExisting(feedbackProvider, statement, candidates, priority),
-          // Role files compose on their next prepare; main's instructions are a stack layer of the thread.
-          invalidate: (role, threadId) => {
-            invalidateComposition();
-            if (role === MAIN_ROLE)
-              directory.get(threadId)?.stack.getLayer('instructions')?.invalidate();
-          },
-          roots: (thread) => feedbackRoots(thread, configStore.config),
-          changed: (item) => streams.feedbackChanged(item),
-          audit: configStore.audit,
-          log: (message) => log.warn(message),
-        })
-      : null;
+  const feedback: FeedbackService | null = localStore
+    ? new FeedbackService({
+        store: localStore,
+        config: () => configStore.config,
+        queue: config.actionQueue ?? null,
+        thread: (id) => directory.get(id),
+        cartographer: (id) => config.threadFactory?.runtime?.get(id)?.cartographer,
+        ...(feedbackProvider
+          ? {
+              classify: (input) => classifyCorrection(feedbackProvider, input),
+              match: (statement, candidates, priority) =>
+                matchExisting(feedbackProvider, statement, candidates, priority),
+            }
+          : {}),
+        // Role files compose on their next prepare; main's instructions are a stack layer of the thread.
+        invalidate: (role, threadId) => {
+          invalidateComposition();
+          if (role === MAIN_ROLE)
+            directory.get(threadId)?.stack.getLayer('instructions')?.invalidate();
+        },
+        roots: (thread) => feedbackRoots(thread, configStore.config),
+        changed: (item) => streams.feedbackChanged(item),
+        audit: configStore.audit,
+        log: (message) => log.warn(message),
+      })
+    : null;
   registerKingdomRoutes(
     app,
     configStore,

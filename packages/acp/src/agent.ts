@@ -93,8 +93,8 @@ const COMMANDS = [
   {
     name: 'feedback',
     description:
-      'Your feedback and where it went; apply, edit or dismiss one: /feedback apply <id>',
-    input: { hint: 'all | apply <id> | dismiss <id> | later <id> | edit <id> <rule>' },
+      'Give feedback on the last turn (/feedback <text>); with no text, list this project’s open feedback',
+    input: { hint: '<text> | all | apply|dismiss|later <fb_id> | edit <fb_id> <rule>' },
   },
 ];
 
@@ -611,36 +611,47 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     return 'Correction recorded. Foundry will learn from it.';
   };
 
-  /** `/feedback`: list this thread's project feedback, or answer one item's pending tuning prompt. */
+  /**
+   * `/feedback <text>`: explicit feedback on the session's last turn, the same item the viewer records.
+   * With no text (or `all`), list this thread's project feedback; `apply|dismiss|later|edit <fb_id>`
+   * answers a detected item's pending tuning prompt.
+   */
   const feedbackCommand = async (
     session: Session,
     foundry: Daemon,
     body: string,
   ): Promise<string> => {
     const [verb = 'list', itemId, ...rest] = body.split(/\s+/).filter(Boolean);
+    const answering =
+      ['apply', 'dismiss', 'later', 'edit'].includes(verb) && /^fb_[0-9a-f]+$/.test(itemId ?? '');
+    if (verb !== 'list' && verb !== 'all' && !answering) {
+      const { item } = await foundry.http.giveFeedback(session.threadId, {
+        text: body,
+        surface: `acp:${clientName}`,
+      });
+      return `Feedback recorded (${item.id}). It is in Foundry's Feedback inbox, on this thread.`;
+    }
     if (verb === 'list' || verb === 'all') {
       const thread = await foundry.http.thread(session.threadId).catch(() => undefined);
       const { items } = await foundry.http.feedback(thread?.meta.projectId ?? undefined);
-      if (!items.length) return 'No feedback captured yet.';
-      const count = (attention: string) =>
-        items.filter((item) => item.attention === attention).length;
-      const shown =
-        verb === 'all' ? items : items.filter((item) => item.attention === 'needs attention');
+      if (!items.length) return 'No feedback yet. Give some with /feedback <text>.';
+      const open = items.filter((item) => item.inbox === 'open');
+      const shown = verb === 'all' ? items : open;
       return [
-        `Feedback: ${count('needs attention')} need attention, ${count('in progress')} in progress, ${count('healthy')} healthy.`,
+        `Feedback: ${open.length} open, ${items.length - open.length} archived.`,
         ...shown.slice(0, 10).map((item) => {
+          const where =
+            item.origin.threadId === session.threadId ? 'this thread' : item.origin.threadId;
+          if (item.originKind === 'explicit')
+            return `- ${item.id}${item.inbox === 'archived' ? ' [archived]' : ''} ${item.statement}\n  on ${where}`;
           const roles = item.route?.roles.join(', ') ?? 'unrouted';
-          const confidence =
-            item.confidence.value === null
-              ? ''
-              : `, confidence ${Math.round(item.confidence.value * 100)}% (exposure-based)`;
-          return `- ${item.id} [${item.stage}] ${item.statement}\n  → ${roles}${confidence}. ${item.reason}`;
+          return `- ${item.id} [${item.stage}] ${item.statement}\n  → ${roles}. ${item.reason}`;
         }),
-        ...(verb === 'all' ? [] : ['/feedback all lists everything.']),
+        ...(verb === 'all' ? [] : ['/feedback all includes archived items.']),
       ].join('\n');
     }
-    if (!['apply', 'dismiss', 'later', 'edit'].includes(verb) || !itemId)
-      return 'Usage: /feedback [all] | apply <id> | dismiss <id> | later <id> | edit <id> <rule>';
+    if (!itemId)
+      return 'Usage: /feedback <text> | all | apply|dismiss|later <id> | edit <id> <rule>';
     const rule = rest.join(' ').trim();
     if (verb === 'edit' && !rule) return 'Usage: /feedback edit <id> <the rule, in one line>';
     await foundry.http.answerFeedback(

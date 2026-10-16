@@ -49,7 +49,8 @@ const warden = (domain: string): AgentSettingsConfig => ({
 function config(feedback?: FoundryConfig['feedback']): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = { 'convention-warden': warden('convention') };
-  if (feedback) c.feedback = feedback;
+  // Detection is opt-in (`feedback.capture`, default false); these tests exercise it.
+  c.feedback = { capture: true, ...feedback };
   return c;
 }
 

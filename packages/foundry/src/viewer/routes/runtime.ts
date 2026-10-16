@@ -7,8 +7,8 @@ import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
-import type { FeedbackService } from '../../feedback/service';
-import { byAttention, feedbackView } from '../../feedback/view';
+import { type FeedbackService, localOperator } from '../../feedback/service';
+import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
 import {
@@ -367,19 +367,82 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     return c.json(interventions.history.slice(0, limit));
   });
 
-  // The feedback lifecycle view: items with their route, changes, uses and recurrence.
+  // Feedback items, newest first: all, a project's, or a thread's; open or archived (the inbox).
   app.get('/api/feedback', (c) => {
     const feedback = deps.feedback;
-    if (!feedback) return c.json({ error: 'feedback lifecycle unavailable', items: [] }, 503);
+    if (!feedback) return c.json({ error: 'feedback unavailable', items: [] }, 503);
     const projectId = c.req.query('projectId');
+    const threadId = c.req.query('threadId');
+    const inbox = c.req.query('status');
+    if (inbox !== undefined && inbox !== 'open' && inbox !== 'archived')
+      return c.json({ error: 'status is open or archived' }, 400);
+    const attention = c.req.query('attention');
     const items =
       projectId === undefined ? feedback.lifecycle.items : feedback.lifecycle.forProject(projectId);
-    const attention = c.req.query('attention');
     const views = items
+      .filter((item) => threadId === undefined || item.origin.threadId === threadId)
+      .filter((item) => inbox === undefined || item.inbox === inbox)
       .map((item) => feedbackView(feedback, item))
       .filter((view) => !attention || view.attention === attention)
-      .sort(byAttention);
+      .sort(attention ? byAttention : newestFirst);
     return c.json({ items: views });
+  });
+  // `/feedback <text>`: an explicit item on this thread, pointing at its last turn unless one is named.
+  app.post('/api/threads/:threadId/feedback', async (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback unavailable' }, 503);
+    const threadId = c.req.param('threadId');
+    const thread =
+      directory.get(threadId) ?? localStore?.threads().find((stored) => stored.id === threadId);
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    const body = await c.req
+      .json<Record<string, unknown>>()
+      .catch(() => ({}) as Record<string, unknown>);
+    if (typeof body.text !== 'string' || !body.text.trim())
+      return c.json({ error: 'text is required' }, 400);
+    if (body.turnId !== undefined && body.turnId !== null && typeof body.turnId !== 'string')
+      return c.json({ error: 'turnId must be a string' }, 400);
+    if (body.messageId !== undefined && typeof body.messageId !== 'string')
+      return c.json({ error: 'messageId must be a string' }, 400);
+    if (
+      body.tags !== undefined &&
+      (!Array.isArray(body.tags) || body.tags.some((tag) => typeof tag !== 'string'))
+    )
+      return c.json({ error: 'tags must be strings' }, 400);
+    try {
+      const item = feedback.record(thread, {
+        text: body.text,
+        ...(body.turnId !== undefined ? { turnId: body.turnId as string | null } : {}),
+        ...(typeof body.messageId === 'string' ? { messageId: body.messageId } : {}),
+        ...(Array.isArray(body.tags) ? { tags: body.tags as string[] } : {}),
+        author: {
+          name: localOperator(),
+          surface: typeof body.surface === 'string' ? body.surface.slice(0, 80) : 'viewer',
+        },
+      });
+      return c.json({ item: feedbackView(feedback, item) }, 201);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+  });
+  // Archive items, or put them back in the inbox (one or many).
+  app.post('/api/feedback/status', async (c) => {
+    const feedback = deps.feedback;
+    if (!feedback) return c.json({ error: 'feedback unavailable' }, 503);
+    const body = await c.req
+      .json<Record<string, unknown>>()
+      .catch(() => ({}) as Record<string, unknown>);
+    if (body.status !== 'open' && body.status !== 'archived')
+      return c.json({ error: 'status is open or archived' }, 400);
+    const ids = body.itemIds;
+    if (!Array.isArray(ids) || !ids.length || ids.some((id) => typeof id !== 'string'))
+      return c.json({ error: 'itemIds lists one or more item ids' }, 400);
+    try {
+      const changed = feedback.setInbox(ids as string[], body.status, localOperator());
+      return c.json({ items: changed.map((item) => feedbackView(feedback, item)) });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 404);
+    }
   });
   app.get('/api/feedback/:itemId', (c) => {
     const feedback = deps.feedback;
@@ -461,7 +524,10 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     // A correction is explicit feedback: captured into the lifecycle off the request path.
     if (deps.feedback && typeof body.correction === 'string')
       void deps.feedback
-        .intervention(thread, body.correction)
+        .intervention(thread, body.correction, {
+          name: localOperator(),
+          surface: typeof body.operator === 'string' ? body.operator.slice(0, 80) : 'viewer',
+        })
         .catch((error) =>
           console.warn('[Feedback] correction not captured:', (error as Error).message),
         );

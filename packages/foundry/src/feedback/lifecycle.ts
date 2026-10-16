@@ -3,9 +3,11 @@ import {
   type FeedbackApplyRecord,
   type FeedbackCaptureRecord,
   type FeedbackCategory,
+  type FeedbackInbox,
   type FeedbackLevel,
   type FeedbackRouteRecord,
   type FeedbackSlot,
+  type FeedbackStatusRecord,
   type FeedbackTuneRecord,
   isFeedbackPhase,
 } from './types';
@@ -31,15 +33,21 @@ export interface FeedbackOccurrence {
   readonly exposedAtTurn?: boolean;
 }
 
-/** One item's lifecycle, folded from its journal rows: feedback → routed → change → recurrence. */
+/**
+ * One item, folded from its journal rows: feedback → routed → change → recurrence. Provenance is the
+ * origin (thread, turn, message) and the thread's project; `inbox` is open until archived.
+ */
 export interface FeedbackItem {
   readonly id: string;
   projectId: string | null;
   readonly origin: { threadId: string; turnId: string | null; at: number };
   statement: string;
   sharp: boolean;
-  category: FeedbackCategory;
+  category?: FeedbackCategory;
   tags: string[];
+  author?: { name: string; surface: string };
+  messageId?: string;
+  inbox: FeedbackInbox;
   quote: string;
   before: string;
   originKind: FeedbackCaptureRecord['origin'];
@@ -106,8 +114,11 @@ export class FeedbackLifecycle {
         origin: { threadId: row.threadId, turnId: row.turnId, at: row.storedAt },
         statement: record.statement,
         sharp: record.sharp,
-        category: record.category,
+        ...(record.category ? { category: record.category } : {}),
         tags: [...record.tags],
+        ...(record.author ? { author: record.author } : {}),
+        ...(record.messageId ? { messageId: record.messageId } : {}),
+        inbox: 'open',
         quote: record.quote,
         before: record.before,
         originKind: record.origin,
@@ -151,6 +162,8 @@ export class FeedbackLifecycle {
         line: record.line,
         appliedAt: row.storedAt,
       });
+    } else if (row.phase === 'feedback-status') {
+      item.inbox = (row.record as unknown as FeedbackStatusRecord).inbox;
     } else if (row.phase === 'feedback-revert') {
       const record = row.record as unknown as FeedbackApplyRecord;
       const change = item.changes.find((c) => c.changeId === record.changeId);

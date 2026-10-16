@@ -63,6 +63,8 @@ async function fixture() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
+  // Automatic detection is opt-in (default off); these tests exercise it.
+  expect((await settings('feedback', { capture: true })).status).toBe(200);
   return { f, dir, provider, send, settings };
 }
 

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import {
   type ActionQueue,
   type ActionResolution,
@@ -30,6 +31,7 @@ import {
   type FeedbackApplyRecord,
   type FeedbackCaptureRecord,
   type FeedbackCategory,
+  type FeedbackInbox,
   type FeedbackLevel,
   type FeedbackRecord,
   type FeedbackRouteRecord,
@@ -59,8 +61,9 @@ export interface FeedbackServiceDeps {
   queue: ActionQueue | null;
   thread: (threadId: string) => Thread | undefined;
   cartographer: (threadId: string) => Pick<Cartographer, 'route'> | undefined;
-  classify: ClassifyCorrection;
-  match: MatchFeedback;
+  /** The decision calls; without them only explicit feedback is recorded (no detection, no tuning). */
+  classify?: ClassifyCorrection;
+  match?: MatchFeedback;
   /** Composed role layers re-read from disk on their next prepare (composition view). */
   invalidate: (role: string, threadId: string) => void;
   /** Directories of a thread's rungs. */
@@ -73,6 +76,20 @@ export interface FeedbackServiceDeps {
 }
 
 const QUOTE = 600;
+/** The longest explicit feedback accepted. */
+export const FEEDBACK_TEXT_MAX = 4_000;
+
+/** Who gave a piece of feedback, and from which surface. */
+export type FeedbackAuthor = NonNullable<FeedbackCaptureRecord['author']>;
+
+/** The local operator: this machine's user (Kingdom identity is not required to give feedback). */
+export const localOperator = (): string => {
+  try {
+    return userInfo().username || 'operator';
+  } catch {
+    return 'operator';
+  }
+};
 const clip = (text: string, max = QUOTE) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
@@ -95,6 +112,7 @@ interface CaptureInput {
   turnId: string | null;
   text: string;
   origin: FeedbackCaptureRecord['origin'];
+  author?: FeedbackAuthor;
 }
 
 /**
@@ -129,7 +147,7 @@ export class FeedbackService {
    */
   turnAccepted(thread: Thread, turnId: string, text: string): void {
     const settings = this.settings(thread);
-    if (!settings.capture) return;
+    if (!settings.capture || !this.deps.classify) return;
     const before = this.previousAgentText(thread.id, turnId);
     const detection = detectCorrection(text, before);
     if (!detection.hit) return;
@@ -175,14 +193,93 @@ export class FeedbackService {
     return this._held.get(turnId) ?? Promise.resolve();
   }
 
-  /** `/correction` and the viewer's Correction form: explicit feedback, no detector. */
-  async intervention(thread: Thread, correction: string): Promise<FeedbackItem[]> {
-    if (!this.settings(thread).capture) return [];
+  /**
+   * `/correction` and the viewer's Correction form: explicit, so `feedback.capture` does not gate it. With
+   * a decision provider it is classified into a rule and tuned; without one it is recorded as said.
+   */
+  async intervention(
+    thread: Thread,
+    correction: string,
+    author: FeedbackAuthor = { name: localOperator(), surface: 'viewer' },
+  ): Promise<FeedbackItem[]> {
+    if (!this.deps.classify)
+      return [this.record(thread, { text: correction, tags: ['correction'], author })];
     const before = this.previousAgentText(thread.id, null);
     return this.capture(
-      { thread, turnId: null, text: correction, origin: 'intervention' },
+      { thread, turnId: null, text: correction, origin: 'intervention', author },
       { before, blocking: false },
     );
+  }
+
+  /**
+   * `/feedback <text>`: an explicit item on a thread, pointing at a turn (the thread's last turn unless
+   * one is named). Recorded as said: no classifier, no routing, no tuning prompt, no role file written.
+   */
+  record(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    input: {
+      text: string;
+      turnId?: string | null;
+      messageId?: string;
+      tags?: string[];
+      author: FeedbackAuthor;
+    },
+  ): FeedbackItem {
+    const text = scrubSecrets(input.text.trim()).text;
+    if (!text) throw Error('feedback text is required');
+    if (text.length > FEEDBACK_TEXT_MAX)
+      throw Error(`feedback is at most ${FEEDBACK_TEXT_MAX} characters`);
+    const recent = this.deps.store.messages(thread.id, 50);
+    const turnId =
+      input.turnId === undefined ? (recent.at(-1)?.turnId ?? null) : input.turnId || null;
+    const referred =
+      recent.find((m) => m.id === input.messageId) ??
+      recent.filter((m) => m.turnId === turnId && m.actor === 'agent').at(-1);
+    const record: FeedbackCaptureRecord = {
+      itemId: newFeedbackId(),
+      recurred: false,
+      origin: 'explicit',
+      quote: clip(text),
+      before: clip(scrubSecrets(referred?.content ?? '').text),
+      statement: text,
+      sharp: false,
+      tags: [...new Set((input.tags ?? []).map((tag) => tag.trim()).filter(Boolean))].slice(0, 10),
+      author: input.author,
+      ...(input.messageId ? { messageId: input.messageId } : {}),
+      match: null,
+      classifier: null,
+    };
+    const item = this.journal(thread, turnId, { phase: 'feedback-capture', record });
+    if (!item) throw Error(`feedback item ${record.itemId} was not recorded`);
+    return item;
+  }
+
+  /** Archive items, or put them back in the inbox; journalled on each item's own thread. */
+  setInbox(itemIds: readonly string[], inbox: FeedbackInbox, by: string): FeedbackItem[] {
+    const items = itemIds.map((id) => {
+      const item = this.lifecycle.get(id);
+      if (!item) throw Error(`feedback item ${id} not found`);
+      return item;
+    });
+    const changed: FeedbackItem[] = [];
+    for (const item of items) {
+      if (item.inbox === inbox) continue;
+      const updated = this.journal(this.journalThread(item), null, {
+        phase: 'feedback-status',
+        record: { itemId: item.id, inbox, by },
+      });
+      if (updated) changed.push(updated);
+    }
+    return changed;
+  }
+
+  /** The item's origin thread, live or as journalled (an archived thread still takes its rows). */
+  private journalThread(item: FeedbackItem): Pick<Thread, 'id' | 'meta'> {
+    const live = this.deps.thread(item.origin.threadId);
+    if (live) return live;
+    const stored = this.deps.store.threads().find((t) => t.id === item.origin.threadId);
+    if (!stored) throw Error('the item’s thread is not available');
+    return stored;
   }
 
   private previousAgentText(threadId: string, turnId: string | null): string {
@@ -192,7 +289,7 @@ export class FeedbackService {
   }
 
   private journal(
-    thread: Thread,
+    thread: Pick<Thread, 'id' | 'meta'>,
     turnId: string | null,
     entry: FeedbackRecord,
   ): FeedbackItem | undefined {
@@ -228,7 +325,9 @@ export class FeedbackService {
     const priority = opts.blocking ? DECISION_PRIORITY.turn : DECISION_PRIORITY.review;
     const quote = scrubSecrets(input.text).text;
     const before = scrubSecrets(opts.before).text;
-    const classified = await this.deps.classify({ text: quote, before, priority });
+    const classify = this.deps.classify;
+    if (!classify) return [];
+    const classified = await classify({ text: quote, before, priority });
     if (!classified) {
       this.deps.log?.('[Feedback] classifier answer was not the contract; nothing captured');
       return [];
@@ -271,9 +370,10 @@ export class FeedbackService {
       .forProject(projectId)
       .filter((item) => item.sharp)
       .map((item) => ({ id: item.id, statement: item.statement }));
-    const matched = found.statement
-      ? await this.deps.match(found.statement, candidates, found.priority)
-      : { match: null };
+    const matched =
+      found.statement && this.deps.match
+        ? await this.deps.match(found.statement, candidates, found.priority)
+        : { match: null };
     const same =
       matched.match && matched.match.confidence >= SAME_ITEM_CONFIDENCE ? matched.match : null;
     const recurring = same ? this.lifecycle.get(same.itemId) : undefined;
@@ -303,6 +403,7 @@ export class FeedbackService {
       match: matched.match,
       ...(!same && matched.match ? { candidateDuplicateOf: matched.match.itemId } : {}),
       classifier: found.classifier,
+      ...(input.author ? { author: input.author } : {}),
     };
     const item = this.journal(thread, input.turnId, { phase: 'feedback-capture', record });
     if (!item) throw Error(`feedback item ${itemId} was not recorded`);
@@ -316,15 +417,15 @@ export class FeedbackService {
             config: this.deps.config(),
             itemId,
             statement: record.statement,
-            category: record.category,
+            category: found.category,
             hasProject: !!projectId,
             timeoutMs: opts.blocking ? this.settings(thread).blockTimeoutMs : 30_000,
           })
         : {
             itemId,
             roles: [MAIN_ROLE],
-            slot: slotFor(record.category),
-            level: defaultLevel(record.category, !!projectId),
+            slot: slotFor(found.category),
+            level: defaultLevel(found.category, !!projectId),
             route: { domains: [], source: 'empty-map', confidence: 0 },
           };
       this.journal(thread, input.turnId, { phase: 'feedback-route', record: route });
@@ -417,7 +518,7 @@ export class FeedbackService {
     return {
       happened,
       did: item.sharp
-        ? `Captured rule ${item.id}: "${item.statement}" (${item.category}). Routed to ${roles} (${slot})${route && route.route.source !== 'model' ? ', weak routing' : ''}.`
+        ? `Captured rule ${item.id}: "${item.statement}" (${item.category ?? 'unclassified'}). Routed to ${roles} (${slot})${route && route.route.source !== 'model' ? ', weak routing' : ''}.`
         : `Captured feedback ${item.id}, but it is not yet a crisp rule: "${item.statement}".`,
       intend: item.sharp
         ? `Add it to ${roles}'s ${slot} at ${route?.level ?? 'project-personal'}.`

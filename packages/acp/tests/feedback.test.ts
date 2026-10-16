@@ -105,7 +105,7 @@ test('a blocking feedback prompt asks the host: Apply / Not a rule / Later, and 
   await f.viewer.app.request('/api/settings/feedback', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tuning: 'block' }),
+    body: JSON.stringify({ capture: true, tuning: 'block' }),
   });
   h.answerPermissions(async () => ({ outcome: { outcome: 'selected', optionId: 'dismiss' } }));
   const prompt = h.agent.request('session/prompt', {
@@ -128,14 +128,38 @@ test('a blocking feedback prompt asks the host: Apply / Not a rule / Later, and 
   expect((await feedbackItem(f))?.stage).toBe('dismissed');
 });
 
-test('/feedback answers with the items that need attention, and a count of the rest', async () => {
+test('/feedback <text> records an item on the last turn without a turn; /feedback lists the open ones', async () => {
+  const { f, sessionId, command, replies } = await session();
+  expect(await command('/feedback Keep PR descriptions short.')).toEqual({
+    stopReason: 'end_turn',
+  });
+  await until(() => replies().includes('Feedback recorded'), 'recorded');
+  expect(f.attempts).toHaveLength(0);
+  const response = await f.viewer.app.request(`/api/feedback?threadId=${sessionId}`);
+  const { items } = (await response.json()) as {
+    items: Array<{
+      id: string;
+      statement: string;
+      originKind: string;
+      inbox: string;
+      author: { surface: string };
+    }>;
+  };
+  expect(items[0]).toMatchObject({
+    statement: 'Keep PR descriptions short.',
+    originKind: 'explicit',
+    inbox: 'open',
+    author: { surface: 'acp:Paseo' },
+  });
+  await command('/feedback');
+  await until(() => replies().includes('1 open, 0 archived'), '/feedback list');
+  expect(replies()).toContain('Keep PR descriptions short.');
+});
+
+test('an unsharp /correction asks for the rule; an invalid edit is refused, not lost', async () => {
   const { f, h, sessionId, correct, command, replies } = await session(false);
   expect((await correct("That's not how we do it.")).status).toBe(201);
   await until(() => f.actionQueue.pending().some((p) => p.meta?.feedback), 'captured');
-  await command('/feedback');
-  await until(() => replies().includes('1 need attention'), '/feedback summary');
-  expect(replies()).toContain('Not yet a crisp rule');
-  // An invalid edit is refused, not silently lost.
   const item = await feedbackItem(f);
   await command(`/feedback edit ${item!.id} Try to be careful.`);
   await until(() => replies().includes('not sharp'), 'refused edit');

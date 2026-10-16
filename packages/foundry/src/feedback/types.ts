@@ -11,6 +11,7 @@ export const FEEDBACK_PHASES = [
   'feedback-tune',
   'feedback-apply',
   'feedback-revert',
+  'feedback-status',
 ] as const;
 export type FeedbackPhase = (typeof FEEDBACK_PHASES)[number];
 export const isFeedbackPhase = (phase: string): phase is FeedbackPhase =>
@@ -38,7 +39,14 @@ export const WRITABLE_LEVELS: readonly FeedbackLevel[] = [
 ];
 
 export type DetectionKind = CorrectionSignal;
-export type FeedbackOrigin = 'detected' | 'intervention' | 'seed' | 'mined';
+/**
+ * `explicit`: given with `/feedback` (viewer composer, a message's Give feedback, ACP). Recorded as said:
+ * no classifier, no routing, no tuning prompt.
+ */
+export type FeedbackOrigin = 'detected' | 'intervention' | 'seed' | 'mined' | 'explicit';
+
+/** Where an item sits in the inbox. Separate from the learning lifecycle's outcome (`FeedbackStatus`). */
+export type FeedbackInbox = 'open' | 'archived';
 
 export interface FeedbackCaptureRecord {
   /** `fb_…`; a recurrence carries the matched item's id. */
@@ -52,8 +60,13 @@ export interface FeedbackCaptureRecord {
   readonly before: string;
   readonly statement: string;
   readonly sharp: boolean;
-  readonly category: FeedbackCategory;
+  /** Absent on explicit feedback: nothing classified it. */
+  readonly category?: FeedbackCategory;
   readonly tags: string[];
+  /** Who gave it (explicit feedback: the local operator) and from where (`viewer`, `acp:<client>`). */
+  readonly author?: { name: string; surface: string };
+  /** The message the feedback refers to, when one was picked (Give feedback on a message). */
+  readonly messageId?: string;
   readonly match: { itemId: string; confidence: number } | null;
   readonly candidateDuplicateOf?: string;
   readonly classifier: { providerId: string; requestHash: string } | null;
@@ -107,15 +120,26 @@ export interface FeedbackApplyRecord {
   readonly sourceVersionId?: string;
 }
 
+/** An item archived or put back in the inbox. */
+export interface FeedbackStatusRecord {
+  readonly itemId: string;
+  readonly inbox: FeedbackInbox;
+  readonly by: string;
+}
+
 export type FeedbackRecord =
   | { phase: 'feedback-capture'; record: FeedbackCaptureRecord }
   | { phase: 'feedback-route'; record: FeedbackRouteRecord }
   | { phase: 'feedback-tune'; record: FeedbackTuneRecord }
-  | { phase: 'feedback-apply' | 'feedback-revert'; record: FeedbackApplyRecord };
+  | { phase: 'feedback-apply' | 'feedback-revert'; record: FeedbackApplyRecord }
+  | { phase: 'feedback-status'; record: FeedbackStatusRecord };
 
 /** Feedback settings, global and per project (`projects[id].feedback` overrides field by field). */
 export interface FeedbackSettings {
-  /** Capture runs and the lifecycle view fills. Default true. */
+  /**
+   * Automatic correction detection on every typed turn (detector → classify → route → tune). Default
+   * false: feedback is explicit (`/feedback`). Explicit feedback and `/correction` never read it.
+   */
   capture?: boolean;
   /** `ask` (default): prompt, the turn proceeds. `block`: the turn waits for the answer. `off`: no prompts. */
   tuning?: TuningMode;
@@ -126,7 +150,7 @@ export interface FeedbackSettings {
 }
 
 export const DEFAULT_FEEDBACK_SETTINGS: Required<FeedbackSettings> = Object.freeze({
-  capture: true,
+  capture: false,
   tuning: 'ask',
   blockOn: [],
   blockTimeoutMs: 120_000,

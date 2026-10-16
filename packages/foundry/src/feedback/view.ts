@@ -55,6 +55,16 @@ export function assess(item: FeedbackItem, uses: readonly Use[]) {
           : item.route
             ? 'routed'
             : 'captured';
+  // Explicit feedback is recorded as said, not tuned: the inbox (open / archived) is its attention.
+  if (item.originKind === 'explicit')
+    return {
+      stage,
+      attention: (item.inbox === 'open' ? 'in progress' : 'healthy') as FeedbackAttention,
+      reason: 'Given with /feedback.',
+      confidence: { value: null, basis: 'exposure' as const },
+      exposures,
+      recurredSince,
+    };
   const attention: FeedbackAttention =
     stage === 'recurred' || (!item.sharp && stage !== 'dismissed')
       ? 'needs attention'
@@ -110,3 +120,7 @@ export type FeedbackView = ReturnType<typeof feedbackView>;
 /** Needs-attention first, then in progress, then healthy; newest first within each. */
 export const byAttention = (a: FeedbackView, b: FeedbackView): number =>
   ATTENTION_ORDER[a.attention] - ATTENTION_ORDER[b.attention] || b.updatedAt - a.updatedAt;
+
+/** Newest first, by when the feedback was given. */
+export const newestFirst = (a: FeedbackView, b: FeedbackView): number =>
+  b.origin.at - a.origin.at || b.id.localeCompare(a.id);
