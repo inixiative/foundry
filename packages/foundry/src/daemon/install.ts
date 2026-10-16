@@ -99,7 +99,54 @@ export async function installDaemon(options: DaemonInstallOptions) {
     }),
   );
   log(`wrote ${plistPath}`);
-  if (await daemonLoaded()) await $`launchctl bootout ${daemonTarget()}`.quiet().nothrow();
-  await $`launchctl bootstrap ${daemonDomain()} ${plistPath}`.quiet();
+  await replaceService(plistPath);
   return { plistPath, logDir: DAEMON_LOG_DIR };
+}
+
+/** One `launchctl` call: its exit code and stderr. */
+export type Launchctl = (args: string[]) => Promise<{ exitCode: number; stderr: string }>;
+
+const launchctl: Launchctl = async (args) => {
+  const result = await $`launchctl ${args}`.quiet().nothrow();
+  return { exitCode: result.exitCode, stderr: result.stderr.toString().trim() };
+};
+
+/**
+ * Boot out the loaded daemon and bootstrap `plistPath` in its place. `bootout` returns while the old
+ * service is still tearing down, and a bootstrap in that window fails (exit 5, "Input/output error"),
+ * so this waits until `launchctl print` no longer finds the service, up to `timeoutMs`.
+ */
+export async function replaceService(
+  plistPath: string,
+  {
+    run = launchctl,
+    target = daemonTarget(),
+    domain = daemonDomain(),
+    timeoutMs = 15_000,
+    pollMs = 100,
+  }: {
+    run?: Launchctl;
+    target?: string;
+    domain?: string;
+    timeoutMs?: number;
+    pollMs?: number;
+  } = {},
+): Promise<void> {
+  const loaded = async () => (await run(['print', target])).exitCode === 0;
+  if (await loaded()) {
+    await run(['bootout', target]);
+    const deadline = Date.now() + timeoutMs;
+    while (await loaded()) {
+      if (Date.now() >= deadline)
+        throw Error(
+          `The old daemon (${target}) was still loaded ${timeoutMs / 1000}s after bootout; nothing was started. Run the install again once \`launchctl print ${target}\` finds nothing.`,
+        );
+      await Bun.sleep(pollMs);
+    }
+  }
+  const bootstrap = await run(['bootstrap', domain, plistPath]);
+  if (bootstrap.exitCode !== 0)
+    throw Error(
+      `launchctl bootstrap ${domain} ${plistPath} failed (exit ${bootstrap.exitCode})${bootstrap.stderr ? `: ${bootstrap.stderr}` : ''}`,
+    );
 }
