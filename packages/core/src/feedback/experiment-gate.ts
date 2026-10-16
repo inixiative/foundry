@@ -5,7 +5,8 @@
  * whose `<design>.review.md` says `verdict: go` for this exact design (`design-sha256:` of its
  * bytes). A tiny test runs without one. When a `<design>.decisions.md` companion sits beside the
  * design (run pins and answers that are filled after review, so the design's hash stays fixed), the
- * run is refused while it still says `TBD`, and its path and hash are recorded too.
+ * run is refused while it still holds a TBD value outside its `## Log`, and its path and hash are
+ * recorded too.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -39,6 +40,19 @@ export const decisionsPathOf = (design: string) => design.replace(/\.md$/, '.dec
 
 const sha256 = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
+/**
+ * Line numbers of a decisions companion that still hold a `TBD` value. The `## Log` section is
+ * history and is skipped, and the token quoted alone in backticks is a mention of it, not a value.
+ */
+export const openDecisionLines = (text: string): number[] => {
+  let inLog = false;
+  return text.split('\n').flatMap((line, i) => {
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (heading) inLog = heading[1] === '##' ? /^log$/i.test(heading[2] ?? '') : inLog;
+    return !inLog && /\bTBD\b/.test(line.replaceAll('`TBD`', '')) ? [i + 1] : [];
+  });
+};
+
 /** Why the design may not run wide; empty when it may. */
 export const experimentProblems = (designPath: string): string[] => {
   const design = resolve(designPath);
@@ -65,9 +79,7 @@ export const experimentProblems = (designPath: string): string[] => {
   if (text.includes('<fill')) problems.push('unfilled <fill: …> placeholders remain');
   const decisions = decisionsPathOf(design);
   if (existsSync(decisions)) {
-    const open = readFileSync(decisions, 'utf8')
-      .split('\n')
-      .flatMap((line, i) => (/\bTBD\b/.test(line) ? [i + 1] : []));
+    const open = openDecisionLines(readFileSync(decisions, 'utf8'));
     if (open.length)
       problems.push(
         `${decisions} still says TBD (line${open.length > 1 ? 's' : ''} ${open.join(', ')})`,

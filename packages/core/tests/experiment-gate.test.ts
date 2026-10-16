@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   DESIGN_SECTIONS,
   experimentProblems,
+  openDecisionLines,
   requireExperiment,
 } from '../src/feedback/experiment-gate';
 
@@ -114,6 +115,23 @@ describe('experiment gate', () => {
         `${join(dir, 'open.decisions.md')} still says TBD (lines 3, 5)`,
       ]);
       expect(() => requireExperiment(path, true)).toThrow(/still says TBD/);
+    });
+
+    test('the Log section and a backticked mention of the token are not open values', () => {
+      const text = [
+        '# Decisions', //                                  1
+        'Refused while any `TBD` remains.', //             2  mention
+        '| Command | `run --token-file <TBD by Aron>` |', // 3  value inside code: open
+        '### Sub', //                                      4
+        '| Answer | TBD |', //                              5  still before the Log
+        '## Log', //                                       6
+        '- all other values are TBD', //                   7  history
+        '### Older', //                                    8
+        '- TBD', //                                        9  a subheading stays in the Log
+        '## After', //                                     10
+        '| x | TBD |', //                                  11 open again
+      ].join('\n');
+      expect(openDecisionLines(text)).toEqual([3, 5, 11]);
     });
 
     test('TBD is matched as a token, not inside a word', () => {

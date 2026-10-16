@@ -195,6 +195,7 @@ export {
   decisionsPathOf,
   type ExperimentRecord,
   experimentProblems,
+  openDecisionLines,
   requireExperiment,
   reviewPathOf,
   TINY_MOMENTS,
