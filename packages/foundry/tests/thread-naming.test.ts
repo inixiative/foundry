@@ -13,6 +13,7 @@ import {
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
 import {
+  hasWorkContent,
   meaningfullyDifferent,
   NAMING_INSTRUCTIONS,
   ThreadNamer,
@@ -245,4 +246,54 @@ test('the message route feeds completed turns to the namer and a PATCH name over
     text: 'Implement requested change',
     source: 'agent',
   });
+});
+
+test('a greeting names nothing; the name waits for a turn that asks for work', async () => {
+  const inputs: LLMMessage[][] = [];
+  const f = namer(async (messages) => {
+    inputs.push(messages);
+    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
+  });
+  f.namer.turnCompleted(
+    f.thread,
+    exchange('hi there!', 'Foundry router invalid context slice; used the fallback executor.'),
+  );
+  await settle();
+  expect(inputs).toHaveLength(0);
+  expect(f.thread.meta.agentName).toBeUndefined();
+
+  f.namer.turnCompleted(f.thread, exchange());
+  await settle();
+  expect(inputs).toHaveLength(1);
+  const prompt = inputs[0][1].content as string;
+  expect(prompt).not.toContain('hi there');
+  expect(prompt).not.toContain('context slice');
+  expect(prompt).toContain('user: Fix the flaky login test');
+  expect(f.thread.meta.agentName?.text).toBe('Fix flaky login test');
+});
+
+test('the reply is context only: clipped well short of the message', async () => {
+  const inputs: LLMMessage[][] = [];
+  const f = namer(async (messages) => {
+    inputs.push(messages);
+    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
+  });
+  f.namer.turnCompleted(f.thread, exchange('Fix the flaky login test', 'x'.repeat(1000)));
+  await settle();
+  const prompt = inputs[0][1].content as string;
+  expect(prompt).toContain(`agent: ${'x'.repeat(200)}\n`.trimEnd());
+  expect(prompt).not.toContain('x'.repeat(201));
+});
+
+test('work content: greetings and filler carry none; a short request does', () => {
+  for (const text of [
+    'hi',
+    'Hello there!',
+    'thanks, ok',
+    'good morning',
+    'hey how are you doing today?',
+  ])
+    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: false });
+  for (const text of ['fix it', 'add dark mode', 'ZLT-42', 'why does login fail?'])
+    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: true });
 });

@@ -21,7 +21,8 @@ export const NAMING_INSTRUCTIONS =
   'If the current name still describes the thread\'s work, respond {"keep":true}. Otherwise respond {"title":"<new name>"}. Respond with JSON only.';
 
 const RECENT = 6,
-  CLIP = 600;
+  CLIP = 600,
+  AGENT_CLIP = 200;
 const STOP = new Set([
   'a',
   'an',
@@ -37,6 +38,44 @@ const STOP = new Set([
   'by',
   'from',
 ]);
+// Greetings and pleasantries: a message made only of these carries no work to name a thread after.
+const FILLER = new Set([
+  'hi',
+  'hello',
+  'hey',
+  'hiya',
+  'howdy',
+  'yo',
+  'sup',
+  'there',
+  'thanks',
+  'thank',
+  'thx',
+  'you',
+  'ok',
+  'okay',
+  'cool',
+  'great',
+  'nice',
+  'good',
+  'morning',
+  'afternoon',
+  'evening',
+  'please',
+  'how',
+  'are',
+  'is',
+  'it',
+  'going',
+  'doing',
+  'today',
+  'test',
+  'testing',
+  'ping',
+  'yes',
+  'no',
+  'sure',
+]);
 const words = (text: string) =>
   new Set(
     text
@@ -44,6 +83,11 @@ const words = (text: string) =>
       .split(/[^\p{L}\p{N}]+/u)
       .filter((w) => w && !STOP.has(w)),
   );
+
+/** Whether a person's message names any work: something beyond greetings, pleasantries and filler. */
+export function hasWorkContent(text: string): boolean {
+  return [...words(text)].some((w) => !FILLER.has(w) && (w.length >= 3 || /\p{N}/u.test(w)));
+}
 
 /** A rename is churn unless the work words changed: under half shared (Jaccard), or no current name. */
 export function meaningfullyDifferent(current: string | undefined, next: string): boolean {
@@ -76,7 +120,7 @@ type State = {
 };
 
 /**
- * Agent-maintained thread names. A thread is named after its first completed turn, then
+ * Agent-maintained thread names. A thread is named after its first completed turn whose message names work, then
  * re-checked once it has gone quiet, at most every `minIntervalMs` and `minTurns`; the decision
  * keeps the name unless the work moved, and a near-identical rename is dropped. A person's
  * name (`meta.name`) stops all of it. Runs off the turn path, at review priority.
@@ -93,15 +137,17 @@ export class ThreadNamer {
     this.minTurns = options.minTurns ?? 3;
   }
 
-  /** The refresh trigger: a turn on `thread` completed with this exchange. */
+  /** The refresh trigger: a turn on `thread` completed with this exchange. A turn whose message names
+   * no work (a greeting) is skipped: the name waits for a turn that does. */
   turnCompleted(thread: Thread, exchange: { user: string; agent: string }): void {
-    if (thread.disposed || thread.meta.name) return;
+    if (thread.disposed || thread.meta.name || !hasWorkContent(exchange.user)) return;
     const state = this.states.get(thread) ?? { turns: 0, recent: [], running: false };
     this.states.set(thread, state);
     state.turns++;
+    // The person's message carries the work; the reply is clipped short, context only.
     state.recent.push(
       { actor: 'user', content: exchange.user.slice(0, CLIP) },
-      { actor: 'agent', content: exchange.agent.slice(0, CLIP) },
+      { actor: 'agent', content: exchange.agent.slice(0, AGENT_CLIP) },
     );
     state.recent.splice(0, Math.max(0, state.recent.length - RECENT));
     const named = thread.meta.agentName;
