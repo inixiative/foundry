@@ -189,43 +189,11 @@
       "label": "Domain development team",
       "path": "/absolute/path/to/project",
       "agents": {
-        "classifier": {
-          "id": "classifier",
-          "kind": "classifier",
-          "flowRole": "context-routing",
-          "prompt": "Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {\"category\": \"...\", \"subcategory\": \"...\", \"reasoning\": \"...\"}",
-          "provider": "subscription-decisions",
-          "model": "claude-haiku-5-5",
-          "temperature": 0,
-          "tools": false,
-          "visibleLayers": ["system"],
-          "ownedLayers": [],
-          "peers": [],
-          "maxDepth": 1,
-          "invocation": "always",
-          "enabled": true
-        },
-        "router": {
-          "id": "router",
-          "kind": "router",
-          "flowRole": "context-routing",
-          "prompt": "Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {\"destination\": \"artificer\", \"contextSlice\": [\"layer1\"], \"priority\": 5, \"reasoning\": \"...\"}",
-          "provider": "subscription-decisions",
-          "model": "claude-haiku-5-5",
-          "temperature": 0,
-          "tools": false,
-          "visibleLayers": ["system"],
-          "ownedLayers": [],
-          "peers": [],
-          "maxDepth": 1,
-          "invocation": "always",
-          "enabled": true
-        },
         "artificer": {
           "id": "artificer",
           "kind": "executor",
           "flowRole": "execution",
-          "prompt": "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
+          "prompt": "",
           "provider": "claude-code",
           "model": "fable",
           "temperature": 0,
@@ -292,58 +260,6 @@
           "visibleLayers": [],
           "peers": [],
           "maxDepth": 1,
-          "enabled": true
-        }
-      },
-      "layers": {
-        "system": {
-          "id": "system",
-          "prompt": "Core system instructions.",
-          "sourceIds": {
-            "replace": ["system-prompt"]
-          },
-          "staleness": 0,
-          "enabled": true
-        },
-        "conventions": {
-          "id": "conventions",
-          "prompt": "Project conventions and coding standards.",
-          "sourceIds": {
-            "replace": ["conventions-src"]
-          },
-          "staleness": 60000,
-          "enabled": true
-        },
-        "memory": {
-          "id": "memory",
-          "prompt": "Working memory — recent context, signals, decisions.",
-          "sourceIds": {
-            "replace": ["memory-src"]
-          },
-          "staleness": 30000,
-          "enabled": true
-        }
-      },
-      "sources": {
-        "system-prompt": {
-          "id": "system-prompt",
-          "type": "inline",
-          "label": "System prompt",
-          "uri": "You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.",
-          "enabled": true
-        },
-        "conventions-src": {
-          "id": "conventions-src",
-          "type": "markdown",
-          "label": "Project conventions",
-          "uri": "/absolute/path/to/project/docs",
-          "enabled": true
-        },
-        "memory-src": {
-          "id": "memory-src",
-          "type": "file",
-          "label": "Working memory",
-          "uri": "/absolute/path/to/project/.foundry/memory",
           "enabled": true
         }
       }

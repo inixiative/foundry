@@ -88,11 +88,9 @@ import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
   createProject,
-  defaultProjectAgents,
-  defaultProjectLayers,
-  defaultProjectSources,
+  DEFAULT_EXECUTOR_ID,
+  defaultAgents,
   type FoundryConfig,
-  projectSources,
   starterConfig,
 } from './viewer/config';
 import { resolveProjectView } from './viewer/config-resolve';
@@ -112,35 +110,20 @@ function hasEntries(record: Record<string, unknown> | undefined): boolean {
   return !!record && Object.keys(record).length > 0;
 }
 
+/**
+ * A runnable config: an executor to run turns and a project for this directory. Nothing else is
+ * seeded: layers, sources and decision roles are opt-in, so a fresh install's threads are unwrapped.
+ */
 function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
   let changed = false;
-  const projectPath = process.cwd();
 
   if (!hasEntries(config.agents)) {
-    config.agents = defaultProjectAgents(
-      config.defaults.provider,
-      config.defaults.model,
-      config.defaults.classifierProvider,
-      config.defaults.classifierModel,
-    );
-    changed = true;
-  }
-
-  if (!hasEntries(config.layers)) {
-    config.layers = defaultProjectLayers();
-    changed = true;
-  }
-
-  if (!hasEntries(config.sources)) {
-    config.sources = defaultProjectSources(projectPath);
+    config.agents = defaultAgents();
     changed = true;
   }
 
   if (!hasEntries(config.projects)) {
-    const project = createProject(projectPath, {
-      label: 'Foundry',
-      sources: projectSources(projectPath),
-    });
+    const project = createProject(process.cwd(), { label: 'Foundry' });
     config.projects = { [project.id]: project };
     changed = true;
   }
@@ -167,8 +150,6 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   ensureRunnableLocalConfig(config);
   await configStore.save(config);
 
-  // Ensure directories exist
-  mkdirSync(`${FOUNDRY_DIR}/memory`, { recursive: true });
   mkdirSync(`${FOUNDRY_DIR}/analytics`, { recursive: true });
 
   console.log('Starter config generated — setup wizard will open in the viewer.');
@@ -176,7 +157,7 @@ if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {
   config = structuredClone(await configStore.load());
   if (ensureRunnableLocalConfig(config)) {
     await configStore.save(config);
-    console.log('Updated starter config with default local agents, layers, and project.');
+    console.log('Updated starter config with a default executor and project.');
   }
 }
 
@@ -529,6 +510,7 @@ const memory = new FileMemory(`${FOUNDRY_DIR}/memory`);
 await memory.load();
 
 console.log(`Memory loaded: ${memory.all().length} entries`);
+const writeSignal = memory.signalWriter();
 
 // Source resolver — turns config source IDs into ContextSources. Memory-backed
 // sources are scope-aware: the template warms with globally published
@@ -630,7 +612,16 @@ const runtimeManager = new ThreadRuntimeManager({
   atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
-  signalSinks: [memory.signalWriter()],
+  // Foundry's own signals feed the memory store only while a configured "file" source reads it as
+  // working memory. With none (a fresh install), nothing Foundry logs lands where a source reads it back.
+  signalSinks: [
+    (signal, owner) =>
+      Object.values(configStore.config.sources).some(
+        (source) => source.enabled && source.type === 'file',
+      )
+        ? writeSignal(signal, owner)
+        : undefined,
+  ],
   // Native session lifecycle (compaction) binds per thread: central session
   // to the thread bus, auxiliaries (classifier/router/cartographer/wardens)
   // to a side bus that never invalidates the central ledger.
@@ -728,7 +719,7 @@ for (const [id, agentCfg] of Object.entries(config.agents)) {
 }
 harness.setDefaultExecutor(
   Object.entries(config.agents).find(([_, a]) => a.kind === 'executor' && a.enabled)?.[0] ??
-    'artificer',
+    DEFAULT_EXECUTOR_ID,
 );
 
 // Load invocation/activation modes from config

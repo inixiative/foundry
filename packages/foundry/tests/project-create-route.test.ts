@@ -11,23 +11,17 @@ import {
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
 import { ActionHandler } from '../src/viewer/actions';
-import {
-  ConfigStore,
-  defaultProjectAgents,
-  defaultProjectLayers,
-  starterConfig,
-} from '../src/viewer/config';
+import { ConfigStore, defaultAgents, starterConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { registerControlRoutes } from '../src/viewer/routes/control';
 
-test('an added project inherits global agents and layers and brings only its existing sources', async () => {
+test('an added project inherits global agents and layers and brings no sources of its own', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'foundry-project-create-'));
   try {
     const repo = join(dir, 'repo');
     await mkdir(join(repo, 'docs'), { recursive: true });
     const config = starterConfig();
-    config.agents = defaultProjectAgents(config.defaults.provider, config.defaults.model);
-    config.layers = defaultProjectLayers();
+    config.agents = defaultAgents();
     const store = new ConfigStore(dir);
     await store.save(config);
     const main = new Thread('main', new ContextStack());
@@ -62,14 +56,13 @@ test('an added project inherits global agents and layers and brings only its exi
     const project = saved.projects[id]!;
     expect(project.agents).toBeUndefined();
     expect(project.layers).toBeUndefined();
-    expect(Object.keys(project.sources!)).toEqual(['project-docs']);
+    // A docs directory is not a source until the project adds one.
+    expect(project.sources).toBeUndefined();
 
     const view = resolveProjectView(saved, id)!;
-    expect(view.config.agents.classifier!.visibleLayers).toEqual(['system']);
-    expect(view.config.sources['project-docs']!.uri).toBe(join(repo, 'docs'));
-    const layer = view.layers.find((l) => l.id === 'project')!;
-    expect(layer.scope).toBe('global');
-    expect(layer.config.sourceIds).toEqual(['project-docs', 'project-ai']);
+    expect(Object.keys(view.config.agents)).toEqual(['executor']);
+    expect(view.config.sources).toEqual({});
+    expect(view.layers).toEqual([]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

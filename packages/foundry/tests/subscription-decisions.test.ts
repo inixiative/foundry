@@ -12,6 +12,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { routedAgents } from '../src/development-team';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { buildNativeTextProvider } from '../src/providers/native-text-provider';
@@ -19,7 +20,7 @@ import {
   buildSubscriptionDecisions,
   type SubscriptionDecisionConfig,
 } from '../src/providers/subscription-decisions';
-import { defaultProjectAgents, starterConfig } from '../src/viewer/config';
+import { starterConfig } from '../src/viewer/config';
 import { subscriptionTransport } from './helpers/subscription-transport';
 import {
   DECIDED,
@@ -310,7 +311,7 @@ test('actual factory classification, routing, advice, guard and learning use the
       guardTriggers: ['Write'],
     },
   };
-  const defaults = defaultProjectAgents('central', 'worker-model', f.provider.id, 'test-model');
+  const defaults = routedAgents('central', { provider: f.provider.id, model: 'test-model' });
   c.agents.classifier = { ...defaults.classifier, visibleLayers: ['docs'] };
   c.agents.router = { ...defaults.router, visibleLayers: ['docs'] };
   c.layers = {

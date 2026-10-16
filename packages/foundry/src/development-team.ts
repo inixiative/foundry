@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
-import { defaultProjectAgents, type FoundryConfig, starterConfig } from './viewer/config';
+import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from './viewer/config';
 
 export const developmentDomains = {
   features:
@@ -34,6 +34,62 @@ export interface DevelopmentTeamOptions {
   snapshots?: Partial<Record<DevelopmentDomain, TeamSnapshot>>;
 }
 
+/**
+ * The routed roster: a classifier and a router on the decision profile ahead of the Artificer. A
+ * fresh install runs none of this (viewer/config.ts, defaultAgents); the development team opts in.
+ */
+export function routedAgents(
+  workerProvider: string,
+  decision: { provider: string; model: string },
+): Record<string, AgentSettingsConfig> {
+  const decisionRole = {
+    flowRole: 'context-routing',
+    provider: decision.provider,
+    model: decision.model,
+    temperature: 0,
+    tools: false,
+    visibleLayers: [],
+    ownedLayers: [],
+    peers: [],
+    maxDepth: 1,
+    invocation: 'always' as const,
+    enabled: true,
+  };
+  return {
+    classifier: {
+      ...decisionRole,
+      id: 'classifier',
+      kind: 'classifier',
+      prompt:
+        'Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {"category": "...", "subcategory": "...", "reasoning": "..."}',
+    },
+    router: {
+      ...decisionRole,
+      id: 'router',
+      kind: 'router',
+      prompt:
+        'Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {"destination": "artificer", "contextSlice": ["layer1"], "priority": 5, "reasoning": "..."}',
+    },
+    artificer: {
+      id: 'artificer',
+      kind: 'executor',
+      flowRole: 'execution',
+      prompt:
+        "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
+      provider: workerProvider,
+      temperature: 0,
+      tools: true,
+      permissions: 'bypass' as const,
+      visibleLayers: [],
+      ownedLayers: [],
+      peers: [],
+      maxDepth: 5,
+      invocation: 'on-demand' as const,
+      enabled: true,
+    },
+  };
+}
+
 /** Build ordinary Foundry configuration. No network, model calls or implicit source grants. */
 export function developmentTeam(options: DevelopmentTeamOptions): FoundryConfig {
   if (
@@ -60,12 +116,7 @@ export function developmentTeam(options: DevelopmentTeamOptions): FoundryConfig 
       path: options.projectPath,
     },
   };
-  const roles = defaultProjectAgents(
-    options.worker.provider,
-    options.worker.model,
-    options.decision.provider,
-    options.decision.model,
-  );
+  const roles = routedAgents(options.worker.provider, options.decision);
   const roleIds = Object.fromEntries(Object.keys(roles).map((role) => [role, crypto.randomUUID()]));
   for (const [role, agent] of Object.entries(roles)) {
     config.agents[roleIds[role]!] = {

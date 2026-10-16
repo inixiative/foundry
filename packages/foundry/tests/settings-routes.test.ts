@@ -62,8 +62,23 @@ test("removing a project's source deletes it from that project only, and refuses
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: dir, label: 'Scratch' }),
     })
-  ).json()) as { id: string; sources: Record<string, unknown> };
-  const sourceId = Object.keys(project.sources)[0]!;
+  ).json()) as { id: string };
+  // A project brings no sources of its own until it adds one.
+  const sourceId = 'project-docs';
+  const added = await fetch(`${origin}/api/projects/${project.id}/settings/sources`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      [sourceId]: {
+        id: sourceId,
+        type: 'markdown',
+        label: 'Project docs',
+        uri: join(dir, 'docs'),
+        enabled: true,
+      },
+    }),
+  });
+  expect(added.status).toBe(200);
   const remove = (projectId: string, itemId: string) =>
     fetch(`${origin}/api/projects/${projectId}/settings/sources/${itemId}`, { method: 'DELETE' });
 

@@ -35,13 +35,7 @@ import {
   ClaudeCodeSessionAdapter,
   InMemoryExternalSessionStore,
 } from '../src/providers/session-adapter';
-import {
-  defaultProjectLayers,
-  defaultProjectSources,
-  type FoundryConfig,
-  starterConfig,
-  validateConfig,
-} from '../src/viewer/config';
+import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
 
 let root: string;
 let home: string;
@@ -87,6 +81,24 @@ const compose = async (
       ...(dedupe ? { dedupe } : {}),
     })
   ).slots.instructions;
+/** Opt in to Foundry composing the instruction files: an `instructions` layer over its source. */
+const composeInstructions = (config: FoundryConfig) => {
+  config.layers.instructions = {
+    id: 'instructions',
+    prompt: 'Standing instructions.',
+    sourceIds: ['instructions'],
+    staleness: 60_000,
+    enabled: true,
+  };
+  config.sources.instructions = {
+    id: 'instructions',
+    type: 'instructions',
+    label: 'Instruction files',
+    uri: '',
+    enabled: true,
+  };
+  return config;
+};
 const memoryPath = (project: string) =>
   join(claudeDir, 'projects', claudeProjectDirName(project), 'memory', 'MEMORY.md');
 
@@ -255,9 +267,7 @@ test('the instructions layer composes the stack for the thread cwd it is bound t
   process.env.HOME = home;
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
   try {
-    const config = starterConfig();
-    config.layers = defaultProjectLayers();
-    config.sources = defaultProjectSources(repo);
+    const config = composeInstructions(starterConfig());
     const template = new ContextStack(
       buildLayers(config, {
         sourceResolver: createSourceResolver({ memory: new FileMemory(join(root, 'memory')) }),
@@ -284,9 +294,7 @@ test('the instructions layer composes the stack for the thread cwd it is bound t
 });
 
 test('harness loading is suppressed exactly when Foundry composes the stack, unless set explicitly', () => {
-  const composing = starterConfig();
-  composing.layers = defaultProjectLayers();
-  composing.sources = defaultProjectSources(repo);
+  const composing = composeInstructions(starterConfig());
   expect(harnessLoadsInstructions(composing)).toBe(false);
 
   const legacy: FoundryConfig = structuredClone(composing);

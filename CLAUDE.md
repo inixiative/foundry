@@ -104,7 +104,9 @@ Foundry is subscription-only by default and all Claude for now (2026-10-11): the
 
 ## Config
 
-Runtime config lives in `.foundry/settings.json`. It defines:
+Runtime config lives in `.foundry/settings.json`. A fresh install is one executor (`defaultAgents`: no instructions, inheriting the default provider and model) and nothing else, so its threads are **unwrapped**: no layers, classifier, router, Cartographer call or thread-state reach the native session (`wrapsThread` in `agents/thread-runtime.ts`). Everything below is opt-in. The old starter stack (system / conventions / memory layers, classifier → router → prompt-only executors) is flagged by `bun run doctor` and removed by `bun run setup --remove-legacy-defaults` when unedited (`setup/legacy-starter.ts`). Foundry's own signals are written into the memory store only while a configured `file` source reads it.
+
+It defines:
 - Default provider/model
 - Agent definitions (id, kind, domain, prompt, provider, model, temperature, visible/owned layers, a Warden's `domainKnowledge` sources)
 - The composition view (`composition`): the instruction ladder and what each role picks from it

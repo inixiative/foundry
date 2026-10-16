@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { routedAgents } from '../src/development-team';
 import {
   MAIN_THREAD_LABS,
   MODEL_REGISTRY,
@@ -23,12 +24,7 @@ import {
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
-import {
-  defaultConfig,
-  defaultProjectAgents,
-  starterConfig,
-  validateConfig,
-} from '../src/viewer/config';
+import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
 import { recordedClaudeTransport, recordedCodexStatus, settleRecordings } from './helpers/vcr';
@@ -77,12 +73,10 @@ function fixture() {
     maxQueued: 8,
     callTimeoutMs: 2000,
   };
-  c.agents = defaultProjectAgents(
-    'claude-code',
-    'worker-model',
-    'subscription-decisions',
-    'decision-model',
-  );
+  c.agents = routedAgents('claude-code', {
+    provider: 'subscription-decisions',
+    model: 'decision-model',
+  });
   c.projects = { project: { id: 'project', path: root, tags: [] } };
   return { c, root, worker, decision };
 }
@@ -400,12 +394,10 @@ function codexMain() {
   delete f.c.subscriptionOnly!.expectedObservedModel;
   f.c.defaults.provider = 'codex';
   f.c.defaults.model = 'gpt-6-astra';
-  f.c.agents = defaultProjectAgents(
-    'codex',
-    'gpt-6-astra',
-    'subscription-decisions',
-    'decision-model',
-  );
+  f.c.agents = routedAgents('codex', {
+    provider: 'subscription-decisions',
+    model: 'decision-model',
+  });
   return f;
 }
 
@@ -564,7 +556,7 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
   // An executor agent is a main thread too.
   const executor = defaultConfig();
   executor.apiTokens = true;
-  executor.agents = defaultProjectAgents('anthropic', 'claude-opus-5', 'openai', 'gpt-6-luna');
+  executor.agents = routedAgents('anthropic', { provider: 'openai', model: 'gpt-6-luna' });
   executor.agents.artificer!.provider = 'deepseek';
   expect(() => validateConfig(executor)).toThrow('deepseek cannot run a main thread');
 });

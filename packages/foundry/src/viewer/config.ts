@@ -139,14 +139,14 @@ export interface FoundryConfig {
   /**
    * Global agent templates (keyed by agent ID).
    * Projects inherit these by id; a project override of the same id wins.
-   * A fresh install is seeded from defaultProjectAgents().
+   * A fresh install is seeded from defaultAgents(): one executor.
    */
   agents: Record<string, AgentSettingsConfig>;
 
   /**
    * Global layer templates (keyed by layer ID).
    * Projects inherit these by id; a project override of the same id wins.
-   * A fresh install is seeded from defaultProjectLayers().
+   * A fresh install has none: a thread is unwrapped until one is configured.
    */
   layers: Record<string, LayerSettingsConfig>;
 
@@ -695,8 +695,8 @@ export function defaultConfig(): FoundryConfig {
 
 /**
  * Starter config — minimal bootstrap for new installations.
- * Only sets providers + model defaults. NO agents, layers, or sources.
- * Those are project-scoped and created when a project is added.
+ * Only sets providers + model defaults. NO agents, layers, or sources: a fresh install's one agent
+ * comes from defaultAgents(), and layers, sources and decision roles are opt-in settings.
  * Used by auto-bootstrap when no config exists.
  */
 export function starterConfig(
@@ -716,163 +716,26 @@ export function starterConfig(
   return config;
 }
 
+/** The id of the one agent a fresh install has. */
+export const DEFAULT_EXECUTOR_ID = 'executor';
+
 /**
- * Default project agents — created when a project is added.
- * Executors name no model: they inherit the global or project default, so changing it changes them.
+ * The agents a fresh install has: one executor with no instructions of its own, no provider and no
+ * model, so it inherits the defaults and the user's message reaches the native session as typed. No
+ * classifier, router or Warden runs, and no layer is composed into the session, until settings add one.
  */
-export function defaultProjectAgents(
-  providerId: string,
-  executorModel: string,
-  classifierProvider?: string,
-  classifierModel?: string,
-): Record<string, AgentSettingsConfig> {
-  const cp = classifierProvider ?? providerId;
-  const cm = classifierModel ?? executorModel;
+export function defaultAgents(): Record<string, AgentSettingsConfig> {
   return {
-    classifier: {
-      id: 'classifier',
-      kind: 'classifier',
-      flowRole: 'context-routing',
-      prompt:
-        'Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {"category": "...", "subcategory": "...", "reasoning": "..."}',
-      provider: cp,
-      model: cm,
-      temperature: 0,
-      tools: false,
-      visibleLayers: ['system'],
-      ownedLayers: [],
-      peers: [],
-      maxDepth: 1,
-      invocation: 'always' as const,
-      enabled: true,
-    },
-    router: {
-      id: 'router',
-      kind: 'router',
-      flowRole: 'context-routing',
-      prompt:
-        'Route the classified message to the Artificer with the right context layers.\nChoose which layers are relevant to the task.\nRespond with JSON: {"destination": "artificer", "contextSlice": ["layer1"], "priority": 5, "reasoning": "..."}',
-      provider: cp,
-      model: cm,
-      temperature: 0,
-      tools: false,
-      visibleLayers: ['system'],
-      ownedLayers: [],
-      peers: [],
-      maxDepth: 1,
-      invocation: 'always' as const,
-      enabled: true,
-    },
-    artificer: {
-      id: 'artificer',
+    [DEFAULT_EXECUTOR_ID]: {
+      id: DEFAULT_EXECUTOR_ID,
       kind: 'executor',
       flowRole: 'execution',
-      prompt:
-        "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
-      provider: providerId,
-      temperature: 0,
+      prompt: '',
       tools: true,
-      permissions: 'bypass' as const,
       visibleLayers: [],
       ownedLayers: [],
       peers: [],
       maxDepth: 5,
-      invocation: 'on-demand' as const,
-      enabled: true,
-    },
-  };
-}
-
-/** Default global layers. The `project` layer reads each project's own sources (see projectSources). */
-export function defaultProjectLayers(): Record<string, LayerSettingsConfig> {
-  return {
-    system: {
-      id: 'system',
-      prompt: 'Core system instructions.',
-      sourceIds: ['system-prompt'],
-      staleness: 0,
-      enabled: true,
-    },
-    instructions: {
-      id: 'instructions',
-      prompt:
-        'Standing instructions: personal, organization and project instruction files, and auto memory.',
-      sourceIds: ['instructions'],
-      staleness: 60_000,
-      enabled: true,
-    },
-    conventions: {
-      id: 'conventions',
-      prompt: 'Project conventions and coding standards.',
-      sourceIds: ['conventions-src'],
-      staleness: 60_000,
-      enabled: true,
-    },
-    memory: {
-      id: 'memory',
-      prompt: 'Working memory — recent context, signals, decisions.',
-      sourceIds: ['memory-src'],
-      staleness: 30_000,
-      enabled: true,
-    },
-    project: PROJECT_LAYER,
-  };
-}
-
-/** Reads the active project's own docs and agent conventions; empty outside a project. */
-export const PROJECT_LAYER: LayerSettingsConfig = {
-  id: 'project',
-  prompt: "This project's own documentation and agent conventions.",
-  sourceIds: ['project-docs', 'project-ai'],
-  staleness: 300_000,
-  enabled: true,
-};
-
-/** A project's own sources: the only settings a project gets when added; everything else is inherited. */
-export function projectSources(projectPath: string): Record<string, DataSourceConfig> {
-  const dirs = {
-    'project-docs': ['docs', 'Project docs'],
-    'project-ai': ['AI', 'Project agent conventions'],
-  } as const;
-  return Object.fromEntries(
-    Object.entries(dirs)
-      .filter(([, [dir]]) => existsSync(join(projectPath, dir)))
-      .map(([id, [dir, label]]) => [
-        id,
-        { id, type: 'markdown', label, uri: join(projectPath, dir), enabled: true },
-      ]),
-  );
-}
-
-/** Default global sources for a fresh install rooted at projectPath. */
-export function defaultProjectSources(projectPath: string): Record<string, DataSourceConfig> {
-  return {
-    'system-prompt': {
-      id: 'system-prompt',
-      type: 'inline',
-      label: 'System prompt',
-      uri: 'You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.',
-      enabled: true,
-    },
-    instructions: {
-      id: 'instructions',
-      type: 'instructions',
-      label: 'Instruction files (CLAUDE.md, AGENTS.md, auto memory)',
-      uri: '',
-      enabled: true,
-    },
-    'conventions-src': {
-      id: 'conventions-src',
-      type: 'markdown',
-      label: 'Project conventions',
-      uri: join(projectPath, 'docs'),
-      enabled: true,
-    },
-    'memory-src': {
-      id: 'memory-src',
-      type: 'file',
-      label: 'Working memory',
-      uri: join(projectPath, '.foundry/memory'),
       enabled: true,
     },
   };

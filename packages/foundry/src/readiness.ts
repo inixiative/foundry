@@ -23,6 +23,7 @@ import {
   type SubscriptionResolution,
 } from './providers/subscription-policy';
 import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
+import { describeLegacyItem, findLegacyStarter } from './setup/legacy-starter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
 import { type ResolvedChorus, resolveProjectView } from './viewer/config-resolve';
 
@@ -236,6 +237,14 @@ export async function inspectReadiness(
     );
     return result();
   }
+  const legacy = findLegacyStarter(saved);
+  if (legacy.length)
+    issue(
+      'warning',
+      'global',
+      'legacy-starter-defaults',
+      `Starter defaults from an older install wrap every thread: ${legacy.map(describeLegacyItem).join(', ')}. Remove them with \`bun run setup --remove-legacy-defaults\` (edited items are kept).`,
+    );
   // Subscription mode inspects the effective routing startup would construct.
   config = subscription?.config ?? saved;
   for (const source of subscription ? [subscription.worker, subscription.decision] : []) {

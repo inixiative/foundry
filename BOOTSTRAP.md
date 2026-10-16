@@ -1,5 +1,10 @@
 # Foundry Bootstrap Strategy
 
+> **Not the default.** This is a strategy for building a wrapped stack by hand. A fresh install is one
+> executor and nothing else: the thread is unwrapped, and the user's message reaches the native session
+> as typed (`defaultAgents` in `packages/foundry/src/viewer/config.ts`). Every layer, classifier, router
+> and executor below is an opt-in setting.
+
 A practical plan for setting up a default Foundry instance with self-improvement
 loops that compound over time. Start minimal, let the system learn.
 

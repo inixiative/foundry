@@ -172,10 +172,9 @@ describe('buildLayers', () => {
     expect(docsLayer!.content).toBe('test docs content');
   });
 
-  test('creates fallback system layer when no layers configured', () => {
+  test('creates no layer when none is configured: nothing is composed into the session', () => {
     const layers = buildLayers(minimalConfig({ layers: {} }), { sourceResolver: noopResolver });
-    expect(layers.length).toBe(1);
-    expect(layers[0].id).toBe('system');
+    expect(layers).toEqual([]);
   });
 });
 

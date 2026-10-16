@@ -88,6 +88,21 @@ export function auxiliarySessionId(threadId: string, role: string): string {
   return `${threadId}:aux:${role}`;
 }
 
+/**
+ * Whether settings give a thread anything Foundry composes or decides: a layer on its stack, a
+ * classifier or router, or a Warden. Without any the thread is unwrapped: no Cartographer call and no
+ * thread-state reach its executor (viewer/config.ts, defaultAgents).
+ */
+function wrapsThread(config: FoundryConfig, wardens: number, stack: ContextStack): boolean {
+  return (
+    wardens > 0 ||
+    stack.layers.length > 0 ||
+    Object.values(config.agents).some(
+      (agent) => agent.enabled && (agent.kind === 'classifier' || agent.kind === 'router'),
+    )
+  );
+}
+
 /** At most this many calls are held for one turn's guard; later calls of the turn are counted, not held. */
 const MAX_TURN_ACTIVITY = 400;
 /** Observed subagent turns whose activity is held for their guard, at most. */
@@ -899,7 +914,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // only outcome metadata enters the shared state every domain reads. Project
     // at the typed signal boundary, never by filtering rendered activity text.
     const factualSignals = new SignalBus(0); // transient projection, no second history
-    this.librarian = new Librarian({ signals: factualSignals, stack });
+    this.librarian = new Librarian({
+      signals: factualSignals,
+      stack,
+      delivered: wrapsThread(deps.config, domains.length, stack),
+    });
     this._unsubs.push(
       signals.onAny((signal) => {
         if (signal.kind !== 'domain_learning') return factualSignals.emit(signal);
@@ -1150,98 +1169,114 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       try {
         const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
         if (ctx.messageId) early.delete(ctx.messageId);
+        // Nothing wraps an unwrapped thread (no layers, decision roles or Wardens): the message reaches
+        // the session as typed, with no Cartographer call, no plan and no thread-state. Settings that
+        // add a layer wrap it from the next turn.
+        const wrapped =
+          !!started ||
+          domainLibrarians.size > 0 ||
+          stack.layers.some((layer) => layer !== this.librarian.layer);
+        this.librarian.setDelivered(wrapped);
         const {
           barrier,
           plan: preparedPlan,
           failure,
           warmShortfalls,
-        } = await (started && started.message === ctx.payload
-          ? started.preparation
-          : prepare(ctx.payload, identityOf(ctx)));
+        } = !wrapped
+          ? {
+              barrier: await this._awaitPendingLearning(),
+              plan: undefined,
+              failure: undefined,
+              warmShortfalls: [],
+            }
+          : await (started && started.message === ctx.payload
+              ? started.preparation
+              : prepare(ctx.payload, identityOf(ctx)));
 
         let prepared: HydrationResult | undefined;
-        try {
-          if (failure || !preparedPlan) throw failure ?? Error('pre-message produced no plan');
-          const plan = preparedPlan;
-          prepared = await flow.hydrateDelta(plan);
-          // The plan's layers are what routing and the Wardens asked for: on-demand ones join this assembly.
-          for (const id of plan.layers) ctx.requestLayer?.(id);
-          ctx.annotations.injectionPlan = plan;
-          ctx.annotations.decoration = prepared.decoration;
-          // Durable at seal, before the central call: the routing request and every expert's advice request
-          // with its three parts survive a failed or interrupted central turn. Journal failure is explicit.
-          const sealedTurn = ctx.messageId ?? null,
-            sealedDispatch = ctx.dispatchId ?? null;
-          // A refused configured journal is recorded as failed and warned, never as durable; the central turn is not blocked.
-          const journalSealed = (
-            phase: 'route' | 'advice',
-            record: Record<string, unknown>,
-          ): PhaseJournalOutcome => {
-            try {
-              return this._journalPhase({
-                id: newId('phase'),
-                turnId: sealedTurn,
-                dispatchId: sealedDispatch,
-                phase,
-                record,
-              });
-            } catch (error) {
-              warn(
-                `  [flow:${thread.id}] ${phase} phase journal failed: ${(error as Error)?.message ?? error}`,
-              );
-              return 'failed';
-            }
-          };
-          const routeJournal = journalSealed('route', {
-            inputHash: plan.input.hash,
-            sealedAt: plan.sealedAt,
-            routing: plan.routing,
-          });
-          // Every Warden's decision is journalled, silence and skips included, so the silence rate is
-          // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
-          const adviceJournal = journalSealed('advice', {
-            trigger: 'user-message' satisfies TriggerPoint,
-            charter: charter.version,
-            inputHash: plan.input.hash,
-            sealedAt: plan.sealedAt,
-            participants: plan.contributions
-              .filter((c) => c.decision !== 'skipped')
-              .map((c) => ({
-                domain: c.domain,
-                decision: c.decision,
-                ...(c.reason ? { reason: c.reason } : {}),
-                // What it chimed in with (empty for NO_COMMENT).
-                snippets: c.snippets,
-                segments: c.segments,
-                request: c.request,
-                threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
-                cacheHash: c.provenance.cacheHash,
-              })),
-            // A Warden the pre-filter ruled out is one row with its score: auditable later.
-            ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
-            prefiltered: plan.contributions
-              .filter((c) => c.prefilter)
-              .map((c) => ({ domain: c.domain, ...c.prefilter })),
-            skipped: Object.fromEntries(
-              Object.entries(
-                Object.groupBy(
-                  plan.contributions.filter((c) => c.decision === 'skipped'),
-                  (c) => c.reason ?? 'skipped',
-                ),
-              ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
-            ),
-            ...(warmShortfalls.length || prepared.warmShortfalls.length
-              ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
-              : {}),
-          });
-          ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
-          const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');
-          log(
-            `  [flow:${thread.id}] decorated: ${decided || 'no domains'} → ${plan.layers.length} layers, ${plan.snippets.length} snippets (${plan.elapsed}ms)`,
-          );
-        } catch (err) {
-          warn(`  [flow:${thread.id}] pre-message failed: ${(err as Error).message}`);
-        }
+        if (wrapped)
+          try {
+            if (failure || !preparedPlan) throw failure ?? Error('pre-message produced no plan');
+            const plan = preparedPlan;
+            prepared = await flow.hydrateDelta(plan);
+            // The plan's layers are what routing and the Wardens asked for: on-demand ones join this assembly.
+            for (const id of plan.layers) ctx.requestLayer?.(id);
+            ctx.annotations.injectionPlan = plan;
+            ctx.annotations.decoration = prepared.decoration;
+            // Durable at seal, before the central call: the routing request and every expert's advice request
+            // with its three parts survive a failed or interrupted central turn. Journal failure is explicit.
+            const sealedTurn = ctx.messageId ?? null,
+              sealedDispatch = ctx.dispatchId ?? null;
+            // A refused configured journal is recorded as failed and warned, never as durable; the central turn is not blocked.
+            const journalSealed = (
+              phase: 'route' | 'advice',
+              record: Record<string, unknown>,
+            ): PhaseJournalOutcome => {
+              try {
+                return this._journalPhase({
+                  id: newId('phase'),
+                  turnId: sealedTurn,
+                  dispatchId: sealedDispatch,
+                  phase,
+                  record,
+                });
+              } catch (error) {
+                warn(
+                  `  [flow:${thread.id}] ${phase} phase journal failed: ${(error as Error)?.message ?? error}`,
+                );
+                return 'failed';
+              }
+            };
+            const routeJournal = journalSealed('route', {
+              inputHash: plan.input.hash,
+              sealedAt: plan.sealedAt,
+              routing: plan.routing,
+            });
+            // Every Warden's decision is journalled, silence and skips included, so the silence rate is
+            // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
+            const adviceJournal = journalSealed('advice', {
+              trigger: 'user-message' satisfies TriggerPoint,
+              charter: charter.version,
+              inputHash: plan.input.hash,
+              sealedAt: plan.sealedAt,
+              participants: plan.contributions
+                .filter((c) => c.decision !== 'skipped')
+                .map((c) => ({
+                  domain: c.domain,
+                  decision: c.decision,
+                  ...(c.reason ? { reason: c.reason } : {}),
+                  // What it chimed in with (empty for NO_COMMENT).
+                  snippets: c.snippets,
+                  segments: c.segments,
+                  request: c.request,
+                  threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
+                  cacheHash: c.provenance.cacheHash,
+                })),
+              // A Warden the pre-filter ruled out is one row with its score: auditable later.
+              ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
+              prefiltered: plan.contributions
+                .filter((c) => c.prefilter)
+                .map((c) => ({ domain: c.domain, ...c.prefilter })),
+              skipped: Object.fromEntries(
+                Object.entries(
+                  Object.groupBy(
+                    plan.contributions.filter((c) => c.decision === 'skipped'),
+                    (c) => c.reason ?? 'skipped',
+                  ),
+                ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
+              ),
+              ...(warmShortfalls.length || prepared.warmShortfalls.length
+                ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
+                : {}),
+            });
+            ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
+            const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');
+            log(
+              `  [flow:${thread.id}] decorated: ${decided || 'no domains'} → ${plan.layers.length} layers, ${plan.snippets.length} snippets (${plan.elapsed}ms)`,
+            );
+          } catch (err) {
+            warn(`  [flow:${thread.id}] pre-message failed: ${(err as Error).message}`);
+          }
 
         // Whatever went stale since the last turn (an edited CLAUDE.md, MEMORY.md or role file, a
         // passed staleness window) re-warms before assembly, whether or not pre-message succeeded,

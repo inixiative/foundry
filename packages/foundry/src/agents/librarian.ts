@@ -106,6 +106,8 @@ export interface LibrarianConfig {
   stack: ContextStack;
   /** ID for the thread-state layer. Defaults to "thread-state". */
   layerId?: string;
+  /** Whether the layer starts on the stack, where the executor's assembly reads it. Default true. */
+  delivered?: boolean;
 }
 
 export class Librarian {
@@ -134,7 +136,7 @@ export class Librarian {
     this._writeLayer();
 
     // Add to stack at position 0 (highest priority)
-    config.stack.addLayer(this._layer, 0);
+    if (config.delivered !== false) config.stack.addLayer(this._layer, 0);
 
     // Subscribe to ALL signals
     this._unsubscribe = config.signals.onAny((signal) => {
@@ -150,6 +152,17 @@ export class Librarian {
   /** The thread-state layer. */
   get layer(): ContextLayer {
     return this._layer;
+  }
+
+  /**
+   * Whether the executor's assembly reads thread-state: on the stack while something wraps the
+   * thread (layers, decision roles, Wardens), off it for an unwrapped thread. The state is kept
+   * either way; the Cartographer and Wardens read it from the layer, not the stack.
+   */
+  setDelivered(on: boolean): void {
+    const present = this._stack.getLayer(this._layer.id) === this._layer;
+    if (on && !present) this._stack.addLayer(this._layer, 0);
+    else if (!on && present) this._stack.removeLayer(this._layer.id);
   }
 
   /** Check if the domain has shifted from the current state. */

@@ -481,7 +481,9 @@ When the router says "pull auth-api-docs," that layer gets hydrated (file I/O, n
 
 ### Delivery: what a native session receives each turn
 
-A thread's context has three parts, and each reaches a native session (Claude Code, Codex) differently:
+**An unwrapped thread receives nothing from Foundry.** A fresh install configures one executor with no instructions and no layers, classifier, router or Wardens (`defaultAgents`, `viewer/config.ts`). Such a thread makes no Cartographer call and keeps thread-state off its stack, so the session gets the user's message as typed: no standing part, no per-turn text (`wrapsThread`, `agents/thread-runtime.ts`). The first configured layer or decision role wraps it from the next turn, and the parts below apply.
+
+A wrapped thread's context has three parts, and each reaches a native session (Claude Code, Codex) differently:
 
 | Part | Examples | Delivered |
 |---|---|---|

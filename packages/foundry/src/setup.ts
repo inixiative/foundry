@@ -24,10 +24,12 @@ import {
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
 import { defaultInstallationName, defaultKingdomUrl, pairKingdom } from './providers/kingdom-cli';
 import { inspectReadiness } from './readiness';
+import { describeLegacyItem, findLegacyStarter, removeLegacyStarter } from './setup/legacy-starter';
 import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
   ConfigStore,
+  defaultAgents,
   defaultConfig,
   type FoundryConfig,
   type ProjectPrompts,
@@ -94,6 +96,7 @@ async function saveConfig(config: FoundryConfig): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  if (process.argv.includes('--remove-legacy-defaults')) return removeLegacyDefaults();
   console.log();
   console.log('  ┌─────────────────────────────────┐');
   console.log('  │          foundry setup           │');
@@ -107,7 +110,6 @@ async function main() {
     const config = await firstTimeSetup();
     await saveConfig(config);
     await ensureDirs();
-    await seedMemory();
     if (await confirm('\n  Set up the local session Archive and pair with Kingdom now?', true)) {
       await configureArchives(config, false);
       await saveConfig(config);
@@ -188,6 +190,11 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
 
 async function configureLoop(config: FoundryConfig) {
   await checkAgentClis(config);
+  const legacy = findLegacyStarter(config).length;
+  if (legacy)
+    console.log(
+      `\n  ! ${legacy} starter default${legacy === 1 ? '' : 's'} from an older install wrap every thread; choose "Legacy defaults" to remove them.`,
+    );
   const counts = () => ({
     agents: Object.keys(config.agents).length,
     layers: Object.keys(config.layers).length,
@@ -213,6 +220,7 @@ async function configureLoop(config: FoundryConfig) {
       `Projects             (${c.projects} configured)`,
       `Kingdom & archives   (${archiveSummary})`,
       'Agent CLIs           (find claude / codex)',
+      `Legacy defaults      (${legacyCount(config)})`,
       'Reset to starter config',
       'Done',
     ]);
@@ -245,7 +253,10 @@ async function configureLoop(config: FoundryConfig) {
       case 8:
         await checkAgentClis(config);
         break;
-      case 9: {
+      case 9:
+        await configureLegacyDefaults(config);
+        break;
+      case 10: {
         if (await confirm('Replace config with starter defaults?', false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -255,7 +266,7 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 10:
+      case 11:
         running = false;
         break;
     }
@@ -281,6 +292,50 @@ async function checkAgentClis(config: FoundryConfig) {
     );
   for (const item of report.issues.filter((issue) => issue.code === 'native-cli-missing'))
     console.log(`  ${item.severity === 'error' ? '✗' : '!'} ${item.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy starter defaults — the classifier/router/layer stack older installs were seeded with
+// ---------------------------------------------------------------------------
+
+function legacyCount(config: FoundryConfig): string {
+  const count = findLegacyStarter(config).length;
+  return count ? `${count} to remove` : 'none';
+}
+
+async function configureLegacyDefaults(config: FoundryConfig) {
+  console.log('\n  ── Legacy starter defaults ──\n');
+  const legacy = findLegacyStarter(config);
+  if (!legacy.length) {
+    console.log('  None: nothing from the old starter stack is left unedited.\n');
+    return;
+  }
+  console.log('  Seeded by an older install, unedited, and wrapping every thread:');
+  for (const item of legacy) console.log(`    - ${describeLegacyItem(item)}`);
+  console.log('  Edited items are not listed and are kept.');
+  if (!(await confirm('Remove them?', true))) return;
+  const { removed, addedExecutor } = removeLegacyStarter(config);
+  console.log(
+    `  Removed ${removed.length}${addedExecutor ? '; added the starter executor' : ''}. Threads are unwrapped unless settings add layers or decision roles.\n`,
+  );
+}
+
+/** `bun run setup --remove-legacy-defaults [dir]`: the same removal, non-interactive, through ConfigStore. */
+async function removeLegacyDefaults() {
+  const flags = process.argv.slice(2).filter((arg) => arg !== '--remove-legacy-defaults');
+  const store = new ConfigStore(flags[0] ?? FOUNDRY_DIR);
+  await store.load();
+  let result = { removed: [] as ReturnType<typeof findLegacyStarter>, addedExecutor: false };
+  await store.update((draft) => {
+    result = removeLegacyStarter(draft);
+  });
+  if (!result.removed.length) console.log('No legacy starter defaults found; nothing changed.');
+  else {
+    console.log(`Removed ${result.removed.length} legacy starter defaults:`);
+    for (const item of result.removed) console.log(`  - ${describeLegacyItem(item)}`);
+    if (result.addedExecutor) console.log(`Added the starter executor.`);
+  }
+  prompts.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,126 +1092,10 @@ async function configureDocsLayer(config: FoundryConfig) {
 // Starter config builder
 // ---------------------------------------------------------------------------
 
+/** One executor and nothing else: threads are unwrapped until layers or decision roles are added. */
 function buildStarterConfig(providerId: ProviderId | string, model: string): FoundryConfig {
-  // Claude Code and Codex are subscription-only with Claude decisions by default; any other worker opts in to API tokens.
   const config = starterConfig(providerId, model);
-  const decision = config.apiTokens
-    ? { provider: providerId, model }
-    : { provider: config.defaults.classifierProvider!, model: config.defaults.classifierModel! };
-
-  config.layers = {
-    system: {
-      id: 'system',
-      prompt: 'Core system instructions.',
-      sourceIds: ['system-prompt'],
-      staleness: 0,
-      enabled: true,
-    },
-    conventions: {
-      id: 'conventions',
-      prompt: 'Project conventions and coding standards.',
-      sourceIds: ['conventions-src'],
-      staleness: 60_000,
-      enabled: true,
-    },
-    memory: {
-      id: 'memory',
-      prompt: 'Working memory — recent context, signals, decisions.',
-      sourceIds: ['memory-src'],
-      staleness: 30_000,
-      enabled: true,
-    },
-  };
-
-  config.agents = {
-    classifier: {
-      id: 'classifier',
-      kind: 'classifier',
-      prompt:
-        'Classify the incoming message into exactly one category.\nCategories: bug, feature, refactor, question, convention, general.\nRespond with JSON: {"category": "...", "subcategory": "...", "reasoning": "..."}',
-      provider: decision.provider,
-      model: decision.model,
-      temperature: 0,
-      visibleLayers: ['system'],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    },
-    router: {
-      id: 'router',
-      kind: 'router',
-      prompt:
-        'Route the classified message to the appropriate executor.\nAvailable executors: executor-fix (bugs), executor-build (features, refactors), executor-answer (questions, general).\nChoose context layers relevant to the task.\nRespond with JSON: {"destination": "...", "contextSlice": ["layer1"], "priority": 5, "reasoning": "..."}',
-      provider: decision.provider,
-      model: decision.model,
-      temperature: 0,
-      visibleLayers: ['system'],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    },
-    'executor-fix': {
-      id: 'executor-fix',
-      kind: 'executor',
-      prompt:
-        'You are a bug-fixing assistant.\nAnalyze the reported issue, identify root cause, and propose a fix.\nInclude the reasoning behind your fix.',
-      provider: providerId,
-      temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 3,
-      enabled: true,
-    },
-    'executor-build': {
-      id: 'executor-build',
-      kind: 'executor',
-      prompt:
-        'You are a feature-building assistant.\nBreak down the request into subtasks, then implement.\nFollow project conventions. Write clean, tested code.',
-      provider: providerId,
-      temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 3,
-      enabled: true,
-    },
-    'executor-answer': {
-      id: 'executor-answer',
-      kind: 'executor',
-      prompt:
-        'You are a knowledgeable assistant.\nAnswer questions using project context and conventions.\nBe concise but thorough.',
-      provider: providerId,
-      temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 3,
-      enabled: true,
-    },
-  };
-
-  config.sources = {
-    'system-prompt': {
-      id: 'system-prompt',
-      type: 'inline',
-      label: 'System prompt',
-      uri: 'You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.',
-      enabled: true,
-    },
-    'conventions-src': {
-      id: 'conventions-src',
-      type: 'file',
-      label: 'Conventions store',
-      uri: '.foundry/memory',
-      enabled: true,
-    },
-    'memory-src': {
-      id: 'memory-src',
-      type: 'file',
-      label: 'Working memory',
-      uri: '.foundry/memory',
-      enabled: true,
-    },
-  };
-
+  config.agents = defaultAgents();
   return config;
 }
 
@@ -1199,47 +1138,11 @@ async function writeEnvLocal(envKey: string, apiKey: string, port?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Directory setup + memory seeding
+// Directory setup
 // ---------------------------------------------------------------------------
 
 async function ensureDirs() {
-  mkdirSync(`${FOUNDRY_DIR}/memory`, { recursive: true });
   mkdirSync(`${FOUNDRY_DIR}/analytics`, { recursive: true });
-}
-
-async function seedMemory() {
-  const seedFile = `${FOUNDRY_DIR}/memory/seed.json`;
-  if (existsSync(seedFile)) return;
-
-  await Bun.write(
-    seedFile,
-    JSON.stringify(
-      [
-        {
-          id: 'conv-zod-validation',
-          kind: 'convention',
-          content: 'Validate API inputs with Zod schemas at system boundaries.',
-          timestamp: Date.now(),
-        },
-        {
-          id: 'conv-naming',
-          kind: 'convention',
-          content: 'Use snake_case for database columns, camelCase for TypeScript.',
-          timestamp: Date.now(),
-        },
-        {
-          id: 'conv-error-handling',
-          kind: 'convention',
-          content: 'Return structured errors with { error, code, detail } shape.',
-          timestamp: Date.now(),
-        },
-      ],
-      null,
-      2,
-    ),
-  );
-
-  console.log('  Seeded .foundry/memory/');
 }
 
 // ---------------------------------------------------------------------------

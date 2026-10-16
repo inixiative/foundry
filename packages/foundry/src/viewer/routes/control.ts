@@ -21,7 +21,6 @@ import {
   createProject,
   type FoundryConfig,
   type McpSettingsConfig,
-  projectSources,
 } from '../config';
 import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
@@ -406,14 +405,13 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
 
     await configStore.load();
 
-    // Agents and layers are inherited from global by id; the project only brings its own sources.
+    // Agents, layers and sources are inherited from global by id; a project adds its own explicitly.
     const projectConfig = createProject(body.path, {
       label: typeof body.label === 'string' ? body.label : undefined,
       tags: Array.isArray(body.tags)
         ? body.tags.filter((tag): tag is string => typeof tag === 'string')
         : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
-      sources: projectSources(body.path),
     });
 
     await configStore.patch('projects', { [projectConfig.id]: projectConfig });

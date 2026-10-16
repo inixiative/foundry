@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test';
 import { ContextStack, Harness, type LLMProvider } from '@inixiative/foundry-core';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
-import { defaultProjectAgents, starterConfig } from '../src/viewer/config';
+import { routedAgents } from '../src/development-team';
+import { starterConfig } from '../src/viewer/config';
 
 function setup() {
   const config = starterConfig('claude-code', 'haiku');
-  config.agents = defaultProjectAgents('claude-code', 'haiku');
+  config.agents = routedAgents('claude-code', { provider: 'claude-code', model: 'haiku' });
   config.agents.artificer.provider = 'codex';
   config.agents.artificer.model = 'gpt-6-astra';
   const calls: Array<{ provider: string; threadId?: string; model?: string }> = [];

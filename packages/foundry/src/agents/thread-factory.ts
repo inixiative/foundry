@@ -165,7 +165,8 @@ export interface BuildLayersDeps {
 
 /**
  * Build ContextLayer instances from project config.
- * Called once at project startup — layers are shared across all threads.
+ * Called once at project startup — layers are shared across all threads. No layers configured is no
+ * layers: nothing is composed into the session.
  */
 export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): ContextLayer[] {
   configuredExperts(config);
@@ -197,21 +198,6 @@ export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): Conte
         // Configured provenance only; an unconfigured layer keeps the legacy classification.
         ...(layerCfg.segment ? { segment: layerCfg.segment } : {}),
         sources,
-      }),
-    );
-  }
-
-  // Fallback: if no layers configured, create a basic system layer
-  if (layers.length === 0) {
-    layers.push(
-      new ContextLayer({
-        id: 'system',
-        sources: [
-          {
-            id: 'default',
-            load: async () => 'You are a helpful engineering assistant.',
-          },
-        ],
       }),
     );
   }
@@ -602,7 +588,7 @@ function buildAgent(
               typeof parsed?.destination === 'string'
                 ? config.agents[parsed.destination]
                 : undefined;
-            if (!target || target.kind !== 'executor' || !target.enabled || !target.prompt) {
+            if (!target || target.kind !== 'executor' || !target.enabled) {
               throw new Error('Router did not select an enabled configured executor');
             }
             if (
@@ -638,11 +624,6 @@ function buildAgent(
       });
 
     case 'executor': {
-      if (!agentCfg.prompt) {
-        console.warn(`[buildAgent] Agent "${id}" has no prompt configured — skipping.`);
-        return null;
-      }
-
       const tools = deps.tools;
       const useToolLoop = tools && tools.size > 0 && opts.tools !== false;
 
@@ -650,14 +631,20 @@ function buildAgent(
         id,
         stack,
         handler: async (ctx, payload, meta) => {
-          const systemParts = [ctx, agentCfg.prompt];
-
-          if (tools && tools.size > 0) {
-            systemParts.push(`\n## Available Tools\n${tools.summary()}`);
-          }
+          // An executor without instructions adds none: with no layers either, the session gets the
+          // user's message as typed (viewer/config.ts, defaultAgents). A native session runs its own
+          // tools, so Foundry's tool list is described only to a provider that runs Foundry's loop.
+          const native = deps.provider.completionLifecycle?.kind === 'session';
+          const own = [
+            ...(agentCfg.prompt ? [agentCfg.prompt] : []),
+            ...(tools && tools.size > 0 && !native
+              ? [`\n## Available Tools\n${tools.summary()}`]
+              : []),
+          ];
+          const system = [ctx, ...own].filter(Boolean).join('\n\n');
 
           const messages: LLMMessage[] = [
-            { role: 'system', content: systemParts.join('\n\n') },
+            ...(system ? [{ role: 'system' as const, content: system }] : []),
             { role: 'user', content: payload },
           ];
           meta?.recordProviderInput?.(messages);
@@ -668,10 +655,9 @@ function buildAgent(
                 standing: [
                   ...meta.delivery.standing,
                   // One slot for the executor's instructions: switching agents replaces it.
-                  standingPart(
-                    'agent',
-                    [`Active agent: ${id}`, ...systemParts.slice(1)].join('\n\n'),
-                  ),
+                  ...(own.length
+                    ? [standingPart('agent', [`Active agent: ${id}`, ...own].join('\n\n'))]
+                    : []),
                 ],
               }
             : undefined;
@@ -881,7 +867,7 @@ export function keywordRoute(
   };
   const route = routeMap[classification.category] ?? routeMap.general;
   const candidates = Object.entries(config.agents).filter(
-    ([, agent]) => agent.enabled && agent.kind === 'executor' && !!agent.prompt,
+    ([, agent]) => agent.enabled && agent.kind === 'executor',
   );
   const destination = candidates.find(([id]) => id === route.dest)?.[0] ?? candidates[0]?.[0];
   if (!destination) throw new Error('Routing failed and no enabled executor is configured');

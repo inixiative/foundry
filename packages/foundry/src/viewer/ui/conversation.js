@@ -506,9 +506,10 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const failure = failurePresentation(msg.meta);
   const volatile = msg.browserStorage?.status === 'volatile';
 
-  // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback)
+  // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback).
+  // Ingress is the turn's root span, not a stage before the executor: an unwrapped turn has no pre bar.
   const execIdx = stages.findIndex((s) => s.kind === 'execute' || s.name?.includes('execut'));
-  const preStages = execIdx > 0 ? stages.slice(0, execIdx) : [];
+  const preStages = execIdx > 0 ? stages.slice(0, execIdx).filter((s) => s.kind !== 'ingress') : [];
   const postStages = execIdx >= 0 && execIdx < stages.length - 1 ? stages.slice(execIdx + 1) : [];
   const execStage = execIdx >= 0 ? stages[execIdx] : null;
 

@@ -203,7 +203,7 @@ function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, on
     <div class="wizard-step">
       <h2 class="wizard-heading">Executor Model</h2>
       <p class="wizard-desc">
-        The executor handles tool use, code generation, and complex tasks.
+        The executor is the native session your messages go to, as typed.
         Pick a capable model — this is where quality matters most.
       </p>
 
@@ -262,10 +262,11 @@ function ClassifierModelStep({
 
   return html`
     <div class="wizard-step">
-      <h2 class="wizard-heading">Classifier Model</h2>
+      <h2 class="wizard-heading">Decision Model</h2>
       <p class="wizard-desc">
-        The classifier and router run on every message to categorize and route requests.
-        A fast, cheap model works best here — it runs often.
+        Your messages go straight to the executor: nothing runs before it by default.
+        This model is for decision roles you add later (Wardens, a classifier or router).
+        A fast, cheap model works best there.
       </p>
 
       ${
@@ -349,7 +350,7 @@ function DoneStep({
           <span class="wizard-summary-value">${execMod?.label || executorModel}</span>
         </div>
         <div class="wizard-summary-row">
-          <span class="wizard-summary-label">Classifier</span>
+          <span class="wizard-summary-label">Decisions</span>
           <span class="wizard-summary-value">${classMod?.label || classifierModel}${classifierProvider !== provider ? ` (${classProv?.label?.split(' ')[0]})` : ''}</span>
         </div>
       </div>
