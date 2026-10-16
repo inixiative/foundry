@@ -1075,7 +1075,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       prompt:
         'You are a bug-fixing assistant.\nAnalyze the reported issue, identify root cause, and propose a fix.\nInclude the reasoning behind your fix.',
       provider: providerId,
-      model,
       temperature: 0,
       visibleLayers: [],
       peers: [],
@@ -1088,7 +1087,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       prompt:
         'You are a feature-building assistant.\nBreak down the request into subtasks, then implement.\nFollow project conventions. Write clean, tested code.',
       provider: providerId,
-      model,
       temperature: 0,
       visibleLayers: [],
       peers: [],
@@ -1101,7 +1099,6 @@ function buildStarterConfig(providerId: ProviderId | string, model: string): Fou
       prompt:
         'You are a knowledgeable assistant.\nAnswer questions using project context and conventions.\nBe concise but thorough.',
       provider: providerId,
-      model,
       temperature: 0,
       visibleLayers: [],
       peers: [],

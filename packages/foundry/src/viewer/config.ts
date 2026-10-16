@@ -713,7 +713,7 @@ export function starterConfig(
 
 /**
  * Default project agents — created when a project is added.
- * Provider/model filled from project or global defaults.
+ * Executors name no model: they inherit the global or project default, so changing it changes them.
  */
 export function defaultProjectAgents(
   providerId: string,
@@ -765,7 +765,6 @@ export function defaultProjectAgents(
       prompt:
         "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
       provider: providerId,
-      model: executorModel,
       temperature: 0,
       tools: true,
       permissions: 'bypass' as const,
