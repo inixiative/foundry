@@ -109,6 +109,13 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
       };
     });
     expect(scroll).toEqual({ scrolls: true, threadsVisible: true });
+    // Threads get ~60% of the space below the pinned group, projects ~40%.
+    const split = await page.evaluate(() => {
+      const height = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().height;
+      return height('.nav-threads') / (height('.nav-threads') + height('.nav-projects'));
+    });
+    expect(split).toBeGreaterThan(0.55);
+    expect(split).toBeLessThan(0.65);
     expect(await column.locator('.proj-sidebar-count').innerText()).toBe('30');
 
     // Collapsing the project list keeps its count and hands the space to the threads.
