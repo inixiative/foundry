@@ -6,12 +6,14 @@
  *   <${Modal} title="Add project" onClose=${close} class="proj-modal">...<//>
  */
 
-import { html, useEffect, useRef } from './lib.js';
+import { html, useLayoutEffect, useRef } from './lib.js';
 
 export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...props }) {
   const close = useRef(onClose);
   close.current = onClose;
-  useEffect(() => {
+  // Layout effect: Escape works from the first painted frame, not one frame after (a deferred
+  // effect left a modal that had just opened deaf to an immediate Escape).
+  useLayoutEffect(() => {
     // Captured ahead of the global hotkeys, so Escape closes this modal and nothing else.
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
