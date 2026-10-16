@@ -1,5 +1,5 @@
+import * as readline from 'node:readline';
 import { Writable } from 'node:stream';
-import * as readline from 'readline/promises';
 
 export interface SetupPrompts {
   ask(question: string, fallback?: string): Promise<string>;
@@ -22,9 +22,38 @@ export function createTerminalPrompts(): SetupPrompts & { close(): void } {
     output,
     terminal: Boolean(process.stdin.isTTY),
   });
-  const ask = async (question: string, fallback?: string) => {
+  // Lines are queued as they arrive, so answers piped in faster than the questions are asked
+  // (scripted or agent-driven setup) wait for their question instead of being dropped.
+  const lines: string[] = [];
+  const waiting: Array<(line: string | undefined) => void> = [];
+  let ended = false;
+  rl.on('line', (line) => {
+    const next = waiting.shift();
+    if (next) next(line);
+    else lines.push(line);
+  });
+  rl.on('close', () => {
+    ended = true;
+    for (const next of waiting.splice(0)) next(undefined);
+  });
+  const nextLine = async (prompt: string): Promise<string> => {
+    if (ended) output.write(prompt);
+    else {
+      rl.setPrompt(prompt);
+      rl.prompt();
+    }
+    const line =
+      lines.length > 0
+        ? lines.shift()
+        : ended
+          ? undefined
+          : await new Promise<string | undefined>((resolve) => waiting.push(resolve));
+    if (line === undefined) throw Error('Setup input ended before every question was answered');
+    return line;
+  };
+  const ask = async (label: string, fallback?: string) => {
     const hint = fallback ? ` [${fallback}]` : '';
-    const answer = await rl.question(`  ${question}${hint}: `);
+    const answer = await nextLine(`  ${label}${hint}: `);
     return answer.trim() || fallback || '';
   };
   return {
@@ -50,7 +79,7 @@ export function createTerminalPrompts(): SetupPrompts & { close(): void } {
       process.stdout.write(`  ${question}: `);
       muted = true;
       try {
-        return (await rl.question('')).trim();
+        return (await nextLine('')).trim();
       } finally {
         muted = false;
         process.stdout.write('\n');
