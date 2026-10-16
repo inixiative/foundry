@@ -5,6 +5,7 @@
  */
 
 import { html, signal, useEffect, useState } from './lib.js';
+import { Modal } from './modal.js';
 import { showToast } from './store.js';
 
 export const wizardOpen = signal(false);
@@ -250,6 +251,8 @@ function ClassifierModelStep({
   onSelectProvider,
   onNext,
   onBack,
+  saving,
+  error,
 }) {
   const prov = providers.find((p) => p.id === provider);
   if (!prov) return null;
@@ -304,9 +307,13 @@ function ClassifierModelStep({
         Each agent can be individually configured with its own provider, model, and settings later.
       </p>
 
+      ${error ? html`<p class="wizard-error" role="alert">Setup failed: ${error}</p>` : null}
+
       <div class="wizard-actions">
-        <button class="wizard-btn" onClick=${onBack}>Back</button>
-        <button class="wizard-btn primary" onClick=${onNext} disabled=${!selected}>Finish Setup</button>
+        <button class="wizard-btn" onClick=${onBack} disabled=${saving}>Back</button>
+        <button class="wizard-btn primary" onClick=${onNext} disabled=${!selected || saving}>
+          ${saving ? 'Saving...' : 'Finish Setup'}
+        </button>
       </div>
     </div>
   `;
@@ -319,7 +326,6 @@ function DoneStep({
   executorModel,
   classifierProvider,
   classifierModel,
-  saving,
 }) {
   const execProv = providers.find((p) => p.id === provider);
   const execMod = execProv?.models.find((m) => m.id === executorModel);
@@ -331,8 +337,8 @@ function DoneStep({
 
   return html`
     <div class="wizard-step">
-      <div class="wizard-icon">${saving ? '...' : '\u2713'}</div>
-      <h2 class="wizard-heading">${saving ? 'Saving...' : "You're all set"}</h2>
+      <div class="wizard-icon">\u2713</div>
+      <h2 class="wizard-heading">You're all set</h2>
       <div class="wizard-summary">
         <div class="wizard-summary-row">
           <span class="wizard-summary-label">Providers</span>
@@ -347,16 +353,10 @@ function DoneStep({
           <span class="wizard-summary-value">${classMod?.label || classifierModel}${classifierProvider !== provider ? ` (${classProv?.label?.split(' ')[0]})` : ''}</span>
         </div>
       </div>
-      ${
-        !saving
-          ? html`
-        <p class="wizard-desc dim">
-          Next: add a project to configure agents, layers, and sources.
-          Open Settings (Ctrl+S) anytime to change providers.
-        </p>
-      `
-          : null
-      }
+      <p class="wizard-desc dim">
+        Next: add a project to configure agents, layers, and sources.
+        Open Settings (Ctrl+S) anytime to change providers.
+      </p>
     </div>
   `;
 }
@@ -386,6 +386,7 @@ export function Wizard() {
   const [classifierProvider, setClassifierProvider] = useState('');
   const [classifierModel, setClassifierModel] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -450,24 +451,27 @@ export function Wizard() {
     setClassifierModel(fast?.id || prov?.models[0]?.id || '');
   };
 
+  const close = () => {
+    wizardOpen.value = false;
+  };
+
+  // Saves from the classifier step: the success screen shows only once every save landed, and a
+  // failure leaves the step editable with the reason.
   const handleFinish = async () => {
     setSaving(true);
-    setStep(5);
+    setError('');
 
     try {
       // Update provider enabled states
       const settingsRes = await fetch('/api/settings');
+      if (!settingsRes.ok) throw new Error('Reading settings failed');
       const config = await settingsRes.json();
 
       const updatedProviders = {};
       for (const [id, prov] of Object.entries(config.providers)) {
         updatedProviders[id] = { ...prov, enabled: enabledProviders.includes(id) };
       }
-      await fetch('/api/settings/providers', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedProviders),
-      });
+      await patchSettings('providers', updatedProviders);
 
       // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
@@ -489,20 +493,21 @@ export function Wizard() {
       });
 
       // Mark setup complete
-      await fetch('/api/setup/complete', {
+      const complete = await fetch('/api/setup/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!complete.ok) throw new Error('Marking setup complete failed');
 
       setSaving(false);
+      setStep(5);
       showToast('Setup complete — add a project to get started', 'ok');
 
       // Close wizard after a brief pause
-      setTimeout(() => {
-        wizardOpen.value = false;
-      }, 1500);
+      setTimeout(close, 1500);
     } catch (err) {
       setSaving(false);
+      setError(err.message);
       showToast('Setup failed: ' + err.message, 'error');
     }
   };
@@ -510,8 +515,7 @@ export function Wizard() {
   const totalSteps = 6;
 
   return html`
-    <div class="overlay-backdrop wizard-backdrop">
-      <div class="wizard-panel">
+    <${Modal} title="Setup" onClose=${close} dismissOnBackdrop=${false} class="wizard-panel">
         <div class="wizard-progress">
           ${Array.from(
             { length: totalSteps },
@@ -575,6 +579,8 @@ export function Wizard() {
             onSelectProvider=${handleClassifierProviderChange}
             onNext=${handleFinish}
             onBack=${() => setStep(3)}
+            saving=${saving}
+            error=${error}
           />
         `
             : null
@@ -589,12 +595,10 @@ export function Wizard() {
             executorModel=${executorModel}
             classifierProvider=${classifierProvider}
             classifierModel=${classifierModel}
-            saving=${saving}
           />
         `
             : null
         }
-      </div>
-    </div>
+    <//>
   `;
 }
