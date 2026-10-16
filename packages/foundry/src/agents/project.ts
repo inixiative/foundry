@@ -19,6 +19,8 @@ export interface ProjectConfig {
   runtime: 'claude-code' | 'codex' | 'cursor';
   /** Optional description of the project. */
   description?: string;
+  /** Persisted `archived` (ProjectSettingsConfig.status); absent means live. */
+  status?: 'archived';
 }
 
 /** Map a provider ID to the runtime adapter it implies. */
@@ -42,6 +44,7 @@ export function fromSettingsConfig(cfg: ProjectSettingsConfig): ProjectConfig {
     tags: cfg.tags ?? [],
     runtime: inferRuntime(cfg.defaults?.provider),
     description: cfg.description,
+    ...(cfg.status === 'archived' ? { status: 'archived' as const } : {}),
   };
 }
 
@@ -83,7 +86,7 @@ export class Project {
     this.runtimeId = config.runtime;
     this.description = config.description ?? '';
     this.createdAt = Date.now();
-    this.status = 'idle';
+    this.status = config.status === 'archived' ? 'archived' : 'idle';
   }
 
   // -- Thread management --
@@ -94,7 +97,7 @@ export class Project {
     }
     const thread = new Thread(id, stack, opts);
     this._threads.set(id, thread);
-    this.status = 'active';
+    if (this.status !== 'archived') this.status = 'active';
     return thread;
   }
 
@@ -111,7 +114,7 @@ export class Project {
     }
     thread.meta.projectId = this.id;
     this._threads.set(thread.id, thread);
-    this.status = 'active';
+    if (this.status !== 'archived') this.status = 'active';
   }
 
   getThread(id: string): Thread | undefined {
@@ -123,7 +126,7 @@ export class Project {
     if (thread) {
       thread.archive();
       this._threads.delete(id);
-      if (this._threads.size === 0) this.status = 'idle';
+      if (this._threads.size === 0 && this.status !== 'archived') this.status = 'idle';
       return true;
     }
     return false;
@@ -143,6 +146,11 @@ export class Project {
   }
 
   // -- Lifecycle --
+
+  /** Archive or unarchive in place: the project is hidden from the list, its threads untouched. */
+  setArchived(archived: boolean): void {
+    this.status = archived ? 'archived' : this._threads.size > 0 ? 'active' : 'idle';
+  }
 
   archive(): void {
     this.status = 'archived';
@@ -174,7 +182,11 @@ export class Project {
 
   // -- Serialization --
 
-  toJSON(): ProjectConfig & { threadIds: string[]; createdAt: number; status: ProjectStatus } {
+  toJSON(): Omit<ProjectConfig, 'status'> & {
+    threadIds: string[];
+    createdAt: number;
+    status: ProjectStatus;
+  } {
     return {
       id: this.id,
       path: this.path,

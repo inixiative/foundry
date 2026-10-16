@@ -371,7 +371,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
 
     const projects = Object.values(cfg.projects).map((project) => ({
       ...project,
-      status: 'idle',
+      status: project.status ?? 'idle',
       threadCount: 0,
       activeThreadCount: 0,
       createdAt: 0,
@@ -422,6 +422,34 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
 
     return c.json(projectConfig, 201);
+  });
+
+  // Rename (`label`) or archive/unarchive (`status`: archived | active) a project.
+  app.patch('/api/projects/:id', async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json<Record<string, unknown>>();
+    const { label, status } = body;
+    if (label !== undefined && (typeof label !== 'string' || !label.trim() || label.length > 200))
+      return c.json({ error: 'label must be a non-empty string (max 200 chars)' }, 400);
+    if (status !== undefined && status !== 'archived' && status !== 'active')
+      return c.json({ error: 'status must be archived or active' }, 400);
+    if (label === undefined && status === undefined)
+      return c.json({ error: 'nothing to change: send label or status' }, 400);
+    await configStore.load();
+    if (!Object.hasOwn(configStore.config.projects, id))
+      return c.json({ error: 'project not found' }, 404);
+    const next = await configStore.update((draft) => {
+      const project = draft.projects[id]!;
+      if (typeof label === 'string') project.label = label.trim();
+      if (status === 'archived') project.status = 'archived';
+      else if (status === 'active') delete project.status;
+    });
+    const live = projectRegistry?.get(id);
+    if (live) {
+      if (typeof label === 'string') live.label = label.trim();
+      if (status !== undefined) live.setArchived(status === 'archived');
+    }
+    return c.json(next.projects[id]);
   });
 
   app.delete('/api/projects/:id', async (c) => {

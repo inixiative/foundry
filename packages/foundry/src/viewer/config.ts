@@ -234,6 +234,11 @@ export interface ProjectSettingsConfig {
   /** Whether this project is enabled. Default: true. */
   enabled?: boolean;
   /**
+   * `archived`: hidden from the viewer's project list until unarchived; its settings and threads are
+   * kept and it still runs. Absent: live, its runtime status (active or idle) derived from its threads.
+   */
+  status?: 'archived';
+  /**
    * This project's chorus: the set of Wardens its threads run. Absent: the chorus from
    * `.foundry/regions` when that directory holds regions, else the hand-named roster. In a resolved
    * project view this is normalized (`source` effective, `layers` absolute); see
@@ -1031,8 +1036,13 @@ export function validateConfig(config: FoundryConfig): void {
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
-  for (const project of Object.values(config.projects ?? {}))
+  for (const project of Object.values(config.projects ?? {})) {
+    if (project.status !== undefined && project.status !== 'archived')
+      throw Error(`Project ${project.id} status must be archived or absent`);
+    if (project.label !== undefined && (typeof project.label !== 'string' || !project.label.trim()))
+      throw Error(`Project ${project.id} label must be a non-empty string`);
     validateProjectCapacity(config, project);
+  }
   for (const validate of configValidators) validate(config);
   if (config.tunnel && 'password' in config.tunnel)
     throw Error(
