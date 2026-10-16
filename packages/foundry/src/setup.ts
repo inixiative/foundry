@@ -23,6 +23,7 @@ import {
 } from './models/registry';
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
 import { defaultInstallationName, defaultKingdomUrl, pairKingdom } from './providers/kingdom-cli';
+import { inspectReadiness } from './readiness';
 import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
@@ -131,6 +132,7 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
   const port = await ask('Viewer port', '4500');
 
   const config = buildStarterConfig(providerId, model);
+  await checkAgentClis(config);
 
   if (apiKey) {
     const envKey = PROVIDERS.find((p) => p.id === providerId)?.envKey;
@@ -185,6 +187,7 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
 // ---------------------------------------------------------------------------
 
 async function configureLoop(config: FoundryConfig) {
+  await checkAgentClis(config);
   const counts = () => ({
     agents: Object.keys(config.agents).length,
     layers: Object.keys(config.layers).length,
@@ -209,6 +212,7 @@ async function configureLoop(config: FoundryConfig) {
       `Sources              (${c.sources} configured)`,
       `Projects             (${c.projects} configured)`,
       `Kingdom & archives   (${archiveSummary})`,
+      'Agent CLIs           (find claude / codex)',
       'Reset to starter config',
       'Done',
     ]);
@@ -238,7 +242,10 @@ async function configureLoop(config: FoundryConfig) {
       case 7:
         await configureArchives(config);
         break;
-      case 8: {
+      case 8:
+        await checkAgentClis(config);
+        break;
+      case 9: {
         if (await confirm('Replace config with starter defaults?', false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -248,7 +255,7 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 9:
+      case 10:
         running = false;
         break;
     }
@@ -257,6 +264,23 @@ async function configureLoop(config: FoundryConfig) {
   }
 
   console.log('\n  Config saved to .foundry/settings.json\n');
+}
+
+// ---------------------------------------------------------------------------
+// Agent CLIs — the doctor's check: each enabled native runtime's CLI, on PATH or in an app bundle
+// ---------------------------------------------------------------------------
+
+async function checkAgentClis(config: FoundryConfig) {
+  console.log('\n  ── Agent CLIs ──\n');
+  const report = await inspectReadiness(config);
+  for (const native of report.nativeClis ?? [])
+    console.log(
+      native.binary
+        ? `  ✓ ${native.cli}: ${native.binary}${native.version ? ` (${native.version})` : ''}`
+        : `  ✗ ${native.cli}: no working install found`,
+    );
+  for (const item of report.issues.filter((issue) => issue.code === 'native-cli-missing'))
+    console.log(`  ${item.severity === 'error' ? '✗' : '!'} ${item.message}`);
 }
 
 // ---------------------------------------------------------------------------

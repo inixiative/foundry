@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
@@ -145,6 +146,18 @@ function ensureRunnableLocalConfig(config: FoundryConfig): boolean {
   }
 
   return changed;
+}
+
+// The agent CLIs every native launch spawns by bare name: one found off PATH (an app bundle's) joins
+// this process's PATH, so a run outside the daemon finds a CLI nobody put on PATH.
+const agentClis = await ensureAgentClisOnPath();
+for (const cli of AGENT_CLIS) {
+  const install = agentClis.get(cli);
+  console.log(
+    install
+      ? `Agent CLI ${cli}: ${install.binary} (${install.version.join('.')})`
+      : `Agent CLI ${cli}: no working install found`,
+  );
 }
 
 if (!existsSync(`${FOUNDRY_DIR}/settings.json`)) {

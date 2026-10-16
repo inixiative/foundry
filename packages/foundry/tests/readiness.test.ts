@@ -157,6 +157,33 @@ test('readiness distinguishes missing native binaries and API credentials', asyn
   expect(report.issues.some((item) => item.code === 'provider-credential-missing')).toBe(true);
   expect(report.issues.some((item) => item.code === 'provider-not-constructed')).toBe(false);
 });
+test('readiness reports each enabled native CLI it found, and says how to fix one it did not', async () => {
+  const config = defaultConfig();
+  const report = await inspectReadiness(config, {
+    environment: {},
+    which: (cli) => (cli === 'claude' ? '/controlled/claude' : null),
+  });
+  expect(report.nativeClis).toEqual([
+    { cli: 'claude', provider: 'claude-code', used: true, binary: '/controlled/claude' },
+    { cli: 'codex', provider: 'codex', used: false, binary: null },
+  ]);
+  expect(report.issues.filter((item) => item.code === 'native-cli-missing')).toEqual([
+    {
+      severity: 'warning',
+      scope: 'global',
+      code: 'native-cli-missing',
+      message:
+        'Codex is enabled but no codex CLI was found on PATH or in an app bundle; install Codex or disable it.',
+    },
+  ]);
+
+  config.defaults = { ...config.defaults, provider: 'codex', model: 'gpt-6-luna' };
+  const main = await inspectReadiness(config, { environment: {}, which: () => null });
+  expect(
+    main.issues.filter((item) => item.code === 'native-cli-missing').map((i) => i.severity),
+  ).toEqual(['error', 'error']);
+  expect(main.configurationReady).toBe(false);
+});
 test('Kingdom inspection enforces the same private-file schema as launch and never claims live access', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-readiness-'));
   try {
@@ -269,7 +296,10 @@ test('keyless providers read as ready: a local Ollama has no credential to be mi
     which: () => null,
   });
   expect(report.issues.some((item) => item.code === 'provider-credential-missing')).toBe(false);
-  expect(report.issues.some((item) => item.code === 'native-cli-missing')).toBe(false);
+  // Claude Code and Codex are enabled but launch nothing here: their missing CLIs are warnings.
+  expect(
+    report.issues.filter((item) => item.code === 'native-cli-missing').map((i) => i.severity),
+  ).toEqual(['warning', 'warning']);
   expect(report.issues.some((item) => item.severity === 'error')).toBe(false);
 
   config.defaults = { provider: 'claude-code', model: 'fable' };

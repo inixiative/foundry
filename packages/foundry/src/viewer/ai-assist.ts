@@ -1,5 +1,6 @@
 import type { LLMMessage, LLMProvider, ToolRegistry } from '@inixiative/foundry-core';
 import { toolUseLoop } from '../agents/tool-loop';
+import type { ReadinessNativeCli } from '../readiness';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from './config';
 import type { SelfChatFocus, SelfChatMessage } from './foundry-self-chat';
 
@@ -282,9 +283,16 @@ export class AIAssist {
       tools?: ToolRegistry;
       toolCwd?: string;
       onToolCall?: (name: string, input: Record<string, unknown>, result: string) => void;
+      /** The native runtime CLIs, located again for this message (`inspectNativeClis`). */
+      nativeClis?: ReadinessNativeCli[];
     },
   ): Promise<{ reply: string; tokens?: { input: number; output: number } }> {
-    const systemPrompt = this._buildSelfChatSystemPrompt(config, focus, !!opts?.tools);
+    const systemPrompt = this._buildSelfChatSystemPrompt(
+      config,
+      focus,
+      !!opts?.tools,
+      opts?.nativeClis,
+    );
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history
@@ -331,6 +339,7 @@ export class AIAssist {
     config: FoundryConfig,
     focus: SelfChatFocus,
     hasTools: boolean,
+    nativeClis?: ReadinessNativeCli[],
   ): string {
     const project = focus.projectId ? config.projects?.[focus.projectId] : null;
     const focusDetail = this._focusDetail(config, focus);
@@ -352,12 +361,29 @@ export class AIAssist {
       `Agents (${Object.keys(config.agents).length}): ${Object.keys(config.agents).join(', ') || 'none'}`,
       `Layers (${Object.keys(config.layers).length}): ${Object.keys(config.layers).join(', ') || 'none'}`,
       `Projects (${Object.keys(config.projects ?? {}).length}): ${Object.keys(config.projects ?? {}).join(', ') || 'none'}`,
+      nativeClis ? this._nativeCliStatus(nativeClis) : '',
       '',
       project ? `Active project: ${project.label ?? project.id} (${project.path})` : '',
       focusDetail ? `Operator is currently looking at:\n${focusDetail}` : '',
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  /** What `bun run doctor` reports as `nativeClis`, located again for this message. */
+  private _nativeCliStatus(nativeClis: ReadinessNativeCli[]): string {
+    const lines = nativeClis.map((native) => {
+      const runs = native.provider ?? 'decisions';
+      return native.binary
+        ? `- ${native.cli} (${runs}): ${native.binary}${native.version ? ` ${native.version}` : ''}`
+        : `- ${native.cli} (${runs}): NOT FOUND${native.used ? ', and this Foundry launches it' : ''}`;
+    });
+    return [
+      '',
+      "Native runtime CLIs, located again for this message by the resolver `bun run setup`, `bun run doctor` and the daemon installer share (on PATH, else the newest working install, macOS app bundles such as /Applications/Codex.app included). One found off PATH has already been added to this running Foundry's PATH, so nothing needs restarting for it:",
+      ...lines,
+      'When one is missing, tell the operator to install it or disable its provider (show the settings patch). For the full report run `bun run doctor`; a LaunchAgent install that refused for a missing CLI takes `bun run daemon:install` again once the doctor finds it.',
+    ].join('\n');
   }
 
   private _focusDetail(config: FoundryConfig, focus: SelfChatFocus): string {

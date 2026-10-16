@@ -5,6 +5,7 @@ import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@
 import { configuredExperts } from './agents/configured-experts';
 import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
+import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
 import { MODEL_REGISTRY } from './models/registry';
 import { resolveDecisionModel } from './providers/decision-provider';
 import {
@@ -72,6 +73,17 @@ export interface ReadinessChorus {
     keyError?: string;
   }>;
 }
+/** A native runtime's CLI as this Foundry would launch it: on PATH, or found in an app bundle. */
+export interface ReadinessNativeCli {
+  cli: string;
+  /** The enabled provider that runs on it; absent when only the decision roles do. */
+  provider?: string;
+  /** Whether the main thread, the decision roles or a requested provider launches it. */
+  used: boolean;
+  /** The binary that launches, or null when no working install was found. */
+  binary: string | null;
+  version?: string;
+}
 export interface ReadinessArchive {
   status: 'not-set-up' | 'unverified' | 'reachable' | 'unreachable';
   url: string;
@@ -89,12 +101,91 @@ export interface ReadinessReport {
   prefilter?: ReadinessPrefilter;
   /** Each project's chorus, read-only; present when the configuration validated. */
   chorus?: ReadinessChorus[];
+  /** Each native runtime CLI the configuration launches; present when the configuration validated. */
+  nativeClis?: ReadinessNativeCli[];
 }
+/** The native providers and the CLI each launches. */
+const NATIVE_CLIS = [
+  ['claude-code', 'claude'],
+  ['codex', 'codex'],
+] as const;
+const NATIVE_LABELS: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
+
+/**
+ * Each native runtime CLI the configuration launches (every enabled native provider's, and the
+ * decision runtime's), located by the shared resolver, which puts a CLI found off PATH (an app
+ * bundle's) on this process's PATH; and an issue for each one missing: an error when the main
+ * thread, the decision roles or a `requested` provider launches it, else a warning.
+ */
+export async function inspectNativeClis(
+  saved: FoundryConfig,
+  options: {
+    /** Test seam in place of the resolver. */
+    which?: (binary: string) => string | null;
+    /** Provider ids something in the configuration launches beyond the main thread. */
+    requested?: ReadonlySet<string>;
+  } = {},
+): Promise<{ nativeClis: ReadinessNativeCli[]; issues: ReadinessIssue[] }> {
+  let subscription: SubscriptionResolution | undefined;
+  try {
+    subscription = resolveSubscriptionPolicy(saved);
+  } catch {
+    // An invalid policy is reported by inspectReadiness; the providers still say what launches.
+  }
+  const config = subscription?.config ?? saved;
+  const use = new Map<string, { provider?: string; used: boolean }>();
+  for (const [provider, cli] of NATIVE_CLIS)
+    if (config.providers[provider]?.enabled)
+      use.set(cli, {
+        provider,
+        used: config.defaults.provider === provider || !!options.requested?.has(provider),
+      });
+  if (subscription) {
+    const cli = subscription.decision.runtime === 'codex' ? 'codex' : 'claude';
+    use.set(cli, { ...use.get(cli), used: true });
+  }
+  const which = options.which;
+  const located: Map<string, Install> = which
+    ? new Map(
+        [...use.keys()].flatMap((cli) => {
+          const binary = which(cli);
+          return binary ? [[cli, { binary, version: [] }] as const] : [];
+        }),
+      )
+    : await ensureAgentClisOnPath([...use.keys()]);
+  const nativeClis = [...use].map(([cli, { provider, used }]) => {
+    const install = located.get(cli);
+    return {
+      cli,
+      ...(provider ? { provider } : {}),
+      used,
+      binary: install?.binary ?? null,
+      ...(install?.version.length ? { version: install.version.join('.') } : {}),
+    };
+  });
+  const issues = nativeClis
+    .filter((native) => !native.binary)
+    .map((native): ReadinessIssue => {
+      const label = NATIVE_LABELS[native.cli] ?? native.cli;
+      return {
+        severity: native.used ? 'error' : 'warning',
+        scope: 'global',
+        code: 'native-cli-missing',
+        message: native.provider
+          ? `${label} is enabled but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label} or disable it.`
+          : `Decisions run on ${native.cli} but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label} or change subscriptionOnly.decisionRuntime.`,
+      };
+    });
+  return { nativeClis, issues };
+}
+
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
 export async function inspectReadiness(
   config: FoundryConfig,
   options: {
     environment?: Record<string, string | undefined>;
+    /** Test seam for locating the native CLIs; default: the shared resolver, which also puts a CLI
+     * found off PATH (an app bundle's) on this process's PATH. */
     which?: (binary: string) => string | null;
     /** Enables the local Archive check with this client (undefined: none is set up). */
     archive?: () => ArchiveClient | undefined;
@@ -109,8 +200,7 @@ export async function inspectReadiness(
   const saved = config;
   const issues: ReadinessIssue[] = [],
     profiles: ReadinessProfile[] = [];
-  const environment = options.environment ?? process.env,
-    which = options.which ?? Bun.which;
+  const environment = options.environment ?? process.env;
   const issue = (
     severity: ReadinessIssue['severity'],
     scope: string,
@@ -120,7 +210,8 @@ export async function inspectReadiness(
   let kingdoms: ReadinessKingdom[] | undefined,
     archive: ReadinessArchive | undefined,
     prefilter: ReadinessPrefilter | undefined,
-    chorus: ReadinessChorus[] | undefined;
+    chorus: ReadinessChorus[] | undefined,
+    nativeClis: ReadinessNativeCli[] | undefined;
   const result = (): ReadinessReport => ({
     configurationReady: !issues.some((item) => item.severity === 'error'),
     liveAccess: 'unverified',
@@ -130,6 +221,7 @@ export async function inspectReadiness(
     ...(archive ? { archive } : {}),
     ...(prefilter ? { prefilter } : {}),
     ...(chorus ? { chorus } : {}),
+    ...(nativeClis ? { nativeClis } : {}),
   });
   let subscription: SubscriptionResolution | undefined;
   try {
@@ -159,18 +251,12 @@ export async function inspectReadiness(
     }
   }
   const decisionProvider = resolveDecisionModel(config).provider;
-  const checkedProviders = new Set<string>();
+  const checkedProviders = new Set<string>(),
+    requested = new Set<string>();
   const checkProvider = (id: string, scope: string) => {
     if (checkedProviders.has(id)) return;
     checkedProviders.add(id);
     if (subscription && id === SUBSCRIPTION_DECISIONS) {
-      if (!which(subscription.decision.runtime === 'codex' ? 'codex' : 'claude'))
-        issue(
-          'error',
-          scope,
-          'native-cli-missing',
-          "Install the decision profile's native CLI on PATH before starting Foundry.",
-        );
       return;
     }
     if (!config.providers[id]?.enabled)
@@ -203,13 +289,7 @@ export async function inspectReadiness(
         'provider-credential-missing',
         `Set ${provider.envKey} through the existing secret mechanism.`,
       );
-    if (['claude-code', 'codex'].includes(id) && !which(id === 'claude-code' ? 'claude' : 'codex'))
-      issue(
-        'error',
-        scope,
-        'native-cli-missing',
-        'Install the requested native CLI on PATH before starting Foundry.',
-      );
+    requested.add(id);
   };
   checkProvider(config.defaults.provider, 'global');
   for (const source of config.kingdomAccess ?? []) {
@@ -422,6 +502,9 @@ export async function inspectReadiness(
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
+  const native = await inspectNativeClis(saved, { which: options.which, requested });
+  nativeClis = native.nativeClis;
+  issues.push(...native.issues);
   chorus = await Promise.all(
     choruses.map(([scope, c]) =>
       describeReadinessChorus(scope, c, (region, message) =>

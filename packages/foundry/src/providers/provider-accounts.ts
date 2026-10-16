@@ -1,3 +1,4 @@
+import { whichOn } from '../daemon/agent-clis';
 import { MODEL_REGISTRY, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../models/registry';
 import type { FoundryConfig } from '../viewer/config';
 import {
@@ -28,7 +29,7 @@ interface Inputs {
 
 export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): ProviderAccount[] {
   const environment = inputs.environment ?? process.env;
-  const which = inputs.which ?? Bun.which;
+  const which = inputs.which ?? ((command: string) => whichOn(command));
   let subscription: ReturnType<typeof resolveSubscriptionPolicy>;
   let policyIssue: string | undefined;
   try {

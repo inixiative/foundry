@@ -11,7 +11,7 @@ import {
   writeFileRef,
 } from '../../prompts/composer';
 import { providerAccounts } from '../../providers/provider-accounts';
-import { describeReadinessChorus } from '../../readiness';
+import { describeReadinessChorus, inspectNativeClis } from '../../readiness';
 import type { ActionHandler, OperatorAction } from '../actions';
 import type { AIAssist, AssistRequest } from '../ai-assist';
 import type { AnalyticsStore, RollupPeriod } from '../analytics';
@@ -743,7 +743,11 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
         selfChat.messages,
         text,
         focus,
-        assistTools ? { tools: assistTools, toolCwd } : undefined,
+        {
+          ...(assistTools ? { tools: assistTools, toolCwd } : {}),
+          // Locating the CLIs again also repairs this process: a CLI installed since startup joins its PATH.
+          nativeClis: (await inspectNativeClis(configStore.config)).nativeClis,
+        },
       );
       await selfChat.append({
         role: 'assistant',
