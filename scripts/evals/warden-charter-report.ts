@@ -59,6 +59,12 @@ import {
 } from '../../packages/foundry/src/agents/warden-charter';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
+import {
+  COST_WEIGHTS,
+  MODEL_COST_WEIGHTS,
+  modelWeighted,
+  POINTS_PER_WEIGHTED_TOKEN,
+} from './cost-weights';
 
 export const REPORT_SCHEMA = 'warden-eval-report/2';
 
@@ -135,6 +141,8 @@ interface ScoreFile {
       knowledge: string;
       fallbackToKnowledge: string[];
       parse?: {
+        missingPickers?: number;
+        dispatched?: number;
         remarks: number;
         regionsNamed: number;
         parseErrorLines: number;
@@ -599,16 +607,14 @@ function effectiveness(ms: readonly Moment[], lad: Map<string, WardenPointerJudg
   };
 }
 
-/** Token weights by kind for the weighted cost: cache reads cheap, writes and generated tokens dear. */
-const COST_WEIGHTS = { input: 1, cacheRead: 0.1, cacheWrite: 2, output: 5, thinking: 5 } as const;
-/** Window points per weighted token: 0.11 pt/moment ÷ 224,661 weighted tokens/moment (after-sub30-20261015). */
-const POINTS_PER_WEIGHTED_TOKEN = 0.11 / 224_661;
+/** Answers and the model that produced them: one part per stage. */
+interface CostPart {
+  answers: readonly WardenProbeAnswer[];
+  model: string;
+}
 
-function cost(
-  ms: readonly Moment[],
-  answers: readonly WardenProbeAnswer[],
-  windowPoints: number | null,
-) {
+function cost(ms: readonly Moment[], parts: readonly CostPart[], windowPoints: number | null) {
+  const answers = parts.flatMap((p) => p.answers);
   const t = tokensOf(answers);
   const n = ms.length;
   const perMoment = {
@@ -625,13 +631,14 @@ function cost(
         ? null
         : Math.round(perMoment.windowPoints * perHour * 100) / 100,
   });
-  const weightedTokens =
-    t.input * COST_WEIGHTS.input +
-    t.cacheRead * COST_WEIGHTS.cacheRead +
-    t.cacheWrite * COST_WEIGHTS.cacheWrite +
-    t.output * COST_WEIGHTS.output +
-    t.thinking * COST_WEIGHTS.thinking;
-  const weightedPerMoment = n ? weightedTokens / n : null;
+  const {
+    byModel,
+    noModelWeight: unweighted,
+    total: weightedTokens,
+  } = modelWeighted(
+    parts.map((p) => ({ model: p.model, tokens: tokensOf(p.answers), calls: p.answers.length })),
+  );
+  const weightedPerMoment = n && weightedTokens !== null ? weightedTokens / n : null;
   const toPoints = (w: number | null) =>
     w === null ? null : Math.round(w * POINTS_PER_WEIGHTED_TOKEN * 10000) / 10000;
   return {
@@ -642,7 +649,10 @@ function cost(
     cacheReadShare: rate(t.cacheRead, t.total),
     weighted: {
       weights: COST_WEIGHTS,
-      tokens: Math.round(weightedTokens),
+      modelWeights: MODEL_COST_WEIGHTS,
+      byModel,
+      ...(unweighted.length ? { noModelWeight: unweighted } : {}),
+      tokens: weightedTokens === null ? null : Math.round(weightedTokens),
       perMoment: weightedPerMoment === null ? null : Math.round(weightedPerMoment),
       coefficientPointsPerWeightedToken: POINTS_PER_WEIGHTED_TOKEN,
       pointsPerMoment: toPoints(weightedPerMoment),
@@ -650,7 +660,7 @@ function cost(
         typical: toPoints(weightedPerMoment === null ? null : weightedPerMoment * triggerRates[0]!),
         busy: toPoints(weightedPerMoment === null ? null : weightedPerMoment * triggerRates[1]!),
       },
-      note: 'exact tokens weighted by kind, converted with one coefficient fixed from the after-run (0.11 window points per moment over 224,661 weighted tokens per moment); the shared-window growth is the bound',
+      note: 'exact tokens weighted by kind, then by model (MODEL_COST_WEIGHTS: Haiku 1, Sonnet 9), converted with one coefficient fixed from the after-run (0.11 window points per moment over 224,661 weighted Haiku tokens per moment); a model without a weight leaves the weighted cost empty; the shared-window growth is the bound',
     },
     windowPoints: {
       growth: windowPoints,
@@ -777,6 +787,8 @@ function provenance(
     run: r.dir,
     answers: r.answersFile,
     model: stageModel?.model ?? s.model ?? 'claude-haiku-5-5',
+    modelCostWeight: MODEL_COST_WEIGHTS[stageModel?.model ?? s.model ?? 'claude-haiku-5-5'] ?? null,
+    modelCostWeights: MODEL_COST_WEIGHTS,
     effort: stageModel?.effort ?? s.effort ?? 'low',
     thinkingTokens: s.thinkingTokens ?? null,
     charter: stageModel?.charter ?? charterVersion ?? null,
@@ -802,17 +814,18 @@ function recogniseStage(
   const ms = moments(r);
   const w = wardens(ms);
   const pl = r.score?.pipeline?.recognise;
+  const model = pl?.model ?? r.score?.model ?? 'claude-haiku-5-5';
   return {
     stage: 'recognise',
     status: 'measured',
     ...(pl
       ? {
-          note: `--pipeline stage 1: ${pl.model} ${pl.effort} under ${pl.charter}, holding recognise.md${pl.fallbackToKnowledge.length ? ` (${pl.fallbackToKnowledge.length} regions fell back to knowledge.md: ${pl.fallbackToKnowledge.join(', ')})` : ''}${pl.parse ? `; stage-1 output parsed: ${pl.parse.regionsNamed} regions named in ${pl.parse.remarks} remarks, parse errors ${pl.parse.parseErrorLines} lines in ${pl.parse.remarksWithErrors} remarks (${pl.parse.remarks ? Math.round((pl.parse.remarksWithErrors / pl.parse.remarks) * 1000) / 10 : 0}%), unknown region ids ${pl.parse.unknownRegions}` : ''}`,
+          note: `--pipeline stage 1: ${pl.model} ${pl.effort} under ${pl.charter}, holding recognise.md${pl.fallbackToKnowledge.length ? ` (${pl.fallbackToKnowledge.length} regions fell back to knowledge.md: ${pl.fallbackToKnowledge.join(', ')})` : ''}${pl.parse ? `; stage-1 output parsed: ${pl.parse.regionsNamed} regions named in ${pl.parse.remarks} remarks, parse errors ${pl.parse.parseErrorLines} lines in ${pl.parse.remarksWithErrors} remarks (${pl.parse.remarks ? Math.round((pl.parse.remarksWithErrors / pl.parse.remarks) * 1000) / 10 : 0}%), unknown region ids ${pl.parse.unknownRegions}${pl.parse.missingPickers !== undefined ? `, members without a picker ${pl.parse.missingPickers}, dispatched ${pl.parse.dispatched}` : ''}` : ''}`,
         }
       : {}),
     moments: ms,
     ...split(ms, lad),
-    cost: cost(ms, r.answers, windowPoints),
+    cost: cost(ms, [{ answers: r.answers, model }], windowPoints),
     time: time(ms, r.answers),
     recognition: w,
     accumulated: accumulated(ms, w),
@@ -843,6 +856,7 @@ function confirmStage(
   const ms = moments(r, base);
   const w = wardens(ms);
   const pl = base.score?.pipeline?.pick;
+  const model = pl?.model ?? r.score?.model ?? 'claude-haiku-5-5';
   return {
     stage: 'confirm',
     status: 'measured',
@@ -851,7 +865,7 @@ function confirmStage(
       : `asked only the (moment, region) pairs stage 1 (${base.dir}) said yes to`,
     moments: ms,
     ...split(ms, lad),
-    cost: cost(ms, r.answers, windowPoints),
+    cost: cost(ms, [{ answers: r.answers, model }], windowPoints),
     time: time(
       ms,
       r.answers,
@@ -880,10 +894,16 @@ function chorusStage(
   if (!s2) return { ...s1, stage: 'chorus', note: 'stage 1 alone' };
   const ms = s2.moments;
   const w = wardens(ms);
-  const answers = [...(r1?.answers ?? []), ...(r2?.answers ?? [])];
   const win1 = s1.cost?.windowPoints.growth ?? null;
   const win2 = s2.cost?.windowPoints.growth ?? null;
-  const c = cost(ms, answers, win1 === null && win2 === null ? null : (win1 ?? 0) + (win2 ?? 0));
+  const c = cost(
+    ms,
+    [
+      { answers: r1?.answers ?? [], model: s1.provenance!.model },
+      { answers: r2?.answers ?? [], model: s2.provenance!.model },
+    ],
+    win1 === null && win2 === null ? null : (win1 ?? 0) + (win2 ?? 0),
+  );
   const t1 = s1.time!;
   const t2 = s2.time!;
   return {
@@ -1332,7 +1352,7 @@ function renderStage(st: StageReport, title: string): string {
     `| per moment | ${f(c.perMoment.calls)} calls, ${k(c.perMoment.tokens)} tokens, ${f(c.perMoment.windowPoints, 3)} window points |`,
     `| projected per hour at ${c.projectedPerHour.typical.momentsPerHour} moments/h (typical) | ${c.projectedPerHour.typical.calls} calls, ${k(c.projectedPerHour.typical.tokens)} tokens, ${f(c.projectedPerHour.typical.windowPoints)} window points |`,
     `| projected per hour at ${c.projectedPerHour.busy.momentsPerHour} moments/h (busy) | ${c.projectedPerHour.busy.calls} calls, ${k(c.projectedPerHour.busy.tokens)} tokens, ${f(c.projectedPerHour.busy.windowPoints)} window points |`,
-    `| weighted tokens (input 1, cache read 0.1, cache write 2, output 5, thinking 5) | ${k(c.weighted.tokens)}, ${k(c.weighted.perMoment)} per moment → ${f(c.weighted.pointsPerMoment, 4)} pts/moment; ${f(c.weighted.pointsPerHour.typical)} pts/h typical, ${f(c.weighted.pointsPerHour.busy)} busy (fixed coefficient) |`,
+    `| weighted tokens (by kind: input 1, cache read 0.1, cache write 2, output 5, thinking 5; by model: ${c.weighted.byModel.map((b) => `${b.model} ×${b.modelWeight ?? 'none'}`).join(', ')}) | ${c.weighted.noModelWeight ? `no model weight for ${c.weighted.noModelWeight.join(', ')}: weighted cost not computed; ` : ''}${k(c.weighted.tokens)}, ${k(c.weighted.perMoment)} per moment → ${f(c.weighted.pointsPerMoment, 4)} pts/moment; ${f(c.weighted.pointsPerHour.typical)} pts/h typical, ${f(c.weighted.pointsPerHour.busy)} busy (fixed coefficient) |`,
     '',
     '### 3. Time',
     '',
@@ -1390,6 +1410,11 @@ function renderStage(st: StageReport, title: string): string {
     '|---|---|',
     `| run | \`${p.run}\` (${p.answers}) |`,
     `| model, effort, MAX_THINKING_TOKENS | ${p.model}, ${p.effort}, ${p.thinkingTokens ?? 'unset'} |`,
+    `| model cost weight (table) | ×${p.modelCostWeight ?? 'none'} (${Object.entries(
+      p.modelCostWeights,
+    )
+      .map(([m, w]) => `${m} ${w}`)
+      .join(', ')}) |`,
     `| charter | ${p.charter ?? '–'} (${p.charterLabel ?? '–'}) |`,
     `| knowledge held | ${p.knowledgeFile ?? '–'}${p.recogniseFallback?.length ? `; fell back to knowledge.md for ${p.recogniseFallback.length} regions (${p.recogniseFallback.join(', ')})` : ''} |`,
     `| regions | ${p.regions ?? '–'}${p.regionsDir ? ` (\`${p.regionsDir}\`)` : ''}${p.knowledge ? `; knowledge \`${p.knowledge}\`` : ''}; roster ${p.roster ?? '–'} |`,

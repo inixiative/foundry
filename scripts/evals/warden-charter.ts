@@ -10,7 +10,7 @@
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
  *     [--experiment <design.md>]
- *     [--pipeline --recognise-charter <file> --pick-charter <file> [--pick-model <id>] [--pick-effort <level>]]
+ *     [--pipeline --recognise-charter <file> --pick-charter <file> [--pick-regions <dir>] [--pick-model <id>] [--pick-effort <level>]]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -53,6 +53,13 @@
  * turns.pick.jsonl; the report (warden-charter-report.ts) scores stage 1, stage 2 and the roll-up from
  * the one run. The charters live under ~/.foundry/evals/experiments/, not in Foundry; shipped defaults
  * are untouched.
+ *
+ * --pick-regions <dir> draws the stage-2 pickers from that regions directory by region id
+ * (`<dir>/<id>/{region.json,knowledge.md}`), independent of the stage-1 chorus, so a grouped stage 1
+ * (`warden-groups.ts build`) hands each named member to its own full-catalog picker. A stage-1 id is
+ * valid when it is one of its recogniser's members (`members` in the group's region.json; a plain
+ * region holds itself); others count as unknown, never guessed (`pipeline-dispatch.ts`). Without it,
+ * the pickers are the stage-1 chorus's own regions holding their knowledge.md.
  */
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -68,7 +75,11 @@ import {
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { configuredExperts } from '../../packages/foundry/src/agents/configured-experts';
-import { describeChorus } from '../../packages/foundry/src/agents/region-roster';
+import {
+  describeChorus,
+  readRegions,
+  regionInstructions,
+} from '../../packages/foundry/src/agents/region-roster';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
 import { chorusSource, wardenCharter } from '../../packages/foundry/src/agents/warden-charter';
@@ -87,6 +98,7 @@ import {
 import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
 import { requireExperiment, TINY_MOMENTS } from './experiment-gate';
+import { dispatch } from './pipeline-dispatch';
 
 const { values } = parseArgs({
   options: {
@@ -117,6 +129,7 @@ const { values } = parseArgs({
     pipeline: { type: 'boolean' },
     'recognise-charter': { type: 'string' },
     'pick-charter': { type: 'string' },
+    'pick-regions': { type: 'string' },
     'pick-model': { type: 'string' },
     'pick-effort': { type: 'string' },
   },
@@ -154,25 +167,6 @@ const pickCharter = pipeline
   : undefined;
 const charterVersion = (text: string) => `charter-${computeHash(text).slice(0, 12)}`;
 
-/** One region a recogniser named for a moment, with its line why (the experiment's stage-1 contract). */
-interface Recognition {
-  readonly regionId: string;
-  readonly why: string;
-}
-const RECOGNITION_LINE =
-  /^\s*(?:in my domain:\s*)?(?:region\s+)?`?([A-Za-z0-9][A-Za-z0-9_.-]{0,199})`?\s*:\s*(.+?)\s*$/i;
-/** Parse a stage-1 remark: one `region <id>: <why>` per line; lines in no shape are errors, counted. */
-function parseRecognition(remark: string): { regions: Recognition[]; errors: string[] } {
-  const regions: Recognition[] = [];
-  const errors: string[] = [];
-  for (const line of remark.split('\n')) {
-    if (!line.trim()) continue;
-    const m = RECOGNITION_LINE.exec(line);
-    if (m) regions.push({ regionId: m[1]!, why: m[2]! });
-    else errors.push(line.trim());
-  }
-  return { regions, errors };
-}
 const onlyRoles = values.roles?.split(',').filter(Boolean);
 if (!values.probes) {
   console.error('usage: warden-charter.ts --probes <jsonl> [--foundry-dir <daemon .foundry dir>]');
@@ -354,6 +348,35 @@ const placeKey = (probe: WardenProbe) => {
 };
 const wardensFor = (probe: WardenProbe): EvalWarden[] => composed.get(placeKey(probe)) ?? [];
 const pickersFor = (probe: WardenProbe): EvalWarden[] => composedPick.get(placeKey(probe)) ?? [];
+/** --pick-regions: one picker per region id of that directory, its knowledge.md in full. */
+const pickRegionsDir = values['pick-regions'] ? resolve(values['pick-regions']) : undefined;
+if (pickRegionsDir && !pipeline) throw Error('--pick-regions is a --pipeline flag');
+const pickRegions = new Map<string, EvalWarden>();
+if (pickRegionsDir) {
+  for (const region of readRegions(pickRegionsDir)) {
+    pickRegions.set(region.id, {
+      domain: region.id,
+      instructions: regionInstructions(region),
+      domainKnowledge: readFileSync(region.knowledgePath, 'utf8'),
+      ...(budgetOverride !== undefined ? { budget: budgetOverride } : {}),
+      ...(values.session ? { session: `${values.session}:pick:${region.id}` } : {}),
+    });
+  }
+  if (!pickRegions.size) throw Error(`--pick-regions ${pickRegionsDir} holds no regions`);
+}
+/** The region ids a stage-1 recogniser holds: a group's `members`, else itself. */
+const membersOf = (recogniser: string): string[] => {
+  const meta = values.regions
+    ? join(resolve(values.regions), recogniser, 'region.json')
+    : undefined;
+  if (meta && existsSync(meta)) {
+    const members = (JSON.parse(readFileSync(meta, 'utf8')) as { members?: unknown }).members;
+    if (Array.isArray(members) && members.every((m) => typeof m === 'string')) return members;
+  }
+  return [recogniser];
+};
+const pickerFor = (probe: WardenProbe, regionId: string): EvalWarden | undefined =>
+  pickRegionsDir ? pickRegions.get(regionId) : pickersFor(probe).find((w) => w.domain === regionId);
 if (pipeline)
   console.error(
     `pipeline: stage 1 ${wardenModel} ${wardenEffort ?? 'low'} RECOGNISE (${recogniseFallback.length} regions without recognise.md fall back to knowledge.md); stage 2 ${pickModel} ${pickEffort} PICK`,
@@ -541,36 +564,21 @@ try {
   // --pipeline stage 2: the picker, asked only where the recogniser said yes, with its line as context.
   let pick: Record<string, unknown> | undefined;
   if (pipeline) {
-    // Stage 1's remark names regions: `region <id>: <why>` per line. Each named region that exists in the
-    // chorus gets a picker; lines in no shape and unknown ids are counted, never guessed at.
-    const fired = new Map<string, { domain: string; why: string }[]>();
-    const parse = {
-      remarks: 0,
-      regionsNamed: 0,
-      parseErrorLines: 0,
-      remarksWithErrors: 0,
-      unknownRegions: 0,
-    };
-    for (const a of answers)
-      if (!a.noComment && !a.error && a.text) {
-        parse.remarks++;
-        const k = turnKey(a.probeId, a.trigger);
-        const { regions, errors } = parseRecognition(a.text);
-        parse.parseErrorLines += errors.length;
-        if (errors.length) parse.remarksWithErrors++;
-        const probe = probes.find((p) => p.id === a.probeId);
-        const known = new Set(probe ? pickersFor(probe).map((w) => w.domain) : []);
-        for (const r of regions) {
-          parse.regionsNamed++;
-          if (!known.has(r.regionId)) {
-            parse.unknownRegions++;
-            continue;
-          }
-          const list = fired.get(k) ?? [];
-          if (!list.some((x) => x.domain === r.regionId))
-            list.push({ domain: r.regionId, why: r.why });
-          fired.set(k, list);
-        }
+    // Stage 1's remark names regions, one `<id>: <why>` per line; ids are checked against the
+    // recogniser's members and handed to the picker of that id (pipeline-dispatch.ts).
+    const probeById = new Map(probes.map((p) => [p.id, p]));
+    const { fired, counts: parse } = dispatch(answers, membersOf, (id) =>
+      pickRegionsDir ? pickRegions.has(id) : true,
+    );
+    // Without --pick-regions a named id needs a picker in the probe's own chorus.
+    if (!pickRegionsDir)
+      for (const [key, list] of fired) {
+        const probe = probeById.get(key.slice(0, key.lastIndexOf('|')));
+        const kept = list.filter((x) => probe && pickerFor(probe, x.domain));
+        parse.missingPickers += list.length - kept.length;
+        parse.dispatched -= list.length - kept.length;
+        if (kept.length) fired.set(key, kept);
+        else fired.delete(key);
       }
     const pickAnswersFile = join(out, 'answers.pick.jsonl');
     const pickTurnsFile = join(out, 'turns.pick.jsonl');
@@ -593,7 +601,7 @@ try {
         probes: probes.filter((p) => [...fired.keys()].some((k) => k.startsWith(`${p.id}|`))),
         wardensFor: (probe, trigger) =>
           (fired.get(turnKey(probe.id, trigger)) ?? []).flatMap(({ domain, why }) => {
-            const picker = pickersFor(probe).find((w) => w.domain === domain);
+            const picker = pickerFor(probe, domain);
             return picker
               ? [
                   {
@@ -625,6 +633,7 @@ try {
           knowledge: 'recognise.md',
           fallbackToKnowledge: recogniseFallback,
           output: 'region <id>: <why> per line',
+          pickRegions: pickRegionsDir ?? null,
           parse,
         },
         pick: {
