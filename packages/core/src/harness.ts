@@ -144,6 +144,8 @@ interface SendOptions {
   onExecutorInput?: () => void;
   /** The payload the execute stage's agent receives instead of `message.payload` (see DispatchOptions.agentPayload). */
   executorPayload?: unknown;
+  /** Images sent with the message; only the execute stage's agent receives them. */
+  images?: readonly import('./types').ImageInput[];
 }
 
 /**
@@ -670,6 +672,7 @@ export class Harness {
           ...(stage.role === 'execute' && opts?.executorPayload !== undefined
             ? { agentPayload: opts.executorPayload }
             : {}),
+          ...(stage.role === 'execute' && opts?.images?.length ? { images: opts.images } : {}),
           recordInjection: (artifact) => {
             stageSpan.annotations.injection = artifact;
             if (stage.role === 'execute' && !executorInput) {

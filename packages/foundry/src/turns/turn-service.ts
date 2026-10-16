@@ -1,6 +1,7 @@
 import type {
   EventStream,
   HarnessResult,
+  ImageInput,
   InjectionArtifact,
   NativeBridgeSource,
   NativeEvidence,
@@ -68,6 +69,8 @@ export interface TurnRequest {
   payload: string;
   /** The requesting client: it alone receives the full terminal on `thread:<threadId>`. */
   clientId?: string;
+  /** Images sent with the message (bytes loaded); the journal keeps their identity only. */
+  images?: readonly ImageInput[];
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */
@@ -201,9 +204,18 @@ export class TurnService {
     // message (and the journal's user message) reads only the user's words.
     const split = splitHostInstructions(request.payload);
     const payload = split?.userText ?? request.payload;
-    const hostMeta = split
-      ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
-      : undefined;
+    const images = request.images ?? [];
+    const userMeta =
+      split || images.length
+        ? {
+            ...(split
+              ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
+              : {}),
+            ...(images.length
+              ? { images: images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes })) }
+              : {}),
+          }
+        : undefined;
     const { db, localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
@@ -225,7 +237,7 @@ export class TurnService {
         body: { error: 'turn already accepted or live capacity unavailable', id: turnId },
       };
     try {
-      localStore?.beginTurn(harness.thread, turnId, payload, hostMeta);
+      localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
     } catch (err) {
       return {
         ok: false,
@@ -243,7 +255,7 @@ export class TurnService {
       actor: 'user',
       kind: 'text',
       content: payload,
-      ...(hostMeta ? { meta: hostMeta } : {}),
+      ...(userMeta ? { meta: userMeta } : {}),
     }).catch(() => {
       db?.writeMessage({
         id: userMsgId,
@@ -252,7 +264,7 @@ export class TurnService {
         actor: 'user',
         kind: 'text',
         content: payload,
-        ...(hostMeta ? { meta: hostMeta } : {}),
+        ...(userMeta ? { meta: userMeta } : {}),
       }).catch((err) => console.warn('[Turns] background op failed:', err.message ?? err));
     });
 
@@ -310,6 +322,7 @@ export class TurnService {
               buffer,
               clientId,
               split && request.payload,
+              images,
             ),
           );
       })
@@ -694,6 +707,7 @@ export class TurnService {
     clientId?: string,
     /** The verbatim prompt for the executor, when host instructions were split off `payload`. */
     executorPayload?: string | null,
+    images: readonly ImageInput[] = [],
   ): Promise<TurnOutcome> {
     const thread = harness.thread;
     const threadId = thread.id;
@@ -706,6 +720,7 @@ export class TurnService {
         {
           nativeObservation: this.nativeObservation(thread, state, turnId),
           ...(executorPayload ? { executorPayload } : {}),
+          ...(images.length ? { images } : {}),
           onDelta: (text) => buffer.append(text),
           onTrace: (trace) => {
             attemptTrace = trace;

@@ -61,12 +61,19 @@ export class FoundryClient {
       method,
       redirect: 'manual',
       headers: {
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(body === undefined
+          ? {}
+          : {
+              'content-type':
+                body instanceof Uint8Array ? 'application/octet-stream' : 'application/json',
+            }),
         ...(this.connection.capability && !anonymous
           ? { authorization: `Bearer ${this.connection.capability}` }
           : {}),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined
+        ? {}
+        : { body: body instanceof Uint8Array ? body : JSON.stringify(body) }),
     });
     const text = await response.text();
     let parsed: Record<string, unknown> = {};
@@ -130,8 +137,22 @@ export class FoundryClient {
     return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}`, body);
   }
 
+  /** Store an image (png, jpeg, gif or webp, at most 5 MB) for a later send to name by id. */
+  uploadImage(
+    bytes: Uint8Array,
+  ): Promise<{ id: string; mediaType: string; bytes: number; url: string }> {
+    return this.request('POST', '/api/attachments/images', bytes);
+  }
+
   /** Accept a turn; its output arrives on `thread:<threadId>`, its full terminal to `clientId`. */
-  send(turn: { threadId: string; id: string; message: string; clientId?: string }): Promise<{
+  send(turn: {
+    threadId: string;
+    id: string;
+    message: string;
+    clientId?: string;
+    /** Image ids from `uploadImage`. */
+    images?: string[];
+  }): Promise<{
     id: string;
     threadId: string;
     status: 'accepted';

@@ -1447,9 +1447,12 @@ async function threadForSend() {
   return tid;
 }
 
-/** Resolves false when the message could not be bound to a thread. */
-export async function sendMessage(text) {
-  if (!text.trim()) return false;
+/**
+ * Resolves false when the message could not be bound to a thread. `images` are stored references
+ * (`{ id, mediaType, bytes }`, from the upload route); the message needs text or an image.
+ */
+export async function sendMessage(text, images = []) {
+  if (!text.trim() && !images.length) return false;
 
   // Bind this send to the thread that was active at submit time.
   // If the user navigates away during the turn, its output still
@@ -1458,7 +1461,14 @@ export async function sendMessage(text) {
   if (!tid) return false;
 
   const turnId = `turn_${crypto.randomUUID()}`;
-  _appendToThread(tid, { actor: 'user', turnId, content: text, timestamp: Date.now() });
+  const refs = images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes }));
+  _appendToThread(tid, {
+    actor: 'user',
+    turnId,
+    content: text,
+    timestamp: Date.now(),
+    ...(refs.length ? { images: refs } : {}),
+  });
   // Seed a pending agent message the thread stream progressively fills.
   _appendToThread(tid, {
     actor: 'agent',
@@ -1473,13 +1483,13 @@ export async function sendMessage(text) {
   inflight.value++;
   pendingSends.set(turnId, tid);
   socket.open(`thread:${tid}`);
-  _sendInBackground(text, tid, turnId);
+  _sendInBackground(text, tid, turnId, refs);
   return true;
 }
 
 const SEND_OPEN_WAIT_MS = 5000;
 
-async function _sendInBackground(text, tid, turnId) {
+async function _sendInBackground(text, tid, turnId, images = []) {
   // Hold the thread stream on the server before the turn can finish, so its full result reaches this tab.
   await socket.opened(`thread:${tid}`, SEND_OPEN_WAIT_MS);
   let res;
@@ -1488,7 +1498,13 @@ async function _sendInBackground(text, tid, turnId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // The full result (with its evidence) comes back only to this tab, on its thread stream.
-      body: JSON.stringify({ id: turnId, message: text, threadId: tid, clientId }),
+      body: JSON.stringify({
+        id: turnId,
+        message: text,
+        threadId: tid,
+        clientId,
+        ...(images.length ? { images: images.map((image) => image.id) } : {}),
+      }),
     });
   } catch (err) {
     // The request may or may not have reached the server.

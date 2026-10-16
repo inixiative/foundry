@@ -125,7 +125,7 @@ export function captureThread(
       id: message.id,
       turnId: message.turnId,
       kind: message.actor === 'user' ? 'user' : 'assistant',
-      text: message.content,
+      text: withImageReferences(message.content, message.meta?.images),
       timestamp: message.timestamp,
       sourceRef: `message:${message.id}`,
       ...(message.actor === 'agent' ? stamp(byTurn.get(message.turnId)) : {}),
@@ -428,4 +428,14 @@ function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSes
     found.set(`${session.source}:${session.sessionId}`, session);
   }
   return [...found.values()];
+}
+
+/** A message's text with each image it carried named by reference; the archive holds no bytes. */
+function withImageReferences(text: string, images: unknown): string {
+  if (!Array.isArray(images) || !images.length) return text;
+  const references = images.map(
+    (image: { id?: unknown; mediaType?: unknown; bytes?: unknown }) =>
+      `[image ${String(image?.id)} (${String(image?.mediaType)}, ${String(image?.bytes)} bytes)]`,
+  );
+  return [text, ...references].filter(Boolean).join('\n\n');
 }

@@ -75,7 +75,7 @@ export interface MessageSummary {
   /** The stored trace summary (stages, totals) as the full-history route already returns it. */
   trace?: PersistedTraceRecord['summary'];
   error?: string;
-  /** Primitive-valued metadata only (turnStatus, persistence, outcomes, injectedLayers); never objects. */
+  /** Primitive-valued metadata only (turnStatus, persistence, outcomes, injectedLayers, images); never objects. */
   meta?: Record<string, unknown>;
   status: {
     turn: StoredTurn['status'] | 'unknown';
@@ -1549,6 +1549,7 @@ export class LocalSessionStore {
       inlineNativeOutcome: string | null;
       recordNativeOutcome: string | null;
       injectedLayers: string | null;
+      images: string | null;
       metaKeys: string | null;
     } & Record<`meta_${(typeof SUMMARY_META_KEYS)[number]}`, unknown>;
     const rows = this.query(`SELECT seq, id, turn_id AS turnId, actor,
@@ -1559,6 +1560,7 @@ export class LocalSessionStore {
         json_extract(record, '$.meta.nativeHistory[#-1].nativeOutcome') AS inlineNativeOutcome,
         json_extract(record, '$.meta.native.nativeOutcome') AS recordNativeOutcome,
         json_extract(record, '$.meta.injectedLayers') AS injectedLayers,
+        json_extract(record, '$.meta.images') AS images,
         (SELECT group_concat(key, char(31)) FROM json_each(session_messages.record, '$.meta')) AS metaKeys,
         ${metaColumns}
       FROM session_messages WHERE thread_id=?${before === undefined ? '' : ' AND seq<?'} ORDER BY seq DESC LIMIT ?`).all(
@@ -1622,6 +1624,15 @@ export class LocalSessionStore {
           if (Array.isArray(layers) && isSummaryValue(layers)) meta.injectedLayers = layers;
         } catch {
           /* malformed provenance stays in detail */
+        }
+      }
+      // A message's images by identity (id, type, size): the viewer shows them from the attachment route.
+      if (typeof row.images === 'string' && row.images.length <= SUMMARY_LAYERS_MAX) {
+        try {
+          const images = JSON.parse(row.images);
+          if (Array.isArray(images) && isSummaryValue(images)) meta.images = images;
+        } catch {
+          /* malformed image references stay in detail */
         }
       }
       const metaKeys = row.metaKeys ? row.metaKeys.split(keySeparator) : [];

@@ -16,7 +16,7 @@ import {
 import { ConfigStore, starterConfig } from '../../foundry/src/viewer/config';
 import { createViewer } from '../../foundry/src/viewer/server';
 import { createFoundryAgent } from '../src/agent';
-import { promptText } from '../src/prompt';
+import { promptImages, promptText } from '../src/prompt';
 import { serveDaemon } from './helpers/acp-host';
 
 const cleanup: Array<() => void | Promise<void>> = [];
@@ -84,17 +84,21 @@ test('a daemon that never comes up fails initialize with the reason', async () =
 });
 
 test('prompt blocks flatten to one payload: text, file links as @ paths, embedded text fenced', () => {
-  expect(
-    promptText([
-      { type: 'text', text: 'Fix it' },
-      { type: 'resource_link', uri: 'file:///repo/src/a%20b.ts', name: 'a b.ts' },
-      { type: 'resource_link', uri: 'https://example.com/spec', name: 'spec' },
-      { type: 'resource', resource: { uri: 'file:///repo/notes.md', text: '# Notes' } },
-      { type: 'image', data: '', mimeType: 'image/png' },
-    ]),
-  ).toBe(
-    'Fix it\n\n@/repo/src/a b.ts\n\n@https://example.com/spec\n\n<resource uri="file:///repo/notes.md">\n# Notes\n</resource>\n\n[image content omitted]',
+  const blocks: Parameters<typeof promptText>[0] = [
+    { type: 'text', text: 'Fix it' },
+    { type: 'resource_link', uri: 'file:///repo/src/a%20b.ts', name: 'a b.ts' },
+    { type: 'resource_link', uri: 'https://example.com/spec', name: 'spec' },
+    { type: 'resource', resource: { uri: 'file:///repo/notes.md', text: '# Notes' } },
+    { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+    { type: 'audio', data: '', mimeType: 'audio/wav' },
+  ];
+  expect(promptText(blocks)).toBe(
+    'Fix it\n\n@/repo/src/a b.ts\n\n@https://example.com/spec\n\n<resource uri="file:///repo/notes.md">\n# Notes\n</resource>\n\n[audio content omitted]',
   );
+  // Images travel beside the text, as their bytes.
+  expect(promptImages(blocks).map((bytes) => Buffer.from(bytes).toString('base64'))).toEqual([
+    'iVBORw0KGgo=',
+  ]);
 });
 
 /** A daemon whose executor holds every turn until released, served on loopback with its launch file. */

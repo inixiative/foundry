@@ -26,7 +26,7 @@ import {
   type ThreadLaunchView,
   type TurnAppend,
 } from '@inixiative/foundry/client';
-import { promptText } from './prompt';
+import { promptImages, promptText } from './prompt';
 import {
   clientMcpServers,
   configOptions,
@@ -740,7 +740,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         agentCapabilities: {
           loadSession: true,
           sessionCapabilities: { resume: {}, close: {} },
-          promptCapabilities: { image: false, audio: false, embeddedContext: true },
+          promptCapabilities: { image: true, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
         },
         authMethods: [],
@@ -902,11 +902,16 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       try {
         turn.open();
         try {
+          // Images are stored on the daemon first; the turn names them by id.
+          const images = await Promise.all(
+            promptImages(ctx.params.prompt).map((bytes) => foundry.http.uploadImage(bytes)),
+          );
           const sent = await foundry.http.send({
             threadId: session.threadId,
             id: turnId,
             message: text,
             clientId: foundry.streams.clientId,
+            ...(images.length ? { images: images.map((image) => image.id) } : {}),
           });
           turn.accepted = true;
           if (sent.settingUp) turn.settingUp();

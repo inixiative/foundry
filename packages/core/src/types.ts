@@ -38,9 +38,34 @@ export interface LayerModeConfig {
 // LLM provider interface — the abstraction, not implementations
 // ---------------------------------------------------------------------------
 
+export const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
+
+/** An image sent with a user message. */
+export interface ImageInput {
+  /** Identity of the stored image; what evidence records in place of the bytes. */
+  readonly id: string;
+  readonly mediaType: ImageMediaType;
+  /** Size of the image in bytes. */
+  readonly bytes: number;
+  /** The image, base64. Present at the provider boundary, dropped from recorded evidence. */
+  readonly data?: string;
+}
+
 export interface LLMMessage {
   readonly role: 'system' | 'user' | 'assistant';
   readonly content: string;
+  /** Images sent with this (user) message, for a provider that declares `imageInput`. */
+  readonly images?: readonly ImageInput[];
+}
+
+/** Messages as evidence records them: each image by identity, without its bytes. */
+export function withoutImageData(messages: readonly LLMMessage[]): LLMMessage[] {
+  return messages.map((message) =>
+    message.images
+      ? { ...message, images: message.images.map(({ data: _data, ...image }) => image) }
+      : message,
+  );
 }
 
 /** Tool definition sent to the LLM so it can call tools. */
@@ -155,6 +180,8 @@ export interface LLMStreamEvent {
 
 export interface LLMProvider {
   readonly id: string;
+  /** Accepts `LLMMessage.images`. A provider without it refuses a message that carries images. */
+  readonly imageInput?: boolean;
   /** Native callback support, distinct from stateless/legacy serializable options. */
   readonly nativeOwnership?: 'required-prewrite';
   /** Optional owned-call evidence. A rejected waiter alone never proves remote settlement. */

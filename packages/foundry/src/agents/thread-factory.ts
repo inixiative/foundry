@@ -643,9 +643,12 @@ function buildAgent(
           ];
           const system = [ctx, ...own].filter(Boolean).join('\n\n');
 
+          const images = meta?.images ?? [];
+          if (images.length && !deps.provider.imageInput)
+            throw Error(`Provider ${deps.provider.id} does not accept images; nothing was sent`);
           const messages: LLMMessage[] = [
             ...(system ? [{ role: 'system' as const, content: system }] : []),
-            { role: 'user', content: payload },
+            { role: 'user', content: payload, ...(images.length ? { images } : {}) },
           ];
           meta?.recordProviderInput?.(messages);
           // For session providers: the layers and this agent's own instructions are standing parts.

@@ -25,6 +25,7 @@ import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
 import { log } from '../logger';
+import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
 import {
@@ -554,6 +555,7 @@ export function createViewer(config: ViewerConfig) {
     directory,
     streams,
     feedback,
+    images: new ImageAttachmentStore(join(configDir, 'attachments', 'images')),
     ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
   // "Setting up your thread": the thread's setup streams on `threads` with its meta.

@@ -12,6 +12,14 @@ import {
   isUnsavedCompletion,
 } from './conversation-state.js';
 import { FeedbackPrompt } from './feedback.js';
+import {
+  IMAGE_TYPES,
+  IMAGES_PER_MESSAGE,
+  imageFiles,
+  imageUrl,
+  prepareImage,
+  uploadImage,
+} from './image-attachments.js';
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel } from './live-state.js';
@@ -268,12 +276,81 @@ function ContextBar() {
 const inputHistory = [];
 let historyIdx = -1;
 
+let attachmentKey = 0;
+
+/** An image in the composer: its local preview, then its stored reference once uploaded. */
+function ComposerImage({ image, onRemove }) {
+  return html`
+    <div class="composer-image ${image.status === 'error' ? 'composer-image-error' : ''}"
+      data-status=${image.status} title=${image.error ?? image.name ?? 'image'}>
+      <img src=${image.preview} alt=${image.name ?? 'attached image'} />
+      ${image.status === 'uploading' ? html`<span class="composer-image-state">…</span>` : null}
+      ${image.status === 'error' ? html`<span class="composer-image-state">!</span>` : null}
+      <button class="composer-image-remove" onClick=${onRemove} title="Remove image"
+        aria-label="Remove image">×</button>
+    </div>
+  `;
+}
+
 function ChatInput() {
   const [text, setText] = useState('');
+  const [images, setImages] = useState([]);
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
   const stopDictation = useRef(null);
   const [listening, setListening] = useState(false);
   useEffect(() => () => stopDictation.current?.(), []);
+
+  const patchImage = (key, patch) =>
+    setImages((list) => list.map((image) => (image.key === key ? { ...image, ...patch } : image)));
+  const removeImage = (key) =>
+    setImages((list) => {
+      const removed = list.find((image) => image.key === key);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return list.filter((image) => image.key !== key);
+    });
+
+  /** Downscale (when needed) and upload each image; the composer shows it from the first moment. */
+  const addImages = (files) => {
+    const accepted = imageFiles(files);
+    if (!accepted.length) return;
+    const room = IMAGES_PER_MESSAGE - images.length;
+    if (accepted.length > room)
+      showToast(`A message carries at most ${IMAGES_PER_MESSAGE} images`, 'warn');
+    for (const file of accepted.slice(0, Math.max(0, room))) {
+      const key = ++attachmentKey;
+      setImages((list) => [
+        ...list,
+        { key, name: file.name, preview: URL.createObjectURL(file), status: 'uploading' },
+      ]);
+      prepareImage(file)
+        .then(uploadImage)
+        .then((stored) => patchImage(key, { status: 'ready', ...stored }))
+        .catch((error) => {
+          patchImage(key, { status: 'error', error: error.message });
+          showToast(`Image not attached: ${error.message}`, 'error');
+        });
+    }
+  };
+
+  const handlePaste = (e) => {
+    const files = imageFiles(e.clipboardData?.items);
+    if (!files.length) return;
+    e.preventDefault();
+    addImages(files);
+  };
+  const handleDragOver = (e) => {
+    if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return;
+    e.preventDefault();
+    setDragging(true);
+  };
+  const handleDrop = (e) => {
+    setDragging(false);
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    addImages(e.dataTransfer.files);
+  };
 
   const toggleDictation = () => {
     if (stopDictation.current) return stopDictation.current();
@@ -290,15 +367,26 @@ function ChatInput() {
     setListening(true);
   };
 
+  const uploading = images.some((image) => image.status === 'uploading');
+  const ready = images.filter((image) => image.status === 'ready');
+  const sendable = !uploading && (!!text.trim() || ready.length > 0);
+
   const handleSubmit = async () => {
     const sent = text.trim();
-    if (!sent) return;
+    if (!sendable) return;
     stopDictation.current?.();
-    inputHistory.push(sent);
+    if (sent) inputHistory.push(sent);
     historyIdx = -1;
     setText('');
-    // Unsent text comes back unless something new was typed meanwhile.
-    if (!(await sendMessage(sent))) setText((current) => current || sent);
+    const attached = images;
+    setImages([]);
+    // Unsent text and images come back unless something new was added meanwhile.
+    if (!(await sendMessage(sent, ready))) {
+      setText((current) => current || sent);
+      setImages((current) => (current.length ? current : attached));
+      return;
+    }
+    for (const image of attached) URL.revokeObjectURL(image.preview);
   };
 
   const handleKeyDown = (e) => {
@@ -327,17 +415,39 @@ function ChatInput() {
   };
 
   return html`
-    <div class="chat-input-bar">
-      <textarea
-        ref=${inputRef}
-        class="chat-input"
-        placeholder="Send a message... (Enter to send, Shift+Enter for newline)"
-        value=${text}
-        onInput=${(e) => setText(e.target.value)}
-        onKeyDown=${handleKeyDown}
-        rows="4"
-      ></textarea>
+    <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}"
+      onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
+      <div class="chat-input-main">
+        ${
+          images.length
+            ? html`<div class="composer-images">
+          ${images.map(
+            (image) =>
+              html`<${ComposerImage} key=${image.key} image=${image} onRemove=${() => removeImage(image.key)} />`,
+          )}
+        </div>`
+            : null
+        }
+        <textarea
+          ref=${inputRef}
+          class="chat-input"
+          placeholder="Send a message... (Enter to send, Shift+Enter for newline; paste or drop images)"
+          value=${text}
+          onInput=${(e) => setText(e.target.value)}
+          onKeyDown=${handleKeyDown}
+          onPaste=${handlePaste}
+          rows="4"
+        ></textarea>
+      </div>
+      <input ref=${fileRef} class="composer-file-input" type="file" multiple
+        accept=${IMAGE_TYPES.join(',')} hidden
+        onChange=${(e) => {
+          addImages(e.target.files);
+          e.target.value = '';
+        }} />
       <div class="chat-input-actions">
+        <button class="chat-voice-btn chat-attach-btn" onClick=${() => fileRef.current?.click()}
+          title="Attach images" aria-label="Attach images">📎</button>
         ${
           dictationSupported
             ? html`<button class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
@@ -353,7 +463,8 @@ function ChatInput() {
         <button
           class="chat-send-btn"
           onClick=${handleSubmit}
-          disabled=${!text.trim()}
+          disabled=${!sendable}
+          title=${uploading ? 'Waiting for images to upload' : 'Send'}
         >Send</button>
       </div>
     </div>
@@ -415,11 +526,25 @@ function evidenceText(value) {
   }
 }
 
+/** The images a sent message carried, shown from the attachment route. */
+function MessageImages({ images }) {
+  if (!Array.isArray(images) || !images.length) return null;
+  return html`
+    <div class="chat-msg-images">
+      ${images.map(
+        (image) => html`<a href=${imageUrl(image.id)} target="_blank" rel="noopener"
+          class="chat-msg-image"><img src=${imageUrl(image.id)} alt="sent image" loading="lazy" /></a>`,
+      )}
+    </div>
+  `;
+}
+
 function UserMessage({ msg, index }) {
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
       <${MessageActions} index=${index} />
-      <div class="chat-msg-content">${msg.content}</div>
+      <${MessageImages} images=${msg.images ?? msg.meta?.images} />
+      ${msg.content ? html`<div class="chat-msg-content">${msg.content}</div>` : null}
       <${BrowserStorageWarning} msg=${msg} />
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
     </div>

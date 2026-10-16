@@ -464,6 +464,8 @@ export type {
   CompletionResult,
   EmbeddingProvider,
   EmbeddingResult,
+  ImageInput,
+  ImageMediaType,
   InvocationCondition,
   LayerModeConfig,
   LLMMessage,
@@ -473,3 +475,4 @@ export type {
   ToolCallResult,
   ToolDefinition,
 } from './types';
+export { IMAGE_MEDIA_TYPES, withoutImageData } from './types';

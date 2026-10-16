@@ -52,7 +52,7 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
     agentCapabilities: {
       loadSession: true,
       sessionCapabilities: { resume: {} },
-      promptCapabilities: { image: false, audio: false, embeddedContext: true },
+      promptCapabilities: { image: true, audio: false, embeddedContext: true },
     },
     authMethods: [],
   });

@@ -30,8 +30,27 @@ const API_VERSION = '2023-06-01';
  * Anthropic Messages API adapter.
  * Uses raw fetch — zero SDK dependency.
  */
+/** A turn as the Messages API takes it: images (base64 blocks) ahead of the text. */
+function anthropicMessage(message: LLMMessage) {
+  if (!message.images?.length) return { role: message.role, content: message.content };
+  return {
+    role: message.role,
+    content: [
+      ...message.images.map((image) => {
+        if (!image.data) throw Error(`Image ${image.id} has no data; nothing was sent`);
+        return {
+          type: 'image',
+          source: { type: 'base64', media_type: image.mediaType, data: image.data },
+        };
+      }),
+      ...(message.content ? [{ type: 'text', text: message.content }] : []),
+    ],
+  };
+}
+
 export class AnthropicProvider implements LLMProvider {
   readonly id: string;
+  readonly imageInput = true;
   private readonly _settlement = new HttpCompletionSettlement();
   readonly completionLifecycle = this._settlement.lifecycle;
 
@@ -56,7 +75,7 @@ export class AnthropicProvider implements LLMProvider {
     const body: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
-      messages: turns.map((m) => ({ role: m.role, content: m.content })),
+      messages: turns.map(anthropicMessage),
     };
 
     if (system) body.system = system;
@@ -124,7 +143,7 @@ export class AnthropicProvider implements LLMProvider {
       model,
       max_tokens: maxTokens,
       stream: true,
-      messages: turns.map((m) => ({ role: m.role, content: m.content })),
+      messages: turns.map(anthropicMessage),
     };
 
     if (system) body.system = system;

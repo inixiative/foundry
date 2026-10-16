@@ -11,6 +11,11 @@ import type { FeedbackService } from '../../feedback/service';
 import { byAttention, feedbackView } from '../../feedback/view';
 import { listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
+import {
+  IMAGE_MAX_BYTES,
+  ImageAttachmentError,
+  type ImageAttachmentStore,
+} from '../../persistence/image-attachments';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
 import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
@@ -52,6 +57,8 @@ export interface RuntimeRoutesDeps {
   threadLaunch?: ThreadLaunchSettings;
   /** The feedback lifecycle: typed turns and corrections are captured here. */
   feedback?: FeedbackService | null;
+  /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
+  images?: ImageAttachmentStore;
 }
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
@@ -149,16 +156,80 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
           ? body.content
           : null;
 
+  /** A send's text and images (by id, loaded from the store); a message needs text or an image. */
+  const messageInput = async (
+    body: Record<string, unknown>,
+  ): Promise<
+    | { payload: string; images: Awaited<ReturnType<ImageAttachmentStore['resolve']>> }
+    | { error: string }
+  > => {
+    let images: Awaited<ReturnType<ImageAttachmentStore['resolve']>> = [];
+    if (body.images !== undefined && !(Array.isArray(body.images) && body.images.length === 0)) {
+      if (!deps.images) return { error: 'image attachments are unavailable on this server' };
+      try {
+        images = await deps.images.resolve(body.images);
+      } catch (error) {
+        if (error instanceof ImageAttachmentError) return { error: error.message };
+        throw error;
+      }
+    }
+    const payload = messagePayload(body);
+    if (!payload && !images.length) return { error: 'message is required (string)' };
+    return { payload: payload ?? '', images };
+  };
+
+  if (deps.images) {
+    const store = deps.images;
+    // Raw image bytes in the body; the store sniffs the type from the bytes themselves.
+    app.post('/api/attachments/images', async (c) => {
+      const declared = Number(c.req.header('content-length'));
+      if (Number.isFinite(declared) && declared > IMAGE_MAX_BYTES)
+        return c.json(
+          { error: `The image is larger than ${IMAGE_MAX_BYTES / 1024 / 1024} MB` },
+          413,
+        );
+      try {
+        const attachment = await store.put(new Uint8Array(await c.req.arrayBuffer()));
+        return c.json(
+          {
+            ...attachment,
+            url: `/api/attachments/images/${attachment.id}`,
+          },
+          201,
+        );
+      } catch (error) {
+        if (error instanceof ImageAttachmentError)
+          return c.json({ error: error.message }, error.status);
+        throw error;
+      }
+    });
+    app.get('/api/attachments/images/:id', async (c) => {
+      const stored = await store.get(c.req.param('id'));
+      if (!stored) return c.json({ error: 'image not found' }, 404);
+      return new Response(new Uint8Array(stored.bytes), {
+        headers: {
+          'content-type': stored.attachment.mediaType,
+          'content-length': String(stored.attachment.bytes),
+          // Content-addressed: an id always names the same bytes.
+          'cache-control': 'private, max-age=31536000, immutable',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    });
+  }
+
   // Runs a turn and answers with its full result once it settles.
   app.post('/api/messages', async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const payload = messagePayload(body);
-    if (!payload) return c.json({ error: 'message is required (string)' }, 400);
+    const input = await messageInput(body);
+    if ('error' in input) return c.json({ error: input.error }, 400);
+    const { payload, images } = input;
 
     const accepted = turns.accept({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
       payload,
+      ...(images.length ? { images } : {}),
     });
     if (!accepted.ok) return c.json(accepted.body, accepted.status);
     const outcome = await accepted.settled;
@@ -200,13 +271,15 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   // result }` with explicit persistence status goes to the `clientId` named in the request.
   app.post('/api/messages/send', async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
-    const payload = messagePayload(body);
-    if (!payload) return c.json({ error: 'message is required (string)' }, 400);
+    const input = await messageInput(body);
+    if ('error' in input) return c.json({ error: input.error }, 400);
+    const { payload, images } = input;
 
     const accepted = turns.accept({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
       payload,
+      ...(images.length ? { images } : {}),
       // The requesting client (a tab's socket id, optional) receives the full result on its `thread:<threadId>` stream.
       clientId: typeof body.clientId === 'string' ? body.clientId : undefined,
     });

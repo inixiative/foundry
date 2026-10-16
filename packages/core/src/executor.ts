@@ -9,7 +9,7 @@ import {
   standingParts,
 } from './session-delivery';
 import type { ToolCallObservation } from './tools';
-import type { LLMMessage } from './types';
+import { type ImageInput, type LLMMessage, withoutImageData } from './types';
 
 /** Runtime metadata passed to executor handlers at dispatch time. */
 export interface ExecuteMeta {
@@ -48,6 +48,8 @@ export interface ExecuteMeta {
   delivery?: SessionDelivery;
   /** The handler reports what a session provider delivered (CompletionResult.delivery). */
   recordDelivery?: (report: SessionDeliveryReport) => void;
+  /** Images sent with the payload; the handler puts them on the user message it sends. */
+  images?: readonly ImageInput[];
 }
 
 export type ExecuteHandler<TPayload, TResult> = (
@@ -228,7 +230,9 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
             observe(() => meta?.recordNative?.(evidence));
           }
         },
-        recordProviderInput: (messages) => {
+        recordProviderInput: (sentMessages) => {
+          // Evidence holds each image by identity; its bytes stay with the attachment.
+          const messages = withoutImageData(sentMessages);
           // The initial boundary input must not be replaced by tool followups.
           if (providerMessages === undefined) {
             providerMessages = structuredClone(messages);

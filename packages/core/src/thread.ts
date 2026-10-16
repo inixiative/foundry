@@ -170,6 +170,8 @@ export interface DispatchOptions {
    * everything that learns from the message sees only the user's words.
    */
   agentPayload?: unknown;
+  /** Images sent with the payload, for the agent alone (`ExecuteMeta.images`). */
+  images?: readonly import('./types').ImageInput[];
   /** Lets this dispatch's middleware include an on-demand layer in its assembly (`RequestContext.requestLayer`). */
   requestLayer?: (layerId: string) => void;
 }
@@ -437,6 +439,7 @@ export class Thread {
       },
       annotations: ctx.annotations,
       onDelta: opts?.onDelta,
+      ...(opts?.images?.length ? { images: opts.images } : {}),
       recordInjection: opts?.recordInjection,
       recordNative: opts?.recordNative,
       recordCompleted: opts?.recordCompleted,

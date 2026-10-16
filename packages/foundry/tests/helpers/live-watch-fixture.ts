@@ -37,6 +37,8 @@ export async function liveWatchFixture(
     feedbackProvider?: LLMProvider;
     /** The adapter checks structural rules at launch, as Codex does. */
     structuralRulesAtLaunch?: boolean;
+    /** The session's transport declares image input (default true). */
+    imageInput?: boolean;
   } = {},
 ) {
   await mkdir(dir, { recursive: true });
@@ -75,6 +77,7 @@ export async function liveWatchFixture(
         /** The thread's tool gate, as a real adapter registers it on the native session. */
         toolGate: opts.toolGate,
         resource: `controlled-resource-${sessions.length + 1}`,
+        transport: { kind: 'claude-cli', capabilities: { images: options.imageInput !== false } },
         externalSessionId: `controlled-native-${sessions.length + 1}`,
         admissionProtocol: 'prewrite-v1',
         turnBudgetProtocol: 'optional-max-turns-v1',
@@ -108,7 +111,7 @@ export async function liveWatchFixture(
                 a.finish(true);
                 return 'acknowledged';
               },
-        async send(_prompt: string, opts: any) {
+        async send(prompt: string, opts: any) {
           let finish!: () => void, reject!: (error: Error) => void;
           const hold = new Promise<void>((r, j) => {
             finish = r;
@@ -131,6 +134,9 @@ export async function liveWatchFixture(
           const a = {
             session: s,
             native,
+            /** What the session was asked to write: the prompt and its images. */
+            prompt,
+            images: opts?.images,
             done: false,
             localRejected: false,
             emit(value: any) {
@@ -258,7 +264,7 @@ export async function liveWatchFixture(
   });
   toolGateFor = viewer.toolGate;
   /** Send a turn from a connection holding `thread:<id>`; `done` is its streamed terminal (or the plain route's JSON). */
-  const send = (id: string, stream = true) => {
+  const send = (id: string, stream = true, extra: { message?: string; images?: string[] } = {}) => {
     const client = connectStreams(viewer);
     const response = Promise.resolve(client.open(`thread:${thread.id}`)).then(() =>
       viewer.app.request(`/api/messages${stream ? '/send' : ''}`, {
@@ -267,7 +273,8 @@ export async function liveWatchFixture(
         body: JSON.stringify({
           id,
           threadId: thread.id,
-          message: 'Do the work',
+          message: extra.message ?? 'Do the work',
+          ...(extra.images ? { images: extra.images } : {}),
           ...(stream ? { clientId: client.socket.data.clientId } : {}),
         }),
       }),

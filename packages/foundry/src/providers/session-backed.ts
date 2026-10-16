@@ -4,6 +4,7 @@ import {
   type CompletionResult,
   type DeliveredPart,
   freezeEvidence,
+  type ImageMediaType,
   type LLMMessage,
   type LLMProvider,
   type NativeBridgeLease,
@@ -114,6 +115,8 @@ interface ProviderInvocation {
 export class SessionBackedProvider implements LLMProvider {
   readonly id: string;
   readonly nativeOwnership = 'required-prewrite' as const;
+  /** Images go to the session's transport, which refuses them unless it declares `images`. */
+  readonly imageInput = true;
 
   private _adapter: SessionAdapter;
   private _defaultModel: string;
@@ -557,6 +560,14 @@ export class SessionBackedProvider implements LLMProvider {
         })
       : undefined;
     const prompt = formatMessagesForNativeSession(turn?.messages ?? messages);
+    let images: Array<{ mediaType: ImageMediaType; data: string }>;
+    try {
+      images = sessionImages(session, messages);
+    } catch (error) {
+      this._notAdmitted.add(error as object);
+      this._settled.add(error as object);
+      throw error;
+    }
     // Native work can outlive a ten-minute observation window. Zero disables
     // the session engine's implicit deadline; auxiliaries remain bounded.
     const protocol = session as HarnessSession & { admissionProtocol?: string };
@@ -573,6 +584,7 @@ export class SessionBackedProvider implements LLMProvider {
     try {
       const sendOptions = {
         timeout: opts?.timeout ?? (textOnly ? 15_000 : 0),
+        ...(images.length ? { images } : {}),
         ...(observation
           ? {
               onAdmission: async (attempt: unknown) => {
@@ -1151,6 +1163,27 @@ function acknowledgedModel(
     if (r.type === 'system' && r.subtype === 'init' && r.session_id === binding) return r.model;
   }
   return undefined;
+}
+
+/**
+ * The images of the message being sent (the last one), as the session sends them; refused when
+ * the session's transport does not declare image input.
+ */
+function sessionImages(
+  session: HarnessSession,
+  messages: readonly LLMMessage[],
+): Array<{ mediaType: ImageMediaType; data: string }> {
+  const images = messages.at(-1)?.images ?? [];
+  if (!images.length) return [];
+  const capabilities = session.transport?.capabilities;
+  if (!(capabilities && 'images' in capabilities && capabilities.images === true))
+    throw Error(
+      `The ${session.transport?.kind ?? 'native'} session does not accept images; nothing was sent`,
+    );
+  return images.map((image) => {
+    if (!image.data) throw Error(`Image ${image.id} has no data; nothing was sent`);
+    return { mediaType: image.mediaType, data: image.data };
+  });
 }
 
 export function formatMessagesForNativeSession(messages: LLMMessage[]): string {
