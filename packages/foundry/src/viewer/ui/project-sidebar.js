@@ -6,7 +6,8 @@
  * strip with project dots. Expanded: full list.
  */
 
-import { html, useState } from './lib.js';
+import { html, useEffect, useRef, useState } from './lib.js';
+import { Modal } from './modal.js';
 import {
   activeProjectId,
   authFetch,
@@ -17,6 +18,7 @@ import {
   projects,
   projectTags,
   showToast,
+  updateProject,
 } from './store.js';
 
 const STATUS_COLORS = {
@@ -25,11 +27,22 @@ const STATUS_COLORS = {
   archived: '#555',
 };
 
+/** Focus (and select) an input once its modal opens. */
+function useAutofocus() {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select?.();
+  }, []);
+  return ref;
+}
+
 // ---------------------------------------------------------------------------
-// Add Project form (inline)
+// Add Project modal
 // ---------------------------------------------------------------------------
 
-function AddProjectForm({ onDone }) {
+function AddProjectModal({ onDone }) {
+  const pathInput = useAutofocus();
   const [path, setPath] = useState('');
   const [label, setLabel] = useState('');
   const [browsing, setBrowsing] = useState(false);
@@ -80,9 +93,11 @@ function AddProjectForm({ onDone }) {
   };
 
   return html`
+    <${Modal} title="Add project" onClose=${onDone} class="proj-modal">
     <form class="proj-add-form" onSubmit=${handleSubmit}>
+      <label class="proj-field-label" for="proj-add-path">Path</label>
       <div class="proj-path-row">
-        <input class="proj-input proj-path-input" placeholder="/path/to/repo" value=${path}
+        <input id="proj-add-path" ref=${pathInput} class="proj-input proj-path-input" placeholder="/path/to/repo" value=${path}
           onInput=${(e) => setPath(e.target.value)} />
         <button type="button" class="proj-btn proj-browse-btn" onClick=${openBrowser}
           title="Browse folders">...</button>
@@ -128,13 +143,45 @@ function AddProjectForm({ onDone }) {
           : null
       }
 
-      <input class="proj-input" placeholder="label (optional)" value=${label}
+      <label class="proj-field-label" for="proj-add-label">Label</label>
+      <input id="proj-add-label" class="proj-input" placeholder="optional" value=${label}
         onInput=${(e) => setLabel(e.target.value)} />
       <div class="proj-form-actions">
-        <button type="submit" class="proj-btn proj-btn-ok">add</button>
-        <button type="button" class="proj-btn" onClick=${onDone}>cancel</button>
+        <button type="button" class="proj-btn" onClick=${onDone}>Cancel</button>
+        <button type="submit" class="proj-btn proj-btn-ok">Add</button>
       </div>
     </form>
+    <//>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Rename Project modal
+// ---------------------------------------------------------------------------
+
+function RenameProjectModal({ project, onDone }) {
+  const input = useAutofocus();
+  const [label, setLabel] = useState(project.label || '');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!label.trim()) {
+      showToast('Label is required', 'error');
+      return;
+    }
+    if (await updateProject(project.id, { label: label.trim() })) onDone();
+  };
+  return html`
+    <${Modal} title="Rename project" onClose=${onDone} class="proj-modal">
+      <form class="proj-add-form" onSubmit=${handleSubmit}>
+        <label class="proj-field-label" for="proj-rename-label">Label</label>
+        <input id="proj-rename-label" ref=${input} class="proj-input" value=${label}
+          onInput=${(e) => setLabel(e.target.value)} />
+        <div class="proj-form-actions">
+          <button type="button" class="proj-btn" onClick=${onDone}>Cancel</button>
+          <button type="submit" class="proj-btn proj-btn-ok">Rename</button>
+        </div>
+      </form>
+    <//>
   `;
 }
 
@@ -142,12 +189,25 @@ function AddProjectForm({ onDone }) {
 // Project item (expanded view)
 // ---------------------------------------------------------------------------
 
-function ProjectItem({ project, isActive, onSelect }) {
+function ProjectItem({ project, isActive, onSelect, onRename }) {
   const statusColor = STATUS_COLORS[project.status] || '#555';
+  const archived = project.status === 'archived';
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [menuOpen]);
+  const act = (e, action) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+    action();
+  };
 
   return html`
     <div
-      class="proj-item ${isActive ? 'proj-active' : ''}"
+      class="proj-item ${isActive ? 'proj-active' : ''} ${archived ? 'proj-archived' : ''}"
       onClick=${() => onSelect(project.id)}
       title=${project.path}
     >
@@ -155,10 +215,34 @@ function ProjectItem({ project, isActive, onSelect }) {
         <div class="proj-item-label">${project.label}</div>
         <div class="proj-item-meta">
           <span class="proj-status-dot" style="background: ${statusColor}"></span>
-          <span>${project.threadCount || 0} threads</span>
+          <span>${archived ? 'archived · ' : ''}${project.threadCount || 0} threads</span>
           ${(project.tags || []).map((t) => html`<span class="proj-tag" key=${t}>${t}</span>`)}
         </div>
       </div>
+      <button
+        type="button"
+        class="proj-menu-btn ${menuOpen ? 'open' : ''}"
+        aria-label="Project actions"
+        aria-haspopup="menu"
+        aria-expanded=${menuOpen}
+        onClick=${(e) => {
+          e.stopPropagation();
+          setMenuOpen(!menuOpen);
+        }}
+      >⋯</button>
+      ${
+        menuOpen
+          ? html`
+        <div class="proj-menu" role="menu" onClick=${(e) => e.stopPropagation()}>
+          <button type="button" role="menuitem" onClick=${(e) => act(e, () => onRename(project))}>Rename</button>
+          <button type="button" role="menuitem" onClick=${(e) =>
+            act(e, () => updateProject(project.id, { status: archived ? 'active' : 'archived' }))}>
+            ${archived ? 'Unarchive' : 'Archive'}
+          </button>
+        </div>
+      `
+          : null
+      }
     </div>
   `;
 }
@@ -168,7 +252,7 @@ function ProjectItem({ project, isActive, onSelect }) {
 // ---------------------------------------------------------------------------
 
 function CollapsedStrip({ onExpand }) {
-  const items = projects.value;
+  const items = projects.value.filter((p) => p.status !== 'archived');
   const active = activeProjectId.value;
 
   return html`
@@ -196,11 +280,16 @@ function CollapsedStrip({ onExpand }) {
 
 export function ProjectSidebar() {
   const isOpen = projectSidebarOpen.value;
-  const items = projects.value;
+  const all = projects.value;
   const tags = projectTags.value;
   const active = activeProjectId.value;
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState(null);
   const [filterTag, setFilterTag] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = all.filter((p) => p.status === 'archived').length;
+  // Archived projects are hidden until asked for; the active one stays visible.
+  const items = showArchived ? all : all.filter((p) => p.status !== 'archived' || p.id === active);
 
   if (!isOpen) {
     return html`<${CollapsedStrip} onExpand=${() => {
@@ -290,6 +379,7 @@ export function ProjectSidebar() {
             project=${p}
             isActive=${!forge && active === p.id}
             onSelect=${handleSelect}
+            onRename=${setRenaming}
           />
         `,
         )}
@@ -301,7 +391,7 @@ export function ProjectSidebar() {
             : null
         }
         ${
-          items.length === 0
+          all.length === 0
             ? html`
           <div class="proj-empty">No projects yet</div>
         `
@@ -309,8 +399,18 @@ export function ProjectSidebar() {
         }
       </div>
 
-      <!-- Add form -->
-      ${adding ? html`<${AddProjectForm} onDone=${() => setAdding(false)} />` : null}
+      ${
+        archivedCount > 0
+          ? html`
+        <button type="button" class="proj-archived-toggle" onClick=${() => setShowArchived(!showArchived)}>
+          ${showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+        </button>
+      `
+          : null
+      }
+
+      ${adding ? html`<${AddProjectModal} onDone=${() => setAdding(false)} />` : null}
+      ${renaming ? html`<${RenameProjectModal} project=${renaming} onDone=${() => setRenaming(null)} />` : null}
     </div>
   `;
 }

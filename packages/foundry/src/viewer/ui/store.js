@@ -1043,6 +1043,27 @@ export async function createProject(config) {
   }
 }
 
+/** Rename (`label`) or archive/unarchive (`status`: 'archived' | 'active') a project. */
+export async function updateProject(id, patch) {
+  try {
+    const res = await authFetch(`/api/projects/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (res.ok) {
+      await loadProjects();
+      return true;
+    }
+    const body = await res.json().catch(() => ({}));
+    showToast(`Failed to update project: ${body.error || res.status}`, 'error');
+    return false;
+  } catch (err) {
+    showToast(`Failed to update project: ${err.message}`, 'error');
+    return false;
+  }
+}
+
 export async function deleteProject(id) {
   try {
     const res = await authFetch(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
