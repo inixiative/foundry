@@ -38,6 +38,11 @@ export interface EvalWarden {
    * knowledge is primed once and read from the prompt cache after. One-shot calls when omitted.
    */
   readonly session?: string;
+  /**
+   * Text this Warden sees as thread context on top of the probe's own (the v1 chain's picker gets the
+   * recogniser's "why" line here). Per call, never cached with the knowledge.
+   */
+  readonly context?: string;
 }
 
 /** The tool name a probe's moment arrives under: the agent's finished turn, before the user answers. */
@@ -45,8 +50,8 @@ const PROBE_MOMENT_TOOL = 'AgentTurn';
 
 export interface CharterEvalOptions {
   readonly probes: readonly WardenProbe[];
-  /** The Wardens that may see a probe (its context's ladder). */
-  readonly wardensFor: (probe: WardenProbe) => readonly EvalWarden[];
+  /** The Wardens that may see a probe (its context's ladder); a chain's second stage picks them per trigger. */
+  readonly wardensFor: (probe: WardenProbe, trigger: WardenProbeTrigger) => readonly EvalWarden[];
   /** Haiku on the subscription, as live Wardens run. */
   readonly warden: LLMProvider;
   /** The grader of remarks; remarks are left unjudged when omitted (graded later, e.g. as pointers). */
@@ -88,10 +93,11 @@ export async function runCharterEval(
   const turns: WardenProbeTurn[] = [];
   const wanted = options.triggers ?? ['agent-action'];
   for (const probe of options.probes) {
-    const wardens = options.wardensFor(probe);
     for (const trigger of probeTriggers(probe).filter(
       (t) => wanted.includes(t) && !options.done?.(probe.id, t),
     )) {
+      const wardens = options.wardensFor(probe, trigger);
+      if (!wardens.length) continue;
       await options.beforeTurn?.(probe.id, trigger);
       const started = Date.now();
       const asked: WardenProbeAnswer[] = new Array(wardens.length);
@@ -138,6 +144,15 @@ export async function runCharterEval(
     }
   }
   return { answers, turns };
+}
+
+/** What the Warden knows of the thread for this call: the probe's own understanding, then the Warden's per-call context. */
+function threadKnowledge(
+  probe: WardenProbe,
+  warden: EvalWarden,
+): { threadKnowledge: string } | undefined {
+  const text = [probe.threadKnowledge, warden.context].filter(Boolean).join('\n\n');
+  return text ? { threadKnowledge: text } : undefined;
 }
 
 /** A failure of the call itself, not of the Warden's answer. */
@@ -212,11 +227,7 @@ async function ask(
     ...rest,
   });
   if (trigger === 'user-message') {
-    const advice = await lib.advise(
-      probe.ask ?? '',
-      undefined,
-      probe.threadKnowledge ? { threadKnowledge: probe.threadKnowledge } : undefined,
-    );
+    const advice = await lib.advise(probe.ask ?? '', undefined, threadKnowledge(probe, warden));
     if (advice.notStarted) return answer({ noComment: false, error: 'not-admitted' });
     if (advice.error || advice.skipped)
       return answer({ noComment: false, error: advice.error ?? advice.skipped! });
@@ -227,7 +238,7 @@ async function ask(
   const result = await lib.guard(
     oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
     undefined,
-    probe.threadKnowledge ? { threadKnowledge: probe.threadKnowledge } : undefined,
+    threadKnowledge(probe, warden),
   );
   if (result.status !== 'completed')
     return answer({
