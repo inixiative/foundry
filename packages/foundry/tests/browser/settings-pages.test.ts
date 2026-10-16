@@ -187,7 +187,10 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     // No horizontal overflow on a narrow phone.
     await page.setViewportSize({ width: 333, height: 800 });
     for (const path of [
+      '/settings/profile',
       '/settings/providers',
+      '/settings/kingdom',
+      '/settings/devices',
       `/projects/${project.id}/settings/archive`,
       '/analytics',
     ]) {
