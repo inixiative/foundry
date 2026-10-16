@@ -17,7 +17,7 @@ export const FIXTURES_DIR = join(import.meta.dir, '../fixtures/vcr');
 export const LIVE = {
   claudeModel: 'haiku',
   claudeObservedModel: 'claude-haiku-5-5',
-  codexModel: 'gpt-6-luna',
+  codexModel: 'gpt-5.6-luna',
   kingdomUrl: process.env.FOUNDRY_VCR_KINGDOM_URL ?? 'http://127.0.0.1:8200',
 } as const;
 

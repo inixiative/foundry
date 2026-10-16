@@ -13,7 +13,7 @@ function team() {
   config.defaults = {
     ...config.defaults,
     classifierProvider: 'openai',
-    classifierModel: 'gpt-6-luna',
+    classifierModel: 'gpt-5.6-luna',
   };
   config.layers.docs = {
     id: 'docs',
@@ -177,7 +177,7 @@ test('readiness reports each enabled native CLI it found, and says how to fix on
     },
   ]);
 
-  config.defaults = { ...config.defaults, provider: 'codex', model: 'gpt-6-luna' };
+  config.defaults = { ...config.defaults, provider: 'codex', model: 'gpt-5.6-luna' };
   const main = await inspectReadiness(config, { environment: {}, which: () => null });
   expect(
     main.issues.filter((item) => item.code === 'native-cli-missing').map((i) => i.severity),
@@ -313,9 +313,9 @@ test('keyless providers read as ready: a local Ollama has no credential to be mi
 
   config.defaults = {
     provider: 'openai',
-    model: 'gpt-6-luna',
+    model: 'gpt-5.6-luna',
     classifierProvider: 'openai',
-    classifierModel: 'gpt-6-luna',
+    classifierModel: 'gpt-5.6-luna',
   };
   const keyed = await inspectReadiness(config, { environment: {}, which: () => '/controlled/cli' });
   expect(keyed.issues.some((item) => item.code === 'provider-credential-missing')).toBe(true);

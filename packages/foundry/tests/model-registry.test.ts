@@ -31,6 +31,7 @@ describe('model registry', () => {
       'gpt-5.5',
     ]);
 
+    // A ChatGPT login is refused gpt-5.5, so the subscription entry does not offer it.
     expect(MODEL_REGISTRY.codex.models.map((model) => model.id)).toEqual([
       'gpt-6-astra',
       'gpt-6-sol',
@@ -38,7 +39,6 @@ describe('model registry', () => {
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
-      'gpt-5.5',
     ]);
     expect(MODEL_REGISTRY['claude-code'].models.map((model) => model.id)).toContain('fable');
     expect(MODEL_REGISTRY.anthropic.models.map((model) => model.id)).toContain('claude-fable-5-1');

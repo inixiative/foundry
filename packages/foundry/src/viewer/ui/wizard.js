@@ -43,7 +43,7 @@ const FALLBACK_PROVIDERS = [
       { id: 'gpt-6-astra', label: 'GPT-6 Astra', tier: 'powerful' },
       { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', tier: 'powerful' },
       { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', tier: 'standard' },
-      { id: 'gpt-6-luna', label: 'GPT-6 Luna', tier: 'fast' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', tier: 'fast' },
     ],
   },
   {

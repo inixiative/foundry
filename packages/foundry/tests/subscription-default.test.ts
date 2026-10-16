@@ -107,15 +107,15 @@ test('Codex decisions are a setting: decisionRuntime selects the Codex login and
     profileDirectory: join(root, '.codex'),
   });
   expect(resolved.policy).toMatchObject({
-    model: 'gpt-6-luna',
+    model: 'gpt-5.6-luna',
     maxConcurrent: 16,
     effort: 'low',
     hedgeAfterMs: 4000,
   });
   // The recorded decision model wins over the runtime default.
   config.defaults.classifierProvider = 'subscription-decisions';
-  config.defaults.classifierModel = 'gpt-5.6-luna';
-  expect(resolveSubscriptionPolicy(config, { cwd: root })!.policy.model).toBe('gpt-5.6-luna');
+  config.defaults.classifierModel = 'gpt-5.6-terra';
+  expect(resolveSubscriptionPolicy(config, { cwd: root })!.policy.model).toBe('gpt-5.6-terra');
   // A named source must match the requested runtime.
   config.nativeAuthentication = [
     {
@@ -141,7 +141,7 @@ test("the user's default profiles are referenced in place but their credential f
   );
   chmodSync(join(root, '.claude', '.credentials.json'), 0o600);
   const codex = defaultConfig();
-  codex.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-6-luna' };
+  codex.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-5.6-luna' };
   chmodSync(join(root, '.codex', 'auth.json'), 0o644);
   expect(() => resolveSubscriptionPolicy(codex, { startup: true, cwd: root })).toThrow(
     'codex subscription profile unavailable',

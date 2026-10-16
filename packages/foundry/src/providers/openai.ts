@@ -7,16 +7,12 @@ import type {
   LLMProvider,
   LLMStreamEvent,
 } from '@inixiative/foundry-core';
-import {
-  type ModelReasoning,
-  registryModel,
-  SUBSCRIPTION_DECISION_MODELS,
-} from '../models/registry';
+import { type ModelReasoning, registryModel } from '../models/registry';
 import { HttpCompletionSettlement } from './http-settlement';
 
 export interface OpenAIConfig {
   apiKey: string;
-  /** Defaults to the registry decision model. */
+  /** Defaults to GPT-6 Luna, the fast OpenAI API model. */
   defaultModel?: string;
   /** Override base URL for Cursor, Azure, local proxies, etc. Normalized to a versioned root. */
   baseUrl?: string;
@@ -34,6 +30,8 @@ export interface OpenAIConfig {
 }
 
 const DEFAULT_BASE = 'https://api.openai.com';
+/** The API's fast model; a ChatGPT login (the codex entry) does not serve it. */
+const API_DEFAULT_MODEL = 'gpt-6-luna';
 
 /**
  * Resolve the versioned API root for an OpenAI-compatible host.
@@ -70,7 +68,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: OpenAIConfig, id?: string) {
     this.id = id ?? 'openai';
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? SUBSCRIPTION_DECISION_MODELS.codex;
+    this._defaultModel = config.defaultModel ?? API_DEFAULT_MODEL;
     this._apiRoot = config.apiRoot?.trim() || openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
     this._organization = config.organization;
     this._extraHeaders = config.headers ?? {};

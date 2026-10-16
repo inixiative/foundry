@@ -1,5 +1,5 @@
 {
-  "version": "0.162.1",
+  "version": "0.163.0",
   "status": 0,
   "body": {
     "kind": "process",
@@ -13,155 +13,215 @@
     "stdin": [
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{},\"clientInfo\":{\"name\":\"inixiative-bench\",\"version\":\"0.1.0\"}}}",
       "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\"}",
-      "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"thread/start\",\"params\":{\"model\":\"gpt-6-luna\",\"cwd\":\"{{cwd}}\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"config\":{}}}",
-      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\"}],\"effort\":\"low\"}}"
+      "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"thread/start\",\"params\":{\"model\":\"gpt-5.6-luna\",\"cwd\":\"{{cwd}}\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"config\":{}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\"}],\"effort\":\"low\"}}"
     ],
     "stdinEnded": true,
     "frames": [
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.162.1 (Mac OS 15.7.3; arm64) xterm-ghostty (inixiative-bench; 0.1.0)\",\"codexHome\":\"~/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
+        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.163.0 (Mac OS 26.6.2; arm64) xterm-ghostty (inixiative-bench; 0.1.0)\",\"codexHome\":\"~/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
+      },
+      {
+        "after": 2,
+        "stream": "stdout",
+        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1792167211749}"
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1792077350495}"
+        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1792167211,\"updatedAt\":1792167211,\"recencyAt\":1792167211,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/10/16/rollout-2026-10-16T13-13-31-01a1457d-72e9-76f0-9ec6-17d45ddc774c.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.163.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-5.6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"disabledPluginIds\":[],\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[\"{{cwd}}/AGENTS.md\"],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":\"high\",\"multiAgentMode\":\"explicitRequestOnly\"}}"
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1792077351,\"updatedAt\":1792077351,\"recencyAt\":1792077351,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/10/15/rollout-2026-10-15T12-15-50-01a14022-4669-7150-a8a0-c71103193bb0.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.162.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"disabledPluginIds\":[],\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[\"~/.codex/AGENTS.md\",\"{{cwd}}/AGENTS.md\"],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":\"high\",\"multiAgentMode\":\"explicitRequestOnly\"}}"
+        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1792167211,\"updatedAt\":1792167211,\"recencyAt\":1792167211,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/10/16/rollout-2026-10-16T13-13-31-01a1457d-72e9-76f0-9ec6-17d45ddc774c.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.163.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1792167211875}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1792077351,\"updatedAt\":1792077351,\"recencyAt\":1792077351,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/10/15/rollout-2026-10-15T12-15-50-01a14022-4669-7150-a8a0-c71103193bb0.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.162.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1792077351063}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"cua_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211876}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"cua_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351063}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"linear\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211876}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351063}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211876}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351063}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211876}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a14022-48a1-7772-a469-143a7a211300\",\"rootTurnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"hivemind\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211876}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"account/updated\",\"params\":{\"authMode\":\"chatgpt\",\"planType\":\"REDACTED\"},\"emittedAtMs\":1792077351210}"
+        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"rootTurnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1792077351229}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"hivemind\",\"status\":\"failed\",\"error\":\"MCP client for `hivemind` failed to start: MCP startup failed: handshaking with MCP server failed: connection closed: initialize response: connection closed: initialize response\",\"failureReason\":null},\"emittedAtMs\":1792167211906}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turn\":{\"id\":\"01a14022-48a1-7772-a469-143a7a211300\",\"rootTurnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1792077351,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1792077351229}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167211994}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351259}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"linear\",\"status\":\"failed\",\"error\":\"The linear MCP server requires OAuth reauthentication. Run `codex mcp login linear`.\",\"failureReason\":\"reauthenticationRequired\"},\"emittedAtMs\":1792167211999}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351295}"
+        "data": "{\"method\":\"account/updated\",\"params\":{\"authMode\":\"chatgpt\",\"planType\":\"REDACTED\"},\"emittedAtMs\":1792167212009}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792077351814}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212023}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a14022-4e3a-7b40-a2b4-7a2f55e8cfcd\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"startedAtMs\":1792077352508},\"emittedAtMs\":1792077352508}"
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1792167212046}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a14022-4e3a-7b40-a2b4-7a2f55e8cfcd\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"completedAtMs\":1792077352508},\"emittedAtMs\":1792077352510}"
+        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turn\":{\"id\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"rootTurnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1792167211,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1792167212046}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"startedAtMs\":1792077353607},\"emittedAtMs\":1792077353607}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"linear\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212135}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"t\"},\"emittedAtMs\":1792077353607}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"hivemind\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212135}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"anger\"},\"emittedAtMs\":1792077353608}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"hivemind\",\"status\":\"failed\",\"error\":\"MCP client for `hivemind` failed to start: MCP startup failed: handshaking with MCP server failed: connection closed: initialize response: connection closed: initialize response\",\"failureReason\":null},\"emittedAtMs\":1792167212159}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"ine\"},\"emittedAtMs\":1792077353608}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"linear\",\"status\":\"failed\",\"error\":\"The linear MCP server requires OAuth reauthentication. Run `codex mcp login linear`.\",\"failureReason\":\"reauthenticationRequired\"},\"emittedAtMs\":1792167212259}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"-l\"},\"emittedAtMs\":1792077353642}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212660}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"ighthouse\"},\"emittedAtMs\":1792077353642}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212660}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"-\"},\"emittedAtMs\":1792077353642}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1792167212660}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"itemId\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"delta\":\"42\"},\"emittedAtMs\":1792077353642}"
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a1457d-78a9-7590-b126-a2c2ba24927d\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"startedAtMs\":1792167213226},\"emittedAtMs\":1792167213226}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"text\":\"tangerine-lighthouse-42\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"completedAtMs\":1792077353644},\"emittedAtMs\":1792077353645}"
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a1457d-78a9-7590-b126-a2c2ba24927d\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"completedAtMs\":1792167213226},\"emittedAtMs\":1792167213230}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"tokenUsage\":{\"total\":{\"totalTokens\":20164,\"inputTokens\":20153,\"cachedInputTokens\":12032,\"cacheWriteInputTokens\":0,\"outputTokens\":11,\"reasoningOutputTokens\":0},\"last\":{\"totalTokens\":20164,\"inputTokens\":20153,\"cachedInputTokens\":12032,\"cacheWriteInputTokens\":0,\"outputTokens\":11,\"reasoningOutputTokens\":0},\"modelContextWindow\":258400}},\"emittedAtMs\":1792077353720}"
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_06423ba21f5825ea016ad24d2e3a688191a5d89523bcd463f1\",\"summary\":[],\"content\":[]},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"startedAtMs\":1792167214324},\"emittedAtMs\":1792167214324}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":3,\"windowDurationMins\":10080,\"resetsAt\":1792667234},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1792077353720}"
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_06423ba21f5825ea016ad24d2e3a688191a5d89523bcd463f1\",\"summary\":[],\"content\":[]},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"completedAtMs\":1792167214324},\"emittedAtMs\":1792167214326}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1792077353727}"
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"startedAtMs\":1792167214327},\"emittedAtMs\":1792167214327}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a14022-4669-7150-a8a0-c71103193bb0\",\"turn\":{\"id\":\"01a14022-48a1-7772-a469-143a7a211300\",\"rootTurnId\":\"01a14022-48a1-7772-a469-143a7a211300\",\"items\":[{\"type\":\"agentMessage\",\"id\":\"msg_0e0d7ff3eb12a33a016ad0ee29cbb481918cd3f344e2894107\",\"text\":\"tangerine-lighthouse-42\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1792077351,\"completedAt\":1792077353,\"durationMs\":2644}},\"emittedAtMs\":1792077353727}"
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"t\"},\"emittedAtMs\":1792167214327}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"anger\"},\"emittedAtMs\":1792167214336}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"ine\"},\"emittedAtMs\":1792167214336}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"-l\"},\"emittedAtMs\":1792167214336}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"ighthouse\"},\"emittedAtMs\":1792167214336}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"-\"},\"emittedAtMs\":1792167214346}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"itemId\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"delta\":\"42\"},\"emittedAtMs\":1792167214346}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"text\":\"tangerine-lighthouse-42\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"completedAtMs\":1792167214413},\"emittedAtMs\":1792167214414}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"tokenUsage\":{\"total\":{\"totalTokens\":13464,\"inputTokens\":13434,\"cachedInputTokens\":11136,\"cacheWriteInputTokens\":0,\"outputTokens\":30,\"reasoningOutputTokens\":17},\"last\":{\"totalTokens\":13464,\"inputTokens\":13434,\"cachedInputTokens\":11136,\"cacheWriteInputTokens\":0,\"outputTokens\":30,\"reasoningOutputTokens\":17},\"modelContextWindow\":258400}},\"emittedAtMs\":1792167214421}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":3,\"windowDurationMins\":10080,\"resetsAt\":1792667234},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1792167214421}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1792167214431}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a1457d-72e9-76f0-9ec6-17d45ddc774c\",\"turn\":{\"id\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"rootTurnId\":\"01a1457d-7365-7b82-a1b2-d99d2c1f0230\",\"items\":[{\"type\":\"agentMessage\",\"id\":\"msg_06423ba21f5825ea016ad24d2e55288191bac98d6a27bdab9c\",\"text\":\"tangerine-lighthouse-42\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1792167211,\"completedAt\":1792167214,\"durationMs\":2545}},\"emittedAtMs\":1792167214431}"
       }
     ],
     "exit": {
@@ -173,10 +233,10 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-10-15T15:15:53.750Z",
+    "recordedAt": "2026-10-16T16:13:34.455Z",
     "agentSession": "0.6.6",
     "environment": "terminal",
-    "durationMs": 3637,
-    "model": "gpt-6-luna"
+    "durationMs": 2857,
+    "model": "gpt-5.6-luna"
   }
 }

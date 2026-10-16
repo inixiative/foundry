@@ -40,7 +40,7 @@ test('subscription mode reports the main-thread and decision profiles where they
     provider: 'claude-code',
     nativeAuthenticationId: config.nativeAuthentication[0]!.id,
   };
-  config.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-6-luna' };
+  config.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-5.6-luna' };
   enable(config, 'claude-code', 'codex', 'anthropic');
 
   const accounts = Object.fromEntries(

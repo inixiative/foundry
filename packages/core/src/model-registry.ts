@@ -234,7 +234,7 @@ export const DECISION_MODEL = 'claude-haiku-5-5';
 /** Subscription decision default per native runtime; settings choose the runtime. */
 export const SUBSCRIPTION_DECISION_MODELS = {
   claude: DECISION_MODEL,
-  codex: 'gpt-6-luna',
+  codex: 'gpt-5.6-luna',
 } as const;
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
@@ -490,6 +490,10 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       // Slugs, effort ladders and the 272k session window come from the local
       // Codex catalogue (~/.codex/models_cache.json); the same models carry a
       // 1,050,000 window on the platform API, which the openai entry records.
+      // Only models a ChatGPT login serves are listed: Codex refuses gpt-5.5 on a
+      // ChatGPT account ("not supported when using Codex with a ChatGPT account"). The
+      // GPT-6 models need a current Codex: 0.153.4 is refused them, 0.163.0 is served
+      // them (2026-10-16); the GPT-5.6 models run on both.
       {
         id: 'gpt-6-astra',
         label: 'GPT-6 Astra',
@@ -521,7 +525,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: FAST_REASONING,
         reasoning: CODEX_REASONING,
-        notes: "Foundry's decision model.",
+        notes: 'Needs a current Codex CLI on a ChatGPT login (0.153.4 is refused it).',
       },
       {
         id: 'gpt-5.6-sol',
@@ -552,20 +556,8 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: FAST_REASONING,
         reasoning: CODEX_REASONING,
-      },
-      {
-        id: 'gpt-5.5',
-        label: 'GPT-5.5',
-        tier: 'standard',
-        costTier: 'medium',
-        contextWindow: 272_000,
-        runtimeKind: 'native-harness',
-        capabilities: STANDARD_REASONING,
-        reasoning: {
-          ...CODEX_REASONING,
-          efforts: ['low', 'medium', 'high', 'xhigh'],
-          fallback: 'xhigh',
-        },
+        notes:
+          "Foundry's Codex decision model: fast, and served to a ChatGPT login on every Codex CLI.",
       },
     ],
   },

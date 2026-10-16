@@ -442,7 +442,7 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
     expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
       'claude-haiku-5-5 is a claude model',
     );
-    c.defaults.classifierModel = 'gpt-6-luna';
+    c.defaults.classifierModel = 'gpt-5.6-luna';
     expect(resolveSubscriptionPolicy(c, { cwd: root })!.decision.profileDirectory).toBe(
       join(root, '.codex'),
     );
