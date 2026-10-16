@@ -884,10 +884,8 @@ async function setupPrompts(projectName: string, projectDesc: string): Promise<P
     prompts.overrides = overrides;
   }
 
-  // Compose output files
-  const runtimes =
-    Object.keys(overrides).length > 0 ? Object.keys(overrides) : Object.keys(RUNTIME_OUTPUT_FILES);
-  const written = await writeComposed(process.cwd(), prompts, runtimes);
+  // Compose only the runtimes the user chose: answering no writes nothing for that runtime.
+  const written = await writeComposed(process.cwd(), prompts, Object.keys(overrides));
   for (const [rt] of written) {
     console.log(`  Composed ${RUNTIME_OUTPUT_FILES[rt]} from prompts`);
   }
@@ -952,7 +950,11 @@ async function configurePrompts(config: FoundryConfig) {
     project.prompts.overrides[rt.id] = overridePath;
     console.log(`  Added ${rt.id} override: ${overridePath}`);
   } else if (idx === 1) {
-    const written = await writeComposed(projectPath, project.prompts);
+    const written = await writeComposed(
+      projectPath,
+      project.prompts,
+      Object.keys(project.prompts.overrides ?? {}),
+    );
     for (const [rt] of written) {
       console.log(`  Composed ${RUNTIME_OUTPUT_FILES[rt]}`);
     }
