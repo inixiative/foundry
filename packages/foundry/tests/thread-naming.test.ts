@@ -81,7 +81,7 @@ test('the first completed turn names the thread on an isolated, text-only, revie
   });
   expect(input[0]).toEqual({ role: 'system', content: NAMING_INSTRUCTIONS });
   expect(input[1]!.content).toContain('Current name: (none)');
-  expect(input[1]!.content).toContain('user: Fix the flaky login test');
+  expect(input[1]!.content).toContain('- Fix the flaky login test');
   expect(f.thread.meta.agentName?.text).toBe('Fix flaky login test');
   expect(threadTitle(f.thread.meta)?.source).toBe('agent');
   expect(f.changes()).toBe(1);
@@ -224,8 +224,8 @@ test('the message route feeds completed turns to the namer and a PATCH name over
   expect(response.status).toBe(200);
   await settle();
   // A creation description does not block naming; the agent name takes over from it.
-  expect(seen[0]!.user).toContain('user: Implement the requested change');
-  expect(seen[0]!.user).toContain('agent: done');
+  expect(seen[0]!.user).toContain('- Implement the requested change');
+  expect(seen[0]!.user).toMatch(/latest replies[^\n]*\n- done$/);
   expect(threadTitle(thread.meta)).toEqual({ text: 'Implement requested change', source: 'agent' });
 
   const renamed = await app.request('/api/threads/routed', {
@@ -248,7 +248,7 @@ test('the message route feeds completed turns to the namer and a PATCH name over
   });
 });
 
-test('a greeting names nothing; the name waits for a turn that asks for work', async () => {
+test('a greeting names nothing; the name waits for a turn that asks for work and is decided from it', async () => {
   const inputs: LLMMessage[][] = [];
   const f = namer(async (messages) => {
     inputs.push(messages);
@@ -268,7 +268,10 @@ test('a greeting names nothing; the name waits for a turn that asks for work', a
   const prompt = inputs[0][1].content as string;
   expect(prompt).not.toContain('hi there');
   expect(prompt).not.toContain('context slice');
-  expect(prompt).toContain('user: Fix the flaky login test');
+  // What the person asked leads; the reply follows as context.
+  expect(prompt.indexOf('- Fix the flaky login test')).toBeGreaterThan(-1);
+  expect(prompt.indexOf('Fix the flaky login test')).toBeLessThan(prompt.indexOf('latest replies'));
+  expect(NAMING_INSTRUCTIONS).toContain("Never name a thread after Foundry's own diagnostics");
   expect(f.thread.meta.agentName?.text).toBe('Fix flaky login test');
 });
 
@@ -281,7 +284,7 @@ test('the reply is context only: clipped well short of the message', async () =>
   f.namer.turnCompleted(f.thread, exchange('Fix the flaky login test', 'x'.repeat(1000)));
   await settle();
   const prompt = inputs[0][1].content as string;
-  expect(prompt).toContain(`agent: ${'x'.repeat(200)}\n`.trimEnd());
+  expect(prompt).toContain(`- ${'x'.repeat(200)}`);
   expect(prompt).not.toContain('x'.repeat(201));
 });
 
