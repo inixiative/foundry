@@ -4,7 +4,7 @@ Foundry can discover and read resources through Kingdom's existing access routes
 
 ## Configure a project grant
 
-In the viewer, open **Settings → Integrations** globally or for the selected project. Add or edit a grant, choose allowed projects, and select the **Signet credential file** this Foundry holds. The browser receives the path and local file status, never the file's contents. **Check access** explicitly fetches the saved grant's currently permitted operations/resources, access-token expiry and remaining Signet requests; it does not execute a resource read or renew credentials. Authentication rejection appears separately from a successful access check. Conflicting saved revisions are refused until reloaded.
+In the viewer, open **Settings → Kingdom** (Resource grants) globally, or a project's **Integrations** settings. Add or edit a grant, choose allowed projects, and select the **Signet credential file** this Foundry holds. The browser receives the path and local file status, never the file's contents. **Check access** explicitly fetches the saved grant's currently permitted operations/resources, access-token expiry and remaining Signet requests; it does not execute a resource read or renew credentials. Authentication rejection appears separately from a successful access check. Conflicting saved revisions are refused until reloaded.
 
 Saved changes apply after restart. Removing a local grant does not revoke its Signet in Kingdom. The panel makes this distinction explicit. Narrow settings layouts provide a separate assistant view so the editor remains usable.
 

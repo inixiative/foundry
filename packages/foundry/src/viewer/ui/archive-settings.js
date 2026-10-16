@@ -1,7 +1,9 @@
 import { hostedSetupUrl } from './hosted-archive-link.js';
 import { html, useEffect, useState } from './lib.js';
+import { onLink, settingsPath } from './route.js';
 
-export function ArchiveSettings() {
+/** Settings → Archive: session archives only. The local Archive, hosted ones, and where each project publishes. */
+export function ArchiveSettings({ projects = [] }) {
   const [status, setStatus] = useState(null);
   const [captureErrors, setCaptureErrors] = useState({});
   const [error, setError] = useState('');
@@ -9,13 +11,14 @@ export function ArchiveSettings() {
   const [kingdoms, setKingdoms] = useState([]);
   const load = async () => {
     fetch('/api/kingdom/status')
-      .then((response) => (response.ok ? response.json() : { runtimes: [] }))
-      .then((value) => setKingdoms(value.runtimes ?? []))
+      .then((response) => (response.ok ? response.json() : { integrations: [] }))
+      .then((value) => setKingdoms(value.integrations ?? []))
       .catch(() => setKingdoms([]));
     try {
       const response = await fetch('/api/archives');
-      const result = await response.json();
-      if (!response.ok) throw Error(result.error || 'Archive unavailable');
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.status)
+        throw Error(result.error || 'The local Archive status is unavailable.');
       setStatus(result.status);
       setCaptureErrors(result.captureErrors);
       setError('');
@@ -42,7 +45,7 @@ export function ArchiveSettings() {
   };
   const failures = Object.keys(captureErrors).length;
   return html`<section class="settings-card archive-settings">
-    <h2 class="settings-card-title">Set up an Archive</h2>
+    <h2 class="settings-card-title">Session Archives</h2>
     <p class="settings-desc">Foundry captures every session into this machine's local Archive. Hosted Archives are set up in Kingdom; the local Archive publishes to them.</p>
     <h3>Local Archive</h3>
     ${error && html`<p role="alert">${error}</p>`}
@@ -54,17 +57,10 @@ export function ArchiveSettings() {
       ${
         status.reachable
           ? ''
-          : html`<button class="action-btn" disabled=${busy} onClick=${setup}>${busy ? 'Starting the Archive…' : 'Set up an Archive'}</button>
+          : html`<button class="action-btn" disabled=${busy} onClick=${setup}>${busy ? 'Starting the Archive…' : 'Set up local Archive'}</button>
         <p class="settings-desc">Runs <code>archive up</code>: the Archive and its Postgres in Docker Compose. Docker must be running.</p>`
       }
       ${failures ? html`<p class="settings-desc">${failures} thread${failures === 1 ? '' : 's'} waiting to be captured; capture retries every 30 seconds.</p>` : ''}
-      ${
-        status.integrations?.length
-          ? html`<h3>Integrations</h3>
-        <p class="settings-desc">What archived sessions can reference. The Archive owns this list.</p>
-        <ul>${status.integrations.map((integration) => html`<li key=${integration.key}>${integration.name} <code>${integration.key}</code>${integration.prefix ? html` · <code>${integration.prefix}</code>` : ''}</li>`)}</ul>`
-          : ''
-      }
       <button class="action-btn subtle" disabled=${busy} onClick=${load}>Refresh</button>
     `
     }
@@ -81,6 +77,16 @@ export function ArchiveSettings() {
         }</li>`;
       })}</ul>`
         : html`<p class="settings-desc">Pair a Kingdom in Settings → Kingdom to set up a hosted Archive.</p>`
+    }
+    <h3>Routing</h3>
+    <p class="settings-desc">Each project chooses which hosted Archives its sessions publish to; with none, they stay in the local Archive.</p>
+    ${
+      projects.length
+        ? html`<ul class="archive-routing">${projects.map(
+            (p) =>
+              html`<li key=${p.id}><a href=${settingsPath(p.id, 'archive')} onClick=${onLink}>${p.label}</a></li>`,
+          )}</ul>`
+        : html`<p class="settings-desc">Add a project to route its sessions.</p>`
     }
   </section>`;
 }

@@ -1,5 +1,7 @@
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { defaultKingdomUrl, installationNameOf } from '../../providers/kingdom-cli';
+import type { KingdomHolders } from '../../providers/kingdom-holder';
 import {
   type KingdomInstallationConnections,
   kingdomIntegrationId,
@@ -38,23 +40,36 @@ export function registerKingdomRoutes(
   configDir: string,
   connections: KingdomInstallationConnections,
   viewerToken: () => string | undefined,
+  holders: KingdomHolders,
 ) {
   let pairing: Pairing | undefined;
   let failure: string | undefined;
   const status = async () => {
     const config = await store.load();
-    const integrations = (config.kingdomIntegrations ?? []).map((integration) => {
-      const id = kingdomIntegrationId(integration);
-      return {
-        id,
-        url: integration.url,
-        owner: integration.owner,
-        integrationId: integration.integrationId,
-        signetId: integration.signetId,
-        status: connections.connected(id) ? ('connected' as const) : ('unavailable' as const),
-      };
-    });
+    const integrations = await Promise.all(
+      (config.kingdomIntegrations ?? []).map(async (integration) => {
+        const id = kingdomIntegrationId(integration);
+        // Who holds the Signet, as Kingdom describes it: names for the table, links to Kingdom.
+        const described = await holders.get(integration);
+        return {
+          id,
+          url: integration.url,
+          owner: integration.owner,
+          integrationId: integration.integrationId,
+          signetId: integration.signetId,
+          status:
+            described.status === 'revoked'
+              ? ('revoked' as const)
+              : connections.connected(id)
+                ? ('connected' as const)
+                : ('unavailable' as const),
+          holder: described.holder,
+        };
+      }),
+    );
     return {
+      defaultUrl: defaultKingdomUrl(),
+      installationName: installationNameOf(config),
       status: overallStatus(integrations),
       integrations,
       installations: connections.all().map((connection) => ({
@@ -84,7 +99,13 @@ export function registerKingdomRoutes(
   app.get('/api/kingdom/status', async (c) => c.json(await status()));
   app.post('/api/kingdom/pair', async (c) => {
     if (pairing) return c.json({ error: 'Already pairing; cancel pending pairing first.' }, 409);
-    const parsed = pairSchema.safeParse(await c.req.json().catch(() => null));
+    const body = await c.req.json().catch(() => null);
+    // The Foundry's name is its profile name (Settings → Profile) unless the request names one.
+    const parsed = pairSchema.safeParse(
+      body && typeof body === 'object' && !('name' in body)
+        ? { ...body, name: installationNameOf(await store.load()) }
+        : body,
+    );
     if (!parsed.success)
       return c.json(
         {
@@ -163,6 +184,7 @@ export function registerKingdomRoutes(
     );
     if (!removed) return c.json({ error: 'That Kingdom is not paired.' }, 404);
     connections.remove(removed.id);
+    holders.forget(removed.id);
     if (pairing?.replace === removed.id) {
       pairing.controller.abort(Error('Pairing canceled'));
       pairing = undefined;

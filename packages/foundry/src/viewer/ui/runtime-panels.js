@@ -48,13 +48,13 @@ export function LayersSection() {
   const total = instances.length + uninstantiated.length;
   return html`
     <${SectionIntro} onAdd=${() => setSelected('+')} addLabel="New layer">
-      Context layers on the selected thread, then layers defined but not yet on it.
+      Context layers: small token caches of project knowledge that Foundry injects into a thread. The selected thread's layers come first, then layers defined but not yet on it.
     </${SectionIntro}>
     <div class="layer-list runtime-list">
       ${active.map((l) => row(l))}
       ${inactive.map((l) => row(l, { dim: true }))}
       ${uninstantiated.map((l) => row(l, { dim: true, defined: true }))}
-      ${total === 0 ? html`<div class="settings-empty">No layers</div>` : null}
+      ${total === 0 ? html`<div class="settings-empty">No layers. Threads are unwrapped by default: the agent sees your message as typed. Add a layer to give threads standing context, such as conventions or memory.</div>` : null}
     </div>
     ${
       selected === '+'
@@ -72,7 +72,7 @@ export function AgentsSection() {
   const total = instances.length + uninstantiated.length;
   return html`
     <${SectionIntro} onAdd=${() => setSelected('+')} addLabel="New agent">
-      Agents running on the selected thread, then agents defined but not yet instantiated.
+      Agents: the executor that does the work, plus any decision roles (classifier, router, Wardens) you add around it. The selected thread's agents come first, then agents defined but not yet running.
     </${SectionIntro}>
     <div class="agent-list runtime-list">
       ${instances.map(
@@ -92,7 +92,7 @@ export function AgentsSection() {
         </button>
       `,
       )}
-      ${total === 0 ? html`<div class="settings-empty">No agents</div>` : null}
+      ${total === 0 ? html`<div class="settings-empty">No agents beyond the executor. Threads are unwrapped by default; add a decision role to route, advise or check its work.</div>` : null}
     </div>
     ${
       selected === '+'
@@ -110,7 +110,7 @@ export function ActivitySection() {
   const events = eventsForThread(liveEvents.value, threadId);
   return html`
     <${SectionIntro}>
-      ${threadId ? 'Runtime events on the selected thread' : 'Runtime events across Foundry'}, newest first.
+      Activity: what Foundry's runtime did, ${threadId ? 'on the selected thread' : 'across every thread'}, newest first. Useful when a thread behaves unexpectedly.
     </${SectionIntro}>
     <div class="live-events-list runtime-list">
       ${events.slice(0, 100).map(
@@ -122,7 +122,7 @@ export function ActivitySection() {
         </button>
       `,
       )}
-      ${events.length === 0 ? html`<div class="settings-empty">No events yet</div>` : null}
+      ${events.length === 0 ? html`<div class="settings-empty">No activity yet. An unwrapped thread runs no layers or decision roles, so most of its activity is the turn itself.</div>` : null}
     </div>
     ${
       selected

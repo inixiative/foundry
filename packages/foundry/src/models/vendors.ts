@@ -239,8 +239,13 @@ export function patchVendorSettings(
     const base = next[id] ?? ({ enabled: false } as VendorSettings);
     const merged: VendorSettings = { ...base, ...(change as Partial<VendorSettings>) };
     for (const mode of ['subscription', 'api'] as const)
-      if (isRecord(change[mode]))
-        merged[mode] = { ...base[mode], ...(change[mode] as object) } as never;
+      if (isRecord(change[mode])) {
+        // A null field clears it (an API root override back to the registry's).
+        const fields = Object.entries({ ...base[mode], ...change[mode] }).filter(
+          ([, value]) => value !== null,
+        );
+        merged[mode] = Object.fromEntries(fields) as never;
+      }
     next[id] = merged;
   }
   return next;

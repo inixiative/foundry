@@ -28,6 +28,7 @@ import { log } from '../logger';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
+import { KingdomHolders } from '../providers/kingdom-holder';
 import {
   KingdomInstallationConnections,
   type KingdomIntegration,
@@ -58,6 +59,7 @@ import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
 import { registerModelRoutes } from './routes/models';
+import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
 import {
@@ -101,6 +103,11 @@ export interface ViewerConfig {
   actionQueue?: ActionQueue;
   /** Tunnel config — expose the viewer over a public URL with auth. */
   tunnel?: TunnelConfig;
+  /**
+   * Start the tunnel at startup when settings leave it automatic (`tunnel.enabled` absent) and a
+   * paired Kingdom authorizes this Foundry. The daemon's entry point opts in.
+   */
+  autoTunnel?: boolean;
   /** Every paired Kingdom integration; defaults to the saved `kingdomIntegrations`. */
   kingdomIntegrations?: KingdomIntegration[];
   /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
@@ -145,10 +152,13 @@ export function createViewer(config: ViewerConfig) {
     sessionCount: () => directory.all().length,
     // Kingdom pushes revocations; losing authorization closes every socket at once.
     onChange: () => {
+      holders.stale();
       if (kingdomLost()) revoke();
     },
     warn: (message) => log.warn(message),
   });
+
+  const holders = new KingdomHolders(configDir);
 
   // Mutable tunnel holder — routes can start/stop at runtime. `changed` runs after every start or stop.
   let sharedToken: string | undefined;
@@ -500,9 +510,17 @@ export function createViewer(config: ViewerConfig) {
           log: (message) => log.warn(message),
         })
       : null;
-  registerKingdomRoutes(app, configStore, configDir, kingdom, () => tunnelHolder.tunnel?.token);
+  registerKingdomRoutes(
+    app,
+    configStore,
+    configDir,
+    kingdom,
+    () => tunnelHolder.tunnel?.token,
+    holders,
+  );
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerModelRoutes(app, configStore);
+  registerProfileRoutes(app, configStore);
   registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)
@@ -579,6 +597,7 @@ export function createViewer(config: ViewerConfig) {
     actionQueue: config.actionQueue ?? null,
     tunnelHolder,
     port,
+    kingdomConnected: () => kingdom.all().some((connection) => connection.connected),
     selfChatDir: config.configDir ?? '.foundry',
     assistTools: config.assistTools,
     threadsChanged: () => streams.threadsChanged(),
@@ -858,6 +877,20 @@ export async function startViewer(config: ViewerConfig) {
   };
 
   log.info(`Foundry Viewer running at http://localhost:${server.port}`);
+
+  // Automatic tunnel: off until it can work, then on.
+  if (
+    !tunnelHolder.tunnel &&
+    config.autoTunnel &&
+    saved.tunnel?.enabled === undefined &&
+    viewer.kingdom.all().some((connection) => connection.connected)
+  )
+    tunnelHolder.tunnel = new FoundryTunnel({
+      port: server.port ?? port,
+      provider: saved.tunnel?.provider,
+      subdomain: saved.tunnel?.subdomain,
+      configDir: config.configDir,
+    });
 
   if (tunnelHolder.tunnel) {
     try {

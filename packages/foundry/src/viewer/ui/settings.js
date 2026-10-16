@@ -9,11 +9,13 @@
 
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
-import { LocalDevicePanel } from './devices.js';
+import { devMode, setDevMode } from './dev-mode.js';
+import { DevicesSection } from './devices.js';
 import { FilePicker } from './file-picker.js';
-import { GlossSettings } from './gloss.js';
+import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useEffect, useState } from './lib.js';
+import { ProfileSection } from './profile-settings.js';
 import { ProvidersSection } from './provider-settings.js';
 import {
   FOUNDRY_SETTINGS,
@@ -26,6 +28,7 @@ import {
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
 import { projects, showToast } from './store.js';
+import { Switch } from './switch.js';
 
 export const settingsConfig = signal(null);
 const selectedFocus = signal(null); // { kind: "source"|"agent"|"layer"|"provider", id }
@@ -297,105 +300,6 @@ function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tunnel editor (kept from prior version; wraps in focus handler)
-// ---------------------------------------------------------------------------
-
-function TunnelEditor() {
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [subdomain, setSubdomain] = useState('');
-  const [provider, setProvider] = useState('localtunnel');
-
-  const refresh = async () => {
-    try {
-      const res = await fetch('/api/tunnel');
-      const data = await res.json();
-      setStatus(data);
-      setProvider(data.provider || 'localtunnel');
-      setSubdomain(data.subdomain || '');
-    } catch {
-      /* ignore */
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  const toggle = async () => {
-    setLoading(true);
-    try {
-      const endpoint = status?.active ? '/api/tunnel/stop' : '/api/tunnel/start';
-      const res = await fetch(endpoint, { method: 'POST' });
-      const data = await res.json();
-      if (data.error) showToast(data.error, 'error');
-      else showToast(status?.active ? 'Tunnel stopped' : `Tunnel started: ${data.url}`, 'ok');
-      await refresh();
-    } catch {
-      showToast('Tunnel operation failed', 'error');
-    }
-    setLoading(false);
-  };
-
-  const saveConfig = async () => {
-    try {
-      const body = { provider, subdomain: subdomain || undefined };
-      const res = await fetch('/api/tunnel', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.ok) showToast('Tunnel config saved', 'ok');
-      else showToast(data.error || 'Save failed', 'error');
-    } catch {
-      showToast('Failed to save tunnel config', 'error');
-    }
-  };
-
-  return html`
-    <div class="settings-card">
-      <div class="settings-card-header">
-        <span class="settings-card-title">Tunnel</span>
-      </div>
-      <p class="settings-desc">Expose the viewer over a public URL. All tunneled access requires authentication. Stopping a tunnel keeps the viewer locked.</p>
-      <div class="tunnel-status">
-        <div class="tunnel-status-row">
-          <span class="tunnel-indicator ${status?.active ? 'active' : 'inactive'}"></span>
-          <span>${status?.active ? 'Active' : 'Inactive'}</span>
-          ${
-            status?.active && status?.url
-              ? html`
-            <a class="tunnel-url" href=${status.url} target="_blank" rel="noopener">${status.url}</a>
-          `
-              : null
-          }
-        </div>
-        <button class="action-btn ${status?.active ? 'danger' : ''}" onClick=${toggle} disabled=${loading}>
-          ${loading ? '...' : status?.active ? 'Stop Tunnel' : 'Start Tunnel'}
-        </button>
-      </div>
-
-      <div class="settings-section-label">Configuration</div>
-      <div class="settings-field">
-        <label class="settings-label">Provider</label>
-        <select class="settings-input small" value=${provider} onChange=${(e) => setProvider(e.target.value)}>
-          <option value="localtunnel">localtunnel (zero-config)</option>
-          <option value="cloudflared">cloudflared (production)</option>
-        </select>
-      </div>
-      <${Field} label="Subdomain hint" value=${subdomain} onChange=${setSubdomain}
-        placeholder="my-foundry (localtunnel only, not guaranteed)" small />
-      <p class="settings-desc">The access token is stored in the private tunnel-token file in this viewer’s configuration directory. It is never returned by these settings.</p>
-
-      <div class="settings-card-actions">
-        <button class="action-btn" onClick=${saveConfig}>Save Config</button>
-      </div>
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
 // Project chorus (read-only)
 // ---------------------------------------------------------------------------
 
@@ -488,91 +392,6 @@ function ProjectChorus({ projectId }) {
 }
 
 // ---------------------------------------------------------------------------
-// Project overrides preview
-// ---------------------------------------------------------------------------
-
-/** Where each chunk of a project Warden's instructions and domain knowledge came from. */
-function ComposedAgents({ projectId }) {
-  const [agents, setAgents] = useState(null);
-  useEffect(() => {
-    let live = true;
-    fetch(`/api/projects/${encodeURIComponent(projectId)}/resolved/agents`)
-      .then((r) => (r.ok ? r.json() : { agents: [] }))
-      .then((body) => live && setAgents(body.agents.filter((a) => a.scope !== 'global')))
-      .catch(() => live && setAgents([]));
-    return () => {
-      live = false;
-    };
-  }, [projectId]);
-  if (!agents?.length) return null;
-  const chunks = (field) =>
-    (field?.chunks ?? []).map(
-      (chunk) =>
-        html`<li>${chunk.origin === 'global' ? 'Global' : 'Project'} · ${chunk.heading}</li>`,
-    );
-  return html`
-    <div class="settings-section-label">Composition</div>
-    ${agents.map(
-      (agent) => html`
-        <div class="settings-override-preview">
-          <strong>${agent.id}</strong>
-          ${agent.extends ? ` extends ${agent.extends}` : ' (standalone)'}
-          <ul>${chunks(agent.fields.prompt)}${chunks(agent.fields.domainKnowledge)}</ul>
-        </div>
-      `,
-    )}
-  `;
-}
-
-function ProjectOverrides({ project }) {
-  if (!project) return null;
-  const hasDefaults = project.defaults && Object.keys(project.defaults).length > 0;
-  const hasAgents = project.agents && Object.keys(project.agents).length > 0;
-  const hasLayers = project.layers && Object.keys(project.layers).length > 0;
-
-  if (!hasDefaults && !hasAgents && !hasLayers) {
-    return html`
-      <div class="settings-empty">
-        No overrides \u2014 this project inherits all global defaults.
-      </div>
-    `;
-  }
-
-  return html`
-    <div class="settings-card">
-      <div class="settings-card-header">
-        <span class="settings-card-title">Project Overrides</span>
-      </div>
-      ${
-        hasDefaults
-          ? html`
-        <div class="settings-section-label">Default overrides</div>
-        <pre class="settings-override-preview">${JSON.stringify(project.defaults, null, 2)}</pre>
-      `
-          : null
-      }
-      ${
-        hasAgents
-          ? html`
-        <div class="settings-section-label">Project agents (${Object.keys(project.agents).length})</div>
-        <pre class="settings-override-preview">${JSON.stringify(project.agents, null, 2)}</pre>
-        <${ComposedAgents} projectId=${project.id} />
-      `
-          : null
-      }
-      ${
-        hasLayers
-          ? html`
-        <div class="settings-section-label">Layer overrides (${Object.keys(project.layers).length})</div>
-        <pre class="settings-override-preview">${JSON.stringify(project.layers, null, 2)}</pre>
-      `
-          : null
-      }
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
 // Scope + section navigation
 // ---------------------------------------------------------------------------
 
@@ -603,13 +422,22 @@ function SettingsNav({ projectId, section, projectList }) {
           : html`<p class="settings-scope-note">Everything this Foundry runs on, shared by every project.</p>`
       }
       <ul class="settings-sections">
-        ${sections.map(
-          ([id, label]) => html`<li key=${id}>
-            <a href=${settingsPath(projectId, id)} aria-current=${section === id ? 'page' : undefined}
-              class="settings-section ${section === id ? 'active' : ''}" onClick=${onLink}>${label}</a>
-          </li>`,
-        )}
+        ${sections.map(([id, label, group, soon], i) => {
+          const heading = group && group !== sections[i - 1]?.[2];
+          return html`
+            ${heading ? html`<li key=${`group-${group}`} class="settings-group" role="presentation">${group}</li>` : null}
+            <li key=${id} class=${group ? 'settings-grouped' : ''}>
+              <a href=${settingsPath(projectId, id)} aria-current=${section === id ? 'page' : undefined}
+                class="settings-section ${section === id ? 'active' : ''}" onClick=${onLink}>${label}${
+                  soon ? html` <span class="coming-soon">soon</span>` : null
+                }</a>
+            </li>`;
+        })}
       </ul>
+      <label class="dev-mode-switch settings-dev-mode">
+        <${Switch} checked=${devMode.value} label="Dev mode" onChange=${setDevMode} />
+        <span>Dev mode<span class="settings-desc">Shows dev-only fields, such as a custom Kingdom URL.</span></span>
+      </label>
     </nav>
   `;
 }
@@ -618,20 +446,39 @@ function SettingsNav({ projectId, section, projectList }) {
 // Settings page
 // ---------------------------------------------------------------------------
 
-function FoundrySection({ section, config, onFocusChange }) {
+const saved = (next) => {
+  settingsConfig.value = next;
+};
+
+/** A section that exists but is not built yet: it says so, and shows no controls. */
+function ComingSoon({ children }) {
+  return html`<section class="settings-card coming-soon-card">
+    <span class="coming-soon">Coming soon</span>
+    <p class="settings-desc">${children}</p>
+  </section>`;
+}
+
+function FoundrySection({ section, config }) {
+  const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
+    id,
+    label: p.label || id,
+  }));
+  if (section === 'profile') return html`<${ProfileSection} onSaved=${saved} />`;
   if (section === 'providers')
-    return html`<${ProvidersSection} vendors=${config.vendors} onSaved=${(next) => {
-      settingsConfig.value = next;
-    }} />`;
-  if (section === 'kingdom') return html`<${KingdomSettings} />`;
-  if (section === 'integrations') return html`<${AccessSettings} onSaved=${loadSettings} />`;
-  if (section === 'archive') return html`<${ArchiveSettings} />`;
-  if (section === 'tunnel') return html`<${TunnelEditor} />`;
+    return html`<${ProvidersSection} vendors=${config.vendors} onSaved=${saved} />`;
+  if (section === 'kingdom')
+    return html`<${KingdomSettings} /><${AccessSettings} onSaved=${loadSettings} />`;
+  if (section === 'archive') return html`<${ArchiveSettings} projects=${projectList} />`;
+  if (section === 'github')
+    return html`<${IntegrationSection} key="github" id="github" name="GitHub" />`;
+  if (section === 'linear')
+    return html`<${IntegrationSection} key="linear" id="linear" name="Linear" />`;
+  if (section === 'devices')
+    return html`<${DevicesSection} projectIds=${JSON.stringify(projects.value.map((p) => p.id))}
+      kingdomPaired=${!!config.kingdomIntegrations?.length} />`;
   if (section === 'layers') return html`<${LayersSection} />`;
   if (section === 'agents') return html`<${AgentsSection} />`;
   if (section === 'activity') return html`<${ActivitySection} />`;
-  if (section === 'devices')
-    return html`<section class="settings-card"><${LocalDevicePanel} projectIds=${JSON.stringify(projects.value.map((p) => p.id))} /></section>`;
   return null;
 }
 
@@ -643,10 +490,11 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
   if (section === 'archive')
     return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
-    return html`<${GlossSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. Its controls arrive with the Gloss rollout.</${ComingSoon}>`;
   if (section === 'chorus')
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
-  if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
+  if (section === 'overrides')
+    return html`<${ComingSoon}>Overrides: this project's own defaults, agents and layers on top of Foundry's. Until then a project inherits everything from Foundry settings (edit <code>projects[id]</code> in settings.json to override by hand).</${ComingSoon}>`;
   if (section === 'sources') {
     const sources = Object.values(project.sources || {});
     return html`

@@ -32,6 +32,7 @@ type KingdomState = {
     integrationId: string;
     signetId: string;
     status: string;
+    holder: unknown;
   }[];
   installations: { url: string; connected: boolean; revoked: boolean }[];
 };
@@ -109,6 +110,8 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
         integrationId,
         signetId,
         status: 'connected',
+        // This mock Kingdom does not describe its holders.
+        holder: null,
       },
     ]);
     expect(connected.installations).toEqual([

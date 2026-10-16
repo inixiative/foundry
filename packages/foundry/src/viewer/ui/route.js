@@ -7,16 +7,21 @@
 
 import { signal } from './lib.js';
 
+/**
+ * Settings sections in nav order: [id, label, group?, comingSoon?]. A group heads the sections under
+ * it in the nav; a coming-soon section says so instead of showing controls.
+ */
 export const FOUNDRY_SETTINGS = [
+  ['profile', 'Profile'],
   ['providers', 'Providers'],
-  ['kingdom', 'Kingdom'],
-  ['integrations', 'Integrations'],
-  ['archive', 'Archive'],
-  ['tunnel', 'Tunnel'],
+  ['kingdom', 'Kingdom', 'Integrations'],
+  ['archive', 'Archive', 'Integrations'],
+  ['github', 'GitHub', 'Integrations'],
+  ['linear', 'Linear', 'Integrations'],
   ['devices', 'Devices'],
-  ['layers', 'Layers'],
-  ['agents', 'Agents'],
-  ['activity', 'Activity'],
+  ['layers', 'Layers', 'Advanced'],
+  ['agents', 'Agents', 'Advanced'],
+  ['activity', 'Activity', 'Advanced'],
 ];
 
 export const PROJECT_SETTINGS = [
@@ -24,12 +29,12 @@ export const PROJECT_SETTINGS = [
   ['chorus', 'Chorus'],
   ['archive', 'Archive'],
   ['sources', 'Sources'],
-  ['gloss', 'Gloss'],
-  ['overrides', 'Overrides'],
+  ['gloss', 'Gloss', null, true],
+  ['overrides', 'Overrides', null, true],
 ];
 
 /** Section addresses that moved: an old link lands on the section that now holds it. */
-const MOVED_SECTIONS = { models: 'providers' };
+const MOVED_SECTIONS = { models: 'providers', tunnel: 'devices', integrations: 'kingdom' };
 
 /** { page: 'workspace' | 'settings' | 'analytics', projectId: string | null, section?: string } */
 export function parseRoute(pathname) {

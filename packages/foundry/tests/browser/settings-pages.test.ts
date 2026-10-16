@@ -52,6 +52,65 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
+    const nav = (name: string | RegExp) =>
+      page.locator('.settings-nav').getByRole('link', { name, exact: typeof name === 'string' });
+    // Profile comes first; the nav groups Integrations and Advanced, Dev mode sits at the bottom.
+    await page.goto(`${origin}/settings`);
+    await page.locator('h1.settings-title', { hasText: 'Profile' }).waitFor();
+    expect(
+      (await page.locator('.settings-sections li').allInnerTexts()).map((t: string) => t.trim()),
+    ).toEqual([
+      'Profile',
+      'Providers',
+      'INTEGRATIONS',
+      'Kingdom',
+      'Archive',
+      'GitHub',
+      'Linear',
+      'Devices',
+      'ADVANCED',
+      'Layers',
+      'Agents',
+      'Activity',
+    ]);
+    await page.locator('#installation-name').fill('Studio Foundry');
+    await page.getByRole('button', { name: 'Save name' }).click();
+    await page.getByRole('button', { name: /Use the default/ }).waitFor();
+    expect((await (await fetch(`${origin}/api/settings`)).json()).installationName).toBe(
+      'Studio Foundry',
+    );
+    expect(await page.locator('.profile-card').innerText()).toContain('Pair a Kingdom');
+
+    // Kingdom: what it is and a link to it; the URL field only in dev mode, which persists.
+    await nav('Kingdom').click();
+    await page.locator('.kingdom-pair', { hasText: 'Pairs as Studio Foundry' }).waitFor();
+    expect(await page.locator('.kingdom-home').getAttribute('href')).toBe(
+      'https://api.kingdom.inixiative.com/dashboard',
+    );
+    expect(await page.locator('#kingdom-api-url').count()).toBe(0);
+    await page.getByRole('switch', { name: 'Dev mode' }).check();
+    await page.locator('#kingdom-api-url').waitFor();
+    await page.reload();
+    await page.locator('#kingdom-api-url').waitFor();
+    await page.getByRole('switch', { name: 'Dev mode' }).uncheck();
+    expect(await page.locator('#kingdom-api-url').count()).toBe(0);
+
+    // GitHub and Linear: what is connected, and connecting an account is coming soon.
+    await nav('GitHub').click();
+    await page.locator('.integration-card .coming-soon').waitFor();
+    expect(await page.getByRole('button', { name: 'Connect GitHub' }).isDisabled()).toBe(true);
+
+    // Devices without Kingdom says what peers and the tunnel are for; the tunnel waits for Kingdom.
+    await nav('Devices').click();
+    await page
+      .locator('.devices-kingdom', { hasText: 'Peers and the tunnel need Kingdom' })
+      .waitFor();
+    await page.locator('.tunnel-mode[data-mode="auto"]', { hasText: 'stays off' }).waitFor();
+
+    // Advanced sections explain themselves; an unwrapped Foundry has no layers.
+    await nav('Layers').click();
+    expect(await page.locator('.settings-empty').innerText()).toContain('unwrapped');
+
     // An old address lands on the section that now holds it.
     await page.goto(`${origin}/settings/models`);
     await page.locator('h1.settings-title', { hasText: 'Providers' }).waitFor();
@@ -103,6 +162,12 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.getByRole('link', { name: 'Project', exact: true }).click();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);
     await page.locator('.settings-breadcrumb', { hasText: 'Scratch' }).waitFor();
+    // Gloss and Overrides are coming soon: marked in the nav, no controls on the page.
+    expect(await page.locator('.settings-section .coming-soon').count()).toBe(2);
+    await nav(/Gloss/).click();
+    await page.locator('.coming-soon-card').waitFor();
+    expect(await page.locator('.settings-body input, .settings-body button').count()).toBe(0);
+    await nav('Integrations').click();
 
     await page.getByRole('link', { name: 'Analytics' }).click();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/analytics`);

@@ -25,8 +25,10 @@ async function setup(answers: string[]) {
   return { cwd, code: await child.exited, output };
 }
 
-// provider (default), model (default), port, project name, description, Claude/Cursor/Codex, Archive.
+// Foundry name, provider (default), model (default), port, project name, description,
+// Claude/Cursor/Codex, Archive.
 const answers = (claude: string, cursor: string, codex: string) => [
+  'Scratch Foundry',
   '',
   '',
   '4599',
@@ -61,9 +63,12 @@ test('a chosen runtime is composed alone, and executors inherit the default mode
   );
   expect(executors.length).toBeGreaterThan(0);
   for (const agent of executors) expect(agent).not.toHaveProperty('model');
+  // The first answer names this Foundry: Kingdom pairing uses it, Settings → Profile edits it.
+  expect(settings.installationName).toBe('Scratch Foundry');
+  expect(settings.vendors.anthropic.subscription.enabled).toBe(true);
 });
 
 test('input that ends early fails with a reason instead of hanging', async () => {
-  const { code } = await setup(['', '']);
+  const { code } = await setup(['', '', '']);
   expect(code).toBe(1);
 });

@@ -413,13 +413,25 @@ export function AnalyticsPage() {
       </div>
 
       <div class="analytics-body">
-        ${state.error ? html`<p class="analytics-empty" role="alert">${state.error}</p>` : null}
+        ${
+          state.error && !data
+            ? html`<section class="settings-card coming-soon-card analytics-soon" title=${state.error}>
+                <span class="coming-soon">Coming soon</span>
+                <p class="settings-desc">Analytics for this view are not available yet.</p>
+              </section>`
+            : null
+        }
         ${projectId ? html`<p class="analytics-availability">Calls recorded on this project's threads. Live session totals and the budget are on the Foundry view.</p>` : null}
         ${tab !== 'overview' && data?.observations ? html`<p class="analytics-availability">Known subtotals only. Usage unavailable for ${data.observations.unavailableUsageCalls} calls; cost unavailable for ${data.observations.unavailableCostCalls} calls. Unpriced subtotals do not establish free usage.</p>` : null}
+        ${
+          state.error && !data
+            ? null
+            : html`
         ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}
         ${tab === 'threads' ? html`<${Threads} data=${data} />` : null}
         ${tab === 'calls' ? html`<${Calls} data=${data} />` : null}
-        ${tab === 'models' ? html`<${Models} data=${data} />` : null}
+        ${tab === 'models' ? html`<${Models} data=${data} />` : null}`
+        }
       </div>
     </main>
   `;

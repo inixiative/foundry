@@ -130,7 +130,7 @@ export function AccessSettings({ projectId, onSaved }) {
   const disabled = busy || !!checking;
   return html`<section class="access-settings" aria-label="Kingdom integrations">
     <div class="settings-card">
-      <div class="settings-card-header"><h2 class="settings-card-title">Integrations</h2><span class="settings-card-kind">Kingdom access</span></div>
+      <div class="settings-card-header"><h2 class="settings-card-title">Resource grants</h2><span class="settings-card-kind">Kingdom access</span></div>
       <p class="settings-desc">Give your agents access to selected resources through Kingdom. Provider credentials stay in Kingdom; this instance uses revocable access tokens.</p>
       <p class="settings-desc">Grant changes apply after a restart. Use Kingdom revocation to block new requests immediately. Inference capacity is configured separately.</p>
       <div class="settings-card-actions">

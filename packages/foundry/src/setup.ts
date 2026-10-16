@@ -22,7 +22,12 @@ import {
   subscriptionWorker,
 } from './models/registry';
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
-import { defaultInstallationName, defaultKingdomUrl, pairKingdom } from './providers/kingdom-cli';
+import {
+  defaultInstallationName,
+  defaultKingdomUrl,
+  installationNameOf,
+  pairKingdom,
+} from './providers/kingdom-cli';
 import { inspectReadiness } from './readiness';
 import { describeLegacyItem, findLegacyStarter, removeLegacyStarter } from './setup/legacy-starter';
 import { createTerminalPrompts } from './setup/prompts';
@@ -124,10 +129,14 @@ async function main() {
 async function firstTimeSetup(): Promise<FoundryConfig> {
   console.log('  No config found — starting fresh.\n');
 
+  // Who this Foundry is: Kingdom pairing names it with this, and Settings → Profile edits it.
+  const installationName = (await ask('Foundry name', defaultInstallationName())).trim();
   const { providerId, apiKey, model } = await pickProvider();
   const port = await ask('Viewer port', '4500');
 
   const config = buildStarterConfig(providerId, model);
+  if (installationName && installationName !== defaultInstallationName())
+    config.installationName = installationName.slice(0, 120);
   await checkAgentClis(config);
 
   if (apiKey) {
@@ -348,7 +357,7 @@ async function configureArchives(config: FoundryConfig, confirmStart = true) {
     await pairKingdom({
       configDir: FOUNDRY_DIR,
       url: await ask('Kingdom API address', defaultKingdomUrl()),
-      name: await ask('Foundry name', defaultInstallationName()),
+      name: installationNameOf(config),
       log,
     });
   } catch (error) {

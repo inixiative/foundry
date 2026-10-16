@@ -883,6 +883,7 @@ const acpLaunch =
     : undefined;
 
 const viewer = await startViewer({
+  autoTunnel: true,
   harness,
   eventStream,
   interventions,

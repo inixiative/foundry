@@ -6197,3 +6197,148 @@ a.thread-ref:hover {
     margin-left: 0;
   }
 }
+
+/* ---- Settings: nav groups, dev mode, coming soon ---- */
+
+.settings-group {
+  font-size: 10px;
+  color: var(--text-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 10px 2px;
+}
+.settings-grouped .settings-section {
+  padding-left: 16px;
+}
+.settings-section .coming-soon {
+  margin-left: 4px;
+  font-size: 9px;
+  padding: 0 4px;
+}
+.dev-mode-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.settings-dev-mode {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.settings-dev-mode .settings-desc {
+  display: block;
+  font-size: 10px;
+  margin-top: 2px;
+}
+.dev-tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--warn-dim);
+  color: var(--warn);
+  letter-spacing: 0;
+}
+.dev-field {
+  align-items: flex-end;
+}
+.coming-soon-card {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.archive-routing {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 6px 0;
+}
+.archive-routing a,
+.kingdom-intro a,
+.devices-kingdom a:not(.action-btn) {
+  color: var(--accent);
+}
+
+/* ---- Settings: Kingdom ---- */
+
+.kingdom-intro {
+  display: grid;
+  gap: 10px;
+}
+.kingdom-home {
+  justify-self: start;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--accent);
+}
+.kingdom-home:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+.kingdom-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.kingdom-pairing .kingdom-actions .action-btn {
+  text-decoration: none;
+  text-align: center;
+  white-space: nowrap;
+  padding: 4px 8px;
+}
+.settings-page .kingdom-pairing {
+  padding: 0;
+  gap: 0;
+  min-width: 0;
+}
+.kingdom-pairing > * {
+  min-width: 0;
+}
+@media (max-width: 800px) {
+  .kingdom-table thead {
+    display: none;
+  }
+  .kingdom-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .kingdom-table td {
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+  .kingdom-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    color: var(--text-dimmer);
+    text-transform: uppercase;
+  }
+  .kingdom-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+.archive-settings h3 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+}
+.archive-settings > ul {
+  list-style: none;
+  margin: 6px 0;
+}

@@ -18,6 +18,9 @@ import {
 import { kingdomLogin, setProjectCapacity } from './kingdom-subscription-login';
 
 export const defaultInstallationName = () => `Foundry on ${hostname()}`.slice(0, 120);
+/** This Foundry's name (Settings → Profile), or the default when none is set. */
+export const installationNameOf = (config: { installationName?: string }) =>
+  config.installationName ?? defaultInstallationName();
 const restartHint =
   'A Foundry viewer is running; restart it (bun run daemon:start restarts the daemon) so it loads the changed Kingdom pairing.';
 
@@ -43,7 +46,8 @@ export interface PairKingdomOptions {
 export async function pairKingdom(options: PairKingdomOptions) {
   const { configDir, log = console.error } = options;
   const store = new ConfigStore(configDir);
-  const integrations = (await store.load()).kingdomIntegrations ?? [];
+  const loaded = await store.load();
+  const integrations = loaded.kingdomIntegrations ?? [];
   const replaced = options.replace
     ? selectKingdomIntegration(integrations, options.kingdom ?? options.url)
     : undefined;
@@ -51,7 +55,7 @@ export async function pairKingdom(options: PairKingdomOptions) {
     try {
       return kingdomPairInputSchema.parse({
         url: replaced?.url ?? options.url,
-        name: options.name ?? defaultInstallationName(),
+        name: options.name ?? installationNameOf(loaded),
         organization: options.organization,
       });
     } catch {

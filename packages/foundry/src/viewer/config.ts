@@ -609,8 +609,12 @@ export interface DataSourceConfig {
 }
 
 export interface TunnelSettingsConfig {
-  /** Whether the tunnel is enabled. */
-  enabled: boolean;
+  /**
+   * Whether the tunnel runs. Absent means automatic: off until it can work (a paired Kingdom
+   * authorizes this Foundry), then on at startup. Starting or stopping it in Settings records the
+   * choice here.
+   */
+  enabled?: boolean;
   /** Tunnel provider. Default: "localtunnel". */
   provider?: 'localtunnel' | 'cloudflared';
   /** Subdomain hint (localtunnel only, not guaranteed). */

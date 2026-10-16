@@ -107,6 +107,8 @@ export interface ControlRoutesDeps {
   assistTools?: ToolRegistry;
   /** Thread-list streams re-check membership (a removed project's threads become unowned). */
   threadsChanged: () => void;
+  /** Whether a paired Kingdom currently authorizes this Foundry (the automatic tunnel waits for it). */
+  kingdomConnected?: () => boolean;
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void {
@@ -825,6 +827,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       url: info?.url ?? null,
       provider: info?.provider ?? cfg.tunnel?.provider ?? 'localtunnel',
       enabled: cfg.tunnel?.enabled ?? false,
+      // automatic: off until a paired Kingdom authorizes this Foundry, then on at startup.
+      mode: cfg.tunnel?.enabled === undefined ? 'auto' : cfg.tunnel.enabled ? 'on' : 'off',
+      kingdomConnected: deps.kingdomConnected?.() ?? false,
       subdomain: cfg.tunnel?.subdomain ?? null,
     });
   });
@@ -876,11 +881,10 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (!tunnel) return c.json({ error: 'No tunnel running' }, 400);
       await tunnel.stop();
       tunnelHolder.changed?.();
-      const cfg = await configStore.load();
-      if (cfg.tunnel)
-        await configStore.update((draft) => {
-          if (draft.tunnel) draft.tunnel.enabled = false;
-        });
+      // Stopping is a choice: the tunnel stays off, automatic no more.
+      await configStore.update((draft) => {
+        draft.tunnel = { ...draft.tunnel, enabled: false };
+      });
       return c.json({ active: false });
     } finally {
       changingTunnel = false;
@@ -900,7 +904,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       return c.json({ error: 'Unknown tunnel provider' }, 400);
 
     const next = await configStore.update((draft) => {
-      const current = draft.tunnel ?? { enabled: false };
+      // Changing the provider or subdomain leaves an automatic tunnel automatic.
+      const current = draft.tunnel ?? {};
       if (body.provider === 'localtunnel' || body.provider === 'cloudflared')
         current.provider = body.provider;
       if (typeof body.subdomain === 'string') current.subdomain = body.subdomain || undefined;

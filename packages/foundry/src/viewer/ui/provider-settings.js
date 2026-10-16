@@ -5,8 +5,10 @@
  * "Set as default model" and "Set as decision model".
  */
 
+import { devMode } from './dev-mode.js';
 import { html, signal, useEffect, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
+import { Switch } from './switch.js';
 
 const registry = signal(null);
 const accounts = signal(null);
@@ -117,14 +119,6 @@ async function setApiTokens(enabled) {
   }
 }
 
-function Switch({ checked, onChange, label, disabled }) {
-  return html`<label class="switch" title=${label}>
-    <input type="checkbox" role="switch" aria-label=${label} checked=${checked} disabled=${disabled}
-      onChange=${(e) => onChange(e.target.checked)} />
-    <span class="switch-track"><span class="switch-thumb"></span></span>
-  </label>`;
-}
-
 function ModelTable({ provider, models, apiTokens, current }) {
   const isDefault = (m) =>
     current?.default?.provider === provider.id && current.default.model === m.id;
@@ -156,6 +150,20 @@ function ModelTable({ provider, models, apiTokens, current }) {
       )}
     </tbody>
   </table>`;
+}
+
+/** Dev mode: the API root this mode posts to; empty means the registry's. */
+function ApiRoot({ vendor, provider, value }) {
+  const [draft, setDraft] = useState(value);
+  return html`<div class="settings-row dev-field">
+    <label class="settings-field">
+      <span class="settings-label">API root <span class="dev-tag">dev</span></span>
+      <input class="settings-input mono small" value=${draft} placeholder=${provider.baseUrl || 'https://…'}
+        onInput=${(e) => setDraft(e.target.value)} />
+    </label>
+    <button class="action-btn subtle" disabled=${draft === value}
+      onClick=${() => saveVendor(vendor.id, { api: { baseUrl: draft.trim() || null } })}>Save</button>
+  </div>`;
 }
 
 function VendorRow({ vendor, settings, providersById, accountsById, apiTokens, current }) {
@@ -198,6 +206,11 @@ function VendorRow({ vendor, settings, providersById, accountsById, apiTokens, c
             <span class="mode-chip tone-${status.tone}">${status.text}</span>
           </div>
           ${status.detail ? html`<p class="settings-desc">${status.detail}</p>` : null}
+          ${
+            devMode.value && mode === 'api' && provider
+              ? html`<${ApiRoot} vendor=${vendor} provider=${provider} value=${settings?.api?.baseUrl ?? ''} />`
+              : null
+          }
           ${
             served.comingSoon
               ? html`<p class="settings-desc">${vendor.label} sells a subscription, but Foundry cannot drive it yet. Use API mode for now.</p>`
