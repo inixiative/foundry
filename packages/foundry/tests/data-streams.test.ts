@@ -630,3 +630,16 @@ test('losing Kingdom authorization closes sockets on the next append or open and
   });
   expect(outcome).toBe('refused');
 });
+
+test('a thread may choose any model its subscription worker runs, and nothing else', async () => {
+  const f = fixture();
+  const launch = (model: string) => f.post('/api/threads/main/launch', { model }, 'PATCH');
+  const refused = await launch('gpt-6-astra');
+  expect(refused.status).toBe(400);
+  expect(((await refused.json()) as { error: string }).error).toContain(
+    'is not a claude-code model',
+  );
+  const chosen = await launch('fable');
+  expect(chosen.status).toBe(200);
+  expect(await chosen.json()).toMatchObject({ provider: 'claude-code', modelOverride: 'fable' });
+});

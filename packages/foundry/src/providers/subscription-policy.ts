@@ -71,6 +71,20 @@ export function assertMainThreadLabs(config: FoundryConfig): void {
   }
 }
 
+/**
+ * Why `modelId` cannot run on this subscription worker, or undefined when it can. The default is
+ * only the default: an executor, a project or a thread may choose any model the worker's harness
+ * runs (its registry entry), and nothing else, so a choice never reaches another provider.
+ */
+export function workerModelRequirement(
+  worker: SubscriptionWorker,
+  modelId: string,
+): string | undefined {
+  if (registryModel(worker, modelId)) return undefined;
+  const known = MODEL_REGISTRY[worker]?.models.map((entry) => entry.id) ?? [];
+  return `${modelId} is not a ${worker} model; choose one of ${known.join(', ')}`;
+}
+
 export interface SubscriptionPolicy {
   model: string;
   expectedObservedModel?: string;
@@ -243,7 +257,6 @@ export function resolveSubscriptionPolicy(
         }`,
       );
     if (
-      view.defaults.model !== config.defaults.model ||
       view.defaults.nativeAuthenticationId !== config.defaults.nativeAuthenticationId ||
       view.defaults.kingdomOwnerKey ||
       view.defaults.classifierProvider !== SUBSCRIPTION_DECISIONS ||
@@ -253,17 +266,26 @@ export function resolveSubscriptionPolicy(
         'Subscription-only defaults require the configured worker and subscription decision model',
       );
     model.parse(view.defaults.model);
+    // A main-thread model other than the global default must be one the worker runs.
+    const workerModel = (chosen: string) => {
+      const refusal =
+        chosen === config.defaults.model
+          ? undefined
+          : workerModelRequirement(workerProvider, chosen);
+      if (refusal) throw Error(`Subscription-only mode: ${refusal}`);
+    };
+    workerModel(view.defaults.model);
     for (const agent of Object.values(view.agents)) {
       if (!agent.enabled) continue;
       const central = agent.kind === 'executor';
       if (
         (agent.provider ?? view.defaults.provider) !==
           (central ? workerProvider : SUBSCRIPTION_DECISIONS) ||
-        (agent.model ?? (central ? view.defaults.model : undefined)) !==
-          (central ? config.defaults.model : policy.model) ||
+        (!central && (agent.model ?? undefined) !== policy.model) ||
         (!central && agent.tools === true)
       )
         throw Error('Subscription-only agent provider, model or tool override refused');
+      if (central) workerModel(agent.model ?? view.defaults.model);
       if (
         !central &&
         ((agent.thinking !== undefined && agent.thinking !== 'none') ||

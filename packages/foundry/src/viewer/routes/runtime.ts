@@ -10,8 +10,9 @@ import type { ThreadContextTracker } from '../../archives/thread-context';
 import type { FeedbackService } from '../../feedback/service';
 import { byAttention, feedbackView } from '../../feedback/view';
 import { listWorktrees } from '../../git';
-import { MODEL_REGISTRY, registryForViewer } from '../../models/registry';
+import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
+import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
   EFFORT_LEVELS,
@@ -535,6 +536,12 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     if ('model' in body) patch.model = body.model as string | null;
     if ('effort' in body) patch.effort = body.effort as EffortLevel | null;
     if ('mcpServers' in body) patch.mcpServers = body.mcpServers as ThreadLaunchPatch['mcpServers'];
+    // A thread's model is the same choice as an executor's: any model its subscription worker runs.
+    const { provider } = launchView(thread);
+    if (typeof patch.model === 'string' && subscriptionWorker(provider)) {
+      const refusal = workerModelRequirement(provider, patch.model);
+      if (refusal) return c.json({ error: refusal }, 400);
+    }
     try {
       threadLaunch.update(thread.id, patch);
     } catch (error) {

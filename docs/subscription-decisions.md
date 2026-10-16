@@ -61,7 +61,9 @@ A Codex worker is checked with `codex login status` and must be a ChatGPT login;
 
 ## Existing settings
 
-Subscription mode runs every enabled non-executor agent on the decision profile. An agent saved with another provider or model (for example a classifier on `gemini` or a Librarian on `claude-code`) is routed to `subscription-decisions` at startup; the startup log lists each routed agent. The saved settings file is not rewritten. Settings that cannot be enforced are refused rather than routed: a worker that is not a subscription harness, an executor on another provider or model, decision agents with tools, thinking, cache or non-zero temperature overrides, and `learning.review` provider/model overrides.
+Subscription mode runs every enabled non-executor agent on the decision profile. An agent saved with another provider or model (for example a classifier on `gemini` or a Librarian on `claude-code`) is routed to `subscription-decisions` at startup; the startup log lists each routed agent. The saved settings file is not rewritten. Settings that cannot be enforced are refused rather than routed: a worker that is not a subscription harness, an executor on another provider, a main-thread model the worker does not run, decision agents with tools, thinking, cache or non-zero temperature overrides, and `learning.review` provider/model overrides.
+
+The default model is only the default. An executor (`agents[id].model`), a project (`projects[id].defaults.model`) and a thread (the launch settings a host or the viewer chooses) may each run any model the subscription worker runs, as its registry entry lists them (`workerModelRequirement`); a model of another provider is refused. Decision roles are different: every decision runs on one shared primed host per runtime, which launches with the decision model and refuses a call naming any other, so a decision agent's own model is routed to the decision model rather than honoured.
 
 ## Sharing the user's own logins
 

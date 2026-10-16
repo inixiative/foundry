@@ -487,6 +487,32 @@ test('claude-in-session runs Claude decisions with Wardens held in the Claude Co
   }
 });
 
+test('the default model is only the default: executors, projects and threads choose any worker model', () => {
+  const f = fixture();
+  // Executors pinned by an earlier setup keep their choice when the default changes.
+  for (const agent of Object.values(f.c.agents))
+    if (agent.kind === 'executor') agent.model = 'fable';
+  f.c.defaults.model = 'opus';
+  f.c.projects.project.defaults = { model: 'sonnet' };
+  expect(() => validateConfig(f.c)).not.toThrow();
+  const view = resolveProjectView(resolveSubscriptionPolicy(f.c)!.config, 'project')!.config;
+  expect(view.defaults.model).toBe('sonnet');
+});
+
+for (const [where, set] of [
+  ['executor', (c: ReturnType<typeof fixture>['c']) => (c.agents.artificer!.model = 'gpt-6-astra')],
+  [
+    'project default',
+    (c: ReturnType<typeof fixture>['c']) =>
+      (c.projects.project.defaults = { model: 'gpt-6-astra' }),
+  ],
+] as const)
+  test(`a ${where} model the worker does not run is refused`, () => {
+    const f = fixture();
+    set(f.c);
+    expect(() => validateConfig(f.c)).toThrow('gpt-6-astra is not a claude-code model');
+  });
+
 test('a Codex executor must be the Codex worker in subscription mode', () => {
   const f = codexMain();
   f.c.agents.artificer!.provider = 'claude-code';
