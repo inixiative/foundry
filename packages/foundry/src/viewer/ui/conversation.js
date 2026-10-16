@@ -22,13 +22,12 @@ import {
 } from './image-attachments.js';
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
-import { liveExecutionStatus, liveThreadStatus, liveWorkLabel } from './live-state.js';
+import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import {
   activeThreadId,
   allThreads,
   forkThread,
   historyPaging,
-  inflight,
   layerColor,
   loadOlderMessages,
   loadTraceDetail,
@@ -37,15 +36,21 @@ import {
   resolvePrompt,
   revertThread,
   selectedSpanId,
-  sending,
   sendMessage,
   showToast,
   stopTurn,
   threadContextTokens,
   threadData,
+  threadUsage,
   tokenUsage,
 } from './store.js';
-import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
+import {
+  isUnnamed,
+  nameSourceLabel,
+  ReferenceChips,
+  threadName,
+  threadPlace,
+} from './thread-labels.js';
 import {
   dictationSupported,
   speakReplies,
@@ -55,7 +60,7 @@ import {
 } from './voice.js';
 
 // ---------------------------------------------------------------------------
-// Token bar — session usage + budget at top of conversation
+// Token bar — this thread's recorded usage, plus the Foundry session budget
 // ---------------------------------------------------------------------------
 
 function fmtNum(n) {
@@ -66,78 +71,50 @@ function fmtNum(n) {
 
 function TokenBar() {
   const usage = tokenUsage.value;
-  if (!usage) return null;
+  const used = threadUsage(usage, activeThreadId.value);
+  // An empty thread has nothing to account for; neither does one with no recorded calls.
+  if (!used || messages.value.length === 0) return null;
 
-  const {
-    usedTokens,
-    totalInput,
-    totalOutput,
-    usedCost,
-    totalCalls,
-    percentage,
-    warning,
-    exceeded,
-    limitCost,
-    contextWindow,
-  } = usage;
-  const contextTokens = threadContextTokens.value;
-  const contextPct = contextWindow ? contextTokens / contextWindow : null;
-  if (usedTokens === 0 && totalCalls === 0 && !usage.usageUnavailable) return null;
-
+  const { percentage, warning, exceeded, limitCost, usedCost } = usage;
   const budgetPct = Math.min(percentage * 100, 100);
   const budgetColor = exceeded ? '#f87171' : warning ? '#facc15' : '#4ade80';
   const barClass = exceeded ? 'token-bar--exceeded' : warning ? 'token-bar--warning' : '';
-
-  // Context window fill
-  const ctxPct = contextPct != null ? Math.min(contextPct * 100, 100) : null;
-  const ctxColor = ctxPct > 90 ? '#f87171' : ctxPct > 70 ? '#facc15' : '#6c9eff';
+  const cost =
+    used.cost > 0
+      ? `$${used.cost.toFixed(4)}`
+      : usage.subscription
+        ? 'Included in subscription'
+        : 'Not reported';
+  const breakdown = `${fmtNum(used.input)} in · ${fmtNum(used.output)} out · ${fmtNum(used.cacheRead + used.cacheWrite)} cache (${fmtNum(used.cacheRead)} read, ${fmtNum(used.cacheWrite)} write)`;
 
   return html`
-    <div class="token-bar ${barClass}">
+    <div class="token-bar ${barClass}" aria-label="This thread's usage">
       <div class="token-bar-stats">
-        <span class="token-stat">
-          <span class="token-stat-value">${fmtNum(totalInput)}</span>
-          <span class="token-stat-label">in</span>
-        </span>
-        <span class="token-stat-sep">/</span>
-        <span class="token-stat">
-          <span class="token-stat-value">${fmtNum(totalOutput)}</span>
-          <span class="token-stat-label">out</span>
+        <span class="token-bar-scope">This thread</span>
+        <span class="token-stat" title=${breakdown}>
+          <span class="token-stat-value">${fmtNum(used.total)}</span>
+          <span class="token-stat-label">tokens incl. cache</span>
         </span>
         <span class="token-stat-divider"></span>
         <span class="token-stat">
-          <span class="token-stat-value">${fmtNum(usedTokens)}</span>
-          <span class="token-stat-label">${usage.usageUnavailable ? 'known tokens' : 'tokens'}</span>
+          <span class="token-stat-value">${cost}</span>
+          <span class="token-stat-label">${used.cost > 0 ? 'cost' : ''}</span>
         </span>
         <span class="token-stat-divider"></span>
         <span class="token-stat">
-          <span class="token-stat-value">${usage.costUnavailable ? 'Unavailable' : `$${usedCost.toFixed(4)}`}</span>
-          <span class="token-stat-label">cost</span>
-        </span>
-        <span class="token-stat-divider"></span>
-        <span class="token-stat">
-          <span class="token-stat-value">${totalCalls}</span>
+          <span class="token-stat-value">${used.calls}</span>
           <span class="token-stat-label">calls</span>
         </span>
       </div>
       <div class="token-bar-meters">
+        <div class="token-bar-meter" title="The executor does not report its context fill">
+          <span class="token-bar-meter-label">ctx</span>
+          <span class="token-bar-pct">n/a</span>
+        </div>
         ${
-          ctxPct != null
+          limitCost
             ? html`
-          <div class="token-bar-meter" title="${fmtNum(contextTokens)} / ${fmtNum(contextWindow)} context window">
-            <span class="token-bar-meter-label" style="color: ${ctxColor}">ctx</span>
-            <div class="token-bar-track">
-              <div class="token-bar-fill" style="width: ${ctxPct}%; background: ${ctxColor}"></div>
-            </div>
-            <span class="token-bar-pct" style="color: ${ctxColor}">${ctxPct.toFixed(0)}%</span>
-          </div>
-        `
-            : null
-        }
-        ${
-          limitCost && !usage.costUnavailable
-            ? html`
-          <div class="token-bar-meter" title=${usage.costUnavailable ? 'Cost unavailable; budget shows known subtotal only' : `$${usedCost.toFixed(4)} / $${limitCost.toFixed(2)} budget`}>
+          <div class="token-bar-meter" title=${`Foundry session budget: $${usedCost.toFixed(4)} / $${limitCost.toFixed(2)}`}>
             <span class="token-bar-meter-label" style="color: ${budgetColor}">$$$</span>
             <div class="token-bar-track">
               <div class="token-bar-fill" style="width: ${budgetPct}%; background: ${budgetColor}"></div>
@@ -216,7 +193,7 @@ function ContextBar() {
     <div class="context-bar">
       <div class="context-bar-head">
         <span class="context-bar-status context-bar-status--${status}" title=${status}></span>
-        <span class="context-bar-title" data-name-source=${titleSource || ''}
+        <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
         ${place.branch ? html`<span class="context-bar-chip context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${place.branch}</span>` : null}
@@ -623,6 +600,51 @@ function LayerChips({ layers }) {
   `;
 }
 
+function ActivityRow({ a }) {
+  if (a.kind === 'thought')
+    return html`<div class="live-work-thought"><small>Thinking</small><br/>${a.text}</div>`;
+  if (a.kind === 'text')
+    return html`<div class="live-work-progress"><small>${a.phase === 'final_answer' ? 'Final answer preview' : 'Live output'}</small><br/>${a.text}</div>`;
+  return html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`;
+}
+
+/** One status line for the turn's actual stage, then its activity. Once the turn has finished, the
+ * activity folds into a closed work log without the text the answer already shows. */
+function LiveWork({ msg }) {
+  if (!msg.live)
+    return msg.streaming
+      ? html`<section class="live-work" aria-label="Work activity"><div class="live-work-status">Sending…</div></section>`
+      : null;
+  const status = liveExecutionStatus(msg);
+  const finished = status !== 'queued' && status !== 'running';
+  const label = liveWorkLabel(msg);
+  if (finished) {
+    const log = workLog(msg);
+    // The outcome already shows as the message; only a failed or unconfirmed outcome is restated.
+    const outcome =
+      label === 'Completed' ? null : html`<div class="live-work-status">${label}</div>`;
+    if (!log.rows.length && !outcome) return null;
+    return html`<section class="live-work live-work--done" aria-label="Work activity">
+      ${outcome}
+      ${
+        log.rows.length
+          ? html`<details class="live-work-log">
+        <summary>Work log${log.summary ? ` · ${log.summary}` : ''}</summary>
+        <div class="live-work-activity">${log.rows.map((a) => html`<${ActivityRow} key=${a.id} a=${a} />`)}</div>
+        ${msg.live.truncated ? html`<div>Partial activity window; complete recorded evidence is in inspection.</div>` : null}
+      </details>`
+          : null
+      }
+    </section>`;
+  }
+  return html`<section class="live-work" aria-label="Work activity">
+    <div class="live-work-status">${label} <button class="live-work-stop" title="Stop this turn"
+      onClick=${() => stopTurn(msg.live.threadId, msg.live.messageId)}>Stop</button></div>
+    <div class="live-work-activity">${msg.live.activity.map((a) => html`<${ActivityRow} key=${a.id} a=${a} />`)}</div>
+    ${msg.live.truncated ? html`<div>Partial activity window; complete recorded evidence is in inspection.</div>` : null}
+  </section>`;
+}
+
 function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = !!msg.traceId;
   const stages = msg.trace?.stages || [];
@@ -693,28 +715,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
       <${LayerChips} layers=${injectedLayers} />
 
-      ${
-        msg.live
-          ? html`<section class="live-work" aria-label="Work activity">
-        <div class="live-work-status">${liveWorkLabel(msg)}${
-          ['queued', 'running'].includes(liveExecutionStatus(msg))
-            ? html` <button class="live-work-stop" title="Stop this turn"
-                onClick=${() => stopTurn(msg.live.threadId, msg.live.messageId)}>Stop</button>`
-            : null
-        }</div>
-        ${!msg.live.activity.length ? html`<div>Public native detail ${msg.live.nativeDetail === 'unavailable' ? 'unavailable' : 'not yet received'}.</div>` : null}
-        ${msg.live.native ? html`<div>Observed native ${msg.live.native.outcome} · RPC ${msg.live.native.rpc}. Cleanup is separate.</div>` : null}
-        <div class="live-work-activity">${msg.live.activity.map((a) =>
-          a.kind === 'thought'
-            ? html`<div class="live-work-thought"><small>Thinking</small><br/>${a.text}</div>`
-            : a.kind === 'text'
-              ? html`<div class="live-work-progress">${a.phase === 'final_answer' ? html`<small>Final answer preview</small><br/>` : a.phase === 'unavailable' ? html`<small>Public text · phase unavailable</small><br/>` : null}${a.text}</div>`
-              : html`<div class="live-work-tool">${a.toolName} · ${a.state}</div>`,
-        )}</div>
-        ${msg.live.truncated ? html`<div>Partial activity window; complete recorded evidence is in inspection.</div>` : null}
-      </section>`
-          : null
-      }
+      <${LiveWork} msg=${msg} />
 
       <div class="chat-msg-content">${msg.content}${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
       <${BrowserStorageWarning} msg=${msg} />
@@ -953,6 +954,8 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
     return html`<div class="chat-history-pager" role="status">Older history is not available from this server; showing the rows it returned (${count}).</div>`;
   if (paging.offline)
     return html`<div class="chat-history-pager" role="status">Server history unavailable; showing this browser's saved copy (${count} rows). Older records were not fetched.</div>`;
+  // An empty thread has no conversation to mark the start of.
+  if (count === 0 && !paging.hasMore && !paging.error) return null;
   return html`
     <div class="chat-history-pager" role="status">
       ${
@@ -962,7 +965,7 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
           ${paging.loading ? 'Loading older messages…' : `Load older messages (${count} loaded)`}
         </button>
       `
-          : html`<span class="chat-history-oldest">Oldest record reached (${count} messages)</span>`
+          : html`<span class="chat-history-oldest">Start of conversation${paging.pages > 1 ? ` (${count} messages)` : ''}</span>`
       }
       ${paging.error ? html`<span class="chat-history-error">${paging.error}</span>` : null}
     </div>
@@ -1038,15 +1041,6 @@ export function Conversation({ onTraceSelect }) {
               : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i}
                   onTraceClick=${handleTraceClick} />`,
         )}
-        ${
-          sending.value
-            ? html`
-          <div class="chat-msg chat-agent chat-thinking">
-            <div class="chat-msg-content">Processing${inflight.value > 1 ? ` (${inflight.value} in flight)` : ''}...</div>
-          </div>
-        `
-            : null
-        }
       </div>
       <${PromptList} />
       <${ChatInput} />

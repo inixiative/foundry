@@ -28,8 +28,12 @@ export function liveWorkLabel(message) {
   let label;
   if (message.connectionStatus === 'unconfirmed' && !hasFullTerminal(message))
     label = 'Connection interrupted · outcome unconfirmed';
-  else if (status === 'queued') label = 'Queued · not sent yet';
-  else if (status === 'running') label = 'Running';
+  else if (status === 'queued') label = 'Queued';
+  else if (status === 'running')
+    label =
+      message.live?.activity?.length || message.live?.content || message.content
+        ? 'Running'
+        : 'Waiting for the model…';
   else if (status === 'failed')
     label =
       meta?.nativeOutcome === 'failed'
@@ -148,4 +152,21 @@ export function mergeLiveSnapshot(messages, snapshot) {
       ? { ...m, streaming: false, connectionStatus: 'unconfirmed' }
       : m,
   );
+}
+
+const normalize = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+/** A finished turn's work log: its activity minus text rows the answer already shows, and a summary
+ * such as "Bash ×2 · Read ×1". Live (unfinished) turns keep every row. */
+export function workLog(message) {
+  const activity = message.live?.activity ?? [];
+  const answer = normalize(message.content);
+  const rows = activity.filter(
+    (a) => a.kind !== 'text' || (!!normalize(a.text) && !answer.includes(normalize(a.text))),
+  );
+  const tools = new Map();
+  for (const a of rows)
+    if (a.kind === 'tool') tools.set(a.toolName, (tools.get(a.toolName) ?? 0) + 1);
+  const summary = [...tools].map(([name, n]) => `${name} ×${n}`);
+  return { rows, summary: summary.join(' · ') };
 }

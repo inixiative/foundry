@@ -165,9 +165,11 @@ const result = await harness.dispatch("Fix the login bug");
 
 The viewer is a Preact-based dashboard served by Hono. No build step — vanilla JS with htm tagged templates.
 
-- **Left panel**: thread tree (with prompt badges), layers, agents, live event stream
+- **Header**: Workspace / Settings / Analytics, and the selected project's name, centered
+- **Left column**: navigation. Pinned Global and Forge Master, the projects, and below them the threads of the selected scope (with prompt badges); the two lists scroll independently
 - **Center panel**: conversation chat, pending prompt cards with approve/reject buttons
 - **Right panel**: trace inspector, span details, layer detail, intervention corrections
+- **Settings**: besides configuration, the Layers, Agents and Activity (runtime events) of the selected thread
 
 Keyboard shortcuts: `1-3` switch panels, `?` help, `s` settings, `a` analytics.
 

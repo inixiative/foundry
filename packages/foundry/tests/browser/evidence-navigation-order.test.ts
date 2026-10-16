@@ -152,7 +152,7 @@ test('late or superseded historical detail never publishes, re-opens or toasts; 
     await store(`s => { window.__p = s.openTurnDetail("a", "a-one"); }`);
     await bounded(h.requested.promise, 'held a-one for dismissal', 5000);
     await store(`s => s.dismissTraceSelection()`);
-    await page.locator('.layer-item').filter({ hasText: 'architecture' }).first().click(); // operator moved on to a layer
+    await store(`s => s.inspectLayer("architecture")`); // operator moved on to a layer (a layer chip in the chat)
     await page.locator('.detail-drawer .expert-understanding').waitFor();
     h.gate.resolve();
     await store(`async s => { await window.__p; }`);

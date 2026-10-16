@@ -22,6 +22,7 @@ import {
   route,
   settingsPath,
 } from './route.js';
+import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
 import { projects, showToast } from './store.js';
 
@@ -846,6 +847,9 @@ function FoundrySection({ section, config, onFocusChange }) {
   if (section === 'integrations') return html`<${AccessSettings} onSaved=${loadSettings} />`;
   if (section === 'archive') return html`<${ArchiveSettings} />`;
   if (section === 'tunnel') return html`<${TunnelEditor} />`;
+  if (section === 'layers') return html`<${LayersSection} />`;
+  if (section === 'agents') return html`<${AgentsSection} />`;
+  if (section === 'activity') return html`<${ActivitySection} />`;
   if (section === 'devices')
     return html`<section class="settings-card"><${LocalDevicePanel} projectIds=${JSON.stringify(projects.value.map((p) => p.id))} /></section>`;
   return null;

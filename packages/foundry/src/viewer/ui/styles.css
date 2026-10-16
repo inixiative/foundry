@@ -50,13 +50,45 @@ body {
 }
 
 .header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 6px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   height: 32px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* The selected scope, centered: a project's name reads as the page's subject. */
+.header-scope {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 40vw;
+}
+.header-scope-kind {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dimmer);
+}
+.header-scope-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- Logo mark ---- */
@@ -86,8 +118,9 @@ body {
 .header-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  margin-left: auto;
+  min-width: 0;
   font-size: 10px;
 }
 
@@ -105,36 +138,34 @@ body {
 }
 
 .panels--proj-open.panels--detail-open {
-  grid-template-columns: 180px 220px 1fr 300px;
+  grid-template-columns: 260px 1fr 300px;
 }
 
 .panels--proj-closed.panels--detail-open {
-  grid-template-columns: 32px 220px 1fr 300px;
+  grid-template-columns: 32px 1fr 300px;
 }
 
 .panels--proj-open.panels--detail-closed {
-  grid-template-columns: 180px 220px 1fr 32px;
+  grid-template-columns: 260px 1fr 32px;
 }
 
 .panels--proj-closed.panels--detail-closed {
-  grid-template-columns: 32px 220px 1fr 32px;
+  grid-template-columns: 32px 1fr 32px;
 }
 
-/* Forge Master has no thread list or thread detail: those columns fold away. */
+/* Forge Master has no thread detail: that column folds away. */
 .panels--forge.panels--proj-open {
-  grid-template-columns: 180px 0 1fr 0;
+  grid-template-columns: 260px 1fr 0;
 }
 .panels--forge.panels--proj-closed {
-  grid-template-columns: 32px 0 1fr 0;
+  grid-template-columns: 32px 1fr 0;
 }
-.panels--forge > .panel-left,
 .panels--forge > .panel-right {
   visibility: hidden;
   border: 0;
 }
 
 .panel-projects,
-.panel-left,
 .panel-center,
 .panel-right {
   min-width: 0;
@@ -149,10 +180,6 @@ body {
   background: var(--bg);
 }
 
-.panel-left {
-  overflow-y: hidden; /* sidebar manages its own scroll regions */
-}
-
 .panel-center {
   overflow-y: hidden; /* conversation component manages its own scroll */
   display: flex;
@@ -163,7 +190,7 @@ body {
   border-right: none;
 }
 
-.panel-left:focus-within,
+.panel-projects:focus-within,
 .panel-center:focus-within,
 .panel-right:focus-within {
   box-shadow: inset 0 0 0 1px var(--border-focus);
@@ -245,18 +272,51 @@ body {
 
 /* ---- Sidebar ---- */
 
-.sidebar {
+/* ---- Navigation column: pinned scopes, then projects and threads, each half scrolling on its own ---- */
+
+.nav-column {
+  min-height: 0;
+}
+.nav-pinned {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.nav-projects {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.nav-projects--collapsed {
+  flex: 0 0 auto;
+}
+.nav-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.nav-threads {
+  flex: 1 1 0;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.thread-list {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
-
-.sidebar-threads {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--border);
+.tree-label--unnamed,
+.context-bar-title--unnamed,
+.detail-name--unnamed {
+  color: var(--text-dimmer);
+  font-style: italic;
 }
 
 .sidebar-header {
@@ -315,41 +375,6 @@ body {
   padding: 0 0 4px;
 }
 
-.sidebar-mid {
-  border-bottom: 1px solid var(--border);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-bottom {
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-section {
-  display: flex;
-  flex-direction: column;
-  min-height: 0; /* allow flex children to shrink */
-}
-
-.sidebar-section-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 4px;
-  cursor: pointer;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
-}
-
-.sidebar-section-header:hover {
-  background: var(--surface2);
-}
-
 .sidebar-caret {
   font-size: 8px;
   color: var(--text-dimmer);
@@ -371,12 +396,6 @@ body {
   padding: 0 5px;
   border-radius: 3px;
   margin-left: auto;
-}
-
-.sidebar-section-body {
-  padding: 0 0 4px;
-  overflow-y: auto;
-  max-height: calc(10 * 26px); /* ~10 items at 26px each */
 }
 
 .sidebar-empty {
@@ -586,11 +605,8 @@ body {
   }
 }
 
-/* ---- Layer list (in tree) ---- */
+/* ---- Layer list (Settings > Layers) ---- */
 
-.scrollable-list {
-  /* scroll handled by .sidebar-section-body */
-}
 .layer-list {
   padding: 0 6px;
 }
@@ -744,22 +760,6 @@ body {
 }
 .def-field pre {
   margin: 0;
-}
-
-/* Small [+] button variant */
-.sidebar-add-btn.sm {
-  width: 18px;
-  height: 18px;
-  font-size: 11px;
-}
-
-/* Section header with toggle + add button side by side */
-.sidebar-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  cursor: pointer;
 }
 
 /* Creation form */
@@ -977,6 +977,14 @@ body {
   background: var(--border);
   margin: 0 6px;
 }
+.token-bar-scope {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dimmer);
+}
+
 .token-bar-meters {
   display: flex;
   flex-direction: column;
@@ -2755,11 +2763,6 @@ body {
 .page-nav a[aria-current="page"] {
   color: var(--text);
   background: var(--accent-dim);
-}
-.page-nav-scope {
-  color: var(--text-dimmer);
-  font-size: 10px;
-  margin-left: 4px;
 }
 
 .settings-page {
@@ -4982,7 +4985,6 @@ body {
     border: 0;
   }
   .panels[data-compact-panel="projects"] > .panel-projects,
-  .panels[data-compact-panel="threads"] > .panel-left,
   .panels[data-compact-panel="detail"] > .panel-right {
     display: block;
   }
@@ -5103,6 +5105,18 @@ body {
 .live-work-thought {
   opacity: 0.7;
   font-style: italic;
+}
+.live-work--done {
+  padding: 6px 12px;
+  border-left-color: var(--border);
+}
+.live-work-log > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.live-work-log[open] > summary {
+  margin-bottom: 6px;
 }
 .live-work-stop {
   margin-left: 8px;
@@ -5724,7 +5738,7 @@ a.thread-ref:hover {
 
 @media (max-width: 600px) {
   .header-title,
-  .page-nav-scope {
+  .header-scope {
     display: none;
   }
   .page-nav {
@@ -5919,4 +5933,38 @@ a.thread-ref:hover {
   color: var(--error);
   font-size: 12px;
   margin: 8px 0 0;
+}
+
+/* ---- Settings: Layers / Agents / Activity (runtime-panels.js) ---- */
+.runtime-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.runtime-intro .settings-desc {
+  flex: 1;
+}
+.runtime-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.runtime-list > button {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  width: 100%;
+}
+.runtime-list > button.selected {
+  background: var(--accent-dim);
+}
+.runtime-detail {
+  margin-top: 12px;
 }

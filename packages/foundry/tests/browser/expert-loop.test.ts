@@ -102,8 +102,15 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     const text = async (loc: any) => ((await loc.count()) ? await loc.first().innerText() : '');
     const count = (p: any, sel: string) => p.locator(sel).count();
     // Wait past the loading placeholder (same class) and for the layer's own cache section to arrive.
+    // A layer opens in the drawer from the chat or the graph (store.inspectLayer); the layer list is a Settings section.
+    const inspectLayer = (p: any, id: string) =>
+      p.evaluate(
+        async (layer: string) =>
+          (await import(`${location.origin}/ui/store.js`)).inspectLayer(layer),
+        id,
+      );
     const openLayer = async (p: any, id: string) => {
-      await p.locator('.layer-item').filter({ hasText: id }).first().click();
+      await inspectLayer(p, id);
       await drawer(p).locator(".expert-understanding:not([data-state='loading'])").waitFor();
       await drawer(p)
         .locator('.detail-section-title')
@@ -158,7 +165,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     attach(page, '1440');
     // ---- before work: each expert's configured instructions, domain knowledge, empty owned understanding ----
     await page.goto(`${origin}/#project=P&thread=a`);
-    await page.locator('.layer-item').filter({ hasText: 'architecture' }).first().waitFor();
+    await page.locator('.context-bar-title').waitFor();
     const before: Record<string, any> = {};
     for (const d of ['architecture', 'testing'] as const) {
       await openLayer(page, d);
@@ -481,8 +488,8 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
         .first();
       if (await t.count()) await t.click();
     };
-    await tab(/threads/i);
-    await m.locator('.layer-item').filter({ hasText: 'architecture' }).first().click();
+    await m.locator('.context-bar-title').waitFor();
+    await inspectLayer(m, 'architecture');
     await tab(/inspect/i);
     await drawer(m).locator('.expert-understanding').waitFor();
     const mLayer = {

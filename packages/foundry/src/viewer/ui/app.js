@@ -1,6 +1,6 @@
 /**
  * Foundry Viewer — main app shell.
- * Workspace: projects | threads | conversation | detail drawer.
+ * Workspace: navigation (pinned scopes, projects, the scope's threads) | conversation | detail drawer.
  * Settings and analytics are pages beside it (ui/route.js).
  */
 
@@ -29,6 +29,8 @@ import {
   executeAction,
   forgeMasterOpen,
   init,
+  inspectLayer,
+  inspectTarget,
   loadTraces,
   projectSidebarOpen,
   projects,
@@ -39,7 +41,6 @@ import {
   toast,
   toggleGraphPanel,
 } from './store.js';
-import { Sidebar } from './thread-tree.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
 // ---------------------------------------------------------------------------
@@ -49,15 +50,30 @@ import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 function PageNav() {
   const { page } = route.value;
   const scope = scopeProjectId();
-  const scopeLabel = scope ? projects.value.find((p) => p.id === scope)?.label || scope : 'Foundry';
   const link = (href, label, current) =>
     html`<a href=${href} aria-current=${current ? 'page' : undefined} onClick=${onLink}>${label}</a>`;
   return html`<nav class="page-nav" aria-label="Pages">
     ${link('/', 'Workspace', page === 'workspace')}
     ${link(settingsPath(scope), 'Settings', page === 'settings')}
     ${link(analyticsPath(scope), 'Analytics', page === 'analytics')}
-    ${page === 'workspace' ? html`<span class="page-nav-scope">${scopeLabel}</span>` : null}
   </nav>`;
+}
+
+/** The selected scope, centered in the header: a project's name, else Global / Forge Master (or Foundry off the workspace). */
+function HeaderScope() {
+  const scope = scopeProjectId();
+  const workspace = route.value.page === 'workspace';
+  const name = scope
+    ? projects.value.find((p) => p.id === scope)?.label || scope
+    : !workspace
+      ? 'Foundry'
+      : forgeMasterOpen.value
+        ? 'Forge Master'
+        : 'Global';
+  return html`<div class="header-scope" title=${scope ? `Project: ${name}` : name}>
+    ${scope ? html`<span class="header-scope-kind">Project</span>` : null}
+    <span class="header-scope-name">${name}</span>
+  </div>`;
 }
 
 function Header() {
@@ -66,9 +82,12 @@ function Header() {
 
   return html`
     <div class="header">
-      <span class="header-logo"><span class="logo-bracket">${'<'}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${'>'}</span></span>
-      <span class="header-title">foundry</span>
-      <${PageNav} />
+      <div class="header-left">
+        <span class="header-logo"><span class="logo-bracket">${'<'}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${'>'}</span></span>
+        <span class="header-title">foundry</span>
+        <${PageNav} />
+      </div>
+      <${HeaderScope} />
       <div class="header-right">
         ${route.value.page === 'workspace' ? html`<${GlossButton} projectId=${scopeProjectId()} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
@@ -172,66 +191,18 @@ function Toast() {
 
 function App() {
   const [selectedSpan, setSelectedSpan] = useState(null);
-  const [selectedLayer, setSelectedLayer] = useState(null);
-  const [selectedAgent, setSelectedAgent] = useState(null);
-  // "layer" | "agent" | null — when set, detail drawer shows creation form
-  const [creating, setCreating] = useState(null);
-
-  const clearSelection = () => {
-    selectedEvent.value = null;
-    setSelectedSpan(null);
-    setSelectedLayer(null);
-    setSelectedAgent(null);
-    setCreating(null);
-  };
 
   const handleSpanSelect = (span) => {
-    clearSelection();
+    selectedEvent.value = null;
+    inspectTarget.value = null;
     setSelectedSpan(span);
     detailDrawerOpen.value = true;
     compactPanel.value = 'detail';
   };
 
-  const handleLayerClick = (layerId) => {
-    clearSelection();
-    dismissTraceSelection();
-    selectedSpanId.value = null;
-    setSelectedLayer(layerId);
-    detailDrawerOpen.value = true;
-    compactPanel.value = 'detail';
-  };
-
-  const handleAgentClick = (agentId) => {
-    clearSelection();
-    dismissTraceSelection();
-    selectedSpanId.value = null;
-    setSelectedAgent(agentId);
-    detailDrawerOpen.value = true;
-    compactPanel.value = 'detail';
-  };
-
-  const handleCreateLayer = () => {
-    clearSelection();
-    setCreating('layer');
-    detailDrawerOpen.value = true;
-    compactPanel.value = 'detail';
-  };
-
-  const handleCreateAgent = () => {
-    clearSelection();
-    setCreating('agent');
-    detailDrawerOpen.value = true;
-    compactPanel.value = 'detail';
-  };
-
-  const handleCreated = () => {
-    setCreating(null);
-  };
-
-  // Register hotkey actions
   useEffect(() => {
     registerDefaults({
-      focusTree: () => document.querySelector('.sidebar')?.focus(),
+      focusTree: () => document.querySelector('.panel-projects')?.focus(),
       focusConversation: () => document.querySelector('.conversation')?.focus(),
       focusDetail: () => document.querySelector('.detail-drawer')?.focus(),
       nextItem: () => {
@@ -244,7 +215,9 @@ function App() {
         /* TODO: expand selected */
       },
       escape: () => {
-        clearSelection();
+        selectedEvent.value = null;
+        inspectTarget.value = null;
+        setSelectedSpan(null);
         selectedSpanId.value = null;
       },
       togglePause: () => executeAction('thread:pause'),
@@ -302,19 +275,9 @@ function App() {
       <${PanelNavigation} />
 
       <div class=${panelClass} data-compact-panel=${compactPanel.value}>
-        <!-- Far left: Project sidebar (collapsible) -->
+        <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
         <div class="panel-projects" id="workspace-projects" tabIndex="0">
           <${ProjectSidebar} />
-        </div>
-
-        <!-- Left: Thread/Layer/Agent sidebar -->
-        <div class="panel-left" id="workspace-threads" tabIndex="0">
-          <${Sidebar}
-            onLayerClick=${handleLayerClick}
-            onAgentClick=${handleAgentClick}
-            onCreateLayer=${handleCreateLayer}
-            onCreateAgent=${handleCreateAgent}
-          />
         </div>
 
         <!-- Center: Conversation / trace timeline, or the graph panel -->
@@ -326,10 +289,10 @@ function App() {
             <${CenterViews} />
             ${
               activePanel.value === 'graph'
-                ? html`<${GraphPanel} onLayerClick=${handleLayerClick} />`
+                ? html`<${GraphPanel} onLayerClick=${inspectLayer} />`
                 : activePanel.value === 'feedback'
                   ? html`<${FeedbackPanel} />`
-                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${handleLayerClick} />`
+                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }
@@ -339,10 +302,7 @@ function App() {
         <div class="panel-right" id="workspace-detail" tabIndex="0">
           <${DetailDrawer}
             selectedSpan=${selectedSpan}
-            selectedLayer=${selectedLayer}
-            selectedAgent=${selectedAgent}
-            creating=${creating}
-            onCreated=${handleCreated}
+            selectedLayer=${inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null}
           />
         </div>
       </div>

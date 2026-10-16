@@ -67,6 +67,8 @@ export function scopeProjectId() {
 }
 export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
+/** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
+export const inspectTarget = signal(null);
 export const compactPanel = signal('conversation');
 
 // Action prompts — pending agent→human interactions
@@ -81,8 +83,8 @@ export const promptCounts = computed(() => {
 // Worktrees — detected git worktrees for thread assignment
 export const worktrees = signal([]); // GitWorktree[] from GET /api/worktrees
 
-// Token usage — session totals + budget
-export const tokenUsage = signal(null); // { usedTokens, usedCost, percentage, warning, exceeded, totalInput, totalOutput, totalCalls }
+// Token usage — per-thread recorded usage (analytics.threads) plus the Foundry session budget
+export const tokenUsage = signal(null);
 
 // Conversation — chat messages (user + agent responses)
 // Each entry: { actor: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
@@ -229,6 +231,15 @@ export function holdStream(stream, onFrame) {
     heldStreams.delete(stream);
     socket.close(stream);
   };
+}
+
+/** Open a layer in the detail drawer (from the chat or the graph). */
+export function inspectLayer(layerId) {
+  selectedEvent.value = null;
+  dismissTraceSelection();
+  inspectTarget.value = { kind: 'layer', id: layerId };
+  detailDrawerOpen.value = true;
+  compactPanel.value = 'detail';
 }
 
 /** Center panel: chat or the graph panel. */
@@ -948,36 +959,47 @@ export async function loadTokenUsage() {
     const budget = budgetRes.ok ? await budgetRes.json() : {};
     const analytics = analyticsRes.ok ? await analyticsRes.json() : {};
     const settings = settingsRes.ok ? await settingsRes.json() : {};
-    const session = analytics.session ?? {};
-
-    // Resolve active model's context window from provider config
     const provider = settings.providers?.[settings.defaults?.provider];
     const model = provider?.models?.find((m) => m.id === settings.defaults?.model);
-    const contextWindow = model?.contextWindow ?? null;
-
-    // Estimate current context fill from messages
-    const contextTokens = estimateContextTokens(messages.value);
-
     tokenUsage.value = {
-      usedTokens: budget.usedTokens ?? session.totalTokens ?? 0,
-      usedCost: budget.usedCost ?? session.totalCost ?? 0,
-      usageUnavailable: analytics.observations?.unavailableUsageCalls ?? 0,
-      costUnavailable: analytics.observations?.unavailableCostCalls ?? 0,
-      limitTokens: budget.limitTokens,
+      // The default model's context window (configuration, not an observed fill).
+      contextWindow: model?.contextWindow ?? null,
+      // Recorded usage per thread id; a thread's decision calls run under `<threadId>:aux:<role>`.
+      threads: Array.isArray(analytics.threads) ? analytics.threads : [],
+      // Without API tokens every call runs on a subscription login: there is no per-call cost.
+      subscription: settings.apiTokens !== true,
+      usedCost: budget.usedCost ?? 0,
       limitCost: budget.limitCost,
       percentage: budget.percentage ?? 0,
       warning: budget.warning ?? false,
       exceeded: budget.exceeded ?? false,
-      totalInput: session.totalInput ?? 0,
-      totalOutput: session.totalOutput ?? 0,
-      totalCalls: session.totalCalls ?? 0,
-      contextWindow,
-      contextTokens,
-      contextPct: contextWindow ? contextTokens / contextWindow : null,
     };
   } catch {
     /* silent — analytics may not be configured */
   }
+}
+
+/** The recorded usage of one thread (its own calls and its decision calls), or null when none is recorded. */
+export function threadUsage(usage, threadId) {
+  if (!usage || !threadId) return null;
+  const rows = usage.threads.filter(
+    (row) => row.threadId === threadId || row.threadId?.startsWith(`${threadId}:`),
+  );
+  if (!rows.length) return null;
+  const sum = (key) => rows.reduce((n, row) => n + (row[key] ?? 0), 0);
+  const input = sum('input'),
+    output = sum('output'),
+    cacheRead = sum('cacheRead'),
+    cacheWrite = sum('cacheWrite');
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    total: input + output + cacheRead + cacheWrite,
+    cost: sum('cost'),
+    calls: sum('calls'),
+  };
 }
 
 export async function loadDefinitions() {
@@ -1082,6 +1104,7 @@ export async function deleteProject(id) {
   }
 }
 
+/** Create a thread in the active scope and select it, so the next send goes to it. */
 export async function createThread({ name, description, tags, worktreePath, branch } = {}) {
   try {
     const projectId = activeProjectId.value || undefined;
@@ -1092,7 +1115,12 @@ export async function createThread({ name, description, tags, worktreePath, bran
     });
     if (res.ok) {
       const created = await res.json();
-      showToast(`Thread created: ${created.threadId}`, 'ok');
+      const tid = created.threadId;
+      if (!allThreads.value.some((thread) => thread.threadId === tid))
+        allThreads.value = [...allThreads.value, created];
+      // A new thread has no history to load; a first load would race the first send's rows.
+      _threadMessages[tid] ??= [];
+      selectThread(tid);
       return created;
     }
     const err = await res.json().catch(() => ({}));
@@ -1437,14 +1465,7 @@ async function threadForSend() {
     _scopeThread = null;
   });
   const created = await _scopeThread;
-  if (!created) return null;
-  const tid = created.threadId;
-  if (!allThreads.value.some((thread) => thread.threadId === tid))
-    allThreads.value = [...allThreads.value, created];
-  // A new thread has no history to load; a first load would race this send's rows.
-  _threadMessages[tid] ??= [];
-  selectThread(tid);
-  return tid;
+  return created ? created.threadId : null;
 }
 
 /**

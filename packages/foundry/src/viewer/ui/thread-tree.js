@@ -1,52 +1,37 @@
 /**
- * Sidebar — left panel with full navigation.
- *
- * Every list splits: active instances → inactive instances → uninstantiated defs.
- * Each thread node shows its metadata (model, temp, agent, layer).
- * [+] buttons on layers/agents open creation forms in the detail drawer.
+ * Thread list — the lower half of the navigation column: the threads of the selected scope
+ * (a project, Global, or Forge Master's one thread), each with its status, branch and references.
  */
 
-import { eventsForThread } from './inspector-data.js';
 import { html, useState } from './lib.js';
 import {
   activeProjectId,
   activeThreadId,
   allThreads,
-  compactPanel,
   createThread,
-  currentTrace,
-  definitions,
-  detailDrawerOpen,
-  dismissTraceSelection,
   executeAction,
-  layerColor,
-  liveEvents,
-  loadWorktrees,
-  mergedAgents,
-  mergedLayers,
+  forgeMasterOpen,
   projects,
   promptCounts,
-  selectedEvent,
-  selectedSpanId,
   selectThread,
-  showToast,
-  threadData,
   worktrees,
 } from './store.js';
-import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
+import {
+  isUnnamed,
+  nameSourceLabel,
+  ReferenceChips,
+  threadName,
+  threadPlace,
+} from './thread-labels.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
 // ---------------------------------------------------------------------------
 
 const INACTIVE_THREAD_STATES = new Set(['archived', 'completed', 'done']);
-const ACTIVE_LAYER_STATES = new Set(['warm', 'warming']);
 
 function isActiveThread(t) {
   return !INACTIVE_THREAD_STATES.has(t.status);
-}
-function isActiveLayer(l) {
-  return ACTIVE_LAYER_STATES.has(l.state);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +164,7 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
         }
         <${StatusDot} status=${thread.status} />
         <span class="tree-text">
-          <span class="tree-label" data-name-source=${thread.nameSource || ''}
+          <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
             title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
           ${
             thread.branch || thread.meta.context?.references?.length
@@ -227,40 +212,6 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
 
 // ---------------------------------------------------------------------------
 // Collapsible section with optional [+] button
-// ---------------------------------------------------------------------------
-
-function SidebarSection({ title, count, defaultOpen = true, onAdd, children }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return html`
-    <div class="sidebar-section">
-      <div class="sidebar-section-header">
-        <span class="sidebar-section-toggle" onClick=${() => setOpen(!open)}>
-          <span class="sidebar-caret">${open ? '▼' : '▶'}</span>
-          <span class="sidebar-section-title">${title}</span>
-          ${count != null ? html`<span class="sidebar-badge">${count}</span>` : null}
-        </span>
-        ${
-          onAdd
-            ? html`
-          <button class="sidebar-add-btn sm" onClick=${(e) => {
-            e.stopPropagation();
-            onAdd();
-          }} title="Add ${title.toLowerCase()}">+</button>
-        `
-            : null
-        }
-      </div>
-      ${open ? html`<div class="sidebar-section-body">${children}</div>` : null}
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar (exported)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Inline thread creation form
 // ---------------------------------------------------------------------------
 
 function AddThreadForm({ onDone }) {
@@ -317,41 +268,36 @@ function AddThreadForm({ onDone }) {
 }
 
 // Signals for creation mode (consumed by detail-drawer)
-export const creatingType = { value: null }; // "layer" | "agent" | null
+/** Forge Master is one persistent thread; it shows here when Forge Master is selected. */
+function ForgeMasterThread() {
+  return html`
+    <div class="tree-node selected" title="Forge Master: the persistent thread about this Foundry">
+      <span class="tree-caret-spacer"></span>
+      <span class="tree-status-dot" style="background: #6c9eff"></span>
+      <span class="tree-text"><span class="tree-label">Forge Master</span></span>
+    </div>
+  `;
+}
 
-export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAgent }) {
-  const events = eventsForThread(liveEvents.value, activeThreadId.value);
-  const selectedThread = activeThreadId.value;
+export function ThreadList() {
   const [addingThread, setAddingThread] = useState(false);
-
-  const { instances: layerInstances, uninstantiated: uninstantiatedLayers } = mergedLayers.value;
-  const { instances: agentInstances, uninstantiated: uninstantiatedAgents } = mergedAgents.value;
-
-  // Split layer instances into active/inactive
-  const activeLayers = layerInstances.filter(isActiveLayer);
-  const inactiveLayers = layerInstances.filter((l) => !isActiveLayer(l));
-
-  // All agent instances are active for now (future: track completion state)
-  const activeAgents = agentInstances;
-  const inactiveAgents = [];
-
-  const threads = allThreads.value;
+  const forge = forgeMasterOpen.value;
+  const selectedThread = activeThreadId.value;
   const activeProject = activeProjectId.value;
+  const scopeLabel = forge
+    ? 'Forge Master'
+    : activeProject
+      ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
+      : 'Global';
 
-  // Resolve project label for display
-  const activeProjectLabel = activeProject
-    ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
-    : null;
-
-  // Build the hierarchy: subagent threads (meta.parentThreadId) nest under
-  // their parent; threads whose parent isn't in view stay at the root.
   const nodeById = new Map(
-    threads.map((t) => [
+    allThreads.value.map((t) => [
       t.threadId,
       {
         id: t.threadId,
         status: t.meta?.status || 'idle',
         name: threadName(t),
+        unnamed: isUnnamed(t),
         nameSource: t.title?.source || null,
         meta: t.meta || {},
         branch: threadPlace(t.meta).branch,
@@ -364,191 +310,37 @@ export function Sidebar({ onLayerClick, onAgentClick, onCreateLayer, onCreateAge
   const threadNodes = [];
   for (const node of nodeById.values()) {
     const parent = node.parentThreadId ? nodeById.get(node.parentThreadId) : null;
-    if (parent && parent !== node) {
-      parent.children.push(node);
-    } else {
-      threadNodes.push(node);
-    }
+    if (parent && parent !== node) parent.children.push(node);
+    else threadNodes.push(node);
   }
 
-  const handleSelect = (id) => {
-    selectThread(id);
-  };
-
-  const totalLayers = activeLayers.length + inactiveLayers.length + uninstantiatedLayers.length;
-  const totalAgents = activeAgents.length + inactiveAgents.length + uninstantiatedAgents.length;
-
   return html`
-    <div class="sidebar">
-      <!-- ─── THREADS ─── -->
-      <div class="sidebar-threads">
-        <div class="sidebar-header">
-          <span class="sidebar-section-title">THREADS</span>
-          ${
-            activeProject
-              ? html`
-            <span class="sidebar-scope-chip scope-project" title=${activeProject}>
-              ${activeProjectLabel}
-            </span>
-          `
-              : html`
-            <span class="sidebar-scope-chip scope-global">global</span>
-          `
-          }
-          <button class="sidebar-add-btn" onClick=${() => setAddingThread(true)} title="New thread">+</button>
-        </div>
-
+    <section class="thread-list" aria-label="Threads">
+      <div class="sidebar-header">
+        <span class="sidebar-section-title">THREADS</span>
+        <span class="sidebar-scope-chip ${activeProject && !forge ? 'scope-project' : 'scope-global'}" title=${scopeLabel}>${scopeLabel}</span>
         ${
-          addingThread
-            ? html`
-          <${AddThreadForm} onDone=${() => setAddingThread(false)} />
-        `
-            : null
+          forge
+            ? null
+            : html`<button class="sidebar-add-btn" onClick=${() => setAddingThread(true)} title="New thread">+</button>`
         }
+      </div>
 
-        <div class="sidebar-threads-list">
-          ${
-            threadNodes.length > 0
+      ${!forge && addingThread ? html`<${AddThreadForm} onDone=${() => setAddingThread(false)} />` : null}
+
+      <div class="sidebar-threads-list">
+        ${
+          forge
+            ? html`<${ForgeMasterThread} />`
+            : threadNodes.length > 0
               ? threadNodes.map(
                   (t) => html`
-            <${ThreadNode}
-              key=${t.id}
-              thread=${t}
-              selectedId=${selectedThread}
-              onSelect=${handleSelect}
-            />
+            <${ThreadNode} key=${t.id} thread=${t} selectedId=${selectedThread} onSelect=${selectThread} />
           `,
                 )
-              : html`<div class="sidebar-empty">${
-                  activeProject ? 'No threads in this project' : 'No threads'
-                }</div>`
-          }
-        </div>
+              : html`<div class="sidebar-empty">${activeProject ? 'No threads in this project' : 'No threads'}</div>`
+        }
       </div>
-
-      <!-- ─── LAYERS ─── -->
-      <div class="sidebar-mid">
-        <${SidebarSection}
-          title="LAYERS"
-          count=${totalLayers || null}
-          onAdd=${onCreateLayer}
-        >
-          <div class="layer-list scrollable-list">
-            <!-- Active instances -->
-            ${activeLayers.map(
-              (l) => html`
-              <div class="layer-item" key=${l.id}
-                onClick=${() => onLayerClick && onLayerClick(l.id)}>
-                <span class="layer-dot" style="background: ${layerColor(l.id)}"></span>
-                <span class="layer-name">${l.id}</span>
-                <span class="layer-state ${l.state}">${l.state}</span>
-              </div>
-            `,
-            )}
-
-            <!-- Inactive instances -->
-            ${inactiveLayers.map(
-              (l) => html`
-              <div class="layer-item dimmed" key=${l.id}
-                onClick=${() => onLayerClick && onLayerClick(l.id)}>
-                <span class="layer-dot" style="background: ${layerColor(l.id)}; opacity: 0.4"></span>
-                <span class="layer-name">${l.id}</span>
-                <span class="layer-state ${l.state}">${l.state}</span>
-              </div>
-            `,
-            )}
-
-            <!-- Uninstantiated definitions -->
-            ${uninstantiatedLayers.map(
-              (l) => html`
-              <div class="layer-item dimmed" key=${l.id}
-                onClick=${() => onLayerClick && onLayerClick(l.id)}>
-                <span class="layer-dot-empty" style="border-color: ${layerColor(l.id)}"></span>
-                <span class="layer-name">${l.id}</span>
-                <span class="layer-state-def">defined</span>
-              </div>
-            `,
-            )}
-
-            ${totalLayers === 0 ? html`<div class="sidebar-empty-sm">No layers</div>` : null}
-          </div>
-        </${SidebarSection}>
-
-        <!-- ─── AGENTS ─── -->
-        <${SidebarSection}
-          title="AGENTS"
-          count=${totalAgents || null}
-          onAdd=${onCreateAgent}
-        >
-          <div class="agent-list scrollable-list">
-            <!-- Active instances -->
-            ${activeAgents.map(
-              (a) => html`
-              <div class="agent-item" key=${a.id}
-                onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
-                <span class="agent-icon">◆</span>
-                <span class="agent-name">${a.agentId}</span>
-              </div>
-            `,
-            )}
-
-            <!-- Inactive instances -->
-            ${inactiveAgents.map(
-              (a) => html`
-              <div class="agent-item dimmed" key=${a.id}
-                onClick=${() => onAgentClick && onAgentClick(a.agentId)}>
-                <span class="agent-icon">◇</span>
-                <span class="agent-name">${a.agentId}</span>
-              </div>
-            `,
-            )}
-
-            <!-- Uninstantiated definitions -->
-            ${uninstantiatedAgents.map(
-              (a) => html`
-              <div class="agent-item dimmed" key=${a.id}
-                onClick=${() => onAgentClick && onAgentClick(a.id)}>
-                <span class="agent-icon">○</span>
-                <span class="agent-name">${a.id}</span>
-                <span class="agent-kind">${a.kind}</span>
-              </div>
-            `,
-            )}
-
-            ${totalAgents === 0 ? html`<div class="sidebar-empty-sm">No agents</div>` : null}
-          </div>
-        </${SidebarSection}>
-      </div>
-
-      <!-- ─── LIVE EVENTS + FOOTER ─── -->
-      <div class="sidebar-bottom">
-        <${SidebarSection}
-          title=${selectedThread ? 'THREAD ACTIVITY' : 'RUNTIME ACTIVITY'}
-          count=${events.length}
-          defaultOpen=${false}
-        >
-          <div class="live-events-list">
-            ${events.slice(0, 30).map(
-              (ev, i) => html`
-              <button key=${i} class="live-event-row activity-event" title="Inspect event"
-                onClick=${() => {
-                  dismissTraceSelection();
-                  selectedSpanId.value = null;
-                  selectedEvent.value = ev;
-                  detailDrawerOpen.value = true;
-                  compactPanel.value = 'detail';
-                }}>
-                <span class="le-kind">${ev.kind}</span>
-                <span class="le-time">${ev._time}</span>
-              </button>
-            `,
-            )}
-            ${events.length === 0 ? html`<div class="sidebar-empty-sm">No events yet</div>` : null}
-          </div>
-        </${SidebarSection}>
-      </div>
-    </div>
+    </section>
   `;
 }
-
-export const ThreadTree = Sidebar;

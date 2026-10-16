@@ -4,7 +4,18 @@
  */
 import { html } from './lib.js';
 
-export const threadName = (t) => t?.title?.text || t?.meta?.description || t?.threadId || '';
+/** A thread nothing has named yet: no person's or agent's name and no creation description. */
+export const isUnnamed = (t) => !t?.title?.text && !t?.meta?.description;
+
+const createdLabel = (t) => {
+  const created = t?.meta?.createdAt;
+  return Number.isFinite(created)
+    ? `New thread · ${new Date(created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    : 'New thread';
+};
+
+/** The thread's name; an unnamed thread reads "New thread · 11:52" (its id belongs in a tooltip). */
+export const threadName = (t) => t?.title?.text || t?.meta?.description || createdLabel(t);
 
 export const nameSourceLabel = {
   human: 'named by you',

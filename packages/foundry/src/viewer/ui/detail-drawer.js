@@ -2,11 +2,12 @@
  * DetailDrawer — right panel.
  *
  * Shows (in priority order):
- *   1. Trace detail with summary/raw tabs (when a trace is selected)
- *   2. Span detail (when a span within the trace is selected)
- *   3. Layer detail (when a layer is clicked in sidebar)
- *   4. Creation forms (when [+] is clicked)
+ *   1. Span detail (when a span within the trace is selected)
+ *   2. Trace detail with summary/raw tabs (when a trace is selected)
+ *   3. Layer detail (when a layer is clicked in the chat or the graph)
+ *   4. The selected thread
  *   5. Empty state
+ * The layer, agent and creation views are exported for the Settings sections (runtime-panels.js).
  */
 
 import {
@@ -57,7 +58,13 @@ import {
   updateThreadWorktree,
   worktrees,
 } from './store.js';
-import { nameSourceLabel, ReferenceChips, threadName, threadPlace } from './thread-labels.js';
+import {
+  isUnnamed,
+  nameSourceLabel,
+  ReferenceChips,
+  threadName,
+  threadPlace,
+} from './thread-labels.js';
 
 // ---------------------------------------------------------------------------
 // Shared components
@@ -76,7 +83,7 @@ function Section({ title, open: defaultOpen = true, children }) {
   `;
 }
 
-function JsonBlock({ data, maxHeight = 300 }) {
+export function JsonBlock({ data, maxHeight = 300 }) {
   if (data === undefined || data === null) return html`<span class="detail-null">null</span>`;
   const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
   return html`<pre class="detail-json" style="max-height: ${maxHeight}px">${text}</pre>`;
@@ -229,8 +236,17 @@ function NativeOutcomeDetail({ trace }) {
           e.record.association?.owner?.messageId === trace.messageId,
       )
     : [];
-  if (!observed.length && !history.length && !tools.length) return null;
+  const live = message?.live?.native;
+  if (!observed.length && !history.length && !tools.length && !live) return null;
   return html`<${Section} title="Native execution evidence">
+    ${
+      live
+        ? html`<div class="detail-meta native-live-observation"><label>Live observation</label><span>native ${live.outcome}${
+            // RPC is only news while pending or failed; providers without RPC report nothing to show.
+            ['pending', 'failed'].includes(live.rpc) ? ` · RPC ${live.rpc}` : ''
+          } · cleanup is separate</span></div>`
+        : null
+    }
     <div class="detail-null">Historical observation. Local completion and native terminal are separate; later journal reconciliation does not rewrite delivered context.</div>
     <div class="native-public-tools">${history
       .filter((e) => e.kind === 'tool_use' || e.kind === 'tool_result')
@@ -890,7 +906,7 @@ function OverrideForm({ threadId, traceId, spanId }) {
 // Layer detail
 // ---------------------------------------------------------------------------
 
-function LayerDetail({ layerId }) {
+export function LayerDetail({ layerId }) {
   const data = threadData.value;
   const threadId = activeThreadId.value;
   const [snapshot, setSnapshot] = useState(null);
@@ -1066,7 +1082,7 @@ function ScopeBar({ section, itemId }) {
 // Agent detail
 // ---------------------------------------------------------------------------
 
-function AgentDetail({ agentId }) {
+export function AgentDetail({ agentId }) {
   const data = threadData.value;
   const instance = (data?.agents || []).find((a) => a.agentId === agentId);
   const agentDef = (definitions.value?.agents || []).find((a) => a.id === agentId);
@@ -1153,7 +1169,7 @@ function AgentDetail({ agentId }) {
 // Creation forms
 // ---------------------------------------------------------------------------
 
-function CreateLayerForm({ onCreated }) {
+export function CreateLayerForm({ onCreated }) {
   const [id, setId] = useState('');
   const [prompt, setPrompt] = useState('');
   const [staleness, setStaleness] = useState('0');
@@ -1201,7 +1217,7 @@ function CreateLayerForm({ onCreated }) {
   `;
 }
 
-function CreateAgentForm({ onCreated }) {
+export function CreateAgentForm({ onCreated }) {
   const [id, setId] = useState('');
   const [kind, setKind] = useState('executor');
   const [prompt, setPrompt] = useState('');
@@ -1286,7 +1302,7 @@ function ThreadDetail() {
   return html`
     <div class="detail-content">
       <div class="detail-header">
-        <span class="detail-name">${threadName(data)}</span>
+        <span class="detail-name ${isUnnamed(data) ? 'detail-name--unnamed' : ''}" title=${data.threadId}>${threadName(data)}</span>
         <span class="detail-status ${liveThreadStatus(messages.value) || meta.status || 'idle'}">${liveThreadStatus(messages.value) || meta.status || 'idle'}</span>
       </div>
 
@@ -1605,14 +1621,7 @@ function KnowledgeDomain({ domain, history }) {
 // Detail drawer (main export)
 // ---------------------------------------------------------------------------
 
-export function DetailDrawer({
-  selectedSpan,
-  selectedLayer,
-  selectedAgent,
-  creating,
-  onCreated,
-  onSpanSelect,
-}) {
+export function DetailDrawer({ selectedSpan, selectedLayer, onSpanSelect }) {
   const trace = currentTrace.value;
   const spanId = selectedSpanId.value;
 
@@ -1622,17 +1631,13 @@ export function DetailDrawer({
     span = findSpan(trace.root, spanId);
   }
 
-  // Priority: creation form > selected span > trace > selected agent > selected layer > empty
+  // Priority: activity event > selected span > trace > selected layer > thread > empty
   let content;
   if (selectedEvent.value) {
     content = html`<div class="detail-content">
       <div class="detail-header"><span class="detail-name">${selectedEvent.value.kind}</span><span class="detail-kind-badge">activity</span></div>
       <${JsonBlock} data=${selectedEvent.value} maxHeight=${600} />
     </div>`;
-  } else if (creating === 'layer') {
-    content = html`<${CreateLayerForm} onCreated=${onCreated} />`;
-  } else if (creating === 'agent') {
-    content = html`<${CreateAgentForm} onCreated=${onCreated} />`;
   } else if (span && trace) {
     content = html`
       <div>
@@ -1645,8 +1650,6 @@ export function DetailDrawer({
     `;
   } else if (trace) {
     content = html`<${TraceDetail} key=${trace.id} trace=${trace} onSpanSelect=${onSpanSelect} />`;
-  } else if (selectedAgent) {
-    content = html`<${AgentDetail} agentId=${selectedAgent} />`;
   } else if (selectedLayer) {
     content = html`<${LayerDetail} key=${`${activeThreadId.value}:${selectedLayer}`} layerId=${selectedLayer} />`;
   } else if (threadData.value) {
@@ -1654,7 +1657,7 @@ export function DetailDrawer({
   } else {
     content = html`
       <div class="detail-empty">
-        <p>Select a trace, span, agent, or layer to inspect</p>
+        <p>Select a trace, span or layer to inspect</p>
         <div class="detail-hint">
           Click <kbd>trace</kbd> on a message to see pipeline details
         </div>

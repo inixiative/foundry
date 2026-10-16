@@ -15,6 +15,9 @@ export const FOUNDRY_SETTINGS = [
   ['archive', 'Archive'],
   ['tunnel', 'Tunnel'],
   ['devices', 'Devices'],
+  ['layers', 'Layers'],
+  ['agents', 'Agents'],
+  ['activity', 'Activity'],
 ];
 
 export const PROJECT_SETTINGS = [

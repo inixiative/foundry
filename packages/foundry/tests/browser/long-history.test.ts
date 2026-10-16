@@ -731,7 +731,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
       '1440: loading older pages reaches all 320 seeded rows, the oldest marker and an explicit oldest-record label, no duplicates',
       reached.visible === 320 &&
         reached.oldestMarker >= 1 &&
-        /Oldest record reached/.test(reached.oldestLabel) &&
+        /^Start of conversation/.test(reached.oldestLabel) &&
         reached.uniqueTurns === 320,
       reached,
     );

@@ -1,9 +1,10 @@
 /**
- * Project Sidebar — collapsible left-most panel for project management.
+ * Navigation column — the workspace's left column.
  *
- * Two defaults sit above the projects: Global (threads no project owns) and
- * Forge Master (the internal thread about this Foundry). Collapsed: thin
- * strip with project dots. Expanded: full list.
+ * Top: the pinned scopes, Global (threads no project owns) and Forge Master (the internal
+ * thread about this Foundry). Then the projects, and below them the threads of whichever
+ * scope is selected; the two lists scroll independently. Collapsed: a thin strip with
+ * project dots.
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
@@ -20,6 +21,7 @@ import {
   showToast,
   updateProject,
 } from './store.js';
+import { ThreadList } from './thread-tree.js';
 
 const STATUS_COLORS = {
   active: '#4ade80',
@@ -287,6 +289,7 @@ export function ProjectSidebar() {
   const [renaming, setRenaming] = useState(null);
   const [filterTag, setFilterTag] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [listOpen, setListOpen] = useState(true);
   const archivedCount = all.filter((p) => p.status === 'archived').length;
   // Archived projects are hidden until asked for; the active one stays visible.
   const items = showArchived ? all : all.filter((p) => p.status !== 'archived' || p.id === active);
@@ -306,42 +309,9 @@ export function ProjectSidebar() {
   };
 
   return html`
-    <div class="proj-sidebar">
-      <div class="proj-sidebar-header">
-        <span class="proj-sidebar-title">PROJECTS</span>
-        <span class="proj-sidebar-count">${items.length}</span>
-        <button class="sidebar-add-btn" onClick=${() => setAdding(true)} title="Add project">+</button>
-        <button class="proj-collapse-btn" onClick=${() => {
-          projectSidebarOpen.value = false;
-        }}
-          title="Collapse">‹</button>
-      </div>
-
-      <!-- Tag filter chips -->
-      ${
-        tags.length > 0
-          ? html`
-        <div class="proj-tags-bar">
-          <span
-            class="proj-filter-chip ${!filterTag ? 'active' : ''}"
-            onClick=${() => setFilterTag(null)}
-          >all</span>
-          ${tags.map(
-            (t) => html`
-            <span
-              key=${t}
-              class="proj-filter-chip ${filterTag === t ? 'active' : ''}"
-              onClick=${() => setFilterTag(filterTag === t ? null : t)}
-            >${t}</span>
-          `,
-          )}
-        </div>
-      `
-          : null
-      }
-
-      <!-- Defaults: unscoped threads, and Forge Master -->
-      <div class="proj-defaults">
+    <div class="proj-sidebar nav-column">
+      <!-- Pinned scopes. A future pinned item (Feedback) joins these. -->
+      <div class="proj-defaults nav-pinned">
         <div
           class="proj-item proj-global ${!active && !forge ? 'proj-active' : ''}"
           onClick=${() => {
@@ -370,44 +340,82 @@ export function ProjectSidebar() {
         </div>
       </div>
 
-      <!-- Project list -->
-      <div class="proj-list">
-        ${filtered.map(
-          (p) => html`
-          <${ProjectItem}
-            key=${p.id}
-            project=${p}
-            isActive=${!forge && active === p.id}
-            onSelect=${handleSelect}
-            onRename=${setRenaming}
-          />
-        `,
-        )}
-        ${
-          filtered.length === 0 && items.length > 0
-            ? html`
-          <div class="proj-empty">No projects match "${filterTag}"</div>
-        `
-            : null
-        }
-        ${
-          all.length === 0
-            ? html`
-          <div class="proj-empty">No projects yet</div>
-        `
-            : null
-        }
-      </div>
+      <section class="nav-projects ${listOpen ? '' : 'nav-projects--collapsed'}" aria-label="Projects">
+        <div class="proj-sidebar-header">
+          <button type="button" class="nav-section-toggle" aria-expanded=${listOpen}
+            title=${listOpen ? 'Collapse projects' : 'Expand projects'} onClick=${() => setListOpen(!listOpen)}>
+            <span class="sidebar-caret">${listOpen ? '\u25BC' : '\u25B6'}</span>
+            <span class="proj-sidebar-title">PROJECTS</span>
+            <span class="proj-sidebar-count">${items.length}</span>
+          </button>
+          <button class="sidebar-add-btn" onClick=${() => setAdding(true)} title="Add project">+</button>
+          <button class="proj-collapse-btn" onClick=${() => {
+            projectSidebarOpen.value = false;
+          }}
+            title="Collapse">\u2039</button>
+        </div>
 
-      ${
-        archivedCount > 0
-          ? html`
-        <button type="button" class="proj-archived-toggle" onClick=${() => setShowArchived(!showArchived)}>
-          ${showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
-        </button>
+        ${
+          listOpen && tags.length > 0
+            ? html`
+          <div class="proj-tags-bar">
+            <span
+              class="proj-filter-chip ${!filterTag ? 'active' : ''}"
+              onClick=${() => setFilterTag(null)}
+            >all</span>
+            ${tags.map(
+              (t) => html`
+              <span
+                key=${t}
+                class="proj-filter-chip ${filterTag === t ? 'active' : ''}"
+                onClick=${() => setFilterTag(filterTag === t ? null : t)}
+              >${t}</span>
+            `,
+            )}
+          </div>
+        `
+            : null
+        }
+
+        ${
+          listOpen
+            ? html`
+        <div class="proj-list">
+          ${filtered.map(
+            (p) => html`
+            <${ProjectItem}
+              key=${p.id}
+              project=${p}
+              isActive=${!forge && active === p.id}
+              onSelect=${handleSelect}
+              onRename=${setRenaming}
+            />
+          `,
+          )}
+          ${
+            filtered.length === 0 && items.length > 0
+              ? html`<div class="proj-empty">No projects match "${filterTag}"</div>`
+              : null
+          }
+          ${all.length === 0 ? html`<div class="proj-empty">No projects yet</div>` : null}
+          ${
+            archivedCount > 0
+              ? html`
+            <button type="button" class="proj-archived-toggle" onClick=${() => setShowArchived(!showArchived)}>
+              ${showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+            </button>
+          `
+              : null
+          }
+        </div>
       `
-          : null
-      }
+            : null
+        }
+      </section>
+
+      <div class="nav-threads" id="workspace-threads">
+        <${ThreadList} />
+      </div>
 
       ${adding ? html`<${AddProjectModal} onDone=${() => setAdding(false)} />` : null}
       ${renaming ? html`<${RenameProjectModal} project=${renaming} onDone=${() => setRenaming(null)} />` : null}
