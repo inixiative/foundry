@@ -302,6 +302,8 @@ test('doctor flags the starter defaults as a warning and names the removal comma
       },
     );
     expect(clean.issues.some((item) => item.code === 'legacy-starter-defaults')).toBe(false);
+    // An unwrapped project is not nagged for Wardens it has no layers for.
+    expect(clean.issues.some((item) => item.code === 'no-domain-experts')).toBe(false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

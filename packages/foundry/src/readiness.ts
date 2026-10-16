@@ -376,7 +376,8 @@ export async function inspectReadiness(
       if (expert && effective.learning?.review?.provider)
         checkProvider(effective.learning.review.provider, scope);
     }
-    if (scope !== 'global' && !experts.length)
+    // An unwrapped project (no layers) has no experts by design; layers without experts is the gap.
+    if (scope !== 'global' && !experts.length && Object.keys(effective.layers ?? {}).length)
       issue(
         'warning',
         scope,
