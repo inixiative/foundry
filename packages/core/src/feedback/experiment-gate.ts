@@ -3,7 +3,9 @@
  * Oracle's replay runner: a wide run (more than TINY_MOMENTS moments, or whatever else the caller
  * counts as wide) needs `--experiment <design.md>` whose pre-registration sections are filled and
  * whose `<design>.review.md` says `verdict: go` for this exact design (`design-sha256:` of its
- * bytes). A tiny test runs without one.
+ * bytes). A tiny test runs without one. When a `<design>.decisions.md` companion sits beside the
+ * design (run pins and answers that are filled after review, so the design's hash stays fixed), the
+ * run is refused while it still says `TBD`, and its path and hash are recorded too.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -24,9 +26,16 @@ export const DESIGN_SECTIONS = [
   'What would make the result wrong',
 ] as const;
 
-export type ExperimentRecord = { design: string; designSha256: string; review: string };
+export type ExperimentRecord = {
+  design: string;
+  designSha256: string;
+  review: string;
+  decisions?: string;
+  decisionsSha256?: string;
+};
 
 export const reviewPathOf = (design: string) => design.replace(/\.md$/, '.review.md');
+export const decisionsPathOf = (design: string) => design.replace(/\.md$/, '.decisions.md');
 
 const sha256 = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
@@ -54,6 +63,16 @@ export const experimentProblems = (designPath: string): string[] => {
       problems.push(`section "## ${name}" is empty`);
   }
   if (text.includes('<fill')) problems.push('unfilled <fill: …> placeholders remain');
+  const decisions = decisionsPathOf(design);
+  if (existsSync(decisions)) {
+    const open = readFileSync(decisions, 'utf8')
+      .split('\n')
+      .flatMap((line, i) => (/\bTBD\b/.test(line) ? [i + 1] : []));
+    if (open.length)
+      problems.push(
+        `${decisions} still says TBD (line${open.length > 1 ? 's' : ''} ${open.join(', ')})`,
+      );
+  }
   const review = reviewPathOf(design);
   if (!existsSync(review)) return [...problems, `no adversarial review at ${review}`];
   const reviewText = readFileSync(review, 'utf8');
@@ -85,5 +104,15 @@ export const requireExperiment = (
         'see .claude/skills/experiment/SKILL.md',
     );
   const design = resolve(experiment);
-  return { design, designSha256: sha256(design), review: reviewPathOf(design) };
+  const record: ExperimentRecord = {
+    design,
+    designSha256: sha256(design),
+    review: reviewPathOf(design),
+  };
+  const decisions = decisionsPathOf(design);
+  if (existsSync(decisions)) {
+    record.decisions = decisions;
+    record.decisionsSha256 = sha256(decisions);
+  }
+  return record;
 };

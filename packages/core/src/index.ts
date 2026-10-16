@@ -192,6 +192,7 @@ export {
 } from './feedback/correction';
 export {
   DESIGN_SECTIONS,
+  decisionsPathOf,
   type ExperimentRecord,
   experimentProblems,
   requireExperiment,

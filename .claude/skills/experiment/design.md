@@ -3,7 +3,9 @@
 Status: design, not run (<fill: date>). Layer: <fill: region-shape | corpus | recognition | selection | model | delivery | cost>. Finding record: `~/.foundry/evals/findings/<fill: date-name>.json`.
 
 <!-- Copy to ~/.foundry/evals/experiments/<date>-<name>.md. Replace every <fill: …>; the gate refuses
-a wide run while one remains. Worked example: ~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md -->
+a wide run while one remains. Values only known after review (run pins, owed answers) go in a
+<date>-<name>.decisions.md companion beside this file, written TBD until filled; the gate refuses while
+any TBD remains (SKILL.md step 1). Worked example: ~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md -->
 
 ## Question
 

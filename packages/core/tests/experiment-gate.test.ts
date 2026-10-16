@@ -91,4 +91,51 @@ describe('experiment gate', () => {
       review: join(dir, 'go.review.md'),
     });
   });
+
+  describe('decisions companion', () => {
+    const reviewed = (name: string, decisions?: string) => {
+      const path = write(name, filled, `verdict: go\ndesign-sha256: ${sha(filled)}\n`);
+      if (decisions !== undefined) writeFileSync(join(dir, `${name}.decisions.md`), decisions);
+      return path;
+    };
+
+    test('no companion: the record carries no decisions', () => {
+      const record = requireExperiment(reviewed('no-decisions'), true);
+      expect(record?.decisions).toBeUndefined();
+      expect(record?.decisionsSha256).toBeUndefined();
+    });
+
+    test('a companion that still says TBD is refused, naming the lines', () => {
+      const path = reviewed(
+        'open',
+        '# Decisions\n\n| Pin | TBD |\n| Model | x |\n| Answer | TBD by Aron |\n',
+      );
+      expect(experimentProblems(path)).toEqual([
+        `${join(dir, 'open.decisions.md')} still says TBD (lines 3, 5)`,
+      ]);
+      expect(() => requireExperiment(path, true)).toThrow(/still says TBD/);
+    });
+
+    test('TBD is matched as a token, not inside a word', () => {
+      expect(experimentProblems(reviewed('word', '| Pin | TBDX and notTBD |\n'))).toEqual([]);
+    });
+
+    test('a filled companion runs and its path and hash are recorded', () => {
+      const decisions = '# Decisions\n\n| Pin | 2.1.301 |\n';
+      const path = reviewed('filled-decisions', decisions);
+      expect(requireExperiment(path, true)).toEqual({
+        design: path,
+        designSha256: sha(filled),
+        review: join(dir, 'filled-decisions.review.md'),
+        decisions: join(dir, 'filled-decisions.decisions.md'),
+        decisionsSha256: sha(decisions),
+      });
+    });
+
+    test('editing the companion does not invalidate the design review', () => {
+      const path = reviewed('edited-decisions', '| Pin | a |\n');
+      writeFileSync(join(dir, 'edited-decisions.decisions.md'), '| Pin | b |\n');
+      expect(experimentProblems(path)).toEqual([]);
+    });
+  });
 });

@@ -37,6 +37,8 @@ Copy [design.md](design.md) to `~/.foundry/evals/experiments/<date>-<name>.md` a
 - **Provenance** pinned by **content hash** (regions files, charters, fixtures, labels), not by a commit that may not contain them.
 - **What would make the result wrong.**
 
+**Decisions companion (optional): `<design>.decisions.md`.** Values that are filled after the review (run pins such as CLI version, image digest, runner commit, fixture hashes, the exact command; answers Aron still owes) go in a companion beside the design, so the design's hash, which the review pins, stays fixed. The design pre-registers every branch those values can take and names the companion. Write each unknown as `TBD`; when one is filled, add a dated line under the companion's `## Log`. The companion is not reviewed by hash, but changing a pre-registered pin is a recorded deviation (log + report).
+
 ## 2. ADVERSARIAL REVIEW (gate: `verdict: go` for this exact design)
 
 A **separate** agent (Opus 5.5, read-only, no model runs; one agent, counted in the three) reviews the design against [review.md](review.md)'s fixed checklist: answers the question or a proxy; one variable; confounds; gate looseness (computed from the baseline's own numbers); assumed vs measured benefit; power; cost realism; duplication of existing tooling, runs or findings; premature optimisation; results vs decisions. It writes `<design>.review.md` beside the design with `verdict: go` or `verdict: revise` and `design-sha256: <shasum -a 256 of the design>`.
@@ -51,7 +53,7 @@ On `revise`: change the design, then review again. Editing the design after a `g
 
 Arms run **serially**, within the cost ceiling, with `--pause-at <n>` on the five-hour window, `--session <key>` per arm, and the window % recorded per arm. Halt at ≥ 90% of the seven-day window.
 
-The eval scripts refuse a wide run (more than three moments, or `--pipeline`; `warden-size.ts run` always) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). The design's path and hash land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
+The eval scripts refuse a wide run (more than three moments, or `--pipeline`; `warden-size.ts run` always) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). When `<design>.decisions.md` exists, the gate also refuses while it still contains the token `TBD`. The design's path and hash, and the companion's when there is one (`decisions`, `decisionsSha256`), land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
 
 ## 5. REPORT — the reporting standard
 
