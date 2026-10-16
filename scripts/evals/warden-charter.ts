@@ -41,7 +41,7 @@
  * settings file is read, never written. Requires exactly one --projects entry.
  *
  * --experiment <design.md>: a run of more than three moments, or --pipeline, refuses to start without
- * a reviewed pre-registration (`scripts/evals/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
+ * a reviewed pre-registration (foundry-core `feedback/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
  * the design's path and hash land in <out>/experiment.json.
  * --pipeline is the two-stage EXPERIMENT (not Foundry's design): stage 1, every region Warden on
  * --model/--effort (Haiku low) under the --recognise-charter file, holding the region's `recognise.md`
@@ -67,7 +67,9 @@ import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   computeHash,
+  requireExperiment,
   scoreCharterRun,
+  TINY_MOMENTS,
   type WardenProbe,
   type WardenProbeAnswer,
   type WardenProbeTrigger,
@@ -97,7 +99,6 @@ import {
 } from '../../packages/foundry/src/providers/decision-host';
 import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
-import { requireExperiment, TINY_MOMENTS } from './experiment-gate';
 import { dispatch } from './pipeline-dispatch';
 
 const { values } = parseArgs({

@@ -3,12 +3,25 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DESIGN_SECTIONS, experimentProblems, requireExperiment } from './experiment-gate';
+import {
+  DESIGN_SECTIONS,
+  experimentProblems,
+  requireExperiment,
+} from '../src/feedback/experiment-gate';
 
 const dir = mkdtempSync(join(tmpdir(), 'experiment-gate-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const TEMPLATE = join(import.meta.dir, '..', '..', '.claude', 'skills', 'experiment', 'design.md');
+const TEMPLATE = join(
+  import.meta.dir,
+  '..',
+  '..',
+  '..',
+  '.claude',
+  'skills',
+  'experiment',
+  'design.md',
+);
 const filled = `# An experiment\n\n${DESIGN_SECTIONS.map((s) => `## ${s}\n\nfilled in\n`).join('\n')}`;
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const write = (name: string, design: string, review?: string) => {

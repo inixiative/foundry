@@ -1,8 +1,9 @@
 /**
- * The experiment gate (`.claude/skills/experiment/SKILL.md`): a wide eval run (more than
- * TINY_MOMENTS moments, or `--pipeline`) needs `--experiment <design.md>` whose pre-registration
- * sections are filled and whose `<design>.review.md` says `verdict: go` for this exact design
- * (`design-sha256:` of its bytes). A tiny test runs without one.
+ * The experiment gate (`.claude/skills/experiment/SKILL.md`), shared by Foundry's eval scripts and
+ * Oracle's replay runner: a wide run (more than TINY_MOMENTS moments, or whatever else the caller
+ * counts as wide) needs `--experiment <design.md>` whose pre-registration sections are filled and
+ * whose `<design>.review.md` says `verdict: go` for this exact design (`design-sha256:` of its
+ * bytes). A tiny test runs without one.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -73,7 +74,7 @@ export const requireExperiment = (
   if (!experiment) {
     if (!wide) return undefined;
     throw Error(
-      `a wide run (more than ${TINY_MOMENTS} moments, or --pipeline) needs --experiment <design.md> ` +
+      `a wide run (more than ${TINY_MOMENTS} moments) needs --experiment <design.md> ` +
         'with a reviewed pre-registration: see .claude/skills/experiment/SKILL.md',
     );
   }

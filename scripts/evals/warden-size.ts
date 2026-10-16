@@ -10,7 +10,7 @@
  *   bun scripts/evals/warden-size.ts build --check concurrency [--root ~/.foundry/evals/warden-size]
  *   bun scripts/evals/warden-size.ts run --checks concurrency,errors [--reps 1] [--parallel 3]
  *     [--sizes 5,10,20,40,80] [--positions start,middle,end] [--run <id>] [--max-window 85]
- *     --experiment <design.md>   (run is always wide: scripts/evals/experiment-gate.ts)
+ *     --experiment <design.md>   (run is always wide: foundry-core feedback/experiment-gate.ts)
  *   bun scripts/evals/warden-size.ts judge [--checks ...]
  *   bun scripts/evals/warden-size.ts report [--checks ...]
  *
@@ -40,6 +40,7 @@ import { parseArgs } from 'node:util';
 import {
   POINTER_LEVELS,
   parseWardenPointerJudgement,
+  requireExperiment,
   WARDEN_POINTER_JUDGE_PROMPT,
   type WardenPointerJudgement,
   type WardenProbe,
@@ -57,7 +58,6 @@ import {
   privateDirectory,
 } from '../../packages/foundry/src/providers/decision-host';
 import { ConfigStore } from '../../packages/foundry/src/viewer/config';
-import { requireExperiment } from './experiment-gate';
 
 const [command, ...rest] = process.argv.slice(2);
 const { values } = parseArgs({

@@ -191,6 +191,14 @@ export {
   type TranscriptTurn,
 } from './feedback/correction';
 export {
+  DESIGN_SECTIONS,
+  type ExperimentRecord,
+  experimentProblems,
+  requireExperiment,
+  reviewPathOf,
+  TINY_MOMENTS,
+} from './feedback/experiment-gate';
+export {
   AUTHORSHIP_MARKERS,
   authorshipOf,
   evidenceSnippet,
