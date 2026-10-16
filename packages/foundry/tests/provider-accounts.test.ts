@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { vendorOfProvider } from '@inixiative/foundry-core';
 import { providerAccounts } from '../src/providers/provider-accounts';
 import { defaultConfig } from '../src/viewer/config';
 
@@ -20,7 +21,15 @@ function privateProfile() {
 
 const onPath = () => '/usr/local/bin/cli';
 const enable = (config: ReturnType<typeof defaultConfig>, ...ids: string[]) => {
-  for (const id of ids) config.providers[id] = { ...config.providers[id]!, enabled: true };
+  for (const id of ids) {
+    const { vendor, mode } = vendorOfProvider(id)!;
+    const settings = config.vendors[vendor.id]!;
+    config.vendors[vendor.id] = {
+      ...settings,
+      enabled: true,
+      [mode]: { ...settings[mode], enabled: true },
+    };
+  }
 };
 
 test('subscription mode reports the main-thread and decision profiles where they live', () => {

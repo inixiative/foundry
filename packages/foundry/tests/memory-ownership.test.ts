@@ -56,7 +56,7 @@ const agentSettings = {
 function makeConfig(dir: string, opts?: { includeUnowned?: boolean }): FoundryConfig {
   return {
     defaults: { provider: 'mock', model: 'mock' },
-    providers: {},
+    vendors: {},
     agents: { worker: { ...agentSettings, id: 'worker', kind: 'executor', prompt: 'Execute' } },
     layers: {
       memory: {

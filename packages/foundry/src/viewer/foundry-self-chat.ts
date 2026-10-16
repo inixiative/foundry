@@ -13,7 +13,7 @@ export interface SelfChatFocus {
   scope?: 'global' | 'project';
   projectId?: string;
   tab?: string;
-  focusKind?: 'source' | 'agent' | 'layer' | 'provider' | null;
+  focusKind?: 'source' | 'agent' | 'layer' | 'vendor' | null;
   focusId?: string | null;
 }
 

@@ -57,6 +57,7 @@ import { registerControlRoutes } from './routes/control';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
+import { registerModelRoutes } from './routes/models';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
 import {
@@ -501,6 +502,7 @@ export function createViewer(config: ViewerConfig) {
       : null;
   registerKingdomRoutes(app, configStore, configDir, kingdom, () => tunnelHolder.tunnel?.token);
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
+  registerModelRoutes(app, configStore);
   registerGlossRoutes(app, configStore);
   const aiAssist = config.assistProvider
     ? new AIAssist(config.assistProvider, config.assistModel)

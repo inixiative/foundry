@@ -66,7 +66,7 @@ forked sessions. Existing native `session_compact` events continue to invalidate
 the hydration ledger. Foundry does not send extra model calls or run a separate
 summarization loop.
 
-Configure the `providers["claude-code"].contextBudget` field in
+Configure the `vendors.anthropic.subscription.contextBudget` field (Claude Code is Anthropic's subscription mode) in
 `.foundry/settings.json`, or pass it directly to either constructor. `false`
 explicitly delegates the policy to the CLI's inherited environment/settings.
 An enabled policy overrides inherited compaction-disabling environment flags.

@@ -52,12 +52,53 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
-    await page.goto(`${origin}/settings`);
-    await page.locator('h1.settings-title', { hasText: 'Models' }).waitFor();
-
-    await page.getByRole('link', { name: 'Providers' }).click();
+    // An old address lands on the section that now holds it.
+    await page.goto(`${origin}/settings/models`);
+    await page.locator('h1.settings-title', { hasText: 'Providers' }).waitFor();
     expect(new URL(page.url()).pathname).toBe('/settings/providers');
-    await page.locator('.provider-account').first().waitFor();
+
+    // One row per vendor, the five main labs first; subscription and API are modes of one row.
+    const vendors = page.locator('.vendor-row');
+    await vendors.first().waitFor();
+    expect(
+      (await vendors.locator('.vendor-name').allTextContents())
+        .slice(0, 5)
+        .map((t: string) => t.trim()),
+    ).toEqual([
+      '▸ Anthropic (Claude)',
+      '▸ OpenAI (Codex, GPT)',
+      '▸ Google (Gemini)',
+      '▸ Meta (Muse)',
+      '▸ xAI (Grok)',
+    ]);
+    const google = page.locator('.vendor-row[data-vendor="google"]');
+    expect(await google.locator('.mode-chip').first().textContent()).toBe(
+      'Subscription: coming soon',
+    );
+    expect(await page.locator('.decision-hint').textContent()).toContain('nothing uses it yet');
+
+    // Expanding a vendor shows each mode's models; a model becomes the default in one click.
+    const openai = page.locator('.vendor-row[data-vendor="openai"]');
+    await openai.locator('.vendor-name').click();
+    const subscription = openai.locator('.vendor-mode[data-mode="subscription"]');
+    const astra = subscription.locator('.vendor-model', { hasText: 'gpt-6-astra' });
+    await astra.getByRole('button', { name: 'Set as default model' }).click();
+    await page
+      .locator('.model-selection-value[data-choice="default"]', { hasText: 'GPT-6 Astra' })
+      .waitFor();
+    await astra.locator('.model-badge.default').waitFor();
+    const settings = await (await fetch(`${origin}/api/settings`)).json();
+    expect(settings.defaults).toMatchObject({ provider: 'codex', model: 'gpt-6-astra' });
+    // API decisions need API keys on; the button says so instead of failing.
+    const apiLuna = openai
+      .locator('.vendor-mode[data-mode="api"] .vendor-model', { hasText: 'gpt-6-luna' })
+      .getByRole('button', { name: 'Set as decision model' });
+    expect(await apiLuna.isDisabled()).toBe(true);
+
+    // A vendor's switch turns all its modes off; the setting is saved per vendor.
+    await page.locator('.vendor-row[data-vendor="xai"] .vendor-head .switch input').uncheck();
+    await page.locator('.vendor-row[data-vendor="xai"].vendor-off').waitFor();
+    expect((await (await fetch(`${origin}/api/settings`)).json()).vendors.xai.enabled).toBe(false);
 
     await page.getByRole('link', { name: 'Project', exact: true }).click();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);

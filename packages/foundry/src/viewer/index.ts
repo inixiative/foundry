@@ -27,8 +27,6 @@ export {
   type DataSourceConfig,
   type FoundryConfig,
   type LayerSettingsConfig,
-  type ModelConfig,
-  type ProviderConfig,
 } from './config';
 export {
   createViewer,

@@ -3,20 +3,21 @@
  * depending on core alone can reason about models. Re-exported here so every
  * existing `models/registry` import path keeps working.
  *
- * What stays: the two projections of the table into Foundry's own shapes — the
- * saved provider configuration and the viewer payload — which need `ProviderConfig`
- * from the viewer, and the tier sweep that feeds Foundry's research runs.
+ * What stays: the viewer's projection of the table (providers, and the vendors that
+ * group them into subscription and API modes) and the tier sweep that feeds
+ * Foundry's research runs.
  */
 
 import {
   MAIN_THREAD_LABS,
   MODEL_REGISTRY,
   MODEL_REGISTRY_UPDATED_AT,
+  MODEL_VENDORS,
   type ModelSweepOption,
   type ModelTier,
   mainThreadLab,
+  vendorModeProvider,
 } from '@inixiative/foundry-core';
-import type { ProviderConfig } from '../viewer/config';
 
 export {
   type CostTier,
@@ -74,30 +75,6 @@ export function mainThreadRequirement(provider: string, apiTokens: boolean): str
   }`;
 }
 
-export function providerConfigsFromRegistry(): Record<string, ProviderConfig> {
-  return Object.fromEntries(
-    Object.values(MODEL_REGISTRY).map((provider) => [
-      provider.id,
-      {
-        id: provider.id,
-        type: provider.type,
-        label: provider.label,
-        enabled: provider.enabledByDefault,
-        ...(provider.apiRoot ? { baseUrl: provider.apiRoot } : {}),
-        models: provider.models.map((model) => ({
-          id: model.id,
-          label: model.label,
-          tier: model.tier,
-          costTier: model.costTier,
-          contextWindow: model.contextWindow,
-          capabilities: [...model.capabilities],
-          ...(model.trainsOnInput ? { trainsOnInput: true } : {}),
-        })),
-      },
-    ]),
-  );
-}
-
 export function modelOptionsByTier(tiers: ModelTier[]): ModelSweepOption[] {
   const wanted = new Set<ModelTier>(tiers);
   return Object.values(MODEL_REGISTRY).flatMap((provider) =>
@@ -131,11 +108,33 @@ export function registryForViewer() {
         id: model.id,
         label: model.label,
         tier: model.tier,
+        costTier: model.costTier ?? null,
+        contextWindow: model.contextWindow ?? null,
+        maxOutputTokens: model.maxOutputTokens ?? null,
         runtimeKind: model.runtimeKind,
         nativeAlias: model.nativeAlias ?? false,
         trainsOnInput: model.trainsOnInput ?? false,
         capabilities: [...model.capabilities],
+        notes: model.notes ?? null,
       })),
+    })),
+    // One row per vendor; each mode names the provider (above) that serves it, or is coming soon.
+    vendors: MODEL_VENDORS.map((vendor) => ({
+      id: vendor.id,
+      label: vendor.label,
+      lab: vendor.lab ?? null,
+      modes: Object.fromEntries(
+        (['subscription', 'api'] as const).flatMap((mode) => {
+          if (!vendor[mode]) return [];
+          const provider = vendorModeProvider(vendor, mode);
+          return [
+            [
+              mode,
+              provider ? { provider, comingSoon: false } : { provider: null, comingSoon: true },
+            ],
+          ];
+        }),
+      ),
     })),
   };
 }

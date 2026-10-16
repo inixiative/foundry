@@ -346,16 +346,19 @@ export {
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
   MODEL_REGISTRY_UPDATED_AT,
+  MODEL_VENDORS,
   type ModelCapability,
   type ModelLab,
   type ModelReasoning,
   type ModelSweepOption,
   type ModelTier,
+  type ModelVendor,
   mainThreadLab,
   modelCapabilities,
   modelHasCapability,
   modelOptionsByCapability,
   type ProviderCredential,
+  type ProviderMode,
   type ProviderType,
   providersWithCapability,
   type ReasoningEffort,
@@ -363,6 +366,8 @@ export {
   registryModel,
   resolveDecisionModel,
   SUBSCRIPTION_DECISION_MODELS,
+  vendorModeProvider,
+  vendorOfProvider,
 } from './model-registry';
 export * from './native-evidence';
 // Retry middleware

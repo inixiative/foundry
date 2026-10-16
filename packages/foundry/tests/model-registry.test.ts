@@ -52,9 +52,14 @@ describe('model registry', () => {
       model: 'fable',
       classifierModel: 'claude-haiku-5-5',
     });
-    expect(config.providers.openai.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
-    expect(config.providers.codex.models.some((model) => model.id === 'gpt-6-astra')).toBe(true);
-    expect(config.providers['claude-code'].models.some((model) => model.id === 'fable')).toBe(true);
+    // Every vendor mode a registry provider serves, at its registry default.
+    expect(config.vendors.anthropic).toEqual({
+      enabled: true,
+      subscription: { enabled: true },
+      api: { enabled: true },
+    });
+    expect(config.vendors.google).toEqual({ enabled: true, api: { enabled: true } });
+    expect(config.vendors.typesafe).toEqual({ enabled: false, api: { enabled: false } });
   });
 
   test('research sweeps draw from the registry', () => {
@@ -142,10 +147,9 @@ describe('capability tags', () => {
   });
 
   test('capabilities and the API root reach the saved config and the viewer', () => {
-    const config = defaultConfig();
-    expect(config.providers.ollama.baseUrl).toBe('http://localhost:11434/v1');
-    expect(config.providers.deepseek.models[0].capabilities).toContain('judgment');
-    expect(config.providers.gemini.baseUrl).toBeUndefined();
+    // The API root is the registry's unless the user overrides it; settings carry only an override.
+    expect(defaultConfig().vendors.ollama!.api!.baseUrl).toBeUndefined();
+    expect(MODEL_REGISTRY.ollama.apiRoot).toBe('http://localhost:11434/v1');
     const viewer = registryForViewer();
     const ollama = viewer.providers.find((provider) => provider.id === 'ollama');
     expect(ollama).toMatchObject({ credential: 'local', envKey: '' });
@@ -242,10 +246,10 @@ describe('Muse Spark reaches the surfaces a user chooses from', () => {
   });
 
   test('the contributor warning survives both projections of the table', () => {
-    const saved = defaultConfig().providers.meta!;
+    const saved = MODEL_REGISTRY.meta;
     const contributor = saved.models.find((model) => model.id === 'muse-spark-1.3-contributor')!;
     const standard = saved.models.find((model) => model.id === 'muse-spark-1.3')!;
-    expect(saved.baseUrl).toBe('https://api.meta.ai/v1');
+    expect(saved.apiRoot).toBe('https://api.meta.ai/v1');
     expect(contributor.trainsOnInput).toBe(true);
     expect(standard.trainsOnInput).toBeUndefined();
 

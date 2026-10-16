@@ -29,7 +29,7 @@ test('the decision default is a registered judgment model, not a hardcoded id', 
 
 test('decisions fail before making requests when disabled or missing a credential', () => {
   const disabled = apiConfig();
-  disabled.providers.anthropic!.enabled = false;
+  disabled.vendors.anthropic!.api!.enabled = false;
   expect(() => createDecisionProvider(disabled, { ANTHROPIC_API_KEY: 'controlled-key' })).toThrow(
     'require anthropic to be enabled',
   );

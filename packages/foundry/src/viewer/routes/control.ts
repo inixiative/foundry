@@ -198,7 +198,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
 
   app.get('/api/providers/accounts', async (c) => {
     await configStore.load();
-    return c.json(providerAccounts(configStore.config));
+    return c.json(providerAccounts(configStore.config, { all: c.req.query('all') === '1' }));
   });
 
   app.put('/api/settings', async (c) => {

@@ -949,17 +949,31 @@ function estimateContextTokens(msgs) {
   return Math.ceil(chars / 4);
 }
 
+/** The model registry is static for a daemon's life: read once, retried after a failure. */
+let registryRequest = null;
+export function modelRegistryOnce() {
+  registryRequest ??= authFetch('/api/models')
+    .then((res) => (res.ok ? res.json() : Promise.reject(Error('models unavailable'))))
+    .catch(() => {
+      registryRequest = null;
+      return null;
+    });
+  return registryRequest;
+}
+
 export async function loadTokenUsage() {
   try {
-    const [budgetRes, analyticsRes, settingsRes] = await Promise.all([
+    const [budgetRes, analyticsRes, settingsRes, modelsRes] = await Promise.all([
       authFetch('/api/analytics/budget'),
       authFetch('/api/analytics'),
       authFetch('/api/settings'),
+      modelRegistryOnce(),
     ]);
     const budget = budgetRes.ok ? await budgetRes.json() : {};
     const analytics = analyticsRes.ok ? await analyticsRes.json() : {};
     const settings = settingsRes.ok ? await settingsRes.json() : {};
-    const provider = settings.providers?.[settings.defaults?.provider];
+    const registry = modelsRes ?? {};
+    const provider = registry.providers?.find((p) => p.id === settings.defaults?.provider);
     const model = provider?.models?.find((m) => m.id === settings.defaults?.model);
     tokenUsage.value = {
       // The default model's context window (configuration, not an observed fill).

@@ -5,179 +5,30 @@
     "classifierProvider": "subscription-decisions",
     "classifierModel": "claude-haiku-5-5"
   },
-  "providers": {
-    "claude-code": {
-      "id": "claude-code",
-      "type": "claude-code",
-      "label": "Claude Code (CLI subscription)",
-      "enabled": true,
-      "models": [
-        {
-          "id": "fable",
-          "label": "Fable 5.1",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "opus",
-          "label": "Opus 5",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "sonnet",
-          "label": "Sonnet 5",
-          "tier": "standard",
-          "costTier": "medium",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "haiku",
-          "label": "Haiku 4.5",
-          "tier": "fast",
-          "costTier": "low",
-          "contextWindow": 200000
-        }
-      ]
-    },
+  "vendors": {
     "anthropic": {
-      "id": "anthropic",
-      "type": "anthropic",
-      "label": "Anthropic (API key)",
       "enabled": true,
-      "models": [
-        {
-          "id": "claude-fable-5-1",
-          "label": "Claude Fable 5.1",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "claude-opus-5",
-          "label": "Claude Opus 5",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "claude-sonnet-5",
-          "label": "Claude Sonnet 5",
-          "tier": "standard",
-          "costTier": "medium",
-          "contextWindow": 1000000
-        },
-        {
-          "id": "claude-haiku-4-5",
-          "label": "Claude Haiku 4.5",
-          "tier": "fast",
-          "costTier": "low",
-          "contextWindow": 200000
-        }
-      ]
-    },
-    "codex": {
-      "id": "codex",
-      "type": "codex",
-      "label": "Codex CLI (OpenAI subscription)",
-      "enabled": true,
-      "models": [
-        {
-          "id": "gpt-6-astra",
-          "label": "GPT-6 Astra",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-5.6-sol",
-          "label": "GPT-5.6 Sol",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-5.6-terra",
-          "label": "GPT-5.6 Terra",
-          "tier": "standard",
-          "costTier": "medium",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-6-luna",
-          "label": "GPT-6 Luna",
-          "tier": "fast",
-          "costTier": "low",
-          "contextWindow": 1050000
-        }
-      ]
+      "subscription": {
+        "enabled": true
+      },
+      "api": {
+        "enabled": true
+      }
     },
     "openai": {
-      "id": "openai",
-      "type": "openai",
-      "label": "OpenAI",
       "enabled": true,
-      "models": [
-        {
-          "id": "gpt-6-astra",
-          "label": "GPT-6 Astra",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-5.6-sol",
-          "label": "GPT-5.6 Sol",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-5.6-terra",
-          "label": "GPT-5.6 Terra",
-          "tier": "standard",
-          "costTier": "medium",
-          "contextWindow": 1050000
-        },
-        {
-          "id": "gpt-6-luna",
-          "label": "GPT-6 Luna",
-          "tier": "fast",
-          "costTier": "low",
-          "contextWindow": 1050000
-        }
-      ]
+      "subscription": {
+        "enabled": true
+      },
+      "api": {
+        "enabled": true
+      }
     },
-    "gemini": {
-      "id": "gemini",
-      "type": "gemini",
-      "label": "Google Gemini",
+    "google": {
       "enabled": true,
-      "models": [
-        {
-          "id": "gemini-3.1-flash-lite",
-          "label": "Gemini 3.1 Flash Lite",
-          "tier": "fast",
-          "costTier": "low",
-          "contextWindow": 1048576
-        },
-        {
-          "id": "gemini-3.8-flash",
-          "label": "Gemini 3.8 Flash",
-          "tier": "standard",
-          "costTier": "medium",
-          "contextWindow": 1048576
-        },
-        {
-          "id": "gemini-3.1-pro-preview",
-          "label": "Gemini 3.1 Pro",
-          "tier": "powerful",
-          "costTier": "high",
-          "contextWindow": 1048576
-        }
-      ]
+      "api": {
+        "enabled": true
+      }
     }
   },
   "agents": {},

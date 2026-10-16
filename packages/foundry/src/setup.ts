@@ -29,8 +29,8 @@ import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
   ConfigStore,
+  configFromSaved,
   defaultAgents,
-  defaultConfig,
   type FoundryConfig,
   type ProjectPrompts,
   starterConfig,
@@ -74,13 +74,7 @@ function detectKeys(): { id: ProviderId; key: string }[] {
 async function loadConfig(): Promise<FoundryConfig | null> {
   if (!existsSync(CONFIG_PATH)) return null;
   try {
-    const saved = (await Bun.file(CONFIG_PATH).json()) as Partial<FoundryConfig>;
-    return {
-      ...defaultConfig(),
-      ...saved,
-      providers: { ...defaultConfig().providers, ...saved.providers },
-      projects: { ...saved.projects },
-    };
+    return configFromSaved(await Bun.file(CONFIG_PATH).json()).config;
   } catch {
     return null;
   }

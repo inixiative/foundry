@@ -1,5 +1,7 @@
+import { vendorOfProvider } from '@inixiative/foundry-core';
 import { whichOn } from '../daemon/agent-clis';
 import { MODEL_REGISTRY, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../models/registry';
+import { enabledProviderIds, providerBaseUrl } from '../models/vendors';
 import type { FoundryConfig } from '../viewer/config';
 import {
   defaultProfileSource,
@@ -25,6 +27,8 @@ export interface ProviderAccount {
 interface Inputs {
   environment?: Record<string, string | undefined>;
   which?: (command: string) => string | null;
+  /** Every vendor mode's provider, switched on or not (Settings shows each mode's availability). */
+  all?: boolean;
 }
 
 export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): ProviderAccount[] {
@@ -39,8 +43,11 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
   }
   const apiTokens = config.apiTokens === true;
 
-  return Object.values(config.providers)
-    .filter((provider) => provider.enabled)
+  const ids = inputs.all
+    ? Object.keys(MODEL_REGISTRY).filter(vendorOfProvider)
+    : enabledProviderIds(config);
+  return ids
+    .map((id) => ({ id, baseUrl: providerBaseUrl(config, id) }))
     .map((provider): ProviderAccount => {
       const info = MODEL_REGISTRY[provider.id];
       const main = config.defaults.provider === provider.id;

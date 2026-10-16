@@ -14,6 +14,7 @@ import { FilePicker } from './file-picker.js';
 import { GlossSettings } from './gloss.js';
 import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useEffect, useState } from './lib.js';
+import { ProvidersSection } from './provider-settings.js';
 import {
   FOUNDRY_SETTINGS,
   navigate,
@@ -40,35 +41,6 @@ export async function loadSettings() {
   } catch {
     showToast('Failed to load settings', 'error');
   }
-}
-
-async function saveSection(section, data) {
-  try {
-    const res = await fetch(`/api/settings/${section}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const body = await res.json();
-    // A refused save names what is missing (for example, what a main thread on that provider needs).
-    if (!res.ok) return showToast(body?.error || 'Failed to save', 'error');
-    settingsConfig.value = body;
-    showToast('Settings saved', 'ok');
-  } catch {
-    showToast('Failed to save', 'error');
-  }
-}
-
-/** Registry view of each provider: whether it can run a main thread and what that needs. */
-const modelRegistry = signal(null);
-function loadModelRegistry() {
-  if (modelRegistry.value) return;
-  fetch('/api/models')
-    .then((res) => (res.ok ? res.json() : null))
-    .then((body) => {
-      if (body) modelRegistry.value = body;
-    })
-    .catch(() => {});
 }
 
 async function saveProjectSection(projectId, section, data) {
@@ -320,179 +292,6 @@ function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
         onCancel=${() => setPickerOpen(false)}
         onPick=${handlePick}
       />
-    </div>
-  `;
-}
-
-// ---------------------------------------------------------------------------
-// Defaults + Providers editors (unchanged shape, minor tidy)
-// ---------------------------------------------------------------------------
-
-function DefaultsEditor({ defaults, providers, apiTokens, onSave, onFocusChange }) {
-  const [draft, setDraft] = useState({ ...defaults });
-  const update = (k, v) => setDraft({ ...draft, [k]: v });
-  const enabledProviders = Object.values(providers).filter((p) => p.enabled);
-  useEffect(loadModelRegistry, []);
-  const registry = modelRegistry.value?.providers;
-  const mainThread = (id) => registry?.find((p) => p.id === id)?.mainThread;
-  // Main threads run on Anthropic, OpenAI, Google, Meta and xAI models.
-  const executorProviders = registry
-    ? enabledProviders.filter((p) => mainThread(p.id) || p.id === draft.provider)
-    : enabledProviders;
-  const executorNeeds = registry
-    ? mainThread(draft.provider) === null
-      ? `${draft.provider} cannot run a main thread.`
-      : !apiTokens && mainThread(draft.provider)?.requirement
-    : null;
-
-  return html`
-    <div class="settings-card" onFocusin=${() => onFocusChange?.(null)}>
-      <div class="settings-card-header">
-        <span class="settings-card-title">Default Models</span>
-      </div>
-
-      <div class="settings-section-label">Executor (tool use, code gen)</div>
-      <div class="settings-row">
-        <div class="settings-field">
-          <label class="settings-label">Provider</label>
-          <select
-            class="settings-input small"
-            value=${draft.provider}
-            onChange=${(e) => update('provider', e.target.value)}
-          >
-            ${executorProviders.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
-          </select>
-        </div>
-        <div class="settings-field">
-          <label class="settings-label">Model</label>
-          <select
-            class="settings-input small mono"
-            value=${draft.model}
-            onChange=${(e) => update('model', e.target.value)}
-          >
-            ${(providers[draft.provider]?.models || []).map(
-              (m) => html`
-              <option key=${m.id} value=${m.id}>${m.label} (${m.tier})</option>
-            `,
-            )}
-          </select>
-        </div>
-      </div>
-
-      ${executorNeeds ? html`<p class="settings-desc main-thread-needs">${executorNeeds}</p>` : null}
-
-      <div class="settings-section-label">Classifier / Router</div>
-      ${
-        apiTokens
-          ? html`      <div class="settings-row">
-        <div class="settings-field">
-          <label class="settings-label">Provider</label>
-          <select
-            class="settings-input small"
-            value=${draft.classifierProvider || draft.provider}
-            onChange=${(e) => update('classifierProvider', e.target.value)}
-          >
-            ${enabledProviders.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
-          </select>
-        </div>
-        <div class="settings-field">
-          <label class="settings-label">Model</label>
-          <select
-            class="settings-input small mono"
-            value=${draft.classifierModel || draft.model}
-            onChange=${(e) => update('classifierModel', e.target.value)}
-          >
-            ${(providers[draft.classifierProvider || draft.provider]?.models || []).map(
-              (m) => html`
-              <option key=${m.id} value=${m.id}>${m.label} (${m.tier})</option>
-            `,
-            )}
-          </select>
-        </div>
-      </div>`
-          : html`<p class="settings-desc">Subscription-only: decision roles run on the subscription decision profile (the Claude login with Haiku 5.5 unless <code>subscriptionOnly</code> names another runtime or model). Set <code>apiTokens: true</code> to choose an API provider here.</p>`
-      }
-
-      <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save Defaults</button>
-      </div>
-    </div>
-  `;
-}
-
-const ACCOUNT_SOURCES = {
-  login: 'Local login',
-  profile: 'Private profile',
-  gateway: 'Gateway',
-  kingdom: 'Kingdom',
-  'api-key': 'API key',
-  local: 'Local server',
-  none: 'No account',
-};
-
-/** Where each enabled provider's account comes from (server-side: profiles, PATH, env presence). */
-const providerAccounts = signal(null);
-function loadProviderAccounts() {
-  fetch('/api/providers/accounts')
-    .then((res) => (res.ok ? res.json() : null))
-    .then((body) => {
-      if (body) providerAccounts.value = body;
-    })
-    .catch(() => {});
-}
-
-function ProviderAccount({ account }) {
-  if (!account) return null;
-  return html`
-    <div class="provider-account ${account.ready ? 'ready' : 'needs-attention'}">
-      <span class="provider-account-source">${ACCOUNT_SOURCES[account.source]}</span>
-      ${account.detail ? html`<code class="provider-account-detail">${account.detail}</code>` : null}
-      ${account.uses.length ? html`<span class="provider-account-uses">${account.uses.join(' · ')}</span>` : null}
-      ${account.issue ? html`<p class="settings-desc">${account.issue}</p>` : null}
-    </div>
-  `;
-}
-
-function ProviderEditor({ provider, account, onSave, onFocusChange }) {
-  const [draft, setDraft] = useState({ ...provider });
-  const update = (k, v) => setDraft({ ...draft, [k]: v });
-
-  return html`
-    <div class="settings-card" onFocusin=${() => onFocusChange?.({ kind: 'provider', id: draft.id })}>
-      <div class="settings-card-header">
-        <span class="settings-card-title">${draft.label}</span>
-        <span class="settings-card-kind">${draft.type}</span>
-        <label class="settings-toggle">
-          <input type="checkbox" checked=${draft.enabled} onChange=${(e) => update('enabled', e.target.checked)} />
-          ${draft.enabled ? 'enabled' : 'disabled'}
-        </label>
-      </div>
-
-      <${ProviderAccount} account=${account} />
-
-      ${
-        draft.baseUrl !== undefined
-          ? html`
-        <${Field} label="Base URL" value=${draft.baseUrl} mono onChange=${(v) => update('baseUrl', v)} placeholder="https://api.example.com" />
-      `
-          : null
-      }
-
-      <div class="settings-section-label">Models</div>
-      ${(draft.models || []).map(
-        (m) => html`
-        <div key=${m.id} class="model-row">
-          <span class="model-id mono">${m.id}</span>
-          <span class="model-label">${m.label}</span>
-          <span class="model-tier tier-${m.tier}">${m.tier}</span>
-          ${m.contextWindow ? html`<span class="model-ctx">${Math.round(m.contextWindow / 1000)}k ctx</span>` : null}
-        </div>
-      `,
-      )}
-
-      <div class="settings-card-actions">
-        <button class="action-btn" onClick=${() => onSave(draft)}>Save</button>
-      </div>
     </div>
   `;
 }
@@ -820,29 +619,10 @@ function SettingsNav({ projectId, section, projectList }) {
 // ---------------------------------------------------------------------------
 
 function FoundrySection({ section, config, onFocusChange }) {
-  if (section === 'models')
-    return html`<${DefaultsEditor}
-      defaults=${config.defaults}
-      providers=${config.providers}
-      apiTokens=${config.apiTokens === true}
-      onSave=${(defaults) => saveSection('defaults', defaults)}
-      onFocusChange=${onFocusChange}
-    />`;
-  if (section === 'providers') {
-    const accounts = providerAccounts.value ?? [];
-    const editor = (p) =>
-      html`<${ProviderEditor} key=${p.id} provider=${p}
-        account=${accounts.find((a) => a.provider === p.id)}
-        onSave=${(provider) => saveSection('providers', { [provider.id]: provider }).then(loadProviderAccounts)}
-        onFocusChange=${onFocusChange} />`;
-    const all = Object.values(config.providers);
-    const off = all.filter((p) => !p.enabled);
-    return html`
-      <p class="settings-desc">The providers this Foundry has turned on, and where each one's account comes from: a local login, a private profile, Kingdom, or an API key.</p>
-      ${all.filter((p) => p.enabled).map(editor)}
-      ${off.length ? html`<details class="settings-off"><summary>${off.length} providers off</summary>${off.map(editor)}</details>` : null}
-    `;
-  }
+  if (section === 'providers')
+    return html`<${ProvidersSection} vendors=${config.vendors} onSaved=${(next) => {
+      settingsConfig.value = next;
+    }} />`;
   if (section === 'kingdom') return html`<${KingdomSettings} />`;
   if (section === 'integrations') return html`<${AccessSettings} onSaved=${loadSettings} />`;
   if (section === 'archive') return html`<${ArchiveSettings} />`;
@@ -896,7 +676,6 @@ export function SettingsPage() {
   }, []);
   useEffect(() => {
     selectedFocus.value = null;
-    if (section === 'providers') loadProviderAccounts();
   }, [projectId, section]);
 
   if (!config)

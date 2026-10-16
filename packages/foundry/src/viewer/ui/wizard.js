@@ -463,16 +463,23 @@ export function Wizard() {
     setError('');
 
     try {
-      // Update provider enabled states
-      const settingsRes = await fetch('/api/settings');
-      if (!settingsRes.ok) throw new Error('Reading settings failed');
-      const config = await settingsRes.json();
-
-      const updatedProviders = {};
-      for (const [id, prov] of Object.entries(config.providers)) {
-        updatedProviders[id] = { ...prov, enabled: enabledProviders.includes(id) };
+      // Each chosen provider is a vendor's mode (Claude Code: Anthropic's subscription mode); a
+      // vendor is on when any of its modes is.
+      const modelsRes = await fetch('/api/models');
+      if (!modelsRes.ok) throw new Error('Reading the model registry failed');
+      const registry = await modelsRes.json();
+      const vendors = {};
+      for (const vendor of registry.vendors) {
+        const modes = {};
+        for (const [mode, served] of Object.entries(vendor.modes))
+          if (served.provider)
+            modes[mode] = { enabled: enabledProviders.includes(served.provider) };
+        vendors[vendor.id] = {
+          enabled: Object.values(modes).some((mode) => mode.enabled),
+          ...modes,
+        };
       }
-      await patchSettings('providers', updatedProviders);
+      await patchSettings('vendors', vendors);
 
       // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =

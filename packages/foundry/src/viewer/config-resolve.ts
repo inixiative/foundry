@@ -774,7 +774,7 @@ export function resolveProjectView(
       ? { composition: structuredClone(config.composition) }
       : {}),
     defaults: { ...config.defaults, ...project.defaults },
-    providers: config.providers,
+    vendors: config.vendors,
     agents: { ...config.agents },
     layers: { ...config.layers },
     sources: { ...config.sources, ...project.sources },

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { providerBaseUrl, providerEnabled } from '../src/models/vendors';
 import {
   ConfigRevisionError,
   ConfigStore,
@@ -211,7 +212,7 @@ describe('ConfigStore project resolution', () => {
     expect(system!.fields.prompt.strategy).toBe('inherit');
   });
 
-  test('load refreshes built-in provider models while preserving user settings', async () => {
+  test('pre-vendor providers settings load as vendors, keeping each mode and override', async () => {
     writeFileSync(
       join(dir, 'settings.json'),
       JSON.stringify({
@@ -241,11 +242,26 @@ describe('ConfigStore project resolution', () => {
 
     const loaded = await store.load();
 
-    expect(loaded.providers['claude-code'].enabled).toBe(false);
-    expect(loaded.providers['claude-code'].models.some((model) => model.id === 'fable')).toBe(true);
-    expect(loaded.providers.openai.baseUrl).toBe('https://example.test/v1');
-    expect(loaded.providers.openai.models.map((model) => model.id)).toContain('gpt-6-astra');
-    expect(loaded.providers.codex.models.map((model) => model.id)).toContain('gpt-6-astra');
+    expect('providers' in loaded).toBe(false);
+    expect(store.migrations).toEqual(['providers → vendors']);
+    // Claude Code off, the Anthropic API at its registry default (on): one vendor, two modes.
+    expect(loaded.vendors.anthropic).toEqual({
+      enabled: true,
+      subscription: { enabled: false },
+      api: { enabled: true },
+    });
+    expect(providerEnabled(loaded, 'claude-code')).toBe(false);
+    expect(loaded.vendors.openai!.api).toEqual({
+      enabled: true,
+      baseUrl: 'https://example.test/v1',
+    });
+    expect(providerBaseUrl(loaded, 'openai')).toBe('https://example.test/v1');
+    // The file keeps its old shape until the next save, which writes vendors.
+    await store.patch('vendors', { google: { enabled: false } });
+    const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+    expect(saved.providers).toBeUndefined();
+    expect(saved.vendors.openai.api.baseUrl).toBe('https://example.test/v1');
+    expect(saved.vendors.google.enabled).toBe(false);
   });
 });
 

@@ -587,7 +587,7 @@ test('an identified dispatch is not refused because the instructions layer repor
   };
   const config = {
     defaults: { provider: 'mock', model: 'mock' },
-    providers: {},
+    vendors: {},
     agents: { worker: { ...agent, id: 'worker', kind: 'executor', prompt: 'Execute' } },
     layers: {
       instructions: {

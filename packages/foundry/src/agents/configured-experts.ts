@@ -1,4 +1,6 @@
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
+import { vendorOfProvider } from '@inixiative/foundry-core';
+import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
@@ -174,7 +176,8 @@ export function resolveThreadDomains(
   ]);
   const providerFor = (id: string) => {
     const provider = providers.get(id);
-    if (!provider || config.providers[id]?.enabled === false)
+    // An unregistered id is an adapter supplied in code (tests, Oracle); a registered one must be switched on.
+    if (!provider || (vendorOfProvider(id) && !providerEnabled(config, id)))
       throw Error(`Configured expert provider unavailable: ${id}`);
     return provider;
   };

@@ -1,5 +1,7 @@
 import type { LLMMessage, LLMProvider, ToolRegistry } from '@inixiative/foundry-core';
 import { toolUseLoop } from '../agents/tool-loop';
+import { MODEL_REGISTRY } from '../models/registry';
+import { enabledProviderIds } from '../models/vendors';
 import type { ReadinessNativeCli } from '../readiness';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from './config';
 import type { SelfChatFocus, SelfChatMessage } from './foundry-self-chat';
@@ -131,8 +133,8 @@ export class AIAssist {
     agentKind: string,
     prompt: string,
   ): Promise<Partial<AgentSettingsConfig>> {
-    const availableModels = Object.values(config.providers)
-      .filter((p) => p.enabled)
+    const availableModels = enabledProviderIds(config)
+      .map((id) => MODEL_REGISTRY[id]!)
       .flatMap((p) =>
         p.models.map((m) => ({
           provider: p.id,
@@ -229,7 +231,7 @@ export class AIAssist {
   private _describeConfig(config: FoundryConfig): string {
     const agentCount = Object.keys(config.agents).length;
     const layerCount = Object.keys(config.layers).length;
-    const providerCount = Object.values(config.providers).filter((p) => p.enabled).length;
+    const providerCount = enabledProviderIds(config).length;
 
     return [
       `System has ${agentCount} agents, ${layerCount} layers, ${providerCount} active providers.`,
@@ -398,8 +400,8 @@ export class AIAssist {
       target = project?.agents?.[focusId] ?? config.agents?.[focusId];
     } else if (focusKind === 'layer') {
       target = project?.layers?.[focusId] ?? config.layers?.[focusId];
-    } else if (focusKind === 'provider') {
-      target = config.providers?.[focusId];
+    } else if (focusKind === 'vendor') {
+      target = config.vendors?.[focusId];
     }
     if (!target) return `(${focusKind}:${focusId} — not found in config)`;
     return '```json\n' + JSON.stringify(target, null, 2) + '\n```';

@@ -196,7 +196,7 @@ test('load validates the merged candidate before it becomes live and never rewri
     );
     const loaded = await fresh.load();
     expect((loaded.sources.memory as any).selection).toEqual({ budgetChars: 5000 });
-    expect(Object.keys(loaded.providers).length).toBeGreaterThan(0);
+    expect(Object.keys(loaded.vendors).length).toBeGreaterThan(0);
   } finally {
     cleanup();
   }

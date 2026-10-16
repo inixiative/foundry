@@ -33,7 +33,7 @@ import type { FoundryConfig } from '../src/viewer/config';
 function config(): FoundryConfig {
   return {
     defaults: { provider: 'mock', model: 'mock-model' },
-    providers: {},
+    vendors: {},
     agents: {
       'executor-answer': {
         id: 'executor-answer',

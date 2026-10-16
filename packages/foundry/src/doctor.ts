@@ -2,8 +2,17 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { localArchive } from '@inixiative/archive/remote';
-import { inspectReadiness } from './readiness';
+import { inspectReadiness, type ReadinessIssue } from './readiness';
 import { ConfigStore } from './viewer/config';
+
+/** Shape migrations applied on load: nothing to run, the next settings save writes the current shape. */
+export const migrationIssues = (migrations: readonly string[]): ReadinessIssue[] =>
+  migrations.map((migration) => ({
+    severity: 'warning',
+    scope: 'global',
+    code: 'settings-migrated',
+    message: `settings.json was loaded through a shape migration (${migration}); the next settings save writes the current shape. Nothing to run by hand.`,
+  }));
 
 /** Inspect existing settings without starting servers, agents or authentication flows. */
 async function main() {
@@ -19,12 +28,14 @@ async function main() {
   if (args.length > 1 || args[0]?.startsWith('--')) throw Error('Invalid arguments');
   const directory = resolve(args[0] ?? '.foundry');
   if (!(await stat(resolve(directory, 'settings.json'))).isFile()) throw Error('Missing settings');
-  const config = await new ConfigStore(directory).load();
+  const store = new ConfigStore(directory);
+  const config = await store.load();
   const report = await inspectReadiness(config, {
     configDir: directory,
     archive: () => localArchive(),
     ...(offline ? {} : { transport: fetch }),
   });
+  report.issues.push(...migrationIssues(store.migrations));
   console.log(JSON.stringify(report, null, 2));
   process.exitCode = report.configurationReady ? 0 : 1;
 }

@@ -48,7 +48,7 @@ const agentSettings = {
 function makeConfig(dir: string, sourceExtras: Record<string, unknown> = {}): FoundryConfig {
   return {
     defaults: { provider: 'mock', model: 'mock' },
-    providers: {},
+    vendors: {},
     agents: { worker: { ...agentSettings, id: 'worker', kind: 'executor', prompt: 'Execute' } },
     layers: {
       system: {

@@ -1623,6 +1623,95 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   },
 };
 
+/**
+ * A vendor, the way a person thinks of who serves their models: one row for Anthropic, not one for
+ * the Claude Code subscription and another for the API key. A vendor reaches its models in up to two
+ * modes, and a person may have either or both:
+ *
+ * - subscription: the person's own subscription login, through a native CLI transport (Claude Code,
+ *   Codex). `comingSoon` marks a vendor that sells a subscription Foundry has no transport for yet.
+ * - api: an API key (or, for a local server, none), through the registry provider named here.
+ *
+ * Each mode names the registry provider that serves it, so the provider table stays the one source
+ * of models, transports and credentials; the vendor only groups them.
+ */
+export type ProviderMode = 'subscription' | 'api';
+export interface ModelVendor {
+  id: string;
+  label: string;
+  /** Absent for gateways and local hosts. */
+  lab?: ModelLab;
+  subscription?: { provider: string } | { comingSoon: true };
+  api?: { provider: string };
+}
+
+/** The five main-thread labs first, in this order, then every other vendor alphabetically. */
+export const MODEL_VENDORS: readonly ModelVendor[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    lab: 'anthropic',
+    subscription: { provider: 'claude-code' },
+    api: { provider: 'anthropic' },
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI (Codex, GPT)',
+    lab: 'openai',
+    subscription: { provider: 'codex' },
+    api: { provider: 'openai' },
+  },
+  {
+    id: 'google',
+    label: 'Google (Gemini)',
+    lab: 'google',
+    subscription: { comingSoon: true },
+    api: { provider: 'gemini' },
+  },
+  {
+    id: 'meta',
+    label: 'Meta (Muse)',
+    lab: 'meta',
+    subscription: { comingSoon: true },
+    api: { provider: 'meta' },
+  },
+  {
+    id: 'xai',
+    label: 'xAI (Grok)',
+    lab: 'xai',
+    subscription: { comingSoon: true },
+    api: { provider: 'xai' },
+  },
+  { id: 'alibaba', label: 'Alibaba (Qwen)', lab: 'alibaba', api: { provider: 'qwen' } },
+  { id: 'deepseek', label: 'DeepSeek', lab: 'deepseek', api: { provider: 'deepseek' } },
+  { id: 'fireworks', label: 'Fireworks AI', api: { provider: 'fireworks' } },
+  { id: 'groq', label: 'Groq', api: { provider: 'groq' } },
+  { id: 'mistral', label: 'Mistral AI', lab: 'mistral', api: { provider: 'mistral' } },
+  { id: 'moonshot', label: 'Moonshot AI (Kimi)', lab: 'moonshot', api: { provider: 'kimi' } },
+  { id: 'ollama', label: 'Ollama (local)', api: { provider: 'ollama' } },
+  { id: 'openrouter', label: 'OpenRouter', api: { provider: 'openrouter' } },
+  { id: 'together', label: 'Together AI', api: { provider: 'together' } },
+  { id: 'typesafe', label: 'TypeSafe (Jev)', lab: 'typesafe', api: { provider: 'typesafe' } },
+  { id: 'vllm', label: 'vLLM (local)', api: { provider: 'vllm' } },
+  { id: 'zhipu', label: 'Zhipu (GLM)', lab: 'zhipu', api: { provider: 'glm' } },
+];
+
+/** The registry provider serving a vendor's mode, or undefined when the mode has no transport. */
+export function vendorModeProvider(vendor: ModelVendor, mode: ProviderMode): string | undefined {
+  const entry = vendor[mode];
+  return entry && 'provider' in entry ? entry.provider : undefined;
+}
+
+/** The vendor and mode a registry provider serves. Every registered provider serves exactly one. */
+export function vendorOfProvider(
+  providerId: string,
+): { vendor: ModelVendor; mode: ProviderMode } | undefined {
+  for (const vendor of MODEL_VENDORS)
+    for (const mode of ['subscription', 'api'] as const)
+      if (vendorModeProvider(vendor, mode) === providerId) return { vendor, mode };
+  return undefined;
+}
+
 /** Every registered model carrying all of the requested capabilities. */
 export function modelOptionsByCapability(...capabilities: ModelCapability[]): ModelSweepOption[] {
   return Object.values(MODEL_REGISTRY).flatMap((provider) =>

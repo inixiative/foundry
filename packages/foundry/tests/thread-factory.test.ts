@@ -48,7 +48,7 @@ function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
       provider: 'mock',
       model: 'mock-model',
     },
-    providers: {},
+    vendors: {},
     agents: {
       'executor-answer': {
         id: 'executor-answer',

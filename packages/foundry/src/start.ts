@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
+import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
@@ -353,7 +354,7 @@ function createProvider(config: FoundryConfig): {
     !subscription &&
     selectedAuth?.mode === 'native-profile' &&
     !(
-      config.providers[resolveDecisionModel(config).provider]?.enabled &&
+      providerEnabled(config, resolveDecisionModel(config).provider) &&
       providerApiKey(resolveDecisionModel(config).provider)
     )
   ) {
@@ -383,7 +384,7 @@ function createProvider(config: FoundryConfig): {
   switch (providerId) {
     case 'claude-code': {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
-        contextBudget: config.providers[providerId]?.contextBudget,
+        contextBudget: providerContextBudget(config, providerId),
         store: sessionStore,
         authentication: routed,
         ...(inSession ? { inSession } : {}),
@@ -470,7 +471,7 @@ function createProvider(config: FoundryConfig): {
         return {
           provider: createRegisteredProvider(providerId, {
             apiKey: key,
-            baseUrl: config.providers[providerId]?.baseUrl,
+            baseUrl: providerBaseUrl(config, providerId),
             defaultModel: config.defaults.model,
           }),
         };

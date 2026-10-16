@@ -22,12 +22,16 @@ import type { ChorusSource } from '../agents/warden-charter';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
+import { subscriptionWorker } from '../models/registry';
 import {
-  type ModelCapability,
-  type ProviderType,
-  providerConfigsFromRegistry,
-  subscriptionWorker,
-} from '../models/registry';
+  type LegacyProviderSettings,
+  mergeVendorSettings,
+  migrateProviderSettings,
+  patchVendorSettings,
+  type VendorSettingsMap,
+  validateVendorSettings,
+  vendorSettingsFromRegistry,
+} from '../models/vendors';
 import {
   COMPOSITION_SLOTS,
   type CompositionSettings,
@@ -35,7 +39,6 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
-import type { ClaudeContextBudget } from '../providers/claude-context-budget';
 import { DECISION_MODEL } from '../providers/decision-provider';
 import {
   type KingdomAccessSource,
@@ -133,8 +136,15 @@ export interface FoundryConfig {
     classifierModel?: string;
   };
 
-  /** Provider configurations (keyed by provider ID). */
-  providers: Record<string, ProviderConfig>;
+  /**
+   * Vendors (keyed by vendor id: anthropic, openai, google, ...), each with an on/off switch and its
+   * subscription and API modes (models/vendors.ts). Replaces the per-transport `providers` map,
+   * which is migrated on load.
+   */
+  vendors: VendorSettingsMap;
+
+  /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
+  installationName?: string;
 
   /**
    * Global agent templates (keyed by agent ID).
@@ -291,36 +301,6 @@ export type ListPatch<T> =
   | { replace: T[] }
   | { append: T[]; remove?: T[] }
   | { append?: T[]; remove: T[] };
-
-export interface ProviderConfig {
-  /** Claude Code native compaction policy; defaults to 200k / 80%. */
-  contextBudget?: ClaudeContextBudget | false;
-  id: string;
-  type: ProviderType;
-  /** Display label. */
-  label: string;
-  /** Available models for this provider. */
-  models: ModelConfig[];
-  /** API root override. Seeded from the registry; edit for a proxy, a mainland endpoint, or a local port. */
-  baseUrl?: string;
-  /** Whether this provider is enabled. */
-  enabled: boolean;
-}
-
-export interface ModelConfig {
-  id: string;
-  label: string;
-  /** Suggested use: "fast" for middleware, "standard" for general, "powerful" for execution. */
-  tier: 'fast' | 'standard' | 'powerful';
-  /** Cost tier for display. */
-  costTier?: 'low' | 'medium' | 'high';
-  /** Context window size. */
-  contextWindow?: number;
-  /** What this model is worth using for. Always includes "judgment". */
-  capabilities?: ModelCapability[];
-  /** The vendor trains on prompts and completions sent to this model. */
-  trainsOnInput?: boolean;
-}
 
 /**
  * Execution environment — where an agent runs its tool calls.
@@ -685,7 +665,7 @@ export function defaultConfig(): FoundryConfig {
       classifierProvider: SUBSCRIPTION_DECISIONS,
       classifierModel: DECISION_MODEL,
     },
-    providers: providerConfigsFromRegistry(),
+    vendors: vendorSettingsFromRegistry(),
     agents: {},
     layers: {},
     sources: {},
@@ -741,28 +721,34 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
   };
 }
 
-function mergeProviderConfigs(
-  defaults: Record<string, ProviderConfig>,
-  saved?: Record<string, ProviderConfig>,
-): Record<string, ProviderConfig> {
-  const merged: Record<string, ProviderConfig> = {};
-
-  for (const [id, provider] of Object.entries(defaults)) {
-    const existing = saved?.[id];
-    merged[id] = {
-      ...provider,
-      ...existing,
-      models: provider.models,
-      enabled: existing?.enabled ?? provider.enabled,
-      baseUrl: existing?.baseUrl ?? provider.baseUrl,
-    };
-  }
-
-  for (const [id, provider] of Object.entries(saved ?? {})) {
-    if (!(id in merged)) merged[id] = provider;
-  }
-
-  return merged;
+/**
+ * A saved settings.json as a full configuration: saved fields over the defaults, vendors merged
+ * mode by mode. Settings saved before vendors name one provider per transport (`providers`); they
+ * load as vendors and the next save writes the vendor shape. A saved `vendors` wins over a stray
+ * `providers`. `migrations` names what was converted, for `bun run doctor`.
+ */
+export function configFromSaved(raw: unknown): { config: FoundryConfig; migrations: string[] } {
+  const { providers, ...saved } = (raw ?? {}) as Partial<FoundryConfig> & {
+    providers?: Record<string, LegacyProviderSettings>;
+  };
+  const defaults = defaultConfig();
+  const migrated = providers && !saved.vendors ? migrateProviderSettings(providers) : undefined;
+  const migrations = migrated
+    ? [
+        `providers → vendors${migrated.dropped.length ? ` (dropped unregistered ${migrated.dropped.join(', ')})` : ''}`,
+      ]
+    : providers
+      ? ['providers ignored: vendors is saved']
+      : [];
+  return {
+    config: {
+      ...defaults,
+      ...saved,
+      vendors: mergeVendorSettings(defaults.vendors, migrated?.vendors ?? saved.vendors),
+      projects: { ...saved.projects },
+    },
+    migrations,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -895,6 +881,18 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
 }
 
 export function validateConfig(config: FoundryConfig): void {
+  if ('providers' in config)
+    throw Error(
+      'settings key "providers" is now "vendors": one entry per vendor with subscription and api modes (models/vendors.ts)',
+    );
+  validateVendorSettings(config.vendors);
+  if (
+    config.installationName !== undefined &&
+    (typeof config.installationName !== 'string' ||
+      !config.installationName.trim() ||
+      config.installationName.length > 120)
+  )
+    throw Error('installationName must be 1 to 120 characters');
   validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
@@ -1056,7 +1054,7 @@ const KEYED_SECTIONS: Record<string, string> = {
   agents: 'agent',
   layers: 'layer',
   sources: 'source',
-  providers: 'provider',
+  vendors: 'vendor',
   projects: 'project',
 };
 
@@ -1093,6 +1091,7 @@ export class ConfigStore {
   private _queue: Promise<unknown> = Promise.resolve();
   private _listeners = new Set<SettingsListener>();
   private _notified: Promise<void> = Promise.resolve();
+  private _migrations: string[] = [];
 
   constructor(dir: string) {
     this._dir = resolve(dir);
@@ -1106,6 +1105,14 @@ export class ConfigStore {
     return this._dir;
   }
 
+  /**
+   * Shape migrations the last load applied in memory (e.g. `providers → vendors`). The file keeps
+   * its old shape until the next save writes the current one; `bun run doctor` reports them.
+   */
+  get migrations(): readonly string[] {
+    return this._migrations;
+  }
+
   /** Increments whenever the committed config changes. */
   get revision(): number {
     return this._revision;
@@ -1117,17 +1124,11 @@ export class ConfigStore {
       const path = join(this._dir, 'settings.json');
       const file = Bun.file(path);
       if (await file.exists()) {
-        const saved = (await file.json()) as Partial<FoundryConfig>;
-        const defaults = defaultConfig();
         // Merge saved over defaults into a candidate; validate before it becomes live.
         // An invalid persisted policy fails loudly, keeps the last working live
         // configuration, and leaves the file untouched for the operator to repair.
-        const candidate: FoundryConfig = {
-          ...defaults,
-          ...saved,
-          providers: mergeProviderConfigs(defaults.providers, saved.providers),
-          projects: { ...saved.projects },
-        };
+        const { config: candidate, migrations } = configFromSaved(await file.json());
+        this._migrations = migrations;
         try {
           validateConfig(candidate);
         } catch (err) {
@@ -1215,8 +1216,13 @@ export class ConfigStore {
     return this.update((next) => {
       if (section === 'defaults') {
         next.defaults = { ...next.defaults, ...patch } as FoundryConfig['defaults'];
-      } else if (section === 'providers') {
-        next.providers = { ...next.providers, ...patch } as FoundryConfig['providers'];
+      } else if (section === 'vendors') {
+        next.vendors = patchVendorSettings(next.vendors, patch);
+      } else if (section === 'profile') {
+        // A name, or null to fall back to the default ("Foundry on <host>").
+        if (typeof patch.installationName === 'string')
+          next.installationName = patch.installationName.trim();
+        else if (patch.installationName === null) delete next.installationName;
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {
@@ -1405,7 +1411,6 @@ function deletableSection(
   section: string,
 ): Record<string, unknown> | undefined {
   if (
-    section === 'providers' ||
     section === 'agents' ||
     section === 'layers' ||
     section === 'sources' ||

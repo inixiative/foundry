@@ -7,6 +7,7 @@ import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
 import { MODEL_REGISTRY } from './models/registry';
+import { providerEnabled } from './models/vendors';
 import { resolveDecisionModel } from './providers/decision-provider';
 import {
   type KingdomIntegration,
@@ -136,7 +137,7 @@ export async function inspectNativeClis(
   const config = subscription?.config ?? saved;
   const use = new Map<string, { provider?: string; used: boolean }>();
   for (const [provider, cli] of NATIVE_CLIS)
-    if (config.providers[provider]?.enabled)
+    if (providerEnabled(config, provider))
       use.set(cli, {
         provider,
         used: config.defaults.provider === provider || !!options.requested?.has(provider),
@@ -268,11 +269,11 @@ export async function inspectReadiness(
     if (subscription && id === SUBSCRIPTION_DECISIONS) {
       return;
     }
-    if (!config.providers[id]?.enabled)
+    if (!providerEnabled(config, id))
       issue('error', scope, 'provider-disabled', 'A requested provider is absent or disabled.');
     if (
       id !== config.defaults.provider &&
-      !(!subscription && id === decisionProvider && config.providers[id]?.enabled)
+      !(!subscription && id === decisionProvider && providerEnabled(config, id))
     )
       issue(
         'error',
@@ -481,8 +482,7 @@ export async function inspectReadiness(
       if (
         !subscription &&
         !(
-          config.providers[decisionProvider]?.enabled &&
-          providerApiKey(decisionProvider, environment)
+          providerEnabled(config, decisionProvider) && providerApiKey(decisionProvider, environment)
         )
       )
         issue(

@@ -5,6 +5,7 @@ import {
   registryModel,
   resolveDecisionModel,
 } from '../models/registry';
+import { providerBaseUrl, providerEnabled } from '../models/vendors';
 import type { FoundryConfig } from '../viewer/config';
 import { AnthropicProvider } from './anthropic';
 import { createRegisteredProvider, providerApiKey } from './openai-compatible';
@@ -12,7 +13,7 @@ import { createRegisteredProvider, providerApiKey } from './openai-compatible';
 /** Re-exported: the registry defaults and the resolver now live in core. */
 export { DECISION_MODEL, DECISION_PROVIDER, resolveDecisionModel } from '../models/registry';
 
-export type DecisionDefaults = Pick<FoundryConfig, 'defaults' | 'providers'>;
+export type DecisionDefaults = Pick<FoundryConfig, 'defaults' | 'vendors'>;
 
 /**
  * Decisions run on any registered model tagged `judgment`. There is no judgment
@@ -26,7 +27,7 @@ export function createDecisionProvider(
 ): LLMProvider {
   const { provider, model } = resolveDecisionModel(config);
   const registered = MODEL_REGISTRY[provider]!;
-  if (!config.providers[provider]?.enabled)
+  if (!providerEnabled(config, provider))
     throw Error(
       `Foundry decisions require ${provider} to be enabled; the worker model will not be used as a fallback.`,
     );
@@ -48,13 +49,13 @@ export function createDecisionProvider(
     return new AnthropicProvider({
       apiKey,
       defaultModel: model,
-      baseUrl: config.providers[provider]?.baseUrl,
+      baseUrl: providerBaseUrl(config, provider),
       id: `${provider}-decisions`,
     });
   return createRegisteredProvider(provider, {
     apiKey,
     defaultModel: model,
-    baseUrl: config.providers[provider]?.baseUrl,
+    baseUrl: providerBaseUrl(config, provider),
     id: `${provider}-decisions`,
   });
 }
