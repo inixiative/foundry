@@ -74,19 +74,19 @@ test('a correction becomes a tuning card in chat; edit applies it; the Feedback 
       return items[0]?.stage === 'applied';
     }, 'applied');
 
-    await page.getByRole('tab', { name: 'Feedback' }).click();
-    const row = page.locator('.feedback-row').first();
+    // The project's feedback (the strip, or the center Feedback tab): the item with its learning loop.
+    await page.locator('.feedback-strip').click();
+    const row = page.locator('.feedback-item').first();
     await row.waitFor();
     expect(await row.locator('.feedback-statement').innerText()).toBe(EDITED);
-    expect(await row.getAttribute('data-stage')).toBe('applied');
-    expect(await row.locator('.feedback-attention').innerText()).toBe('in progress');
-    expect(await row.locator('.feedback-change code').innerText()).toContain(EDITED);
-    expect(await row.locator('.feedback-confidence').innerText()).toContain('exposure-based');
-    expect(await page.getByRole('tab', { name: /needs attention/ }).innerText()).toContain('(0)');
-
-    await row.getByRole('button', { name: 'undo' }).click();
+    expect(await row.getAttribute('data-origin')).toBe('intervention');
+    const loop = row.locator('.feedback-loop');
+    await loop.locator('summary').click();
+    expect(await loop.locator('summary').innerText()).toContain('applied');
+    expect(await loop.locator('.feedback-change code').innerText()).toContain(EDITED);
+    await loop.getByRole('button', { name: 'undo' }).click();
     await until(
-      async () => (await row.getAttribute('data-stage')) !== 'applied',
+      async () => !(await loop.locator('summary').innerText()).includes('applied'),
       'reverted in the view',
     );
     expect(errors).toEqual([]);

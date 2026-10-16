@@ -2,6 +2,17 @@
 
 **Status: hypotheses, not a settled design. The [Lifecycle](#lifecycle-proposal-2026-10-12-awaiting-arons-yes) section is a PROPOSAL awaiting Aron.** This document covers journey goal 8 in the [system map](SYSTEM-MAP.md) ("process feedback captured into a middleware layer") and the measuring half of goal 9. Treat what follows as working hypotheses and the experiments that would test them, not as decisions.
 
+## Explicit feedback (built 2026-10-16)
+
+> Aron: "Feedback per thread. We should have a global feedback thing, like Forge Master, which tracks all your feedback ... Individual threads can have feedback and they just feed in — it's a duplicate view. For each project we should see feedback at the top of its threads list."
+
+Feedback is **explicit**. What is built today, and supersedes the capture parts of the proposal below:
+
+- **Giving it.** `/feedback <text>` in the viewer composer (never sent to the model), a message's ⋯ → feedback (aimed at that turn and message), or `/feedback <text>` over ACP. All three call `POST /api/threads/:threadId/feedback` (`text`, optional `turnId`, `messageId`, `tags`); with no `turnId` the item points at the thread's last turn. It is recorded as said: no classifier, routing or tuning prompt. `/correction` is kept: with a decision provider it is classified and tuned as before; without one it is recorded as explicit feedback tagged `correction`.
+- **One store.** An item is the same fold over journal rows as before (`feedback/lifecycle.ts`): a `feedback-capture` row with `origin: "explicit"`, its author (the local operator and the surface) and the message it refers to, on the thread and turn it was given on; the thread gives its project. `inbox` is `open` until a `feedback-status` row archives it (`POST /api/feedback/status`, one item or many; unarchive the same way). `GET /api/feedback?status=&projectId=&threadId=` lists newest first. The `feedback` stream carries every change; the rows reach the thread's archive snapshot as phase entries.
+- **Three scopes, one list.** The pinned **Feedback** inbox in the left column (after Forge Master): everything, open / archived / all, archive one or many, each item linking to its project, thread and turn. A project's **strip** at the top of its threads (open count; it opens the project's list). The **thread**: a marker on the turn an item refers to, and the thread's list in the detail panel.
+- **Detection is opt-in.** `feedback.capture` defaults to false (Settings → Advanced → Feedback turns it on): the detector → classify → route → tune loop below runs only then. An install that never set it gets the new default.
+
 Code references point at `origin/main` as of 2026-09-30:
 
 | Repo | Commit |
@@ -179,7 +190,7 @@ A rule that has many exposures and no citations is dead weight in that Warden's 
 
 > Aron (2026-10-12): "You should be able to see your feedback cycle as one of the things in Foundry. Here's all the feedback you've left, where it is in the cycle, what it's polished, how confident we are that it's working, or whether it needs to go back to the drawing board, or whether it doesn't need attention."
 
-- **Where it lives.** **Feedback** is a center view beside Chat and Graph (`pf:viewer/ui/feedback.js`). It is a first-class place, not something buried in a thread. A data stream feeds it: `feedback` for everything, `feedback:<projectId>` for one project. The stream sends a snapshot `{ items }`, then an append `{ item }` whenever an item changes. It also re-sends an applied item's counts after each journalled turn. The same data is at `GET /api/feedback?projectId=&attention=`, sorted.
+- **Where it lives.** (Superseded 2026-10-16: the pinned inbox, the project strip and the thread; see [Explicit feedback](#explicit-feedback-built-2026-10-16).) **Feedback** is a center view beside Chat and Graph (`pf:viewer/ui/feedback.js`). It is a first-class place, not something buried in a thread. A data stream feeds it: `feedback` for everything, `feedback:<projectId>` for one project. The stream sends a snapshot `{ items }`, then an append `{ item }` whenever an item changes. It also re-sends an applied item's counts after each journalled turn. The same data is at `GET /api/feedback?projectId=&attention=`, sorted.
 - **Each item shows:**
   - The original text, with a link to its turn.
   - Its **stage**: captured → routed → tuned → applied → in use → holding, or recurred, or dismissed. Routing comes before the tuning answer in Foundry, because the prompt has to say where the rule would go.

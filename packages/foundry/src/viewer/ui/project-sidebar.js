@@ -1,23 +1,25 @@
 /**
  * Navigation column — the workspace's left column.
  *
- * Top: the pinned scopes, Global (threads no project owns) and Forge Master (the internal
- * thread about this Foundry). Then the projects, and below them the threads of whichever
+ * Top: the pinned scopes, Global (threads no project owns), Forge Master (the internal
+ * thread about this Foundry) and Feedback (the inbox of every feedback item). Then the projects, and below them the threads of whichever
  * scope is selected; the two lists scroll independently. Collapsed: a thin strip with
  * project dots.
  */
 
+import { feedbackIn } from './feedback.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
 import {
   activeProjectId,
   authFetch,
-  compactPanel,
   createProject,
+  feedbackInboxOpen,
   forgeMasterOpen,
   projectSidebarOpen,
   projects,
   projectTags,
+  selectScope,
   showToast,
   updateProject,
 } from './store.js';
@@ -303,21 +305,18 @@ export function ProjectSidebar() {
   const filtered = filterTag ? items.filter((p) => (p.tags || []).includes(filterTag)) : items;
 
   const forge = forgeMasterOpen.value;
-  const handleSelect = (id) => {
-    forgeMasterOpen.value = false;
-    activeProjectId.value = id;
-  };
+  const inbox = feedbackInboxOpen.value;
+  const pinned = forge || inbox;
+  const openFeedback = feedbackIn().filter((item) => item.inbox === 'open').length;
+  const handleSelect = (id) => selectScope(id);
 
   return html`
     <div class="proj-sidebar nav-column">
-      <!-- Pinned scopes. A future pinned item (Feedback) joins these. -->
+      <!-- Pinned scopes -->
       <div class="proj-defaults nav-pinned">
         <div
-          class="proj-item proj-global ${!active && !forge ? 'proj-active' : ''}"
-          onClick=${() => {
-            forgeMasterOpen.value = false;
-            activeProjectId.value = null;
-          }}
+          class="proj-item proj-global ${!active && !pinned ? 'proj-active' : ''}"
+          onClick=${() => selectScope(null)}
         >
           <span class="proj-runtime-icon">*</span>
           <div class="proj-item-body">
@@ -327,16 +326,24 @@ export function ProjectSidebar() {
         </div>
         <div
           class="proj-item proj-global ${forge ? 'proj-active' : ''}"
-          onClick=${() => {
-            forgeMasterOpen.value = true;
-            compactPanel.value = 'conversation';
-          }}
+          onClick=${() => selectScope('forge')}
         >
           <span class="proj-runtime-icon">\u2692</span>
           <div class="proj-item-body">
             <div class="proj-item-label">Forge Master</div>
             <div class="proj-item-meta"><span>this Foundry and its settings</span></div>
           </div>
+        </div>
+        <div
+          class="proj-item proj-global nav-feedback ${inbox ? 'proj-active' : ''}"
+          onClick=${() => selectScope('feedback')}
+        >
+          <span class="proj-runtime-icon">\u25C6</span>
+          <div class="proj-item-body">
+            <div class="proj-item-label">Feedback</div>
+            <div class="proj-item-meta"><span>${openFeedback ? `${openFeedback} open · ` : ''}everything you’ve given</span></div>
+          </div>
+          ${openFeedback ? html`<span class="nav-count" aria-label=${`${openFeedback} open`}>${openFeedback}</span>` : null}
         </div>
       </div>
 
@@ -386,7 +393,7 @@ export function ProjectSidebar() {
             <${ProjectItem}
               key=${p.id}
               project=${p}
-              isActive=${!forge && active === p.id}
+              isActive=${!pinned && active === p.id}
               onSelect=${handleSelect}
               onRename=${setRenaming}
             />

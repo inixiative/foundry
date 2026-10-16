@@ -58,12 +58,18 @@ export const projectTags = signal([]); // string[]
 export const activeProjectId = signal(null); // selected project ID or null (global: unscoped threads)
 /** The workspace shows Forge Master, the internal thread about this Foundry, instead of a scope's threads. */
 export const forgeMasterOpen = signal(false);
+/** The workspace shows the Feedback inbox: every feedback item, across projects. */
+export const feedbackInboxOpen = signal(false);
+/** Every feedback item (the `feedback` stream), newest first; the inbox, project strips and threads read it. */
+export const feedbackItems = signal([]);
+/** A turn to bring into view once its thread's messages show (a feedback item's provenance link). */
+export const focusTurnId = signal(null);
 
 /** The project the operator is looking at: the page's on settings/analytics, else the workspace's (none for Global and Forge Master). */
 export function scopeProjectId() {
   const { page, projectId } = route.value;
   if (page !== 'workspace') return projectId;
-  return forgeMasterOpen.value ? null : activeProjectId.value;
+  return forgeMasterOpen.value || feedbackInboxOpen.value ? null : activeProjectId.value;
 }
 export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
@@ -231,6 +237,91 @@ export function holdStream(stream, onFrame) {
     heldStreams.delete(stream);
     socket.close(stream);
   };
+}
+
+const newestFeedbackFirst = (a, b) => b.origin.at - a.origin.at || (a.id < b.id ? 1 : -1);
+
+/** Hold the `feedback` stream for the whole workspace: one list, three scopes (inbox, project, thread). */
+function holdFeedback() {
+  holdStream('feedback', (frame) => {
+    if (frame.action === 'rejected') return;
+    if (frame.action === 'snapshot')
+      feedbackItems.value = [...(frame.payload.items ?? [])].sort(newestFeedbackFirst);
+    else if (frame.payload?.item)
+      feedbackItems.value = [
+        frame.payload.item,
+        ...feedbackItems.value.filter((item) => item.id !== frame.payload.item.id),
+      ].sort(newestFeedbackFirst);
+  });
+}
+
+/** Select a pinned scope or a project: Global (`null`), a project id, Forge Master or the Feedback inbox. */
+export function selectScope(scope) {
+  batch(() => {
+    forgeMasterOpen.value = scope === 'forge';
+    feedbackInboxOpen.value = scope === 'feedback';
+    if (scope !== 'forge' && scope !== 'feedback') activeProjectId.value = scope;
+    if (scope === 'forge' || scope === 'feedback') compactPanel.value = 'conversation';
+  });
+}
+
+/** `/feedback <text>`: record feedback on a thread (its last turn unless one is named). Never a turn. */
+export async function giveFeedback(threadId, text, { turnId, messageId } = {}) {
+  if (!threadId) {
+    showToast('Open a thread to give feedback on it', 'warn');
+    return false;
+  }
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        surface: 'viewer',
+        ...(turnId ? { turnId } : {}),
+        ...(messageId ? { messageId } : {}),
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(body.error || 'Feedback not recorded', 'error');
+      return false;
+    }
+    showToast('Feedback recorded', 'ok');
+    return true;
+  } catch (err) {
+    showToast(`Feedback not recorded: ${err.message}`, 'error');
+    return false;
+  }
+}
+
+/** Archive feedback items, or put them back in the inbox. */
+export async function setFeedbackStatus(itemIds, status) {
+  if (!itemIds.length) return false;
+  try {
+    const res = await authFetch('/api/feedback/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemIds, status }),
+    });
+    if (res.ok) return true;
+    showToast((await res.json().catch(() => ({}))).error || 'Feedback not updated', 'error');
+  } catch (err) {
+    showToast(`Feedback not updated: ${err.message}`, 'error');
+  }
+  return false;
+}
+
+/** Go to where a feedback item was given: its project, its thread, its turn. */
+export function openFeedbackSource(item) {
+  batch(() => {
+    forgeMasterOpen.value = false;
+    feedbackInboxOpen.value = false;
+    activeProjectId.value = item.projectId ?? null;
+    activePanel.value = 'conversation';
+    focusTurnId.value = item.origin.turnId ?? null;
+  });
+  selectThread(item.origin.threadId);
 }
 
 /** Open a layer in the detail drawer (from the chat or the graph). */
@@ -1691,7 +1782,7 @@ export function dismissToast() {
 // View state — persist to URL hash so refresh restores position
 // ---------------------------------------------------------------------------
 
-const VIEW_KEYS = ['project', 'thread', 'panel', 'sidebar', 'detail', 'forge'];
+const VIEW_KEYS = ['project', 'thread', 'panel', 'sidebar', 'detail', 'forge', 'feedback'];
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -1703,6 +1794,7 @@ function writeHash() {
   if (route.peek().page !== 'workspace') return;
   const params = new URLSearchParams();
   if (forgeMasterOpen.value) params.set('forge', '1');
+  if (feedbackInboxOpen.value) params.set('feedback', '1');
   if (activeProjectId.value) params.set('project', activeProjectId.value);
   if (activeThreadId.value) params.set('thread', activeThreadId.value);
   if (activePanel.value !== 'conversation') params.set('panel', activePanel.value);
@@ -1716,6 +1808,7 @@ function writeHash() {
 function restoreFromHash() {
   const h = readHash();
   forgeMasterOpen.value = h.forge === '1';
+  feedbackInboxOpen.value = h.feedback === '1' && h.forge !== '1';
   if (h.project) activeProjectId.value = h.project;
   if (h.thread) selectThread(h.thread);
   if (h.panel) activePanel.value = h.panel;
@@ -1732,6 +1825,7 @@ export function init() {
   restoreFromHash();
 
   connectStreams();
+  holdFeedback();
   loadTraces();
   loadDefinitions();
   loadProjects();
@@ -1748,6 +1842,7 @@ export function init() {
   effect(() => {
     // Touch all signals to subscribe
     forgeMasterOpen.value;
+    feedbackInboxOpen.value;
     activeProjectId.value;
     // Returning to the workspace writes its live state, not the hash it was left with.
     route.value;

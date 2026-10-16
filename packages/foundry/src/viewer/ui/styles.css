@@ -5759,7 +5759,172 @@ a.thread-ref:hover {
   }
 }
 
-/* ---- Feedback lifecycle (feedback.js) ---- */
+/* ---- Feedback (feedback.js): inbox, project strip, thread marker and list ---- */
+.feedback-inbox-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.feedback-inbox-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.feedback-inbox-name {
+  font-size: 13px;
+  color: var(--text);
+}
+.feedback-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.feedback-bulk label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.feedback-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+.feedback-item--archived {
+  border-left-color: var(--border);
+  opacity: 0.7;
+}
+.feedback-item:not(:has(.feedback-select)) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.feedback-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-item .feedback-statement {
+  white-space: pre-wrap;
+}
+.feedback-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 11px;
+}
+.feedback-chip--project {
+  color: var(--text);
+}
+.feedback-id {
+  color: var(--text-dimmer);
+}
+.feedback-loop summary {
+  cursor: pointer;
+  font-size: 11px;
+}
+.feedback-loop > *:not(summary) {
+  margin-top: 4px;
+}
+.feedback-list--compact {
+  padding: 0;
+}
+.feedback-list--compact .feedback-item {
+  padding: 8px;
+}
+.feedback-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  margin: 4px 8px 6px;
+  padding: 5px 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.feedback-strip:hover,
+.feedback-strip--current {
+  border-color: var(--accent);
+}
+.feedback-strip--open .feedback-strip-icon,
+.feedback-strip--open .feedback-strip-count {
+  color: var(--accent);
+}
+.feedback-strip-label {
+  color: var(--text);
+}
+.nav-count {
+  align-self: center;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10px;
+  text-align: center;
+}
+.feedback-scope-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.feedback-scope-row:hover {
+  background: var(--surface2);
+}
+.turn-feedback {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-dim);
+  border-radius: 0 4px 4px 0;
+  font-size: 11px;
+}
+.turn-feedback summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.turn-feedback ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.give-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-msg--focused {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .feedback-panel {
   display: flex;
   flex-direction: column;
@@ -5774,32 +5939,6 @@ a.thread-ref:hover {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.feedback-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(120px, 1fr));
-  gap: 10px;
-  padding: 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 12px;
-}
-.feedback-row[data-attention="needs attention"] {
-  border-color: var(--warn);
-}
-.feedback-row[data-attention="healthy"] {
-  border-color: var(--ok-dim);
-}
-.feedback-row[data-stage="dismissed"] {
-  opacity: 0.6;
-}
-.feedback-row-head {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
 }
 .feedback-attention {
@@ -5852,11 +5991,6 @@ a.thread-ref:hover {
 .feedback-path {
   font-size: 10px;
   overflow-wrap: anywhere;
-}
-@media (max-width: 900px) {
-  .feedback-row {
-    grid-template-columns: 1fr;
-  }
 }
 .feedback-stage-label {
   color: var(--text-dimmer);

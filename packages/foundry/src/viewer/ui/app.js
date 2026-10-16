@@ -8,7 +8,7 @@ import { AnalyticsPage } from './analytics.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { DetailDrawer } from './detail-drawer.js';
-import { FeedbackPanel } from './feedback.js';
+import { FeedbackInbox } from './feedback.js';
 import { GlossButton, GlossReview } from './gloss.js';
 import { GraphPanel } from './graph-view.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
@@ -27,6 +27,7 @@ import {
   dismissTraceSelection,
   eventCount,
   executeAction,
+  feedbackInboxOpen,
   forgeMasterOpen,
   init,
   inspectLayer,
@@ -59,7 +60,7 @@ function PageNav() {
   </nav>`;
 }
 
-/** The selected scope, centered in the header: a project's name, else Global / Forge Master (or Foundry off the workspace). */
+/** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
 function HeaderScope() {
   const scope = scopeProjectId();
   const workspace = route.value.page === 'workspace';
@@ -69,7 +70,9 @@ function HeaderScope() {
       ? 'Foundry'
       : forgeMasterOpen.value
         ? 'Forge Master'
-        : 'Global';
+        : feedbackInboxOpen.value
+          ? 'Feedback'
+          : 'Global';
   return html`<div class="header-scope" title=${scope ? `Project: ${name}` : name}>
     ${scope ? html`<span class="header-scope-kind">Project</span>` : null}
     <span class="header-scope-name">${name}</span>
@@ -113,10 +116,11 @@ const panelViews = [
 ];
 
 function PanelNavigation() {
-  // Forge Master has no thread list or thread detail.
-  const views = forgeMasterOpen.value
-    ? panelViews.filter(([id]) => id === 'projects' || id === 'conversation')
-    : panelViews;
+  // Forge Master and the Feedback inbox have no thread list or thread detail.
+  const views =
+    forgeMasterOpen.value || feedbackInboxOpen.value
+      ? panelViews.filter(([id]) => id === 'projects' || id === 'conversation')
+      : panelViews;
   const select = (id) => {
     if (id === 'projects') projectSidebarOpen.value = true;
     if (id === 'detail') detailDrawerOpen.value = true;
@@ -157,7 +161,7 @@ function CenterViews() {
     ].map(
       ([id, label]) => html`<button key=${id} role="tab"
       class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
-      title=${id === 'graph' ? 'Threads, turn flow and learning loops (g)' : id === 'feedback' ? 'Your feedback: where it went, what changed, whether it stuck' : 'Conversation'}
+      title=${id === 'graph' ? 'Threads, turn flow and learning loops (g)' : id === 'feedback' ? 'Feedback given in this scope’s threads' : 'Conversation'}
       onClick=${() => {
         activePanel.value = id;
       }}>${label}</button>`,
@@ -253,9 +257,10 @@ function App() {
   const projOpen = projectSidebarOpen.value;
   const detailOpen = detailDrawerOpen.value;
   const forge = forgeMasterOpen.value;
+  const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge ? ' panels--forge' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -285,13 +290,15 @@ function App() {
           ${
             forge
               ? html`<div class="forge-master"><${SelfChatPane} docked=${false} /></div>`
-              : html`
+              : inbox
+                ? html`<${FeedbackInbox} />`
+                : html`
             <${CenterViews} />
             ${
               activePanel.value === 'graph'
                 ? html`<${GraphPanel} onLayerClick=${inspectLayer} />`
                 : activePanel.value === 'feedback'
-                  ? html`<${FeedbackPanel} />`
+                  ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
                   : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `

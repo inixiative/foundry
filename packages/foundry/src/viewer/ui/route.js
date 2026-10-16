@@ -22,6 +22,7 @@ export const FOUNDRY_SETTINGS = [
   ['layers', 'Layers', 'Advanced'],
   ['agents', 'Agents', 'Advanced'],
   ['activity', 'Activity', 'Advanced'],
+  ['feedback', 'Feedback', 'Advanced'],
 ];
 
 export const PROJECT_SETTINGS = [

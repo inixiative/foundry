@@ -3,16 +3,20 @@
  * (a project, Global, or Forge Master's one thread), each with its status, branch and references.
  */
 
+import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useState } from './lib.js';
 import {
+  activePanel,
   activeProjectId,
   activeThreadId,
   allThreads,
   createThread,
   executeAction,
+  feedbackInboxOpen,
   forgeMasterOpen,
   projects,
   promptCounts,
+  selectScope,
   selectThread,
   worktrees,
 } from './store.js';
@@ -279,8 +283,49 @@ function ForgeMasterThread() {
   `;
 }
 
+/** In the Feedback inbox the lower list is feedback by project: where it was given, one click away. */
+function FeedbackByProject() {
+  const items = feedbackIn();
+  const scopes = new Map();
+  for (const item of items) {
+    const key = item.projectId ?? null;
+    const entry = scopes.get(key) ?? { open: 0, total: 0 };
+    entry.total++;
+    if (item.inbox === 'open') entry.open++;
+    scopes.set(key, entry);
+  }
+  return html`
+    <section class="thread-list" aria-label="Feedback by project">
+      <div class="sidebar-header">
+        <span class="sidebar-section-title">BY PROJECT</span>
+        <span class="sidebar-scope-chip scope-global">Feedback</span>
+      </div>
+      <div class="sidebar-threads-list">
+        ${
+          scopes.size
+            ? [...scopes].map(
+                ([
+                  projectId,
+                  counts,
+                ]) => html`<button type="button" key=${projectId ?? '*'} class="feedback-scope-row"
+                  onClick=${() => {
+                    selectScope(projectId);
+                    activePanel.value = 'feedback';
+                  }}>
+                  <span>${projectId ? projects.value.find((p) => p.id === projectId)?.label || projectId : 'Global'}</span>
+                  <span class="feedback-dim">${counts.open} open / ${counts.total}</span>
+                </button>`,
+              )
+            : html`<div class="sidebar-empty">No feedback yet</div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
 export function ThreadList() {
   const [addingThread, setAddingThread] = useState(false);
+  if (feedbackInboxOpen.value) return html`<${FeedbackByProject} />`;
   const forge = forgeMasterOpen.value;
   const selectedThread = activeThreadId.value;
   const activeProject = activeProjectId.value;
@@ -326,6 +371,7 @@ export function ThreadList() {
         }
       </div>
 
+      ${!forge && activeProject ? html`<${FeedbackStrip} projectId=${activeProject} />` : null}
       ${!forge && addingThread ? html`<${AddThreadForm} onDone=${() => setAddingThread(false)} />` : null}
 
       <div class="sidebar-threads-list">

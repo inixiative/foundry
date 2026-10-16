@@ -10,6 +10,7 @@
  * The layer, agent and creation views are exported for the Settings sections (runtime-panels.js).
  */
 
+import { feedbackIn, ThreadFeedback } from './feedback.js';
 import {
   deliveredUnderstanding,
   deliverySummary,
@@ -1386,6 +1387,10 @@ function ThreadDetail() {
       `
           : null
       }
+
+      <${Section} title=${`Feedback (${feedbackIn({ threadId: tid }).length})`}>
+        <${ThreadFeedback} threadId=${tid} />
+      </${Section}>
 
       <${KnowledgeInspection} key=${tid} threadId=${tid} />
     </div>

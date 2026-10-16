@@ -11,6 +11,7 @@ import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { DevicesSection } from './devices.js';
+import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
@@ -479,6 +480,8 @@ function FoundrySection({ section, config }) {
   if (section === 'layers') return html`<${LayersSection} />`;
   if (section === 'agents') return html`<${AgentsSection} />`;
   if (section === 'activity') return html`<${ActivitySection} />`;
+  if (section === 'feedback')
+    return html`<${FeedbackSettings} feedback=${config.feedback} onSaved=${saved} />`;
   return null;
 }
 

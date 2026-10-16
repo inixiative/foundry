@@ -85,6 +85,7 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     expect(await pinned.allInnerTexts()).toEqual([
       expect.stringContaining('Global'),
       expect.stringContaining('Forge Master'),
+      expect.stringContaining('Feedback'),
     ]);
     const threads = column.locator('.nav-threads .tree-label');
     await threads.first().waitFor();

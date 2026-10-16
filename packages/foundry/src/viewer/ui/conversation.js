@@ -11,7 +11,7 @@ import {
   browserStorageSummary,
   isUnsavedCompletion,
 } from './conversation-state.js';
-import { FeedbackPrompt } from './feedback.js';
+import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
 import {
   IMAGE_TYPES,
   IMAGES_PER_MESSAGE,
@@ -26,7 +26,9 @@ import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from '.
 import {
   activeThreadId,
   allThreads,
+  focusTurnId,
   forkThread,
+  giveFeedback,
   historyPaging,
   layerColor,
   loadOlderMessages,
@@ -351,6 +353,18 @@ function ChatInput() {
   const handleSubmit = async () => {
     const sent = text.trim();
     if (!sendable) return;
+    // `/feedback <text>` records feedback on this thread's last turn; it is never sent to the model.
+    const feedback = /^\/feedback(?:\s+([\s\S]*))?$/.exec(sent);
+    if (feedback) {
+      const body = feedback[1]?.trim() ?? '';
+      if (!body)
+        return showToast('Usage: /feedback <what you want to say about this thread>', 'warn');
+      stopDictation.current?.();
+      inputHistory.push(sent);
+      historyIdx = -1;
+      if (await giveFeedback(activeThreadId.value, body)) setText('');
+      return;
+    }
     stopDictation.current?.();
     if (sent) inputHistory.push(sent);
     historyIdx = -1;
@@ -452,7 +466,7 @@ function ChatInput() {
 // Chat messages
 // ---------------------------------------------------------------------------
 
-function MessageActions({ index }) {
+function MessageActions({ index, onFeedback }) {
   const [open, setOpen] = useState(false);
 
   const toggle = (e) => {
@@ -476,6 +490,12 @@ function MessageActions({ index }) {
           title="Revert to this point">revert</button>
         <button class="msg-action-btn" onClick=${run(forkThread)}
           title="Fork thread from here">fork</button>
+        ${
+          onFeedback
+            ? html`<button class="msg-action-btn" onClick=${run(onFeedback)}
+          title="Give feedback on this turn">feedback</button>`
+            : null
+        }
       `
           : null
       }
@@ -516,14 +536,28 @@ function MessageImages({ images }) {
   `;
 }
 
+/** A message's "Give feedback" form, opened from its ⋯ actions. */
+function useGiveFeedback(msg) {
+  const [giving, setGiving] = useState(false);
+  const threadId = activeThreadId.value;
+  return {
+    onFeedback: msg.turnId && threadId ? () => setGiving(true) : undefined,
+    form: giving
+      ? html`<${GiveFeedback} threadId=${threadId} msg=${msg} onDone=${() => setGiving(false)} />`
+      : null,
+  };
+}
+
 function UserMessage({ msg, index }) {
+  const give = useGiveFeedback(msg);
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
-      <${MessageActions} index=${index} />
+      <${MessageActions} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${msg.content ? html`<div class="chat-msg-content">${msg.content}</div>` : null}
       <${BrowserStorageWarning} msg=${msg} />
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
+      ${give.form}
     </div>
   `;
 }
@@ -652,6 +686,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const injectedLayers = msg.meta?.injectedLayers;
   const failure = failurePresentation(msg.meta);
   const volatile = msg.browserStorage?.status === 'volatile';
+  const give = useGiveFeedback(msg);
 
   // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback).
   // Ingress is the turn's root span, not a stage before the executor: an unwrapped turn has no pre bar.
@@ -662,7 +697,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
   return html`
     <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent">
-      <${MessageActions} index=${index} />
+      <${MessageActions} index=${index} onFeedback=${give.onFeedback} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
         stages=${preStages}
@@ -767,6 +802,8 @@ function AgentMessage({ msg, index, onTraceClick }) {
       />
 
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === 'unconfirmed' ? ' | Connection interrupted; server outcome unconfirmed' : ''}</div>
+      <${TurnFeedback} threadId=${activeThreadId.value} turnId=${msg.turnId} />
+      ${give.form}
     </div>
   `;
 }
@@ -1003,6 +1040,18 @@ export function Conversation({ onTraceSelect }) {
     }
     el.scrollTop = el.scrollHeight;
   }, [newestKey, msgList.length]);
+
+  // A feedback item's provenance link: bring its turn into view once the thread's messages show.
+  const focus = focusTurnId.value;
+  useEffect(() => {
+    if (!focus) return;
+    const el = scrollRef.current?.querySelector(`[data-turn-id="${CSS.escape(focus)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('chat-msg--focused');
+    setTimeout(() => el.classList.remove('chat-msg--focused'), 2000);
+    focusTurnId.value = null;
+  }, [focus, msgList.length, threadId]);
 
   const handleLoadOlder = () => {
     const el = scrollRef.current;
