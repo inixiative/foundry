@@ -156,13 +156,13 @@ test('Kingdom holders are read once, again after the Installation changes, and a
     owner: {
       ownerModel: 'Organization',
       name: 'Acme',
-      organization: { id: 'o', name: 'Acme', slug: 'acme' },
+      organization: { id: crypto.randomUUID(), name: 'Acme', slug: 'acme' },
       space: null,
       user: null,
     },
-    issuedBy: { id: 'u', name: null, email: 'grace@acme.test' },
-    webUrl: null,
-    manageUrl: null,
+    issuedBy: { id: crypto.randomUUID(), name: null, email: 'grace@acme.test' },
+    webUrl: 'https://kingdom.acme.test',
+    manageUrl: `https://kingdom.acme.test/dashboard?integration=${integration.integrationId}`,
   };
   const holders = new KingdomHolders('/nowhere', {
     describe: async () => {
