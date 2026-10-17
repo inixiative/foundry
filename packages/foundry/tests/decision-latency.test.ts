@@ -13,7 +13,7 @@ import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing'];
 const expert = (domain: string): AgentSettingsConfig => ({
   id: `${domain}-expert`,
-  kind: 'decider',
+  kind: 'domain-librarian',
   flowRole: 'domain-advising',
   domain,
   prompt: `Advise on ${domain}.`,

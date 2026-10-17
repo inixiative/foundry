@@ -23,6 +23,7 @@ import {
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { ConfigStore, type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
+import { writeRegions } from './helpers/regions';
 
 /** Composed instructions every Warden shares (global CLAUDE.md and the like): about 60k chars. */
 const SHARED = `SHARED_COMPOSED_INSTRUCTIONS\n${'Look for what already exists before building. '.repeat(1300)}`;
@@ -39,7 +40,29 @@ async function tempDir(prefix: string) {
   return dir;
 }
 
-function wardenConfig(wardens: number): FoundryConfig {
+/** The project's role files overlay its region Wardens: nothing from the machine running the tests. */
+const ROLE_FILES: NonNullable<FoundryConfig['composition']> = {
+  preset: 'none',
+  nodes: {
+    project: {
+      scope: 'project',
+      personal: false,
+      sources: [
+        {
+          walk: [
+            {
+              path: '.foundry/roles/{role}/{slot}.md',
+              when: { slots: ['instructions', 'domainKnowledge'] },
+            },
+          ],
+          span: { within: ['{project}'] },
+        },
+      ],
+    },
+  },
+} as NonNullable<FoundryConfig['composition']>;
+
+function baseConfig(): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.setupComplete = true;
   c.agents = {
@@ -55,38 +78,33 @@ function wardenConfig(wardens: number): FoundryConfig {
       enabled: true,
     },
   };
-  for (let i = 0; i < wardens; i++)
-    c.agents[`w${i}`] = {
-      id: `w${i}`,
-      kind: 'decider',
-      flowRole: 'domain-advising',
-      domain: `d${i}`,
-      prompt: `${SHARED}\nWARDEN_${i}`,
-      provider: 'expert',
-      model: 'warden-model',
-      tools: false,
-      visibleLayers: [],
-      domainKnowledge: ['knowledge'],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    };
-  c.composition = {
-    preset: 'none',
-    roles: Object.fromEntries(
-      Array.from({ length: wardens }, (_, i) => [`w${i}`, { budget: 200_000 }]),
-    ),
-  } as FoundryConfig['composition'];
+  c.composition = structuredClone(ROLE_FILES);
   c.layers = {};
-  c.sources = {
-    knowledge: {
-      id: 'knowledge',
-      label: 'Knowledge',
-      type: 'inline',
-      uri: KNOWLEDGE,
-      enabled: true,
-    },
-  };
+  c.sources = {};
+  return c;
+}
+
+/**
+ * Project P with `wardens` region Wardens, each with large composed instructions: the shared text
+ * (global CLAUDE.md and the like) through its role file, its region's knowledge whole.
+ */
+async function wardenConfig(wardens: number): Promise<FoundryConfig> {
+  const project = await tempDir('foundry-journal-project-');
+  const ids = Array.from({ length: wardens }, (_, i) => `w${i}`);
+  writeRegions(
+    project,
+    ids.map((id) => ({ id, knowledge: KNOWLEDGE })),
+  );
+  for (const [i, id] of ids.entries()) {
+    await mkdir(join(project, '.foundry', 'roles', id), { recursive: true });
+    await writeFile(
+      join(project, '.foundry', 'roles', id, 'instructions.md'),
+      `${SHARED}\nWARDEN_${i}`,
+    );
+  }
+  const c = baseConfig();
+  c.composition!.roles = Object.fromEntries(ids.map((id) => [id, { budget: 200_000 }]));
+  c.projects.P = { id: 'P', path: project };
   return c;
 }
 
@@ -129,7 +147,7 @@ async function viewerWith(c: FoundryConfig) {
     runtime,
     configuration: { config: c, layers: { sourceResolver }, agents: deps },
   });
-  const main = factory.create('main');
+  const main = factory.create('main', c.projects.P ? { projectId: 'P' } : {});
   const harness = new Harness(main);
   harness.setDefaultExecutor('worker');
   const configStore = new ConfigStore(dir);
@@ -189,7 +207,7 @@ function journalRows(store: unknown) {
 }
 
 test('a thread with 24 large Wardens survives many turns and every journal row stays under its limit', async () => {
-  const f = await viewerWith(wardenConfig(24));
+  const f = await viewerWith(await wardenConfig(24));
   for (const turn of ['first', 'second', 'third']) {
     const response = await f.send(turn);
     expect(response.status).toBe(200);
@@ -214,7 +232,7 @@ test('a thread with 24 large Wardens survives many turns and every journal row s
 });
 
 test('the advice record keeps every Warden’s full input, read back by reference', async () => {
-  const f = await viewerWith(wardenConfig(24));
+  const f = await viewerWith(await wardenConfig(24));
   expect((await f.send('only')).status).toBe(200);
   await f.runtime.get('main')!.learningSettled();
   const [advice] = f.viewer
@@ -226,16 +244,16 @@ test('the advice record keeps every Warden’s full input, read back by referenc
     request: { messages: LLMMessage[] };
   }>;
   expect(participants).toHaveLength(24);
-  for (const [i, p] of participants.entries()) {
+  for (const p of participants) {
     expect(p.segments.instructions).toContain(SHARED);
-    expect(p.segments.instructions).toContain(`WARDEN_${i}`);
-    expect(p.segments.domainKnowledge).toContain(KNOWLEDGE);
+    expect(p.segments.instructions).toContain(`WARDEN_${p.domain.slice(1)}`);
+    expect(p.segments.domainKnowledge).toContain(KNOWLEDGE.trim());
     expect(String(p.request.messages[0]!.content)).toContain(SHARED);
   }
 });
 
 test('repeated composed instructions are stored once, so a later turn adds little', async () => {
-  const f = await viewerWith(wardenConfig(24));
+  const f = await viewerWith(await wardenConfig(24));
   expect((await f.send('first')).status).toBe(200);
   await f.runtime.get('main')!.learningSettled();
   const db = () => journalRows(f.viewer.localStore);
@@ -293,33 +311,11 @@ test('a relative docs source reads the thread’s own project, never the daemon�
 
 test('a docs Warden in each project reads only that project’s docs', async () => {
   const root = await tempDir('foundry-docs-warden-');
-  const c = wardenConfig(0);
-  c.agents.docs = {
-    id: 'docs',
-    kind: 'decider',
-    flowRole: 'domain-advising',
-    domain: 'docs',
-    prompt: 'Docs Warden',
-    provider: 'expert',
-    model: 'warden-model',
-    tools: false,
-    visibleLayers: [],
-    domainKnowledge: ['docs-src'],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
-  };
-  c.sources['docs-src'] = {
-    id: 'docs-src',
-    label: 'Docs',
-    type: 'markdown',
-    uri: 'docs/',
-    enabled: true,
-  };
+  const c = baseConfig();
   for (const id of ['P', 'Q']) {
     const path = join(root, id);
-    await mkdir(join(path, 'docs'), { recursive: true });
-    await writeFile(join(path, 'docs', 'guide.md'), `# DOCS_${id}\n`);
+    // Each project's region is its own: a Warden's knowledge is that project's regions, never another's.
+    writeRegions(path, [{ id: 'docs', knowledge: `# DOCS_${id}\n` }]);
     c.projects[id] = { id, path };
   }
   const f = await viewerWith(c);

@@ -171,7 +171,6 @@ describe('DomainLibrarian', () => {
               severity: 'advisory',
               description: 'Function name uses snake_case, should be camelCase',
               location: 'src/auth/service.ts:42',
-              suggestion: 'Rename get_user to getUser',
             },
           ],
         }),
@@ -205,18 +204,23 @@ describe('DomainLibrarian', () => {
     });
 
     it('emits signals for findings', async () => {
-      const llm = mockLLM(
-        JSON.stringify({
-          findings: [
-            {
-              severity: 'critical',
-              description: 'SQL injection risk',
-              location: 'src/db/query.ts:10',
-            },
-          ],
-        }),
-      );
-      const lib = makeConventionLibrarian(llm, signals);
+      // An LLM Warden only points (advisory); a critical finding comes from a programmatic guard.
+      const cache = new ContextLayer({ id: 'convention-cache' });
+      const lib = new DomainLibrarian({
+        domain: 'convention',
+        cache,
+        signals,
+        llm: mockLLM('unused'),
+        guardTriggers: ['file_write'],
+        programmaticGuard: true,
+        guardFn: () => [
+          {
+            severity: 'critical',
+            description: 'SQL injection risk',
+            location: 'src/db/query.ts:10',
+          },
+        ],
+      });
 
       const emitted: any[] = [];
       signals.onAny((s) => {

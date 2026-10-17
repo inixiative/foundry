@@ -53,10 +53,7 @@ import {
   wardenPointerJudgeMessage,
   wilsonInterval,
 } from '../../packages/core/src';
-import {
-  WARDEN_CHARTER_CLASSIFY_VERSION,
-  WARDEN_CHARTER_VERSION,
-} from '../../packages/foundry/src/agents/warden-charter';
+import { WARDEN_CHARTER_VERSION } from '../../packages/foundry/src/agents/warden-charter';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
 import {
@@ -776,11 +773,13 @@ function provenance(
   },
 ) {
   const s = r.score ?? {};
+  // `charter-roster` runs predate 2026-10-17 and scored the retired roster charter (advise-style);
+  // its version is kept here as history only, since that text no longer ships.
   const charterVersion =
-    s.charter === 'charter-regions'
-      ? WARDEN_CHARTER_CLASSIFY_VERSION
+    s.charter === 'charter-regions' || s.charter === 'charter-shipped'
+      ? WARDEN_CHARTER_VERSION
       : s.charter === 'charter-roster'
-        ? WARDEN_CHARTER_VERSION
+        ? 'charter-56af38aeaa90'
         : s.charter;
   const regions = s.regions ? basename(s.regions).replace(/^regions-/, '') : undefined;
   return {

@@ -418,7 +418,7 @@ export class FeedbackService {
             itemId,
             statement: record.statement,
             category: found.category,
-            hasProject: !!projectId,
+            projectId,
             timeoutMs: opts.blocking ? this.settings(thread).blockTimeoutMs : 30_000,
           })
         : {
@@ -443,7 +443,7 @@ export class FeedbackService {
     const since = activeChanges(item)[0]?.appliedAt;
     if (since === undefined) return false;
     const domains = new Set(
-      [...wardenRoles(this.deps.config())]
+      [...wardenRoles(this.deps.config(), item.projectId)]
         .filter(([, role]) => item.route?.roles.includes(role))
         .map(([domain]) => domain),
     );
@@ -633,7 +633,7 @@ export class FeedbackService {
   /** Where an answer writes, every role known before anything is written. */
   private target(item: FeedbackItem, edited?: FeedbackTuneRecord['edited']) {
     const roles = edited?.roles ?? item.route?.roles ?? [MAIN_ROLE];
-    const known = new Set([MAIN_ROLE, ...wardenRoles(this.deps.config()).values()]);
+    const known = new Set([MAIN_ROLE, ...wardenRoles(this.deps.config(), item.projectId).values()]);
     const unknown = roles.filter((role) => !known.has(role));
     if (unknown.length) throw Error(`Unknown role ${unknown.join(', ')}`);
     if (!roles.length) throw Error('No role to apply the rule to');
@@ -768,7 +768,7 @@ export class FeedbackService {
     const item = this.lifecycle.get(itemId);
     const since = item ? Math.min(...activeChanges(item).map((c) => c.appliedAt)) : Infinity;
     if (!item || !Number.isFinite(since)) return [];
-    const byDomain = wardenRoles(this.deps.config());
+    const byDomain = wardenRoles(this.deps.config(), item.projectId);
     return this.deps.store.phasesContaining(ruleMarker(itemId), since).map((row) => ({
       threadId: row.threadId,
       turnId: row.turnId,

@@ -76,10 +76,8 @@ import {
   CHORUS_RECEPTION,
   CHORUS_RECEPTION_LAYER,
   CHORUS_RECEPTION_VERSION,
-  chorusSource,
-  WARDEN_CHARTER_CLASSIFY,
-  type WardenCharter,
-  wardenCharter,
+  WARDEN_CHARTER,
+  WARDEN_CHARTER_VERSION,
 } from './warden-charter';
 import type { GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
@@ -849,8 +847,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _cartographerInstructions!: ContextLayer;
   /** Each configured Warden's composed slots, by domain. */
   private _roleLayers = new Map<string, { role: string } & RoleLayers>();
-  /** The charter this thread's Wardens run under (what its chorus is built from), journalled with every call. */
-  private _charter!: WardenCharter;
   private _learningTimeoutMs = 10_000;
   private _hardTimeoutMs = 60_000;
   private _epoch = 0;
@@ -1000,10 +996,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this.cartographer.buildMap();
 
     this.domainLibrarians = new Map();
-    const charter = wardenCharter(
-      chorusSource(deps.config, thread.meta.projectId as string | undefined),
-    );
-    this._charter = charter;
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
     // Retained configuration is validated for compatibility, but never adds a central wait.
     positiveMs('learning.barrierMs', deps.learning?.barrierMs, 5_000);
@@ -1055,7 +1047,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           cache,
           ...(slots ? { instructions: slots.instructions, role } : {}),
           ...(dc.budget !== undefined ? { budget: dc.budget } : {}),
-          charter: charter.text,
+          charter: WARDEN_CHARTER,
           signals,
           llm: scopedProvider(dc.adviseProvider ?? deps.llm, { threadId: domainId, cwd }),
           llmOpts: dc.adviseOpts ?? { maxTokens: 512, temperature: 0 },
@@ -1077,16 +1069,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       );
     }
 
-    // A thread whose chorus is its regions holds the reception charter once, as a standing layer: how
-    // the main thread reads a pointer (`chorus.reception: false` leaves it out). Roster Wardens advise
-    // under their own charter, so their threads do not get it. Fixed text, so its inline source
-    // re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
+    // A thread with a chorus holds the reception charter once, as a standing layer: how the main
+    // thread reads a pointer (`chorus.reception: false` leaves it out). Fixed text, so its inline
+    // source re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
     const projectChorusSettings = thread.meta.projectId
       ? deps.config.projects?.[thread.meta.projectId as string]?.chorus
       : undefined;
     if (
       this.domainLibrarians.size &&
-      charter.text === WARDEN_CHARTER_CLASSIFY &&
       projectChorusSettings?.reception !== false &&
       !stack.getLayer(CHORUS_RECEPTION_LAYER)
     ) {
@@ -1282,7 +1272,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
             const adviceJournal = journalSealed('advice', {
               trigger: 'user-message' satisfies TriggerPoint,
-              charter: charter.version,
+              charter: WARDEN_CHARTER_VERSION,
               inputHash: plan.input.hash,
               sealedAt: plan.sealedAt,
               participants: plan.contributions
@@ -1579,7 +1569,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
       }),
     );
-    // The agent handed a task to a subagent: the roster briefs the handoff (the subagent-spawn trigger).
+    // The agent handed a task to a subagent: the chorus briefs the handoff (the subagent-spawn trigger).
     this._unsubs.push(
       signals.on('subagent_spawn', async (signal) => {
         const content = signal.content as
@@ -1592,7 +1582,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         await this._briefHandoff(signal.id, content);
       }),
     );
-    // The main thread took in a work item: the roster is asked what of its domain the work touches
+    // The main thread took in a work item: the chorus is asked what of its domain the work touches
     // (the consumed trigger, `chorus.consumed`, off by default). A subagent's reads are not asked: its
     // notes would reach the parent's next turn, never the subagent doing the work.
     if (this._consumed && this.domainLibrarians.size)
@@ -1839,7 +1829,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const outcomeJournal = journalOutcome({
         trigger: 'agent-action' satisfies TriggerPoint,
         mode: this._guardMode,
-        charter: this._charter.version,
+        charter: WARDEN_CHARTER_VERSION,
         observation,
         wraps,
         // The turn's activity the Wardens were given, as identity: tool, call id and outcome per call.
@@ -1922,7 +1912,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   }
 
   /**
-   * The subagent-spawn trigger: the roster briefs a handoff the agent made, on the parent's node; the
+   * The subagent-spawn trigger: the chorus briefs a handoff the agent made, on the parent's node; the
    * harness has already composed what the subagent received.
    */
   private async _briefHandoff(
@@ -1960,7 +1950,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     });
   }
 
-  /** The consumed trigger: the roster is asked about a work item the main thread took in. */
+  /** The consumed trigger: the chorus is asked about a work item the main thread took in. */
   private async _consumeWorkItem(
     signalId: string,
     item: WorkItemMoment,
@@ -2024,7 +2014,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         phase: 'advice',
         record: {
           trigger: moment.trigger,
-          charter: this._charter.version,
+          charter: WARDEN_CHARTER_VERSION,
           wraps: moment.wraps,
           ...moment.record,
           inputHash: report.input.hash,
@@ -3305,11 +3295,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const next = new Set<string>();
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
     const swaps: Array<() => void> = [];
-    if (
-      wardenCharter(chorusSource(config, this.thread.meta.projectId as string | undefined))
-        .version !== this._charter.version
-    )
-      deferred.push('Warden charter change (chorus setting) applies to new threads');
     const cartographerRole = cartographerRoleId(config);
     if (cartographerRole === this._cartographerRole) {
       const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {

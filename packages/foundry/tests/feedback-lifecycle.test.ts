@@ -18,7 +18,8 @@ import { lintStatement, parseMatch, ruleMarker } from '../src/feedback/sharpen';
 import { validateFeedbackSettings } from '../src/feedback/types';
 import { assess } from '../src/feedback/view';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { writeRegions } from './helpers/regions';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -32,26 +33,24 @@ const tempDir = (prefix: string) => {
 const git = (cwd: string, ...args: string[]) =>
   Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
 
-const warden = (domain: string): AgentSettingsConfig => ({
-  id: `${domain}-warden`,
-  kind: 'decider',
-  flowRole: 'domain-advising',
-  domain,
-  prompt: `INSTRUCTIONS_${domain}`,
-  provider: 'expert',
-  model: 'haiku',
-  tools: false,
-  visibleLayers: [],
-  peers: [],
-  maxDepth: 1,
-  enabled: true,
-});
-function config(feedback?: FoundryConfig['feedback']): FoundryConfig {
+/**
+ * Project P's settings; its Warden is its one region, `convention` (role, agent id and domain). The
+ * regions are written by `regionProject`; settings declare no Wardens.
+ */
+function config(project: string, feedback?: FoundryConfig['feedback']): FoundryConfig {
   const c = starterConfig('central', 'central-model');
-  c.agents = { 'convention-warden': warden('convention') };
+  c.projects.P = { id: 'P', path: project };
   // Detection is opt-in (`feedback.capture`, default false); these tests exercise it.
   c.feedback = { capture: true, ...feedback };
   return c;
+}
+/** A git repository whose chorus is the one region `convention`. */
+function regionProject(root: string): string {
+  const project = join(root, 'repo');
+  mkdirSync(project, { recursive: true });
+  git(project, 'init', '-q');
+  writeRegions(project, [{ id: 'convention' }]);
+  return project;
 }
 
 const RULE = 'When a change is green on the agentic side, merge it yourself.';
@@ -65,9 +64,7 @@ function setup(
   } = {},
 ) {
   const root = tempDir('feedback-project-');
-  const project = join(root, 'repo');
-  mkdirSync(project, { recursive: true });
-  git(project, 'init', '-q');
+  const project = regionProject(root);
   const home = tempDir('feedback-home-');
   const store = new LocalSessionStore(join(tempDir('feedback-store-'), 'sessions.sqlite'));
   cleanup.push(() => store.close());
@@ -92,7 +89,7 @@ function setup(
   const classifyCalls: Array<{ text: string; before: string; priority: number }> = [];
   const service = new FeedbackService({
     store,
-    config: () => config(options.feedback),
+    config: () => config(project, options.feedback),
     queue,
     thread: (id) => (id === thread.id ? thread : undefined),
     cartographer: () => ({
@@ -155,16 +152,18 @@ test('routing maps Cartographer domains to Warden roles, and weak routing goes t
   const route = (result: RouteResult) =>
     routeFeedback({
       cartographer: { route: async () => result },
-      config: config(),
+      config: config(project),
       itemId: 'fb_x',
       statement: RULE,
       category: 'convention',
-      hasProject: true,
+      projectId,
     });
+  const project = regionProject(tempDir('feedback-routing-'));
+  let projectId: string | null = 'P';
   expect(
     await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' }),
   ).toMatchObject({
-    roles: ['convention-warden'],
+    roles: ['convention'],
     slot: 'instructions',
     level: 'project-personal',
   });
@@ -181,6 +180,11 @@ test('routing maps Cartographer domains to Warden roles, and weak routing goes t
   expect(
     (await route({ layers: [], domains: ['unknown'], confidence: 0.9, source: 'model' })).roles,
   ).toEqual(['main']);
+  // A thread outside a project has no chorus: every rule goes to main.
+  projectId = null;
+  expect(
+    (await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' })).roles,
+  ).toEqual(['main']);
 });
 
 test('role files resolve per rung; personal repo files are kept out of git', () => {
@@ -189,8 +193,8 @@ test('role files resolve per rung; personal repo files are kept out of git', () 
   mkdirSync(project);
   git(project, 'init', '-q');
   const roots = { home: join(root, 'home'), project, org: root };
-  expect(roleFilePath('computer', 'convention-warden', 'instructions', roots)).toBe(
-    join(root, 'home', '.foundry/roles/convention-warden/instructions.md'),
+  expect(roleFilePath('computer', 'convention', 'instructions', roots)).toBe(
+    join(root, 'home', '.foundry/roles/convention/instructions.md'),
   );
   expect(roleFilePath('project-personal', 'main', 'domainKnowledge', roots)).toBe(
     join(project, '.foundry/roles/main/domainKnowledge.local.md'),
@@ -199,12 +203,12 @@ test('role files resolve per rung; personal repo files are kept out of git', () 
     'Invalid role',
   );
 
-  const path = roleFilePath('project-personal', 'convention-warden', 'instructions', roots);
+  const path = roleFilePath('project-personal', 'convention', 'instructions', roots);
   guardPersonalFile(path);
   expect(readFileSync(join(project, '.git/info/exclude'), 'utf8')).toContain(
     '.foundry/roles/**/*.local.md',
   );
-  mkdirSync(join(project, '.foundry/roles/convention-warden'), { recursive: true });
+  mkdirSync(join(project, '.foundry/roles/convention'), { recursive: true });
   writeFileSync(path, 'x\n');
   expect(git(project, 'status', '--porcelain').stdout.toString()).toBe('');
   // A tracked file is never edited.
@@ -222,7 +226,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     itemId: 'fb_111111111111',
     changeId: 'c1',
     statement: RULE,
-    role: 'convention-warden',
+    role: 'convention',
     slot: 'instructions',
     level: 'computer',
     roots,
@@ -231,7 +235,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     itemId: 'fb_222222222222',
     changeId: 'c2',
     statement: 'Never add backwards compatibility shims.',
-    role: 'convention-warden',
+    role: 'convention',
     slot: 'instructions',
     level: 'computer',
     roots,
@@ -257,7 +261,7 @@ test('a detected correction is captured, routed and tuned without holding the tu
   const [prompt] = queue.pending();
   expect(prompt?.kind).toBe('choice');
   expect(prompt?.meta?.feedback).toMatchObject({ blocking: false });
-  expect(prompt?.message).toContain('convention-warden');
+  expect(prompt?.message).toContain('convention');
   const [item] = service.lifecycle.items;
   expect(item).toMatchObject({
     statement: RULE,
@@ -266,7 +270,7 @@ test('a detected correction is captured, routed and tuned without holding the tu
     category: 'approach',
   });
   expect(item?.detection?.kind).toBe('repeat');
-  expect(item?.route).toMatchObject({ roles: ['convention-warden'], level: 'org-personal' });
+  expect(item?.route).toMatchObject({ roles: ['convention'], level: 'org-personal' });
   // Every step is a journal row, and a fresh fold over them is the same item.
   const phases = store.feedbackPhases({ projectId: 'P' }).map((p) => p.phase);
   expect(phases).toEqual(['feedback-capture', 'feedback-route']);
@@ -283,9 +287,9 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
   const [item] = service.lifecycle.items;
   expect(item?.status).toBe('applied');
   const change = item!.changes[0]!;
-  expect(change.path).toBe(join(root, '.foundry/roles/convention-warden/instructions.local.md'));
+  expect(change.path).toBe(join(root, '.foundry/roles/convention/instructions.local.md'));
   expect(readFileSync(change.path, 'utf8')).toContain(`${RULE} ${ruleMarker(item!.id)}`);
-  expect(invalidated).toEqual(['convention-warden']);
+  expect(invalidated).toEqual(['convention']);
 
   // Use: a later advice call whose Warden segments carry the rule counts as exposure.
   store.appendPhase(thread, {
@@ -305,7 +309,7 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
     },
   });
   expect(service.uses(item!.id)).toMatchObject([
-    { threadId: 't1', turnId: 'turn-2', phase: 'advice', roles: ['convention-warden'] },
+    { threadId: 't1', turnId: 'turn-2', phase: 'advice', roles: ['convention'] },
   ]);
 
   service.undo(item!.id, change.changeId);
@@ -328,9 +332,7 @@ test('edit replaces the statement and level before applying; committed levels ar
   await settle();
   const [item] = service.lifecycle.items;
   expect(item?.statement).toBe('Never ask before merging green agentic changes.');
-  expect(item?.changes[0]?.path).toBe(
-    join(home, '.foundry/roles/convention-warden/instructions.md'),
-  );
+  expect(item?.changes[0]?.path).toBe(join(home, '.foundry/roles/convention/instructions.md'));
 });
 
 test('blocking tuning holds the turn until answered, and times out to deferred', async () => {
@@ -436,7 +438,7 @@ test('a recurrence of an applied rule is counted on the item and re-tuned', asyn
   // Same store, new service: the fold is rebuilt from the journal, then the same rule comes back.
   const again = new FeedbackService({
     store: first.store,
-    config: () => config(),
+    config: () => config(first.project),
     queue: first.queue,
     thread: () => first.thread,
     cartographer: () => undefined,

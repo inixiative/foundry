@@ -247,7 +247,7 @@ function SelectionCard({ current, providersById }) {
     <p class="settings-desc decision-hint">${
       current.decisionRoles.length
         ? `The decision roles you added (${current.decisionRoles.join(', ')}) run on it.`
-        : 'Decision roles (a classifier, router or Warden) run on it once you add one. Threads are unwrapped by default, so nothing uses it yet.'
+        : 'Decision roles (a classifier or router you add, and the region Wardens of a project whose chorus is enabled) run on it. Threads are unwrapped by default, so nothing uses it yet.'
     }</p>
     ${current.issue ? html`<p class="settings-desc" role="alert">${current.issue}</p>` : null}
     <div class="model-selection-row">

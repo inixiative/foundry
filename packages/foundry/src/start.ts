@@ -173,11 +173,11 @@ if (subscription) {
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
 // Each project's chorus: said at startup, so a regions directory that did not resolve is never a
-// silent fall-back to the hand-named roster.
+// silent loss of the project's Wardens.
 for (const [projectId, project] of Object.entries(config.projects ?? {})) {
   if (project.enabled === false) continue;
   const view = resolveProjectView(config, projectId);
-  if (!view || (view.chorus.requested !== 'regions' && !view.chorus.reason)) continue;
+  if (!view || (!view.chorus.enabled && !view.chorus.reason)) continue;
   console.log(describeChorus(project.label ?? projectId, view.chorus));
 }
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
@@ -209,7 +209,7 @@ const decisions = subscription
       ...(inSession ? { inSession } : {}),
       // Every decision role stays primed: an advice and a review key per Warden, plus the
       // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      // Sized for the largest roster any project runs (a generated region roster is per project).
+      // Sized for the largest chorus any project runs (region Wardens are per project).
       primedSessions: Math.max(16, 2 * largestRoster(config) + 8),
       onPressure: (event) => {
         const message =

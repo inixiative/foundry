@@ -72,7 +72,7 @@ export function AgentsSection() {
   const total = instances.length + uninstantiated.length;
   return html`
     <${SectionIntro} onAdd=${() => setSelected('+')} addLabel="New agent">
-      Agents: the executor that does the work, plus any decision roles (classifier, router, Wardens) you add around it. The selected thread's agents come first, then agents defined but not yet running.
+      Agents: the executor that does the work, plus any decision roles (classifier, router) you add around it; Wardens come from a project's regions. The selected thread's agents come first, then agents defined but not yet running.
     </${SectionIntro}>
     <div class="agent-list runtime-list">
       ${instances.map(

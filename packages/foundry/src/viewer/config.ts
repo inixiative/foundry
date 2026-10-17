@@ -18,7 +18,6 @@ import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
-import type { ChorusSource } from '../agents/warden-charter';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
@@ -249,10 +248,10 @@ export interface ProjectSettingsConfig {
    */
   status?: 'archived';
   /**
-   * This project's chorus: the set of Wardens its threads run. Merged over the repository's own
+   * This project's chorus: the region Wardens its threads run. Merged over the repository's own
    * `<project>/.foundry/project.json` `chorus`, these settings winning. Region Wardens run only when
-   * `source` is `"regions"`; absent, the hand-named roster runs and regions present are reported as
-   * off. In a resolved project view this is normalized (`source` effective, `layers` absolute); see
+   * `enabled` is true; absent, the project has no chorus and regions present are reported as off. In
+   * a resolved project view this is normalized (`enabled` effective, `layers` absolute); see
    * docs/usage-and-context.md, "Chorus".
    */
   chorus?: ChorusSettings;
@@ -272,22 +271,23 @@ export interface ChorusLayerSettings {
 
 /**
  * A project's chorus, the set of region Wardens its threads run (Aron, 2026-10-15: "each project needs
- * its own chorus"). Opt-in (Aron, 2026-10-16): `source: "regions"` builds it from layers of regions,
- * in order: a region id present in a later layer replaces the earlier one whole; unique ids union. One
- * layer is `regions` (default `.foundry/regions`); several are `layers`, e.g. a template base then this
- * project's delta. With no regions found the hand-named roster runs and the view says why.
- * `source: "roster"`, the default, runs the hand-named roster whatever regions exist; `regions`/`layers`
- * may stay written beside it, unread.
+ * its own chorus"). Region Wardens are the only chorus: the hand-named settings roster was retired on
+ * 2026-10-17 (Aron: "We're just doing the region wardens"). Opt-in (Aron, 2026-10-16): `enabled: true`
+ * builds it from layers of regions, in order: a region id present in a later layer replaces the earlier
+ * one whole; unique ids union. One layer is `regions` (default `.foundry/regions`); several are
+ * `layers`, e.g. a template base then this project's delta. Not enabled, or enabled with no regions
+ * found, the project has no chorus and the view says why; `regions`/`layers` may stay written, unread.
  */
 export interface ChorusSettings {
-  source?: ChorusSource;
+  /** Run this project's region Wardens. Off by default. */
+  enabled?: boolean;
   regions?: string;
   layers?: ChorusLayerSettings[];
   /** The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default. */
   consumed?: ConsumedSettings;
   /**
    * The reception charter (`CHORUS_RECEPTION`): how the main thread reads a chime, held once as a
-   * standing layer. On with a region chorus (itself opt-in); `false` leaves it out, e.g. for a baseline.
+   * standing layer. On with the chorus (itself opt-in); `false` leaves it out, e.g. for a baseline.
    */
   reception?: boolean;
 }
@@ -368,16 +368,17 @@ export interface BrowserConfigOverride
 }
 
 /**
- * Kinds settings may declare. Classifiers, routers and executors are thread agents; the Cartographer
- * and domain-advising Wardens (decider, domain-librarian) are runtime roles configured here. The
- * Librarian is programmatic and the Herald is not wired, so neither takes settings.
+ * Agent kinds. Classifiers, routers and executors are thread agents; the Cartographer is a runtime
+ * role configured here. A Warden (`domain-librarian`, flowRole `domain-advising`) is never written in
+ * settings: each is generated from a project's regions (`agents/region-roster.ts`), so it appears only
+ * in a project view (`refuseHandNamedWardens`). The Librarian is programmatic and the Herald is not
+ * wired, so neither takes settings.
  */
 export const AGENT_KINDS = [
   'executor',
   'classifier',
   'router',
   'cartographer',
-  'decider',
   'domain-librarian',
 ] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
@@ -833,20 +834,42 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${AGENT_KINDS.join(', ')})`,
       );
-    if (
-      (agent.kind === 'decider' || agent.kind === 'domain-librarian') &&
-      agent.flowRole !== 'domain-advising'
-    )
+    if (agent.kind === 'domain-librarian' && agent.flowRole !== 'domain-advising')
       throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
     // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
     if (
-      ['cartographer', 'decider', 'domain-librarian'].includes(agent.kind) &&
+      ['cartographer', 'domain-librarian'].includes(agent.kind) &&
       /respond with json/i.test(agent.prompt ?? '')
     )
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: instructions must not state a response format; the phase supplies it`,
       );
   }
+}
+
+/**
+ * Settings declare no Wardens: the hand-named Warden roster was retired on 2026-10-17 (Aron: "We're
+ * just doing the region wardens… The hand-named roster should go away"). Region Wardens, generated
+ * from a project's `.foundry/regions` when its chorus is enabled, are the only chorus. A Warden left in
+ * settings is refused by name, with the fix, never silently dropped (no alias, no migration).
+ */
+function refuseHandNamedWardens(config: FoundryConfig) {
+  // Every offender in one error, so a settings file holding a whole roster is fixed in one pass.
+  const found: string[] = [];
+  const scan = (where: string, agents: Record<string, unknown> | undefined) => {
+    for (const [id, agent] of Object.entries(agents ?? {})) {
+      const a = (agent ?? {}) as { kind?: string; flowRole?: string };
+      if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
+        found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
+    }
+  };
+  scan('agents', config.agents);
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    scan(`projects.${pid}.agents`, project?.agents);
+  if (!found.length) return;
+  throw Error(
+    `${found.join('; ')}: the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${found.length === 1 ? 'it' : 'them'} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
+  );
 }
 
 function validateConsumedSettings(where: string, consumed: unknown): void {
@@ -876,18 +899,24 @@ function validateConsumedSettings(where: string, consumed: unknown): void {
 export function validateChorusSettings(where: string, chorus: unknown): void {
   if (chorus === undefined) return;
   if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
-    throw Error(`${where} must be an object: { source?, regions? | layers? }`);
+    throw Error(`${where} must be an object: { enabled?, regions? | layers? }`);
   const c = chorus as Record<string, unknown>;
+  // Retired 2026-10-17 with the hand-named roster: region Wardens are the only chorus. Refused by name
+  // so a settings file written for the roster says what to write instead (no alias, no migration).
+  if ('source' in c)
+    throw Error(
+      `${where}.source is gone: the hand-named Warden roster is retired and region Wardens are the only chorus. ${c.source === 'regions' ? `Write "enabled": true instead of "source": "regions"` : `Remove "source"${c.source === 'roster' ? ' ("roster" has no replacement: a project without "enabled": true has no chorus)' : ''}; set "enabled": true to run the project's regions`} (docs/usage-and-context.md, "Chorus")`,
+    );
   for (const key of Object.keys(c))
-    if (!['source', 'regions', 'layers', 'consumed', 'reception'].includes(key))
+    if (!['enabled', 'regions', 'layers', 'consumed', 'reception'].includes(key))
       throw Error(
-        `${where}.${key} is not a chorus setting (source, regions, layers, consumed, reception)`,
+        `${where}.${key} is not a chorus setting (enabled, regions, layers, consumed, reception)`,
       );
+  if (c.enabled !== undefined && typeof c.enabled !== 'boolean')
+    throw Error(`${where}.enabled must be true or false`);
   if (c.reception !== undefined && typeof c.reception !== 'boolean')
     throw Error(`${where}.reception must be true or false`);
   validateConsumedSettings(`${where}.consumed`, c.consumed);
-  if (c.source !== undefined && c.source !== 'regions' && c.source !== 'roster')
-    throw Error(`${where}.source must be "regions" or "roster"`);
   if (c.regions !== undefined && (typeof c.regions !== 'string' || !c.regions))
     throw Error(`${where}.regions must be a path (absolute, or relative to the project)`);
   if (c.layers !== undefined) {
@@ -950,6 +979,7 @@ export function validateConfig(config: FoundryConfig): void {
       config.installationName.length > 120)
   )
     throw Error('installationName must be 1 to 120 characters');
+  refuseHandNamedWardens(config);
   validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
@@ -1024,7 +1054,7 @@ export function validateConfig(config: FoundryConfig): void {
     for (const key of ['wardens', 'regions'] as const)
       if (project && key in project)
         throw Error(
-          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ source }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
+          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ enabled }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
         );
     validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
   }

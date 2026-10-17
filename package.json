@@ -44,7 +44,6 @@
     "db:push:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5932/foundry_test bunx prisma db push",
     "setup": "bun run packages/foundry/src/setup.ts",
     "doctor": "bun run packages/foundry/src/doctor.ts",
-    "team": "bun run packages/foundry/src/development-team-cli.ts",
     "archive:viewer": "bun run packages/foundry/src/archives/viewer.ts",
     "signet": "bun run packages/foundry/src/providers/signet-cli.ts",
     "lint": "biome check .",

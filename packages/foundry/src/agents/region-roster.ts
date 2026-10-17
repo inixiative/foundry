@@ -202,26 +202,26 @@ export function composeChorus(layers: readonly ChorusLayer[]): {
   };
 }
 
-/** One line on a project's chorus for the startup log and the eval: what runs, from which layers, or why not. */
+/** One line on a project's chorus for the startup log and the eval: what runs, from which layers, or why nothing does. */
 export function describeChorus(
   project: string,
   chorus: {
-    readonly source: 'regions' | 'roster';
-    readonly requested: 'regions' | 'roster';
+    readonly on: boolean;
+    readonly enabled: boolean;
     readonly layers: readonly ChorusLayerRegions[];
     readonly regions: readonly ChorusRegion[];
     readonly reason?: string;
   },
 ): string {
-  if (chorus.source !== 'regions')
-    return chorus.requested === 'regions'
-      ? `Chorus: project ${project} asked for regions but ${chorus.reason ?? 'none were found'}`
-      : `Chorus: project ${project}: ${chorus.reason ?? 'the hand-named roster runs'}`;
+  if (!chorus.on)
+    return chorus.enabled
+      ? `Chorus: project ${project} enabled its chorus but ${chorus.reason ?? 'no regions were found'}`
+      : `Chorus: project ${project}: ${chorus.reason ?? 'no chorus'}`;
   const layers = chorus.layers
     .map((layer) => `${layer.label}: ${layer.regions.length} at ${layer.regionsDir}`)
     .join('; ');
   const bytes = chorus.regions.reduce((sum, region) => sum + region.bytes, 0);
-  return `Chorus: project ${project} runs ${chorus.regions.length} region Wardens (${Math.round(bytes / 1024)} KB of knowledge) from ${chorus.layers.length} layer${chorus.layers.length === 1 ? '' : 's'} (${layers}); classifier charter`;
+  return `Chorus: project ${project} runs ${chorus.regions.length} region Wardens (${Math.round(bytes / 1024)} KB of knowledge) from ${chorus.layers.length} layer${chorus.layers.length === 1 ? '' : 's'} (${layers})`;
 }
 
 /**
@@ -254,7 +254,7 @@ export interface RegionWarden {
 }
 
 /**
- * The generated chorus for `regions`: one domain-librarian Warden per region, its domain the region
+ * The generated chorus: one domain-librarian Warden per region, its domain the region
  * id, asked on every user message (`invocation: always`) and on every write or exec tool call, its
  * knowledge the region's knowledge.md through a `markdown` source (audited as `source-content`, so
  * composition versions name the exact text). Org and personal overlays reach it through the ladder's

@@ -58,9 +58,9 @@ export interface ReadinessPrefilter {
 /** A project's chorus as the doctor shows it: what runs, from which layers, each region's size and key. */
 export interface ReadinessChorus {
   scope: string;
-  source: ResolvedChorus['source'];
-  requested: ResolvedChorus['requested'];
-  requestedBy: ResolvedChorus['requestedBy'];
+  on: ResolvedChorus['on'];
+  enabled: ResolvedChorus['enabled'];
+  enabledBy: ResolvedChorus['enabledBy'];
   directoriesFrom: ResolvedChorus['directoriesFrom'];
   /** The repository's `.foundry/project.json`, when it exists. */
   repository?: ResolvedChorus['repository'];
@@ -371,7 +371,7 @@ export async function inspectReadiness(
       });
       checkProvider(provider, scope);
       if (
-        ['classifier', 'router', 'decider', 'domain-librarian'].includes(agent.kind) &&
+        ['classifier', 'router', 'domain-librarian'].includes(agent.kind) &&
         ['claude-code', 'codex'].includes(provider)
       )
         issue(
@@ -555,9 +555,9 @@ export async function describeReadinessChorus(
 ): Promise<ReadinessChorus> {
   return {
     scope,
-    source: chorus.source,
-    requested: chorus.requested,
-    requestedBy: chorus.requestedBy,
+    on: chorus.on,
+    enabled: chorus.enabled,
+    enabledBy: chorus.enabledBy,
     directoriesFrom: chorus.directoriesFrom,
     ...(chorus.repository ? { repository: chorus.repository } : {}),
     ...(chorus.available ? { available: chorus.available } : {}),

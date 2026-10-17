@@ -242,7 +242,8 @@ test('a NO_COMMENT adds nothing to the message delivered to the native session',
   ]);
   const delivered = text(silent.inputs[0]!);
   expect(delivered).toContain(message);
-  expect(delivered).not.toContain('chimed in');
+  // The reception charter (a standing layer) describes chimes; no Warden chimed in.
+  expect(delivered).not.toContain('The security Warden chimed in');
   expect(delivered).not.toContain('Domain decisions');
   expect(delivered).not.toContain('no-comment');
   expect(delivered).not.toContain(NO_COMMENT);
