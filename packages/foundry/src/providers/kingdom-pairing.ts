@@ -1,6 +1,13 @@
+import { existsSync } from 'node:fs';
 import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { kingdomUrl, pairInstallation, signetCredentialFile } from '@inixiative/signet';
+import {
+  cancelInstallationInquiry,
+  installationInquiries,
+  kingdomUrl,
+  pairInstallation,
+  signetCredentialFile,
+} from '@inixiative/signet';
 import type { RequestedResource } from '@inixiative/signet/contracts';
 import { z } from 'zod';
 import { log } from '../logger';
@@ -193,6 +200,24 @@ export async function saveKingdomIntegration(
 }
 
 /** Removes one paired Kingdom's local entry and its Signet file. Revoking the integration stays with Kingdom. */
+/**
+ * A canceled pairing withdraws the registration it may have claimed (an inquiry awaiting approval),
+ * so a later approval in Kingdom mints no Integration nothing collects. One pairing runs at a time
+ * per installation, so every open registration inquiry belongs to a pairing that no longer waits.
+ */
+export async function withdrawKingdomRegistration(configDir: string, url: string) {
+  const { keyFile } = kingdomInstallationPaths(configDir, url);
+  if (!existsSync(keyFile)) return [];
+  const { inquiries } = await installationInquiries(kingdomUrl(url), keyFile);
+  const open = inquiries.filter(
+    (inquiry) =>
+      inquiry.type === 'registerIntegration' &&
+      (inquiry.status === 'sent' || inquiry.status === 'changesRequested'),
+  );
+  for (const inquiry of open) await cancelInstallationInquiry(kingdomUrl(url), keyFile, inquiry.id);
+  return open.map((inquiry) => inquiry.id);
+}
+
 export async function disconnectKingdom(store: ConfigStore, configDir: string, selector?: string) {
   const { kingdomIntegrations } = await store.load();
   if (!kingdomIntegrations?.length) return undefined;

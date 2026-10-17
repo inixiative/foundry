@@ -87,6 +87,7 @@ export function mockKingdom(
   const enrollments = new Map<string, Presented & { thumbprint: string }>();
   const sockets = new Map<ServerWebSocket<{ thumbprint?: string }>, string | undefined>();
   const calls: string[] = [];
+  const canceled: string[] = [];
   const frames: Record<string, unknown>[] = [];
   const credentials: { integrationId: string; token: string }[] = [];
   const logins: Record<string, unknown>[] = [];
@@ -240,6 +241,16 @@ export function mockKingdom(
           const { pending, declinedAt, inquiries } = snapshotOf(installation);
           return data({ pending, declinedAt, inquiries });
         }
+        case 'cancelInstallationInquiry': {
+          const inquiry = installation.inquiries.find(
+            (item) => item.id === body.inquiryId && item.status === 'sent',
+          );
+          if (!inquiry) return refuse(404);
+          installation.inquiries = installation.inquiries.filter((item) => item !== inquiry);
+          canceled.push(inquiry.id);
+          push(installation);
+          return data({ id: inquiry.id });
+        }
         case 'installationSignets':
           return data({ signets: snapshotOf(installation).signets });
         case 'collectSignet': {
@@ -348,6 +359,28 @@ export function mockKingdom(
     frames,
     credentials,
     approve,
+    /** Inquiries the installation canceled (Kingdom soft-deletes them). */
+    canceled,
+    /** A person claims the waiting code for an owner they can't manage: the inquiry awaits approval. */
+    claim() {
+      const installation = latest();
+      const id = crypto.randomUUID();
+      installation.pending = null;
+      installation.inquiries.unshift({
+        id,
+        type: 'registerIntegration',
+        status: 'sent',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        owner: null,
+        ownerName: null,
+        integrationId: null,
+        signetId: null,
+        deliverBefore: null,
+      });
+      push(installation);
+      return id;
+    },
     /** What the latest installation asked for when it requested registration. */
     requested: () => [...installations.values()].at(-1)?.requested,
     /** A person declines the waiting registration. */

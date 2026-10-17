@@ -188,6 +188,28 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
   }
 });
 
+test('canceling a claimed pairing withdraws its inquiry in Kingdom, so a later approval mints nothing', async () => {
+  const kingdom = mockKingdom(),
+    f = await viewerFixture();
+  try {
+    expect((await f.post('pair', { url: kingdom.url, name: 'Awaiting approval' })).status).toBe(
+      200,
+    );
+    const inquiryId = kingdom.claim();
+    await Bun.sleep(50);
+    expect((await f.status()).pending).toBeDefined();
+    const canceled = await kingdomState(await f.post('cancel'));
+    expect(canceled.pending).toBeUndefined();
+    expect(canceled.error).toBeUndefined();
+    expect(kingdom.canceled).toEqual([inquiryId]);
+    expect(canceled.status).toBe('disconnected');
+  } finally {
+    f.viewer.server.stop(true);
+    kingdom.stop();
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('a declined registration leaves nothing paired and says so', async () => {
   const kingdom = mockKingdom(),
     f = await viewerFixture();
