@@ -1,37 +1,21 @@
 import { SignetClient, SignetHttpError, signetCredentialFile } from '@inixiative/signet';
-import { signetDescriptionSchema } from '@inixiative/signet/contracts';
-import { z } from 'zod';
+import {
+  type SignetHolder,
+  signetDescriptionSchema,
+  signetHolderSchema,
+} from '@inixiative/signet/contracts';
 import {
   type KingdomIntegration,
   kingdomInstallationPaths,
   kingdomIntegrationId,
 } from './kingdom-installation-connection';
 
-const person = z.object({ id: z.string(), name: z.string().nullable(), email: z.string() });
-
 /**
- * Who holds a paired Kingdom's Signet, from Kingdom's extended `access/describe`: the integration
- * this Foundry is, the owner it belongs to (an organization, a space or a person), who approved it,
- * and where to see and manage it in Kingdom. An older Kingdom sends no `holder`.
+ * Who holds a paired Kingdom's Signet, from Kingdom's extended `access/describe` (`holder`; null
+ * for a person-held Signet). `signetDescriptionSchema` strips unknown fields, so it is added here.
  */
-export const signetHolderSchema = z.object({
-  integration: z.object({ id: z.string(), name: z.string(), provider: z.string().nullable() }),
-  owner: z.object({
-    ownerModel: z.string(),
-    name: z.string().nullable(),
-    organization: z.object({ id: z.string(), name: z.string(), slug: z.string() }).nullable(),
-    space: z.object({ id: z.string(), name: z.string() }).nullable(),
-    user: person.nullable(),
-  }),
-  issuedBy: person.nullable(),
-  webUrl: z.string().nullable(),
-  manageUrl: z.string().nullable(),
-});
-export type SignetHolder = z.infer<typeof signetHolderSchema>;
-
-/** `signetDescriptionSchema` strips unknown fields, so the published `describe()` drops `holder`. */
 export const heldSignetDescriptionSchema = signetDescriptionSchema.extend({
-  holder: signetHolderSchema.nullish(),
+  holder: signetHolderSchema.nullable(),
 });
 
 export interface HolderView {

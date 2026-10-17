@@ -12,6 +12,7 @@ import {
   type KingdomReview,
   kingdomPairInputSchema,
   pairKingdomIntegration,
+  withdrawKingdomRegistration,
 } from '../../providers/kingdom-pairing';
 import type { ConfigStore } from '../config';
 
@@ -170,10 +171,19 @@ export function registerKingdomRoutes(
     }
     return c.json(await status());
   });
+  const cancelPairing = async (canceled: Pairing) => {
+    canceled.controller.abort(Error('Pairing canceled'));
+    if (pairing === canceled) pairing = undefined;
+    await withdrawKingdomRegistration(configDir, canceled.url).catch((error) => {
+      failure = shown(
+        error,
+        'Pairing canceled, but Kingdom could not withdraw the request; decline it in Kingdom.',
+      );
+    });
+  };
   app.post('/api/kingdom/cancel', async (c) => {
-    pairing?.controller.abort(Error('Pairing canceled'));
-    pairing = undefined;
     failure = undefined;
+    if (pairing) await cancelPairing(pairing);
     return c.json(await status());
   });
   app.post('/api/kingdom/disconnect', async (c) => {
@@ -185,10 +195,7 @@ export function registerKingdomRoutes(
     if (!removed) return c.json({ error: 'That Kingdom is not paired.' }, 404);
     connections.remove(removed.id);
     holders.forget(removed.id);
-    if (pairing?.replace === removed.id) {
-      pairing.controller.abort(Error('Pairing canceled'));
-      pairing = undefined;
-    }
+    if (pairing?.replace === removed.id) await cancelPairing(pairing);
     return c.json(await status());
   });
 }

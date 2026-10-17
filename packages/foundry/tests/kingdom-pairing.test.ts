@@ -18,6 +18,7 @@ import {
   type MockKingdom,
   mockKingdom,
   organizationOwner,
+  reviewUrlFor,
   userOwner,
 } from './helpers/kingdom-installation';
 
@@ -83,9 +84,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     expect(start.status).toBe(200);
     const pairing = await kingdomState(start);
     expect(pairing.pending).toMatchObject({ url: kingdom.url });
-    expect(pairing.pending!.review).toBe(
-      `${kingdom.url}/dashboard?reviewSignet=${pairing.pending!.reviewCode}`,
-    );
+    expect(pairing.pending!.review).toBe(reviewUrlFor(pairing.pending!.reviewCode));
     expect(kingdom.requested()).toMatchObject({
       name: 'Test Foundry',
       resources: [{ resourceKind: 'model', operations: ['inference.create'], lens: {} }],
@@ -182,6 +181,28 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     expect(await f.tunnel()).toBe(200);
     expect(await f.settings()).not.toHaveProperty('kingdomIntegrations');
     expect(existsSync(file)).toBe(false);
+  } finally {
+    f.viewer.server.stop(true);
+    kingdom.stop();
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('canceling a claimed pairing withdraws its inquiry in Kingdom, so a later approval mints nothing', async () => {
+  const kingdom = mockKingdom(),
+    f = await viewerFixture();
+  try {
+    expect((await f.post('pair', { url: kingdom.url, name: 'Awaiting approval' })).status).toBe(
+      200,
+    );
+    const inquiryId = kingdom.claim();
+    await Bun.sleep(50);
+    expect((await f.status()).pending).toBeDefined();
+    const canceled = await kingdomState(await f.post('cancel'));
+    expect(canceled.pending).toBeUndefined();
+    expect(canceled.error).toBeUndefined();
+    expect(kingdom.canceled).toEqual([inquiryId]);
+    expect(canceled.status).toBe('disconnected');
   } finally {
     f.viewer.server.stop(true);
     kingdom.stop();

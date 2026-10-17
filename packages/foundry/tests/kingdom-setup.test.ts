@@ -19,7 +19,13 @@ import {
 import { inspectReadiness } from '../src/readiness';
 import { ConfigStore } from '../src/viewer/config';
 import { startFakeArchive } from './helpers/fake-archive';
-import { type MockKingdom, mockKingdom, userOwner } from './helpers/kingdom-installation';
+import {
+  kingdomWebUrl,
+  type MockKingdom,
+  mockKingdom,
+  reviewUrlFor,
+  userOwner,
+} from './helpers/kingdom-installation';
 
 const P1 = 'd8deab98-d4a6-43d9-9e65-ae783e58ae42';
 const viewerPort = process.env.VIEWER_PORT;
@@ -77,7 +83,7 @@ test('shared pairing collects the Signet privately once the owner is confirmed, 
         kingdom.approve(owner);
       },
     });
-    expect(reviews[1]).toBe(`${kingdom.url}/dashboard?reviewSignet=${reviews[0]}`);
+    expect(reviews[1]).toBe(reviewUrlFor(reviews[0]!));
     expect(kingdom.calls).toContain('registerInstallation');
     expect(kingdom.calls).toContain('collectSignet');
     expect((await lstat(dir)).mode & 0o777).toBe(0o700);
@@ -144,7 +150,7 @@ test('CLI pairing shows the review code, opens the review page and persists like
       restartViewer: false,
     });
     expect(opened).toHaveLength(1);
-    expect(opened[0]).toStartWith(`${kingdom.url}/dashboard?reviewSignet=`);
+    expect(opened[0]).toStartWith(`${kingdomWebUrl}/dashboard?reviewSignet=`);
     expect(lines.join('\n')).toContain(opened[0]!.split('=')[1]!);
     expect((await new ConfigStore(dir).load()).kingdomIntegrations).toEqual([
       { url: kingdom.url, owner, integrationId: result.integrationId, signetId: result.signetId },
