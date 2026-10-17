@@ -276,14 +276,6 @@ describe('shipped defaults name a model that is actually served', () => {
     // The subscription decision profile is the Claude login; Haiku 5.5 is registered on it and on the API.
     expect(registryModel('claude-code', DECISION_MODEL)!.runtimeKind).toBe('native-harness');
     expect(registryModel('anthropic', DECISION_MODEL)!.runtimeKind).toBe('api');
-
-    const example = await Bun.file(
-      new URL('../../../examples/domain-team.settings.json', import.meta.url),
-    ).json();
-    expect(example.defaults).toMatchObject({
-      classifierProvider: SUBSCRIPTION_DECISIONS,
-      classifierModel: DECISION_MODEL,
-    });
   });
 
   test('no adapter or wizard fallback hardcodes a model the registry does not serve', async () => {

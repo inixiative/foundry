@@ -15,7 +15,7 @@
 //     name one of them when the turn's tool activity ends (Aron, 2026-10-15: one guard per turn, not
 //     per tool call; `guard: "per-call"` in settings restores a guard per call). An observed subagent's
 //     own turn is guarded the same way, on the subagent's node;
-//   - `subagent-spawn` (brief): when the agent hands a task to a subagent, the roster briefs the
+//   - `subagent-spawn` (brief): when the agent hands a task to a subagent, the chorus briefs the
 //     handoff from the task text; the brief is journalled on the parent and delivered as a note;
 //   - `consumed` (advice phase): when the agent takes in a work item (a ticket or spec file it reads,
 //     a Linear issue or Notion page it fetches; `chorus.consumed` in a project's settings, off by

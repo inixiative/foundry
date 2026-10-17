@@ -65,7 +65,12 @@ test('the default instructions also receive the phase protocol; the default advi
     null,
   );
   expect(lib.advisePrompt).toContain('You are a architecture domain advisor');
-  expect(await lib.advise('m')).toEqual({ layers: [], snippets: ['x'], confidence: 1 });
+  expect(await lib.advise('m')).toEqual({
+    layers: [],
+    snippets: ['x'],
+    confidence: 1,
+    pointer: { relevant: false },
+  });
   expect(calls[0]!.map((m) => m.content).join('\n')).toContain(ADVICE_RESPONSE_PROTOCOL);
 });
 

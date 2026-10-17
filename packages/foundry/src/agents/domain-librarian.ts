@@ -590,7 +590,7 @@ export interface ToolObservation {
 /**
  * The guard's moment: the tool activity of one turn in call order, every write, edit and command a
  * Warden's `guardTriggers` name (`guard: "per-turn"`, the default), or one call (`guard: "per-call"`).
- * The roster is asked once over it when the turn's tool activity ends.
+ * The chorus is asked once over it when the turn's tool activity ends.
  */
 export interface TurnActivity {
   /** The turn the activity belongs to; an observed subagent's own turn for its calls. */

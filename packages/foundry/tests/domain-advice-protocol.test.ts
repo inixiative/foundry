@@ -93,7 +93,11 @@ describe('advice phase protocol independent of domain instructions', () => {
   it('preserves valid fenced advice and reads NO_COMMENT as nothing to add', async () => {
     const advice = { layers: [], snippets: ['Keep the migration reversible'], confidence: 0.6 };
     const { lib } = fixture(`\`\`\`json\n${JSON.stringify(advice)}\n\`\`\``);
-    expect(await lib.advise('update the spelling')).toEqual(advice);
+    // Every snippet list is read as a pointer; this one opens no pointer shape.
+    expect(await lib.advise('update the spelling')).toEqual({
+      ...advice,
+      pointer: { relevant: false },
+    });
     const silent = fixture('NO_COMMENT');
     expect(await silent.lib.advise('update the spelling')).toEqual({
       layers: [],

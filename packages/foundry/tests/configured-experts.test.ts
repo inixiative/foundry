@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import {
   type LLMProvider,
   Thread,
 } from '@inixiative/foundry-core';
+import { REGION_GUARD_TRIGGERS } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -21,35 +22,27 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { SessionBackedProvider } from '../src/providers/session-backed';
-import { DOCS_ADVISE_PROMPT } from '../src/setup/scan-docs';
-import {
-  type AgentSettingsConfig,
-  ConfigStore,
-  type FoundryConfig,
-  starterConfig,
-} from '../src/viewer/config';
+import { ConfigStore, type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
+import { type TestRegion, writeRegions } from './helpers/regions';
 
-const expert = (
-  domain = 'compatibility',
-  id = `${domain}-expert`,
-  sourceId = `${domain}-source`,
-): AgentSettingsConfig => ({
-  id,
-  kind: 'decider',
-  flowRole: 'domain-advising',
-  domain,
-  prompt: `INSTRUCTIONS_${domain}: interpret only your domain's evidence.`,
-  provider: 'expert',
-  model: 'explicit-fable',
-  tools: false,
-  visibleLayers: [],
-  domainKnowledge: [sourceId],
-  peers: [],
-  maxDepth: 1,
-  enabled: true,
+const COMPAT = { id: 'compatibility', knowledge: 'DOMAIN_COMPAT: old readers still work' };
+const TESTING = { id: 'testing', knowledge: 'DOMAIN_TEST: require a legacy reader regression' };
+
+const dirs: string[] = [];
+afterEach(async () => {
+  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-function config() {
+/** A project directory whose repository enables a chorus of `regions`. */
+async function regionProject(regions: TestRegion[], options: { enabled?: boolean } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'e1-region-project-'));
+  dirs.push(dir);
+  writeRegions(dir, regions, options);
+  return dir;
+}
+
+/** Settings: the worker, and project P (and Q) at `paths`. Wardens come only from their regions. */
+function config(paths: { P?: string; Q?: string } = {}) {
   const c = starterConfig('central', 'central-model');
   c.agents = {
     worker: {
@@ -63,18 +56,10 @@ function config() {
       maxDepth: 1,
       enabled: true,
     },
-    'compatibility-expert': expert(),
   };
   c.layers = {};
-  c.sources = {
-    'compatibility-source': {
-      id: 'compatibility-source',
-      label: 'Compatibility',
-      type: 'inline',
-      uri: 'DOMAIN_COMPAT: old readers still work',
-      enabled: true,
-    },
-  };
+  c.sources = {};
+  for (const [id, path] of Object.entries(paths)) if (path) c.projects[id] = { id, path };
   return c;
 }
 interface Call {
@@ -133,8 +118,15 @@ function setup(
   const providers = new Map(
     [central, flow, experts, phase, ...(extra ? [extra] : [])].map((p) => [p.id, p]),
   );
-  const sourceResolver: SourceResolver = (id, cfg) =>
-    cfg.sources[id] ? { id, load: async () => cfg.sources[id].uri } : null;
+  // A region's knowledge is its knowledge.md; inline sources are their text.
+  const sourceResolver: SourceResolver = (id, cfg) => {
+    const source = cfg.sources[id];
+    if (!source) return null;
+    return {
+      id,
+      load: async () => (source.type === 'markdown' ? Bun.file(source.uri).text() : source.uri),
+    };
+  };
   const stack = new ContextStack(buildLayers(c, { sourceResolver }));
   const manager = new ThreadRuntimeManager({
     config: c,
@@ -165,22 +157,13 @@ function setup(
   };
 }
 
-test('saved experts learn through production factory/journal, remain separate and survive a fresh configuration/factory reload', async () => {
+test('region Wardens learn through production factory/journal, remain separate and survive a fresh configuration/factory reload', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'e1-saved-experts-'));
   let f: ReturnType<typeof setup> | undefined;
   let journal: LocalSessionStore | undefined;
   try {
-    const c = config();
-    c.agents['testing-expert'] = expert('testing');
-    c.sources['testing-source'] = {
-      id: 'testing-source',
-      label: 'Testing',
-      type: 'inline',
-      uri: 'DOMAIN_TEST: require a legacy reader regression',
-      enabled: true,
-    };
-    c.projects.P = { id: 'P', path: dir };
-    c.projects.Q = { id: 'Q', path: dir };
+    writeRegions(dir, [COMPAT, TESTING]);
+    const c = config({ P: dir, Q: dir });
     const settings = new ConfigStore(dir);
     await settings.save(c);
     const loaded = await new ConfigStore(dir).load();
@@ -205,14 +188,15 @@ test('saved experts learn through production factory/journal, remain separate an
       const post = f.calls.find(
         (call) => call.phase === 'post' && call.opts.threadId?.endsWith(`:domain:${domain}`),
       )!;
-      expect(post.provider).toBe('expert');
+      // A region Warden runs on the default profile.
+      expect(post.provider).toBe('central');
       expect(post.opts).toMatchObject({
-        model: 'explicit-fable',
+        model: 'central-model',
         tools: false,
         maxTurns: 1,
         timeout: 0,
       });
-      expect(post.messages[0].content).toContain(`INSTRUCTIONS_${domain}`);
+      expect(post.messages[0].content).toContain(`(\`${domain}\`)`);
       expect(post.messages[1].content).toContain(
         domain === 'compatibility' ? 'DOMAIN_COMPAT' : 'DOMAIN_TEST',
       );
@@ -233,7 +217,7 @@ test('saved experts learn through production factory/journal, remain separate an
         (call) => call.phase === 'pre' && call.opts.threadId?.endsWith(':domain:compatibility'),
       )
       .at(-1)!;
-    expect(advice.opts).toMatchObject({ model: 'explicit-fable', tools: false, maxTurns: 1 });
+    expect(advice.opts).toMatchObject({ model: 'central-model', tools: false, maxTurns: 1 });
     expect(JSON.stringify(advice.messages)).toContain('PRIVATE_compatibility');
     expect(JSON.stringify(advice.messages)).not.toContain('PRIVATE_testing');
     const b = f.factory.create('B', { projectId: 'Q' });
@@ -270,73 +254,37 @@ test('saved experts learn through production factory/journal, remain separate an
   }
 });
 
-test('project-only/override/disabled definitions use resolved sources and profiles without affecting another project', async () => {
+test("each project's chorus is its own regions; learning.review applies to them; a thread outside a project has none", async () => {
   const dir = await mkdtemp(join(tmpdir(), 'e1-project-resolution-'));
-  const c = config();
+  dirs.push(dir);
+  const p = await regionProject([{ id: 'compatibility', knowledge: 'PROJECT_COMPAT_KNOWLEDGE' }]);
+  const q = await regionProject([{ id: 'testing', knowledge: 'ONLY_Q_TEST_KNOWLEDGE' }]);
+  const c = config({ P: p, Q: q });
   c.learning = {
     review: { provider: 'phase', model: 'explicit-review', maxTokens: 1700, thinking: 'high' },
-  };
-  c.projects.P = {
-    id: 'P',
-    path: '/controlled/P',
-    agents: {
-      'compatibility-expert': {
-        extends: 'compatibility-expert',
-        model: 'project-fable',
-        prompt: 'PROJECT_INSTRUCTIONS',
-      },
-    },
-    sources: {
-      'compatibility-source': {
-        ...c.sources['compatibility-source'],
-        uri: 'PROJECT_COMPAT_KNOWLEDGE',
-      },
-    },
-  };
-  c.projects.Q = {
-    id: 'Q',
-    path: '/controlled/Q',
-    agents: {
-      'compatibility-expert': { extends: 'compatibility-expert', enabled: false },
-      'testing-expert': expert('testing'),
-    },
-    sources: {
-      'testing-source': {
-        id: 'testing-source',
-        label: 'Project testing',
-        type: 'inline',
-        uri: 'ONLY_Q_TEST_KNOWLEDGE',
-        enabled: true,
-      },
-    },
   };
   let f: ReturnType<typeof setup> | undefined;
   try {
     const store = new ConfigStore(dir);
     await store.save(c);
-    const saved = await new ConfigStore(dir).load();
-    f = setup(saved);
-    // Factory holds its saved snapshot; a later source object edit is not a live replacement.
-    saved.agents['compatibility-expert'].prompt = 'MUTATED_AFTER_CONSTRUCTION';
-    const p = f.factory.create('P-thread', { projectId: 'P' }),
-      q = f.factory.create('Q-thread', { projectId: 'Q' }),
+    f = setup(await new ConfigStore(dir).load());
+    const pThread = f.factory.create('P-thread', { projectId: 'P' }),
+      qThread = f.factory.create('Q-thread', { projectId: 'Q' }),
       g = f.factory.create('global-thread');
-    expect([...f.manager.get(p.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
-    expect([...f.manager.get(q.id)!.domainLibrarians.keys()]).toEqual(['testing']);
-    for (const thread of [p, q, g]) {
+    expect([...f.manager.get(pThread.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
+    expect([...f.manager.get(qThread.id)!.domainLibrarians.keys()]).toEqual(['testing']);
+    expect(f.manager.get(g.id)!.domainLibrarians.size).toBe(0);
+    for (const thread of [pThread, qThread, g]) {
       await thread.dispatch('worker', 'Work');
       await f.manager.get(thread.id)!.learningSettled();
     }
     const pre = f.calls.find(
-      (call) => call.phase === 'pre' && call.opts.threadId?.startsWith(p.id),
+      (call) => call.phase === 'pre' && call.opts.threadId?.startsWith(pThread.id),
     )!;
-    expect(pre.provider).toBe('expert');
-    expect(pre.opts.model).toBe('project-fable');
-    expect(pre.messages[0].content).toContain('PROJECT_INSTRUCTIONS');
     expect(JSON.stringify(pre.messages)).toContain('PROJECT_COMPAT_KNOWLEDGE');
     expect(JSON.stringify(pre.messages)).not.toContain('ONLY_Q_TEST_KNOWLEDGE');
     const post = f.calls.find(
-      (call) => call.phase === 'post' && call.opts.threadId?.startsWith(p.id),
+      (call) => call.phase === 'post' && call.opts.threadId?.startsWith(pThread.id),
     )!;
     expect(post.provider).toBe('phase');
     expect(post.opts).toMatchObject({
@@ -345,16 +293,15 @@ test('project-only/override/disabled definitions use resolved sources and profil
       maxTokens: 1700,
       tools: false,
     });
-    const global = f.calls.find(
-      (call) => call.phase === 'pre' && call.opts.threadId?.startsWith(g.id),
-    )!;
-    expect(global.opts.model).toBe('explicit-fable');
-    expect(JSON.stringify(global.messages)).toContain('DOMAIN_COMPAT');
-    expect(JSON.stringify(global.messages)).not.toContain('MUTATED_AFTER_CONSTRUCTION');
+    expect(
+      f.calls.some(
+        (call) =>
+          (call.phase === 'pre' || call.phase === 'post') && call.opts.threadId?.startsWith(g.id),
+      ),
+    ).toBe(false);
     expect(resolveProjectView(c, 'P')!.config.learning).toEqual(c.learning);
   } finally {
     await f?.close();
-    await rm(dir, { recursive: true, force: true });
   }
 });
 
@@ -363,9 +310,9 @@ test('configured review pending does not block Continue or create another same-d
   const held = new Promise<string>((resolve) => {
     release = resolve;
   });
-  const f = setup(config(), undefined, () => held);
+  const f = setup(config({ P: await regionProject([COMPAT]) }), undefined, () => held);
   try {
-    const t = f.factory.create('pending'),
+    const t = f.factory.create('pending', { projectId: 'P' }),
       runtime = f.manager.get(t.id)!;
     await t.dispatch('worker', 'Work');
     const next = await Promise.race([
@@ -394,29 +341,27 @@ test('configured review pending does not block Continue or create another same-d
   }
 });
 
-for (const state of ['disabled-agent', 'layer-named-like-a-domain'] as const)
-  test(`${state} cannot resurrect a configured or built-in expert`, async () => {
-    const c = config();
-    c.agents = {
-      worker: c.agents.worker,
-      'security-expert': expert('security', 'security-expert', 'compatibility-source'),
-    };
-    if (state === 'disabled-agent') c.agents['security-expert'].enabled = false;
+for (const state of ['chorus-off', 'layer-named-like-a-domain'] as const)
+  test(`${state} cannot resurrect a Warden`, async () => {
+    const c = config({
+      P: await regionProject([{ id: 'security' }], { enabled: state !== 'chorus-off' }),
+    });
     if (state === 'layer-named-like-a-domain') {
-      // A layer with a built-in domain's name and metadata is passive: only settings make Wardens.
-      delete c.agents['security-expert'];
+      // A layer with a domain's name and metadata is passive: only a project's regions make Wardens.
+      c.projects.P!.path = await regionProject([]);
+      c.sources.notes = { id: 'notes', label: 'N', type: 'inline', uri: 'x', enabled: true };
       c.layers.security = {
         id: 'security',
         domain: 'security',
         prompt: 'Security',
-        sourceIds: ['compatibility-source'],
+        sourceIds: ['notes'],
         staleness: 0,
         enabled: true,
       };
     }
     const f = setup(c);
     try {
-      const t = f.factory.create(state);
+      const t = f.factory.create(state, { projectId: 'P' });
       expect(f.manager.get(t.id)!.domainLibrarians.size).toBe(0);
       expect(f.calls).toHaveLength(0);
     } finally {
@@ -424,103 +369,12 @@ for (const state of ['disabled-agent', 'layer-named-like-a-domain'] as const)
     }
   });
 
-for (const [label, mutate] of [
-  [
-    'duplicate-domain',
-    (c: FoundryConfig) => {
-      c.agents.duplicate = { ...expert(), id: 'duplicate' };
-    },
-  ],
-  [
-    'owned-layer',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].ownedLayers = ['compatibility-reference'];
-    },
-  ],
-  [
-    'unknown-knowledge-source',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].domainKnowledge = ['absent-source'];
-    },
-  ],
-  [
-    'tool-policy',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].tools = true;
-    },
-  ],
-  [
-    'foreign-visible-context',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].visibleLayers.push('another-expert');
-    },
-  ],
-  [
-    'invalid-thinking',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].thinking = 'unsupported' as never;
-    },
-  ],
-  [
-    'invalid-timeout',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].timeout = 0;
-    },
-  ],
-  [
-    'invalid-enable',
-    (c: FoundryConfig) => {
-      c.agents['compatibility-expert'].enabled = 'false' as never;
-    },
-  ],
-] as const)
-  test(`reject ${label} before any partial runtime attachment`, () => {
-    const c = config();
-    mutate(c);
-    let calls = 0,
-      binds = 0;
-    const stack = new ContextStack([new ContextLayer({ id: 'compatibility-reference' })]),
-      t = new Thread('invalid', stack);
-    const manager = new ThreadRuntimeManager({
-      config: c,
-      llm: {
-        id: 'expert',
-        complete: async () => {
-          calls++;
-          throw Error('No send permitted');
-        },
-      },
-      sessionAdapter: {
-        runtime: 'controlled',
-        bindSignals() {
-          binds++;
-          return () => {};
-        },
-        createSession: async () => {
-          throw Error('No process permitted');
-        },
-        getExternalSessionId: async () => null,
-        clearSession: async () => {},
-      },
-    });
-    try {
-      expect(() => manager.attach(t)).toThrow();
-      expect(manager.runtimes.size).toBe(0);
-      expect(manager.stacks.size).toBe(0);
-      expect(stack.layers.map((l) => l.id)).toEqual(['compatibility-reference']);
-      expect(calls).toBe(0);
-      expect(binds).toBe(0);
-    } finally {
-      t.dispose();
-      manager.disposeAll();
-    }
-  });
-
 test('missing provider and unsupported actual native profiles are refused before native construction', async () => {
-  for (const mode of ['missing', 'codex', 'claude-thinking'] as const) {
-    const c = config();
+  const project = await regionProject([COMPAT]);
+  for (const mode of ['missing', 'codex'] as const) {
+    const c = config({ P: project });
     let creates = 0;
-    const id = mode === 'claude-thinking' ? 'claude-code' : 'codex';
+    const id = 'codex';
     const native = new SessionBackedProvider({
       id,
       defaultModel: 'explicit-model',
@@ -534,11 +388,11 @@ test('missing provider and unsupported actual native profiles are refused before
         clearSession: async () => {},
       },
     });
-    c.agents['compatibility-expert'].provider = mode === 'missing' ? 'absent' : id;
-    if (mode === 'claude-thinking') c.agents['compatibility-expert'].thinking = 'high';
+    // A region Warden runs on the default profile: an absent or unsupported one is refused.
+    c.defaults.provider = mode === 'missing' ? 'absent' : id;
     const f = setup(c, undefined, undefined, native);
     try {
-      expect(() => f.factory.create('unsupported')).toThrow();
+      expect(() => f.factory.create('unsupported', { projectId: 'P' })).toThrow();
       expect(creates).toBe(0);
       expect(f.calls).toHaveLength(0);
       expect(f.manager.runtimes.size).toBe(0);
@@ -548,9 +402,9 @@ test('missing provider and unsupported actual native profiles are refused before
   }
 });
 
+const CODE_PROMPT = 'CODE_WARDEN: pick the docs this message needs.';
 test('a code-registered Warden reads the stack layer it names, with its own prompt', () => {
   const c = config();
-  c.agents = { worker: c.agents.worker };
   const layer = new ContextLayer({ id: 'docs' });
   layer.set('CODE_DOCS');
   const manager = new ThreadRuntimeManager({
@@ -561,16 +415,14 @@ test('a code-registered Warden reads the stack layer it names, with its own prom
         throw Error('No inspection model call');
       },
     },
-    domains: [
-      { domain: 'docs', layerId: 'docs', advisePrompt: DOCS_ADVISE_PROMPT, guardTriggers: [] },
-    ],
+    domains: [{ domain: 'docs', layerId: 'docs', advisePrompt: CODE_PROMPT, guardTriggers: [] }],
     log() {},
     warn() {},
   });
   const thread = new Thread('code', new ContextStack([layer]));
   try {
     const lib = manager.attach(thread).domainLibrarians.get('docs')!;
-    expect(lib.advisePrompt).toBe(DOCS_ADVISE_PROMPT);
+    expect(lib.advisePrompt).toBe(CODE_PROMPT);
     expect(lib.cache).toBe(layer);
   } finally {
     thread.dispose();
@@ -578,31 +430,25 @@ test('a code-registered Warden reads the stack layer it names, with its own prom
   }
 });
 
-test('an explicit built-in expert retains its guard triggers without replacing its configured instructions', async () => {
-  const c = config();
-  c.agents = {
-    worker: c.agents.worker,
-    'security-expert': expert('security', 'security-expert', 'compatibility-source'),
-  };
-  const f = setup(c);
+test('a region Warden is asked on every write or exec tool call, under its generated region prompt', async () => {
+  const f = setup(config({ P: await regionProject([{ id: 'security' }]) }));
   try {
-    const thread = f.factory.create('security-guard'),
+    const thread = f.factory.create('security-guard', { projectId: 'P' }),
       lib = f.manager.get(thread.id)!.domainLibrarians.get('security')!;
-    expect(lib.shouldGuard('Write')).toBe(true);
-    expect(lib.shouldGuard('Bash')).toBe(true);
-    expect(lib.advisePrompt).toContain('INSTRUCTIONS_security');
-    expect(lib.reviewPrompt).toContain('INSTRUCTIONS_security');
+    for (const tool of REGION_GUARD_TRIGGERS) expect(lib.shouldGuard(tool)).toBe(true);
+    expect(lib.shouldGuard('Read')).toBe(false);
+    expect(lib.advisePrompt).toContain('You are a region Warden.');
+    expect(lib.advisePrompt).toContain('(`security`)');
+    expect(lib.reviewPrompt).toBe(lib.advisePrompt);
     expect(f.calls).toHaveLength(0);
   } finally {
     await f.close();
   }
 });
 
-test('metadata-only/generated layers and a conflicting generated ID never silently become legacy expert state', () => {
+test('metadata-only/generated layers and a conflicting generated ID never silently become legacy expert state', async () => {
   for (const generated of [false, true]) {
     const c = config();
-    c.layers = {};
-    c.agents = { worker: c.agents.worker };
     const layer = new ContextLayer({
       id: 'security',
       ...(generated
@@ -628,16 +474,16 @@ test('metadata-only/generated layers and a conflicting generated ID never silent
       manager.disposeAll();
     }
   }
-  const c = config();
+  const c = config({ P: await regionProject([COMPAT]) });
   const stack = new ContextStack([
     new ContextLayer({ id: 'compatibility-reference' }),
     new ContextLayer({ id: 'thread-knowledge:compatibility' }),
   ]);
-  const t = new Thread('collision', stack);
+  const t = new Thread('collision', stack, { projectId: 'P' });
   const manager = new ThreadRuntimeManager({
     config: c,
     llm: {
-      id: 'expert',
+      id: 'central',
       complete: async () => {
         throw Error('No call allowed');
       },

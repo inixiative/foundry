@@ -23,6 +23,7 @@ export function writeRegions(
   options: { enabled?: boolean } = {},
 ): string {
   const dir = join(projectPath, '.foundry', 'regions');
+  mkdirSync(dir, { recursive: true });
   for (const region of regions) {
     const at = join(dir, region.id);
     mkdirSync(at, { recursive: true });

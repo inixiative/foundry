@@ -11,14 +11,20 @@ import {
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
 import { ProjectRegistry } from '../src/agents/project';
-import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
+import {
+  buildAgents,
+  buildLayers,
+  type SourceResolver,
+  ThreadFactory,
+} from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { ConfigStore, starterConfig } from '../src/viewer/config';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
 import { withStreams } from './helpers/data-stream';
+import { writeRegions } from './helpers/regions';
 
 for (const operation of ['create', 'fork'] as const) {
-  test(`HTTP ${operation} resolves saved project experts before runtime ownership is captured`, async () => {
+  test(`HTTP ${operation} resolves the project's region Wardens before runtime ownership is captured`, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'foundry-project-route-'));
     let runtime: ThreadRuntimeManager | undefined;
     try {
@@ -29,7 +35,6 @@ for (const operation of ['create', 'fork'] as const) {
           domain: 'compatibility',
           segment: 'domain-knowledge',
           prompt: 'Compatibility evidence',
-          writers: ['expert'],
           sourceIds: [],
           staleness: 0,
           enabled: true,
@@ -47,25 +52,12 @@ for (const operation of ['create', 'fork'] as const) {
           maxDepth: 1,
           enabled: true,
         },
-        expert: {
-          id: 'expert',
-          kind: 'decider',
-          flowRole: 'domain-advising',
-          domain: 'compatibility',
-          prompt: 'Global expert',
-          provider: 'controlled',
-          model: 'controlled',
-          tools: false,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
       };
+      // The project's Wardens are its regions; the settings declare none.
+      writeRegions(dir, [{ id: 'compatibility' }]);
       config.projects.P = {
         id: 'P',
         path: dir,
-        agents: { expert: { extends: 'expert', enabled: false } },
         layers: { reference: { enabled: false } },
       };
       const store = new ConfigStore(dir);
@@ -80,11 +72,19 @@ for (const operation of ['create', 'fork'] as const) {
         },
       };
       const events = new EventStream();
-      const layerDeps = { sourceResolver: () => null };
+      // A region's knowledge is its markdown file; nothing here calls a model.
+      const sourceResolver: SourceResolver = (id, cfg) => {
+        const source = cfg.sources[id];
+        return source?.type === 'markdown'
+          ? { id, load: async () => Bun.file(source.uri).text() }
+          : null;
+      };
+      const layerDeps = { sourceResolver };
       const stack = new ContextStack(buildLayers(saved, layerDeps));
       const agentDeps = { provider: llm };
       runtime = new ThreadRuntimeManager({
         config: saved,
+        resolveSource: sourceResolver,
         llm,
         eventStream: events,
         log() {},
@@ -99,7 +99,8 @@ for (const operation of ['create', 'fork'] as const) {
         configuration: { config: saved, layers: layerDeps, agents: agentDeps },
       });
       const main = factory.create('main');
-      expect([...runtime.get(main.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
+      // Outside a project there is no chorus.
+      expect(runtime.get(main.id)!.domainLibrarians.size).toBe(0);
       const registry = new ProjectRegistry();
       const project = registry.register({
         id: 'P',
@@ -111,7 +112,7 @@ for (const operation of ['create', 'fork'] as const) {
       const source = factory.create('source', { projectId: project.id, cwd: dir });
       project.addThread(source);
       expect(capturedOwner(source.id).projectId).toBe(project.id);
-      expect(runtime.get(source.id)!.domainLibrarians.size).toBe(0);
+      expect([...runtime.get(source.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
       const app = new Hono();
       registerRuntimeRoutes(
         app,
@@ -143,7 +144,7 @@ for (const operation of ['create', 'fork'] as const) {
       expect({
         projectId: capturedOwner(thread.id).projectId,
         experts: [...owned.domainLibrarians.keys()],
-      }).toEqual({ projectId: project.id, experts: [] });
+      }).toEqual({ projectId: project.id, experts: ['compatibility'] });
       expect(thread.stack.getLayer('reference')).toBeUndefined();
       expect(calls).toBe(0);
     } finally {

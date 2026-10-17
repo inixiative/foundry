@@ -134,7 +134,7 @@ function setup() {
       JSON.stringify({
         findings: [
           {
-            severity: 'critical',
+            severity: 'advisory',
             description: 'eval() is banned — code injection risk',
             location: 'src/utils.ts:10',
           },
@@ -320,7 +320,7 @@ describe('FlowOrchestrator', () => {
         }),
       );
 
-      // Security guard should catch eval() as critical
+      // The security Warden points at eval() (advisory: a Warden never gives a verdict)
       const allFindings = [...report.critical, ...report.advisory];
       expect(allFindings.length).toBeGreaterThan(0);
     });

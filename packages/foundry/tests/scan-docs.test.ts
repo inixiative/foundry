@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DOCS_ADVISE_PROMPT, formatPlan, scanRepoDocs } from '../src/setup/scan-docs';
+import { formatPlan, scanRepoDocs } from '../src/setup/scan-docs';
 
 function makeDoc(title: string, h2s: string[], filler = ''): string {
   const h2Block = h2s.map((h) => `## ${h}\n\nsome prose about ${h}.\n`).join('\n');
@@ -125,7 +125,7 @@ describe('scanRepoDocs', () => {
     const plan = await scanRepoDocs(repo);
     expect(plan.settings).toBeDefined();
 
-    const { source, layer, agent } = plan.settings!;
+    const { source, layer } = plan.settings!;
 
     expect(source.type).toBe('markdown');
     expect(source.enabled).toBe(true);
@@ -136,13 +136,8 @@ describe('scanRepoDocs', () => {
     expect(layer.sourceIds).toEqual([source.id]);
     expect(layer.activation).toBe('conditional');
     expect(layer.writers).toBeUndefined();
-
-    expect(agent.kind).toBe('domain-librarian');
-    expect(agent.domain).toBe('docs');
-    expect(agent.prompt).toBe(DOCS_ADVISE_PROMPT);
-    expect(agent.tools).toBe(false);
-    expect(agent.domainKnowledge).toEqual([source.id]);
-    expect(agent.ownedLayers).toBeUndefined();
+    // No docs Warden: settings declare none since the hand-named roster was retired.
+    expect(Object.keys(plan.settings!).sort()).toEqual(['layer', 'source']);
   });
 
   test('honours custom candidateDirs', async () => {

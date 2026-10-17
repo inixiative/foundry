@@ -12,6 +12,7 @@ import {
   type LLMProvider,
 } from '@inixiative/foundry-core';
 import { oneCall } from '../src/agents/domain-librarian';
+import { regionInstructions } from '../src/agents/region-roster';
 import { invalidateComposition } from '../src/agents/role-layers';
 import {
   buildAgents,
@@ -29,12 +30,8 @@ import {
   instructionStackReport,
 } from '../src/prompts/instruction-stack';
 import { primedRequest } from '../src/providers/primed-decisions';
-import {
-  type AgentSettingsConfig,
-  type FoundryConfig,
-  starterConfig,
-  validateConfig,
-} from '../src/viewer/config';
+import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { writeRegions } from './helpers/regions';
 
 /**
  * The composition view (docs/usage-and-context.md, "Composition view"): one ladder composes the
@@ -69,7 +66,10 @@ const write = (path: string, text: string) => {
 };
 const roleFile = (dir: string, role: string, slot: string, local = false) =>
   join(dir, '.foundry', 'roles', role, `${slot}${local ? '.local' : ''}.md`);
-const WARDEN = 'librarian-convention';
+/** The project's one region, and so its one Warden (role and domain are the region id). */
+const WARDEN = 'conventions';
+const REGION = { id: WARDEN, title: 'Conventions', routing: 'Is this about how this repo works?' };
+const REGION_RULES = regionInstructions(REGION);
 
 /** Aron's machine in miniature: computer personal, org, project, project personal. */
 function ladderFiles() {
@@ -209,23 +209,11 @@ interface Call {
   opts: CompletionOpts;
 }
 
-const warden = (): AgentSettingsConfig => ({
-  id: WARDEN,
-  kind: 'domain-librarian',
-  flowRole: 'domain-advising',
-  domain: 'conventions',
-  prompt: 'CONVENTION_WARDEN: hold the thread to the written conventions.',
-  provider: 'flow',
-  model: 'haiku',
-  tools: false,
-  visibleLayers: [],
-  guardTriggers: ['Write'],
-  peers: [],
-  maxDepth: 1,
-  enabled: true,
-});
-
-function config(picks?: RoleComposition): FoundryConfig {
+/**
+ * A region Warden takes no general files by default (`instructions.general: []` in its view); these
+ * tests give it the whole ladder (`instructions: {}`), as any other role has, unless they pick.
+ */
+function config(picks: RoleComposition = { instructions: {} }): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
     worker: {
@@ -239,7 +227,6 @@ function config(picks?: RoleComposition): FoundryConfig {
       maxDepth: 1,
       enabled: true,
     },
-    [WARDEN]: warden(),
   };
   c.layers = {
     instructions: {
@@ -254,7 +241,7 @@ function config(picks?: RoleComposition): FoundryConfig {
     instructions: { id: 'instructions', type: 'instructions', label: 'I', uri: '', enabled: true },
   };
   c.projects.P = { id: 'P', path: repo };
-  if (picks) c.composition = { roles: { [WARDEN]: picks } };
+  c.composition = { roles: { [WARDEN]: picks } };
   return c;
 }
 
@@ -263,6 +250,7 @@ function setup(
   advice: { snippets: string[] } = { snippets: [] },
   routeLayers: string[] = [],
 ) {
+  writeRegions(repo, [{ ...REGION, knowledge: 'REGION_KNOWLEDGE' }]);
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
     id,
@@ -335,14 +323,16 @@ test('a Warden and the main thread take their slots from the view; the Warden sl
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     const advise = f.last('advise');
-    expect(advise.messages[0]!.content).toStartWith(chartered('CONVENTION_WARDEN'));
+    expect(advise.messages[0]!.content).toStartWith(chartered(REGION_RULES));
     expect(advise.messages[0]!.content).toContain('PROJECT_RULES');
+    expect(advise.messages[1]!.content).toContain('REGION_KNOWLEDGE');
     expect(advise.messages[1]!.content).toContain('PROJECT_WARDEN_KNOWLEDGE');
     const central = JSON.stringify(f.last('central').messages);
     expect(central).toContain('PROJECT_RULES');
     // Role files and Warden slots never reach the executor.
     expect(central).not.toContain('PROJECT_WARDEN_KNOWLEDGE');
-    expect(central).not.toContain('CONVENTION_WARDEN');
+    expect(central).not.toContain('REGION_KNOWLEDGE');
+    expect(central).not.toContain(REGION_RULES);
     expect(f.thread.stack.layers.some((layer) => layer.id.startsWith('role:'))).toBe(false);
   } finally {
     await f.close();
@@ -380,7 +370,7 @@ test('a composition over the role budget is a clear reported error in every phas
 test('the Cartographer composes too, and over its budget routing reports an error', async () => {
   ladderFiles();
   const c = config();
-  c.composition = { roles: { cartographer: { budget: 50 } } };
+  c.composition = { roles: { ...c.composition!.roles, cartographer: { budget: 50 } } };
   const f = setup(c);
   try {
     const turn = await f.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
@@ -444,7 +434,9 @@ test("a Warden that chimes in is appended to the end of the user's message, not 
       .filter((m) => m.role === 'system')
       .map((m) => m.content)
       .join('\n');
-    expect(system).not.toContain('chimed in');
+    // The context holds the reception charter (how to read a chime), never the chime itself.
+    expect(system).toContain('# Chimes from the Warden chorus');
+    expect(system).not.toContain('Use the existing script runner.');
   } finally {
     await f.close();
   }
@@ -481,7 +473,7 @@ test("a role never reads more personal files than the main thread's audience all
   write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE');
   // The Warden's notes reach main's message, so a team main thread makes the Warden team too.
   const c = config();
-  c.composition = { roles: { main: { audience: 'team' } } };
+  c.composition = { roles: { ...c.composition!.roles, main: { audience: 'team' } } };
   const f = setup(c);
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
@@ -535,15 +527,6 @@ test('a composition edit reaches the main thread on its next turn', async () => 
   } finally {
     await f.close();
   }
-});
-
-test('Warden knowledge sources are refused when disabled or when they compose instructions', () => {
-  const c = config();
-  c.sources.notes = { id: 'notes', type: 'inline', label: 'N', uri: 'x', enabled: false };
-  c.agents[WARDEN]!.domainKnowledge = ['notes'];
-  expect(() => validateConfig(c)).toThrow('disabled sources: notes');
-  c.agents[WARDEN]!.domainKnowledge = ['instructions'];
-  expect(() => validateConfig(c)).toThrow(`composition.roles.${WARDEN}.domainKnowledge.general`);
 });
 
 test('an edited CLAUDE.md, a new MEMORY.md and an edited role file reach a running thread and its Warden on the next turn', async () => {

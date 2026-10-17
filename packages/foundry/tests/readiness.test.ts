@@ -1,11 +1,12 @@
 import './helpers/isolate-archive';
 import { expect, spyOn, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspectReadiness } from '../src/readiness';
 import { ConfigStore, defaultConfig } from '../src/viewer/config';
-import { resolveProjectView } from '../src/viewer/config-resolve';
+import { writeRegions } from './helpers/regions';
 
 function team() {
   const config = defaultConfig();
@@ -14,16 +15,6 @@ function team() {
     ...config.defaults,
     classifierProvider: 'openai',
     classifierModel: 'gpt-5.6-luna',
-  };
-  config.layers.docs = {
-    id: 'docs',
-    domain: 'docs',
-    segment: 'domain-knowledge',
-    prompt: 'PRIVATE_CORPUS',
-    writers: ['expert'],
-    sourceIds: [],
-    staleness: 0,
-    enabled: true,
   };
   config.agents.worker = {
     id: 'worker',
@@ -34,77 +25,13 @@ function team() {
     maxDepth: 1,
     enabled: true,
   };
-  config.agents.expert = {
-    id: 'expert',
-    kind: 'decider',
-    flowRole: 'domain-advising',
-    domain: 'docs',
-    prompt: 'PRIVATE_EXPERT',
-    provider: 'openai',
-    model: 'configured-model',
-    tools: false,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
-  };
-  config.projects.P = { id: 'P', path: '/tmp/example' };
+  // The project's one Warden is its region `docs` (settings declare none).
+  const project = mkdtempSync(join(tmpdir(), 'foundry-readiness-project-'));
+  writeRegions(project, [{ id: 'docs', knowledge: '# Docs\n\nPRIVATE_CORPUS\n' }]);
+  config.projects.P = { id: 'P', path: project };
   return config;
 }
 const local = { environment: { OPENAI_API_KEY: 'PRIVATE_KEY' }, which: () => '/controlled/cli' };
-test('the team example loads through production configuration with four separately owned experts', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'foundry-team-example-')),
-    home = process.env.HOME;
-  // Hermetic default login locations; readiness checks ~/.claude and ~/.codex in subscription mode.
-  process.env.HOME = directory;
-  for (const profile of ['.claude', '.codex'])
-    await mkdir(join(directory, profile), { mode: 0o700 });
-  try {
-    await writeFile(
-      join(directory, 'settings.json'),
-      await readFile(join(import.meta.dir, '../../../examples/domain-team.settings.json')),
-    );
-    const config = await new ConfigStore(directory).load();
-    const report = await inspectReadiness(config, local);
-    expect(report.configurationReady).toBe(true);
-    expect(report.issues).toEqual([]);
-    const projectId = Object.keys(config.projects)[0]!;
-    expect(projectId).toMatch(/^[a-f0-9-]{36}$/);
-    const experts = report.profiles.filter(
-      (profile) => profile.scope === projectId && profile.domain,
-    );
-    expect(experts.map((profile) => profile.domain).sort()).toEqual([
-      'architecture',
-      'docs',
-      'security',
-      'testing',
-    ]);
-    expect(new Set(experts.map((profile) => profile.agentId)).size).toBe(4);
-    const effective = resolveProjectView(config, projectId)!.config;
-    for (const layer of Object.values(effective.layers)) {
-      for (const source of layer.sourceIds) expect(effective.sources[source]?.enabled).toBe(true);
-    }
-    expect(report.profiles.find((profile) => profile.role === 'execution')?.provider).toBe(
-      'claude-code',
-    );
-    expect(
-      report.profiles
-        .filter((profile) => profile.role !== 'execution')
-        .every(
-          (profile) =>
-            profile.provider === 'subscription-decisions' && profile.model === 'claude-haiku-5-5',
-        ),
-    ).toBe(true);
-    process.env.HOME = join(directory, 'absent');
-    expect((await inspectReadiness(config, local)).issues.map((item) => item.code)).toEqual([
-      'subscription-profile-unavailable',
-      'subscription-profile-unavailable',
-    ]);
-  } finally {
-    process.env.HOME = home;
-    await rm(directory, { recursive: true, force: true });
-  }
-});
 test('readiness resolves effective experts without dispatch, loading corpus or exposing secrets', async () => {
   const config = team(),
     before = JSON.stringify(config);
@@ -120,13 +47,17 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
     const report = await inspectReadiness(config, local);
     expect(report.configurationReady).toBe(true);
     expect(report.liveAccess).toBe('unverified');
-    expect(report.profiles).toContainEqual({
-      scope: 'P',
-      agentId: 'expert',
-      role: 'domain-advising',
-      provider: 'openai',
-      model: 'configured-model',
-      domain: 'docs',
+    expect(report.profiles).toContainEqual(
+      expect.objectContaining({
+        scope: 'P',
+        agentId: 'docs',
+        role: 'domain-advising',
+        domain: 'docs',
+      }),
+    );
+    expect(report.chorus?.find((c) => c.scope === 'P')).toMatchObject({
+      on: true,
+      regions: [{ id: 'docs' }],
     });
     expect(JSON.stringify(report)).not.toContain('PRIVATE_');
     expect(JSON.stringify(config)).toBe(before);
@@ -135,15 +66,27 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
     fetch.mockRestore();
   }
 });
-test('readiness refuses project expert ownership errors and catches unavailable providers', async () => {
+test('readiness refuses a hand-named Warden in settings and catches unavailable providers', async () => {
   const config = team();
-  config.projects.P!.agents = { expert: { extends: 'expert', domainKnowledge: ['missing'] } };
+  config.projects.P!.agents = {
+    expert: {
+      id: 'expert',
+      kind: 'domain-librarian',
+      flowRole: 'domain-advising',
+      domain: 'docs',
+      prompt: 'PRIVATE_EXPERT',
+      visibleLayers: [],
+      peers: [],
+      maxDepth: 1,
+      enabled: true,
+    },
+  };
   let report = await inspectReadiness(config, local);
   expect(report.configurationReady).toBe(false);
-  // Validation now runs each project's expert checks, so the settings are refused outright.
+  // Settings declare no Wardens: the settings are refused outright.
   expect(report.issues.some((item) => item.code === 'invalid-configuration')).toBe(true);
   delete config.projects.P!.agents;
-  config.agents.expert!.provider = 'anthropic';
+  config.agents.worker!.provider = 'anthropic';
   report = await inspectReadiness(config, {
     ...local,
     environment: { ...local.environment, ANTHROPIC_API_KEY: 'PRIVATE_SECOND' },
@@ -151,7 +94,11 @@ test('readiness refuses project expert ownership errors and catches unavailable 
   expect(report.issues.some((item) => item.code === 'provider-not-constructed')).toBe(true);
 });
 test('readiness distinguishes missing native binaries and API credentials', async () => {
-  const report = await inspectReadiness(team(), { environment: {}, which: () => null });
+  const config = team();
+  // An API-key profile beside the native default: one of each is missing.
+  config.agents.worker!.provider = 'openai';
+  config.agents.worker!.model = 'configured-model';
+  const report = await inspectReadiness(config, { environment: {}, which: () => null });
   expect(report.configurationReady).toBe(false);
   expect(report.issues.some((item) => item.code === 'native-cli-missing')).toBe(true);
   expect(report.issues.some((item) => item.code === 'provider-credential-missing')).toBe(true);

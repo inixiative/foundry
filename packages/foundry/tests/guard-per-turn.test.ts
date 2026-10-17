@@ -21,7 +21,7 @@ import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer
 
 // One guard per turn (Aron, 2026-10-15): the Wardens are asked once over the turn's tool activity in
 // call order, when the turn's tool activity ends, not once per tool call; `guard: "per-call"` restores
-// the old shape. A handoff to a subagent (`task_started`) is its own trigger: the roster briefs it, the
+// the old shape. A handoff to a subagent (`task_started`) is its own trigger: the chorus briefs it, the
 // brief is journalled on the parent and rides with the parent's next turn. Real runtime, factory,
 // Harness, orchestrator, Warden and journal; controlled providers only.
 
@@ -181,7 +181,7 @@ function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) 
   return { manager, thread, runtime, store, aux, guardCalls, briefCalls, central, turn, rows };
 }
 
-test('per-turn: the roster is asked once, when the turn ends, over every guardable call in order; reads never enter the moment', async () => {
+test('per-turn: the chorus is asked once, when the turn ends, over every guardable call in order; reads never enter the moment', async () => {
   const f = fixture();
   const sent = await f.turn('turn-1', 'Add preferred names', [
     { tool: 'Read', input: { file_path: 'contacts.ts' } },
@@ -329,7 +329,7 @@ test("an observed subagent's turn is guarded once when it ends, on its node", as
   });
 });
 
-test('subagent-spawn: the roster briefs the handoff from the task text; the brief is journalled on the parent and rides with the next turn', async () => {
+test('subagent-spawn: the chorus briefs the handoff from the task text; the brief is journalled on the parent and rides with the next turn', async () => {
   const f = fixture();
   await f.turn('turn-1', 'Audit the snapshots');
   await f.thread.signals.emit({
@@ -360,7 +360,7 @@ test('subagent-spawn: the roster briefs the handoff from the task text; the brie
   expect(asked).toContain('general-purpose "audit scalar snapshots"');
   expect(asked).toContain('Make the audit snapshots column-only and drop relations.');
   expect(asked).toContain('## Response protocol (advice phase, trigger: subagent-spawn)');
-  expect(asked).toContain('the subagent must know that the task text leaves out');
+  expect(asked).toContain('the moment touches nothing in your domain, whatever it says to build');
   // Journalled on the parent, wrapping the handoff, with the Warden's decision and snippets.
   const brief = f
     .rows('turn-1')

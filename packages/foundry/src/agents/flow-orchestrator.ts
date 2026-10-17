@@ -362,7 +362,7 @@ export interface WorkItemMoment {
 }
 
 /**
- * The roster's answers at a moment between turns: a handoff (`subagent-spawn`, the brief) or a work
+ * The chorus's answers at a moment between turns: a handoff (`subagent-spawn`, the brief) or a work
  * item (`consumed`). Every Warden's decision, delivered on the next turn.
  */
 export interface BriefReport {
@@ -646,7 +646,7 @@ export class FlowOrchestrator {
     }));
   }
 
-  /** The shared deadline of one fan-out to the roster, from `start`. */
+  /** The shared deadline of one fan-out to the chorus, from `start`. */
   private _clock(start: number): PlanClock {
     const planTimeoutMs = this._planTimeoutMs;
     const deadlineAt = planTimeoutMs !== undefined ? start + planTimeoutMs : undefined;
@@ -664,7 +664,7 @@ export class FlowOrchestrator {
   // -----------------------------------------------------------------------
 
   /**
-   * The agent handed a task to a subagent: ask the roster, once, what the subagent must know that
+   * The agent handed a task to a subagent: ask the chorus, once, what the subagent must know that
    * the task text leaves out. Every Warden decides under the charter through the advice protocol
    * (NO_COMMENT expected); the pre-filter, when on, rules out the ones it is confident the task is
    * outside of. The brief never blocks the handoff, which the harness has already made.
@@ -674,7 +674,7 @@ export class FlowOrchestrator {
   }
 
   /**
-   * The agent took in a work item (the `consumed` trigger): ask the roster, once, what of its domain
+   * The agent took in a work item (the `consumed` trigger): ask the chorus, once, what of its domain
    * the work touches. Every Warden answers under the charter through the advice protocol (NO_COMMENT
    * expected); like a brief, it never blocks, and what is said rides with the next turn.
    */
@@ -682,7 +682,7 @@ export class FlowOrchestrator {
     return this._between('consumed', workItemText(item));
   }
 
-  /** One fan-out to the roster at a moment between turns, through the advice protocol. */
+  /** One fan-out to the chorus at a moment between turns, through the advice protocol. */
   private async _between(
     trigger: Extract<AdviceTrigger, 'subagent-spawn' | 'consumed'>,
     message: string,

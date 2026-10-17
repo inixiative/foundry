@@ -1569,7 +1569,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
       }),
     );
-    // The agent handed a task to a subagent: the roster briefs the handoff (the subagent-spawn trigger).
+    // The agent handed a task to a subagent: the chorus briefs the handoff (the subagent-spawn trigger).
     this._unsubs.push(
       signals.on('subagent_spawn', async (signal) => {
         const content = signal.content as
@@ -1582,7 +1582,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         await this._briefHandoff(signal.id, content);
       }),
     );
-    // The main thread took in a work item: the roster is asked what of its domain the work touches
+    // The main thread took in a work item: the chorus is asked what of its domain the work touches
     // (the consumed trigger, `chorus.consumed`, off by default). A subagent's reads are not asked: its
     // notes would reach the parent's next turn, never the subagent doing the work.
     if (this._consumed && this.domainLibrarians.size)
@@ -1912,7 +1912,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   }
 
   /**
-   * The subagent-spawn trigger: the roster briefs a handoff the agent made, on the parent's node; the
+   * The subagent-spawn trigger: the chorus briefs a handoff the agent made, on the parent's node; the
    * harness has already composed what the subagent received.
    */
   private async _briefHandoff(
@@ -1950,7 +1950,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     });
   }
 
-  /** The consumed trigger: the roster is asked about a work item the main thread took in. */
+  /** The consumed trigger: the chorus is asked about a work item the main thread took in. */
   private async _consumeWorkItem(
     signalId: string,
     item: WorkItemMoment,
