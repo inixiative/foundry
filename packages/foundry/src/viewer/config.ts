@@ -283,6 +283,29 @@ export interface ChorusSettings {
   source?: ChorusSource;
   regions?: string;
   layers?: ChorusLayerSettings[];
+  /** The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default. */
+  consumed?: ConsumedSettings;
+  /**
+   * The reception charter (`CHORUS_RECEPTION`): how the main thread reads a chime, held once as a
+   * standing layer. On with a region chorus (itself opt-in); `false` leaves it out, e.g. for a baseline.
+   */
+  reception?: boolean;
+}
+
+/**
+ * The `consumed` trigger (Aron, 2026-10-17): when a thread takes in a work item (reads a ticket or spec
+ * file, fetches a Linear issue or a Notion page), every Warden is asked what of its domain the work
+ * touches, so an over-specified ticket meets the existing systems before the build. Off unless
+ * `enabled`; each key the machine's settings give wins over the repository's.
+ */
+export interface ConsumedSettings {
+  enabled?: boolean;
+  /** Globs on a tool's name; a matching call's output is the work item. Default `DEFAULT_CONSUMED_TOOLS`. */
+  tools?: string[];
+  /** Globs on a read file's path, relative to the project; the file is the work item. Default `DEFAULT_CONSUMED_PATHS`. */
+  paths?: string[];
+  /** The work item is clipped to this many characters, with a marker. Default 12,000. */
+  maxChars?: number;
 }
 
 /** A Kingdom-capacity project: the paired Kingdom, the Signet (`subscription.use`) it runs under, and the
@@ -826,14 +849,43 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
   }
 }
 
+function validateConsumedSettings(where: string, consumed: unknown): void {
+  if (consumed === undefined) return;
+  if (!consumed || typeof consumed !== 'object' || Array.isArray(consumed))
+    throw Error(`${where} must be an object: { enabled?, tools?, paths?, maxChars? }`);
+  const c = consumed as Record<string, unknown>;
+  for (const key of Object.keys(c))
+    if (!['enabled', 'tools', 'paths', 'maxChars'].includes(key))
+      throw Error(`${where}.${key} is not a consumed setting (enabled, tools, paths, maxChars)`);
+  if (c.enabled !== undefined && typeof c.enabled !== 'boolean')
+    throw Error(`${where}.enabled must be true or false`);
+  for (const key of ['tools', 'paths'] as const)
+    if (
+      c[key] !== undefined &&
+      (!Array.isArray(c[key]) ||
+        !(c[key] as unknown[]).every((g) => typeof g === 'string' && g.trim().length > 0))
+    )
+      throw Error(`${where}.${key} must be a list of globs`);
+  if (
+    c.maxChars !== undefined &&
+    (typeof c.maxChars !== 'number' || !Number.isInteger(c.maxChars) || c.maxChars < 200)
+  )
+    throw Error(`${where}.maxChars must be a whole number of at least 200`);
+}
+
 export function validateChorusSettings(where: string, chorus: unknown): void {
   if (chorus === undefined) return;
   if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
     throw Error(`${where} must be an object: { source?, regions? | layers? }`);
   const c = chorus as Record<string, unknown>;
   for (const key of Object.keys(c))
-    if (!['source', 'regions', 'layers'].includes(key))
-      throw Error(`${where}.${key} is not a chorus setting (source, regions, layers)`);
+    if (!['source', 'regions', 'layers', 'consumed', 'reception'].includes(key))
+      throw Error(
+        `${where}.${key} is not a chorus setting (source, regions, layers, consumed, reception)`,
+      );
+  if (c.reception !== undefined && typeof c.reception !== 'boolean')
+    throw Error(`${where}.reception must be true or false`);
+  validateConsumedSettings(`${where}.consumed`, c.consumed);
   if (c.source !== undefined && c.source !== 'regions' && c.source !== 'roster')
     throw Error(`${where}.source must be "regions" or "roster"`);
   if (c.regions !== undefined && (typeof c.regions !== 'string' || !c.regions))

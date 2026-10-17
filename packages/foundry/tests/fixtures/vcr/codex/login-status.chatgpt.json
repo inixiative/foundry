@@ -1,5 +1,5 @@
 {
-  "version": "0.163.0",
+  "version": "0.162.1",
   "status": 0,
   "body": {
     "kind": "process",
@@ -28,9 +28,9 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-10-16T16:13:41.358Z",
+    "recordedAt": "2026-10-17T15:42:04.153Z",
     "agentSession": "0.6.6",
     "environment": "terminal",
-    "durationMs": 46
+    "durationMs": 178
   }
 }

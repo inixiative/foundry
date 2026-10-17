@@ -618,3 +618,18 @@ personal, project and project personal:
 - the chimed-in append;
 - the Convention Warden's knowledge unchanged under the default config.
 
+
+
+**Work items and reception** (Aron, 2026-10-17). Two more chorus keys, merged key by key like the rest (the machine's settings over the repository's):
+
+```
+"chorus": {
+  "consumed": { "enabled": true, "tools": [...], "paths": [...], "maxChars": 12000 },
+  "reception": false
+}
+```
+
+- `consumed`: the `consumed` trigger ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)). Off unless `enabled`. `tools` default to Linear issues and documents and Notion fetches (`mcp__*linear*__get_issue`, `mcp__*linear*__get_document`, `mcp__*notion*__*fetch*`, case-insensitive); `paths` to `**/tickets/**/*.{md,txt}`, `**/specs/**/*.{md,txt}`, `**/*.spec.md`, `**/SPEC*.md`, `**/docs/design/**/*.md`. Within `consumed`, each key the machine gives wins over the repository's.
+- `reception`: whether a region-chorus thread holds the reception charter (`chorus-reception` standing layer). On with a region chorus; `false` leaves it out. A roster chorus never has it.
+
+The chorus card in the viewer shows both, with the layer that set them (yours or the repository's). Editing them there, "set this for me / for everyone", is not built yet; the files are the way in.
