@@ -329,26 +329,24 @@ function ProjectChorus({ projectId }) {
       <div class="settings-card-header">
         <span class="settings-card-title">Chorus</span>
         <span class="settings-desc">${
-          chorus.source === 'regions'
-            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge, classifier charter`
+          chorus.on
+            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge`
             : chorus.available
-              ? `Off: ${chorus.available} regions present, not enabled; the hand-named roster runs`
-              : chorus.requested === 'roster'
-                ? `The hand-named roster (chorus.source: roster${chorus.requestedBy === 'default' ? ', the default' : ''})`
-                : 'The hand-named roster'
+              ? `Off: ${chorus.available} regions present, not enabled; no Wardens run`
+              : 'Off: no Wardens run'
         }</span>
       </div>
       ${
         chorus.reason
-          ? html`<p class="settings-desc">${chorus.requested === 'regions' ? 'Regions were asked for, but ' : ''}${chorus.reason}.</p>`
+          ? html`<p class="settings-desc">${chorus.enabled ? 'The chorus is enabled, but ' : ''}${chorus.reason}.</p>`
           : null
       }
       ${
         chorus.consumed && chorus.reception
-          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.source === 'regions' ? ', with the region chorus' : ', only with a region chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
+          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the chorus' : ', only with a running chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
           : null
       }
-      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens run only when enabled: <code>"chorus": { "source": "regions" }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
+      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens are the only Wardens, and run only when enabled: <code>"chorus": { "enabled": true }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
       ${
         chorus.layers.length
           ? html`

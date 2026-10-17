@@ -1258,7 +1258,6 @@ export function CreateAgentForm({ onCreated }) {
             <option value="executor">Executor</option>
             <option value="classifier">Classifier</option>
             <option value="router">Router</option>
-            <option value="decider">Decider</option>
           </select>
         </div>
         <div class="settings-field">

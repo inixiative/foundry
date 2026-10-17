@@ -1,6 +1,7 @@
 import type { Cartographer, RouteResult } from '../agents/cartographer';
 import { configuredExperts } from '../agents/configured-experts';
 import type { FoundryConfig } from '../viewer/config';
+import { resolveProjectView } from '../viewer/config-resolve';
 import type { FeedbackCategory, FeedbackLevel, FeedbackRouteRecord, FeedbackSlot } from './types';
 
 /** The thread's own instructions slot: the last resort when no Warden owns the rule. */
@@ -16,9 +17,17 @@ export function defaultLevel(category: FeedbackCategory, hasProject: boolean): F
   return 'computer';
 }
 
-/** Warden agent id for each enabled configured domain. */
-export function wardenRoles(config: FoundryConfig): Map<string, string> {
-  return new Map(configuredExperts(config).experts.map((e) => [e.domain, e.agentId]));
+/**
+ * Warden agent id for each domain of the project's chorus: its region Wardens, which only its project
+ * view carries (settings declare no Wardens). Without a project, or with its chorus off, there are none.
+ */
+export function wardenRoles(
+  config: FoundryConfig,
+  projectId: string | null | undefined,
+): Map<string, string> {
+  const view = projectId ? resolveProjectView(config, projectId)?.config : undefined;
+  if (!view) return new Map();
+  return new Map(configuredExperts(view).experts.map((e) => [e.domain, e.agentId]));
 }
 
 /**
@@ -31,13 +40,13 @@ export async function routeFeedback(input: {
   itemId: string;
   statement: string;
   category: FeedbackCategory;
-  hasProject: boolean;
+  projectId: string | null | undefined;
   timeoutMs?: number;
 }): Promise<FeedbackRouteRecord> {
   const result: RouteResult = await input.cartographer.route(input.statement, undefined, {
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
   });
-  const wardens = wardenRoles(input.config);
+  const wardens = wardenRoles(input.config, input.projectId);
   const source = result.source ?? 'model';
   const roles =
     source === 'model'
@@ -47,7 +56,7 @@ export async function routeFeedback(input: {
     itemId: input.itemId,
     roles: roles.length ? roles : [MAIN_ROLE],
     slot: slotFor(input.category),
-    level: defaultLevel(input.category, input.hasProject),
+    level: defaultLevel(input.category, !!input.projectId),
     route: { domains: result.domains, source, confidence: result.confidence },
   };
 }

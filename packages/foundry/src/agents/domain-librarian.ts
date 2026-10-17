@@ -31,12 +31,7 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
-import {
-  chartered,
-  parseWardenPointer,
-  WARDEN_CHARTER_CLASSIFY,
-  type WardenPointer,
-} from './warden-charter';
+import { chartered, parseWardenPointer, type WardenPointer } from './warden-charter';
 import type { AdviceTrigger } from './warden-triggers';
 
 // ---------------------------------------------------------------------------
@@ -835,7 +830,7 @@ export interface DomainLibrarianConfig {
   reviewPrompt?: string;
   /** Maximum characters a reviewer may write as thread knowledge. Default 4 000. */
   maxKnowledgeChars?: number;
-  /** The charter this Warden runs under (`wardenCharter`), or a candidate wording under evaluation. Default WARDEN_CHARTER. */
+  /** A candidate charter wording under evaluation. Default WARDEN_CHARTER, the one every Warden runs under. */
   charter?: string;
 }
 
@@ -1412,7 +1407,7 @@ export class DomainLibrarian {
             : trigger === 'consumed'
               ? `\n## Work item the agent took in\n${message}`
               : `\n## Message\n${message}`,
-          `\n${adviceResponseProtocol(trigger, this._charter === WARDEN_CHARTER_CLASSIFY)}`,
+          `\n${adviceResponseProtocol(trigger)}`,
         ].join('\n'),
       },
     ];
@@ -1459,8 +1454,8 @@ export class DomainLibrarian {
     const validated = validateAdviceResponse(content);
     if ('error' in validated)
       return { layers: [], snippets: [], confidence: 0, error: validated.error };
-    if (this._charter !== WARDEN_CHARTER_CLASSIFY || !validated.snippets.length) return validated;
-    // The classifier charter's contract: the first snippet is the pointer, read into its parts.
+    if (!validated.snippets.length) return validated;
+    // The charter's contract: the first snippet is the pointer, read into its parts.
     return { ...validated, pointer: parseWardenPointer(validated.snippets) };
   }
 
@@ -1545,7 +1540,7 @@ export class DomainLibrarian {
           threadState ? `\n## Thread state\n${threadState}` : '',
           `\n## The agent's actions this turn (${activity.observations.length} tool call${activity.observations.length === 1 ? '' : 's'}, in order)`,
           renderTurnActivity(activity),
-          `\n${this._charter === WARDEN_CHARTER_CLASSIFY ? CLASSIFY_GUARD_RESPONSE_PROTOCOL : GUARD_RESPONSE_PROTOCOL}`,
+          `\n${GUARD_RESPONSE_PROTOCOL}`,
         ].join('\n'),
       },
     ];
@@ -1596,9 +1591,7 @@ export class DomainLibrarian {
         ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
       };
     }
-    const validated = validateGuardResponse(content, {
-      classify: this._charter === WARDEN_CHARTER_CLASSIFY,
-    });
+    const validated = validateGuardResponse(content);
     if ('error' in validated) {
       // An answer that is not a guard result is never presented as a completed all-clear.
       return {
@@ -1610,15 +1603,12 @@ export class DomainLibrarian {
         ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
       };
     }
-    const findings =
-      this._charter === WARDEN_CHARTER_CLASSIFY
-        ? // The findings are the pointer's remarks in order; the first carries the parsed pointer.
-          validated.findings.map((f, i) =>
-            i === 0
-              ? { ...f, pointer: parseWardenPointer(validated.findings.map((g) => g.description)) }
-              : f,
-          )
-        : validated.findings;
+    // The findings are the pointer's remarks in order; the first carries the parsed pointer.
+    const findings = validated.findings.map((f, i) =>
+      i === 0
+        ? { ...f, pointer: parseWardenPointer(validated.findings.map((g) => g.description)) }
+        : f,
+    );
     await this._emitFindings(findings, activity);
     return {
       findings,
@@ -1691,36 +1681,17 @@ const STRICT_RULE = `Any other answer, including JSON with empty lists or extra 
 
 /**
  * The advice phase's response contract for a trigger. Sent with every advice request, independent of
- * the domain's instructions. At a handoff (`subagent-spawn`) the moment is the task text a subagent
- * starts from, and a note is what it must know that the text leaves out. Under the classifier charter
- * (`classify`) every trigger has the one bar the charter's first principle sets: NO_COMMENT only when
- * the moment touches nothing in the domain, whatever it says to build or not to use; the snippets are
- * the pointer's remarks.
+ * the domain's instructions. Every trigger has the one bar the charter's first principle sets:
+ * NO_COMMENT only when the moment touches nothing in the domain, whatever it says to build or not to
+ * use; the snippets are the pointer's remarks. At a handoff (`subagent-spawn`) the moment is the task
+ * text a subagent starts from.
  */
-export function adviceResponseProtocol(trigger: AdviceTrigger, classify = false): string {
-  const shape =
-    'respond with JSON only, exactly this shape: { "snippets": string[], "layers": string[], "confidence": number }.';
-  if (classify)
-    return [
-      `## Response protocol (advice phase, trigger: ${trigger})`,
-      `${NO_COMMENT_RULE} Here it means the moment touches nothing in your domain, whatever it says to build or not to use.`,
-      `Only when it touches something your domain says already exists, ${shape}`,
-      '"snippets" are the remarks of your pointer, one per line of the charter\'s shape, in its order; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
-      STRICT_RULE,
-    ].join('\n');
+export function adviceResponseProtocol(trigger: AdviceTrigger): string {
   return [
     `## Response protocol (advice phase, trigger: ${trigger})`,
-    trigger === 'subagent-spawn'
-      ? `${NO_COMMENT_RULE} Here it means the task text already carries what your domain would add, or your domain has nothing for this task.`
-      : trigger === 'consumed'
-        ? `${NO_COMMENT_RULE} Here it means the work item touches nothing in your domain.`
-        : NO_COMMENT_RULE,
-    trigger === 'subagent-spawn'
-      ? `Only when your domain has something the subagent must know that the task text leaves out (a rule, the existing thing to use, a decision already made), ${shape}`
-      : trigger === 'consumed'
-        ? `Only when the work this item asks for touches something your domain says already exists (whatever the item says to build), ${shape}`
-        : `Only when your domain has something the user would otherwise have to say themselves, ${shape}`,
-    '"snippets" are short notes from your domain, one point each; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
+    `${NO_COMMENT_RULE} Here it means the moment touches nothing in your domain, whatever it says to build or not to use.`,
+    'Only when it touches something your domain says already exists, respond with JSON only, exactly this shape: { "snippets": string[], "layers": string[], "confidence": number }.',
+    '"snippets" are the remarks of your pointer, one per line of the charter\'s shape, in its order; "layers" are IDs of your domain\'s layers to inject; at least one of them is non-empty. "confidence" is a number from 0 to 1.',
     STRICT_RULE,
   ].join('\n');
 }
@@ -1758,20 +1729,12 @@ export function reviewResponseProtocol(maxKnowledgeChars: number): string {
   ].join('\n');
 }
 
-/** The guard phase's response contract. Sent with every guard request, independent of the domain's instructions. */
-export const GUARD_RESPONSE_PROTOCOL = [
-  '## Response protocol (guard phase, trigger: agent-action)',
-  `${NO_COMMENT_RULE} Here it means the agent's actions this turn break nothing in your domain.`,
-  'Only for a violation of your domain that the actions evidence, respond with JSON only, exactly this shape: { "findings": [ { "severity": "critical" | "advisory", "description": string, "location"?: string, "suggestion"?: string } ] }, with at least one finding. "location" names the call (its number or tool) and file the finding is about.',
-  STRICT_RULE,
-].join('\n');
-
 /**
- * The guard phase's contract under the classifier charter: the agent's actions are classified like any
- * moment, so a finding is one remark of the pointer, always advisory, with no suggested fix. Nothing in
- * it is a verdict.
+ * The guard phase's response contract, sent with every guard request: the agent's actions are
+ * classified like any moment, so a finding is one remark of the pointer, always advisory, with no
+ * suggested fix. Nothing in it is a verdict.
  */
-export const CLASSIFY_GUARD_RESPONSE_PROTOCOL = [
+export const GUARD_RESPONSE_PROTOCOL = [
   '## Response protocol (guard phase, trigger: agent-action)',
   `${NO_COMMENT_RULE} Here it means the agent's actions this turn touch nothing in your domain.`,
   'Only when they touch something your domain says already exists, respond with JSON only, exactly this shape: { "findings": [ { "severity": "advisory", "description": string, "location"?: string } ] }: one finding per remark of your pointer, in the charter\'s order, its "description" the remark. "location" names the call (its number or tool) and file the remark is about.',
@@ -1853,7 +1816,6 @@ const outside = (value: Record<string, unknown>, allowed: readonly string[]) =>
  */
 export function validateGuardResponse(
   content: unknown,
-  opts?: { classify?: boolean },
 ): { findings: GuardFinding[]; noComment?: true } | { error: string } {
   if (typeof content !== 'string') return { error: 'guard response is not text' };
   if (content.length > MAX_GUARD_RESPONSE)
@@ -1878,38 +1840,29 @@ export function validateGuardResponse(
       severity?: unknown;
       description?: unknown;
       location?: unknown;
-      suggestion?: unknown;
     } | null;
     if (!f || typeof f !== 'object' || Array.isArray(f))
       return { error: `guard finding ${i} is not an object` };
+    // A Warden points: a critical severity or a suggested fix would be a verdict, so neither is in the protocol.
     const findingExtra = outside(f as Record<string, unknown>, [
       'severity',
       'description',
       'location',
-      'suggestion',
     ]);
     if (findingExtra.length)
       return {
         error: `guard finding ${i} has ${findingExtra.length} field(s) outside the protocol`,
       };
-    if (f.severity !== 'critical' && f.severity !== 'advisory')
-      return { error: `guard finding ${i} requires "severity": "critical" | "advisory"` };
-    // A classifier Warden points; a critical severity or a suggested fix would be a verdict.
-    if (opts?.classify && (f.severity !== 'advisory' || f.suggestion !== undefined))
-      return {
-        error: `guard finding ${i} under the classifier charter is advisory only, with no "suggestion"`,
-      };
+    if (f.severity !== 'advisory')
+      return { error: `guard finding ${i} requires "severity": "advisory"` };
     if (typeof f.description !== 'string' || !f.description.trim())
       return { error: `guard finding ${i} requires "description": non-empty string` };
     if (f.location !== undefined && typeof f.location !== 'string')
       return { error: `guard finding ${i} "location" must be a string` };
-    if (f.suggestion !== undefined && typeof f.suggestion !== 'string')
-      return { error: `guard finding ${i} "suggestion" must be a string` };
     findings.push({
       severity: f.severity,
       description: f.description,
       ...(f.location !== undefined ? { location: f.location } : {}),
-      ...(f.suggestion !== undefined ? { suggestion: f.suggestion } : {}),
     });
   }
   return { findings };

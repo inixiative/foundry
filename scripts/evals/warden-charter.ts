@@ -47,7 +47,7 @@
  * --regions <dir> scores a chorus of regions: the --projects project runs a one-layer chorus from that
  * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
  * instructions, knowledge and charter are generated and composed exactly as a live thread of that
- * project composes them (`resolveProjectView`, `buildRoleLayers`, `wardenCharter`). The daemon's
+ * project composes them (`resolveProjectView`, `buildRoleLayers`, `WARDEN_CHARTER`). The daemon's
  * settings file is read, never written. Requires exactly one --projects entry.
  *
  * --experiment <design.md>: a run of more than three moments, or --pipeline, refuses to start without
@@ -94,7 +94,7 @@ import {
 } from '../../packages/foundry/src/agents/region-roster';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
-import { chorusSource, wardenCharter } from '../../packages/foundry/src/agents/warden-charter';
+import { WARDEN_CHARTER } from '../../packages/foundry/src/agents/warden-charter';
 import {
   type EvalWarden,
   judge,
@@ -206,7 +206,7 @@ const label = explicitCharter
     ? 'charter-pipeline'
     : values.regions
       ? 'charter-regions'
-      : 'charter-roster';
+      : 'charter-shipped';
 const out = values.out ?? join(homedir(), '.foundry', 'evals', `charter-${label}-${Date.now()}`);
 if (resolve(out).startsWith(`${resolve(import.meta.dir, '..', '..')}/`)) {
   console.error('--out must be outside the repository: answers hold session text');
@@ -246,7 +246,7 @@ const experiment = requireExperiment(
 );
 if (experiment) writeFileSync(join(out, 'experiment.json'), JSON.stringify(experiment, null, 1));
 
-// The roster, composed as live from the daemon's settings and composition view.
+// The chorus, composed as live from the daemon's settings and composition view.
 const foundryDir = resolve(
   values['foundry-dir'] ?? join(homedir(), 'code', 'inixiative', 'foundry', '.foundry'),
 );
@@ -259,12 +259,12 @@ if (values.regions) {
   const entry = projectEntry(projects![0]);
   if (!entry) throw Error(`--regions: project ${projects![0]} is not registered in ${foundryDir}`);
   // In memory only: this run's view of the project runs a one-layer chorus from --regions.
-  entry[1].chorus = { source: 'regions', regions: resolve(values.regions) };
+  entry[1].chorus = { enabled: true, regions: resolve(values.regions) };
   const view = resolveProjectView(config, entry[0])!;
-  if (view.chorus.source !== 'regions') throw Error(`--regions: ${view.chorus.reason}`);
+  if (!view.chorus.on) throw Error(`--regions: ${view.chorus.reason}`);
   console.error(describeChorus(projects![0]!, view.chorus));
 }
-/** The config a thread of `projectId` composes under: its project view (generated roster included), else the global settings. */
+/** The config a thread of `projectId` composes under: its project view (its region Wardens included), else the global settings (no Wardens). */
 const viewOf = (projectId: string | undefined): FoundryConfig =>
   (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config;
 const rosterOf = (projectId: string | undefined) => {
@@ -275,15 +275,8 @@ const rosterOf = (projectId: string | undefined) => {
     throw Error(`--roles names Wardens not in the roster: ${onlyRoles.join(', ')}`);
   return roster;
 };
-/**
- * The charter the run scores: an explicit wording, else the one the scored roster runs under live (one
- * run, one charter: with --regions that project's; otherwise the roster's, which every place shares).
- */
-const scoredProject = projects?.length === 1 ? projectEntry(projects[0])?.[0] : undefined;
-const charter =
-  explicitCharter ??
-  recogniseCharter ??
-  wardenCharter(chorusSource(viewOf(scoredProject), scoredProject)).text;
+/** The charter the run scores: an explicit wording, else the shipped one every Warden runs under. */
+const charter = explicitCharter ?? recogniseCharter ?? WARDEN_CHARTER;
 /** The project and working directory a probe's thread would have run in. */
 const placeOf = (probe: WardenProbe): { projectId?: string; cwd: string } => {
   const entry = projectEntry(probe.project);

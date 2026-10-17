@@ -1,5 +1,4 @@
 export {
-  DOCS_ADVISE_PROMPT,
   type DocsCandidate,
   type DocsConfigSnippet,
   type DocsSetupPlan,

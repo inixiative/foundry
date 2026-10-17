@@ -168,13 +168,12 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
   if (plan.strategy !== 'none' && plan.settings) {
     console.log(formatPlan(plan));
     console.log();
-    if (await confirm('Wire this docs warden into your config?')) {
-      const { source, layer, agent } = plan.settings;
+    if (await confirm('Wire this docs layer into your config?')) {
+      const { source, layer } = plan.settings;
       config.sources[source.id] = source;
       config.layers[layer.id] = layer;
-      config.agents[agent.id] = agent;
       console.log(
-        `  Wired docs warden: ${plan.strategy} strategy, ${plan.chosen!.fileCount} files.`,
+        `  Wired docs layer: ${plan.strategy} strategy, ${plan.chosen!.fileCount} files.`,
       );
     } else {
       console.log('  Skipped. You can run the scan later via `bun run setup`.');
@@ -473,7 +472,7 @@ const agentEditor: ItemEditor<any> = {
     console.log('\n  An agent is a named actor with a role — it reads layers, makes decisions,');
     console.log('  and can delegate to other agents.\n');
 
-    const id = await ask('Agent ID (e.g. security-librarian, code-reviewer)');
+    const id = await ask('Agent ID (e.g. code-reviewer)');
     if (!id) return null;
 
     // Kind — explain each option
@@ -482,9 +481,9 @@ const agentEditor: ItemEditor<any> = {
       'executor — does real work (code, tools, full model)',
       'classifier — categorizes messages (cheap model, no tools)',
       'router — routes to the right agent (cheap model, no tools)',
-      'domain-librarian — advises + guards a knowledge domain',
     ]);
-    const kind = ['executor', 'classifier', 'router', 'domain-librarian'][kindIdx];
+    // No Warden kind: a project's Wardens are generated from its regions, never written here.
+    const kind = ['executor', 'classifier', 'router'][kindIdx];
 
     // Role description
     console.log('\n  What does this agent do? (saved as a description file)');
@@ -496,7 +495,7 @@ const agentEditor: ItemEditor<any> = {
     if (kind === 'executor') {
       console.log('\n  Executors use a capable model (Claude, GPT) for real work.');
     } else {
-      console.log('\n  Classifiers, routers, and librarians should use a cheap/fast model');
+      console.log('\n  Classifiers and routers should use a cheap/fast model');
       console.log('  (Gemini Flash, Haiku) — they make decisions, not produce artifacts.');
     }
     const model = await ask('Model', config.defaults.model);
@@ -1048,11 +1047,11 @@ async function configurePrompts(config: FoundryConfig) {
 // ---------------------------------------------------------------------------
 
 /**
- * Scan the project's markdown docs and (optionally) wire a docs warden.
+ * Scan the project's markdown docs and (optionally) wire a docs layer.
  *
  * Picks the most structured candidate directory (`docs/claude/` > `docs/` > …),
  * decides between `inline` (full content) and `topology` (compact path+H1+H2)
- * based on corpus size, and merges the resulting source/layer/agent into the
+ * based on corpus size, and merges the resulting source and layer into the
  * config — only after the user confirms.
  */
 async function configureDocsLayer(config: FoundryConfig) {
@@ -1072,20 +1071,17 @@ async function configureDocsLayer(config: FoundryConfig) {
   }
 
   const existing = !!config.sources['docs-src'] || !!config.layers['docs'];
-  const verb = existing
-    ? 'Replace the existing docs source/layer/agent?'
-    : 'Wire this into your config?';
+  const verb = existing ? 'Replace the existing docs source/layer?' : 'Wire this into your config?';
   if (!(await confirm(verb))) {
     console.log('  Skipped.\n');
     return;
   }
 
-  const { source, layer, agent } = plan.settings;
+  const { source, layer } = plan.settings;
   config.sources[source.id] = source;
   config.layers[layer.id] = layer;
-  config.agents[agent.id] = agent;
 
-  console.log(`  Wired: source=${source.id}, layer=${layer.id}, agent=${agent.id}`);
+  console.log(`  Wired: source=${source.id}, layer=${layer.id}`);
   console.log(
     `  Strategy: ${plan.strategy} (${plan.chosen!.fileCount} files, ~${plan.chosen!.approxTokens} tokens)\n`,
   );
