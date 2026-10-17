@@ -13,6 +13,14 @@ import { REGION_WARDEN_INSTRUCTIONS } from './warden-charter';
 /** Where a project's regions live unless its `chorus` names a layer. */
 export const DEFAULT_REGIONS_DIR = '.foundry/regions';
 
+/**
+ * The repository's own Foundry settings, committed beside its regions: `{ "chorus": { … } }`. The
+ * machine's project settings win over it, key by key (`viewer/config-resolve.ts`, `projectChorus`).
+ * Not `.foundry/settings.json`: that name is a Foundry install's own settings, and Foundry's checkout
+ * is itself a registered project.
+ */
+export const REPOSITORY_SETTINGS_FILE = '.foundry/project.json';
+
 /** The label of the one implicit layer (`chorus.regions`, or the default directory). */
 export const DEFAULT_LAYER_LABEL = 'project';
 
@@ -160,6 +168,14 @@ export function readRegions(dir: string): RegionSummary[] {
   return regions.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** How many regions `dir` holds (subdirectories with a `region.json`), without reading them. */
+export function countRegions(dir: string): number {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return 0;
+  return readdirSync(dir, { withFileTypes: true }).filter(
+    (entry) => entry.isDirectory() && existsSync(join(dir, entry.name, 'region.json')),
+  ).length;
+}
+
 /**
  * The chorus the layers compose, in order: a region id present in a later layer replaces the earlier
  * one whole (its knowledge is not merged); ids present once union. A layer that names no regions is
@@ -191,13 +207,16 @@ export function describeChorus(
   project: string,
   chorus: {
     readonly source: 'regions' | 'roster';
+    readonly requested: 'regions' | 'roster';
     readonly layers: readonly ChorusLayerRegions[];
     readonly regions: readonly ChorusRegion[];
     readonly reason?: string;
   },
 ): string {
   if (chorus.source !== 'regions')
-    return `Chorus: project ${project} asked for regions but ${chorus.reason ?? 'none were found'}`;
+    return chorus.requested === 'regions'
+      ? `Chorus: project ${project} asked for regions but ${chorus.reason ?? 'none were found'}`
+      : `Chorus: project ${project}: ${chorus.reason ?? 'the hand-named roster runs'}`;
   const layers = chorus.layers
     .map((layer) => `${layer.label}: ${layer.regions.length} at ${layer.regionsDir}`)
     .join('; ');

@@ -331,17 +331,19 @@ function ProjectChorus({ projectId }) {
         <span class="settings-desc">${
           chorus.source === 'regions'
             ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge, classifier charter`
-            : chorus.requested === 'roster'
-              ? 'The hand-named roster (chorus.source: roster)'
-              : 'The hand-named roster'
+            : chorus.available
+              ? `Off: ${chorus.available} regions present, not enabled; the hand-named roster runs`
+              : chorus.requested === 'roster'
+                ? `The hand-named roster (chorus.source: roster${chorus.requestedBy === 'default' ? ', the default' : ''})`
+                : 'The hand-named roster'
         }</span>
       </div>
       ${
         chorus.reason
-          ? html`<p class="settings-desc">Regions were asked for, but ${chorus.reason}.</p>`
+          ? html`<p class="settings-desc">${chorus.requested === 'regions' ? 'Regions were asked for, but ' : ''}${chorus.reason}.</p>`
           : null
       }
-      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Edit the regions themselves, or <code>projects[id].chorus</code> in settings.json.</p>
+      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens run only when enabled: <code>"chorus": { "source": "regions" }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
       ${
         chorus.layers.length
           ? html`
