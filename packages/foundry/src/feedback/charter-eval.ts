@@ -99,6 +99,8 @@ export async function runCharterEval(
       const wardens = options.wardensFor(probe, trigger);
       if (!wardens.length) continue;
       await options.beforeTurn?.(probe.id, trigger);
+      // The gate may have closed the run (a quota stop): a turn it closed is not asked.
+      if (options.done?.(probe.id, trigger)) continue;
       const started = Date.now();
       const asked: WardenProbeAnswer[] = new Array(wardens.length);
       let next = 0;

@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import {
   type ClaudeInSessionDecisions,
   ClaudePrimedSessions,
+  ClaudeSubagentSessions,
   CodexPrimedSessions,
   type CodexSpawn,
   DecisionError,
@@ -88,6 +89,12 @@ export interface PrimedDecisionHostConfig {
    * process; their calls go there while it serves, and to the primed host otherwise.
    */
   inSession?: InSessionWardens;
+  /**
+   * Claude: serve decisions as subagents of a bounded pool of side processes (agent-session
+   * ClaudeSubagentSessions) instead of one primed process per key: `processes` side sessions, each
+   * hosting up to `membersPerProcess` roles. Memory stays capped at the pool size. Offline evals only.
+   */
+  subagents?: { processes: number; membersPerProcess: number };
 }
 
 /**
@@ -233,66 +240,84 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
   const claude = runtime === 'claude' ? claudeLogin() : undefined;
-  const host: CodexPrimedSessions | ClaudePrimedSessions = claude
-    ? new ClaudePrimedSessions({
-        model: config.model,
-        effort: config.effort,
-        cwd,
-        baseInstructions: PRIMED_DECISION_CONTEXT,
-        maxConcurrent: config.maxConcurrent,
-        maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
-        timeoutMs: config.callTimeoutMs,
-        onEvent: config.onEvent,
-        // Synchronous launcher: the login was verified and registered before the first decision.
-        spawn: (argv, options) => {
-          const env = claude.env();
-          // The user's hooks, permissions and plugins never apply to a decision.
-          const command = [...argv, '--setting-sources', ''];
-          return config.spawn
-            ? config.spawn(command, { cwd: options.cwd, env })
-            : (Bun.spawn(command, {
-                cwd: options.cwd,
-                env,
-                stdin: 'pipe',
-                stdout: 'pipe',
-                stderr: 'pipe',
-              }) as unknown as DecisionProcess);
-        },
-      })
-    : new CodexPrimedSessions({
-        model: config.model,
-        effort: config.effort,
-        hedgeAfterMs: config.hedgeAfterMs,
-        cwd,
-        baseInstructions: PRIMED_DECISION_CONTEXT,
-        maxConcurrent: config.maxConcurrent,
-        timeoutMs: config.callTimeoutMs,
-        clientName: 'foundry-decisions',
-        onEvent: config.onEvent,
-        spawn: async (argv, options) => {
-          const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
-          let child: DecisionProcess;
-          try {
-            const command = launch.launch(argv, options.env);
-            const env = nativeTextEnvironment(command.env);
-            child = config.spawn
-              ? config.spawn(command.argv, { cwd: options.cwd, env })
-              : (Bun.spawn(command.argv, {
-                  cwd: options.cwd,
-                  env,
-                  stdin: 'pipe',
-                  stdout: 'pipe',
-                  stderr: 'pipe',
-                }) as unknown as DecisionProcess);
-          } catch (error) {
-            release(launch);
-            throw error;
-          }
-          const done = () => release(launch);
-          void child.exited.then(done, done);
-          return child;
-        },
-      });
+  const claudeSpawn = (
+    argv: string[],
+    options: { cwd: string; env: Record<string, string | undefined> },
+    env: Record<string, string | undefined>,
+  ) => {
+    // The user's hooks, permissions and plugins never apply to a decision.
+    const command = [...argv, '--setting-sources', ''];
+    return config.spawn
+      ? config.spawn(command, { cwd: options.cwd, env })
+      : (Bun.spawn(command, {
+          cwd: options.cwd,
+          env,
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }) as unknown as DecisionProcess);
+  };
+  const host: PrimedSessions =
+    claude && config.subagents
+      ? new ClaudeSubagentSessions({
+          model: config.model,
+          effort: config.effort,
+          cwd,
+          baseInstructions: PRIMED_DECISION_CONTEXT,
+          maxMembers: config.subagents.membersPerProcess,
+          maxSessionsPerGroup: config.subagents.processes,
+          timeoutMs: config.callTimeoutMs,
+          onEvent: config.onEvent,
+          // The side session's own environment (autoupdate off, held moment calls), over the login's.
+          spawn: (argv, options) => claudeSpawn(argv, options, { ...options.env, ...claude.env() }),
+        })
+      : claude
+        ? new ClaudePrimedSessions({
+            model: config.model,
+            effort: config.effort,
+            cwd,
+            baseInstructions: PRIMED_DECISION_CONTEXT,
+            maxConcurrent: config.maxConcurrent,
+            maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
+            timeoutMs: config.callTimeoutMs,
+            onEvent: config.onEvent,
+            // Synchronous launcher: the login was verified and registered before the first decision.
+            spawn: (argv, options) => claudeSpawn(argv, options, claude.env()),
+          })
+        : new CodexPrimedSessions({
+            model: config.model,
+            effort: config.effort,
+            hedgeAfterMs: config.hedgeAfterMs,
+            cwd,
+            baseInstructions: PRIMED_DECISION_CONTEXT,
+            maxConcurrent: config.maxConcurrent,
+            timeoutMs: config.callTimeoutMs,
+            clientName: 'foundry-decisions',
+            onEvent: config.onEvent,
+            spawn: async (argv, options) => {
+              const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
+              let child: DecisionProcess;
+              try {
+                const command = launch.launch(argv, options.env);
+                const env = nativeTextEnvironment(command.env);
+                child = config.spawn
+                  ? config.spawn(command.argv, { cwd: options.cwd, env })
+                  : (Bun.spawn(command.argv, {
+                      cwd: options.cwd,
+                      env,
+                      stdin: 'pipe',
+                      stdout: 'pipe',
+                      stderr: 'pipe',
+                    }) as unknown as DecisionProcess);
+              } catch (error) {
+                release(launch);
+                throw error;
+              }
+              const done = () => release(launch);
+              void child.exited.then(done, done);
+              return child;
+            },
+          });
 
   /** The Claude login, checked as a subscription (never an API key) at most every five minutes and registered
    * as a shared holder for the host's lifetime; every decision process launches with its environment. */

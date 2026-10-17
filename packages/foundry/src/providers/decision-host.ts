@@ -27,6 +27,7 @@ export function decisionHost(
   overrides: {
     inputCap?: number;
     primedSessions?: number;
+    subagents?: { processes: number; membersPerProcess: number };
     effort?: SubscriptionSettings['effort'] | 'default';
   } = {},
 ) {
@@ -49,6 +50,7 @@ export function decisionHost(
     ...(overrides.effort === 'default' ? { effort: undefined } : {}),
     ...(overrides.inputCap !== undefined ? { inputCap: overrides.inputCap } : {}),
     ...(overrides.primedSessions !== undefined ? { primedSessions: overrides.primedSessions } : {}),
+    ...(overrides.subagents ? { subagents: overrides.subagents } : {}),
   });
 }
 

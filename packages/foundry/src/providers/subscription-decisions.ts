@@ -23,6 +23,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   maxConcurrent?: number;
   /** Claude primed keys kept warm (see createPrimedDecisionHost). */
   primedSessions?: number;
+  /** Claude: a bounded pool of subagent side processes instead of a primed process per key (offline evals). */
+  subagents?: { processes: number; membersPerProcess: number };
   /** Waiting decisions per logical thread. Default: maxQueued. */
   maxQueuedPerThread?: number;
   /** Load and rate-limit events (shedding, backoff); observers only. */
@@ -88,6 +90,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     hedgeAfterMs: config.hedgeAfterMs,
     maxConcurrent: config.maxConcurrent ?? 1,
     ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
+    ...(config.subagents ? { subagents: config.subagents } : {}),
     callTimeoutMs: config.callTimeoutMs,
     ...(config.inputCap !== undefined ? { inputCap: config.inputCap } : {}),
     onEvent: onPrimedEvent,

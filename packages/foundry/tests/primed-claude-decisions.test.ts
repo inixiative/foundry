@@ -44,6 +44,8 @@ function claudeTransport(options: { model?: string } = {}) {
     inputs: string[];
     /** The base context file's contents at spawn; agent-session removes the file when the session ends. */
     base?: string;
+    /** The `--agents` definitions file's contents at spawn (subagent side sessions). */
+    agents?: string;
     exited: boolean;
   }[] = [];
   return {
@@ -58,6 +60,9 @@ function claudeTransport(options: { model?: string } = {}) {
           argv.includes('--append-system-prompt-file') && file
             ? readFileSync(file, 'utf8')
             : undefined,
+        agents: argv.includes('--agents')
+          ? readFileSync(argv[argv.indexOf('--agents') + 1]!, 'utf8')
+          : undefined,
         exited: false,
       };
       launches.push(launch);
@@ -128,7 +133,11 @@ function claudeTransport(options: { model?: string } = {}) {
 
 function claudeDecisions(
   transport: ReturnType<typeof claudeTransport>,
-  options: { subscribed?: boolean; bounds?: Partial<SubscriptionDecisionConfig> } = {},
+  options: {
+    subscribed?: boolean;
+    bounds?: Partial<SubscriptionDecisionConfig>;
+    subagents?: { processes: number; membersPerProcess: number };
+  } = {},
 ) {
   const root = userHome(),
     directory = join(root, 'receipts');
@@ -152,6 +161,7 @@ function claudeDecisions(
     maxConcurrent: config.maxConcurrent ?? 1,
     callTimeoutMs: config.callTimeoutMs,
     spawn: transport.spawn,
+    ...(options.subagents ? { subagents: options.subagents } : {}),
     statusSpawn: () => {
       statusChecks++;
       return subscriptionStatusProcess(options.subscribed ?? true);
@@ -276,4 +286,44 @@ test('the Claude worker and Claude decisions hold the one login together', async
     await run.close();
   }
   expect(existsSync(join(run.root, '.claude', '.foundry-auth-shared'))).toBe(false);
+});
+
+test('subagents: decisions are served by a bounded pool of dispatcher side sessions holding each role as a subagent', async () => {
+  const transport = claudeTransport();
+  const run = claudeDecisions(transport, {
+    subagents: { processes: 2, membersPerProcess: 2 },
+    bounds: { callTimeoutMs: 400 },
+  });
+  const cache = (domain: string) => `## Domain cache (${domain})\nknowledge of ${domain}\n`;
+  const advise = (domain: string) =>
+    run.decisions.provider.complete(
+      [
+        { role: 'system', content: `ADVISE ${domain}` },
+        { role: 'user', content: `${cache(domain)}\n## Message\nhello` },
+      ],
+      { threadId: `T:aux:domain:${domain}`, stablePrefix: cache(domain) },
+    );
+  try {
+    // The fake transport never answers the dispatcher, so each decision times out; the launches show the shape.
+    await Promise.allSettled(['a', 'b', 'c', 'd'].map(advise));
+    expect(transport.launches.length).toBeGreaterThan(0);
+    expect(transport.launches.length).toBeLessThanOrEqual(2);
+    const roles = transport.launches.flatMap((launch) =>
+      Object.values(JSON.parse(launch.agents ?? '{}') as Record<string, { prompt: string }>),
+    );
+    for (const launch of transport.launches) {
+      expect(flag(launch.argv, '--tools')).toBe('Agent');
+      expect(flag(launch.argv, '--model')).toBe('claude-haiku-5-5');
+      expect(launch.argv.slice(-2)).toEqual(['--setting-sources', '']);
+      expect(
+        Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN|CLAUDE_CONFIG_DIR/.test(key)),
+      ).toEqual([]);
+    }
+    // Each role's prompt is the decision base, its instructions and its stable context, as primed.
+    const a = roles.find((role) => role.prompt.includes('ADVISE a'));
+    expect(a?.prompt).toContain("Foundry's internal decision middleware");
+    expect(a?.prompt).toContain('knowledge of a');
+  } finally {
+    await run.close();
+  }
 });

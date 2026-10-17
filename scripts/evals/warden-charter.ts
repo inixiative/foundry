@@ -9,7 +9,7 @@
  *     [--knowledge <alternate knowledge dir>] [--rejudge <earlier run dir>] \
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
- *     [--experiment <design.md>]
+ *     [--experiment <design.md>] [--subagents <processes>] [--stop-at-points <n>] [--stop-seven-day <percent>]
  *     [--pipeline --recognise-charter <file> --pick-charter <file> [--pick-regions <dir>] [--pick-model <id>] [--pick-effort <level>]]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
@@ -33,6 +33,16 @@
  * a domain better?); the shipped decision model stays Haiku 5.5 and the judges stay on Opus. --effort
  * sets the Wardens' reasoning effort (low | medium | high | xhigh | max, or `default` for the model's
  * own); omitted, the subscription policy's decision default applies, as live.
+ *
+ * --cells <file> names, per probe, the Wardens asked on it (see wardensFor).
+ * --in-order runs every eligible probe in the file's order instead of the per-kind hash sample.
+ * --subagents <n> serves the Wardens as subagents of n Claude side processes (agent-session
+ * ClaudeSubagentSessions), each holding its share of the roster, instead of one primed process per
+ * Warden: memory stays at n processes for a 70-region chorus. The composed prompts are unchanged, but
+ * it is not the shipped path: agent-session gives the dispatcher process --effort, not its subagents
+ * (2026-10-17 tiny test: 11 yeses vs the primed pool's 7 on the same 210 cells).
+ * --stop-at-points / --stop-seven-day stop taking turns once the run's summed five-hour growth or the
+ * seven-day window reaches the bound (see quotaGate); --resume continues.
  *
  * --regions <dir> scores a chorus of regions: the --projects project runs a one-layer chorus from that
  * regions directory (`<dir>/<region id>/{region.json,knowledge.md}`), so its Wardens, their
@@ -123,6 +133,11 @@ const { values } = parseArgs({
     'no-judge': { type: 'boolean' },
     regions: { type: 'string' },
     'primed-sessions': { type: 'string' },
+    subagents: { type: 'string' },
+    'in-order': { type: 'boolean' },
+    cells: { type: 'string' },
+    'stop-at-points': { type: 'string' },
+    'stop-seven-day': { type: 'string' },
     'pause-at': { type: 'string' },
     model: { type: 'string' },
     effort: { type: 'string' },
@@ -145,6 +160,9 @@ const budgetOverride = positive('budget', values.budget);
 const inputCap = positive('input-cap', values['input-cap']);
 const primedSessionsOverride = positive('primed-sessions', values['primed-sessions']);
 const pauseAt = positive('pause-at', values['pause-at']);
+const subagentProcesses = positive('subagents', values.subagents);
+const stopAtPoints = positive('stop-at-points', values['stop-at-points']);
+const stopSevenDay = positive('stop-seven-day', values['stop-seven-day']);
 const wardenModel = values.model ?? 'claude-haiku-5-5';
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'default'] as const;
 const wardenEffort = values.effort as (typeof EFFORTS)[number] | undefined;
@@ -214,10 +232,14 @@ const pick = (kind: string, project?: string) =>
     .filter((p) => p.kind === kind && (!project || p.project === project))
     .sort((a, b) => rank(a.id) - rank(b.id))
     .slice(0, perKind);
-const probes = (projects ?? [undefined]).flatMap((project) => [
-  ...pick('positive', project),
-  ...pick('negative', project),
-]);
+// --in-order: every eligible probe in the file's order (a caller's own sample, e.g. Oracle's slices),
+// so a run stopped early on quota is a prefix of that order rather than all positives first.
+const probes = values['in-order']
+  ? eligible
+  : (projects ?? [undefined]).flatMap((project) => [
+      ...pick('positive', project),
+      ...pick('negative', project),
+    ]);
 const experiment = requireExperiment(
   values.experiment,
   probes.length > TINY_MOMENTS || process.argv.includes('--pipeline'),
@@ -347,7 +369,20 @@ const placeKey = (probe: WardenProbe) => {
   const place = placeOf(probe);
   return `${place.projectId ?? ''}|${place.cwd}`;
 };
-const wardensFor = (probe: WardenProbe): EvalWarden[] => composed.get(placeKey(probe)) ?? [];
+/**
+ * --cells <file>: `{ "<probe id>": ["<domain>", …] }`, the Wardens to ask on that probe (others are
+ * not asked; a probe absent from the file asks every Warden). Each call is its own fresh decision,
+ * so asking a subset changes no answer; it lets an eval spend calls where they are scored (Oracle's
+ * per-region slices). Not routing: nothing here sees the moment.
+ */
+const cells = values.cells
+  ? (JSON.parse(readFileSync(values.cells, 'utf8')) as Record<string, string[]>)
+  : undefined;
+const wardensFor = (probe: WardenProbe): EvalWarden[] => {
+  const all = composed.get(placeKey(probe)) ?? [];
+  const only = cells?.[probe.id];
+  return only ? all.filter((w) => only.includes(w.domain)) : all;
+};
 const pickersFor = (probe: WardenProbe): EvalWarden[] => composedPick.get(placeKey(probe)) ?? [];
 /** --pick-regions: one picker per region id of that directory, its knowledge.md in full. */
 const pickRegionsDir = values['pick-regions'] ? resolve(values['pick-regions']) : undefined;
@@ -477,12 +512,23 @@ markEvalRun(state);
 const largestComposed = Math.max(0, ...[...composed.values()].map((w) => w.length));
 const primedSessions =
   primedSessionsOverride ?? (values.session ? Math.max(16, largestComposed + 8) : undefined);
+// --subagents <n>: the roster's Wardens as subagents of n side processes, each holding its share.
+const subagents = subagentProcesses
+  ? {
+      processes: subagentProcesses,
+      membersPerProcess: Math.max(1, Math.ceil(largestComposed / subagentProcesses)),
+    }
+  : undefined;
 const wardens = decisionHost(wardenModel, 'claude', concurrency, state, {
   ...(inputCap !== undefined ? { inputCap } : {}),
-  ...(primedSessions !== undefined ? { primedSessions } : {}),
+  ...(subagents ? { subagents } : primedSessions !== undefined ? { primedSessions } : {}),
   ...(wardenEffort !== undefined ? { effort: wardenEffort } : {}),
 });
-if (primedSessions !== undefined) console.error(`primed sessions: ${primedSessions}`);
+if (subagents)
+  console.error(
+    `subagent pool: ${subagents.processes} processes x ${subagents.membersPerProcess} Wardens`,
+  );
+else if (primedSessions !== undefined) console.error(`primed sessions: ${primedSessions}`);
 console.error(`warden model: ${wardenModel}, effort: ${wardenEffort ?? 'policy default (low)'}`);
 /**
  * --pause-at <percent>: before a turn, while the Claude login's five-hour window is at or above it,
@@ -501,7 +547,42 @@ const recordWindow = async (phase: string) => {
   );
   return windows;
 };
+/**
+ * --stop-at-points <n> / --stop-seven-day <percent>: the five-hour window's growth is summed in code
+ * from the run's first reading (a reset adds the new window's reading), and the run stops taking new
+ * turns once the sum reaches n points or the seven-day window reaches the percent. Read before every
+ * turn, at most every 30 s, failing closed when the window cannot be read twice running; a turn the
+ * stop lands on is not asked. --resume continues a stopped run.
+ */
+let stopped: string | undefined;
+let spentPoints = 0;
+let lastFiveHour: number | undefined;
+let unreadable = 0;
+const spend = (windows: Record<string, number> | undefined) => {
+  if (stopAtPoints === undefined && stopSevenDay === undefined) return;
+  const now = windows?.five_hour;
+  // Fail closed: a bound that cannot be read twice running stops the run.
+  if (now === undefined) {
+    if (++unreadable >= 2) stopped ??= 'the five-hour window could not be read twice running';
+  } else {
+    unreadable = 0;
+    spentPoints += lastFiveHour === undefined ? 0 : now >= lastFiveHour ? now - lastFiveHour : now;
+    lastFiveHour = now;
+  }
+  if (stopAtPoints !== undefined && spentPoints >= stopAtPoints)
+    stopped ??= `five-hour spend ${spentPoints} >= ${stopAtPoints} points`;
+  const sevenDay = windows?.seven_day;
+  if (stopSevenDay !== undefined && sevenDay !== undefined && sevenDay >= stopSevenDay)
+    stopped ??= `seven-day window ${sevenDay}% >= ${stopSevenDay}%`;
+};
 const quotaGate = async () => {
+  if (
+    (stopAtPoints !== undefined || stopSevenDay !== undefined) &&
+    Date.now() - lastWindowCheck >= 30_000
+  ) {
+    spend(await recordWindow('spend'));
+    if (stopped) console.error(`${new Date().toISOString()} stopping: ${stopped}`);
+  }
   if (pauseAt === undefined) return;
   if (Date.now() - lastWindowCheck < 120_000) return;
   for (;;) {
@@ -512,7 +593,7 @@ const quotaGate = async () => {
     await Bun.sleep(600_000);
   }
 };
-await recordWindow('start');
+spend(await recordWindow('start'));
 const judges = values['no-judge'] ? undefined : decisionHost('claude-opus-5-5', 'claude', 4, state);
 const started = Date.now();
 const answersFile = join(out, 'answers.jsonl');
@@ -549,7 +630,7 @@ try {
     charter,
     concurrency,
     triggers,
-    done: (probeId, trigger) => finished.has(turnKey(probeId, trigger)),
+    done: (probeId, trigger) => !!stopped || finished.has(turnKey(probeId, trigger)),
     beforeTurn: quotaGate,
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
     onAnswer: (answer) => {
@@ -698,5 +779,9 @@ try {
 } finally {
   await wardens.shutdown();
   await judges?.shutdown();
-  await recordWindow('end');
+  spend(await recordWindow('end'));
+  if (stopAtPoints !== undefined || stopSevenDay !== undefined)
+    console.error(
+      `five-hour spend: ${spentPoints} points${stopped ? `; stopped early (${stopped}), --resume continues` : ''}`,
+    );
 }
