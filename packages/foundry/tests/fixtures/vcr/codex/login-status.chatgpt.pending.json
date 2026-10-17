@@ -1,0 +1,36 @@
+{
+  "version": "0.162.1",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "codex",
+      "login",
+      "status"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [],
+    "stdinEnded": false,
+    "frames": [
+      {
+        "after": 0,
+        "stream": "stderr",
+        "data": "Logged in using ChatGPT",
+        "kept": true
+      }
+    ],
+    "exit": {
+      "after": 0,
+      "code": 0,
+      "killed": false
+    }
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-17T18:14:31.027Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal",
+    "durationMs": 192
+  }
+}

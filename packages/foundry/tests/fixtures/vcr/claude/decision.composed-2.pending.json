@@ -1,0 +1,102 @@
+{
+  "version": "2.1.302",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "e361a191-989a-4155-b5cc-02b388eeb632",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-1280-eOGGH1/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\n\\n\\n## Message\\nWhere do settings toggles live?\\n\\n## Response protocol (advice phase, trigger: user-message)\\nNothing to add is the expected answer, and the most common one. Then respond with exactly NO_COMMENT and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread.\\nOnly when your domain has something the user would otherwise have to say themselves, respond with JSON only, exactly this shape: { \\\"snippets\\\": string[], \\\"layers\\\": string[], \\\"confidence\\\": number }.\\n\\\"snippets\\\" are short notes from your domain, one point each; \\\"layers\\\" are IDs of your domain's layers to inject; at least one of them is non-empty. \\\"confidence\\\" is a number from 0 to 1.\\nAny other answer, including JSON with empty lists or extra fields, is an error, not a comment.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.302\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\",\"mcp_call_result_not_for_model_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"c8408eda-25b3-415e-94a9-b645eca86cef\",\"original_cwd\":\"{{cwd}}\",\"additional_directories\":[],\"messaging_socket_path\":\"/tmp/cc-socks/3046.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":50,\"estimated_tokens_delta\":50,\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"uuid\":\"a30b2cef-3557-42c9-9616-671f8586ca28\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":250,\"estimated_tokens_delta\":200,\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"uuid\":\"f8d35bc1-aeb3-444d-bc7b-a573952526bc\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":374,\"estimated_tokens_delta\":124,\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"uuid\":\"2e78a5e6-01b2-4cb5-9677-166f48c469b5\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg8GCqPzuZomxb2PUABXN\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAQSzgsKEAgSGAI4AUIIdGhpbmtpbmcSDCoQMrn3oy66dLs2qBoMRVdbgCYzb2M32qEDIjCn+I1fBRYSeZfBJMz90iklacnYhjHfbBh6R9Vy/kJMkOYhI61T2zjVjFtjpSOWRWkq6wrI7Nv4QElShJ86NI0sJXawYHZZy7OVEIaHPC3gJrKp+MFZ6tNhQkvE8d3W2ZT+WT7BzqjMaMbqZmK9YgYZikOAcqOLau7/PUjOmlEd2rToAjkkQLlqb+1y6GWQAJNrtw6zYcA8kw+u52EggDby619luuVsYCAtzGjmqHcKCucsmUPohaglhdnMm7BnC/5MApPtf2CSMKLH8VDuFUD1kEPYXAMz18knrzwjn0ZiKqOfTt4+k74qPU/n4trvfb7U4iqueaTObMCC5J/ocxbVSafUB0w+77zB5xjBLzhM7mRlfSniJw/KD2zLpXzH+/pkk41ysy2Ej8YHFpcwozB7HZUBITdG6P5V8dL01SymzT0fSKst/JRg3UjV7krNP7eLI4SrGoDXWpQ2eCfZK71xOOvBVsE6Xorfw1vzyNOjT5VwC4wJPA+GXWBXTMD3ZVjVR8JvrGHsBNp/cq+LPAAVCVyFtgYzz2qtFrqEGcMt3cTCph5bcaz1fsM6NYG43taHe9ceZtgUxSHj2PER5TVW9h7zoZSPb/wM022s7ZZq2KOASAVmwSdn2tDuWfc6al4iDBQ7JtdjLHjPGzm01P/6R3AmUH+SbEfiB6nkjTBtYahI6WesunCKv5AWApE1/sNgMkKcY1/js5GfRmfUmzXVtKdA11dAdBLv2TNMVq3bwRtrh39oLCgryMeTFkFKEMmgue/gtwYOAIti8Y/ddJbhr48jGU2DmOg9ldtP5AxfYSNvhdLIk9d7RaXZNzsZ0KkPAPXZctkqPYLM6TMJLcKjDYlmGO5Md0erMHXx3rtsgcFXMyFn6VqxRVP/pGqOjQt14rmYL4a1t1XNK2pRnVfYJ/9EL3dwZY/5cuIlSXBgRkxCdaW4AbapGbmZX3IZvl7dM+4h/Q2lBfXQQsPKdBf+Mp54lKZWLrZoDoxIZD+a3SLJr+GZid3+3G/7TBEW3/3cc56CInwNW/uj6ji8d+sG7F5D9WnTIYKLMv2i4FS5i2wYKDhdE/55XKZ7x94WuJKu8l4YOoDcb7x7VYrDp1dSOqaJeLm6E3CoDPdpAXL40qXa9xL415yMk54yhWN3jPGFAG38Af/2kuH+oaFruw2b84O44m0+YeSchnugOmKleh+SDNAlwqWY0q2htsh7GcRSrmqPze9CtP7dlw6anBgDMEgVnuyGpaeudiScJHwYYXQeVmhCgYEeYuVHSPBmZI12yUdyCAvA4uLBqloyjrTR8blNlF7OAg6ZCfKx9wXujXFlRMwA3yEi1Fh5UpDUGyJy0IUiejW4RMur1MwUVE128+NS2PRpSlOKpKCoKDmXpV72+cwfgFQglFAhp7lI3fKzPtgAvpbIYVG6KU33e5cWNn+hRqOctjxUAAimV8YrxHuzpVeYt0ttHax+Z9R3xlVOrYkCZLNh0Q8hmZ1Rbf5VLu7yIIZ6UxRTuhmzMTwk2YHXx0eICiH5CrMtMHul/mx9ayJbQRhyEn1CK5JfTZb0CkOBhfhy1xhvPVmZujaxiywmyLvQotUTg3R76PXqNCcqWESr5Ir07CykuWXXuWW1gbpN4GpkPE5O431ecgiIVaVwDReangEsEp0sRBjNXr3sHhwWorOzs+Tr5QW5dCePlIwOjAHHUKoPLVPvZYmbXkfABcsD++u7A+SOLUnhoEQ/UXaBdE854nkJ12Dp6dHpCj3vScN5bA190w14vgNUBaoUMblu5XitOP4PvZkOBzNgx59VTTYYseI0VmE1Y75QVOdwN1+GQOoatKuH52n4Rk8LHgpi+yvcXNCb/nSCoKKpkdQCe+fnSjgv1xAIrb4G0AFGywdTiczflEHP1E+40XBZtaBJgyvSH/+DL6TpGAE=\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":709,\"cache_read_input_tokens\":4315,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":709},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":760}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"uuid\":\"535dcc6e-5325-4694-86ca-4db0438ab01d\",\"timestamp\":\"2026-10-17T18:13:27.742Z\",\"request_id\":\"req_011Cg8GCq97njjr6p2uFyCDw\",\"thinking_duration_ms\":1419,\"thinking_display\":\"updates\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg8GCqPzuZomxb2PUABXN\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"NO_COMMENT\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":709,\"cache_read_input_tokens\":4315,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":709},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":760}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"uuid\":\"aad02af0-0878-4f30-8852-66d900fc0c0e\",\"timestamp\":\"2026-10-17T18:13:27.758Z\",\"request_id\":\"req_011Cg8GCq97njjr6p2uFyCDw\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1792273800,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.19,\"resetsAt\":1792273800},\"seven_day\":{\"utilization\":0.62,\"resetsAt\":1792285200}}},\"uuid\":\"43fa8dbf-7bb4-4e8d-843c-d21a9f278fff\",\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":4077,\"stop_reason\":\"end_turn\",\"session_id\":\"8d5f585a-966a-41e9-9ca7-a4281083a9bf\",\"total_cost_usd\":0.0011530300000000002,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":709,\"cache_read_input_tokens\":4315,\"output_tokens\":289,\"output_tokens_details\":{\"thinking_tokens\":279},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":709,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":289,\"cache_read_input_tokens\":4315,\"cache_creation_input_tokens\":709,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":709},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":4,\"outputTokens\":293,\"thinkingTokens\":279,\"cacheReadInputTokens\":4973,\"cacheCreationInputTokens\":4782,\"webSearchRequests\":0,\"costUSD\":0.0011530300000000002,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"NO_COMMENT\",\"ttft_ms\":2733,\"type\":\"result\",\"duration_ms\":2779,\"uuid\":\"41e5e5e1-a8cb-40ce-b9a6-88a1150a592f\",\"ttft_stream_ms\":1314,\"time_to_request_ms\":30,\"first_content_frame_ms\":1314,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-17T18:13:28.531Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal",
+    "durationMs": 4189,
+    "model": "claude-haiku-5-5"
+  }
+}
