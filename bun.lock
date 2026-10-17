@@ -6,7 +6,7 @@
       "name": "@inixiative/foundry-monorepo",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
-        "@inixiative/config": "^0.5.102",
+        "@inixiative/config": "^0.5.106",
         "@prisma/client": "6",
         "@types/bun": "1.4.2",
         "lefthook": "2.1.9",
@@ -50,7 +50,7 @@
         "@inixiative/archive": "^0.21.1",
         "@inixiative/foundry-core": "workspace:*",
         "@inixiative/gloss": "0.0.5",
-        "@inixiative/signet": "^0.4.3",
+        "@inixiative/signet": "^0.4.6",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@prisma/client": "^6.6.0",
         "bullmq": "^5.73.0",
@@ -119,7 +119,7 @@
 
     "@inixiative/archive": ["@inixiative/archive@0.21.1", "", { "dependencies": { "@inixiative/agent-session": "^0.6.6", "@inixiative/signet": "^0.4.2", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-ULfI21C421783Lh+Yzf+EodSBzF8+1iHW0NWPkNHTlODu7hz/0iXxRjLiXwSoypcsd49yYFHygFKdWPf0YzksA=="],
 
-    "@inixiative/config": ["@inixiative/config@0.5.102", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-PhGxJ2151v0KDr8gXQIWgA5scVWxzI4TivsvMWQ767mT4N1QAkvmU86npc1EruTZolRTOYMWaZQP5WruZmEELQ=="],
+    "@inixiative/config": ["@inixiative/config@0.5.106", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-icVXzalJfU6h1kuOx0vk2AZTv33AywC8rCZsRd+r8TDQKLT2UtcnXB01LLwGRq7Uc7V+7MouTZPPYiAmC/Op9g=="],
 
     "@inixiative/foundry": ["@inixiative/foundry@workspace:packages/foundry"],
 
@@ -131,7 +131,7 @@
 
     "@inixiative/json-rules": ["@inixiative/json-rules@3.5.4", "", { "dependencies": { "dayjs": "^1.11.13", "fastest-levenshtein": "^1.0.16", "re2js": "^2.8.6" }, "peerDependencies": { "@prisma/client": ">=6.0.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@prisma/client", "typescript"] }, "sha512-Ow/M74grWwSStHizn34BZjdsN14aK6zf1NpHlwhMlwc+CtS53yT+aLRI/T0B5vX7lm/DVcD+ddIfEEQMkn1qYA=="],
 
-    "@inixiative/signet": ["@inixiative/signet@0.4.3", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-9G1N1SrVXXHfoF4TgVhvMhSL97HvqVAWFK5+hjPQL4qHx+kEeIchybvYiVipYVDSI7N7Pebg3qhrljq4wxp2JA=="],
+    "@inixiative/signet": ["@inixiative/signet@0.4.6", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "zod": "^4.3.6" } }, "sha512-wepOOh1DPw4Kwc7MMHYC3r4gZ7EWaljoRFeJSwIiDAYBzYs7Fp+Zq82InQh2Wz5h03PQW8AqOQ7P94nghixO2w=="],
 
     "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
 
