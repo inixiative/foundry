@@ -279,7 +279,8 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   validateConfig(c);
   const again = resolveProjectView(c, 'P')!.chorus;
   expect(again.requestedBy).toBe('settings');
-  expect({ ...again, requestedBy: 'repository' }).toEqual(view.chorus);
+  expect(again.directoriesFrom).toBe('settings');
+  expect({ ...again, requestedBy: 'repository', directoriesFrom: 'default' }).toEqual(view.chorus);
   delete c.projects.P!.chorus;
 
   // The roster is exactly the regions: the hand-named Warden is not this project's Warden.
@@ -370,6 +371,7 @@ test('without regions the hand-named roster runs and the view says why; source "
     source: 'roster',
     requested: 'roster',
     requestedBy: 'settings',
+    directoriesFrom: 'settings',
     repository: { file: join(project, '.foundry', 'project.json'), chorus: { source: 'regions' } },
     layers: [],
     regions: [],
@@ -461,6 +463,7 @@ test("the region chorus is opt-in: regions present but not enabled are off; the 
     source: 'roster',
     requested: 'roster',
     requestedBy: 'default',
+    directoriesFrom: 'default',
     layers: [],
     regions: [],
   });
@@ -478,6 +481,7 @@ test("the region chorus is opt-in: regions present but not enabled are off; the 
     source: 'roster',
     requested: 'roster',
     requestedBy: 'repository',
+    directoriesFrom: 'default',
     repository: { file: repositoryFile, chorus: { source: 'roster' } },
     layers: [],
     regions: [],
@@ -499,11 +503,19 @@ test("the region chorus is opt-in: regions present but not enabled are off; the 
   write(repositoryFile, JSON.stringify({ chorus: { source: 'regions', regions: elsewhere } }));
   delete c.projects.P!.chorus;
   const theirs = resolveProjectView(c, 'P')!.chorus;
-  expect(theirs).toMatchObject({ source: 'regions', requestedBy: 'repository' });
+  expect(theirs).toMatchObject({
+    source: 'regions',
+    requestedBy: 'repository',
+    directoriesFrom: 'repository',
+  });
   expect(theirs.regions.map((r) => r.id)).toEqual(['only']);
   c.projects.P!.chorus = { regions: '.foundry/regions' };
   const mine = resolveProjectView(c, 'P')!.chorus;
-  expect(mine).toMatchObject({ source: 'regions', requestedBy: 'repository' });
+  expect(mine).toMatchObject({
+    source: 'regions',
+    requestedBy: 'repository',
+    directoriesFrom: 'settings',
+  });
   expect(mine.regions.map((r) => r.id)).toEqual(['concurrency-locks', 'lens-model']);
   delete c.projects.P!.chorus;
 

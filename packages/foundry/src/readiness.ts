@@ -61,6 +61,7 @@ export interface ReadinessChorus {
   source: ResolvedChorus['source'];
   requested: ResolvedChorus['requested'];
   requestedBy: ResolvedChorus['requestedBy'];
+  directoriesFrom: ResolvedChorus['directoriesFrom'];
   /** The repository's `.foundry/project.json`, when it exists. */
   repository?: ResolvedChorus['repository'];
   /** Regions present but off (the chorus is not enabled). */
@@ -557,6 +558,7 @@ export async function describeReadinessChorus(
     source: chorus.source,
     requested: chorus.requested,
     requestedBy: chorus.requestedBy,
+    directoriesFrom: chorus.directoriesFrom,
     ...(chorus.repository ? { repository: chorus.repository } : {}),
     ...(chorus.available ? { available: chorus.available } : {}),
     ...(chorus.reason ? { reason: chorus.reason } : {}),

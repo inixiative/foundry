@@ -70,14 +70,19 @@ export interface ResolvedAgentDefinition {
   fields: Record<string, FieldProvenance>;
 }
 
+/** Which layer a project setting's value came from: personal settings cascade over the repository's, over the default. */
+export type SettingLayer = 'settings' | 'repository' | 'default';
+
 /** The chorus a project view carries: what it was built from, and why. */
 export interface ResolvedChorus {
   /** What runs: `regions` only when the layers held regions. */
   source: ChorusSource;
   /** What was asked for (`chorus.source`; `roster` when neither the settings nor the repository say). */
   requested: ChorusSource;
-  /** Who asked: the machine's project settings, the repository's `.foundry/project.json`, or nobody. */
-  requestedBy: 'settings' | 'repository' | 'default';
+  /** Which layer `chorus.source` came from: the machine's (personal) project settings, the repository's `.foundry/project.json`, or neither. */
+  requestedBy: SettingLayer;
+  /** Which layer the directories (`regions` or `layers`, one unit) came from. */
+  directoriesFrom: SettingLayer;
   /** The repository's `.foundry/project.json`, when it exists: what it said, or why it was not read. */
   repository?: { file: string; chorus?: ChorusSettings; error?: string };
   /** Regions present in the configured layers but not run, because the chorus is not enabled. */
@@ -805,7 +810,8 @@ export function readRepositorySettings(
  */
 export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'chorus'>): {
   chorus: ChorusSettings;
-  requestedBy: ResolvedChorus['requestedBy'];
+  requestedBy: SettingLayer;
+  directoriesFrom: SettingLayer;
   repository?: ResolvedChorus['repository'];
 } {
   const repository = readRepositorySettings(project.path);
@@ -818,6 +824,12 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   return {
     chorus: { ...(source ? { source } : {}), ...directories },
     requestedBy: mine.source ? 'settings' : theirs.source ? 'repository' : 'default',
+    directoriesFrom:
+      mine.layers || mine.regions
+        ? 'settings'
+        : theirs.layers || theirs.regions
+          ? 'repository'
+          : 'default',
     ...(repository ? { repository } : {}),
   };
 }
@@ -851,6 +863,7 @@ export function resolveProjectView(
   const asked = {
     requested,
     requestedBy: setting.requestedBy,
+    directoriesFrom: setting.directoriesFrom,
     ...(setting.repository ? { repository: setting.repository } : {}),
   };
   const unread = setting.repository?.error

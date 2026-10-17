@@ -425,7 +425,16 @@ checkout never stops the daemon or turns its chorus on. The machine's
 `projects[id].chorus` wins key by key: its `source` over the repository's, and
 its directories (`regions` or `layers`, one unit) over the repository's. It is
 not named `.foundry/settings.json` because that is a Foundry install's own
-settings, and Foundry's checkout is itself a registered project.
+settings, and Foundry's checkout is itself a registered project. The view
+names which layer won per key (`chorus.requestedBy` for `source`,
+`chorus.directoriesFrom` for the directories: `settings`, `repository` or
+`default`), so a surface can show a personal value overriding the shared one.
+
+Direction (Aron, 2026-10-16): a project's shared Foundry settings live in the
+repo's `.foundry/` and personal settings cascade over them; each setting in the
+settings view offers "set this for me" and "set this for everyone" and shows
+an override. Today the repository file carries `chorus` only; widening it to
+the other project keys (and the settings-view controls) is the next step.
 
 The regions:
 
