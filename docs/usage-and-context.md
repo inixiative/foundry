@@ -405,9 +405,38 @@ Aron, 2026-10-15: "Each project needs its own chorus, which is what we should
 call the set of wardens... you need it per project because all those docs are
 per project. The default should be per-project chorus."
 
-A project's **chorus** is the set of Wardens its threads run. By default it is
-built from the project's concept regions, the shards the template's region
-builder writes (plan: "Wardens built from docs"), one Warden per region:
+A project's **chorus** is the set of Wardens its threads run. When enabled it
+is built from the project's concept regions, the shards the template's region
+builder writes (plan: "Wardens built from docs"), one Warden per region.
+**It is opt-in** (Aron, 2026-10-16: regions on a repository's main stay off
+until the repository's own Foundry config turns them on); regions present but
+not enabled are reported as off and the hand-named roster runs, as it did
+before the regions existed.
+
+```
+<project>/.foundry/project.json   the repository's own Foundry settings, committed:
+                                  { "$comment"?: "…", "chorus"?: { source?, regions? | layers? } }
+```
+
+The repository file carries only `chorus` (and an ignored `$comment`); any other
+key, or an invalid chorus, is reported (view `chorus.repository.error`, the
+doctor's `repository-settings-unreadable` error) and the file is ignored: a
+checkout never stops the daemon or turns its chorus on. The machine's
+`projects[id].chorus` wins key by key: its `source` over the repository's, and
+its directories (`regions` or `layers`, one unit) over the repository's. It is
+not named `.foundry/settings.json` because that is a Foundry install's own
+settings, and Foundry's checkout is itself a registered project. The view
+names which layer won per key (`chorus.requestedBy` for `source`,
+`chorus.directoriesFrom` for the directories: `settings`, `repository` or
+`default`), so a surface can show a personal value overriding the shared one.
+
+Direction (Aron, 2026-10-16): a project's shared Foundry settings live in the
+repo's `.foundry/` and personal settings cascade over them; each setting in the
+settings view offers "set this for me" and "set this for everyone" and shows
+an override. Today the repository file carries `chorus` only; widening it to
+the other project keys (and the settings-view controls) is the next step.
+
+The regions:
 
 ```
 <project>/.foundry/regions/
@@ -418,13 +447,18 @@ builder writes (plan: "Wardens built from docs"), one Warden per region:
 ```
 
 - **Setting.** `projects[id].chorus` is `{ source?, regions? | layers? }`.
-  `source` is `"regions"` (the default) or `"roster"`, the hand-named
+  `source` is `"regions"` (turns it on) or `"roster"` (the default), the hand-named
   `domain-advising` agents in settings, whatever regions exist (`regions` or
   `layers` may stay written beside it, unread). `regions` points
   the one layer at another directory (absolute, or relative to the project;
-  default `.foundry/regions`). No setting means the chorus from
-  `.foundry/regions` when that directory holds regions; otherwise the hand-named
-  roster runs and the view, the startup log and the doctor say why. A thread
+  default `.foundry/regions`). With neither the settings nor the repository
+  asking, the hand-named roster runs; regions present are counted
+  (`view.chorus.available`) and the view, the startup log and the doctor say the
+  region chorus is off and how to turn it on. Regions asked for but not found:
+  the roster runs and they say why. `view.chorus.requestedBy` is `settings`,
+  `repository` or `default`. To turn a repository's chorus on for yourself
+  without committing, set `projects[id].chorus = { "source": "regions" }` in
+  settings, or edit its `.foundry/project.json` locally. A thread
   without a project composes from the settings themselves and always runs the
   hand-named roster. There is no global setting: a chorus is per project
   because its docs are.

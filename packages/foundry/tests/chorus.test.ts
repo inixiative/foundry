@@ -131,10 +131,18 @@ const knowledge = (title: string, routing: string, deep: string) =>
     '',
   ].join('\n');
 
-/** A project with two regions, plus the corpus-level files the builder leaves at the regions root. */
-function projectWithRegions(): { project: string; regions: string } {
+/**
+ * A project with two regions, plus the corpus-level files the builder leaves at the regions root. The
+ * repository enables its chorus in `.foundry/project.json` unless `enabled` is false.
+ */
+function projectWithRegions({ enabled = true } = {}): { project: string; regions: string } {
   const project = tempDir('regions-project');
   const regions = join(project, '.foundry', 'regions');
+  if (enabled)
+    write(
+      join(project, '.foundry', 'project.json'),
+      JSON.stringify({ chorus: { source: 'regions' } }),
+    );
   write(
     join(regions, 'concurrency-locks', 'region.json'),
     JSON.stringify({
@@ -237,12 +245,17 @@ function config(project: string): FoundryConfig {
   return c;
 }
 
-test("a project's chorus is one generated Warden per region of .foundry/regions, by default", () => {
+test("a project's chorus is one generated Warden per region of .foundry/regions, once the repository enables it", () => {
   const { project, regions } = projectWithRegions();
   const c = config(project);
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
-  expect(view.chorus).toMatchObject({ source: 'regions', requested: 'regions' });
+  expect(view.chorus).toMatchObject({
+    source: 'regions',
+    requested: 'regions',
+    requestedBy: 'repository',
+    repository: { file: join(project, '.foundry', 'project.json'), chorus: { source: 'regions' } },
+  });
   expect(view.chorus.layers).toMatchObject([
     {
       label: DEFAULT_LAYER_LABEL,
@@ -264,7 +277,10 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   // The normalized entry is a valid setting that resolves to the same chorus.
   c.projects.P!.chorus = view.config.projects.P!.chorus;
   validateConfig(c);
-  expect(resolveProjectView(c, 'P')!.chorus).toEqual(view.chorus);
+  const again = resolveProjectView(c, 'P')!.chorus;
+  expect(again.requestedBy).toBe('settings');
+  expect(again.directoriesFrom).toBe('settings');
+  expect({ ...again, requestedBy: 'repository', directoriesFrom: 'default' }).toEqual(view.chorus);
   delete c.projects.P!.chorus;
 
   // The roster is exactly the regions: the hand-named Warden is not this project's Warden.
@@ -330,9 +346,9 @@ test('without regions the hand-named roster runs and the view says why; source "
   const { project } = projectWithRegions();
   const c = config(project);
   validateConfig(c);
-  // Regions asked for (the default), none there: the roster runs, and the view says why.
+  // Regions asked for, none there: the roster runs, and the view says why.
   const empty = tempDir('no-regions');
-  c.projects.Q = { id: 'Q', path: empty };
+  c.projects.Q = { id: 'Q', path: empty, chorus: { source: 'regions' } };
   validateConfig(c);
   const q = resolveProjectView(c, 'Q')!;
   expect(q.chorus).toMatchObject({ source: 'roster', requested: 'regions', regions: [] });
@@ -351,7 +367,15 @@ test('without regions the hand-named roster runs and the view says why; source "
   c.projects.P!.chorus = { source: 'roster', layers: [{ regions: '.foundry/regions' }] };
   validateConfig(c);
   const roster = resolveProjectView(c, 'P')!;
-  expect(roster.chorus).toEqual({ source: 'roster', requested: 'roster', layers: [], regions: [] });
+  expect(roster.chorus).toEqual({
+    source: 'roster',
+    requested: 'roster',
+    requestedBy: 'settings',
+    directoriesFrom: 'settings',
+    repository: { file: join(project, '.foundry', 'project.json'), chorus: { source: 'regions' } },
+    layers: [],
+    regions: [],
+  });
   expect(configuredExperts(roster.config).experts.map((e) => e.domain)).toEqual(['reuse']);
   expect(roster.config.projects.P!.chorus).toMatchObject({ source: 'roster' });
   delete c.projects.P!.chorus;
@@ -363,7 +387,7 @@ test('without regions the hand-named roster runs and the view says why; source "
     JSON.stringify({ id: 'only', title: 'Only', routing: 'Is this about the only thing?' }),
   );
   write(join(elsewhere, 'only', 'knowledge.md'), '# Only\n\nONLY_KNOWLEDGE.');
-  c.projects.Q!.chorus = { regions: elsewhere };
+  c.projects.Q!.chorus = { source: 'regions', regions: elsewhere };
   validateConfig(c);
   expect(chorusLayers(c.projects.Q!)).toEqual([{ label: 'project', regionsDir: elsewhere }]);
   expect(resolveProjectView(c, 'Q')!.chorus.regions.map((r) => r.id)).toEqual(['only']);
@@ -402,6 +426,119 @@ test('without regions the hand-named roster runs and the view says why; source "
   delete c.projects.Q;
   (c as unknown as Record<string, unknown>).wardens = 'regions';
   expect(() => validateConfig(c)).toThrow('settings key "wardens" is gone');
+});
+
+test("the region chorus is opt-in: regions present but not enabled are off; the repository's .foundry/project.json enables it and the machine's settings win", async () => {
+  const { project, regions } = projectWithRegions({ enabled: false });
+  const c = config(project);
+  validateConfig(c);
+  const repositoryFile = join(project, '.foundry', 'project.json');
+
+  // Regions present, nobody asked: off. The hand-named roster runs, and the view says how to turn it on.
+  const off = resolveProjectView(c, 'P')!;
+  expect(off.chorus).toMatchObject({
+    source: 'roster',
+    requested: 'roster',
+    requestedBy: 'default',
+    available: 2,
+    layers: [],
+    regions: [],
+  });
+  expect(off.chorus.repository).toBeUndefined();
+  expect(off.chorus.reason).toContain(`the region chorus is off: 2 regions at ${regions}`);
+  expect(off.chorus.reason).toContain(`"chorus": { "source": "regions" } in ${repositoryFile}`);
+  expect(off.config.projects.P!.chorus).toEqual({ source: 'roster' });
+  expect(configuredExperts(off.config).experts.map((e) => e.domain)).toEqual(['reuse']);
+  expect(off.agents.map((a) => a.scope)).not.toContain('project-generated');
+  expect(describeChorus('P', off.chorus)).toBe(`Chorus: project P: ${off.chorus.reason}`);
+  expect(await describeReadinessChorus('P', off.chorus)).toMatchObject({
+    source: 'roster',
+    requestedBy: 'default',
+    available: 2,
+    regions: [],
+  });
+  // No regions and nobody asked: nothing to report.
+  c.projects.E = { id: 'E', path: tempDir('plain-project') };
+  expect(resolveProjectView(c, 'E')!.chorus).toEqual({
+    source: 'roster',
+    requested: 'roster',
+    requestedBy: 'default',
+    directoriesFrom: 'default',
+    layers: [],
+    regions: [],
+  });
+  delete c.projects.E;
+
+  // The repository says roster, with a comment: still off, and now it is the repository's choice.
+  write(
+    repositoryFile,
+    JSON.stringify({
+      $comment: 'set source to regions to turn it on',
+      chorus: { source: 'roster' },
+    }),
+  );
+  expect(resolveProjectView(c, 'P')!.chorus).toEqual({
+    source: 'roster',
+    requested: 'roster',
+    requestedBy: 'repository',
+    directoriesFrom: 'default',
+    repository: { file: repositoryFile, chorus: { source: 'roster' } },
+    layers: [],
+    regions: [],
+  });
+  // The machine's settings win: regions run although the repository says roster.
+  c.projects.P!.chorus = { source: 'regions' };
+  validateConfig(c);
+  const on = resolveProjectView(c, 'P')!;
+  expect(on.chorus).toMatchObject({ source: 'regions', requestedBy: 'settings' });
+  expect(on.chorus.regions.map((r) => r.id)).toEqual(['concurrency-locks', 'lens-model']);
+
+  // The repository enables it and names its directory; the settings' directory wins, key by key.
+  const elsewhere = tempDir('regions-elsewhere');
+  write(
+    join(elsewhere, 'only', 'region.json'),
+    JSON.stringify({ id: 'only', title: 'Only', routing: 'Is this about the only thing?' }),
+  );
+  write(join(elsewhere, 'only', 'knowledge.md'), '# Only\n\nONLY_KNOWLEDGE.');
+  write(repositoryFile, JSON.stringify({ chorus: { source: 'regions', regions: elsewhere } }));
+  delete c.projects.P!.chorus;
+  const theirs = resolveProjectView(c, 'P')!.chorus;
+  expect(theirs).toMatchObject({
+    source: 'regions',
+    requestedBy: 'repository',
+    directoriesFrom: 'repository',
+  });
+  expect(theirs.regions.map((r) => r.id)).toEqual(['only']);
+  c.projects.P!.chorus = { regions: '.foundry/regions' };
+  const mine = resolveProjectView(c, 'P')!.chorus;
+  expect(mine).toMatchObject({
+    source: 'regions',
+    requestedBy: 'repository',
+    directoriesFrom: 'settings',
+  });
+  expect(mine.regions.map((r) => r.id)).toEqual(['concurrency-locks', 'lens-model']);
+  delete c.projects.P!.chorus;
+
+  // A malformed repository file is reported, never thrown, and never turns the chorus on.
+  for (const [text, message] of [
+    ['{ not json', 'JSON'],
+    [JSON.stringify({ wardens: 'regions' }), 'wardens is not a repository setting'],
+    [
+      JSON.stringify({ chorus: { source: 'always' } }),
+      'chorus.source must be "regions" or "roster"',
+    ],
+    [JSON.stringify(['chorus']), 'must be an object'],
+  ] as const) {
+    write(repositoryFile, text);
+    const bad = resolveProjectView(c, 'P')!.chorus;
+    expect(bad).toMatchObject({ source: 'roster', requestedBy: 'default', available: 2 });
+    expect(bad.repository!.file).toBe(repositoryFile);
+    expect(bad.repository!.error).toContain(message);
+    expect(bad.reason).toContain(`${repositoryFile} was not read`);
+  }
+  // Asked for by the settings, a malformed repository file is still named.
+  c.projects.P!.chorus = { source: 'roster' };
+  expect(resolveProjectView(c, 'P')!.chorus.reason).toContain(`${repositoryFile} was not read`);
 });
 
 test('a chorus composes from layers in order: a later region replaces an earlier one whole, unique ids union', async () => {
@@ -520,7 +657,7 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
   c.projects.O = {
     id: 'O',
     path: other,
-    chorus: { layers: [{ regions: copy, label: 'template-base' }] },
+    chorus: { source: 'regions', layers: [{ regions: copy, label: 'template-base' }] },
   };
   validateConfig(c);
   const here = resolveProjectView(c, 'P')!.chorus.regions.find(

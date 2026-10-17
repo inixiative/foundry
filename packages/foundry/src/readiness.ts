@@ -60,6 +60,12 @@ export interface ReadinessChorus {
   scope: string;
   source: ResolvedChorus['source'];
   requested: ResolvedChorus['requested'];
+  requestedBy: ResolvedChorus['requestedBy'];
+  directoriesFrom: ResolvedChorus['directoriesFrom'];
+  /** The repository's `.foundry/project.json`, when it exists. */
+  repository?: ResolvedChorus['repository'];
+  /** Regions present but off (the chorus is not enabled). */
+  available?: number;
   reason?: string;
   layers: Array<{ label: string; regionsDir: string; regions: number }>;
   regions: Array<{
@@ -515,6 +521,14 @@ export async function inspectReadiness(
   const native = await inspectNativeClis(saved, { which: options.which, requested });
   nativeClis = native.nativeClis;
   issues.push(...native.issues);
+  for (const [scope, c] of choruses)
+    if (c.repository?.error)
+      issue(
+        'error',
+        scope,
+        'repository-settings-unreadable',
+        `${c.repository.file} was not read (${c.repository.error}); its chorus setting is ignored.`,
+      );
   chorus = await Promise.all(
     choruses.map(([scope, c]) =>
       describeReadinessChorus(scope, c, (region, message) =>
@@ -543,6 +557,10 @@ export async function describeReadinessChorus(
     scope,
     source: chorus.source,
     requested: chorus.requested,
+    requestedBy: chorus.requestedBy,
+    directoriesFrom: chorus.directoriesFrom,
+    ...(chorus.repository ? { repository: chorus.repository } : {}),
+    ...(chorus.available ? { available: chorus.available } : {}),
     ...(chorus.reason ? { reason: chorus.reason } : {}),
     layers: chorus.layers.map((layer) => ({
       label: layer.label,

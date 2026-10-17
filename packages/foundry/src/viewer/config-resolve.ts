@@ -1,8 +1,12 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   type ChorusLayerRegions,
   type ChorusRegion,
   chorusLayers,
   composeChorus,
+  countRegions,
+  REPOSITORY_SETTINGS_FILE,
   type RegionSummary,
   regionWardens,
 } from '../agents/region-roster';
@@ -21,6 +25,7 @@ import {
   type LayerSettingsOverride,
   type ListPatch,
   type ProjectSettingsConfig,
+  validateChorusSettings,
 } from './config';
 
 export type MergeOrigin = 'global' | 'project' | 'merged';
@@ -65,17 +70,28 @@ export interface ResolvedAgentDefinition {
   fields: Record<string, FieldProvenance>;
 }
 
+/** Which layer a project setting's value came from: personal settings cascade over the repository's, over the default. */
+export type SettingLayer = 'settings' | 'repository' | 'default';
+
 /** The chorus a project view carries: what it was built from, and why. */
 export interface ResolvedChorus {
   /** What runs: `regions` only when the layers held regions. */
   source: ChorusSource;
-  /** What the settings asked for (`chorus.source`; `regions` when unset). */
+  /** What was asked for (`chorus.source`; `roster` when neither the settings nor the repository say). */
   requested: ChorusSource;
+  /** Which layer `chorus.source` came from: the machine's (personal) project settings, the repository's `.foundry/project.json`, or neither. */
+  requestedBy: SettingLayer;
+  /** Which layer the directories (`regions` or `layers`, one unit) came from. */
+  directoriesFrom: SettingLayer;
+  /** The repository's `.foundry/project.json`, when it exists: what it said, or why it was not read. */
+  repository?: { file: string; chorus?: ChorusSettings; error?: string };
+  /** Regions present in the configured layers but not run, because the chorus is not enabled. */
+  available?: number;
   /** Under a `regions` request: each layer as read, in order, missing or empty directories included. */
   layers: ChorusLayerRegions[];
   /** The composed chorus, in id order: each region with the layer it came from. */
   regions: ChorusRegion[];
-  /** Why `regions` was asked for but the hand-named roster runs: nothing is skipped silently. */
+  /** Why the hand-named roster runs although regions were asked for or are present: nothing is skipped silently. */
   reason?: string;
 }
 
@@ -761,6 +777,63 @@ function resolveLayerDefinition(
   };
 }
 
+/**
+ * The repository's own settings (`<project>/.foundry/project.json`): `{ "chorus"?, "$comment"? }`. A
+ * file that is missing reads as none; one that is malformed is reported, not thrown, so a repository's
+ * checkout never stops the daemon or turns its chorus on.
+ */
+export function readRepositorySettings(
+  projectPath: string,
+): { file: string; chorus?: ChorusSettings; error?: string } | undefined {
+  const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
+  if (!existsSync(file)) return undefined;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      throw Error('must be an object: { "chorus"? }');
+    const settings = raw as Record<string, unknown>;
+    for (const key of Object.keys(settings))
+      if (key !== 'chorus' && key !== '$comment')
+        throw Error(`${key} is not a repository setting (chorus, $comment)`);
+    validateChorusSettings('chorus', settings.chorus);
+    return settings.chorus === undefined
+      ? { file }
+      : { file, chorus: settings.chorus as ChorusSettings };
+  } catch (error) {
+    return { file, error: (error as Error).message };
+  }
+}
+
+/**
+ * A project's chorus setting: the machine's project settings over the repository's `chorus`, key by
+ * key. `source` from whichever says it; the directories (`regions` or `layers`, one unit) likewise.
+ */
+export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'chorus'>): {
+  chorus: ChorusSettings;
+  requestedBy: SettingLayer;
+  directoriesFrom: SettingLayer;
+  repository?: ResolvedChorus['repository'];
+} {
+  const repository = readRepositorySettings(project.path);
+  const mine = project.chorus ?? {};
+  const theirs = repository?.chorus ?? {};
+  const where = (c: ChorusSettings): ChorusSettings =>
+    c.layers ? { layers: c.layers } : c.regions ? { regions: c.regions } : {};
+  const directories = mine.layers || mine.regions ? where(mine) : where(theirs);
+  const source = mine.source ?? theirs.source;
+  return {
+    chorus: { ...(source ? { source } : {}), ...directories },
+    requestedBy: mine.source ? 'settings' : theirs.source ? 'repository' : 'default',
+    directoriesFrom:
+      mine.layers || mine.regions
+        ? 'settings'
+        : theirs.layers || theirs.regions
+          ? 'repository'
+          : 'default',
+    ...(repository ? { repository } : {}),
+  };
+}
+
 export function resolveProjectView(
   config: FoundryConfig,
   projectId: string,
@@ -782,22 +855,44 @@ export function resolveProjectView(
   };
 
   // The chorus: one generated Warden per composed region, or the settings' domain-advising agents.
-  const requested: ChorusSource = project.chorus?.source ?? 'regions';
-  const configuredLayers = chorusLayers(project);
-  let chorus: ResolvedChorus = { source: 'roster', requested, layers: [], regions: [] };
+  // Opt-in (Aron, 2026-10-16): region Wardens run only when the settings or the repository's
+  // `.foundry/project.json` ask for them; regions merely present are reported as off.
+  const setting = projectChorus(project);
+  const requested: ChorusSource = setting.chorus.source ?? 'roster';
+  const configuredLayers = chorusLayers({ path: project.path, chorus: setting.chorus });
+  const asked = {
+    requested,
+    requestedBy: setting.requestedBy,
+    directoriesFrom: setting.directoriesFrom,
+    ...(setting.repository ? { repository: setting.repository } : {}),
+  };
+  const unread = setting.repository?.error
+    ? `; ${setting.repository.file} was not read (${setting.repository.error})`
+    : '';
+  let chorus: ResolvedChorus = { source: 'roster', ...asked, layers: [], regions: [] };
   let generated: ReturnType<typeof regionWardens> = [];
   if (requested === 'regions') {
     const composed = composeChorus(configuredLayers);
     chorus = composed.regions.length
-      ? { source: 'regions', requested, ...composed }
+      ? { source: 'regions', ...asked, ...composed }
       : {
           source: 'roster',
-          requested,
+          ...asked,
           ...composed,
-          reason: `no regions at ${configuredLayers.map((l) => l.regionsDir).join(', ')} (no <id>/region.json); the hand-named roster runs`,
+          reason: `no regions at ${configuredLayers.map((l) => l.regionsDir).join(', ')} (no <id>/region.json); the hand-named roster runs${unread}`,
         };
     generated = regionWardens(composed.regions);
-  }
+  } else if (setting.requestedBy === 'default') {
+    const available = configuredLayers.reduce((n, l) => n + countRegions(l.regionsDir), 0);
+    if (available || unread)
+      chorus = {
+        ...chorus,
+        ...(available ? { available } : {}),
+        reason: available
+          ? `the region chorus is off: ${available} regions at ${configuredLayers.map((l) => l.regionsDir).join(', ')} are not enabled (set "chorus": { "source": "regions" } in ${join(project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings); the hand-named roster runs${unread}`
+          : `the hand-named roster runs${unread}`,
+      };
+  } else if (unread) chorus = { ...chorus, reason: `the hand-named roster runs${unread}` };
   // The view's project entry carries the effective chorus, normalized: what `chorusSource` reads. The
   // setting is valid and, on a raw config, resolves to the same chorus (a roster, from a request or a
   // fall-back, names no layers; the layers read stay on `view.chorus`). A view config itself is not

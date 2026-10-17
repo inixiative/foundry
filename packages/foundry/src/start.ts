@@ -177,7 +177,7 @@ if (subscription) {
 for (const [projectId, project] of Object.entries(config.projects ?? {})) {
   if (project.enabled === false) continue;
   const view = resolveProjectView(config, projectId);
-  if (!view || view.chorus.requested !== 'regions') continue;
+  if (!view || (view.chorus.requested !== 'regions' && !view.chorus.reason)) continue;
   console.log(describeChorus(project.label ?? projectId, view.chorus));
 }
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code

@@ -249,9 +249,10 @@ export interface ProjectSettingsConfig {
    */
   status?: 'archived';
   /**
-   * This project's chorus: the set of Wardens its threads run. Absent: the chorus from
-   * `.foundry/regions` when that directory holds regions, else the hand-named roster. In a resolved
-   * project view this is normalized (`source` effective, `layers` absolute); see
+   * This project's chorus: the set of Wardens its threads run. Merged over the repository's own
+   * `<project>/.foundry/project.json` `chorus`, these settings winning. Region Wardens run only when
+   * `source` is `"regions"`; absent, the hand-named roster runs and regions present are reported as
+   * off. In a resolved project view this is normalized (`source` effective, `layers` absolute); see
    * docs/usage-and-context.md, "Chorus".
    */
   chorus?: ChorusSettings;
@@ -271,12 +272,12 @@ export interface ChorusLayerSettings {
 
 /**
  * A project's chorus, the set of region Wardens its threads run (Aron, 2026-10-15: "each project needs
- * its own chorus"). `source: "regions"` (the default) builds it from layers of regions, in order: a
- * region id present in a later layer replaces the earlier one whole; unique ids union. One layer is
- * `regions` (default `.foundry/regions`); several are `layers`, e.g. a template base then this
+ * its own chorus"). Opt-in (Aron, 2026-10-16): `source: "regions"` builds it from layers of regions,
+ * in order: a region id present in a later layer replaces the earlier one whole; unique ids union. One
+ * layer is `regions` (default `.foundry/regions`); several are `layers`, e.g. a template base then this
  * project's delta. With no regions found the hand-named roster runs and the view says why.
- * `source: "roster"` runs the hand-named roster whatever regions exist; `regions`/`layers` may stay
- * written beside it, unread.
+ * `source: "roster"`, the default, runs the hand-named roster whatever regions exist; `regions`/`layers`
+ * may stay written beside it, unread.
  */
 export interface ChorusSettings {
   source?: ChorusSource;
@@ -825,7 +826,7 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
   }
 }
 
-function validateChorusSettings(where: string, chorus: unknown): void {
+export function validateChorusSettings(where: string, chorus: unknown): void {
   if (chorus === undefined) return;
   if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
     throw Error(`${where} must be an object: { source?, regions? | layers? }`);
