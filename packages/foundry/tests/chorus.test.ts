@@ -1094,3 +1094,25 @@ test('the primed pool is sized for the largest chorus any project runs', () => {
   c.projects.P!.chorus = { enabled: false };
   expect(largestRoster(c)).toBe(0);
 });
+
+test('a settings file holding a whole roster names every hand-named Warden in one error', () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  const warden = (id: string) => ({
+    id,
+    kind: 'domain-librarian' as const,
+    flowRole: 'domain-advising',
+    domain: id,
+    prompt: 'X',
+    visibleLayers: [],
+    peers: [],
+    maxDepth: 1,
+    enabled: false,
+  });
+  c.agents['librarian-a'] = warden('librarian-a');
+  c.agents['librarian-b'] = warden('librarian-b');
+  c.projects.P!.agents = { 'librarian-c': warden('librarian-c') };
+  expect(() => validateConfig(c)).toThrow(
+    'agents.librarian-a is a hand-named Warden (domain-librarian); agents.librarian-b is a hand-named Warden (domain-librarian); projects.P.agents.librarian-c is a hand-named Warden (domain-librarian): the hand-named Warden roster is retired',
+  );
+});

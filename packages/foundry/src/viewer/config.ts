@@ -853,15 +853,23 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
  * from a project's `.foundry/regions` when its chorus is enabled, are the only chorus. A Warden left in
  * settings is refused by name, with the fix, never silently dropped (no alias, no migration).
  */
-function refuseHandNamedWardens(where: string, agents: Record<string, unknown> | undefined) {
-  for (const [id, agent] of Object.entries(agents ?? {})) {
-    const a = (agent ?? {}) as { kind?: string; flowRole?: string };
-    if (a.flowRole !== 'domain-advising' && a.kind !== 'domain-librarian' && a.kind !== 'decider')
-      continue;
-    throw Error(
-      `${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole}): the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${where}.${id} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
-    );
-  }
+function refuseHandNamedWardens(config: FoundryConfig) {
+  // Every offender in one error, so a settings file holding a whole roster is fixed in one pass.
+  const found: string[] = [];
+  const scan = (where: string, agents: Record<string, unknown> | undefined) => {
+    for (const [id, agent] of Object.entries(agents ?? {})) {
+      const a = (agent ?? {}) as { kind?: string; flowRole?: string };
+      if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
+        found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
+    }
+  };
+  scan('agents', config.agents);
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    scan(`projects.${pid}.agents`, project?.agents);
+  if (!found.length) return;
+  throw Error(
+    `${found.join('; ')}: the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${found.length === 1 ? 'it' : 'them'} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
+  );
 }
 
 function validateConsumedSettings(where: string, consumed: unknown): void {
@@ -971,9 +979,7 @@ export function validateConfig(config: FoundryConfig): void {
       config.installationName.length > 120)
   )
     throw Error('installationName must be 1 to 120 characters');
-  refuseHandNamedWardens('agents', config.agents);
-  for (const [pid, project] of Object.entries(config.projects ?? {}))
-    refuseHandNamedWardens(`projects.${pid}.agents`, project?.agents);
+  refuseHandNamedWardens(config);
   validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
@@ -1048,7 +1054,7 @@ export function validateConfig(config: FoundryConfig): void {
     for (const key of ['wardens', 'regions'] as const)
       if (project && key in project)
         throw Error(
-          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ source }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
+          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ enabled }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
         );
     validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
   }

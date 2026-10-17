@@ -567,7 +567,7 @@ export interface GuardFinding {
   location?: string;
   /** Suggested fix, if any. */
   suggestion?: string;
-  /** Under the classifier charter: the output contract read off the description (`Look over here: …`). */
+  /** The charter's output contract read off the description (`Look over here: …`). */
   pointer?: WardenPointer;
 }
 

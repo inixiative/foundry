@@ -135,7 +135,7 @@ export interface DomainContribution {
   readonly layers: string[];
   readonly snippets: string[];
   readonly confidence: number;
-  /** Under the classifier charter: the pointer read off the snippets (`Look over here: …`). */
+  /** The charter's pointer read off the snippets (`Look over here: …`). */
   readonly pointer?: WardenPointer;
   readonly segments: ContributionSegments;
   readonly provenance: ContributionProvenance;

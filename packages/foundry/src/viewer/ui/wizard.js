@@ -265,7 +265,7 @@ function ClassifierModelStep({
       <h2 class="wizard-heading">Decision Model</h2>
       <p class="wizard-desc">
         Your messages go straight to the executor: nothing runs before it by default.
-        This model is for decision roles you add later (Wardens, a classifier or router).
+        This model is for decision roles: a classifier or router you add later, and a project's region Wardens.
         A fast, cheap model works best there.
       </p>
 
