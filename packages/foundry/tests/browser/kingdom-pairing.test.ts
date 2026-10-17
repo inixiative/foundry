@@ -11,7 +11,7 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { startViewer } from '../../src/viewer/server';
-import { mockKingdom, organizationOwner } from '../helpers/kingdom-installation';
+import { mockKingdom, organizationOwner, reviewUrlFor } from '../helpers/kingdom-installation';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Settings → Kingdom: the page shows Kingdom's review code and link, then the connection once approved.
@@ -90,7 +90,7 @@ test('the Kingdom page pairs through the review code and shows the connection on
     const reviewCode = await code.textContent();
     expect(
       await page.getByRole('link', { name: 'Log in to Kingdom and approve' }).getAttribute('href'),
-    ).toBe(`${kingdom.url}/dashboard?reviewSignet=${reviewCode}`);
+    ).toBe(reviewUrlFor(reviewCode!));
 
     const owner = organizationOwner();
     kingdom.approve(owner);

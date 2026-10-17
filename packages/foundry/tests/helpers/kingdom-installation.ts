@@ -28,6 +28,11 @@ export const organizationOwner = () => `Organization::${crypto.randomUUID()}:`;
 const random = (bytes = 32) =>
   Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString('base64url');
 
+/** Kingdom's web app, where requestRegistration's reviewUrl points (not the API host). */
+export const kingdomWebUrl = 'https://kingdom-web.test';
+export const reviewUrlFor = (reviewCode: string) =>
+  `${kingdomWebUrl}/dashboard?reviewSignet=${reviewCode}`;
+
 type Inquiry = {
   id: string;
   type: string;
@@ -226,7 +231,10 @@ export function mockKingdom(
             const owner = options.autoApprove;
             setTimeout(() => approve(owner, { installation }), 20);
           }
-          return data(installation.pending);
+          return data({
+            ...installation.pending,
+            reviewUrl: reviewUrlFor(installation.pending.reviewCode),
+          });
         }
         case 'installationInquiries': {
           const { pending, declinedAt, inquiries } = snapshotOf(installation);

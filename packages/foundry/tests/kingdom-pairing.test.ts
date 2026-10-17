@@ -18,6 +18,7 @@ import {
   type MockKingdom,
   mockKingdom,
   organizationOwner,
+  reviewUrlFor,
   userOwner,
 } from './helpers/kingdom-installation';
 
@@ -83,9 +84,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     expect(start.status).toBe(200);
     const pairing = await kingdomState(start);
     expect(pairing.pending).toMatchObject({ url: kingdom.url });
-    expect(pairing.pending!.review).toBe(
-      `${kingdom.url}/dashboard?reviewSignet=${pairing.pending!.reviewCode}`,
-    );
+    expect(pairing.pending!.review).toBe(reviewUrlFor(pairing.pending!.reviewCode));
     expect(kingdom.requested()).toMatchObject({
       name: 'Test Foundry',
       resources: [{ resourceKind: 'model', operations: ['inference.create'], lens: {} }],
