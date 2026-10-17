@@ -1,0 +1,102 @@
+{
+  "version": "2.1.302",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "e361a191-989a-4155-b5cc-02b388eeb632",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-1280-JwnoRu/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\n\\n\\n## Message\\nIs a disabled toggle a bug?\\n\\n## Response protocol (advice phase, trigger: user-message)\\nNothing to add is the expected answer, and the most common one. Then respond with exactly NO_COMMENT and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread.\\nOnly when your domain has something the user would otherwise have to say themselves, respond with JSON only, exactly this shape: { \\\"snippets\\\": string[], \\\"layers\\\": string[], \\\"confidence\\\": number }.\\n\\\"snippets\\\" are short notes from your domain, one point each; \\\"layers\\\" are IDs of your domain's layers to inject; at least one of them is non-empty. \\\"confidence\\\" is a number from 0 to 1.\\nAny other answer, including JSON with empty lists or extra fields, is an error, not a comment.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.302\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\",\"mcp_call_result_not_for_model_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"14e4211e-e63a-4885-9072-0d1b87797f06\",\"original_cwd\":\"{{cwd}}\",\"additional_directories\":[],\"messaging_socket_path\":\"/tmp/cc-socks/3237.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":50,\"estimated_tokens_delta\":50,\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"uuid\":\"949ecf9f-3139-456f-b8a4-2b2cb9a01ee6\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":300,\"estimated_tokens_delta\":250,\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"uuid\":\"61dd621b-8780-49a9-be61-243cd5ec2576\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":423,\"estimated_tokens_delta\":123,\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"uuid\":\"f2c4024d-8c17-491e-a7b1-0034f4427a0e\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg8GD9Aaz3E83QsMvE2Wk\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"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\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":712,\"cache_read_input_tokens\":4315,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":712},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":760}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"uuid\":\"44981655-8a58-420d-9d06-37247be0871e\",\"timestamp\":\"2026-10-17T18:13:31.638Z\",\"request_id\":\"req_011Cg8GD8xBegZeZfaeaFXRp\",\"thinking_duration_ms\":1657,\"thinking_display\":\"updates\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg8GD9Aaz3E83QsMvE2Wk\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{ \\\"snippets\\\": [\\\"Settings toggles are features, not bugs (org CLAUDE.md). A disabled toggle is an intended state, so don't treat it as a defect.\\\"], \\\"layers\\\": [], \\\"confidence\\\": 0.85 }\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":712,\"cache_read_input_tokens\":4315,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":712},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":760}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"uuid\":\"589d2fd9-2ff8-47b5-ad88-4d6d497f7fcd\",\"timestamp\":\"2026-10-17T18:13:31.865Z\",\"request_id\":\"req_011Cg8GD8xBegZeZfaeaFXRp\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1792273800,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.19,\"resetsAt\":1792273800},\"seven_day\":{\"utilization\":0.62,\"resetsAt\":1792285200}}},\"uuid\":\"94335c36-6e69-40e9-8e17-f85ab6dcacb5\",\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":4036,\"stop_reason\":\"end_turn\",\"session_id\":\"d5ef6dfe-b3f2-4583-a032-0b2d888e0fac\",\"total_cost_usd\":0.00122663,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":712,\"cache_read_input_tokens\":4315,\"output_tokens\":435,\"output_tokens_details\":{\"thinking_tokens\":358},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":712,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":435,\"cache_read_input_tokens\":4315,\"cache_creation_input_tokens\":712,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":712},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":4,\"outputTokens\":439,\"thinkingTokens\":358,\"cacheReadInputTokens\":4973,\"cacheCreationInputTokens\":4785,\"webSearchRequests\":0,\"costUSD\":0.00122663,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{ \\\"snippets\\\": [\\\"Settings toggles are features, not bugs (org CLAUDE.md). A disabled toggle is an intended state, so don't treat it as a defect.\\\"], \\\"layers\\\": [], \\\"confidence\\\": 0.85 }\",\"ttft_ms\":2462,\"type\":\"result\",\"duration_ms\":2735,\"uuid\":\"c7e28162-c60e-4f86-94c3-b9ed4f9355bb\",\"ttft_stream_ms\":805,\"time_to_request_ms\":27,\"first_content_frame_ms\":805,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-17T18:13:32.682Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal",
+    "durationMs": 4149,
+    "model": "claude-haiku-5-5"
+  }
+}

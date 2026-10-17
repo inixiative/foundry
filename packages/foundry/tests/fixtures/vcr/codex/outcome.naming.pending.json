@@ -1,0 +1,23 @@
+{
+  "version": "0.162.1",
+  "status": 200,
+  "body": {
+    "title": "Add settings dark mode toggle",
+    "short": true,
+    "aboutTheWork": true,
+    "launches": 1,
+    "receipts": [
+      {
+        "valid": true,
+        "settled": true
+      }
+    ]
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-10-17T18:13:41.201Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal"
+  }
+}
