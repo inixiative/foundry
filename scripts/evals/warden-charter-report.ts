@@ -2,7 +2,7 @@
 /**
  * The Warden eval report: one `report.json` (schema `warden-eval-report/2`) and one rendered `REPORT.md`
  * per run of the charter eval (scripts/evals/warden-charter.ts), organised by stage. The schema is
- * documented in docs/EVAL-REPORTING.md.
+ * documented in Oracle docs/foundry/EVAL-REPORTING.md.
  *
  *   bun scripts/evals/warden-charter-report.ts --run <run dir> --probes <probes.jsonl> \
  *     [--labels <labels.json>] [--recognise <stage-1 run dir>] [--baseline <run dir>] \
@@ -1438,7 +1438,7 @@ function renderReport(): string {
   const out: string[] = [
     `# Warden eval report — ${basename(run)}`,
     '',
-    `Schema \`${REPORT_SCHEMA}\`, generated ${(report.generatedAt as string).slice(0, 19)}Z. ${report.kind as string}. Docs: \`foundry/docs/EVAL-REPORTING.md\`.`,
+    `Schema \`${REPORT_SCHEMA}\`, generated ${(report.generatedAt as string).slice(0, 19)}Z. ${report.kind as string}. Docs: \`oracle/docs/foundry/EVAL-REPORTING.md\`.`,
     '',
     '## Fixtures',
     '',

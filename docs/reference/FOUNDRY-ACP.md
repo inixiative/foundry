@@ -4,6 +4,8 @@
 
 It changes what Foundry *is* to an outside client. Foundry becomes an agent you plug into an editor or runner, not a middleware layer bolted onto someone else's agent.
 
+**Cited designs.** COMPARISON and FEEDBACK-LOOP H4, cited below, are design docs in Oracle (`docs/foundry/reference/COMPARISON.md`, `docs/foundry/FEEDBACK-LOOP.md`).
+
 **Basis:**
 - Foundry origin/main `5b5de6a`.
 - agent-session origin/main `08f5081`.

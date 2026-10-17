@@ -12,7 +12,7 @@ Open http://localhost:4500, or point an ACP host at `foundry-acp` ([setup](docs/
 
 For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
 
-How Foundry fits with Kingdom, Oracle, Archive and agent-session, and how far the end-to-end journey works today: [system map](docs/SYSTEM-MAP.md).
+Foundry runs on your machine. It reaches Kingdom for identity, integrations and Signets, captures sessions into the local Archive, and runs native sessions through agent-session ([session archives](docs/session-archives.md), [Kingdom access](docs/kingdom-access.md), [subscription-only setup](docs/subscription-decisions.md)).
 
 ## What this is
 

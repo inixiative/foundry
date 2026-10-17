@@ -22,4 +22,4 @@ Installed version: `2.1.260`; binary SHA-256: `3c269f66801028823e24a63ced9fdd398
 
 Targeted current-machine checks found no local managed settings/drop-ins, managed MCP, managed CLAUDE.md or macOS managed preference plists. The default remote settings cache was empty JSON. That describes disk state at inspection, not a selected authenticated profile's effective launch policy. No global or user policy was changed.
 
-All affected live confinement acceptance remains pending. Controlled source tests remain valid for ownership, transport, launch composition and refusal behavior. They do not establish live subscription/model or containment success. See [dedicated worker proposal](dedicated-native-worker.md) for the concrete next boundary.
+All affected live confinement acceptance remains pending. Controlled source tests remain valid for ownership, transport, launch composition and refusal behavior. They do not establish live subscription/model or containment success. The proposed next boundary, a dedicated worker, is a design in Oracle (`docs/foundry/dedicated-native-worker.md`).

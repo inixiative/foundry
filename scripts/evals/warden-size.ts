@@ -721,7 +721,7 @@ async function run() {
         ...(await windowPercent().then((w) => (w ? { windowAfter: w } : {}))),
       });
       writePrivate(join(out, 'meta.json'), JSON.stringify(meta, null, 1));
-      // The standard report for the cell (docs/EVAL-REPORTING.md): offline, from its answers; no labels,
+      // The standard report for the cell (Oracle docs/foundry/EVAL-REPORTING.md): offline, from its answers; no labels,
       // so the one Warden under test is every targeted moment's needed region.
       if (exit === 0)
         await Bun.spawn(

@@ -90,7 +90,7 @@ export interface ThreadMeta {
   /** The parent's turn that spawned this thread (a subagent). */
   parentTurnId?: string;
 
-  /** How this subagent thread was spawned (docs/reference/SUBAGENTS.md §4.1). */
+  /** How this subagent thread was spawned. */
   spawn?: ThreadSpawn;
 
   /** 1 for a child of a main thread. */

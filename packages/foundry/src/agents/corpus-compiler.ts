@@ -81,7 +81,7 @@ export interface CorpusCompilerConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Audiences that may see a doc at each tier (docs/VISION.md §5). Untiered docs are personal_private. */
+/** Audiences that may see a doc at each tier. Untiered docs are personal_private. */
 const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
   personal_private: ['personal_private'],
   personal_public: ['personal_private', 'personal_public', 'team'],

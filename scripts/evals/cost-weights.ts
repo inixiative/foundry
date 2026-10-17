@@ -1,5 +1,5 @@
 /**
- * The weighted cost of the Warden eval report (docs/EVAL-REPORTING.md): exact tokens weighted by
+ * The weighted cost of the Warden eval report (the reporting standard, Oracle docs/foundry/EVAL-REPORTING.md): exact tokens weighted by
  * kind, then by model, converted to window points with one coefficient fixed from the after-run.
  */
 

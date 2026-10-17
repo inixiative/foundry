@@ -57,7 +57,7 @@ The eval scripts refuse a wide run (more than three moments, or `--pipeline`; `w
 
 ## 5. REPORT — the reporting standard
 
-Every run emits `report.json` + `REPORT.md` (`scripts/evals/warden-charter-report.ts`; schema `docs/EVAL-REPORTING.md`, landing with the eval-reporting branch). Per stage (recognise → confirm/pick → deliver → chorus roll-up):
+Every run emits `report.json` + `REPORT.md` (`scripts/evals/warden-charter-report.ts`; schema in Oracle `docs/foundry/EVAL-REPORTING.md`). Per stage (recognise → confirm/pick → deliver → chorus roll-up):
 - effectiveness, cost (exact tokens primary; window points as a shared upper bound), time (warm and cold, p50/p95);
 - per-Warden miss and false-positive rates, each with n and a CI;
 - accumulated (chorus) error with the compounding line;

@@ -8,7 +8,7 @@ import type { TokenCounts } from '@inixiative/foundry-core';
 // 1. Cross-thread awareness — what other threads are doing, conflicts,
 //    convergence, duplication. Event-driven (listens to signals), not polling.
 //
-// 2. Information visibility tiers (VISION.md §6):
+// 2. Information visibility tiers:
 //    - personal-private: individual preferences, shortcuts (gitignored)
 //    - personal-public: role, expertise, decisions (queryable by team)
 //    - team: shared conventions, architecture, priorities
@@ -16,7 +16,7 @@ import type { TokenCounts } from '@inixiative/foundry-core';
 //    Each context layer has a visibility tier. The Herald enforces boundaries.
 //
 // 3. Multi-user bridge (future) — querying another user's public layer
-//    before interrupting them. The "queryable proxy" pattern from VISION.md.
+//    before interrupting them. The "queryable proxy" pattern.
 //
 // The Herald maintains a compact summary layer that the FlowOrchestrator
 // reads during the advise phase. Updated asynchronously via signal bus —
@@ -29,7 +29,7 @@ import type { SessionManager } from './session';
 import { WorkstreamOverloadDetector } from './workstream-detector';
 
 // ---------------------------------------------------------------------------
-// Information Visibility Tiers (VISION.md §6)
+// Information Visibility Tiers
 // ---------------------------------------------------------------------------
 
 /**
