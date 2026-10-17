@@ -109,6 +109,7 @@ import {
 } from '../../packages/foundry/src/providers/decision-host';
 import { ConfigStore, type FoundryConfig } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
+import { kindWeighted, MODEL_COST_WEIGHTS, POINTS_PER_WEIGHTED_TOKEN } from './cost-weights';
 import { dispatch } from './pipeline-dispatch';
 
 const { values } = parseArgs({
@@ -541,18 +542,42 @@ const recordWindow = async (phase: string) => {
   return windows;
 };
 /**
- * --stop-at-points <n> / --stop-seven-day <percent>: the five-hour window's growth is summed in code
- * from the run's first reading (a reset adds the new window's reading), and the run stops taking new
- * turns once the sum reaches n points or the seven-day window reaches the percent. Read before every
- * turn, at most every 30 s, failing closed when the window cannot be read twice running; a turn the
- * stop lands on is not asked. --resume continues a stopped run.
+ * --stop-at-points <n> / --stop-seven-day <percent>. The run's spend is counted two ways, in code:
+ * its own tokens, weighted by kind and model and converted with the calibrated coefficient
+ * (`cost-weights.ts`), checked before every turn; and the five-hour window's growth from the run's
+ * first reading (a reset adds the new window's reading), read at most every 30 s. The run stops
+ * taking turns once its tokens reach n points, or the window's growth reaches n + WINDOW_SLACK (the
+ * window reads in whole points and counts every session on the login, so it is a backstop, not the
+ * meter), or the seven-day window reaches the percent. It fails closed when the window cannot be read
+ * twice running; a turn the stop lands on is not asked. --resume continues a stopped run.
  */
+const WINDOW_SLACK = 2;
 let stopped: string | undefined;
 let spentPoints = 0;
+let tokenPoints = 0;
 let lastFiveHour: number | undefined;
 let unreadable = 0;
+const bounded = () => stopAtPoints !== undefined || stopSevenDay !== undefined;
+const countTokens = (answer: WardenProbeAnswer, model: string) => {
+  const t = answer.tokens;
+  if (!t) return;
+  const kinds = {
+    input: t.input ?? 0,
+    cacheRead: t.cacheRead ?? 0,
+    cacheWrite: t.cacheWrite ?? 0,
+    output: t.output ?? 0,
+    thinking: t.thinking ?? 0,
+  };
+  tokenPoints += kindWeighted(kinds) * (MODEL_COST_WEIGHTS[model] ?? 1) * POINTS_PER_WEIGHTED_TOKEN;
+};
+const checkSpend = () => {
+  if (stopAtPoints !== undefined && tokenPoints >= stopAtPoints)
+    stopped ??= `token spend ${tokenPoints.toFixed(2)} >= ${stopAtPoints} points`;
+  if (stopAtPoints !== undefined && spentPoints >= stopAtPoints + WINDOW_SLACK)
+    stopped ??= `five-hour window growth ${spentPoints} >= ${stopAtPoints} + ${WINDOW_SLACK} points`;
+};
 const spend = (windows: Record<string, number> | undefined) => {
-  if (stopAtPoints === undefined && stopSevenDay === undefined) return;
+  if (!bounded()) return;
   const now = windows?.five_hour;
   // Fail closed: a bound that cannot be read twice running stops the run.
   if (now === undefined) {
@@ -562,18 +587,15 @@ const spend = (windows: Record<string, number> | undefined) => {
     spentPoints += lastFiveHour === undefined ? 0 : now >= lastFiveHour ? now - lastFiveHour : now;
     lastFiveHour = now;
   }
-  if (stopAtPoints !== undefined && spentPoints >= stopAtPoints)
-    stopped ??= `five-hour spend ${spentPoints} >= ${stopAtPoints} points`;
+  checkSpend();
   const sevenDay = windows?.seven_day;
   if (stopSevenDay !== undefined && sevenDay !== undefined && sevenDay >= stopSevenDay)
     stopped ??= `seven-day window ${sevenDay}% >= ${stopSevenDay}%`;
 };
 const quotaGate = async () => {
-  if (
-    (stopAtPoints !== undefined || stopSevenDay !== undefined) &&
-    Date.now() - lastWindowCheck >= 30_000
-  ) {
-    spend(await recordWindow('spend'));
+  if (bounded()) {
+    checkSpend();
+    if (!stopped && Date.now() - lastWindowCheck >= 30_000) spend(await recordWindow('spend'));
     if (stopped) console.error(`${new Date().toISOString()} stopping: ${stopped}`);
   }
   if (pauseAt === undefined) return;
@@ -628,6 +650,7 @@ try {
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
     onAnswer: (answer) => {
       appendFileSync(answersFile, `${JSON.stringify(answer)}\n`);
+      countTokens(answer, wardenModel);
       if (++done % 50 === 0)
         console.error(`  ${done} answers (${Math.round((Date.now() - started) / 1000)}s)`);
     },
@@ -695,7 +718,10 @@ try {
           finishedPick.has(turnKey(probeId, trigger)) || !fired.has(turnKey(probeId, trigger)),
         beforeTurn: quotaGate,
         onTurn: (turn) => appendFileSync(pickTurnsFile, `${JSON.stringify(turn)}\n`),
-        onAnswer: (answer) => appendFileSync(pickAnswersFile, `${JSON.stringify(answer)}\n`),
+        onAnswer: (answer) => {
+          appendFileSync(pickAnswersFile, `${JSON.stringify(answer)}\n`);
+          countTokens(answer, pickModel);
+        },
       });
       const pickAnswers = [...keptPick, ...run2.answers];
       const pickTurns = [...keptPickTurns, ...run2.turns];
@@ -773,8 +799,8 @@ try {
   await wardens.shutdown();
   await judges?.shutdown();
   spend(await recordWindow('end'));
-  if (stopAtPoints !== undefined || stopSevenDay !== undefined)
+  if (bounded())
     console.error(
-      `five-hour spend: ${spentPoints} points${stopped ? `; stopped early (${stopped}), --resume continues` : ''}`,
+      `five-hour spend: ${spentPoints} points (window), ${tokenPoints.toFixed(2)} points (tokens)${stopped ? `; stopped early (${stopped}), --resume continues` : ''}`,
     );
 }
