@@ -83,6 +83,10 @@ export interface ResolvedChorus {
   requestedBy: SettingLayer;
   /** Which layer the directories (`regions` or `layers`, one unit) came from. */
   directoriesFrom: SettingLayer;
+  /** The consumed trigger: whether it is on, and which layer said so. */
+  consumed: { enabled: boolean; from: SettingLayer };
+  /** The reception charter: whether threads of this chorus hold it, and which layer said so. */
+  reception: { on: boolean; from: SettingLayer };
   /** The repository's `.foundry/project.json`, when it exists: what it said, or why it was not read. */
   repository?: { file: string; chorus?: ChorusSettings; error?: string };
   /** Regions present in the configured layers but not run, because the chorus is not enabled. */
@@ -812,6 +816,8 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   chorus: ChorusSettings;
   requestedBy: SettingLayer;
   directoriesFrom: SettingLayer;
+  consumedFrom: SettingLayer;
+  receptionFrom: SettingLayer;
   repository?: ResolvedChorus['repository'];
 } {
   const repository = readRepositorySettings(project.path);
@@ -821,8 +827,21 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
     c.layers ? { layers: c.layers } : c.regions ? { regions: c.regions } : {};
   const directories = mine.layers || mine.regions ? where(mine) : where(theirs);
   const source = mine.source ?? theirs.source;
+  // The consumed trigger merges key by key too: the machine's `enabled`, `tools`, `paths` or `maxChars` over the repository's.
+  const consumed =
+    mine.consumed || theirs.consumed ? { ...theirs.consumed, ...mine.consumed } : undefined;
+  const reception = mine.reception ?? theirs.reception;
+  const from = (key: 'consumed' | 'reception'): SettingLayer =>
+    mine[key] !== undefined ? 'settings' : theirs[key] !== undefined ? 'repository' : 'default';
   return {
-    chorus: { ...(source ? { source } : {}), ...directories },
+    chorus: {
+      ...(source ? { source } : {}),
+      ...directories,
+      ...(consumed ? { consumed } : {}),
+      ...(reception !== undefined ? { reception } : {}),
+    },
+    consumedFrom: from('consumed'),
+    receptionFrom: from('reception'),
     requestedBy: mine.source ? 'settings' : theirs.source ? 'repository' : 'default',
     directoriesFrom:
       mine.layers || mine.regions
@@ -864,6 +883,9 @@ export function resolveProjectView(
     requested,
     requestedBy: setting.requestedBy,
     directoriesFrom: setting.directoriesFrom,
+    consumed: { enabled: setting.chorus.consumed?.enabled === true, from: setting.consumedFrom },
+    // Settled below, once what runs is known: the reception charter goes with a region chorus.
+    reception: { on: false, from: setting.receptionFrom },
     ...(setting.repository ? { repository: setting.repository } : {}),
   };
   const unread = setting.repository?.error
@@ -897,13 +919,21 @@ export function resolveProjectView(
   // setting is valid and, on a raw config, resolves to the same chorus (a roster, from a request or a
   // fall-back, names no layers; the layers read stay on `view.chorus`). A view config itself is not
   // re-resolvable: it carries the generated agents.
+  const consumed = setting.chorus.consumed ? { consumed: setting.chorus.consumed } : {};
+  // The reception charter goes with a region chorus (the classifier charter's pointers), unless turned off.
+  const receptionOn = chorus.source === 'regions' && setting.chorus.reception !== false;
+  chorus = { ...chorus, reception: { on: receptionOn, from: setting.receptionFrom } };
   const effectiveChorus: ChorusSettings =
     chorus.source === 'regions'
       ? {
           source: 'regions',
           layers: configuredLayers.map((l) => ({ label: l.label, regions: l.regionsDir })),
+          ...consumed,
+          ...(setting.chorus.reception !== undefined
+            ? { reception: setting.chorus.reception }
+            : {}),
         }
-      : { source: 'roster' };
+      : { source: 'roster', ...consumed };
   const agents = new Map<string, ResolvedAgentDefinition>(
     Object.entries(config.agents)
       // Under a chorus of regions the hand-named Wardens are not this project's Wardens.

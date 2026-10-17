@@ -346,9 +346,27 @@ export interface HandoffMoment {
   readonly prompt: string;
 }
 
-/** The roster's brief for a handoff: every Warden's decision at the `subagent-spawn` trigger. */
+/**
+ * A work item the agent took in (the `consumed` trigger): a ticket or spec file it read, or an issue
+ * or page it fetched. `text` is already clipped to the project's `chorus.consumed.maxChars`.
+ */
+export interface WorkItemMoment {
+  /** One id per item: the tool and the file path or fetched id. */
+  readonly itemId: string;
+  /** How the main thread named it: the file path, or the issue or page id. */
+  readonly name: string;
+  readonly tool: string;
+  readonly text: string;
+  /** Characters cut from the item's end, when it was clipped. */
+  readonly clipped?: number;
+}
+
+/**
+ * The roster's answers at a moment between turns: a handoff (`subagent-spawn`, the brief) or a work
+ * item (`consumed`). Every Warden's decision, delivered on the next turn.
+ */
 export interface BriefReport {
-  /** The moment the Wardens were given, frozen: the handoff as text. */
+  /** The moment the Wardens were given, frozen: the handoff or work item as text. */
   readonly input: PlanInput;
   /** Per Warden, in configured order: contribute (the brief), no-comment, skipped, excluded, timeout or error. */
   readonly contributions: DomainContribution[];
@@ -652,9 +670,25 @@ export class FlowOrchestrator {
    * outside of. The brief never blocks the handoff, which the harness has already made.
    */
   async brief(handoff: HandoffMoment): Promise<BriefReport> {
+    return this._between('subagent-spawn', handoffText(handoff));
+  }
+
+  /**
+   * The agent took in a work item (the `consumed` trigger): ask the roster, once, what of its domain
+   * the work touches. Every Warden answers under the charter through the advice protocol (NO_COMMENT
+   * expected); like a brief, it never blocks, and what is said rides with the next turn.
+   */
+  async consume(item: WorkItemMoment): Promise<BriefReport> {
+    return this._between('consumed', workItemText(item));
+  }
+
+  /** One fan-out to the roster at a moment between turns, through the advice protocol. */
+  private async _between(
+    trigger: Extract<AdviceTrigger, 'subagent-spawn' | 'consumed'>,
+    message: string,
+  ): Promise<BriefReport> {
     const start = Date.now();
     const threadState = this._librarian.layer.content;
-    const message = handoffText(handoff);
     const input: PlanInput = {
       message,
       hash: computeHash(message),
@@ -666,20 +700,13 @@ export class FlowOrchestrator {
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
     const prefiltered = await this.prefilter(
-      'subagent-spawn',
+      trigger,
       message,
       threadState,
       participants.filter((p) => p.cache).map((p) => p.lib),
     );
     const contributions = await runBounded(participants, this._maxAdviseParallel, (p) =>
-      this._assess(
-        p,
-        input,
-        clock,
-        outstanding,
-        prefilterSkip(prefiltered, p.lib.domain),
-        'subagent-spawn',
-      ),
+      this._assess(p, input, clock, outstanding, prefilterSkip(prefiltered, p.lib.domain), trigger),
     );
     return deepFreeze({
       input,
@@ -1584,17 +1611,37 @@ export function handoffText(handoff: HandoffMoment): string {
   return `The main agent is handing this task to a subagent${to ? ` (${to})` : ''}. The subagent starts from the task text alone.\n\nTask:\n${handoff.prompt || '(no task text recorded)'}`;
 }
 
-/** The note a Warden's brief becomes on the next turn: the "chimed in" delivery, naming the handoff. */
-export function briefNotes(handoff: HandoffMoment, report: BriefReport): PromptBlock[] {
-  const to = handoff.description ?? handoff.agentType ?? handoff.childThreadId;
+/** A work item as the Wardens read it: what the agent took in, how, and the item's text. */
+export function workItemText(item: WorkItemMoment): string {
+  return `The main agent took in this work item (${item.tool}: ${item.name}). The work it asks for is what to check against your domain, whatever it says to build.\n\n${item.text || '(empty)'}${
+    item.clipped ? `\n… [${item.clipped} more chars not shown]` : ''
+  }`;
+}
+
+/**
+ * The notes a moment between turns becomes on the next turn: the "chimed in" delivery, one per Warden
+ * that spoke, under a heading that names the moment (`on the handoff to …`, `on the work item …`).
+ */
+function betweenTurnNotes(idPrefix: string, heading: string, report: BriefReport): PromptBlock[] {
   return report.contributions
     .filter((c) => c.decision === 'contribute' && c.snippets.length)
     .map((c) => ({
       role: 'content' as const,
-      id: `brief:${handoff.handoffId}:${c.domain}`,
+      id: `${idPrefix}:${c.domain}`,
       source: c.domain,
       segment: 'domain-knowledge',
       placement: 'after-message' as const,
-      text: `The ${c.domain} Warden chimed in on the handoff to ${to}:\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
+      text: `The ${c.domain} Warden chimed in ${heading}:\n${c.snippets.map((s) => `- ${s}`).join('\n')}`,
     }));
+}
+
+/** The notes a Warden's brief becomes on the next turn, naming the handoff. */
+export function briefNotes(handoff: HandoffMoment, report: BriefReport): PromptBlock[] {
+  const to = handoff.description ?? handoff.agentType ?? handoff.childThreadId;
+  return betweenTurnNotes(`brief:${handoff.handoffId}`, `on the handoff to ${to}`, report);
+}
+
+/** The notes a work item's answers become on the next turn, naming the item. */
+export function consumedNotes(item: WorkItemMoment, report: BriefReport): PromptBlock[] {
+  return betweenTurnNotes(`consumed:${item.itemId}`, `on the work item ${item.name}`, report);
 }

@@ -2,10 +2,12 @@ import {
   type CompletionOpts,
   ContextLayer,
   type ContextStack,
+  computeHash,
   type DeliveryRecord,
   type DispatchObservation,
   type EventStream,
   type InjectionArtifact,
+  inlineSource,
   type LLMMessage,
   type LLMProvider,
   type NativeEvidence,
@@ -14,6 +16,7 @@ import {
   normalizeScope,
   type OwnershipScope,
   type ParticipantRequest,
+  type PromptBlock,
   type Signal,
   SignalBus,
   sameNativeOwner,
@@ -49,12 +52,15 @@ import {
   threadKnowledgeLayerId,
 } from './domain-librarian';
 import {
+  type BriefReport,
   briefNotes,
+  consumedNotes,
   FlowOrchestrator,
   type FlowTimingConfig,
   type HandoffMoment,
   type HydrationResult,
   type InjectionPlan,
+  type WorkItemMoment,
 } from './flow-orchestrator';
 import { Librarian } from './librarian';
 import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
@@ -66,8 +72,17 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import { chorusSource, type WardenCharter, wardenCharter } from './warden-charter';
+import {
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
+  CHORUS_RECEPTION_VERSION,
+  chorusSource,
+  WARDEN_CHARTER_CLASSIFY,
+  type WardenCharter,
+  wardenCharter,
+} from './warden-charter';
 import type { GuardMode, TriggerPoint } from './warden-triggers';
+import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
 
 // ---------------------------------------------------------------------------
 // Session identity
@@ -875,6 +890,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   >();
   /** How often the guard fires (settings `guard`, default `per-turn`). */
   private readonly _guardMode: GuardMode;
+  /** The project's `consumed` trigger, when it is on (`chorus.consumed`). */
+  private readonly _consumed: ConsumedMatcher | undefined;
+  /** Work items already asked about in this thread, by id and content hash: asked once each. */
+  private readonly _consumedItems = new Set<string>();
   private readonly _log: (line: string) => void;
   private readonly _warn: (line: string) => void;
 
@@ -900,6 +919,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._log = log;
     this._warn = warn;
     this._guardMode = deps.config.guard ?? 'per-turn';
+    this._consumed = consumedMatcher(
+      thread.meta.projectId
+        ? deps.config.projects?.[thread.meta.projectId as string]?.chorus?.consumed
+        : undefined,
+    );
     const { stack, signals } = thread;
     const cwd = () => thread.meta.cwd;
     this.thread = thread;
@@ -1051,6 +1075,28 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           maxKnowledgeChars: deps.learning?.maxKnowledgeChars,
         }),
       );
+    }
+
+    // A thread whose chorus is its regions holds the reception charter once, as a standing layer: how
+    // the main thread reads a pointer (`chorus.reception: false` leaves it out). Roster Wardens advise
+    // under their own charter, so their threads do not get it. Fixed text, so its inline source
+    // re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
+    const projectChorusSettings = thread.meta.projectId
+      ? deps.config.projects?.[thread.meta.projectId as string]?.chorus
+      : undefined;
+    if (
+      this.domainLibrarians.size &&
+      charter.text === WARDEN_CHARTER_CLASSIFY &&
+      projectChorusSettings?.reception !== false &&
+      !stack.getLayer(CHORUS_RECEPTION_LAYER)
+    ) {
+      const reception = new ContextLayer({
+        id: CHORUS_RECEPTION_LAYER,
+        owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
+        sources: [inlineSource(CHORUS_RECEPTION_VERSION, CHORUS_RECEPTION)],
+      });
+      reception.set(CHORUS_RECEPTION, 'foundry');
+      stack.addLayer(reception);
     }
 
     // Classifier/router auxiliaries are named by the factory-built agents
@@ -1546,6 +1592,31 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         await this._briefHandoff(signal.id, content);
       }),
     );
+    // The main thread took in a work item: the roster is asked what of its domain the work touches
+    // (the consumed trigger, `chorus.consumed`, off by default). A subagent's reads are not asked: its
+    // notes would reach the parent's next turn, never the subagent doing the work.
+    if (this._consumed && this.domainLibrarians.size)
+      this._unsubs.push(
+        signals.on('tool_observation', async (signal) => {
+          if (signal.source === 'flow-orchestrator') return;
+          const content = signal.content as ToolSignalContent | undefined;
+          if (!content?.tool || content.subagent) return;
+          const item = workItemOf(
+            toObservation(content as ToolSignalContent & { tool: string }),
+            this._consumed!,
+            thread.meta.cwd,
+          );
+          // Asked once per item: a file by its path and whole content (chunked reads of it are one
+          // item), a fetch by its tool and id.
+          if (!item || this._consumedItems.has(item.key)) return;
+          this._consumedItems.add(item.key);
+          await this._consumeWorkItem(
+            signal.id,
+            item,
+            this._liveDispatches.get(content.dispatchId ?? '')?.messageId ?? null,
+          );
+        }),
+      );
 
     // Post-work learning: completed executor work and tool observations feed
     // every domain reviewer (text-only auxiliary). Each observation is
@@ -1851,11 +1922,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   }
 
   /**
-   * The subagent-spawn trigger: the roster briefs a handoff the agent made. Every Warden's decision
-   * is journalled on the parent node as an `advice` row wrapping the handoff (silence included, so
-   * the silence rate is measurable), and what they said is queued as "chimed in on the handoff"
-   * notes for the parent's next turn: no push path reaches the running turn, and the harness has
-   * already composed what the subagent received.
+   * The subagent-spawn trigger: the roster briefs a handoff the agent made, on the parent's node; the
+   * harness has already composed what the subagent received.
    */
   private async _briefHandoff(
     signalId: string,
@@ -1864,12 +1932,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       parentTurnId?: string | null;
     },
   ): Promise<void> {
-    if (this._disposed) return;
-    const flow = this.flowOrchestrator;
-    // The parent's node: the thread itself, or the observed subagent that issued the spawn.
-    const node =
-      handoff.parent && handoff.parent.id !== this.thread.id ? handoff.parent : undefined;
-    const turnId = handoff.parentTurnId ?? null;
     const moment: HandoffMoment = {
       childThreadId: handoff.childThreadId,
       handoffId: handoff.handoffId,
@@ -1877,12 +1939,78 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       ...(handoff.agentType ? { agentType: handoff.agentType } : {}),
       prompt: handoff.prompt ?? '',
     };
-    let report: Awaited<ReturnType<FlowOrchestrator['brief']>>;
+    await this._askBetweenTurns({
+      trigger: 'subagent-spawn',
+      // The parent's node: the thread itself, or the observed subagent that issued the spawn.
+      node: handoff.parent,
+      turnId: handoff.parentTurnId ?? null,
+      wraps: handoff.handoffId,
+      label: `handoff brief ${handoff.handoffId}`,
+      ask: (flow) => flow.brief(moment),
+      record: {
+        handoff: {
+          childThreadId: handoff.childThreadId,
+          handoffId: handoff.handoffId,
+          signalId,
+          ...(handoff.description ? { description: handoff.description } : {}),
+          ...(handoff.agentType ? { agentType: handoff.agentType } : {}),
+        },
+      },
+      notes: (report) => briefNotes(moment, report),
+    });
+  }
+
+  /** The consumed trigger: the roster is asked about a work item the main thread took in. */
+  private async _consumeWorkItem(
+    signalId: string,
+    item: WorkItemMoment,
+    turnId: string | null,
+  ): Promise<void> {
+    await this._askBetweenTurns({
+      trigger: 'consumed',
+      turnId,
+      wraps: item.itemId,
+      label: `work item ${item.name}`,
+      ask: (flow) => flow.consume(item),
+      record: {
+        workItem: {
+          itemId: item.itemId,
+          name: item.name,
+          tool: item.tool,
+          signalId,
+          chars: item.text.length,
+          ...(item.clipped ? { clipped: item.clipped } : {}),
+        },
+      },
+      notes: (report) => consumedNotes(item, report),
+    });
+  }
+
+  /**
+   * A moment between turns (a handoff, a work item): every Warden's decision is journalled as an
+   * `advice` row wrapping the moment (silence included, so the silence rate is measurable), and what
+   * they said is queued as "chimed in on …" notes for the next turn: no push path reaches the running
+   * turn.
+   */
+  private async _askBetweenTurns(moment: {
+    trigger: Extract<TriggerPoint, 'subagent-spawn' | 'consumed'>;
+    node?: { id: string; meta: ThreadMeta };
+    turnId: string | null;
+    wraps: string;
+    label: string;
+    ask: (flow: FlowOrchestrator) => Promise<BriefReport>;
+    record: Record<string, unknown>;
+    notes: (report: BriefReport) => PromptBlock[];
+  }): Promise<void> {
+    if (this._disposed) return;
+    const flow = this.flowOrchestrator;
+    const node = moment.node && moment.node.id !== this.thread.id ? moment.node : undefined;
+    let report: BriefReport;
     try {
-      report = await flow.brief(moment);
+      report = await moment.ask(flow);
     } catch (error) {
       this._warn(
-        `  [flow:${this.thread.id}] handoff brief failed: ${(error as Error)?.message ?? error}`,
+        `  [flow:${this.thread.id}] ${moment.label} failed: ${(error as Error)?.message ?? error}`,
       );
       return;
     }
@@ -1891,20 +2019,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       this._journalPhase({
         ...(node ? { node } : {}),
         id: newId('phase'),
-        turnId,
+        turnId: moment.turnId,
         dispatchId: null,
         phase: 'advice',
         record: {
-          trigger: 'subagent-spawn' satisfies TriggerPoint,
+          trigger: moment.trigger,
           charter: this._charter.version,
-          wraps: handoff.handoffId,
-          handoff: {
-            childThreadId: handoff.childThreadId,
-            handoffId: handoff.handoffId,
-            signalId,
-            ...(handoff.description ? { description: handoff.description } : {}),
-            ...(handoff.agentType ? { agentType: handoff.agentType } : {}),
-          },
+          wraps: moment.wraps,
+          ...moment.record,
           inputHash: report.input.hash,
           sealedAt: report.sealedAt,
           participants: report.contributions
@@ -1936,14 +2058,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       });
     } catch (error) {
       this._warn(
-        `  [flow:${this.thread.id}] handoff brief journal failed: ${(error as Error)?.message ?? error}`,
+        `  [flow:${this.thread.id}] ${moment.label} journal failed: ${(error as Error)?.message ?? error}`,
       );
     }
-    const notes = briefNotes(moment, report);
+    const notes = moment.notes(report);
     if (notes.length) {
       flow.queueNotes(notes);
       this._log(
-        `  [flow:${this.thread.id}] handoff brief: ${notes.map((n) => n.source).join(', ')} chimed in on ${handoff.handoffId} (${report.elapsed}ms)`,
+        `  [flow:${this.thread.id}] ${moment.label}: ${notes.map((n) => n.source).join(', ')} chimed in (${report.elapsed}ms)`,
       );
     }
   }

@@ -173,6 +173,7 @@ export function prefilterQuestion(description: string) {
 export function prefilterState(trigger: PrefilterTrigger, text: string, context?: string): string {
   const label = {
     'user-message': "The user's message",
+    consumed: 'A work item the agent took in (a ticket, spec, issue or page)',
     'agent-action': "The agent's actions this turn",
     'agent-plan': "The agent's plan",
     'subagent-spawn': 'The task the agent is handing to a subagent',

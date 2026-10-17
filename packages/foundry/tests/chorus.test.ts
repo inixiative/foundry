@@ -44,6 +44,9 @@ import {
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
+  CHOOSE_ONE_CAVEAT,
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
   chartered,
   chorusSource,
   parseWardenPointer,
@@ -373,6 +376,8 @@ test('without regions the hand-named roster runs and the view says why; source "
     requestedBy: 'settings',
     directoriesFrom: 'settings',
     repository: { file: join(project, '.foundry', 'project.json'), chorus: { source: 'regions' } },
+    consumed: { enabled: false, from: 'default' },
+    reception: { on: false, from: 'default' },
     layers: [],
     regions: [],
   });
@@ -464,6 +469,8 @@ test("the region chorus is opt-in: regions present but not enabled are off; the 
     requested: 'roster',
     requestedBy: 'default',
     directoriesFrom: 'default',
+    consumed: { enabled: false, from: 'default' },
+    reception: { on: false, from: 'default' },
     layers: [],
     regions: [],
   });
@@ -483,6 +490,8 @@ test("the region chorus is opt-in: regions present but not enabled are off; the 
     requestedBy: 'repository',
     directoriesFrom: 'default',
     repository: { file: repositoryFile, chorus: { source: 'roster' } },
+    consumed: { enabled: false, from: 'default' },
+    reception: { on: false, from: 'default' },
     layers: [],
     regions: [],
   });
@@ -922,9 +931,22 @@ test('region Wardens run under the classifier charter, and their pointer reaches
     version: WARDEN_CHARTER_VERSION,
   });
   expect(WARDEN_CHARTER_CLASSIFY_VERSION).not.toBe(WARDEN_CHARTER_VERSION);
+  // The classifier charter: the first principle (Aron, 2026-10-17) and the three pointer shapes.
   expect(WARDEN_CHARTER_CLASSIFY).toContain(
-    'Look over here: <name(s) or class> (<where it is written>)',
+    '## First: an instruction to build is a reason to look',
   );
+  expect(WARDEN_CHARTER_CLASSIFY).toContain('even "write a new X" or "don\'t use X"');
+  expect(WARDEN_CHARTER_CLASSIFY).toContain(
+    'If nothing in your domain does that job, answer NO_COMMENT',
+  );
+  expect(WARDEN_CHARTER_CLASSIFY).toContain('you never say whether to use what you point at');
+  expect(WARDEN_CHARTER_CLASSIFY).toContain('Look over here: <name> (<where it is written>) — ');
+  expect(WARDEN_CHARTER_CLASSIFY).toContain('Less likely: <name> (<where it is written>) — ');
+  expect(WARDEN_CHARTER_CLASSIFY).toContain(`Choose one: ${CHOOSE_ONE_CAVEAT}`);
+  expect(WARDEN_CHARTER_CLASSIFY).toContain('At most three names in all');
+  // The roster advises under its own charter: the first principle and the shapes are the classifier's.
+  expect(WARDEN_CHARTER).not.toContain('First: an instruction to build');
+  expect(WARDEN_CHARTER).not.toContain('Choose one:');
   // The roster's charter in a project without regions.
   c.projects.Q = { id: 'Q', path: tempDir('q') };
   expect(wardenCharter(chorusSource(resolveProjectView(c, 'Q')!.config, 'Q')).text).toBe(
@@ -955,11 +977,33 @@ test('region Wardens run under the classifier charter, and their pointer reaches
     .at(-1)!.content;
   expect(user).toEndWith(`The concurrency-locks Warden chimed in:\n- ${pointer}`);
   expect(user).not.toContain('lens-model Warden chimed in');
+  // The classifier protocol: NO_COMMENT only when the moment touches nothing, whatever it says to build.
+  expect(locksCall.messages[1]!.content).toContain(
+    'Here it means the moment touches nothing in your domain, whatever it says to build or not to use.',
+  );
+  expect(locksCall.messages[1]!.content).not.toContain('would otherwise have to say themselves');
+  // A region-chorus thread holds the reception charter once, in its standing context, never in the message.
+  expect(thread.stack.getLayer(CHORUS_RECEPTION_LAYER)?.content).toBe(CHORUS_RECEPTION);
+  const system = f
+    .all('central')
+    .at(-1)!
+    .messages.filter((m) => m.role === 'system')
+    .map((m) => m.content)
+    .join('\n');
+  expect(system.split('# Chimes from the Warden chorus')).toHaveLength(2);
+  expect(user).not.toContain('# Chimes from the Warden chorus');
+  // `chorus.reception: false` leaves it out (an Oracle baseline); a roster thread never has it.
+  c.projects.P!.chorus = { ...c.projects.P!.chorus, reception: false };
+  const off = setup(c, pointer).factory.create('p-off', { projectId: 'P' });
+  expect(off.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
+  const rosterThread = setup(c, pointer).factory.create('q-thread', { projectId: 'Q' });
+  expect(rosterThread.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
 });
 
 test('the classifier output contract is read into relevant, pointer, where and level', async () => {
   expect(parseWardenPointer('Look over here: createLock (docs/claude/CONCURRENCY.md)')).toEqual({
     relevant: true,
+    shape: 'ranked',
     pointer: 'createLock',
     where: 'docs/claude/CONCURRENCY.md',
     level: 'exact',
@@ -970,6 +1014,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
     ),
   ).toEqual({
     relevant: true,
+    shape: 'ranked',
     pointer: 'claimLane or watchLane',
     where: 'CONCURRENCY.md, Supersede Lanes (claimLane / watchLane)',
     level: 'candidates',
@@ -990,6 +1035,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
   });
   expect(parseWardenPointer('Look over here: makeSingletonJob.')).toEqual({
     relevant: true,
+    shape: 'ranked',
     pointer: 'makeSingletonJob',
     level: 'exact',
   });
@@ -1032,6 +1078,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
   const classify = make(WARDEN_CHARTER_CLASSIFY);
   expect((await classify.advise('lock it')).pointer).toEqual({
     relevant: true,
+    shape: 'ranked',
     pointer: 'createLock',
     where: 'CONCURRENCY.md',
     level: 'exact',

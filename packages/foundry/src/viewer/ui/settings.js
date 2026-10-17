@@ -343,6 +343,11 @@ function ProjectChorus({ projectId }) {
           ? html`<p class="settings-desc">${chorus.requested === 'regions' ? 'Regions were asked for, but ' : ''}${chorus.reason}.</p>`
           : null
       }
+      ${
+        chorus.consumed && chorus.reception
+          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.source === 'regions' ? ', with the region chorus' : ', only with a region chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
+          : null
+      }
       <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens run only when enabled: <code>"chorus": { "source": "regions" }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
       ${
         chorus.layers.length
