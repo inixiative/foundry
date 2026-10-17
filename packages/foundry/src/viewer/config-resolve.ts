@@ -831,8 +831,8 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   const consumed =
     mine.consumed || theirs.consumed ? { ...theirs.consumed, ...mine.consumed } : undefined;
   const reception = mine.reception ?? theirs.reception;
-  const from = (key: 'consumed' | 'reception'): SettingLayer =>
-    mine[key] !== undefined ? 'settings' : theirs[key] !== undefined ? 'repository' : 'default';
+  const from = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
+    mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
   return {
     chorus: {
       ...(source ? { source } : {}),
@@ -840,8 +840,12 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
       ...(consumed ? { consumed } : {}),
       ...(reception !== undefined ? { reception } : {}),
     },
-    consumedFrom: from('consumed'),
-    receptionFrom: from('reception'),
+    // Whether the trigger is on is what the view reports, so its provenance is the `enabled` key's.
+    consumedFrom: from(
+      mine.consumed?.enabled !== undefined,
+      theirs.consumed?.enabled !== undefined,
+    ),
+    receptionFrom: from(mine.reception !== undefined, theirs.reception !== undefined),
     requestedBy: mine.source ? 'settings' : theirs.source ? 'repository' : 'default',
     directoriesFrom:
       mine.layers || mine.regions

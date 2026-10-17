@@ -69,6 +69,14 @@ test('a ranked pointer: the top name with its why, then the less likely ones wit
     where: 'CONCURRENCY.md, Supersede Lanes (claimLane / watchLane)',
     why: 'latest wins',
   });
+  // A name written as a call keeps its parentheses; the location is the next group.
+  expect(
+    parseWardenPointer('Look over here: db.findForUpdate() (DATABASE.md § Row Locks) — one row'),
+  ).toMatchObject({
+    pointer: 'db.findForUpdate()',
+    where: 'DATABASE.md § Row Locks',
+    why: 'one row',
+  });
   expect(parseWardenPointer('Look over here: createLock — exclusion')).toMatchObject({
     pointer: 'createLock',
     why: 'exclusion',

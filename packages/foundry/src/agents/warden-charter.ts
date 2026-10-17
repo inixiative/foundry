@@ -207,7 +207,7 @@ const CHOOSE_ONE_PREFIX = /^\s*choose one:\s*/i;
 const CLASS_WORDS =
   /\b(?:listed under|the primitives|the patterns|the rules|the class of|everything under|anything under|the helpers)\b/i;
 /** `<name> (<where>) — <note>`: the location may hold one level of parentheses; the note follows a dash. */
-const LOCATED = /^(.*?)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)\s*(?:[—–]|--?)?\s*(.*)$/s;
+const LOCATED = /^(.*?)\s*\(([^()]+(?:\([^()]*\)[^()]*)*)\)\s*(?:[—–]|--?)?\s*(.*)$/s;
 const NOTE_DASH = /\s+(?:[—–]|--?)\s+/;
 
 function candidate(text: string): PointerCandidate | undefined {

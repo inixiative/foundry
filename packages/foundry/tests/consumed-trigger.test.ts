@@ -386,6 +386,13 @@ test('the work-item matcher: tool globs, project-relative path globs, defaults, 
   expect(
     workItemOf({ tool: 'mcp__claude_ai_Notion__notion-fetch', input: {}, output: ' ' }, m, root),
   ).toBeUndefined();
+  // A fetch with no id field is keyed by what it returned: two different pages are two items.
+  const a = workItemOf({ tool: 'mcp__notion__fetch', input: {}, output: 'Page A' }, m, root)!;
+  const b = workItemOf({ tool: 'mcp__notion__fetch', input: {}, output: 'Page B' }, m, root)!;
+  expect(a.key).not.toBe(b.key);
+  expect(
+    workItemOf({ tool: 'mcp__notion__fetch', input: { id: 'p' }, output: 'x' }, m, root)!.key,
+  ).toBe('mcp__notion__fetch:p');
   // Configured globs replace the defaults; maxChars clips.
   const custom = consumedMatcher({
     enabled: true,
@@ -425,6 +432,10 @@ test('chorus.consumed is validated, and the machine settings win over the reposi
   expect(
     projectChorus({ ...project, chorus: { consumed: { maxChars: 800 } } }).chorus.consumed,
   ).toEqual({ enabled: true, paths: ['tickets/**'], maxChars: 800 });
+  // The view reports whether the trigger is on, so its provenance is the `enabled` key's.
+  expect(projectChorus({ ...project, chorus: { consumed: { maxChars: 800 } } }).consumedFrom).toBe(
+    'repository',
+  );
   config.projects = { P: { ...project, chorus: { consumed: { enabled: false } } } };
   expect(resolveProjectView(config, 'P')!.config.projects.P!.chorus).toEqual({
     source: 'roster',

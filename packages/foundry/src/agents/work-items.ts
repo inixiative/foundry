@@ -138,7 +138,8 @@ export function workItemOf(
   const itemId = `${observation.tool}:${name}`;
   return {
     itemId,
-    key: itemId,
+    // A fetch with no id field the matcher knows is keyed by what it returned, so later fetches differ.
+    key: id ? itemId : `${itemId}:${computeHash(text)}`,
     name,
     tool: observation.tool,
     ...clip(text, matcher.maxChars),
