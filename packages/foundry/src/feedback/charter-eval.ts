@@ -156,7 +156,8 @@ const lines = (text: string) =>
     .filter(Boolean);
 /** The answer's leading YES or NO (markdown and punctuation tolerated) and whatever follows it. */
 const leading = (text: string) => {
-  const m = /^[\W_]*(YES|NO)\b[\W_]*(.*)$/is.exec(text.trim());
+  // NO_COMMENT, the live protocol's no, still answers NO.
+  const m = /^[\W_]*(YES|NO)(?:_COMMENT)?\b[\W_]*(.*)$/is.exec(text.trim());
   return m ? { decision: m[1]!.toLowerCase() as 'yes' | 'no', rest: m[2]!.trim() } : undefined;
 };
 

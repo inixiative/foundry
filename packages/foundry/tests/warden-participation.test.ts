@@ -778,6 +778,7 @@ test('diagnose parsers: a decision on its own line or leading a sentence; NAME n
   const { parseBare, parseFollowup, parseOneshot } = await import('../src/feedback/charter-eval');
   expect(parseBare('NO')).toEqual({ decision: 'no' });
   expect(parseBare('I think so')).toEqual({});
+  expect(parseBare('NO_COMMENT')).toEqual({ decision: 'no' });
   expect(parseOneshot('NO — not mine\nNAME: none\nWHY: it is about email.')).toEqual({
     decision: 'no',
     why: 'it is about email.',
