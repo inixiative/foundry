@@ -21,8 +21,9 @@ import {
   type LLMProvider,
   type NativeEvidence,
 } from '@inixiative/foundry-core';
+import { stampFoundryRun } from '../archives/run-stamp';
 import { DECISION_INPUT_CAP } from './decision-budget';
-import { type NativeProfileSource, withProfile } from './default-profiles';
+import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
 import type { InSessionWardens } from './in-session-wardens';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
@@ -210,6 +211,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const hostId = crypto.randomUUID();
   const root = join(config.directory, `primed-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
+  // Its sessions run below this root: Archive drops them as Foundry's own, never a person's work.
+  stampFoundryRun(root);
   const cwd = join(root, 'fixture');
   mkdirSync(cwd, { mode: 0o700 });
   const receiptsPath = join(root, 'decisions.jsonl');
@@ -275,6 +278,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           effort: config.effort,
           cwd,
           baseInstructions: PRIMED_DECISION_CONTEXT,
+          // The login's profile, so transcript cleanup looks where the child wrote (empty for the default login).
+          env: profileEnvironment('claude', source.profileDirectory),
           maxMembers: config.subagents.membersPerProcess,
           maxSessionsPerGroup: config.subagents.processes,
           timeoutMs: config.callTimeoutMs,
@@ -288,6 +293,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             effort: config.effort,
             cwd,
             baseInstructions: PRIMED_DECISION_CONTEXT,
+            // The login's profile, so transcript cleanup looks where the child wrote (empty for the default login).
+            env: profileEnvironment('claude', source.profileDirectory),
             maxConcurrent: config.maxConcurrent,
             maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
             timeoutMs: config.callTimeoutMs,

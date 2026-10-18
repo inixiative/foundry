@@ -15,6 +15,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { computeHash } from '../packages/core/src';
+import { RUN_ENV, stampFoundryRun } from '../packages/foundry/src/archives/run-stamp';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   composeRoleView,
@@ -35,7 +36,7 @@ const arg = (name: string, fallback: string) => {
 if (!process.env.FOUNDRY_MEASURE_CLEAN) {
   const { path } = await livePath();
   const child = Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2)], {
-    env: cleanEnvironment({ PATH: path, FOUNDRY_MEASURE_CLEAN: '1' }),
+    env: cleanEnvironment({ PATH: path, FOUNDRY_MEASURE_CLEAN: '1', [RUN_ENV]: 'test' }),
     stdio: ['inherit', 'inherit', 'inherit'],
   });
   process.exit(await child.exited);
@@ -47,6 +48,10 @@ const modes = arg('modes', 'a,b,c').split(',') as Mode[];
 const cwd = resolve(arg('cwd', join(import.meta.dir, '..')));
 const learningAt = Number(arg('learning-at', '5'));
 const out = arg('out', join(mkdtempSync(join(tmpdir(), 'foundry-warm-cache-')), 'results.json'));
+// The measured sessions run in a stamped scratch folder, never the checkout, so Archive drops them.
+const sessionCwd = mkdtempSync(join(tmpdir(), 'foundry-warm-cache-session-'));
+// Re-executed with ARCHIVE_RUN=test above, so the stamp is a test run's.
+stampFoundryRun(sessionCwd);
 type Mode = 'a' | 'b' | 'c';
 
 const EXECUTOR_PROMPT =
@@ -126,7 +131,7 @@ async function runMode(mode: Mode): Promise<TurnRow[]> {
   });
   const session = await adapter.createSession({
     threadId: `measure-warm-cache:${mode}`,
-    cwd,
+    cwd: sessionCwd,
     model,
     maxTurns: 1,
     ...(baseContext ? { baseContext } : {}),
