@@ -127,23 +127,32 @@ test("a project's publish target is read from and set through the local Archive"
     });
 
   expect(await (await app.request('/api/archives/destinations?projectId=p1')).json()).toEqual({
+    organizationId: null,
+    organizations: [],
     destinations: [],
     paired: false,
     libraries: [],
   });
-  const refused = await post('connect', route);
+  // A project in no organization names the one it joins.
+  expect((await post('connect', route)).status).toBe(400);
+  const joined = { ...route, organizationId: 'inixiative' };
+  const refused = await post('connect', joined);
   expect(refused.status).toBe(403);
   expect(((await refused.json()) as { error: string }).error).toContain('does not grant');
 
   archive.grantLibrary(library);
-  expect((await post('connect', route)).status).toBe(200);
+  expect((await post('connect', joined)).status).toBe(200);
   const routed = (await (await app.request('/api/archives/destinations?projectId=p1')).json()) as {
-    destinations: Array<{ resourceId: string; pending: number }>;
+    organizationId: string;
+    destinations: Array<{ resourceId: string; organizationId: string }>;
     paired: boolean;
   };
   expect(routed.paired).toBe(true);
-  expect(routed.destinations.map((d) => d.resourceId)).toEqual([library.resourceId]);
-
+  expect(routed.organizationId).toBe('inixiative');
+  expect(routed.destinations.map((d) => [d.organizationId, d.resourceId])).toEqual([
+    ['inixiative', library.resourceId],
+  ]);
+  // Once it belongs to an organization, the project's organization is used.
   expect(await (await post('remove', route)).json()).toEqual({ removed: true });
   expect((await post('connect', { ...route, integrationId: 'not-a-uuid' })).status).toBe(400);
 });

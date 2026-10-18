@@ -96,6 +96,7 @@ export function ProjectArchive({ projectId }) {
   const [archives, setArchives] = useState(null);
   const [routing, setRouting] = useState(null);
   const [library, setLibrary] = useState('');
+  const [organization, setOrganization] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const query = `projectId=${encodeURIComponent(projectId)}`;
@@ -133,7 +134,11 @@ export function ProjectArchive({ projectId }) {
       const response = await fetch(`/api/archives/destinations/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, ...target }),
+        body: JSON.stringify({
+          projectId,
+          ...(routing?.organizationId ? {} : { organizationId: organization.trim() }),
+          ...target,
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error || `Could not ${action} the destination`);
@@ -159,7 +164,16 @@ export function ProjectArchive({ projectId }) {
   return html`<section class="settings-card archive-settings">
     ${error && html`<p role="alert">${error}</p>`}
     <h3>Publishes to</h3>
-    <p class="settings-desc">The local Archive keeps every session; it copies this project's sessions to these hosted Archives. With none, they stay on this machine.</p>
+    <p class="settings-desc">The local Archive keeps every session. Hosted Archives are per organization: this project's sessions, and any session that touched it, go to its organization's Archives. With none, they stay on this machine.</p>
+    ${
+      routing &&
+      (routing.organizationId
+        ? html`<p class="settings-desc">Organization: <strong>${routing.organizationId}</strong></p>`
+        : html`<div class="settings-row">
+            <input class="settings-input small" list="archive-organizations" aria-label="Organization" placeholder="Organization this project belongs to" value=${organization} onInput=${(e) => setOrganization(e.target.value)} />
+            <datalist id="archive-organizations">${(routing.organizations ?? []).map((id) => html`<option key=${id} value=${id} />`)}</datalist>
+          </div>`)
+    }
     ${
       !routing
         ? html`<p>${error ? 'Routing is unavailable.' : 'Checking routing…'}</p>`
@@ -183,7 +197,7 @@ export function ProjectArchive({ projectId }) {
                 <option value="">Choose a hosted Archive…</option>
                 ${libraries.map((l) => html`<option key=${`${l.integrationId}:${l.resourceId}`} value=${`${l.integrationId}:${l.resourceId}`}>${l.name}</option>`)}
               </select>
-              <button class="action-btn" disabled=${busy || !library} onClick=${() => {
+              <button class="action-btn" disabled=${busy || !library || (!routing.organizationId && !organization.trim())} onClick=${() => {
                 const [integrationId, resourceId] = library.split(':');
                 change('connect', { integrationId, resourceId });
               }}>Publish here</button>

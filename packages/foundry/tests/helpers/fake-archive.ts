@@ -25,9 +25,10 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
   let failing = false;
   /** Libraries this Archive's paired Signet grants sessions.write on; connect refuses others. */
   const libraries: { integrationId: string; resourceId: string; name: string }[] = [];
-  const destinations: { projectId: string; integrationId: string; resourceId: string }[] = [];
+  const destinations: { organizationId: string; integrationId: string; resourceId: string }[] = [];
+  const organizations: { id: string; projects: string[] }[] = [];
   const sameRoute = (a: Record<string, unknown>, b: Record<string, unknown>) =>
-    a.projectId === b.projectId &&
+    a.organizationId === b.organizationId &&
     a.integrationId === b.integrationId &&
     a.resourceId === b.resourceId;
   const latest = (id: string) => archives.get(id)?.at(-1);
@@ -177,17 +178,30 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
         return json({
           data: {
             destinations: destinations
-              .filter((d) => body.projectId === undefined || d.projectId === body.projectId)
+              .filter(
+                (d) =>
+                  body.organizationId === undefined || d.organizationId === body.organizationId,
+              )
               .map((d) => ({
                 configured: true,
                 kind: 'kingdom',
                 url: 'https://kingdom.example',
                 ...d,
                 delivered: 0,
-                pending: current(d.projectId).length,
+                pending: (organizations.find((o) => o.id === d.organizationId)?.projects ?? [])
+                  .map((p) => current(p).length)
+                  .reduce((a, b) => a + b, 0),
               })),
           },
         });
+      if (action === 'organizations/list') return json({ data: { organizations } });
+      if (action === 'organizations/set') {
+        const set = { id: String(body.id), projects: (body.projects as string[]) ?? [] };
+        const index = organizations.findIndex((o) => o.id === set.id);
+        if (index < 0) organizations.push(set);
+        else organizations[index] = set;
+        return json({ data: { organizations } });
+      }
       if (action === 'destinations/libraries')
         return json({ data: { paired: libraries.length > 0, libraries } });
       if (action === 'destinations/connect') {
@@ -201,10 +215,12 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
             403,
           );
         const route = {
-          projectId: String(body.projectId),
+          organizationId: String(body.organizationId),
           integrationId: String(body.integrationId),
           resourceId: String(body.resourceId),
         };
+        if (!organizations.some((o) => o.id === route.organizationId))
+          organizations.push({ id: route.organizationId, projects: [] });
         if (!destinations.some((d) => sameRoute(d, route))) destinations.push(route);
         return json({
           data: { configured: true, kind: 'kingdom', url: 'https://kingdom.example', ...route },
