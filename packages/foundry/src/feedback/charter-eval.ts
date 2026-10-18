@@ -25,7 +25,7 @@ import {
   oneCall,
   threadSection,
 } from '../agents/domain-librarian';
-import { adviceResponseProtocol } from '../classify';
+import { adviceResponseProtocol, DEFAULT_STAGE } from '../classify';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {
@@ -353,7 +353,9 @@ async function ask(
     },
     guardTriggers: [PROBE_MOMENT_TOOL],
     ...(warden.budget !== undefined ? { budget: warden.budget } : {}),
-    ...(options.charter !== undefined ? { charter: options.charter } : {}),
+    ...(options.charter !== undefined
+      ? { stages: [{ config: DEFAULT_STAGE, charter: options.charter }] }
+      : {}),
   });
   const started = Date.now();
   const answer = (

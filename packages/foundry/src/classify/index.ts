@@ -1,9 +1,25 @@
-// Foundry's one classification primitive: what a decision role is told about answering (charters,
-// response protocols) and how its answer is read (strict envelopes, pointers). Wardens run it live;
-// Foundry's evals and Oracle's experiments run the same code through `scripts/evals/warden-charter.ts`.
+// Foundry's one classification primitive, for Wardens, Heralds and Oracle: a run of at most three
+// stages, each asking a decision role whether a moment is in its area and reading the answer. It owns
+// what a stage is told about answering (charters, response protocols), how the answer is read (strict
+// envelopes, pointers, recogniser lines) and the stage loop (escalation, deadlines, fallback, trace).
+// Callers frame the moment and supply a provider per stage; this module never builds one. Wardens run
+// it live; Foundry's evals and Oracle's experiments run it through `scripts/evals/warden-charter.ts`.
 
-export { chartered, WARDEN_CHARTER, WARDEN_CHARTER_VERSION } from './charters/point.warden';
 export {
+  type Charter,
+  type ClassifyRole,
+  charterFor,
+  charterVersion,
+} from './charters';
+export {
+  chartered,
+  pointCharter,
+  WARDEN_CHARTER,
+  WARDEN_CHARTER_VERSION,
+} from './charters/point.warden';
+export { RECOGNISE_CHARTER } from './charters/recognise.warden';
+export {
+  ALL_OF_CAVEAT,
   CHOOSE_ONE_CAVEAT,
   MAX_POINTER_NAMES,
   type PointerCandidate,
@@ -16,12 +32,48 @@ export {
   ADVICE_RESPONSE_PROTOCOL,
   type AdviceAnswer,
   adviceResponseProtocol,
+  type Envelope,
+  FOLLOWUP_QUESTION,
   GUARD_RESPONSE_PROTOCOL,
   type GuardAnswerFinding,
   NO_COMMENT,
   NO_COMMENT_RULE,
+  type ProtocolSpec,
+  parseFollowup,
   protocolAnswer,
+  readStageAnswer,
+  responseProtocol,
   STRICT_RULE,
+  type StageReading,
   validateAdviceResponse,
   validateGuardResponse,
 } from './protocol';
+export { parseRecognition, type Recognition } from './recognition';
+export {
+  type Carried,
+  type ClassifyResult,
+  type ClassifyRunOptions,
+  carriedSection,
+  runStages,
+  type StageCall,
+  type StageRun,
+  stageRuns,
+} from './run';
+export {
+  DEFAULT_STAGE,
+  DEFAULT_STAGES,
+  deadlineShares,
+  EVAL_STAGE_KEYS,
+  isDefaultStages,
+  KNOWLEDGE_DOC,
+  MAX_STAGES,
+  type PointerSettings,
+  STAGE_EFFORTS,
+  type StageConfig,
+  type StageEffort,
+  type StageOutcomes,
+  type StageReason,
+  type StageTask,
+  stageDocs,
+  validateStages,
+} from './stages';

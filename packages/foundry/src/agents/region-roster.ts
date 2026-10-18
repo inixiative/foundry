@@ -242,7 +242,7 @@ export async function regionKey(
  * region (title and routing line). The region's own text is its domain knowledge, in full.
  */
 export const REGION_WARDEN_INSTRUCTIONS =
-  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says: relevant or NO_COMMENT, and when relevant, a pointer in one of its shapes (ranked, choose one, or class) to the things it touches and where they are written.';
+  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says: relevant or NO_COMMENT, and when relevant, a pointer in one of its shapes to the things it touches and where they are written.';
 
 /** A region Warden's settings prompt: the generic region instructions, then which region this is. */
 export function regionInstructions(

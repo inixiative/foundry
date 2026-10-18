@@ -251,6 +251,8 @@ export {
 export {
   type Authorship,
   type CharterScore,
+  type ClassifyOutcome,
+  type ClassifyStageTrace,
   CONCEPT_CLUSTERS,
   CORRECTION_TARGET_PROMPT,
   type CorrectionTarget,

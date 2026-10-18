@@ -1,5 +1,5 @@
 import { computeHash } from '@inixiative/foundry-core';
-import { CHOOSE_ONE_CAVEAT } from '../classify/pointer';
+import { ALL_OF_CAVEAT, CHOOSE_ONE_CAVEAT } from '../classify/pointer';
 
 /**
  * The reception charter: how the main thread reads a chime. The counterpart of the Warden charter,
@@ -13,6 +13,7 @@ export const CHORUS_RECEPTION = `# Chimes from the Warden chorus
 A Warden's chime ("The <domain> Warden chimed in: …") is a pointer from a narrow context router: where to look, not advice and not a decision. Verify it by following it into the doc section and the code it names before you rely on it. You decide; the chime only makes an existing system visible.
 
 - **A ranked pointer** ("Look over here: X …", then "Less likely: Y …"): follow the top one first; the less likely ones are fallbacks, each with what tells it apart.
+- **An all-of set** ("All of these: ${ALL_OF_CAVEAT}"): each member applies to a different part of the moment; read every one.
 - **A sibling set** ("Choose one: ${CHOOSE_ONE_CAVEAT}"): read each member's distinction and pick the one whose job matches. In your plan, say which you picked and why.
 - **A pointer at a system your instruction, ticket or spec contradicts** (it says to build something new where this already exists, or not to use it): an override of an existing system needs explicit acknowledgement. If the instruction does not name that system, or its concept, and say to replace or bypass it, stop before building and ask the user one short question naming the system and its doc section: "This doesn't match what we have (X, <doc section>); confirm?" A casual "do it this way" is not an acknowledgement. If it does acknowledge it, proceed without asking, and use the system as the comparison while you build: state the material difference in your plan in a line.
 - **A wrong or irrelevant chime:** set it aside with one line ("considered X: not applicable because …"). Never let a chime derail the task.

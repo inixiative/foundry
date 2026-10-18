@@ -24,7 +24,7 @@ import {
   type ThreadMeta,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
-import { WARDEN_CHARTER, WARDEN_CHARTER_VERSION } from '../classify';
+import { WARDEN_CHARTER_VERSION } from '../classify';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -1046,7 +1046,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           cache,
           ...(slots ? { instructions: slots.instructions, role } : {}),
           ...(dc.budget !== undefined ? { budget: dc.budget } : {}),
-          charter: WARDEN_CHARTER,
           signals,
           llm: scopedProvider(dc.adviseProvider ?? deps.llm, { threadId: domainId, cwd }),
           llmOpts: dc.adviseOpts ?? { maxTokens: 512, temperature: 0 },

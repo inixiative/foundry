@@ -14,7 +14,6 @@ import {
 } from '@inixiative/foundry-core';
 import { DomainLibrarian, type TurnActivity } from '../src/agents/domain-librarian';
 import { regionInstructions } from '../src/agents/region-roster';
-import { WARDEN_CHARTER } from '../src/classify';
 
 const GOLDEN = join(import.meta.dir, 'fixtures', 'classify', 'golden.json');
 const RECORD = process.env.CLASSIFY_GOLDEN === 'record';
@@ -54,7 +53,6 @@ function warden(answer: string) {
     cache,
     instructions,
     role: 'locks',
-    charter: WARDEN_CHARTER,
     signals: new SignalBus(0),
     llm,
     guardTriggers: ['Write', 'Bash'],

@@ -31,16 +31,21 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import {
-  adviceResponseProtocol,
+  type ClassifyResult,
+  carriedSection,
   chartered,
-  GUARD_RESPONSE_PROTOCOL,
+  charterFor,
+  DEFAULT_STAGE,
+  isDefaultStages,
   NO_COMMENT,
   NO_COMMENT_RULE,
-  parseWardenPointer,
   protocolAnswer,
+  runStages,
   STRICT_RULE,
-  validateAdviceResponse,
-  validateGuardResponse,
+  type StageCall,
+  type StageConfig,
+  type StageRun,
+  stageRuns,
   type WardenPointer,
 } from '../classify';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
@@ -68,6 +73,8 @@ export interface AdviseResult {
   notStarted?: string;
   /** The model call failed; nothing was advised. */
   error?: string;
+  /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
+  classified?: ClassifyResult;
 }
 
 /** Caller-supplied inputs for one advise call. */
@@ -104,6 +111,8 @@ export interface PhaseRequestEvidence {
   readonly capturedAt: number;
   /** What the call's instructions and domain knowledge were composed of (in memory; journalled as version ids). */
   readonly composition?: CompositionSnapshot;
+  /** A Warden with configured stages: which stage (0-based) this call was. */
+  readonly stage?: number;
 }
 /** Advice-phase request evidence: the advice observer's payload. */
 export type AdviceRequestEvidence = PhaseRequestEvidence & { readonly phase: 'advice' };
@@ -113,12 +122,14 @@ function frozenRequest(
   providerId: string,
   messages: LLMMessage[],
   composition?: CompositionSnapshot,
+  stage?: number,
 ): PhaseRequestEvidence {
   return Object.freeze({
     phase,
     providerId,
     capturedAt: Date.now(),
     ...(composition ? { composition } : {}),
+    ...(stage !== undefined ? { stage } : {}),
     messages: Object.freeze(
       messages.map((m) => Object.freeze({ role: m.role, content: m.content })),
     ),
@@ -713,6 +724,8 @@ export interface GuardResult {
   threadKnowledgeRevision?: number;
   /** The exact request supplied to the guard provider, or why no call was made. Not evidence of native receipt. */
   request: ParticipantRequest;
+  /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
+  classified?: ClassifyResult;
 }
 
 /** Caller-supplied frozen inputs for one guard call. */
@@ -842,8 +855,33 @@ export interface DomainLibrarianConfig {
   reviewPrompt?: string;
   /** Maximum characters a reviewer may write as thread knowledge. Default 4 000. */
   maxKnowledgeChars?: number;
-  /** A candidate charter wording under evaluation. Default WARDEN_CHARTER, the one every Warden runs under. */
-  charter?: string;
+  /**
+   * How it classifies (classify/): its stages in order, each with its provider, the doc it reads and,
+   * under evaluation only, candidate charter text. Stage 0 defaults to this Warden's own provider,
+   * options and cache. Default: one stage, today's Warden (`DEFAULT_STAGE`).
+   */
+  stages?: readonly WardenStage[];
+}
+
+/** One classification stage of a Warden, bound to what answers it and what it reads. */
+export interface WardenStage {
+  readonly config: StageConfig;
+  /** Default (stage 0): the Warden's `llm` and `llmOpts`. Required past stage 0. */
+  readonly llm?: LLMProvider;
+  readonly llmOpts?: CompletionOpts;
+  /** The stage's doc, composed. Default (stage 0): the Warden's `cache`. Required past stage 0. */
+  readonly cache?: ContextLayer;
+  /** Candidate charter text under evaluation; the stage's fixed charter (task, role, pointer) when omitted. */
+  readonly charter?: string;
+}
+
+/** A stage with its defaults filled: what each call of it uses. */
+interface BoundStage {
+  readonly config: StageConfig;
+  readonly llm: LLMProvider;
+  readonly llmOpts: CompletionOpts;
+  readonly cache: ContextLayer;
+  readonly charter?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -872,7 +910,9 @@ export class DomainLibrarian {
   private _guardStrategy: ProcessingStrategy;
   private _reviewPrompt!: string;
   private _threadKnowledge: ThreadKnowledge;
-  private _charter: string | undefined;
+  private _stages: readonly BoundStage[];
+  /** The point charter its review is chartered with: today's Warden charter. */
+  private _reviewCharter: string;
 
   constructor(config: DomainLibrarianConfig) {
     this.domain = config.domain;
@@ -894,7 +934,21 @@ export class DomainLibrarian {
     };
     this._programmaticGuard = config.programmaticGuard ?? false;
     this._guardFn = config.guardFn;
-    this._charter = config.charter;
+    const stages = config.stages?.length ? config.stages : [{ config: DEFAULT_STAGE }];
+    this._stages = stages.map((stage, index) => {
+      if (index && (!stage.llm || !stage.cache))
+        throw Error(`${config.domain} Warden: stage ${index + 1} needs its own provider and doc`);
+      return {
+        config: stage.config,
+        llm: stage.llm ?? config.llm,
+        llmOpts: stage.llmOpts ?? this._llmOpts,
+        cache: stage.cache ?? config.cache,
+        ...(stage.charter !== undefined ? { charter: stage.charter } : {}),
+      };
+    });
+    const pointing = [...this._stages].reverse().find((s) => s.config.task === 'point');
+    this._reviewCharter =
+      pointing?.charter ?? charterFor('point', 'warden', pointing?.config.pointer).text;
     this._threadKnowledge = new ThreadKnowledge(
       config.domain,
       config.threadKnowledgeLayer ??
@@ -1058,7 +1112,7 @@ export class DomainLibrarian {
    */
   /** What the domain knowledge cache is made of right now, and what its composer left out. */
   cacheComposition(): CacheComposition {
-    return { segments: this._cache.segments(), omitted: omittedFrom(this._cache) };
+    return cacheCompositionOf(this._cache);
   }
 
   composition(
@@ -1198,7 +1252,7 @@ export class DomainLibrarian {
     const messages: LLMMessage[] = [
       {
         role: 'system',
-        content: chartered(job?.segments.instructions ?? this.reviewPrompt, this._charter),
+        content: chartered(job?.segments.instructions ?? this.reviewPrompt, this._reviewCharter),
       },
       {
         role: 'user',
@@ -1362,20 +1416,144 @@ export class DomainLibrarian {
    * rides with the moment). A provider without pre-start ignores it; nothing is decided here.
    */
   prestart(): void {
-    const cacheContent = this._cache.content;
-    if (!cacheContent || !this._llm.prestart) return;
-    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const threadPrefix = threadSection(this._threadKnowledge.content || undefined);
     // Composed instructions serve advice and guard alike; a Warden without them has two shapes.
     const systems = [...new Set([this.advisePrompt, this.guardPrompt])];
-    for (const system of systems)
-      this._llm.prestart(
-        [
-          { role: 'system', content: chartered(system, this._charter) },
-          { role: 'user', content: `${stablePrefix}${threadPrefix}` },
-        ],
-        { ...this._llmOpts, stablePrefix, threadPrefix },
-      );
+    const runs = stageRuns({
+      stages: this._stages.map((s) => s.config),
+      envelope: 'advice',
+      trigger: 'user-message',
+      charters: this._stages.map((s) => s.charter),
+    });
+    this._stages.forEach((stage, index) => {
+      const cacheContent = stage.cache.content;
+      if (!cacheContent || !stage.llm.prestart) return;
+      const stablePrefix = domainCachePrefix(this.domain, cacheContent);
+      for (const system of systems)
+        stage.llm.prestart(
+          [
+            { role: 'system', content: chartered(system, runs[index]!.charter.text) },
+            { role: 'user', content: `${stablePrefix}${threadPrefix}` },
+          ],
+          { ...stage.llmOpts, stablePrefix, threadPrefix },
+        );
+    });
+  }
+
+  /** Whether this Warden runs today's single stage, unconfigured: its results carry no stage trace. */
+  private get _defaultStages(): boolean {
+    return (
+      this._stages.length === 1 &&
+      this._stages[0]!.charter === undefined &&
+      isDefaultStages([this._stages[0]!.config])
+    );
+  }
+
+  /**
+   * One stage's call: its doc (stage 0's frozen by the caller), its charter above the instructions,
+   * the moment framed for the trigger, what an earlier stage carried, and its protocol.
+   */
+  private async _askStage(
+    run: StageRun,
+    frame: {
+      readonly phase: 'advice' | 'guard';
+      readonly system: string;
+      readonly cache?: string;
+      readonly cacheComposition?: CacheComposition;
+      readonly understanding?: string;
+      readonly threadState?: string;
+      readonly moment: string;
+      readonly opts: CompletionOpts;
+      readonly observe?: (evidence: PhaseRequestEvidence) => void;
+    },
+  ): Promise<StageCall> {
+    const stage = this._stages[run.index]!;
+    const first = run.index === 0;
+    const cacheContent = (first ? frame.cache : undefined) ?? stage.cache.content;
+    const docHash = computeHash(cacheContent);
+    if (!cacheContent) return { error: `cold-cache: ${run.stage.doc}`, docHash };
+    if (!first) {
+      const over = this.budgetError(frame.system, cacheContent);
+      if (over) return { error: over, docHash };
+    }
+    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
+    const threadPrefix = threadSection(frame.understanding);
+    const messages: LLMMessage[] = [
+      { role: 'system', content: chartered(frame.system, run.charter.text) },
+      {
+        role: 'user',
+        content: [
+          `## Domain cache (${this.domain})`,
+          cacheContent,
+          frame.understanding
+            ? `\n## Your understanding of this thread\n${frame.understanding}`
+            : '',
+          frame.threadState ? `\n## Thread state\n${frame.threadState}` : '',
+          ...(run.carried ? [carriedSection(run.carried)] : []),
+          frame.moment,
+          `\n${run.protocol}`,
+        ].join('\n'),
+      },
+    ];
+    const composition = this.composition(
+      frame.phase === 'advice' ? 'advise' : 'guard',
+      !first
+        ? { cache: cacheContent, composition: cacheCompositionOf(stage.cache) }
+        : frame.cache !== undefined
+          ? {
+              cache: cacheContent,
+              ...(frame.cacheComposition ? { composition: frame.cacheComposition } : {}),
+            }
+          : undefined,
+    );
+    // The exact input, frozen before the provider sees it. Text only: no transport, session or
+    // credential state exists here to leak. What the provider then did is reported separately.
+    frame.observe?.(
+      frozenRequest(
+        frame.phase,
+        stage.llm.id,
+        messages,
+        composition,
+        this._defaultStages ? undefined : run.index,
+      ),
+    );
+    const opts: CompletionOpts = {
+      ...stage.llmOpts,
+      ...frame.opts,
+      stablePrefix,
+      threadPrefix,
+      ...(run.timeoutMs !== undefined ? { timeout: Math.max(100, Math.ceil(run.timeoutMs)) } : {}),
+    };
+    try {
+      const result = await stage.llm.complete(messages, opts);
+      const served = servedModel(result);
+      const tokens = result.tokens
+        ? (({ providerUsage: _usage, ...counts }) => counts)(result.tokens)
+        : undefined;
+      return {
+        content: result.content,
+        docHash,
+        ...(served ? { served } : {}),
+        ...(tokens ? { tokens } : {}),
+        followUp: async (question) => {
+          const followed = await stage.llm.complete(
+            [
+              ...messages,
+              { role: 'assistant', content: result.content },
+              { role: 'user', content: question },
+            ],
+            opts,
+          );
+          return { content: followed.content };
+        },
+      };
+    } catch (err) {
+      // Never admitted (queue expiry, shed, admission closed): the Warden did not run. The turn goes
+      // on without it, and that is recorded as such, not as a model failure.
+      if (refusedForCapacity(err)) return { notStarted: (err as Error)?.message ?? String(err) };
+      // Model failure: nothing, but say why so the composer records an error, not silence.
+      return { error: (err as Error)?.message ?? String(err), docHash, cause: err };
+    }
   }
 
   async advise(message: string, threadState?: string, opts?: AdviseOpts): Promise<AdviseResult> {
@@ -1386,89 +1564,65 @@ export class DomainLibrarian {
     const system = this.advisePrompt;
     const over = this.budgetError(system, cacheContent);
     if (over) return { layers: [], snippets: [], confidence: 0, error: over };
-    const composition = this.composition(
-      'advise',
-      opts?.cache !== undefined
-        ? {
-            cache: cacheContent,
-            ...(opts.cacheComposition ? { composition: opts.cacheComposition } : {}),
-          }
-        : undefined,
-    );
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
-    // `advisePrompt`. The advice-phase response protocol is supplied separately by this phase,
-    // so custom instructions never have to restate the schema and never get rewritten to carry it.
-    // The domain cache heads the message and changes only when the domain learns: a stable, primable prefix.
+    // `advisePrompt`. Each stage's response protocol is supplied separately (classify/), so custom
+    // instructions never have to restate the schema and never get rewritten to carry it. The domain
+    // cache heads the message and changes only when the domain learns: a stable, primable prefix.
     const trigger = opts?.trigger ?? 'user-message';
-    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
-    const threadPrefix = threadSection(opts?.threadKnowledge);
-    const messages: LLMMessage[] = [
-      { role: 'system', content: chartered(system, this._charter) },
-      {
-        role: 'user',
-        content: [
-          `## Domain cache (${this.domain})`,
-          cacheContent,
-          opts?.threadKnowledge
-            ? `\n## Your understanding of this thread\n${opts.threadKnowledge}`
-            : '',
-          threadState ? `\n## Thread state\n${threadState}` : '',
-          trigger === 'subagent-spawn'
-            ? `\n## Handoff to a subagent\n${message}`
-            : trigger === 'consumed'
-              ? `\n## Work item the agent took in\n${message}`
-              : `\n## Message\n${message}`,
-          `\n${adviceResponseProtocol(trigger)}`,
-        ].join('\n'),
+    const run = await runStages({
+      stages: this._stages.map((s) => s.config),
+      charters: this._stages.map((s) => s.charter),
+      envelope: 'advice',
+      trigger,
+      ...(opts?.timeoutMs !== undefined ? { deadlineMs: opts.timeoutMs } : {}),
+      holds: [this.domain],
+      ask: async (stage) => {
+        const call = await this._askStage(stage, {
+          phase: 'advice',
+          system,
+          ...(opts?.cache !== undefined ? { cache: opts.cache } : {}),
+          ...(opts?.cacheComposition ? { cacheComposition: opts.cacheComposition } : {}),
+          ...(opts?.threadKnowledge ? { understanding: opts.threadKnowledge } : {}),
+          ...(threadState ? { threadState } : {}),
+          moment:
+            trigger === 'subagent-spawn'
+              ? `\n## Handoff to a subagent\n${message}`
+              : trigger === 'consumed'
+                ? `\n## Work item the agent took in\n${message}`
+                : `\n## Message\n${message}`,
+          opts: {},
+          ...(opts?.observeRequest
+            ? {
+                observe: (e: PhaseRequestEvidence) =>
+                  opts.observeRequest!(e as AdviceRequestEvidence),
+              }
+            : {}),
+        });
+        if ('content' in call && call.served) opts?.observeServed?.(call.served);
+        return call;
       },
-    ];
-
-    // The exact input, frozen before the provider sees it. Text only: no transport, session or
-    // credential state exists here to leak. What the provider then did is reported separately.
-    opts?.observeRequest?.(
-      frozenRequest('advice', this._llm.id, messages, composition) as AdviceRequestEvidence,
-    );
-
-    let content: string;
-    try {
-      const result = await this._llm.complete(messages, {
-        ...this._llmOpts,
-        stablePrefix,
-        threadPrefix,
-        ...(opts?.timeoutMs !== undefined
-          ? { timeout: Math.max(100, Math.ceil(opts.timeoutMs)) }
-          : {}),
-      });
-      const served = servedModel(result);
-      if (served) opts?.observeServed?.(served);
-      content = result.content;
-    } catch (err) {
-      // Never admitted (queue expiry, shed, admission closed): the Warden did not run. The turn goes
-      // on without it, and that is recorded as such, not as a model failure.
-      if (refusedForCapacity(err))
-        return {
-          layers: [],
-          snippets: [],
-          confidence: 0,
-          notStarted: (err as Error)?.message ?? String(err),
-        };
-      // Model failure: advise nothing, but say why so the composer records an error, not silence.
+    });
+    const classified = this._defaultStages ? {} : { classified: run };
+    if (run.notStarted)
+      return { layers: [], snippets: [], confidence: 0, notStarted: run.notStarted, ...classified };
+    // Protocol failure: an explicit, bounded error that never carries the model's text. A response
+    // that is not advice is never presented as successful empty advice.
+    if (!run.final)
       return {
         layers: [],
         snippets: [],
         confidence: 0,
-        error: (err as Error)?.message ?? String(err),
+        error: run.error ?? 'no answer',
+        ...classified,
       };
-    }
-    // Protocol failure: an explicit, bounded error that never carries the model's text. A response
-    // that is not advice is never presented as successful empty advice.
-    const validated = validateAdviceResponse(content);
-    if ('error' in validated)
-      return { layers: [], snippets: [], confidence: 0, error: validated.error };
-    if (!validated.snippets.length) return validated;
+    const advice = run.final.advice!;
+    // Only a pointing stage's yes reaches the thread; anything else is journalled as nothing to add.
+    if (!run.delivered)
+      return { layers: [], snippets: [], confidence: 0, noComment: true, ...classified };
+    if (!advice.snippets.length) return { ...advice, ...classified };
     // The charter's contract: the first snippet is the pointer, read into its parts.
-    return { ...validated, pointer: parseWardenPointer(validated.snippets) };
+    return { ...advice, pointer: run.final.pointer!, ...classified };
   }
 
   // -----------------------------------------------------------------------
@@ -1539,57 +1693,67 @@ export class DomainLibrarian {
       opts?.threadKnowledge !== undefined
         ? opts.threadKnowledgeRevision
         : this._threadKnowledge.revision;
-    const stablePrefix = domainCachePrefix(this.domain, cacheContent);
-    const threadPrefix = threadSection(understanding);
-    const messages: LLMMessage[] = [
-      { role: 'system', content: chartered(system, this._charter) },
-      {
-        role: 'user',
-        content: [
-          `## Domain cache (${this.domain})`,
-          cacheContent,
-          understanding ? `\n## Your understanding of this thread\n${understanding}` : '',
-          threadState ? `\n## Thread state\n${threadState}` : '',
-          `\n## The agent's actions this turn (${activity.observations.length} tool call${activity.observations.length === 1 ? '' : 's'}, in order)`,
-          renderTurnActivity(activity),
-          `\n${GUARD_RESPONSE_PROTOCOL}`,
-        ].join('\n'),
+    const withRevision = revision !== undefined ? { threadKnowledgeRevision: revision } : {};
+
+    // The exact input of the first stage, frozen before the provider sees it; retained on every outcome below.
+    let evidence: PhaseRequestEvidence | undefined;
+    let served: ServedModel | undefined;
+    let failure: unknown;
+    const run = await runStages({
+      stages: this._stages.map((s) => s.config),
+      charters: this._stages.map((s) => s.charter),
+      envelope: 'guard',
+      trigger: 'agent-action',
+      holds: [this.domain],
+      ask: async (stage) => {
+        const call = await this._askStage(stage, {
+          phase: 'guard',
+          system,
+          cache: cacheContent,
+          cacheComposition: this.cacheComposition(),
+          ...(understanding ? { understanding } : {}),
+          ...(threadState ? { threadState } : {}),
+          moment: `\n## The agent's actions this turn (${activity.observations.length} tool call${activity.observations.length === 1 ? '' : 's'}, in order)\n${renderTurnActivity(activity)}`,
+          // Guards observe completed actions; queued decision capacity serves blocked turns first.
+          opts: { priority: DECISION_PRIORITY.guard },
+          observe: (observed) => {
+            if (stage.index !== 0) return;
+            opts?.observeRequest?.(observed);
+            evidence = observed;
+          },
+        });
+        if (stage.index === 0 && 'content' in call && call.served) served = call.served;
+        if (stage.index === 0 && 'error' in call) failure = call.cause;
+        return call;
       },
-    ];
-
-    // The exact input, frozen before the provider sees it; retained on every outcome below.
-    const evidence = frozenRequest(
-      'guard',
-      this._llm.id,
-      messages,
-      this.composition('guard', { cache: cacheContent, composition: this.cacheComposition() }),
-    );
-    opts?.observeRequest?.(evidence);
-    let request: ParticipantRequest = { status: 'supplied', ...evidence };
-
-    let content: string;
-    try {
-      // Guards observe completed actions; queued decision capacity serves blocked turns first.
-      const result = await this._llm.complete(messages, {
-        ...this._llmOpts,
-        priority: DECISION_PRIORITY.guard,
-        stablePrefix,
-        threadPrefix,
-      });
-      const served = servedModel(result);
-      if (served) request = { ...request, served };
-      content = result.content;
-    } catch (err) {
-      // A call the decision queue never admitted did not run: not-admitted, not a provider error.
-      if (refusedForCapacity(err))
+    });
+    const classified = this._defaultStages ? {} : { classified: run };
+    const supplied: ParticipantRequest = evidence
+      ? { status: 'supplied', ...evidence, ...(served ? { served } : {}) }
+      : { status: 'not-sent', phase: 'guard', reason: 'no call' };
+    // A call the decision queue never admitted did not run: not-admitted, not a provider error.
+    if (run.notStarted)
+      return {
+        findings: [],
+        ran: true,
+        status: 'not-admitted',
+        error: boundedError(run.notStarted),
+        admission: 'not-admitted',
+        request: supplied,
+        ...withRevision,
+        ...classified,
+      };
+    if (!run.final) {
+      // An answer that is not a guard result is never presented as a completed all-clear.
+      if (run.malformed)
         return {
           findings: [],
           ran: true,
-          status: 'not-admitted',
-          error: boundedError((err as Error)?.message ?? String(err)),
-          admission: 'not-admitted',
-          request,
-          ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
+          status: 'invalid-response',
+          error: run.error!,
+          request: supplied,
+          ...withRevision,
+          ...classified,
         };
       // A rejected call is not a completed check. Whether a model ran, or native work is still
       // running, is only known when the provider classifies it; otherwise it is unknown.
@@ -1597,38 +1761,27 @@ export class DomainLibrarian {
         findings: [],
         ran: true,
         status: 'provider-error',
-        error: boundedError((err as Error)?.message ?? String(err)),
-        admission: classifyGuardCall(err),
-        request,
-        ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
+        error: boundedError(run.error ?? 'no answer'),
+        admission: classifyGuardCall(failure),
+        request: supplied,
+        ...withRevision,
+        ...classified,
       };
     }
-    const validated = validateGuardResponse(content);
-    if ('error' in validated) {
-      // An answer that is not a guard result is never presented as a completed all-clear.
-      return {
-        findings: [],
-        ran: true,
-        status: 'invalid-response',
-        error: validated.error,
-        request,
-        ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
-      };
-    }
+    const answered = run.delivered ? (run.final.findings ?? []) : [];
     // The findings are the pointer's remarks in order; the first carries the parsed pointer.
-    const findings = validated.findings.map((f, i) =>
-      i === 0
-        ? { ...f, pointer: parseWardenPointer(validated.findings.map((g) => g.description)) }
-        : f,
+    const findings: GuardFinding[] = answered.map((f, i) =>
+      i === 0 && run.final!.pointer ? { ...f, pointer: run.final!.pointer } : f,
     );
     await this._emitFindings(findings, activity);
     return {
       findings,
-      ...(validated.noComment ? { noComment: true as const } : {}),
+      ...(!findings.length ? { noComment: true as const } : {}),
       ran: true,
       status: 'completed',
-      request,
-      ...(revision !== undefined ? { threadKnowledgeRevision: revision } : {}),
+      request: supplied,
+      ...withRevision,
+      ...classified,
     };
   }
 
@@ -1758,6 +1911,11 @@ function attributedAs(
 export interface CacheComposition {
   readonly segments: readonly SourceSegment[];
   readonly omitted: readonly OmittedSource[];
+}
+
+/** What a doc layer is made of right now, and what its composer left out. */
+function cacheCompositionOf(layer: ContextLayer): CacheComposition {
+  return { segments: layer.segments(), omitted: omittedFrom(layer) };
 }
 
 /** What a layer's composer left out at its last warm (a file path becomes its `file:` subject). */
