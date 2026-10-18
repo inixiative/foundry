@@ -6,10 +6,14 @@ import {
   chorusLayers,
   composeChorus,
   countRegions,
+  type MissingRegionDoc,
+  missingRegionDocs,
   REPOSITORY_SETTINGS_FILE,
+  type RegionRole,
   type RegionSummary,
   regionWardens,
 } from '../agents/region-roster';
+import { DEFAULT_STAGES, type StageConfig, validateStages } from '../classify';
 import {
   type AgentExtension,
   type AgentSettingsConfig,
@@ -86,6 +90,16 @@ export interface ResolvedChorus {
   consumed: { enabled: boolean; from: SettingLayer };
   /** The reception charter: whether threads of this chorus hold it, and which layer said so. */
   reception: { on: boolean; from: SettingLayer };
+  /**
+   * How each role's regions classify: the resolved stages (defaults filled) and which layer gave
+   * them. Heralds are not built: their regions never run, and `built: false` says so.
+   */
+  roles: {
+    warden: { stages: readonly StageConfig[]; from: SettingLayer; regions: number };
+    herald: { stages: readonly StageConfig[]; from: SettingLayer; regions: number; built: false };
+  };
+  /** Docs a region lacks for its role's stages: while any is missing the chorus is not built. */
+  missingDocs?: MissingRegionDoc[];
   /** The repository's `.foundry/project.json`, when it exists: what it said, or why it was not read. */
   repository?: { file: string; chorus?: ChorusSettings; error?: string };
   /** Regions present in the configured layers but not run, because the chorus is not enabled. */
@@ -814,6 +828,8 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   directoriesFrom: SettingLayer;
   consumedFrom: SettingLayer;
   receptionFrom: SettingLayer;
+  /** Per role: the stage list as written (the machine's replaces the repository's whole), and its layer. */
+  stagesFrom: Record<RegionRole, SettingLayer>;
   repository?: ResolvedChorus['repository'];
 } {
   const repository = readRepositorySettings(project.path);
@@ -829,12 +845,21 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   const reception = mine.reception ?? theirs.reception;
   const from = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
     mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
+  // A role's stages are one unit: the machine's list replaces the repository's whole.
+  const wardens = mine.wardens?.stages ?? theirs.wardens?.stages;
+  const heralds = mine.heralds?.stages ?? theirs.heralds?.stages;
   return {
     chorus: {
       ...(enabled !== undefined ? { enabled } : {}),
       ...directories,
       ...(consumed ? { consumed } : {}),
       ...(reception !== undefined ? { reception } : {}),
+      ...(wardens ? { wardens: { stages: wardens } } : {}),
+      ...(heralds ? { heralds: { stages: heralds } } : {}),
+    },
+    stagesFrom: {
+      warden: from(mine.wardens?.stages !== undefined, theirs.wardens?.stages !== undefined),
+      herald: from(mine.heralds?.stages !== undefined, theirs.heralds?.stages !== undefined),
     },
     // Whether the trigger is on is what the view reports, so its provenance is the `enabled` key's.
     consumedFrom: from(
@@ -851,6 +876,11 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
           : 'default',
     ...(repository ? { repository } : {}),
   };
+}
+
+/** A role's stages as written, defaults filled; absent, today's single-stage Warden. */
+function stagesOf(written: unknown): readonly StageConfig[] {
+  return written === undefined ? DEFAULT_STAGES : validateStages('stages', written);
 }
 
 export function resolveProjectView(
@@ -887,6 +917,19 @@ export function resolveProjectView(
     consumed: { enabled: setting.chorus.consumed?.enabled === true, from: setting.consumedFrom },
     // Settled below, once what runs is known: the reception charter goes with a running chorus.
     reception: { on: false, from: setting.receptionFrom },
+    roles: {
+      warden: {
+        stages: stagesOf(setting.chorus.wardens?.stages),
+        from: setting.stagesFrom.warden,
+        regions: 0,
+      },
+      herald: {
+        stages: stagesOf(setting.chorus.heralds?.stages),
+        from: setting.stagesFrom.herald,
+        regions: 0,
+        built: false as const,
+      },
+    },
     ...(setting.repository ? { repository: setting.repository } : {}),
   };
   const unread = setting.repository?.error
@@ -897,15 +940,42 @@ export function resolveProjectView(
   let generated: ReturnType<typeof regionWardens> = [];
   if (enabled) {
     const composed = composeChorus(configuredLayers);
-    chorus = composed.regions.length
-      ? { on: true, ...asked, ...composed }
-      : {
+    const wardenRegions = composed.regions.filter((r) => r.role === 'warden');
+    const heraldRegions = composed.regions.filter((r) => r.role === 'herald');
+    const roles = {
+      warden: { ...asked.roles.warden, regions: wardenRegions.length },
+      herald: { ...asked.roles.herald, regions: heraldRegions.length },
+    };
+    // Checked on the composed chorus: a later layer's region replaces an earlier one whole, docs included.
+    const missingDocs = missingRegionDocs(wardenRegions, () => roles.warden.stages);
+    const heralds = heraldRegions.length
+      ? `; ${heraldRegions.length} Herald region${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
+      : '';
+    chorus = missingDocs.length
+      ? {
           on: false,
           ...asked,
+          roles,
           ...composed,
-          reason: `no regions at ${dirs} (no <id>/region.json); this project has no chorus${unread}`,
-        };
-    generated = regionWardens(composed.regions);
+          missingDocs,
+          reason: `the chorus is not built: ${missingDocs.map((m) => `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+        }
+      : wardenRegions.length
+        ? {
+            on: true,
+            ...asked,
+            roles,
+            ...composed,
+            ...(heralds ? { reason: heralds.slice(2) } : {}),
+          }
+        : {
+            on: false,
+            ...asked,
+            roles,
+            ...composed,
+            reason: `${heraldRegions.length ? `no Warden regions at ${dirs}${heralds}` : `no regions at ${dirs} (no <id>/region.json)`}; this project has no chorus${unread}`,
+          };
+    generated = chorus.on ? regionWardens(wardenRegions, roles.warden.stages) : [];
   } else {
     const available = configuredLayers.reduce((n, l) => n + countRegions(l.regionsDir), 0);
     if (available || unread)
@@ -930,6 +1000,8 @@ export function resolveProjectView(
         layers: configuredLayers.map((l) => ({ label: l.label, regions: l.regionsDir })),
         ...consumed,
         ...(setting.chorus.reception !== undefined ? { reception: setting.chorus.reception } : {}),
+        ...(setting.chorus.wardens ? { wardens: setting.chorus.wardens } : {}),
+        ...(setting.chorus.heralds ? { heralds: setting.chorus.heralds } : {}),
       }
     : { enabled: false, ...consumed };
   const agents = new Map<string, ResolvedAgentDefinition>(
@@ -940,14 +1012,15 @@ export function resolveProjectView(
   const renamed = new Map<string, string>();
   const entries = Object.entries(project.agents ?? {});
   if (chorus.on) {
-    for (const { agent, source, region } of generated) {
+    for (const { agent, sources, region } of generated) {
       if (config.agents[agent.id])
         throw new Error(
           `[config] region ${region.id} (${region.path}) has the id of global agent ${JSON.stringify(agent.id)}`,
         );
-      if (project.agents?.[agent.id] || resolved.sources[source.id])
+      const taken = sources.find((source) => resolved.sources[source.id]);
+      if (project.agents?.[agent.id] || taken)
         throw new Error(
-          `[config] region ${region.id} (${region.path}) collides with project agent or source ${JSON.stringify(agent.id)}`,
+          `[config] region ${region.id} (${region.path}) collides with project agent or source ${JSON.stringify(taken?.id ?? agent.id)}`,
         );
       // A Warden is a decision role: it runs on the project's decision provider and model, never on the
       // main-thread default (an agent with no model resolves to defaults.model, the executor's).
@@ -958,7 +1031,7 @@ export function resolveProjectView(
         ...(resolved.defaults.classifierModel ? { model: resolved.defaults.classifierModel } : {}),
       };
       agents.set(agent.id, generatedAgent({ ...agent, ...decision }, region));
-      resolved.sources[source.id] = source;
+      for (const source of sources) resolved.sources[source.id] = source;
     }
     // A region Warden's instructions are its prompt and the role files for its region, not the whole
     // CLAUDE.md stack (the ladder's default for the instructions slot); its knowledge is the region.

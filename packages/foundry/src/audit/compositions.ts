@@ -4,8 +4,8 @@ import {
   type SourceSegment,
   segmentsText,
 } from '@inixiative/foundry-core';
-import { regionOfSubject } from '../agents/region-roster';
-import { WARDEN_CHARTER } from '../classify';
+import { regionDocOfSubject } from '../agents/region-roster';
+import { KNOWLEDGE_DOC, WARDEN_CHARTER } from '../classify';
 import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import type { AuditLog } from './audit-log';
@@ -50,7 +50,7 @@ export interface CallVersions {
    * knowledge this call composed (`regionKey`). Equal across projects whose region text is equal,
    * whatever layer it came from; the key a shared primed prefix would be looked up by.
    */
-  readonly chorus?: { readonly region: string; readonly key: string };
+  readonly chorus?: { readonly region: string; readonly key: string; readonly doc?: string };
 }
 
 export interface CompositionAuditorOptions {
@@ -85,6 +85,16 @@ export class CompositionAuditor {
     return this.charterVersion;
   }
 
+  /** A classify stage's own charter (recognise, or a pointer set other than the default): its version. */
+  stageCharter(charter: { subject: string; text: string }): string {
+    return this.audit.observe(charter.subject, charter.text, {
+      actor: { kind: 'release' },
+      cause: {
+        ...(this.options.foundryVersion ? { foundryVersion: this.options.foundryVersion } : {}),
+      },
+    }).id;
+  }
+
   versions(role: string, snapshot: CompositionSnapshot): CallVersions {
     const retrieved: Array<{ slot: CompositionSlotName; subject: string; hash: string }> = [];
     const slot = (name: CompositionSlotName) =>
@@ -93,7 +103,7 @@ export class CompositionAuditor {
       );
     const chorus = regionPart(snapshot.domainKnowledge);
     return {
-      charter: this.charter(),
+      charter: snapshot.charter ? this.stageCharter(snapshot.charter) : this.charter(),
       instructions: slot('instructions'),
       domainKnowledge: slot('domainKnowledge'),
       composedHash: {
@@ -175,14 +185,22 @@ export class CompositionAuditor {
   }
 }
 
-/** The region knowledge part of a domain-knowledge slot, as the region and its key (`regionKey`). */
+/**
+ * The region doc part of a domain-knowledge slot, as the region, its key (`regionKey`) and, for a doc
+ * other than knowledge.md (a classify stage's), the doc.
+ */
 function regionPart(
   segments: readonly SourceSegment[],
-): { region: string; key: string } | undefined {
+): { region: string; key: string; doc?: string } | undefined {
   for (const segment of segments) {
     if (typeof segment === 'string') continue;
-    const region = regionOfSubject(segment.subject);
-    if (region) return { region, key: contentHash(segment.text) };
+    const part = regionDocOfSubject(segment.subject);
+    if (part)
+      return {
+        region: part.region,
+        key: contentHash(segment.text),
+        ...(part.doc !== KNOWLEDGE_DOC ? { doc: part.doc } : {}),
+      };
   }
   return undefined;
 }

@@ -20,6 +20,7 @@ import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
+import { type StageConfig, validateStages } from '../classify';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import { subscriptionWorker } from '../models/registry';
 import {
@@ -290,7 +291,23 @@ export interface ChorusSettings {
    * standing layer. On with the chorus (itself opt-in); `false` leaves it out, e.g. for a baseline.
    */
   reception?: boolean;
+  /**
+   * How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, one
+   * stage, today's Warden. The machine's list replaces the repository's whole.
+   */
+  wardens?: ChorusRoleSettings;
+  /** How Herald regions would classify: the socket only. Heralds are not built; their regions do not run. */
+  heralds?: ChorusRoleSettings;
 }
+
+/** One role's classification settings in a chorus. */
+export interface ChorusRoleSettings {
+  /** Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`. */
+  stages?: StageSettings[];
+}
+
+/** A stage as written in settings: any field omitted takes the default stage's (classify `DEFAULT_STAGE`). */
+export type StageSettings = { [K in keyof StageConfig]?: StageConfig[K] };
 
 /**
  * The `consumed` trigger (Aron, 2026-10-17): when a thread takes in a work item (reads a ticket or spec
@@ -896,6 +913,8 @@ function validateConsumedSettings(where: string, consumed: unknown): void {
     throw Error(`${where}.maxChars must be a whole number of at least 200`);
 }
 
+const CHORUS_KEYS = ['enabled', 'regions', 'layers', 'consumed', 'reception', 'wardens', 'heralds'];
+
 export function validateChorusSettings(where: string, chorus: unknown): void {
   if (chorus === undefined) return;
   if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
@@ -907,11 +926,26 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
     throw Error(
       `${where}.source is gone: the hand-named Warden roster is retired and region Wardens are the only chorus. ${c.source === 'regions' ? `Write "enabled": true instead of "source": "regions"` : `Remove "source"${c.source === 'roster' ? ' ("roster" has no replacement: a project without "enabled": true has no chorus)' : ''}; set "enabled": true to run the project's regions`} (docs/usage-and-context.md, "Chorus")`,
     );
-  for (const key of Object.keys(c))
-    if (!['enabled', 'regions', 'layers', 'consumed', 'reception'].includes(key))
+  // Charters are fixed per task and role, owned by Foundry (Aron, 2026-10-18: "keep it somewhat fixed
+  // for now"); a project never sets one.
+  for (const key of ['charter', 'charters'])
+    if (key in c)
       throw Error(
-        `${where}.${key} is not a chorus setting (enabled, regions, layers, consumed, reception)`,
+        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may carry candidate text (scripts/evals/warden-charter.ts --classify)`,
       );
+  for (const key of Object.keys(c))
+    if (!CHORUS_KEYS.includes(key))
+      throw Error(`${where}.${key} is not a chorus setting (${CHORUS_KEYS.join(', ')})`);
+  for (const role of ['wardens', 'heralds'] as const) {
+    const value = c[role];
+    if (value === undefined) continue;
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw Error(`${where}.${role} must be { stages }`);
+    for (const key of Object.keys(value))
+      if (key !== 'stages') throw Error(`${where}.${role}.${key} is not a role setting (stages)`);
+    const stages = (value as { stages?: unknown }).stages;
+    if (stages !== undefined) validateStages(`${where}.${role}.stages`, stages);
+  }
   if (c.enabled !== undefined && typeof c.enabled !== 'boolean')
     throw Error(`${where}.enabled must be true or false`);
   if (c.reception !== undefined && typeof c.reception !== 'boolean')

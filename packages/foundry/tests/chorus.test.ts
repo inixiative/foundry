@@ -47,7 +47,13 @@ import {
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
-import { CHOOSE_ONE_CAVEAT, chartered, parseWardenPointer, WARDEN_CHARTER } from '../src/classify';
+import {
+  CHOOSE_ONE_CAVEAT,
+  chartered,
+  DEFAULT_STAGES,
+  parseWardenPointer,
+  WARDEN_CHARTER,
+} from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';
@@ -429,6 +435,10 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
     directoriesFrom: 'default',
     consumed: { enabled: false, from: 'default' },
     reception: { on: false, from: 'default' },
+    roles: {
+      warden: { stages: DEFAULT_STAGES, from: 'default', regions: 0 },
+      herald: { stages: DEFAULT_STAGES, from: 'default', regions: 0, built: false },
+    },
     layers: [],
     regions: [],
   });

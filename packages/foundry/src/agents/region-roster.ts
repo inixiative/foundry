@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { claudemdSource, INSTRUCTION_FILE_LIMIT } from '@inixiative/foundry-core';
+import { DEFAULT_STAGES, KNOWLEDGE_DOC, type StageConfig, stageDocs } from '../classify';
 import { contentHash } from '../persistence/journal-content';
 import type {
   AgentSettingsConfig,
@@ -37,16 +38,34 @@ export const REGION_GUARD_TRIGGERS: readonly string[] = [
 /** Source id of a region's knowledge in the project view; the audit log versions it as `source-content:<id>@project:<pid>`. */
 export const regionSourceId = (regionId: string): string => `region:${regionId}`;
 
-const REGION_SUBJECT = /^source-content:region:([^@]+)(?:@project:.*)?$/;
+/**
+ * Source id of one doc of a region: its knowledge.md is `region:<id>`, any other doc a stage reads
+ * `region:<id>:<doc>`, so each is versioned (`source-content`) and keyed on its own.
+ */
+export const regionDocSourceId = (regionId: string, doc: string): string =>
+  doc === KNOWLEDGE_DOC ? regionSourceId(regionId) : `${regionSourceId(regionId)}:${doc}`;
 
-/** The region id a composition part's subject names, when it is a region's knowledge. */
+const REGION_SUBJECT = /^source-content:region:([^@:]+)(?::([^@]+))?(?:@project:.*)?$/;
+
+/** The region id a composition part's subject names, when it is a region's doc. */
 export function regionOfSubject(subject: string): string | undefined {
   return REGION_SUBJECT.exec(subject)?.[1];
 }
 
+/** The region and doc a composition part's subject names, when it is a region's doc. */
+export function regionDocOfSubject(subject: string): { region: string; doc: string } | undefined {
+  const m = REGION_SUBJECT.exec(subject);
+  return m ? { region: m[1]!, doc: m[2] ?? KNOWLEDGE_DOC } : undefined;
+}
+
+/** Who a region is for: a Warden (static knowledge, the default) or a Herald (live data; not built). */
+export type RegionRole = 'warden' | 'herald';
+
 /** One region as its `region.json` describes it, plus where its files are. */
 export interface RegionSummary {
   readonly id: string;
+  /** `region.json` `role`; `warden` when it names none. */
+  readonly role: RegionRole;
   readonly title: string;
   /** The one-line routing question ("Is this about …?"), also the pre-filter's question for this Warden. */
   readonly routing: string;
@@ -59,6 +78,8 @@ export interface RegionSummary {
   readonly path: string;
   /** `knowledge.md`, absolute. */
   readonly knowledgePath: string;
+  /** Every markdown doc in the region's folder (knowledge.md included), by file name: absolute path and size. */
+  readonly docs: Readonly<Record<string, { readonly path: string; readonly bytes: number }>>;
 }
 
 /** One layer of a chorus, as configured: its label and its regions directory (absolute). */
@@ -131,6 +152,7 @@ export function readRegions(dir: string): RegionSummary[] {
     }
     const r = raw as {
       id?: unknown;
+      role?: unknown;
       title?: unknown;
       routing?: unknown;
       concepts?: unknown;
@@ -138,6 +160,17 @@ export function readRegions(dir: string): RegionSummary[] {
     } | null;
     if (!r || typeof r !== 'object')
       throw Error(`region ${entry.name} at ${dir}: region.json is not an object`);
+    // How a region is classified is the chorus's setting, per role (Aron, 2026-10-18: "let's try and
+    // start without that"): refused by name, so a region never silently classifies differently.
+    for (const key of ['stages', 'charter'])
+      if (key in r)
+        throw Error(
+          `region ${entry.name} at ${dir}: region.json "${key}" is not a region setting; a chorus sets its stages per role (chorus.wardens.stages), and charters are Foundry's`,
+        );
+    if (r.role !== undefined && r.role !== 'warden' && r.role !== 'herald')
+      throw Error(
+        `region ${entry.name} at ${dir}: region.json "role" must be "warden" or "herald"`,
+      );
     if (typeof r.id !== 'string' || !REGION_ID.test(r.id))
       throw Error(
         `region ${entry.name} at ${dir}: region.json needs an "id" (letters, digits, _ . -)`,
@@ -153,8 +186,15 @@ export function readRegions(dir: string): RegionSummary[] {
     const concepts = Array.isArray(r.concepts)
       ? r.concepts.filter((c): c is string => typeof c === 'string')
       : [];
+    const docs: Record<string, { path: string; bytes: number }> = {};
+    for (const file of readdirSync(join(dir, entry.name), { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith('.md')) continue;
+      const docPath = join(dir, entry.name, file.name);
+      docs[file.name] = { path: docPath, bytes: statSync(docPath).size };
+    }
     regions.push({
       id: r.id,
+      role: r.role === 'herald' ? 'herald' : 'warden',
       title: r.title.trim(),
       routing: r.routing.trim(),
       concepts,
@@ -162,6 +202,7 @@ export function readRegions(dir: string): RegionSummary[] {
       bytes: knowledge.size,
       path,
       knowledgePath,
+      docs,
     });
   }
   return regions.sort((a, b) => a.id.localeCompare(b.id));
@@ -232,9 +273,49 @@ export function describeChorus(
  * Rejects when the file cannot be read.
  */
 export async function regionKey(
-  region: Pick<RegionSummary, 'id' | 'knowledgePath'>,
+  region: Pick<RegionSummary, 'id' | 'knowledgePath' | 'docs'>,
+  doc: string = KNOWLEDGE_DOC,
 ): Promise<string> {
-  return contentHash(await claudemdSource(regionSourceId(region.id), region.knowledgePath).load());
+  const path = doc === KNOWLEDGE_DOC ? region.knowledgePath : region.docs[doc]?.path;
+  if (!path) throw Error(`region ${region.id} has no ${doc}`);
+  return contentHash(await claudemdSource(regionDocSourceId(region.id, doc), path).load());
+}
+
+/** A doc a region of the chorus lacks for a stage of its role: the chorus is not built while any is. */
+export interface MissingRegionDoc {
+  readonly region: string;
+  readonly role: RegionRole;
+  readonly doc: string;
+  /** The 0-based stages that read it. */
+  readonly stages: readonly number[];
+}
+
+/**
+ * The docs the regions lack for their role's stages, checked on the composed chorus (a later layer's
+ * region replaces an earlier one whole, docs included). A doc over the size an instruction file
+ * loads counts as missing: its source would load it as nothing.
+ */
+export function missingRegionDocs(
+  regions: readonly RegionSummary[],
+  stagesFor: (role: RegionRole) => readonly StageConfig[],
+): MissingRegionDoc[] {
+  const missing: MissingRegionDoc[] = [];
+  for (const region of regions) {
+    const stages = stagesFor(region.role);
+    for (const doc of stageDocs(stages)) {
+      const found = region.docs[doc];
+      if (found && found.bytes <= INSTRUCTION_FILE_LIMIT) continue;
+      missing.push({
+        region: region.id,
+        role: region.role,
+        doc: found
+          ? `${doc} (${found.bytes} bytes, over the ${INSTRUCTION_FILE_LIMIT}-byte limit)`
+          : doc,
+        stages: stages.flatMap((s, i) => (s.doc === doc ? [i] : [])),
+      });
+    }
+  }
+  return missing;
 }
 
 /**
@@ -255,8 +336,10 @@ export interface RegionWarden {
   readonly region: RegionSummary;
   /** A standalone project agent: a full definition, so `resolveProjectView` treats it like one written in settings. */
   readonly agent: AgentSettingsConfig;
-  /** The project source its domain knowledge composes from: the region's knowledge.md, whole. */
+  /** The project source its domain knowledge composes from: its first stage's doc, whole. */
   readonly source: DataSourceConfig;
+  /** One project source per doc its stages read, the first stage's included (`regionDocSourceId`). */
+  readonly sources: readonly DataSourceConfig[];
 }
 
 /**
@@ -266,8 +349,23 @@ export interface RegionWarden {
  * composition versions name the exact text). Org and personal overlays reach it through the ladder's
  * role files for role `<region id>` as for any Warden.
  */
-export function regionWardens(regions: readonly RegionSummary[]): RegionWarden[] {
-  return regions.map((region) => ({
+export function regionWardens(
+  regions: readonly RegionSummary[],
+  stages: readonly StageConfig[] = DEFAULT_STAGES,
+): RegionWarden[] {
+  return regions.map((region) => regionWarden(region, stages));
+}
+
+function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): RegionWarden {
+  const docSource = (doc: string): DataSourceConfig => ({
+    id: regionDocSourceId(region.id, doc),
+    label: `${region.title} (region ${doc === KNOWLEDGE_DOC ? 'knowledge' : doc})`,
+    type: 'markdown',
+    uri: doc === KNOWLEDGE_DOC ? region.knowledgePath : region.docs[doc]!.path,
+    enabled: true,
+  });
+  const sources = stageDocs(stages).map(docSource);
+  return {
     region,
     agent: {
       id: region.id,
@@ -279,19 +377,14 @@ export function regionWardens(regions: readonly RegionSummary[]): RegionWarden[]
       temperature: 0,
       tools: false,
       visibleLayers: [],
-      domainKnowledge: [regionSourceId(region.id)],
+      domainKnowledge: [regionDocSourceId(region.id, stages[0]!.doc)],
       guardTriggers: [...REGION_GUARD_TRIGGERS],
       peers: [],
       maxDepth: 1,
       invocation: 'always',
       enabled: true,
     },
-    source: {
-      id: regionSourceId(region.id),
-      label: `${region.title} (region knowledge)`,
-      type: 'markdown',
-      uri: region.knowledgePath,
-      enabled: true,
-    },
-  }));
+    source: sources[0]!,
+    sources,
+  };
 }

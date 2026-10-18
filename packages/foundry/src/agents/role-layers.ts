@@ -28,6 +28,8 @@ export interface RoleLayerOptions {
   /** Instructions to use when the role's settings carry none. */
   builtIn?: string;
   scope?: OwnershipScope;
+  /** The domain knowledge sources in place of the role's own (a later classify stage's doc). */
+  domainKnowledge?: readonly string[];
 }
 
 /**
@@ -48,6 +50,25 @@ export function buildRoleLayers(
 }
 
 const BOTH: readonly CompositionSlot[] = ['instructions', 'domainKnowledge'];
+
+/**
+ * The domain knowledge a later classify stage reads: the role's slot composed the same way (its
+ * overlays and general files included), from that stage's doc source in place of the role's own.
+ */
+export function buildStageKnowledge(
+  config: FoundryConfig,
+  role: string,
+  doc: string,
+  sourceId: string,
+  options: RoleLayerOptions = {},
+): ContextLayer {
+  return roleLayer(
+    `${roleLayerId(role, 'domainKnowledge')}:${doc}`,
+    roleSources(config, role, 'domainKnowledge', BOTH, { ...options, domainKnowledge: [sourceId] }),
+    options.scope,
+    'domain-knowledge',
+  );
+}
 
 /** One slot of a role that receives `delivered` (the Cartographer: instructions only). */
 export function buildRoleLayer(
@@ -71,7 +92,11 @@ export function roleSources(
   role: string,
   slot: CompositionSlot,
   delivered: readonly CompositionSlot[],
-  options: { resolveSource?: ResolveSource; builtIn?: string } = {},
+  options: {
+    resolveSource?: ResolveSource;
+    builtIn?: string;
+    domainKnowledge?: readonly string[];
+  } = {},
 ): ContextSource[] {
   const agent = config.agents[role];
   const ladder = compositionSource(
@@ -93,7 +118,7 @@ export function roleSources(
       ladder,
     ];
   }
-  const ids = [...new Set(agent?.domainKnowledge ?? [])];
+  const ids = [...new Set(options.domainKnowledge ?? agent?.domainKnowledge ?? [])];
   if (ids.length && !options.resolveSource)
     throw Error(`Role ${role} names domain knowledge sources but no source resolver is available`);
   const settings = ids.map((id) => {

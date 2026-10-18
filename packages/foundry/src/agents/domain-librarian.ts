@@ -46,6 +46,7 @@ import {
   type StageConfig,
   type StageRun,
   stageRuns,
+  WARDEN_CHARTER,
   type WardenPointer,
 } from '../classify';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
@@ -1506,6 +1507,18 @@ export class DomainLibrarian {
             }
           : undefined,
     );
+    // A stage under its own charter (recognise, a pointer set other than the default, a candidate)
+    // journals that charter's version; the Warden charter stays the auditor's default.
+    const charter =
+      run.charter.text === WARDEN_CHARTER
+        ? undefined
+        : {
+            subject:
+              stage.charter !== undefined
+                ? 'charter:candidate'
+                : `charter:${run.stage.task}.warden${run.stage.pointer?.any === false ? '.no-any' : ''}`,
+            text: run.charter.text,
+          };
     // The exact input, frozen before the provider sees it. Text only: no transport, session or
     // credential state exists here to leak. What the provider then did is reported separately.
     frame.observe?.(
@@ -1513,7 +1526,7 @@ export class DomainLibrarian {
         frame.phase,
         stage.llm.id,
         messages,
-        composition,
+        charter ? { ...composition, charter } : composition,
         this._defaultStages ? undefined : run.index,
       ),
     );

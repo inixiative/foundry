@@ -146,6 +146,11 @@ export interface CompositionSnapshot {
     readonly instructions: readonly OmittedSource[];
     readonly domainKnowledge: readonly OmittedSource[];
   };
+  /**
+   * The charter the call ran under, when it is not the Warden charter (a classify stage's own):
+   * its audited subject and text.
+   */
+  readonly charter?: { readonly subject: string; readonly text: string };
 }
 
 export interface OmittedSource {
