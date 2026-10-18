@@ -25,6 +25,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+// The measured Foundry captures to a fake Archive, never the machine's (ARCHIVE_URL/TOKEN inherited).
+import '../packages/foundry/tests/helpers/isolate-archive';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
