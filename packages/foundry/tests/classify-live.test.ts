@@ -19,7 +19,13 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { RECOGNISE_CHARTER, type StageEffort, WARDEN_CHARTER } from '../src/classify';
+import {
+  charterFor,
+  RECOGNISE_CHARTER,
+  type StageEffort,
+  validateStages,
+  WARDEN_CHARTER,
+} from '../src/classify';
 import { inSessionTarget, isStageSession } from '../src/providers/primed-decisions';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 
@@ -197,7 +203,15 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
     'domain:locks',
     'domain:queues',
   ]);
-  expect(first.every((c) => c.messages[0]!.content.startsWith(RECOGNISE_CHARTER))).toBe(true);
+  // A ternary recogniser: the recognise charter with its mode's unsure section composed in.
+  const ternary = charterFor(
+    'recognise',
+    'warden',
+    undefined,
+    validateStages('s', [RECOGNISE, {}])[0]!,
+  );
+  expect(ternary.text).not.toBe(RECOGNISE_CHARTER);
+  expect(first.every((c) => c.messages[0]!.content.startsWith(ternary.text))).toBe(true);
   expect(first.every((c) => !c.messages[1]!.content.includes('CATALOGUE_'))).toBe(true);
   const second = f.calls.filter((c) => c.host === 'claude-sonnet-5-5');
   expect(second).toHaveLength(1);

@@ -243,7 +243,7 @@ export function stageRuns(
       charter:
         override !== undefined
           ? { text: override, version: charterVersion(override) }
-          : charterFor(stage.task, options.role ?? 'warden', stage.pointer),
+          : charterFor(stage.task, options.role ?? 'warden', stage.pointer, stage),
       spec,
       protocol: responseProtocol(spec),
     };
@@ -419,7 +419,8 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       };
     }
     let followup: Partial<ClassifyStageTrace> = {};
-    if (base.stage.reason === 'followup' && call.followUp) {
+    // A no is neither delivered nor carried, so it has no why to ask for (debug's after reading asks).
+    if (base.stage.reason === 'followup' && reading.outcome !== 'no' && call.followUp) {
       try {
         // The follow-up stays inside the run's deadline: past it, the answer stands without its why.
         const asked = call.followUp(FOLLOWUP_QUESTION);
@@ -438,8 +439,12 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       }
     }
     await debug(base, call, reading, followup);
+    // The why carried on: given inline, else asked after the answer, else the recogniser's or pointer's line.
     const why =
-      reading.why ?? reading.regions?.map((r) => r.why).join('; ') ?? reading.pointer?.why;
+      reading.why ??
+      followup.why ??
+      reading.regions?.map((r) => r.why).join('; ') ??
+      reading.pointer?.why;
     traces.push(
       trace({
         ...meta,

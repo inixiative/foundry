@@ -18,7 +18,7 @@ import { buildRoleLayers, buildStageKnowledge } from '../src/agents/role-layers'
 import { createSourceResolver } from '../src/agents/thread-factory';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
-import { RECOGNISE_CHARTER, validateStages, WARDEN_CHARTER } from '../src/classify';
+import { charterFor, validateStages, WARDEN_CHARTER } from '../src/classify';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import {
   type FoundryConfig,
@@ -225,7 +225,10 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   // The first stage's request reaches the observer; later stages' ride on the result.
   requests.push(...(advice.stageRequests ?? []));
   expect(requests.map((r) => r.stage)).toEqual([0, 1]);
-  expect(requests[0]!.messages[0]!.content).toStartWith(RECOGNISE_CHARTER);
+  // Each stage's charter is the one its task and modes compose (a ternary recogniser adds its unsure section).
+  expect(requests[0]!.messages[0]!.content).toStartWith(
+    charterFor('recognise', 'warden', undefined, stages[0]).text,
+  );
   expect(requests[1]!.messages[0]!.content).toStartWith(WARDEN_CHARTER);
 
   const store = new LocalSessionStore(':memory:');

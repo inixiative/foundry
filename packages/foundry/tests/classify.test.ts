@@ -319,7 +319,16 @@ describe('the stage loop', () => {
       },
     );
     const result = await lib.advise('Add a nightly job that must never run twice.');
-    expect(one.calls[0]!.messages[0]!.content).toStartWith(RECOGNISE_CHARTER);
+    // A ternary recogniser runs under the recognise charter with its mode's unsure section added.
+    const ternary = charterFor(
+      'recognise',
+      'warden',
+      undefined,
+      recognise as Partial<StageConfig> as StageConfig,
+    );
+    expect(ternary.text).not.toBe(RECOGNISE_CHARTER);
+    expect(ternary.text).toContain('## Unsure');
+    expect(one.calls[0]!.messages[0]!.content).toStartWith(ternary.text);
     expect(one.calls[0]!.messages[1]!.content).toContain('Mutual exclusion across instances.');
     const second = two.calls[0]!.messages;
     expect(second[0]!.content).toStartWith(WARDEN_CHARTER);
@@ -435,10 +444,10 @@ describe('the stage loop', () => {
     });
   });
 
-  test('reason followup asks why after the answer; the answer stands', async () => {
+  test('reason followup asks why after a yes on the same session; the answer stands', async () => {
     const { llm, calls } = scripted('haiku', [
-      'NO_COMMENT',
-      'It asks for a rename.\nNothing in locks.\nREVISED: KEEP',
+      advice([RANKED]),
+      'It asks for mutual exclusion.\ncreateLock does that job.\nREVISED: KEEP',
     ]);
     const lib = new DomainLibrarian({
       domain: 'locks',
@@ -447,18 +456,51 @@ describe('the stage loop', () => {
       llm,
       stages: [{ config: validateStages('s', [{ reason: 'followup' }])[0]! }],
     });
-    const result = await lib.advise('Rename a variable.');
-    expect(calls[1]!.messages.at(-2)).toEqual({ role: 'assistant', content: 'NO_COMMENT' });
+    const result = await lib.advise('Stop two workers running the same job.');
+    expect(calls[1]!.messages.at(-2)).toEqual({ role: 'assistant', content: advice([RANKED]) });
     expect(calls[1]!.messages.at(-1)!.content).toContain('REVISED: KEEP');
     expect(result).toMatchObject({
-      noComment: true,
       classified: {
-        outcome: 'no',
+        outcome: 'yes',
         stages: [
-          { outcome: 'no', why: 'It asks for a rename. Nothing in locks.', revised: 'keep' },
+          {
+            outcome: 'yes',
+            why: 'It asks for mutual exclusion. createLock does that job.',
+            revised: 'keep',
+          },
         ],
       },
     });
+  });
+
+  test('reason followup does not ask after a no: nothing is delivered or carried', async () => {
+    const { llm, calls } = scripted('haiku', ['NO_COMMENT']);
+    const lib = new DomainLibrarian({
+      domain: 'locks',
+      cache: layer('k', '# Locks'),
+      signals: new SignalBus(0),
+      llm,
+      stages: [{ config: validateStages('s', [{ reason: 'followup' }])[0]! }],
+    });
+    const result = await lib.advise('Rename a variable.');
+    expect(calls).toHaveLength(1);
+    expect(result).toMatchObject({ noComment: true, classified: { outcome: 'no' } });
+  });
+
+  test('a why asked after the answer is carried to the next stage', async () => {
+    const { lib, two } = twoStage(
+      { reason: 'followup', escalate: ['yes'] },
+      {},
+      {
+        one: [advice([RANKED]), 'Two workers must not overlap.\nREVISED: KEEP'],
+        two: [advice([RANKED])],
+      },
+    );
+    const result = await lib.advise('Stop two workers running the same job.');
+    expect(two.calls[0]!.messages.at(-1)!.content).toContain(
+      'read this moment as in your region: Two workers must not overlap.',
+    );
+    expect(result).toMatchObject({ classified: { outcome: 'yes', finalStage: 1 } });
   });
 
   test('a recogniser that names only regions it does not hold is malformed; a fan-out starts past it', async () => {

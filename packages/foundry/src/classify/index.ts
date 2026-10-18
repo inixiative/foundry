@@ -19,10 +19,14 @@ export {
 } from './charters/point.warden';
 export { RECOGNISE_CHARTER } from './charters/recognise.warden';
 export {
+  type AddedSection,
   assemblePrompt,
   defaultSection,
+  modeSections,
   PROMPT_SECTIONS,
   type SectionSource,
+  type StageMode,
+  stageModes,
   stageSections,
   withRegionInstructions,
 } from './charters/sections';
