@@ -649,7 +649,12 @@ async function run() {
         for (const check of checks)
           if (built.get(check)!.some((c) => c.size === size && c.position === position))
             jobs.push({ check, cell: `${size / 1000}k-${position}`, rep });
-  const charter = join(ROOT, 'charter-classify.md');
+  // The size test's candidate charter, as a one-stage classify run (warden-charter.ts --classify).
+  const runConfig = join(ROOT, 'classify-run.json');
+  writePrivate(
+    runConfig,
+    JSON.stringify({ stages: [{ charterFile: 'charter-classify.md' }] }, null, 1),
+  );
   console.error(`run ${runId}: ${jobs.length} cells, ${parallel} at once`);
   let next = 0;
   const worker = async () => {
@@ -701,8 +706,8 @@ async function run() {
           '4000000',
           '--input-cap',
           '4000000',
-          '--charter',
-          charter,
+          '--classify',
+          runConfig,
           '--no-judge',
           '--concurrency',
           '1',

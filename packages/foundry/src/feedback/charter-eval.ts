@@ -1,13 +1,14 @@
-// The Warden charter eval: run a chorus over real-session probes with one charter wording and score
-// how quiet, how right and how in-scope it is. Same code path as live (DomainLibrarian with the
-// charter composed above each Warden's instructions), at both trigger points: `user-message` advises
-// on the user's ask, `agent-action` guards the agent's turn. No thread, no writes. Scoring and the
-// probe contract live in foundry-core (`feedback/warden-probes`), so Oracle scores runs the same way.
+// The Warden charter eval: run a chorus over real-session probes under one classify configuration and
+// score how quiet, how right and how in-scope it is. Same code path as live (DomainLibrarian running
+// classify's stages, each charter composed above the Warden's instructions), at both trigger points:
+// `user-message` advises on the user's ask, `agent-action` guards the agent's turn. No thread, no
+// writes. Scoring and the probe contract live in foundry-core (`feedback/warden-probes`), so Oracle
+// scores runs the same way.
 
 import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
+  type ClassifyStageTrace,
   ContextLayer,
-  type LLMMessage,
   type LLMProvider,
   parseWardenJudgement,
   probeTriggers,
@@ -20,12 +21,21 @@ import {
   wardenJudgeMessage,
 } from '@inixiative/foundry-core';
 import {
+  type AdviseResult,
   DomainLibrarian,
-  domainCachePrefix,
+  type GuardResult,
   oneCall,
-  threadSection,
+  type WardenStage,
 } from '../agents/domain-librarian';
-import { adviceResponseProtocol, DEFAULT_STAGE } from '../classify';
+import {
+  type Carried,
+  type ClassifyResult,
+  DEFAULT_STAGES,
+  isDefaultStages,
+  KNOWLEDGE_DOC,
+  type Recognition,
+  type StageConfig,
+} from '../classify';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {
@@ -37,7 +47,12 @@ export function markEvalRun(state: string): void {
 export interface EvalWarden {
   readonly domain: string;
   readonly instructions: string;
+  /** What its first stage reads (live: the role's composed knowledge of that stage's doc). */
   readonly domainKnowledge: string;
+  /** What later stages read, by doc name, composed the same way. */
+  readonly docs?: Readonly<Record<string, string>>;
+  /** A group recogniser: the region ids it holds. Its first stage's yeses fan out to those regions. */
+  readonly members?: readonly string[];
   /** The role's composition budget, as live (`roleComposition(...).budget`). */
   readonly budget?: number;
   /**
@@ -45,10 +60,7 @@ export interface EvalWarden {
    * knowledge is primed once and read from the prompt cache after. One-shot calls when omitted.
    */
   readonly session?: string;
-  /**
-   * Text this Warden sees as thread context on top of the probe's own (the v1 chain's picker gets the
-   * recogniser's "why" line here). Per call, never cached with the knowledge.
-   */
+  /** Text this Warden sees as thread context on top of the probe's own. Per call, never cached with the knowledge. */
   readonly context?: string;
 }
 
@@ -57,14 +69,20 @@ const PROBE_MOMENT_TOOL = 'AgentTurn';
 
 export interface CharterEvalOptions {
   readonly probes: readonly WardenProbe[];
-  /** The Wardens that may see a probe (its context's ladder); a chain's second stage picks them per trigger. */
+  /** The Wardens (regions, or group recognisers) that may see a probe: its context's ladder. */
   readonly wardensFor: (probe: WardenProbe, trigger: WardenProbeTrigger) => readonly EvalWarden[];
-  /** Haiku on the subscription, as live Wardens run. */
+  /** A group recogniser's member, as the region Warden its later stages run as. */
+  readonly memberWarden?: (probe: WardenProbe, regionId: string) => EvalWarden | undefined;
+  /** Haiku on the subscription, as live Wardens run: every stage's provider without `stageProviders`. */
   readonly warden: LLMProvider;
+  /** One provider per stage (one host per model and effort); a stage without one uses `warden`. */
+  readonly stageProviders?: readonly (LLMProvider | undefined)[];
+  /** The classify stages under test; the shipped single stage when omitted. */
+  readonly stages?: readonly StageConfig[];
+  /** Candidate charter text per stage (eval only); a stage without one runs its fixed charter. */
+  readonly charters?: readonly (string | undefined)[];
   /** The grader of remarks; remarks are left unjudged when omitted (graded later, e.g. as pointers). */
   readonly judge?: LLMProvider;
-  /** The wording under test; the shipped WARDEN_CHARTER when omitted. */
-  readonly charter?: string;
   /** Wardens in flight at once: the decision queue's size. */
   readonly concurrency?: number;
   /** The trigger points to ask at, where a probe recorded their input; `agent-action` when omitted. */
@@ -84,136 +102,14 @@ export interface CharterEvalOptions {
   readonly onAnswer?: (answer: WardenProbeAnswer) => void;
   /** Called once a turn's answers are all judged and passed to `onAnswer`. */
   readonly onTurn?: (turn: WardenProbeTurn) => void;
-  /**
-   * Diagnostic runs only (`--diagnose`): after each `user-message` answer, ask the same Warden, on the
-   * same composed prompt and under the same bar, three more readings: `bare` (the protocol swapped for
-   * one word, YES or NO: isolates the protocol swap), `oneshot` (YES or NO, the name it would point
-   * at, and why: against `bare`, whether producing a reason moves the decision), and `followup` (the
-   * live exchange quoted back, then "why?"). Rows reach `onDiagnosis` once their turn is recorded, so
-   * a run stopped mid-turn leaves none behind. Live Wardens never do this.
-   */
-  readonly diagnose?: boolean;
-  readonly onDiagnosis?: (diagnosis: WardenDiagnosis) => void;
-}
-
-type Tokens = WardenProbeAnswer['tokens'];
-
-/** One cell's diagnostic: the live answer and three readings of the same prompt. */
-export interface WardenDiagnosis {
-  readonly probeId: string;
-  readonly domain: string;
-  readonly trigger: WardenProbeTrigger;
-  /** The live answer: true when the Warden pointed, false on NO_COMMENT. */
-  readonly answered: boolean;
-  readonly bare: {
-    readonly decision?: 'yes' | 'no';
-    readonly error?: string;
-    readonly tokens?: Tokens;
-  };
-  readonly oneshot: {
-    readonly decision?: 'yes' | 'no';
-    /** The name it would point at; absent when it said none. */
-    readonly name?: string;
-    readonly why?: string;
-    readonly error?: string;
-    readonly tokens?: Tokens;
-  };
-  /**
-   * A quoted-answer review, not the Warden's own turn: on the primed transport the live answer
-   * reaches it as text inside one user message. Descriptive only.
-   */
-  readonly followup: {
-    readonly why?: string;
-    /** `keep`, or the answer the Warden now says is right. */
-    readonly revised?: 'keep' | 'yes' | 'no';
-    readonly error?: string;
-    readonly tokens?: Tokens;
-  };
-}
-
-/** The live bar, restated for the diagnostic readings so they decide on the same terms. */
-const DIAGNOSE_BAR = `Apply your usual bar: YES only when the message touches something your domain says already exists, something you can name from your knowledge (a pointer you cannot source is a guess, so NO); otherwise NO, whatever the message says to build or not to use.`;
-
-export const DIAGNOSE_BARE_PROTOCOL = `This is a diagnostic run, not a live turn. ${DIAGNOSE_BAR}
-Answer with one word and nothing else: YES or NO.`;
-
-export const DIAGNOSE_ONESHOT_PROTOCOL = `This is a diagnostic run, not a live turn. ${DIAGNOSE_BAR}
-Answer in exactly this shape and nothing else:
-Line 1: YES or NO.
-Line 2: NAME: the exact name from your knowledge you would point at, or none.
-Line 3: WHY: one or two sentences: what the message asks for, and which part of your domain it does or does not touch.`;
-
-export const DIAGNOSE_FOLLOWUP = `This is a diagnostic question, not a live turn. Above is the answer given to this message. In at most two short lines, explain it:
-1. What the message asks for, in your words.
-2. Which part of your domain it does or does not touch, and why.
-Then one last line: \`REVISED: KEEP\` if that answer stands, or \`REVISED: YES\` / \`REVISED: NO\` if on reflection the other answer is right.`;
-
-const lines = (text: string) =>
-  text
-    .trim()
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-/** The answer's leading YES or NO (markdown and punctuation tolerated) and whatever follows it. */
-const leading = (text: string) => {
-  // NO_COMMENT, the live protocol's no, still answers NO.
-  const m = /^[\W_]*(YES|NO)(?:_COMMENT)?\b[\W_]*(.*)$/is.exec(text.trim());
-  return m ? { decision: m[1]!.toLowerCase() as 'yes' | 'no', rest: m[2]!.trim() } : undefined;
-};
-
-/** A bare reading: YES or NO, alone. */
-export function parseBare(text: string): { decision?: 'yes' | 'no' } {
-  const lead = leading(text);
-  return lead ? { decision: lead.decision } : {};
-}
-
-/** A one-shot reading: its YES or NO, the NAME line (`none` is no name) and the WHY. */
-export function parseOneshot(text: string): {
-  decision?: 'yes' | 'no';
-  name?: string;
-  why?: string;
-} {
-  const lead = leading(text);
-  const body = lines(lead ? lead.rest : text);
-  const field = (key: string) =>
-    body
-      .map((l) => new RegExp(`^[*_\\s]*${key}[*_\\s]*:\\s*(.*)$`, 'i').exec(l)?.[1]?.trim())
-      .find((v) => v !== undefined);
-  const name = field('NAME')?.replace(/[`*]/g, '').trim();
-  const why =
-    field('WHY') ??
-    body
-      .filter((l) => !/^[*_\s]*NAME[*_\s]*:/i.test(l))
-      .join(' ')
-      .trim();
-  return {
-    ...(lead ? { decision: lead.decision } : {}),
-    ...(name && !/^none\b/i.test(name) ? { name } : {}),
-    ...(why ? { why } : {}),
-  };
-}
-
-/** The follow-up's explanation and its last `REVISED:` verdict, wherever it stands. */
-export function parseFollowup(text: string): { why?: string; revised?: 'keep' | 'yes' | 'no' } {
-  const all = [...text.matchAll(/REVISED:\s*\**\s*(KEEP|YES|NO)\b/gi)];
-  const last = all.at(-1);
-  const why = lines(text)
-    .filter((l) => !/REVISED:/i.test(l))
-    .join(' ')
-    .replace(/`/g, '')
-    .trim();
-  return {
-    ...(why ? { why } : {}),
-    ...(last ? { revised: last[1]!.toLowerCase() as 'keep' | 'yes' | 'no' } : {}),
-  };
 }
 
 /**
  * Run each probe as one turn per trigger point: every Warden is asked at once, as the live chorus is,
  * bounded by `concurrency`: through the advice phase on the user's ask (`user-message`), and through
  * the guard phase on the agent's turn (`agent-action`). Probes run one after another, so each turn's
- * wall clock is what a live turn would wait. Every remark is then judged against the user's real
- * next message.
+ * wall clock is what a live turn would wait. A group recogniser's answer becomes one row per member.
+ * Every remark is then judged against the user's real next message.
  */
 export async function runCharterEval(
   options: CharterEvalOptions,
@@ -231,12 +127,7 @@ export async function runCharterEval(
       // The gate may have closed the run (a quota stop): a turn it closed is not asked.
       if (options.done?.(probe.id, trigger)) continue;
       const started = Date.now();
-      const asked: WardenProbeAnswer[] = new Array(wardens.length);
-      // Diagnoses wait for their turn to be recorded, so a stopped turn leaves none behind.
-      const diagnosed: WardenDiagnosis[] = [];
-      const turnOptions = options.diagnose
-        ? { ...options, onDiagnosis: (d: WardenDiagnosis) => diagnosed.push(d) }
-        : options;
+      const asked: WardenProbeAnswer[][] = new Array(wardens.length);
       let next = 0;
       await Promise.all(
         Array.from(
@@ -244,26 +135,29 @@ export async function runCharterEval(
           async () => {
             while (next < wardens.length) {
               const index = next++;
-              asked[index] = await askWithRetries(turnOptions, probe, wardens[index]!, trigger);
+              asked[index] = await askWithRetries(options, probe, wardens[index]!, trigger);
             }
           },
         ),
       );
+      const rows = asked.flat();
       turns.push({
         probeId: probe.id,
         trigger,
-        calls: wardens.length,
+        calls: rows.length,
         wallMs: Date.now() - started,
-        notAdmitted: asked.filter((a) => a.error === 'not-admitted').length,
+        notAdmitted: rows.filter((a) => a.error === 'not-admitted').length,
       });
-      for (const answer of asked) {
+      const describe = (domain: string) =>
+        (
+          wardens.find((w) => w.domain === domain) ?? options.memberWarden?.(probe, domain)
+        )?.instructions.slice(0, 1200) ?? '';
+      for (const answer of rows) {
         const judged =
           options.judge && !answer.noComment && !answer.error && answer.text
             ? await judge(options.judge, {
                 domain: answer.domain,
-                domainDescription: wardens
-                  .find((w) => w.domain === answer.domain)!
-                  .instructions.slice(0, 1200),
+                domainDescription: describe(answer.domain),
                 moment: probe.moment,
                 ...(probe.ask ? { ask: probe.ask } : {}),
                 trigger,
@@ -277,7 +171,6 @@ export async function runCharterEval(
         options.onAnswer?.(final);
       }
       options.onTurn?.(turns.at(-1)!);
-      for (const d of diagnosed) options.onDiagnosis?.(d);
     }
   }
   return { answers, turns };
@@ -300,19 +193,70 @@ async function askWithRetries(
   probe: WardenProbe,
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
-): Promise<WardenProbeAnswer> {
-  let answer = await ask(options, probe, warden, trigger);
+): Promise<WardenProbeAnswer[]> {
+  const lost = (rows: WardenProbeAnswer[]) =>
+    rows.length > 0 && rows.every((a) => a.error && TRANSPORT_FAILURE.test(a.error));
+  let rows = await ask(options, probe, warden, trigger);
   const retried: string[] = [];
-  for (
-    let attempt = 0;
-    attempt < (options.retries ?? 2) && answer.error && TRANSPORT_FAILURE.test(answer.error);
-    attempt++
-  ) {
-    retried.push(answer.error);
+  for (let attempt = 0; attempt < (options.retries ?? 2) && lost(rows); attempt++) {
+    retried.push(rows[0]!.error!);
     await Bun.sleep((options.retryDelayMs ?? 5_000) * (attempt + 1));
-    answer = await ask(options, probe, warden, trigger);
+    rows = await ask(options, probe, warden, trigger);
   }
-  return retried.length ? { ...answer, retried } : answer;
+  return retried.length ? rows.map((a) => ({ ...a, retried })) : rows;
+}
+
+type Row = Omit<WardenProbeAnswer, 'probeId' | 'domain' | 'trigger' | 'elapsedMs'>;
+
+/** A Warden's answer as a row: a yes speaks its final remarks; a no, or a final unsure, is silence. */
+function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult): Row {
+  const staged = classified
+    ? { ...(classified.outcome ? { outcome: classified.outcome } : {}), stages: classified.stages }
+    : {};
+  if ('status' in result) {
+    if (result.status !== 'completed')
+      return {
+        noComment: false,
+        error: result.status === 'not-admitted' ? 'not-admitted' : (result.error ?? result.status),
+        ...staged,
+      };
+  } else if (result.notStarted) return { noComment: false, error: 'not-admitted', ...staged };
+  else if (result.error || result.skipped)
+    return { noComment: false, error: result.error ?? result.skipped!, ...staged };
+  if (classified?.final)
+    return classified.outcome === 'yes' && classified.final.remarks.length
+      ? { noComment: false, text: classified.final.remarks.join('\n'), ...staged }
+      : { noComment: true, ...staged };
+  if ('status' in result)
+    return result.noComment
+      ? { noComment: true }
+      : {
+          noComment: false,
+          text: result.findings
+            .map((f) => [f.description, f.suggestion].filter(Boolean).join(' '))
+            .join('\n'),
+        };
+  // Advice without a snippet adds nothing a Warden would say to the thread.
+  return result.noComment || !result.snippets.length
+    ? { noComment: true }
+    : { noComment: false, text: result.snippets.join('\n') };
+}
+
+/** A trace's tokens split evenly over a group's members, so per-region cost sums to the group's. */
+function shared(trace: ClassifyStageTrace, members: number): ClassifyStageTrace {
+  if (!trace.tokens) return trace;
+  const part = (n: number) => Math.round(n / members);
+  const t = trace.tokens;
+  return {
+    ...trace,
+    tokens: {
+      input: part(t.input),
+      output: part(t.output),
+      ...(t.cacheRead !== undefined ? { cacheRead: part(t.cacheRead) } : {}),
+      ...(t.cacheWrite !== undefined ? { cacheWrite: part(t.cacheWrite) } : {}),
+      ...(t.thinking !== undefined ? { thinking: part(t.thinking) } : {}),
+    },
+  };
 }
 
 async function ask(
@@ -320,91 +264,151 @@ async function ask(
   probe: WardenProbe,
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
-): Promise<WardenProbeAnswer> {
-  const cache = new ContextLayer({ id: `eval:${warden.domain}` });
-  cache.set(warden.domainKnowledge);
-  const instructions = new ContextLayer({ id: `eval:${warden.domain}:instructions` });
-  instructions.set(warden.instructions);
-  // The provider's usage report for this call: cache reads show whether the primed prefix was warm.
-  let tokens: WardenProbeAnswer['tokens'];
-  // The real answer's text, as the model gave it: the follow-up quotes it back as its own turn.
-  let raw: string | undefined;
-  const llm: LLMProvider = Object.assign(Object.create(options.warden) as LLMProvider, {
-    complete: async (...args: Parameters<LLMProvider['complete']>) => {
-      const result = await options.warden.complete(...args);
-      raw = result.content;
-      if (result.tokens) {
-        const { providerUsage: _usage, ...counts } = result.tokens;
-        tokens = counts;
-      }
-      return result;
-    },
-  });
-  const lib = new DomainLibrarian({
-    domain: warden.domain,
-    cache,
-    instructions,
-    signals: new SignalBus(0),
-    llm,
-    llmOpts: {
-      maxTokens: 512,
-      temperature: 0,
-      ...(warden.session ? { threadId: warden.session } : {}),
-    },
-    guardTriggers: [PROBE_MOMENT_TOOL],
-    ...(warden.budget !== undefined ? { budget: warden.budget } : {}),
-    ...(options.charter !== undefined
-      ? { stages: [{ config: DEFAULT_STAGE, charter: options.charter }] }
-      : {}),
-  });
+): Promise<WardenProbeAnswer[]> {
+  const stages = options.stages ?? DEFAULT_STAGES;
+  const staged = !isDefaultStages(stages) || !!options.charters?.some((c) => c !== undefined);
   const started = Date.now();
-  const answer = (
-    rest: Omit<WardenProbeAnswer, 'probeId' | 'domain' | 'trigger' | 'elapsedMs'>,
-  ) => ({
-    probeId: probe.id,
-    domain: warden.domain,
-    trigger,
-    elapsedMs: Date.now() - started,
-    ...(tokens ? { tokens } : {}),
-    ...rest,
-  });
-  if (trigger === 'user-message') {
-    let request: readonly LLMMessage[] | undefined;
-    const advice = await lib.advise(probe.ask ?? '', undefined, {
-      ...threadKnowledge(probe, warden),
-      observeRequest: (evidence) => {
-        request = evidence.messages;
+  // A one-stage call's usage as the provider reported it: cache reads show a warm, primed prefix.
+  let tokens: WardenProbeAnswer['tokens'];
+  const counted = (provider: LLMProvider): LLMProvider =>
+    Object.assign(Object.create(provider) as LLMProvider, {
+      complete: async (...args: Parameters<LLMProvider['complete']>) => {
+        const result = await provider.complete(...args);
+        if (result.tokens) {
+          const { providerUsage: _usage, ...counts } = result.tokens;
+          tokens = counts;
+        }
+        return result;
       },
     });
-    if (advice.notStarted) return answer({ noComment: false, error: 'not-admitted' });
-    if (advice.error || advice.skipped)
-      return answer({ noComment: false, error: advice.error ?? advice.skipped! });
-    // Advice without a snippet adds nothing a Warden would say to the thread.
-    const final =
-      advice.noComment || !advice.snippets.length
-        ? answer({ noComment: true })
-        : answer({ noComment: false, text: advice.snippets.join('\n') });
-    if (options.diagnose && request && raw !== undefined)
-      options.onDiagnosis?.(
-        await diagnoseCell(options.warden, probe, warden, trigger, request, raw, !final.noComment),
-      );
-    return final;
+  const row = (domain: string, rest: Row): WardenProbeAnswer => ({
+    probeId: probe.id,
+    domain,
+    trigger,
+    elapsedMs: Date.now() - started,
+    ...(!staged && tokens ? { tokens } : {}),
+    ...rest,
+  });
+  const run = async (who: EvalWarden, holds?: readonly string[], from?: Carried) => {
+    const lib = librarian(options, who, stages, counted, holds);
+    const fromOpts = from ? { from: { index: from.stage + 1, carried: from } } : {};
+    if (trigger === 'user-message') {
+      const advice = await lib.advise(probe.ask ?? '', undefined, {
+        ...threadKnowledge(probe, who),
+        ...fromOpts,
+      });
+      return { result: advice as AdviseResult | GuardResult, classified: advice.classified };
+    }
+    const guard = await lib.guard(
+      oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
+      undefined,
+      { ...threadKnowledge(probe, who), ...fromOpts },
+    );
+    return { result: guard as AdviseResult | GuardResult, classified: guard.classified };
+  };
+  const group = warden.members;
+  if (!group) {
+    const { result, classified } = await run(warden);
+    return [row(warden.domain, rowOf(result, staged ? classified : undefined))];
   }
-  const result = await lib.guard(
-    oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
-    undefined,
-    threadKnowledge(probe, warden),
+  // A group recogniser asks its first stage once; each member it names goes on as that region's own
+  // run from the next stage, carrying its line. Members it did not name are silent; its failure is theirs.
+  const { result, classified } = await run(warden, group);
+  const first = classified?.stages[0];
+  const failed = rowOf(result, classified);
+  if (failed.error || !first)
+    return group.map((id) =>
+      row(id, { ...failed, ...(first ? { stages: [shared(first, group.length)] } : {}) }),
+    );
+  const mine = shared(first, group.length);
+  const named = new Map<string, Recognition>(
+    (classified!.final?.regions ?? []).map((r) => [r.regionId, r]),
   );
-  if (result.status !== 'completed')
-    return answer({
-      noComment: false,
-      error: result.status === 'not-admitted' ? 'not-admitted' : (result.error ?? result.status),
-    });
-  if (result.noComment) return answer({ noComment: true });
-  const text = result.findings
-    .map((f) => [f.description, f.suggestion].filter(Boolean).join(' '))
-    .join('\n');
-  return answer({ noComment: false, text });
+  return Promise.all(
+    group.map(async (id): Promise<WardenProbeAnswer> => {
+      const recognition = named.get(id);
+      if (!recognition)
+        return row(id, { noComment: true, outcome: 'no', stages: [{ ...mine, outcome: 'no' }] });
+      const own: ClassifyStageTrace = {
+        ...mine,
+        outcome: recognition.outcome,
+        why: recognition.why,
+        regions: [recognition],
+      };
+      if (stages.length === 1 || !(stages[0]!.escalate ?? []).includes(recognition.outcome))
+        return row(id, {
+          noComment: recognition.outcome !== 'yes',
+          ...(recognition.outcome === 'yes' ? { text: `${id}: ${recognition.why}` } : {}),
+          outcome: recognition.outcome,
+          stages: [own],
+        });
+      const member = options.memberWarden?.(probe, id);
+      if (!member)
+        return row(id, {
+          noComment: false,
+          error: `no member region ${id} for the later stages`,
+          stages: [own],
+        });
+      const later = await run(member, undefined, {
+        stage: 0,
+        outcome: recognition.outcome,
+        why: recognition.why,
+        ...(first.model ? { model: first.model } : {}),
+      });
+      const rest = rowOf(later.result, later.classified);
+      return row(id, { ...rest, stages: [own, ...(later.classified?.stages ?? [])] });
+    }),
+  );
+}
+
+/** A Warden as live builds it, bound to the eval's providers: one stage per config, each its own doc. */
+function librarian(
+  options: CharterEvalOptions,
+  warden: EvalWarden,
+  stages: readonly StageConfig[],
+  counted: (provider: LLMProvider) => LLMProvider,
+  holds?: readonly string[],
+): DomainLibrarian {
+  const layer = (id: string, text: string) => {
+    const l = new ContextLayer({ id });
+    l.set(text);
+    return l;
+  };
+  const session = (index: number) =>
+    warden.session ? { threadId: index ? `${warden.session}:stage:${index}` : warden.session } : {};
+  const llmOpts = (index: number) => ({ maxTokens: 512, temperature: 0, ...session(index) });
+  const provider = (index: number) => counted(options.stageProviders?.[index] ?? options.warden);
+  // A group recogniser runs its first stage alone: its yeses fan out to its members' own runs.
+  const asked = holds ? stages.slice(0, 1) : stages;
+  const bound: WardenStage[] = asked.map((config, index) => {
+    const charter = options.charters?.[index];
+    const doc =
+      warden.docs?.[config.doc] ??
+      (config.doc === KNOWLEDGE_DOC ? warden.domainKnowledge : undefined);
+    return {
+      config,
+      ...(index
+        ? {
+            llm: provider(index),
+            llmOpts: llmOpts(index),
+            cache: layer(`eval:${warden.domain}:${config.doc}`, doc ?? ''),
+          }
+        : {}),
+      ...(charter !== undefined ? { charter } : {}),
+    };
+  });
+  return new DomainLibrarian({
+    domain: warden.domain,
+    cache: layer(`eval:${warden.domain}`, warden.domainKnowledge),
+    instructions: layer(`eval:${warden.domain}:instructions`, warden.instructions),
+    signals: new SignalBus(0),
+    llm: provider(0),
+    llmOpts: llmOpts(0),
+    guardTriggers: [PROBE_MOMENT_TOOL],
+    ...(warden.budget !== undefined ? { budget: warden.budget } : {}),
+    stages: bound,
+    ...(holds ? { holds } : {}),
+  });
 }
 
 /** A judge call that fails (not one that answers out of shape) is asked again, up to twice. */
@@ -427,76 +431,4 @@ export async function judge(
     }
   }
   return undefined;
-}
-
-/**
- * The three diagnostic readings for one cell, on the Warden's own composed prompt (same system, same
- * primed prefix, so the knowledge is read from the cache): the protocol swapped for one word, for
- * "YES or NO, NAME, WHY", and the live exchange followed by "why?". Failures are recorded, never
- * retried into a guess.
- */
-async function diagnoseCell(
-  provider: LLMProvider,
-  probe: WardenProbe,
-  warden: EvalWarden,
-  trigger: WardenProbeTrigger,
-  request: readonly LLMMessage[],
-  raw: string,
-  answered: boolean,
-): Promise<WardenDiagnosis> {
-  const tk = threadKnowledge(probe, warden)?.threadKnowledge;
-  const opts = {
-    maxTokens: 512,
-    temperature: 0,
-    ...(warden.session ? { threadId: warden.session } : {}),
-    stablePrefix: domainCachePrefix(warden.domain, warden.domainKnowledge),
-    threadPrefix: threadSection(tk),
-  };
-  const messages = request.map((m) => ({ role: m.role, content: m.content }));
-  const last = messages.at(-1)!;
-  // Diagnosis runs at the user's message only (see `ask`).
-  const protocol = adviceResponseProtocol('user-message');
-  const call = async (
-    msgs: LLMMessage[],
-  ): Promise<{ content?: string; tokens?: Tokens; error?: string }> => {
-    try {
-      const result = await provider.complete(msgs, opts);
-      if (!result.tokens) return { content: result.content };
-      const { providerUsage: _usage, ...tokens } = result.tokens;
-      return { content: result.content, tokens };
-    } catch (err) {
-      return { error: (err as Error)?.message ?? String(err) };
-    }
-  };
-  /** The live message with only its response protocol replaced. */
-  const swapped = (replacement: string) =>
-    last.content.endsWith(protocol)
-      ? call([
-          ...messages.slice(0, -1),
-          { ...last, content: `${last.content.slice(0, -protocol.length)}${replacement}` },
-        ])
-      : Promise.resolve({ error: 'the advice message does not end with its protocol' });
-  const read = <T>(
-    result: { content?: string; tokens?: Tokens; error?: string },
-    parse: (text: string) => T,
-  ) =>
-    result.error !== undefined
-      ? { error: result.error }
-      : { ...parse(result.content ?? ''), ...(result.tokens ? { tokens: result.tokens } : {}) };
-  const bare = await swapped(DIAGNOSE_BARE_PROTOCOL);
-  const oneshot = await swapped(DIAGNOSE_ONESHOT_PROTOCOL);
-  const followup = await call([
-    ...messages,
-    { role: 'assistant', content: raw },
-    { role: 'user', content: DIAGNOSE_FOLLOWUP },
-  ]);
-  return {
-    probeId: probe.id,
-    domain: warden.domain,
-    trigger,
-    answered,
-    bare: read(bare, parseBare),
-    oneshot: read(oneshot, parseOneshot),
-    followup: read(followup, parseFollowup),
-  };
 }

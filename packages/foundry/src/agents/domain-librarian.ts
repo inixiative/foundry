@@ -31,6 +31,7 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import {
+  type Carried,
   type ClassifyResult,
   carriedSection,
   chartered,
@@ -102,6 +103,8 @@ export interface AdviseOpts {
    * asks what it must know that the text leaves out.
    */
   trigger?: AdviceTrigger;
+  /** Start at a later stage, carrying what an earlier one said (a group recogniser's fan-out). */
+  from?: { readonly index: number; readonly carried: Carried };
 }
 
 /** The exact input one phase call supplied to its provider, frozen at the call boundary. Text only. */
@@ -737,6 +740,8 @@ export interface GuardOpts {
   threadKnowledgeRevision?: number;
   /** Observes the exact messages supplied to the guard provider, once, before the call. Invocation-scoped. */
   observeRequest?: (request: PhaseRequestEvidence) => void;
+  /** Start at a later stage, carrying what an earlier one said (a group recogniser's fan-out). */
+  from?: { readonly index: number; readonly carried: Carried };
 }
 
 /**
@@ -862,6 +867,8 @@ export interface DomainLibrarianConfig {
    * options and cache. Default: one stage, today's Warden (`DEFAULT_STAGE`).
    */
   stages?: readonly WardenStage[];
+  /** The region ids a recogniser stage may name: a group's members. Default: its own domain. */
+  holds?: readonly string[];
 }
 
 /** One classification stage of a Warden, bound to what answers it and what it reads. */
@@ -912,6 +919,7 @@ export class DomainLibrarian {
   private _reviewPrompt!: string;
   private _threadKnowledge: ThreadKnowledge;
   private _stages: readonly BoundStage[];
+  private _holds: readonly string[];
   /** The point charter its review is chartered with: today's Warden charter. */
   private _reviewCharter: string;
 
@@ -947,6 +955,7 @@ export class DomainLibrarian {
         ...(stage.charter !== undefined ? { charter: stage.charter } : {}),
       };
     });
+    this._holds = config.holds ?? [config.domain];
     const pointing = [...this._stages].reverse().find((s) => s.config.task === 'point');
     this._reviewCharter =
       pointing?.charter ?? charterFor('point', 'warden', pointing?.config.pointer).text;
@@ -1589,7 +1598,8 @@ export class DomainLibrarian {
       envelope: 'advice',
       trigger,
       ...(opts?.timeoutMs !== undefined ? { deadlineMs: opts.timeoutMs } : {}),
-      holds: [this.domain],
+      holds: this._holds,
+      ...(opts?.from ? { from: opts.from } : {}),
       ask: async (stage) => {
         const call = await this._askStage(stage, {
           phase: 'advice',
@@ -1717,7 +1727,8 @@ export class DomainLibrarian {
       charters: this._stages.map((s) => s.charter),
       envelope: 'guard',
       trigger: 'agent-action',
-      holds: [this.domain],
+      holds: this._holds,
+      ...(opts?.from ? { from: opts.from } : {}),
       ask: async (stage) => {
         const call = await this._askStage(stage, {
           phase: 'guard',

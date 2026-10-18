@@ -1,12 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Recogniser granularity (eval-only): group regions so one recogniser covers several, and map its
- * answers back to per-region rows. Design: ~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md.
+ * Recogniser granularity (eval-only): group regions so one recogniser covers several. Design:
+ * ~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md.
  *
  *   bun scripts/evals/warden-groups.ts build --regions <pinned regions dir> --budget <tokens|all|1> \
  *     --out <arm dir> [--random --seed <n>] [--seams <seams.txt>] [--votes <votes.json>] \
  *     [--atlas-parents <parents.json>]
- *   bun scripts/evals/warden-groups.ts expand --run <group run dir> --groups <groups.json> --out <dir>
  *
  * build reads every region's `region.json` and `recognise.md` (its short recognition text; a region
  * without one is an error), weighs each pair of regions by concept adjacency with weights fixed in
@@ -17,22 +16,17 @@
  * group of everything. `--random --seed <n>` fills token-matched groups from a shuffled order instead,
  * the control for grouping quality. It writes `<out>/groups.json` (members in merge order, tokens,
  * the weights and inputs used, the regions set's content hash) and a chorus directory
- * `<out>/regions/<group id>/{region.json,knowledge.md}` where knowledge.md is the members' recognise.md
- * texts, each under `# Region <id>: <title>` with its own headings demoted one level, content otherwise
- * unchanged. That directory is what `warden-charter.ts --regions` runs.
- *
- * expand reads a run made on a grouped chorus and writes `<out>/answers.jsonl`, `turns.jsonl`,
- * `score.json` and `quota.jsonl` as if each region had answered for itself: a group's remark names
- * regions one per line (`<id>: <why>`, `region <id>: <why>`; several ids before one colon share the
- * line and are counted as a collapse); a named member is a yes with that line, an unnamed member is
- * NO_COMMENT, an id outside the group is a parse error (counted in `<out>/parse.json`, never guessed).
- * The standard report then runs on the expanded directory unchanged.
+ * `<out>/regions/<group id>/{region.json,knowledge.md,recognise.md}` where knowledge.md and recognise.md
+ * are both the members' recognise.md texts, each under `# Region <id>: <title>` with its own headings
+ * demoted one level, content otherwise unchanged. That directory is what `warden-charter.ts --regions`
+ * runs, with `--classify` naming the members directory (`"members"`): the group's first stage asks once
+ * and each member it names goes on as its own region, one answer row per region (classify's
+ * `parseRecognition` reads the group's lines; an id outside the group is counted, never followed).
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import type { WardenProbeAnswer, WardenProbeTurn } from '../../packages/core/src';
 
 const [command, ...rest] = process.argv.slice(2);
 const { values } = parseArgs({
@@ -46,13 +40,11 @@ const { values } = parseArgs({
     seams: { type: 'string' },
     votes: { type: 'string' },
     'atlas-parents': { type: 'string' },
-    run: { type: 'string' },
-    groups: { type: 'string' },
   },
 });
 const usage = () => {
   console.error(
-    'usage: warden-groups.ts build --regions <dir> --budget <tokens|all|1> --out <dir> [--random --seed <n>] | expand --run <dir> --groups <groups.json> --out <dir>',
+    'usage: warden-groups.ts build --regions <dir> --budget <tokens|all|1> --out <dir> [--random --seed <n>]',
   );
   process.exit(2);
 };
@@ -61,13 +53,6 @@ const privateDir = (path: string) => {
   return path;
 };
 const writePrivate = (path: string, text: string) => writeFileSync(path, text, { mode: 0o600 });
-const readJsonl = <T>(path: string): T[] =>
-  existsSync(path)
-    ? readFileSync(path, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => JSON.parse(l) as T)
-    : [];
 
 // ---------------------------------------------------------------------------
 // Regions as the builder wrote them
@@ -291,6 +276,7 @@ function build() {
     const knowledge = rs.map(wrapped).join('\n');
     const groupDir = privateDir(join(regionsOut, id));
     writePrivate(join(groupDir, 'knowledge.md'), knowledge);
+    writePrivate(join(groupDir, 'recognise.md'), knowledge);
     writePrivate(
       join(groupDir, 'region.json'),
       JSON.stringify(
@@ -356,154 +342,6 @@ function build() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Expand: group answers back to per-region rows
-// ---------------------------------------------------------------------------
-const LINE =
-  /^\s*(?:in my domain:\s*)?(?:regions?\s+)?`?([A-Za-z0-9][A-Za-z0-9_.,\s-]*?)`?\s*:\s*(.+?)\s*$/i;
-/** The ids a line names (one, or several before one colon) and its why. */
-function parseLine(line: string): { ids: string[]; why: string } | undefined {
-  const m = LINE.exec(line);
-  if (!m) return undefined;
-  const ids = m[1]!
-    .split(/\s*(?:,|\band\b|\/)\s*/i)
-    .map((s) => s.trim().replace(/^`|`$/g, ''))
-    .filter((s) => /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/.test(s));
-  return ids.length ? { ids, why: m[2]! } : undefined;
-}
-function expand() {
-  if (!values.run || !values.groups || !values.out) usage();
-  const run = resolve(values.run!);
-  const manifest = JSON.parse(readFileSync(resolve(values.groups!), 'utf8')) as {
-    groups: { id: string; members: string[] }[];
-  };
-  const members = new Map(manifest.groups.map((g) => [g.id, g.members]));
-  const answers = readJsonl<WardenProbeAnswer>(join(run, 'answers.jsonl'));
-  const turns = readJsonl<WardenProbeTurn>(join(run, 'turns.jsonl'));
-  const out = privateDir(resolve(values.out!));
-  const parse = {
-    groupAnswers: answers.length,
-    groupYes: 0,
-    lines: 0,
-    parseErrorLines: 0,
-    unknownIds: 0,
-    collapses: 0,
-    perRegionRows: 0,
-    unknownGroups: 0,
-    examples: { parseErrors: [] as string[], unknownIds: [] as string[] },
-  };
-  const expanded: WardenProbeAnswer[] = [];
-  for (const a of answers) {
-    const group = members.get(a.domain);
-    if (!group) {
-      parse.unknownGroups++;
-      continue;
-    }
-    const base = {
-      probeId: a.probeId,
-      ...(a.trigger ? { trigger: a.trigger } : {}),
-      elapsedMs: a.elapsedMs ?? 0,
-    };
-    const share = (n: number) => {
-      // The group's tokens are split evenly over its members, so per-region cost sums to the group's.
-      if (!a.tokens) return {};
-      const t = a.tokens;
-      const part = (x: number | undefined) => (x === undefined ? undefined : Math.round(x / n));
-      return {
-        tokens: {
-          input: part(t.input)!,
-          output: part(t.output)!,
-          ...(t.cacheRead !== undefined ? { cacheRead: part(t.cacheRead)! } : {}),
-          ...(t.cacheWrite !== undefined ? { cacheWrite: part(t.cacheWrite)! } : {}),
-          ...(t.thinking !== undefined ? { thinking: part(t.thinking)! } : {}),
-        },
-      };
-    };
-    if (a.error) {
-      for (const id of group)
-        expanded.push({
-          ...base,
-          domain: id,
-          noComment: false,
-          error: a.error,
-          ...share(group.length),
-        });
-      continue;
-    }
-    if (a.noComment || !a.text) {
-      for (const id of group)
-        expanded.push({ ...base, domain: id, noComment: true, ...share(group.length) });
-      continue;
-    }
-    parse.groupYes++;
-    const named = new Map<string, string>();
-    for (const line of a.text.split('\n')) {
-      if (!line.trim()) continue;
-      parse.lines++;
-      const parsed = parseLine(line);
-      if (!parsed) {
-        parse.parseErrorLines++;
-        if (parse.examples.parseErrors.length < 10)
-          parse.examples.parseErrors.push(line.trim().slice(0, 160));
-        continue;
-      }
-      if (parsed.ids.length > 1) parse.collapses++;
-      for (const id of parsed.ids) {
-        if (!group.includes(id)) {
-          parse.unknownIds++;
-          if (parse.examples.unknownIds.length < 10)
-            parse.examples.unknownIds.push(`${a.domain}: ${id}`);
-          continue;
-        }
-        named.set(id, named.has(id) ? `${named.get(id)}\n${parsed.why}` : parsed.why);
-      }
-    }
-    for (const id of group)
-      expanded.push(
-        named.has(id)
-          ? { ...base, domain: id, noComment: false, text: named.get(id)!, ...share(group.length) }
-          : { ...base, domain: id, noComment: true, ...share(group.length) },
-      );
-  }
-  parse.perRegionRows = expanded.length;
-  const groupSize = (domain: string) => members.get(domain)?.length ?? 0;
-  const expandedTurns = turns.map((t) => ({
-    ...t,
-    calls: answers
-      .filter(
-        (a) =>
-          a.probeId === t.probeId &&
-          (a.trigger ?? 'agent-action') === (t.trigger ?? 'agent-action'),
-      )
-      .reduce((n, a) => n + groupSize(a.domain), 0),
-  }));
-  writePrivate(join(out, 'answers.jsonl'), expanded.map((a) => `${JSON.stringify(a)}\n`).join(''));
-  writePrivate(
-    join(out, 'turns.jsonl'),
-    expandedTurns.map((t) => `${JSON.stringify(t)}\n`).join(''),
-  );
-  const score = existsSync(join(run, 'score.json'))
-    ? (JSON.parse(readFileSync(join(run, 'score.json'), 'utf8')) as Record<string, unknown>)
-    : {};
-  writePrivate(
-    join(out, 'score.json'),
-    JSON.stringify(
-      {
-        ...score,
-        roster: [...new Set(expanded.map((a) => a.domain))].sort(),
-        expandedFrom: { run, groups: resolve(values.groups!), groupCount: manifest.groups.length },
-      },
-      null,
-      1,
-    ),
-  );
-  if (existsSync(join(run, 'quota.jsonl')))
-    writePrivate(join(out, 'quota.jsonl'), readFileSync(join(run, 'quota.jsonl'), 'utf8'));
-  writePrivate(join(out, 'parse.json'), JSON.stringify(parse, null, 1));
-  console.log(JSON.stringify({ out, ...parse, examples: undefined }, null, 1));
-}
-
 if (command === 'build') build();
-else if (command === 'expand') expand();
 else usage();
 console.error(`${command}: ${basename(resolve(values.out ?? '.'))}`);

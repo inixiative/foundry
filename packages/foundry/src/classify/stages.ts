@@ -65,8 +65,8 @@ const STAGE_KEYS = [
   'escalate',
   'deadline',
 ] as const;
-/** Eval-only: a stage of a run config may carry candidate charter text (`--classify`). */
-export const EVAL_STAGE_KEYS = ['charter'] as const;
+/** Eval-only: a stage of a run config may carry candidate charter text, inline or as a file (`--classify`). */
+export const EVAL_STAGE_KEYS = ['charter', 'charterFile'] as const;
 const DOC = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.md$/;
 
 const oneOf = <T extends string>(where: string, value: unknown, allowed: readonly T[]): T => {
@@ -95,9 +95,9 @@ export function validateStages(
       throw Error(`${at} must be an object`);
     const s = raw as Record<string, unknown>;
     for (const key of Object.keys(s)) {
-      if (key === 'charter' && !extraKeys.includes(key))
+      if ((key === 'charter' || key === 'charterFile') && !extraKeys.includes(key))
         throw Error(
-          `${at}.charter is not a setting: charters are fixed per task and role, owned by Foundry (an eval run config may carry one)`,
+          `${at}.${key} is not a setting: charters are fixed per task and role, owned by Foundry (an eval run config may carry one)`,
         );
       if (!(STAGE_KEYS as readonly string[]).includes(key) && !extraKeys.includes(key))
         throw Error(`${at}.${key} is not a stage setting (${STAGE_KEYS.join(', ')})`);
