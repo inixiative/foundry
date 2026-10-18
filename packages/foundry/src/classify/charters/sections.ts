@@ -7,7 +7,7 @@
 // sections: a live project's charters stay Foundry's (Oracle `docs/foundry/CLASSIFY.md`, "charters fixed for now").
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ALL_OF_CAVEAT, CHOOSE_ONE_CAVEAT } from '../pointer';
@@ -82,6 +82,82 @@ export const defaultSection = (prompt: SectionedPrompt, name: string): string =>
   return text;
 };
 
+/**
+ * A section added to a prompt beside its own: by default after the section `after` names (else at the
+ * end), or, with `overrides`, in that section's place (the explicit dagger; additions are the rule). An
+ * addition that is not `enabled` is sent only when a run sets it.
+ */
+export interface AddedSection {
+  readonly name: string;
+  readonly text: string;
+  readonly after?: string;
+  readonly overrides?: string;
+  readonly enabled: boolean;
+}
+
+/** A stage mode that may add sections to its charter: three outcomes, the why inline, the why asked after. */
+export type StageMode = 'ternary' | 'inline' | 'followup';
+
+/** The modes a stage runs in, from its outcomes and reason. */
+export const stageModes = (stage: Pick<StageConfig, 'outcomes' | 'reason'>): StageMode[] => [
+  ...(stage.outcomes === 'ternary' ? (['ternary'] as const) : []),
+  ...(stage.reason === 'inline' || stage.reason === 'followup' ? [stage.reason] : []),
+];
+
+/** A mode section file's front matter: `after`, `overrides` and `enabled` lines between `---` fences. */
+function readAdded(name: string, path: string): AddedSection {
+  const raw = readFileSync(path, 'utf8');
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(raw);
+  const fields: Record<string, string> = {};
+  for (const line of match?.[1]?.split('\n') ?? []) {
+    const at = line.indexOf(':');
+    if (at < 0) throw Error(`${path}: front matter line "${line}" is not "key: value"`);
+    fields[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  for (const key of Object.keys(fields))
+    if (!['after', 'overrides', 'enabled'].includes(key))
+      throw Error(`${path}: ${key} is not a front matter field (after, overrides, enabled)`);
+  if (fields.after && fields.overrides) throw Error(`${path}: name after or overrides, not both`);
+  if (fields.enabled !== undefined && !['true', 'false'].includes(fields.enabled))
+    throw Error(`${path}: enabled is true or false`);
+  return {
+    name,
+    text: fill((match ? raw.slice(match[0].length) : raw).trim()),
+    ...(fields.after ? { after: fields.after } : {}),
+    ...(fields.overrides ? { overrides: fields.overrides } : {}),
+    enabled: fields.enabled !== 'false',
+  };
+}
+
+/** Each mode's added sections per prompt, from `<prompt>/modes/<mode>/<name>.md`, named `<mode>/<name>`. */
+const MODE_SECTIONS: Record<SectionedPrompt, ReadonlyMap<StageMode, readonly AddedSection[]>> = {
+  point: loadModes('point'),
+  recognise: loadModes('recognise'),
+  region: loadModes('region'),
+};
+
+function loadModes(prompt: SectionedPrompt): ReadonlyMap<StageMode, readonly AddedSection[]> {
+  const modes = new Map<StageMode, AddedSection[]>();
+  for (const mode of ['ternary', 'inline', 'followup'] as const) {
+    const dir = fileURLToPath(new URL(`./${prompt}/modes/${mode}/`, import.meta.url));
+    if (!existsSync(dir)) continue;
+    const files = readdirSync(dir)
+      .filter((file) => file.endsWith('.md'))
+      .sort();
+    modes.set(
+      mode,
+      files.map((file) => readAdded(`${mode}/${file.slice(0, -3)}`, `${dir}${file}`)),
+    );
+  }
+  return modes;
+}
+
+/** The sections a prompt's modes add, in mode order then file order. */
+export const modeSections = (
+  prompt: SectionedPrompt,
+  modes: readonly StageMode[],
+): readonly AddedSection[] => modes.flatMap((mode) => MODE_SECTIONS[prompt].get(mode) ?? []);
+
 /** Where a run's text goes relative to the section's default: in its place (default), or beside it. */
 export type SectionPlace = 'replace' | 'before' | 'after';
 
@@ -112,6 +188,9 @@ const PLACES: readonly SectionPlace[] = ['replace', 'before', 'after'];
  * resolved against `baseDir`), sent in its place, or `{ ..., place: "before" | "after" }` beside the
  * default, joined as the section joins. `omit` drops sections the stage does not offer (choose-one
  * when `pointer.any` is off); setting one of them is refused. An unknown name is refused by name.
+ * `added` composes further sections in (a stage's mode sections): each after the section it names or
+ * at the end, or in the place of the one it `overrides`, and set by its own name like any other. The
+ * assembler holds no section of its own: what is added, and where, is the added sections' to say.
  */
 export function assemblePrompt(
   prompt: SectionedPrompt,
@@ -120,13 +199,20 @@ export function assemblePrompt(
     readonly where: string;
     readonly baseDir?: string;
     readonly omit?: readonly string[];
+    readonly added?: readonly AddedSection[];
   } = {
     where: prompt,
   },
 ): AssembledPrompt {
   const { where } = options;
-  const order = PROMPT_SECTIONS[prompt] as readonly (readonly [string, Join])[];
-  const names = order.map(([name]) => name);
+  const { order, defaults, known, overridden } = composeOrder(
+    prompt,
+    options.added ?? [],
+    settings && typeof settings === 'object' && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : {},
+  );
+  const names = [...new Set([...order.map(([name]) => name), ...known])];
   if (
     settings !== undefined &&
     (!settings || typeof settings !== 'object' || Array.isArray(settings))
@@ -134,6 +220,10 @@ export function assemblePrompt(
     throw Error(`${where} must be an object of section names (${names.join(', ')})`);
   const set = (settings ?? {}) as Record<string, unknown>;
   for (const key of Object.keys(set)) {
+    if (overridden.has(key))
+      throw Error(
+        `${where}.${key} is overridden at this stage by ${overridden.get(key)}: set that`,
+      );
     if (!names.includes(key))
       throw Error(`${where}.${key} is not a section of the ${prompt} prompt (${names.join(', ')})`);
     if (options.omit?.includes(key)) throw Error(`${where}.${key} is not offered at this stage`);
@@ -148,9 +238,15 @@ export function assemblePrompt(
       parts.push({ gap: join });
       continue;
     }
-    const fallback = defaultSection(prompt, name);
+    const { text: fallback, enabled } = defaults.get(name)!;
     const value = set[name];
+    // An added section that is not enabled by default is left out until a run sets it, unchanged.
+    if (!enabled && (value === undefined || value === false)) {
+      parts.push({ gap: join });
+      continue;
+    }
     if (value === undefined || value === true) {
+      if (!enabled) changed = true;
       parts.push({ text: fallback, join });
       sections.push({ name, source: 'default', sha256: sha256(fallback) });
       continue;
@@ -207,6 +303,55 @@ export function assemblePrompt(
   return { text, sections, changed };
 }
 
+/**
+ * A prompt's sections in order with the `added` ones composed in, each section's default text and
+ * whether it is sent by default, the added names (settable even while left out), and which sections
+ * an overriding one replaces. An override replaces its target only while it is on: by default when
+ * enabled, or once `set` turns it on.
+ */
+function composeOrder(
+  prompt: SectionedPrompt,
+  added: readonly AddedSection[],
+  set: Record<string, unknown>,
+) {
+  const order: [string, Join][] = (
+    PROMPT_SECTIONS[prompt] as readonly (readonly [string, Join])[]
+  ).map(([name, join]) => [name, join]);
+  const defaults = new Map<string, { text: string; enabled: boolean }>(
+    order.map(([name]) => [name, { text: defaultSection(prompt, name), enabled: true }]),
+  );
+  const known = new Set<string>();
+  const overridden = new Map<string, string>();
+  for (const section of added) {
+    if (defaults.has(section.name)) throw Error(`${prompt} already has a section ${section.name}`);
+    const target = section.overrides ?? section.after;
+    if (target !== undefined && !defaults.has(target))
+      throw Error(
+        `${section.name} names ${target}, which is not a section of the ${prompt} prompt`,
+      );
+    defaults.set(section.name, { text: section.text, enabled: section.enabled });
+    known.add(section.name);
+    if (section.overrides === undefined) {
+      const at =
+        section.after === undefined
+          ? order.length - 1
+          : order.findIndex(([name]) => name === section.after);
+      order.splice(at + 1, 0, [section.name, '\n\n']);
+      continue;
+    }
+    const value = set[section.name];
+    if (section.enabled ? value === false : value === undefined || value === false) continue;
+    if (overridden.has(section.overrides))
+      throw Error(
+        `${section.overrides} is overridden by both ${overridden.get(section.overrides)} and ${section.name}`,
+      );
+    overridden.set(section.overrides, section.name);
+    const at = order.findIndex(([name]) => name === section.overrides);
+    order[at] = [section.name, order[at]![1]];
+  }
+  return { order, defaults, known, overridden };
+}
+
 /** A stage's prompt language as a run's `sections` set it: its charter and its instruction line. */
 export interface StageSections {
   readonly charter: AssembledPrompt;
@@ -219,7 +364,8 @@ export interface StageSections {
  * recognise or point prompt, by its task), choose-one offered only while `pointer.any` is on.
  * Choose-one is switched off by `pointer.any: false`, which also makes the parser refuse that shape,
  * never by `false` here, so the charter and the parser cannot disagree. All-of may be switched off:
- * the parser still reads it.
+ * the parser still reads it. The stage's modes (ternary, a why inline or asked after) add their own
+ * sections (`<prompt>/modes/<mode>/<name>.md`), set here by name (`ternary/unsure`).
  */
 export function stageSections(
   stage: StageConfig,
@@ -244,9 +390,12 @@ export function stageSections(
     throw Error(
       `${where}.choose-one: switch choose-one off with "pointer": { "any": false }, which also makes the parser refuse it`,
     );
-  const names = [...PROMPT_SECTIONS[prompt].map(([name]) => name), 'region-instructions'].filter(
-    (name) => !(anyOff && name === 'choose-one'),
-  );
+  const added = modeSections(prompt, stageModes(stage));
+  const names = [
+    ...PROMPT_SECTIONS[prompt].map(([name]) => name),
+    ...added.map(({ name }) => name),
+    'region-instructions',
+  ].filter((name) => !(anyOff && name === 'choose-one'));
   for (const key of Object.keys(charterSettings))
     if (!names.includes(key))
       throw Error(`${where}.${key} is not a section of a ${prompt} stage (${names.join(', ')})`);
@@ -254,6 +403,7 @@ export function stageSections(
   return {
     charter: assemblePrompt(prompt, charterSettings, {
       ...at,
+      added,
       ...(anyOff ? { omit: ['choose-one'] } : {}),
     }),
     regionInstructions: assemblePrompt(

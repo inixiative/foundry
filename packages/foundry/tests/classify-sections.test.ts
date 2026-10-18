@@ -8,15 +8,19 @@ import { join } from 'node:path';
 import type { LLMMessage, LLMProvider, WardenProbe } from '@inixiative/foundry-core';
 import { REGION_WARDEN_INSTRUCTIONS, regionInstructions } from '../src/agents/region-roster';
 import {
+  type AddedSection,
   assemblePrompt,
+  charterFor,
   charterVersion,
   defaultSection,
   FOLLOWUP_QUESTION,
+  modeSections,
   NO_COMMENT,
   PROMPT_SECTIONS,
   pointCharter,
   RECOGNISE_CHARTER,
   responseProtocol,
+  stageModes,
   stageSections,
   validateStages,
   WARDEN_CHARTER,
@@ -399,5 +403,77 @@ describe('the full system prompt is hashed per call', () => {
         expect(system).toContain('# Your instructions\n\nBe brief.\n\nYour region: Locks');
     }
     expect(hashes[0]).not.toBe(hashes[1]);
+  });
+});
+
+describe('mode sections: composed in, never held by the assembler', () => {
+  const TERNARY = validateStages('s', [{ outcomes: 'ternary' }])[0]!;
+  const unsure = modeSections('point', ['ternary']).find((s) => s.name === 'ternary/unsure')!;
+
+  test('a stage mode adds its sections; binary with no why adds none and stays the shipped charter', () => {
+    expect(stageModes(POINT)).toEqual([]);
+    expect(charterFor('point', 'warden', { any: true }, POINT).text).toBe(WARDEN_CHARTER);
+    expect(stageModes(TERNARY)).toEqual(['ternary']);
+    const ternary = charterFor('point', 'warden', { any: true }, TERNARY).text;
+    // Additive: the default charter is all there, with the unsure section after the NO_COMMENT default.
+    for (const [name] of PROMPT_SECTIONS.point)
+      expect(ternary).toContain(defaultSection('point', name));
+    const at = ternary.indexOf(unsure.text);
+    expect(at).toBeGreaterThan(ternary.indexOf(defaultSection('point', 'no-comment-default')));
+    expect(at).toBeLessThan(ternary.indexOf(defaultSection('point', 'moment')));
+  });
+
+  test('a dagger not enabled by default leaves its target until a run turns it on, then takes its place', () => {
+    const dagger = modeSections('point', ['ternary']).find((s) => s.overrides === 'sourcing-bar')!;
+    expect(dagger).toMatchObject({ name: 'ternary/sourcing-bar', enabled: false });
+    const plain = stageSections(TERNARY, undefined, 'x').charter;
+    expect(plain.text).toContain(defaultSection('point', 'sourcing-bar'));
+    expect(plain.text).not.toContain(dagger.text);
+    expect(plain.changed).toBe(false);
+    const on = stageSections(TERNARY, { 'ternary/sourcing-bar': true }, 'x').charter;
+    expect(on.text).toContain(dagger.text);
+    expect(on.text).not.toContain(defaultSection('point', 'sourcing-bar'));
+    expect(on.changed).toBe(true);
+    // While the dagger is on, its target is set through it, not by its own name.
+    expect(() =>
+      stageSections(TERNARY, { 'ternary/sourcing-bar': true, 'sourcing-bar': false }, 'x'),
+    ).toThrow(/sourcing-bar is overridden at this stage by ternary\/sourcing-bar/);
+  });
+
+  test('a mode section is set by name like any other: off, text, or beside its default', () => {
+    const off = stageSections(TERNARY, { 'ternary/unsure': false }, 'x').charter;
+    expect(off.text).toBe(WARDEN_CHARTER);
+    expect(off.changed).toBe(true);
+    const text = stageSections(
+      TERNARY,
+      { 'ternary/unsure': { text: 'Say unsure when torn.' } },
+      'x',
+    );
+    expect(text.charter.text).toContain('Say unsure when torn.');
+    expect(text.charter.text).not.toContain(unsure.text);
+    expect(() => stageSections(POINT, { 'ternary/unsure': false }, 'x')).toThrow(
+      /ternary\/unsure is not a section of a point stage/,
+    );
+  });
+
+  test('the composer refuses an added section that names no section, or a name it already has', () => {
+    const base = { where: 'x', added: [] as AddedSection[] };
+    expect(() =>
+      assemblePrompt('point', undefined, {
+        ...base,
+        added: [{ name: 'm/a', text: 'A.', after: 'nowhere', enabled: true }],
+      }),
+    ).toThrow(/m\/a names nowhere, which is not a section of the point prompt/);
+    expect(() =>
+      assemblePrompt('point', undefined, {
+        ...base,
+        added: [{ name: 'job', text: 'A.', enabled: true }],
+      }),
+    ).toThrow(/point already has a section job/);
+    const end = assemblePrompt('point', undefined, {
+      ...base,
+      added: [{ name: 'm/a', text: 'Appended.', enabled: true }],
+    });
+    expect(end.text).toBe(`${WARDEN_CHARTER}\n\nAppended.`);
   });
 });

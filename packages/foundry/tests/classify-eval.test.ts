@@ -284,7 +284,8 @@ test('reason inline and followup, through the eval: the why lands on the stage t
       confidence: 0,
     }),
     NO_COMMENT,
-    'It asks for a typo fix.\nNothing in locks.\nREVISED: KEEP',
+    JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 }),
+    'It asks for mutual exclusion.\ncreateLock does that job.\nREVISED: KEEP',
   ];
   const provider: LLMProvider = {
     id: 'stub',
@@ -304,9 +305,20 @@ test('reason inline and followup, through the eval: the why lands on the stage t
     outcome: 'no',
     stages: [{ outcome: 'no', why: 'a README typo' }],
   });
-  const followup = await ask('followup');
-  expect(followup.answers[0]).toMatchObject({
-    noComment: true,
-    stages: [{ outcome: 'no', why: 'It asks for a typo fix. Nothing in locks.', revised: 'keep' }],
+  // A followup is asked only after a yes: a no is neither delivered nor carried.
+  const followupNo = await ask('followup');
+  expect(followupNo.answers[0]).toMatchObject({ noComment: true, stages: [{ outcome: 'no' }] });
+  expect(followupNo.answers[0]!.stages![0]).not.toHaveProperty('why');
+  const followupYes = await ask('followup');
+  expect(followupYes.answers[0]).toMatchObject({
+    noComment: false,
+    stages: [
+      {
+        outcome: 'yes',
+        why: 'It asks for mutual exclusion. createLock does that job.',
+        revised: 'keep',
+      },
+    ],
   });
+  expect(replies).toHaveLength(0);
 });
