@@ -43,23 +43,38 @@ export function registerArchiveRoutes(
         : [];
     return c.json({ archives, captureErrors: Object.fromEntries(capture.errors), status });
   });
-  // Where a project's sessions publish. Archive owns the routing; Foundry only reads and asks.
+  // Where a project's sessions publish. Archive owns the routing: one archive per organization,
+  // projects belong to an organization. Foundry only reads and asks.
+  const organizationOf = async (local: ArchiveClient, projectId: string) =>
+    (await local.organizations()).organizations.find((o) => o.projects.includes(projectId));
   app.get('/api/archives/destinations', async (c) => {
     const projectId = c.req.query('projectId');
     const local = archive();
     if (!local) return c.json({ error: 'No local Archive is set up' }, 503);
     try {
-      const [{ destinations }, { paired, libraries }] = await Promise.all([
-        local.destinations(projectId ? { projectId } : {}),
+      const organization = projectId ? await organizationOf(local, projectId) : undefined;
+      const [{ destinations }, { paired, libraries }, { organizations }] = await Promise.all([
+        projectId && !organization
+          ? { destinations: [] }
+          : local.destinations(organization ? { organizationId: organization.id } : {}),
         local.libraries(),
+        local.organizations(),
       ]);
-      return c.json({ destinations, paired, libraries });
+      return c.json({
+        organizationId: organization?.id ?? null,
+        organizations: organizations.map((o) => o.id),
+        destinations,
+        paired,
+        libraries,
+      });
     } catch (error) {
       return archiveFailure(c, error);
     }
   });
   const kingdomRoute = z.strictObject({
     projectId: z.string().min(1).max(256),
+    /** For a project in no organization yet: the organization it joins. */
+    organizationId: z.string().min(1).max(64).optional(),
     integrationId: z.uuid(),
     resourceId: z.uuid(),
   });
@@ -70,10 +85,21 @@ export function registerArchiveRoutes(
       const local = archive();
       if (!local) return c.json({ error: 'No local Archive is set up' }, 503);
       try {
+        const { projectId, organizationId, integrationId, resourceId } = body.data;
+        const owner = await organizationOf(local, projectId);
+        const id = owner?.id ?? organizationId;
+        if (!id)
+          return c.json({ error: 'Choose the organization this project belongs to first' }, 400);
+        if (!owner && action === 'remove') return c.json({ removed: false });
+        if (!owner) {
+          const existing = (await local.organizations()).organizations.find((o) => o.id === id);
+          await local.setOrganization({ id, projects: [...(existing?.projects ?? []), projectId] });
+        }
+        const route = { organizationId: id, integrationId, resourceId };
         return c.json(
           action === 'connect'
-            ? await local.connectDestination(body.data)
-            : await local.removeDestination(body.data),
+            ? await local.connectDestination(route)
+            : await local.removeDestination(route),
         );
       } catch (error) {
         return archiveFailure(c, error);
