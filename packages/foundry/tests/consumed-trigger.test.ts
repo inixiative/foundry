@@ -10,15 +10,12 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { CHORUS_RECEPTION, CHORUS_RECEPTION_LAYER } from '../src/agents/chorus-reception';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import {
-  CHOOSE_ONE_CAVEAT,
-  CHORUS_RECEPTION,
-  CHORUS_RECEPTION_LAYER,
-} from '../src/agents/warden-charter';
 import { consumedMatcher, DEFAULT_CONSUMED_MAX_CHARS, workItemOf } from '../src/agents/work-items';
 import { reduceMiddleware } from '../src/archives/reduced-middleware';
+import { CHOOSE_ONE_CAVEAT } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
@@ -208,7 +205,7 @@ test('consumed: a ticket file the thread reads is asked about once; the pointer 
   expect(asked).toContain('(Read: tickets/ENG-12.md)');
   expect(asked).toContain('Add a new table `job_locks` and write a lock');
   expect(asked).toContain('## Response protocol (advice phase, trigger: consumed)');
-  expect(asked).toContain('whatever the item says to build');
+  expect(asked).toContain('whatever it says to build or not to use');
   expect(asked).not.toContain('Nothing to see.');
   const row = f.consumedRows()[0]!;
   expect(row.dispatchId).toBeNull();
@@ -306,9 +303,9 @@ test('consumed is off by default: a ticket read asks nothing', async () => {
   expect(f.consumedRows()).toHaveLength(0);
 });
 
-test('a roster thread holds no reception charter: its Wardens advise under their own charter', () => {
-  const f = fixture();
-  expect(f.thread.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
+test('a thread with Wardens holds the reception charter once; a thread with none does not', () => {
+  expect(fixture().thread.stack.getLayer(CHORUS_RECEPTION_LAYER)?.content).toBe(CHORUS_RECEPTION);
+  expect(fixture({ domains: false }).thread.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
 });
 
 test('the reception charter says how to read each pointer shape and carries the acknowledgement rule', () => {
@@ -438,7 +435,7 @@ test('chorus.consumed is validated, and the machine settings win over the reposi
   );
   config.projects = { P: { ...project, chorus: { consumed: { enabled: false } } } };
   expect(resolveProjectView(config, 'P')!.config.projects.P!.chorus).toEqual({
-    source: 'roster',
+    enabled: false,
     consumed: { enabled: false, paths: ['tickets/**'], maxChars: 5000 },
   });
   const bad = (consumed: unknown) =>

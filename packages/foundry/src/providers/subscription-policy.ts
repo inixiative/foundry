@@ -102,7 +102,7 @@ export interface SubscriptionPolicy {
   wardens: 'primed' | 'in-session';
 }
 /**
- * Sized for a full Warden roster: every Warden is asked on every user message, and every
+ * Sized for a full chorus: every Warden is asked on every user message, and every
  * guard-triggered Warden on every action, so one turn fans out ~25 advice calls plus the
  * Cartographer, then guards per tool call and a review per Warden. Each Claude decision is its own
  * CLI process (~130-230 MB measured 2026-10-12), so 16 at once is ~2-4 GB. Queues are deep enough that

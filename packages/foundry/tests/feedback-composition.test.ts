@@ -22,6 +22,7 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { FeedbackService } from '../src/feedback/service';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
+import { writeRegions } from './helpers/regions';
 
 const RULE = 'When a change is green on the agentic side, merge it yourself.';
 const dirs: string[] = [];
@@ -45,39 +46,29 @@ function config(project: string): FoundryConfig {
       maxDepth: 1,
       enabled: true,
     },
-    'conventions-warden': {
-      id: 'conventions-warden',
-      kind: 'decider',
-      flowRole: 'domain-advising',
-      domain: 'conventions',
-      prompt: 'WARDEN_RULES',
-      // The Warden holds knowledge, so it is asked on every turn (a cold Warden is skipped).
-      domainKnowledge: ['conventions-knowledge'],
-      provider: 'expert',
-      model: 'warden-model',
-      tools: false,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    },
   };
+  // The project's one Warden is its region `conventions`; settings declare none.
+  writeRegions(project, [
+    { id: 'conventions', knowledge: 'CONVENTIONS_KNOWLEDGE: scripts live in package.json.' },
+  ]);
   c.layers = {};
-  c.sources['conventions-knowledge'] = {
-    id: 'conventions-knowledge',
-    label: 'Conventions',
-    type: 'inline',
-    uri: 'CONVENTIONS_KNOWLEDGE: scripts live in package.json.',
-    enabled: true,
-  };
-  // Only the personal role files compose: nothing from the machine running the tests.
   c.composition = {
     preset: 'none',
     nodes: {
       local: {
         scope: 'project',
         personal: true,
-        sources: [{ walk: [{ path: '.foundry/roles/{role}/{slot}.local.md' }] }],
+        // Slotted, as the default preset's role files are: a region Warden takes no general files.
+        sources: [
+          {
+            walk: [
+              {
+                path: '.foundry/roles/{role}/{slot}.local.md',
+                when: { slots: ['instructions', 'domainKnowledge'] },
+              },
+            ],
+          },
+        ],
       },
     },
   };
@@ -115,11 +106,16 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
     },
   });
   const central = provider('central'),
-    flow = provider('flow'),
-    expert = provider('expert');
-  const providers = new Map([central, flow, expert].map((p) => [p.id, p]));
-  const sourceResolver: SourceResolver = (id, cfg) =>
-    cfg.sources[id] ? { id, load: async () => cfg.sources[id]!.uri } : null;
+    flow = provider('flow');
+  const providers = new Map([central, flow].map((p) => [p.id, p]));
+  const sourceResolver: SourceResolver = (id, cfg) => {
+    const source = cfg.sources[id];
+    if (!source) return null;
+    return {
+      id,
+      load: async () => (source.type === 'markdown' ? Bun.file(source.uri).text() : source.uri),
+    };
+  };
   const stack = new ContextStack(buildLayers(c, { sourceResolver }));
   const manager = new ThreadRuntimeManager({
     config: c,
@@ -166,7 +162,7 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
 
   await thread.dispatch('worker', 'First turn');
   const [item] = await service.intervention(thread, 'Merge it yourself once green.');
-  expect(item?.route).toMatchObject({ roles: ['conventions-warden'], level: 'project-personal' });
+  expect(item?.route).toMatchObject({ roles: ['conventions'], level: 'project-personal' });
   const prompt = queue.pending()[0]!;
   service.submit(item!.id, 'apply');
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -176,7 +172,5 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
   await thread.dispatch('worker', 'Second turn');
   const advice = calls.filter((call) => call.phase === 'pre').at(-1)!;
   expect(advice.messages[0]!.content).toContain(`${RULE} (${item!.id})`);
-  expect(service.uses(item!.id)).toMatchObject([
-    { phase: 'advice', roles: ['conventions-warden'] },
-  ]);
+  expect(service.uses(item!.id)).toMatchObject([{ phase: 'advice', roles: ['conventions'] }]);
 });

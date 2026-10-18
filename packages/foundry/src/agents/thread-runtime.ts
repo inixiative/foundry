@@ -24,6 +24,14 @@ import {
   type ThreadMeta,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
+import {
+  DEFAULT_STAGES,
+  KNOWLEDGE_DOC,
+  type StageConfig,
+  type StageEffort,
+  validateStages,
+  WARDEN_CHARTER_VERSION,
+} from '../classify';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -35,6 +43,11 @@ import {
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
+import {
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
+  CHORUS_RECEPTION_VERSION,
+} from './chorus-reception';
 import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
   activityTools,
@@ -50,6 +63,7 @@ import {
   type ToolObservation,
   type TurnActivity,
   threadKnowledgeLayerId,
+  type WardenStage,
 } from './domain-librarian';
 import {
   type BriefReport,
@@ -64,23 +78,16 @@ import {
 } from './flow-orchestrator';
 import { Librarian } from './librarian';
 import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
+import { regionDocSourceId } from './region-roster';
 import {
   buildRoleLayer,
   buildRoleLayers,
+  buildStageKnowledge,
   type ResolveSource,
   type RoleLayers,
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import {
-  CHORUS_RECEPTION,
-  CHORUS_RECEPTION_LAYER,
-  CHORUS_RECEPTION_VERSION,
-  chorusSource,
-  WARDEN_CHARTER_CLASSIFY,
-  type WardenCharter,
-  wardenCharter,
-} from './warden-charter';
 import type { GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
 
@@ -333,6 +340,21 @@ export const DEFAULT_THREAD_DOMAINS: ThreadDomainConfig[] = [
   { domain: 'memory', layerId: 'memory', guardTriggers: [], programmaticGuard: true },
 ];
 
+/** A later classify stage's composed doc, and the source it composes from. */
+interface StageDoc {
+  readonly layer: ContextLayer;
+  readonly sourceId: string;
+}
+
+/** The stages a project's region Wardens classify in: its chorus's, else today's single stage. */
+function wardenStages(
+  config: FoundryConfig,
+  projectId: string | undefined,
+): readonly StageConfig[] {
+  const written = projectId ? config.projects?.[projectId]?.chorus?.wardens?.stages : undefined;
+  return written ? validateStages('chorus.wardens.stages', written) : DEFAULT_STAGES;
+}
+
 export interface ThreadRuntimeDeps {
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
@@ -356,6 +378,15 @@ export interface ThreadRuntimeDeps {
   prefilter?: WardenPrefilter;
   /** Post-work learning deadline and knowledge size. */
   learning?: LearningConfig;
+  /**
+   * The decision host for a classify stage that names its own model or effort (one host per pair):
+   * `null` when that pair is the decision default (the Warden's own provider serves it), undefined
+   * when nothing serves it, and the stage is refused.
+   */
+  stageHost?: (
+    model: string | undefined,
+    effort: StageEffort | undefined,
+  ) => LLMProvider | null | undefined;
   /** Persistence subscribers (file memory, postgres, muninn) attached to every thread's bus with that thread as owner. */
   signalSinks?: SignalSink[];
   /**
@@ -847,10 +878,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _resolveSource: ResolveSource | undefined;
   private _cartographerRole!: string;
   private _cartographerInstructions!: ContextLayer;
-  /** Each configured Warden's composed slots, by domain. */
-  private _roleLayers = new Map<string, { role: string } & RoleLayers>();
-  /** The charter this thread's Wardens run under (what its chorus is built from), journalled with every call. */
-  private _charter!: WardenCharter;
+  /** Each configured Warden's composed slots, by domain, and the doc layer of each later classify stage. */
+  private _roleLayers = new Map<
+    string,
+    { role: string; stages: readonly StageConfig[]; stageDocs: StageDoc[] } & RoleLayers
+  >();
   private _learningTimeoutMs = 10_000;
   private _hardTimeoutMs = 60_000;
   private _epoch = 0;
@@ -932,6 +964,20 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._onDisposed = onDisposed;
     this._clock = deps.learning?.clock ?? (() => performance.now());
     this.auxiliarySessionIds = [];
+    // A project chorus's region Wardens classify in its stages (chorus.wardens.stages); a Warden
+    // registered in code runs today's single stage. A stage no decision host serves is refused here,
+    // before the runtime attaches to anything.
+    const chorusStages = wardenStages(deps.config, thread.meta.projectId as string | undefined);
+    if (domains.some((dc) => dc.expert))
+      chorusStages.forEach((config, index) => {
+        if (
+          (config.model !== undefined || config.effort !== undefined) &&
+          deps.stageHost?.(config.model, config.effort) === undefined
+        )
+          throw Error(
+            `chorus.wardens.stages[${index}] names ${[config.model, config.effort].filter(Boolean).join(' at ')}, and no decision host serves it (stage models run on subscription decisions)`,
+          );
+      });
 
     // The shared factual thread record is not an expert's private interpretation.
     // Keep full learning signals on the original owned bus/journal for inspection;
@@ -1000,10 +1046,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this.cartographer.buildMap();
 
     this.domainLibrarians = new Map();
-    const charter = wardenCharter(
-      chorusSource(deps.config, thread.meta.projectId as string | undefined),
-    );
-    this._charter = charter;
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
     // Retained configuration is validated for compatibility, but never adds a central wait.
     positiveMs('learning.barrierMs', deps.learning?.barrierMs, 5_000);
@@ -1020,11 +1062,50 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             scope: this._scope,
           })
         : undefined;
-      if (role && slots) this._roleLayers.set(dc.domain, { role, ...slots });
       const cache = slots?.domainKnowledge ?? (dc.layerId ? stack.getLayer(dc.layerId) : undefined);
       if (!cache) continue;
       const domainId = auxiliarySessionId(thread.id, `domain:${dc.domain}`);
       this.auxiliarySessionIds.push(domainId);
+      const stages = role ? chorusStages : DEFAULT_STAGES;
+      const stageDocs: StageDoc[] = [];
+      const bound: WardenStage[] = stages.map((config, index) => {
+        const host =
+          config.model !== undefined || config.effort !== undefined
+            ? deps.stageHost?.(config.model, config.effort)
+            : undefined;
+        if (host) this._wardenProviders.add(host);
+        const llmOpts = {
+          ...(dc.adviseOpts ?? { maxTokens: 512, temperature: 0 }),
+          ...(config.model ? { model: config.model } : {}),
+        };
+        // A stage reading another doc than the knowledge slot (knowledge.md) composes its own, the
+        // same way; the knowledge slot stays what guard defaults and the review read.
+        const own = () => {
+          const sourceId = regionDocSourceId(role!, config.doc);
+          const layer = buildStageKnowledge(deps.config, role!, config.doc, sourceId, {
+            resolveSource: deps.resolveSource,
+            scope: this._scope,
+          });
+          stageDocs.push({ layer, sourceId });
+          return layer;
+        };
+        if (index === 0)
+          return {
+            config,
+            ...(host ? { llm: scopedProvider(host, { threadId: domainId, cwd }), llmOpts } : {}),
+            ...(role && config.doc !== KNOWLEDGE_DOC ? { cache: own() } : {}),
+          };
+        // Each later stage keeps its own primed session (its own charter and doc), keyed by stage.
+        const stageId = auxiliarySessionId(thread.id, `domain:${dc.domain}:stage:${index}`);
+        this.auxiliarySessionIds.push(stageId);
+        return {
+          config,
+          llm: scopedProvider(host ?? dc.adviseProvider ?? deps.llm, { threadId: stageId, cwd }),
+          llmOpts,
+          cache: config.doc === KNOWLEDGE_DOC ? cache : own(),
+        };
+      });
+      if (role && slots) this._roleLayers.set(dc.domain, { role, stages, stageDocs, ...slots });
       // A review generation never resumes a possibly unknown operation from an old runtime.
       // Existing advice/guard and historical review bindings remain untouched.
       const reviewId = auxiliarySessionId(
@@ -1055,7 +1136,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           cache,
           ...(slots ? { instructions: slots.instructions, role } : {}),
           ...(dc.budget !== undefined ? { budget: dc.budget } : {}),
-          charter: charter.text,
           signals,
           llm: scopedProvider(dc.adviseProvider ?? deps.llm, { threadId: domainId, cwd }),
           llmOpts: dc.adviseOpts ?? { maxTokens: 512, temperature: 0 },
@@ -1073,20 +1153,19 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           programmaticGuard: dc.programmaticGuard,
           threadKnowledgeLayer,
           maxKnowledgeChars: deps.learning?.maxKnowledgeChars,
+          stages: bound,
         }),
       );
     }
 
-    // A thread whose chorus is its regions holds the reception charter once, as a standing layer: how
-    // the main thread reads a pointer (`chorus.reception: false` leaves it out). Roster Wardens advise
-    // under their own charter, so their threads do not get it. Fixed text, so its inline source
-    // re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
+    // A thread with a chorus holds the reception charter once, as a standing layer: how the main
+    // thread reads a pointer (`chorus.reception: false` leaves it out). Fixed text, so its inline
+    // source re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
     const projectChorusSettings = thread.meta.projectId
       ? deps.config.projects?.[thread.meta.projectId as string]?.chorus
       : undefined;
     if (
       this.domainLibrarians.size &&
-      charter.text === WARDEN_CHARTER_CLASSIFY &&
       projectChorusSettings?.reception !== false &&
       !stack.getLayer(CHORUS_RECEPTION_LAYER)
     ) {
@@ -1282,7 +1361,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
             const adviceJournal = journalSealed('advice', {
               trigger: 'user-message' satisfies TriggerPoint,
-              charter: charter.version,
+              charter: WARDEN_CHARTER_VERSION,
               inputHash: plan.input.hash,
               sealedAt: plan.sealedAt,
               participants: plan.contributions
@@ -1297,6 +1376,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                   request: c.request,
                   threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
                   cacheHash: c.provenance.cacheHash,
+                  ...(c.classified ? { classified: c.classified } : {}),
+                  ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
                 })),
               // A Warden the pre-filter ruled out is one row with its score: auditable later.
               ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
@@ -1579,7 +1660,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
       }),
     );
-    // The agent handed a task to a subagent: the roster briefs the handoff (the subagent-spawn trigger).
+    // The agent handed a task to a subagent: the chorus briefs the handoff (the subagent-spawn trigger).
     this._unsubs.push(
       signals.on('subagent_spawn', async (signal) => {
         const content = signal.content as
@@ -1592,7 +1673,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         await this._briefHandoff(signal.id, content);
       }),
     );
-    // The main thread took in a work item: the roster is asked what of its domain the work touches
+    // The main thread took in a work item: the chorus is asked what of its domain the work touches
     // (the consumed trigger, `chorus.consumed`, off by default). A subagent's reads are not asked: its
     // notes would reach the parent's next turn, never the subagent doing the work.
     if (this._consumed && this.domainLibrarians.size)
@@ -1839,7 +1920,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const outcomeJournal = journalOutcome({
         trigger: 'agent-action' satisfies TriggerPoint,
         mode: this._guardMode,
-        charter: this._charter.version,
+        charter: WARDEN_CHARTER_VERSION,
         observation,
         wraps,
         // The turn's activity the Wardens were given, as identity: tool, call id and outcome per call.
@@ -1922,7 +2003,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   }
 
   /**
-   * The subagent-spawn trigger: the roster briefs a handoff the agent made, on the parent's node; the
+   * The subagent-spawn trigger: the chorus briefs a handoff the agent made, on the parent's node; the
    * harness has already composed what the subagent received.
    */
   private async _briefHandoff(
@@ -1960,7 +2041,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     });
   }
 
-  /** The consumed trigger: the roster is asked about a work item the main thread took in. */
+  /** The consumed trigger: the chorus is asked about a work item the main thread took in. */
   private async _consumeWorkItem(
     signalId: string,
     item: WorkItemMoment,
@@ -2024,7 +2105,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         phase: 'advice',
         record: {
           trigger: moment.trigger,
-          charter: this._charter.version,
+          charter: WARDEN_CHARTER_VERSION,
           wraps: moment.wraps,
           ...moment.record,
           inputHash: report.input.hash,
@@ -2040,6 +2121,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               request: c.request,
               threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
               cacheHash: c.provenance.cacheHash,
+              ...(c.classified ? { classified: c.classified } : {}),
+              ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
             })),
           ...(report.prefilter ? { prefilter: report.prefilter } : {}),
           prefiltered: report.contributions
@@ -3305,11 +3388,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const next = new Set<string>();
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
     const swaps: Array<() => void> = [];
-    if (
-      wardenCharter(chorusSource(config, this.thread.meta.projectId as string | undefined))
-        .version !== this._charter.version
-    )
-      deferred.push('Warden charter change (chorus setting) applies to new threads');
     const cartographerRole = cartographerRoleId(config);
     if (cartographerRole === this._cartographerRole) {
       const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {
@@ -3332,6 +3410,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         deferred.push(`Warden ${dc.domain} applies to new threads`);
         continue;
       }
+      if (
+        held &&
+        JSON.stringify(held.stages) !==
+          JSON.stringify(wardenStages(config, this.thread.meta.projectId as string | undefined))
+      )
+        deferred.push(`Warden ${dc.domain}'s stages apply to new threads`);
       // Settings edits reach the composed slots on the next turn's warm.
       const fresh = held
         ? (['instructions', 'domainKnowledge'] as const).map(
@@ -3344,6 +3428,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               ] as const,
           )
         : [];
+      // A later stage's doc is composed like the knowledge slot, so the same edits reach it.
+      for (const doc of held?.stageDocs ?? [])
+        fresh.push([
+          doc.layer,
+          roleSources(config, held!.role, 'domainKnowledge', ['instructions', 'domainKnowledge'], {
+            resolveSource: this._resolveSource,
+            domainKnowledge: [doc.sourceId],
+          }),
+        ] as const);
       swaps.push(() => {
         for (const [layer, sources] of fresh) replaceRoleSources(layer, sources, this._scope);
         lib.reconfigure(dc);

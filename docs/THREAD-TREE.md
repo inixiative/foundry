@@ -227,7 +227,7 @@ These are the audit pieces Foundry already has. Each one is extended, not replac
 
 - **`settings-history.jsonl`** (`pf/viewer/config.ts:1068-1080, 1393-1418`). This is already an audit log for settings definitions. Every edit appends `{subject: 'agent:<id>' | 'source:<id>' | …, revision, entry: {hash, timestamp, trigger, author, snapshot: {before, after}}}`, using foundry-core's `VersionEntry` (`pc/context-layer.ts:234-260`). **Proposal: this becomes the one Foundry audit log.** Its subjects widen to files and the charter, its entries gain `actor` and `cause`, and it moves into the journal's SQLite so calls can point at it. It is a hard cut: pre-users, no dual file.
 - **`feedback-apply` / `feedback-revert`** phase rows `{itemId, changeId, path, line, beforeHash, afterHash}` (FEEDBACK-LOOP L-data). They stay as lifecycle facts. Each one gains the `sourceVersionId` it produced, and the source version's cause names the `itemId` and `changeId`. That is one link in each direction, and the line is not stored twice.
-- **`WARDEN_CHARTER_VERSION`**: `charter-<sha12>` of the charter text (`pf/agents/warden-charter.ts:49`). It is already journaled with every decision. Its source version is written the first time a new hash is seen, with actor `release` and cause `{foundryVersion, gitCommit}`.
+- **`WARDEN_CHARTER_VERSION`**: `charter-<sha12>` of the charter text (`pf/classify/charters/point.warden.ts`). It is already journaled with every decision. Its source version is written the first time a new hash is seen, with actor `release` and cause `{foundryVersion, gitCommit}`.
 - **`ContributionProvenance`**: `cacheHash` and `threadKnowledge{Revision, Hash}` (`pf/agents/flow-orchestrator.ts:100-114`). This is already the call's per-slice provenance. It gains `instructions` and `domainKnowledge` composition version ids.
 - **The content store**: `session_content` and `session_content_ref`, sha256-addressed, with heading-chunked text (`pf/persistence/journal-content.ts`). It holds every source version's text, every thread-knowledge revision, and nothing twice.
 - **The composer's own report**: `HierarchyStack.{files, duplicates, refused}` (`pc/adapters/markdown-hierarchy.ts:165`), plus `ContextLayer.selection` (selected and omitted, with reasons). This is the input to a composition version.
@@ -483,7 +483,7 @@ All runs were Haiku 5.5 at low effort, about 60 Haiku calls in total, plus a few
    - Foundry starts the main session (one Claude CLI or one Codex app-server), with `perTaskStopAffordance: true` and Foundry's SDK MCP server (`moment`, `answer`, `next`).
    - `ThreadMeta.setup.status = 'starting'`.
 2. **Setup.**
-   - Claude: Foundry sends the setup turn. The main model starts `foundry-dispatch` in the background and replies READY. The dispatcher calls `next`, and Foundry returns the roster. The dispatcher starts every Warden in one message. Each Warden calls `moment` and is held.
+   - Claude: Foundry sends the setup turn. The main model starts `foundry-dispatch` in the background and replies READY. The dispatcher calls `next`, and Foundry returns the thread's Wardens (its project's chorus). The dispatcher starts every Warden in one message. Each Warden calls `moment` and is held.
    - Codex: Foundry calls `thread/start` plus a primer for each Warden in the same app-server.
 3. **Ready.** When every Warden is held, or a 30 s setup deadline passes, the status becomes `ready` (or `degraded`, listing those that failed). Queued turns are sent in order.
 4. **A trigger** (user message, action, spawn, ask, hand-back, landed). Foundry answers each relevant held `moment` with the moment. Each Warden answers through `answer`, and Foundry appends the result ("this Warden chimed in with…"). Wardens with no matching spare are started through `next` and answer as they start.
@@ -588,7 +588,7 @@ Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`,
 - **CPU stress.** Under artificial CPU load (load average 266), 5 in-session threads had 0 failures and 0 main-model wakes.
 - **Earlier build.** Before the connect fix, setup took 47–54 s.
 - **[unverified]:**
-  - an end-to-end run through a Foundry daemon with the live Warden roster (the numbers above drive agent-session directly);
+  - an end-to-end run through a Foundry daemon with a live chorus (the numbers above drive agent-session directly);
   - growth over a long thread;
   - user hooks firing on Warden tool calls.
 
@@ -601,9 +601,9 @@ Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`,
 
 ## C.10 Next: a warm set of concept-region Wardens (design note, not built)
 
-The roster is moving from 23 fixed Wardens to Wardens built per concept region (plan step 8, "T7 warm set"). A project then has many more Wardens than a thread can hold, so the main thread keeps a **warm set**, not the whole roster.
+Wardens are now built per concept region (the 23 fixed, hand-named Wardens were retired 2026-10-17; plan step 8, "T7 warm set"). A project has many more Wardens than a thread can hold, so the main thread could keep a **warm set**, not the whole chorus. (Since 2026-10-15 v1 asks every region every time, so this note is shelved with routing.)
 
-- **What is warm.** The regions routed for the thread's recent moments (R1), kept by recency (LRU), bounded by `warmWardens` (proposed 6–8). `prestart` already takes the roster as a list: the warm set is just a shorter, changing list. A region leaving it has its spare retired normally (it ends into its dispatcher, so no main turn). A region joining it starts a spare.
+- **What is warm.** The regions routed for the thread's recent moments (R1), kept by recency (LRU), bounded by `warmWardens` (proposed 6–8). `prestart` already takes the Wardens as a list: the warm set is just a shorter, changing list. A region leaving it has its spare retired normally (it ends into its dispatcher, so no main turn). A region joining it starts a spare.
 - **Slots.** Claude Code runs 20 subagents per session by default, and the main thread's own subagents count against the same cap. In-session use is: root + 1–2 dispatchers + the warm set + a replacement while a used spare finishes (up to 2 × warm set). With a warm set of 8 that is at most about 20, so instead of today's flat `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=96`, the launch should raise the cap by exactly that: the user's own cap (default 20) plus `2 + 2 × warmWardens`. The main thread's own subagents then keep all of their slots.
 - **Cold regions.** A routed region outside the warm set starts its member with the moment inline (the existing direct path, 2–4 s at normal load, measured by its prime `cold`), then joins the warm set.
 - **Orphans.** A smaller warm set also bounds the cost of a dispatcher dying (§C.9): at most a warm set's worth of orphans per dead generation, against `maxOrphans`.

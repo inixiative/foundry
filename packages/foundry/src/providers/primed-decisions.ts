@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import {
   type ClaudeInSessionDecisions,
   ClaudePrimedSessions,
+  ClaudeSubagentSessions,
   CodexPrimedSessions,
   type CodexSpawn,
   DecisionError,
@@ -20,8 +21,9 @@ import {
   type LLMProvider,
   type NativeEvidence,
 } from '@inixiative/foundry-core';
+import { stampFoundryRun } from '../archives/run-stamp';
 import { DECISION_INPUT_CAP } from './decision-budget';
-import { type NativeProfileSource, withProfile } from './default-profiles';
+import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
 import type { InSessionWardens } from './in-session-wardens';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
@@ -88,6 +90,12 @@ export interface PrimedDecisionHostConfig {
    * process; their calls go there while it serves, and to the primed host otherwise.
    */
   inSession?: InSessionWardens;
+  /**
+   * Claude: serve decisions as subagents of a bounded pool of side processes (agent-session
+   * ClaudeSubagentSessions) instead of one primed process per key: `processes` side sessions, each
+   * hosting up to `membersPerProcess` roles. Memory stays capped at the pool size. Offline evals only.
+   */
+  subagents?: { processes: number; membersPerProcess: number };
 }
 
 /**
@@ -152,12 +160,23 @@ export function isWardenSession(sessionKey: string): boolean {
   return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
-/** The in-session host serving this decision, when its thread's Wardens run in-session. */
+/** A later classify stage of a Warden (`domain:<d>:stage:<n>`): its own primed session, never in-session. */
+export function isStageSession(sessionKey: string): boolean {
+  const at = sessionKey.indexOf(AUXILIARY);
+  return at > 0 && /^domain:.+:stage:\d+$/.test(sessionKey.slice(at + AUXILIARY.length));
+}
+
+/**
+ * The in-session host serving this decision, when its thread's Wardens run in-session. A later
+ * classify stage is not: the in-session runtime holds one subagent per Warden, on the decision model
+ * (a stage on another model, held beside it, is not built).
+ */
 export function inSessionTarget(
   inSession: InSessionWardens | undefined,
   sessionKey: string | undefined,
 ): ClaudeInSessionDecisions | undefined {
-  if (!inSession || !sessionKey || !isWardenSession(sessionKey)) return undefined;
+  if (!inSession || !sessionKey || !isWardenSession(sessionKey) || isStageSession(sessionKey))
+    return undefined;
   const thread = decisionThread(sessionKey);
   return thread ? inSession.serving(thread) : undefined;
 }
@@ -192,6 +211,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   const hostId = crypto.randomUUID();
   const root = join(config.directory, `primed-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
+  // Its sessions run below this root: Archive drops them as Foundry's own, never a person's work.
+  stampFoundryRun(root);
   const cwd = join(root, 'fixture');
   mkdirSync(cwd, { mode: 0o700 });
   const receiptsPath = join(root, 'decisions.jsonl');
@@ -233,66 +254,88 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
   const claude = runtime === 'claude' ? claudeLogin() : undefined;
-  const host: CodexPrimedSessions | ClaudePrimedSessions = claude
-    ? new ClaudePrimedSessions({
-        model: config.model,
-        effort: config.effort,
-        cwd,
-        baseInstructions: PRIMED_DECISION_CONTEXT,
-        maxConcurrent: config.maxConcurrent,
-        maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
-        timeoutMs: config.callTimeoutMs,
-        onEvent: config.onEvent,
-        // Synchronous launcher: the login was verified and registered before the first decision.
-        spawn: (argv, options) => {
-          const env = claude.env();
-          // The user's hooks, permissions and plugins never apply to a decision.
-          const command = [...argv, '--setting-sources', ''];
-          return config.spawn
-            ? config.spawn(command, { cwd: options.cwd, env })
-            : (Bun.spawn(command, {
-                cwd: options.cwd,
-                env,
-                stdin: 'pipe',
-                stdout: 'pipe',
-                stderr: 'pipe',
-              }) as unknown as DecisionProcess);
-        },
-      })
-    : new CodexPrimedSessions({
-        model: config.model,
-        effort: config.effort,
-        hedgeAfterMs: config.hedgeAfterMs,
-        cwd,
-        baseInstructions: PRIMED_DECISION_CONTEXT,
-        maxConcurrent: config.maxConcurrent,
-        timeoutMs: config.callTimeoutMs,
-        clientName: 'foundry-decisions',
-        onEvent: config.onEvent,
-        spawn: async (argv, options) => {
-          const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
-          let child: DecisionProcess;
-          try {
-            const command = launch.launch(argv, options.env);
-            const env = nativeTextEnvironment(command.env);
-            child = config.spawn
-              ? config.spawn(command.argv, { cwd: options.cwd, env })
-              : (Bun.spawn(command.argv, {
-                  cwd: options.cwd,
-                  env,
-                  stdin: 'pipe',
-                  stdout: 'pipe',
-                  stderr: 'pipe',
-                }) as unknown as DecisionProcess);
-          } catch (error) {
-            release(launch);
-            throw error;
-          }
-          const done = () => release(launch);
-          void child.exited.then(done, done);
-          return child;
-        },
-      });
+  const claudeSpawn = (
+    argv: string[],
+    options: { cwd: string; env: Record<string, string | undefined> },
+    env: Record<string, string | undefined>,
+  ) => {
+    // The user's hooks, permissions and plugins never apply to a decision.
+    const command = [...argv, '--setting-sources', ''];
+    return config.spawn
+      ? config.spawn(command, { cwd: options.cwd, env })
+      : (Bun.spawn(command, {
+          cwd: options.cwd,
+          env,
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }) as unknown as DecisionProcess);
+  };
+  const host: PrimedSessions =
+    claude && config.subagents
+      ? new ClaudeSubagentSessions({
+          model: config.model,
+          effort: config.effort,
+          cwd,
+          baseInstructions: PRIMED_DECISION_CONTEXT,
+          // The login's profile, so transcript cleanup looks where the child wrote (empty for the default login).
+          env: profileEnvironment('claude', source.profileDirectory),
+          maxMembers: config.subagents.membersPerProcess,
+          maxSessionsPerGroup: config.subagents.processes,
+          timeoutMs: config.callTimeoutMs,
+          onEvent: config.onEvent,
+          // The side session's own environment (autoupdate off, held moment calls), over the login's.
+          spawn: (argv, options) => claudeSpawn(argv, options, { ...options.env, ...claude.env() }),
+        })
+      : claude
+        ? new ClaudePrimedSessions({
+            model: config.model,
+            effort: config.effort,
+            cwd,
+            baseInstructions: PRIMED_DECISION_CONTEXT,
+            // The login's profile, so transcript cleanup looks where the child wrote (empty for the default login).
+            env: profileEnvironment('claude', source.profileDirectory),
+            maxConcurrent: config.maxConcurrent,
+            maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
+            timeoutMs: config.callTimeoutMs,
+            onEvent: config.onEvent,
+            // Synchronous launcher: the login was verified and registered before the first decision.
+            spawn: (argv, options) => claudeSpawn(argv, options, claude.env()),
+          })
+        : new CodexPrimedSessions({
+            model: config.model,
+            effort: config.effort,
+            hedgeAfterMs: config.hedgeAfterMs,
+            cwd,
+            baseInstructions: PRIMED_DECISION_CONTEXT,
+            maxConcurrent: config.maxConcurrent,
+            timeoutMs: config.callTimeoutMs,
+            clientName: 'foundry-decisions',
+            onEvent: config.onEvent,
+            spawn: async (argv, options) => {
+              const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
+              let child: DecisionProcess;
+              try {
+                const command = launch.launch(argv, options.env);
+                const env = nativeTextEnvironment(command.env);
+                child = config.spawn
+                  ? config.spawn(command.argv, { cwd: options.cwd, env })
+                  : (Bun.spawn(command.argv, {
+                      cwd: options.cwd,
+                      env,
+                      stdin: 'pipe',
+                      stdout: 'pipe',
+                      stderr: 'pipe',
+                    }) as unknown as DecisionProcess);
+              } catch (error) {
+                release(launch);
+                throw error;
+              }
+              const done = () => release(launch);
+              void child.exited.then(done, done);
+              return child;
+            },
+          });
 
   /** The Claude login, checked as a subscription (never an API key) at most every five minutes and registered
    * as a shared holder for the host's lifetime; every decision process launches with its environment. */
@@ -616,7 +659,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   /** Keep a thread's Wardens pre-started in its own process (in-session threads only). */
   const prestart = (messages: LLMMessage[], opts: CompletionOpts) => {
     const sessionKey = opts.threadId;
-    if (!config.inSession || !sessionKey || !isWardenSession(sessionKey)) return;
+    if (
+      !config.inSession ||
+      !sessionKey ||
+      !isWardenSession(sessionKey) ||
+      isStageSession(sessionKey)
+    )
+      return;
     const thread = decisionThread(sessionKey)!;
     const { spec, standby } = primedRequest(messages, opts, sessionKey);
     if (standby === undefined) return;

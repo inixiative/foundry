@@ -4,7 +4,6 @@ import { homedir } from 'node:os';
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { sessionMetadata, transcriptFiles } from '@inixiative/archive/collector';
 import { cwdRunTag, exemptRun } from '@inixiative/archive/exemption';
-import { typedPrompt } from '@inixiative/archive/import';
 import { importTranscriptFile } from '@inixiative/archive/import-file';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import {
@@ -24,6 +23,7 @@ import {
   type TokenCounts,
   type TranscriptTurn,
 } from '@inixiative/foundry-core';
+import { snapshotTurns } from '@inixiative/foundry-core/archive';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 
 // The repeat report: corrections a person gave their agents more than once, from local Claude Code
@@ -120,7 +120,6 @@ export interface RepeatOptions {
 const HOME = homedir();
 const tilde = (path: string) => (path.startsWith(HOME) ? `~${path.slice(HOME.length)}` : path);
 const ARCHIVE_SOURCE_ID = '00000000-0000-4000-8000-000000000000';
-const MARKER = /^\s*\[Request interrupted by user/;
 
 /** Session files touched since `since` (Archive's collector walk): no subagent or Foundry decision sessions. */
 export function sessionFiles(
@@ -148,23 +147,6 @@ const projectOf = (harness: 'claude-code' | 'codex', file: string) => {
   const cwd = sessionMetadata(file, harness)?.cwd;
   return cwd ? tilde(cwd) : harness;
 };
-
-/** The transcript as turns: what the person typed, the agent's prose, and interruptions. */
-export function snapshotTurns(snapshot: ArchiveSnapshot): TranscriptTurn[] {
-  const turns: TranscriptTurn[] = [];
-  for (const entry of snapshot.entries) {
-    const timestamp = entry.timestamp === null ? '' : new Date(entry.timestamp).toISOString();
-    if (entry.kind === 'assistant') turns.push({ role: 'assistant', text: entry.text, timestamp });
-    else if ((entry.kind === 'user' || entry.kind === 'event') && MARKER.test(entry.text))
-      turns.push({ role: 'user', text: '', timestamp, interrupted: true });
-    else if (entry.kind === 'user') {
-      const text = typedPrompt(entry.text);
-      if (text)
-        turns.push({ role: 'user', id: entry.id, text, timestamp, sourceRef: entry.sourceRef });
-    }
-  }
-  return turns;
-}
 
 const normalized = (text: string) =>
   scrubSecrets(text).text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);

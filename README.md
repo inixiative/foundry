@@ -48,7 +48,7 @@ bun install
 bun run setup
 ```
 
-Setup is interactive — picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router, Cartographer or thread-state composed into it. Layers, sources, decision roles and Wardens are opt-in settings. The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
+Setup is interactive — picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router, Cartographer or thread-state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once its chorus is enabled (`"chorus": { "enabled": true }` in its `.foundry/project.json`). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
 
 An install set up before this default carries the old starter stack (system / conventions / memory layers, classifier → router → three prompt-only executors). `bun run doctor` flags it (`legacy-starter-defaults`), and `bun run setup --remove-legacy-defaults` (or the **Legacy defaults** item in `bun run setup`) removes whatever is still exactly as seeded; edited items are kept.
 

@@ -329,26 +329,35 @@ function ProjectChorus({ projectId }) {
       <div class="settings-card-header">
         <span class="settings-card-title">Chorus</span>
         <span class="settings-desc">${
-          chorus.source === 'regions'
-            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge, classifier charter`
+          chorus.on
+            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge`
             : chorus.available
-              ? `Off: ${chorus.available} regions present, not enabled; the hand-named roster runs`
-              : chorus.requested === 'roster'
-                ? `The hand-named roster (chorus.source: roster${chorus.requestedBy === 'default' ? ', the default' : ''})`
-                : 'The hand-named roster'
+              ? `Off: ${chorus.available} regions present, not enabled; no Wardens run`
+              : 'Off: no Wardens run'
         }</span>
       </div>
       ${
         chorus.reason
-          ? html`<p class="settings-desc">${chorus.requested === 'regions' ? 'Regions were asked for, but ' : ''}${chorus.reason}.</p>`
+          ? html`<p class="settings-desc">${chorus.enabled ? 'The chorus is enabled, but ' : ''}${chorus.reason}.</p>`
           : null
       }
       ${
         chorus.consumed && chorus.reception
-          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.source === 'regions' ? ', with the region chorus' : ', only with a region chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
+          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the chorus' : ', only with a running chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
           : null
       }
-      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens run only when enabled: <code>"chorus": { "source": "regions" }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
+      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens are the only Wardens, and run only when enabled: <code>"chorus": { "enabled": true }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
+      ${
+        chorus.missingDocs?.length
+          ? html`<p class="settings-desc">Missing docs: ${chorus.missingDocs
+              .map(
+                (m) =>
+                  `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')})`,
+              )
+              .join('; ')}.</p>`
+          : null
+      }
+      ${chorus.roles ? html`<${ChorusStages} roles=${chorus.roles} />` : null}
       ${
         chorus.layers.length
           ? html`
@@ -396,6 +405,38 @@ function ProjectChorus({ projectId }) {
           : null
       }
     </div>
+  `;
+}
+
+const layerName = (from) =>
+  from === 'default'
+    ? "the default (today's Warden)"
+    : from === 'settings'
+      ? 'your settings'
+      : 'the repository';
+
+/** How each role classifies (classify): its stages in order, where they came from, and their versions. */
+function ChorusStages({ roles }) {
+  const rows = (role) =>
+    role.stages.map(
+      (s) => html`<tr key=${s.index}>
+        <td>${s.index + 1}</td>
+        <td>${s.task}${s.pointer && s.pointer.any === false ? html`<div class="settings-desc">no choose-one</div>` : null}</td>
+        <td><code>${s.doc}</code></td>
+        <td>${s.outcomes}${s.reason !== 'none' ? html`<div class="settings-desc">why: ${s.reason}</div>` : null}</td>
+        <td>${s.model}<div class="settings-desc">${s.effort}</div></td>
+        <td>${s.escalate ? s.escalate.join(', ') : '–'}</td>
+        <td>${Math.round(s.deadline * 100)}%</td>
+        <td><code>${s.charter}</code><div class="settings-desc"><code>${s.protocols.advice}</code> / <code>${s.protocols.guard}</code></div></td>
+      </tr>`,
+    );
+  return html`
+    <div class="settings-section-label">Classification (<code>chorus.wardens.stages</code>)</div>
+    <p class="settings-desc">Wardens: ${roles.warden.stages.length} stage${roles.warden.stages.length === 1 ? '' : 's'}, from ${layerName(roles.warden.from)}. Heralds: not built${roles.herald.regions ? `; ${roles.herald.regions} Herald region${roles.herald.regions === 1 ? '' : 's'} not run` : ''}.</p>
+    <table class="settings-table chorus-table">
+      <thead><tr><th>#</th><th>Task</th><th>Doc</th><th>Outcomes</th><th>Model</th><th>Escalates</th><th>Deadline</th><th>Charter / protocols</th></tr></thead>
+      <tbody>${rows(roles.warden)}</tbody>
+    </table>
   `;
 }
 

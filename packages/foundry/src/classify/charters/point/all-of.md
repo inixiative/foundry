@@ -1,0 +1,1 @@
+- **All of these**, when the moment touches two or three systems in your domain at once and each of them applies (a new table that needs both the audit log and soft delete). First remark exactly `All of these: {{ALL_OF_CAVEAT}}` Then two or three remarks, one per system: `<name> (<where it is written>) — <the part of the moment it touches>`.

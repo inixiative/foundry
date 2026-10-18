@@ -44,7 +44,6 @@ test('advisory guard findings and operator corrections are retained as audit-onl
         content: JSON.stringify({
           findings: [
             { severity: 'advisory', description: 'ADVISORY-SENTINEL consider a migration test' },
-            { severity: 'critical', description: 'CRITICAL-SENTINEL schema drops a column' },
           ],
         }),
       }),
@@ -52,6 +51,22 @@ test('advisory guard findings and operator corrections are retained as audit-onl
   });
   const result = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } }));
   expect(result.status).toBe('completed');
+  // A Warden only points (advisory); a critical finding comes from a programmatic guard.
+  const programmatic = new DomainLibrarian({
+    domain: 'memory',
+    cache,
+    signals,
+    guardTriggers: ['Write'],
+    llm: { id: 'unused', complete: async () => ({ model: 'unused', content: 'NO_COMMENT' }) },
+    programmaticGuard: true,
+    guardFn: () => [
+      { severity: 'critical', description: 'CRITICAL-SENTINEL schema drops a column' },
+    ],
+  });
+  expect(
+    (await programmatic.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } })))
+      .status,
+  ).toBe('completed');
   await new InterventionLog().intervene(
     { id: owner.threadId, signals },
     'trace',

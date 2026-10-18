@@ -7,15 +7,10 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import {
-  DomainLibrarian,
-  GUARD_RESPONSE_PROTOCOL,
-  oneCall,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
-import { chartered } from '../src/agents/warden-charter';
+import { chartered, GUARD_RESPONSE_PROTOCOL, validateGuardResponse } from '../src/classify';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
 // The parent's protected domain-guard-evidence fixture proves failures differ from a completed all-clear;
@@ -86,7 +81,7 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
   expect(clear.emitted).toHaveLength(0);
   const found = fixture(
     () =>
-      '```json\n{"findings":[{"severity":"critical","description":"Schema drops legacy column","location":"contacts.ts:12"},{"severity":"advisory","description":"Add a migration test"}]}\n```',
+      '```json\n{"findings":[{"severity":"advisory","description":"Schema drops legacy column","location":"contacts.ts:12"},{"severity":"advisory","description":"Add a migration test"}]}\n```',
   );
   const result = await found.lib.guard(oneCall(observation), 'COMMON_EVIDENCE');
   expect(result).toMatchObject({
@@ -95,20 +90,22 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
     threadKnowledgeRevision: 0,
     findings: [
       {
-        severity: 'critical',
+        severity: 'advisory',
         description: 'Schema drops legacy column',
         location: 'contacts.ts:12',
       },
       { severity: 'advisory', description: 'Add a migration test' },
     ],
   });
+  // The first finding carries the parsed pointer; these remarks open no pointer shape.
   expect(result.findings[0]).toEqual({
-    severity: 'critical',
+    severity: 'advisory',
     description: 'Schema drops legacy column',
     location: 'contacts.ts:12',
+    pointer: { relevant: false },
   });
   expect(found.emitted.map((s) => [s.kind, (s.content as any).severity])).toEqual([
-    ['security_concern', 'critical'],
+    ['guard_finding', 'advisory'],
     ['guard_finding', 'advisory'],
   ]);
 });
@@ -129,6 +126,9 @@ test('invalid schema is an explicit invalid-response with a bounded error that n
     `[{"severity":"critical","description":"${secret}"}]`,
     `{"findings":[{"description":"${secret}"}]}`,
     `{"findings":[{"severity":"high","description":"${secret}"}]}`,
+    // A Warden points: a critical severity or a suggested fix is a verdict, outside the protocol.
+    `{"findings":[{"severity":"critical","description":"${secret}"}]}`,
+    `{"findings":[{"severity":"advisory","description":"d","suggestion":"${secret}"}]}`,
     `{"findings":[{"severity":"critical","description":"  "}]}`,
     `{"findings":[{"severity":"critical","description":"d","location":7}]}`,
     `{"findings":[null]}`,
@@ -149,9 +149,15 @@ test('invalid schema is an explicit invalid-response with a bounded error that n
   expect(validateGuardResponse(42)).toEqual({ error: 'guard response is not text' });
   expect(
     validateGuardResponse(
-      '{"findings":[{"severity":"advisory","description":"ok","suggestion":"do"}]}',
+      '{"findings":[{"severity":"advisory","description":"ok","location":"a.ts"}]}',
     ),
-  ).toEqual({ findings: [{ severity: 'advisory', description: 'ok', suggestion: 'do' }] });
+  ).toEqual({ findings: [{ severity: 'advisory', description: 'ok', location: 'a.ts' }] });
+  expect(
+    'error' in
+      validateGuardResponse(
+        '{"findings":[{"severity":"advisory","description":"ok","suggestion":"do"}]}',
+      ),
+  ).toBe(true);
 });
 
 test("provider error is a provider-error with the provider's lifecycle classification when it exposes one, otherwise unknown; a model run is never implied", async () => {
@@ -341,7 +347,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     expect(report.domainsChecked).toEqual(['architecture', 'testing', 'security']);
     expect(report.skipped).toEqual([]);
     expect(report.findings).toEqual([
-      { severity: 'advisory', description: 'Add a migration test' },
+      { severity: 'advisory', description: 'Add a migration test', pointer: { relevant: false } },
     ]);
     expect(report.critical).toEqual([]);
     expect(report.advisory).toHaveLength(1);

@@ -5,12 +5,8 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import {
-  ADVICE_RESPONSE_PROTOCOL,
-  DomainLibrarian,
-  validateAdviceResponse,
-} from '../src/agents/domain-librarian';
-import { chartered } from '../src/agents/warden-charter';
+import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../src/classify';
 
 // Author cases for the advice-phase response contract (Fable). Controlled provider only; no model.
 // The parent's protected protocol fixture covers the invalid-shape matrix; these cover the boundary
@@ -65,7 +61,12 @@ test('the default instructions also receive the phase protocol; the default advi
     null,
   );
   expect(lib.advisePrompt).toContain('You are a architecture domain advisor');
-  expect(await lib.advise('m')).toEqual({ layers: [], snippets: ['x'], confidence: 1 });
+  expect(await lib.advise('m')).toEqual({
+    layers: [],
+    snippets: ['x'],
+    confidence: 1,
+    pointer: { relevant: false },
+  });
   expect(calls[0]!.map((m) => m.content).join('\n')).toContain(ADVICE_RESPONSE_PROTOCOL);
 });
 

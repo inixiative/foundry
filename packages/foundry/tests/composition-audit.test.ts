@@ -20,6 +20,7 @@ import {
   type LLMProvider,
   segmentsText,
 } from '@inixiative/foundry-core';
+import { regionInstructions, regionSourceId } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -27,39 +28,29 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { chartered, WARDEN_CHARTER } from '../src/agents/warden-charter';
 import { AuditLog } from '../src/audit/audit-log';
 import { type CallVersions, CompositionAuditor } from '../src/audit/compositions';
+import { chartered, WARDEN_CHARTER } from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { instructionStackSource } from '../src/prompts/instruction-stack';
-import {
-  type AgentSettingsConfig,
-  ConfigStore,
-  type FoundryConfig,
-  starterConfig,
-} from '../src/viewer/config';
+import { ConfigStore, type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { writeRegions } from './helpers/regions';
 
-const RULES = 'RULES: merge yourself once green.';
+const REGION = {
+  id: 'conventions',
+  title: 'Conventions',
+  routing: 'Is this about how this repo works?',
+  knowledge: 'KNOWLEDGE: look for what exists first.',
+};
+/** The region Warden's settings prompt, as `regionWardens` generates it. */
+const RULES = regionInstructions(REGION);
+/** Its knowledge source, and the subject that source's text is versioned under in project P. */
+const SOURCE = regionSourceId(REGION.id);
+const SUBJECT = `source-content:${SOURCE}@project:P`;
 
-const warden = (): AgentSettingsConfig => ({
-  id: 'conventions-warden',
-  kind: 'decider',
-  flowRole: 'domain-advising',
-  domain: 'conventions',
-  prompt: RULES,
-  provider: 'expert',
-  model: 'warden-model',
-  tools: false,
-  visibleLayers: [],
-  domainKnowledge: ['how-i-work'],
-  peers: [],
-  maxDepth: 1,
-  enabled: true,
-});
-
-function config(): FoundryConfig {
+function config(project: string): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
     worker: {
@@ -73,19 +64,11 @@ function config(): FoundryConfig {
       maxDepth: 1,
       enabled: true,
     },
-    'conventions-warden': warden(),
   };
   c.layers = {};
   c.composition = { preset: 'none' };
-  c.sources = {
-    'how-i-work': {
-      id: 'how-i-work',
-      label: 'How I work',
-      type: 'inline',
-      uri: 'KNOWLEDGE: look for what exists first.',
-      enabled: true,
-    },
-  };
+  c.sources = {};
+  c.projects.P = { id: 'P', path: project };
   return c;
 }
 
@@ -108,14 +91,12 @@ const tempDir = (name: string) => {
 };
 
 /** A thread whose Warden calls are journalled through the auditor, as the viewer wires it. */
-async function setup(
-  options: { retrieved?: () => string; edit?: (c: FoundryConfig) => void } = {},
-) {
+async function setup(options: { retrieved?: () => string } = {}) {
   const dir = tempDir('composition-audit');
+  const project = tempDir('composition-project');
+  writeRegions(project, [REGION]);
   const configStore = new ConfigStore(dir);
-  const initial = config();
-  options.edit?.(initial);
-  await configStore.save(initial);
+  await configStore.save(config(project));
   const c = structuredClone(configStore.config);
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
@@ -144,11 +125,11 @@ async function setup(
   });
   const central = provider('central');
   const flow = provider('flow');
-  const expert = provider('expert');
-  const providers = new Map([central, flow, expert].map((p) => [p.id, p]));
+  const providers = new Map([central, flow].map((p) => [p.id, p]));
   const sourceResolver: SourceResolver = (id, cfg) => {
-    if (!cfg.sources[id]) return null;
-    if (options.retrieved && id === 'how-i-work') {
+    const configured = cfg.sources[id];
+    if (!configured) return null;
+    if (options.retrieved && id === SOURCE) {
       const source: ContextSource = {
         id,
         focusable: true,
@@ -156,7 +137,11 @@ async function setup(
       };
       return source;
     }
-    return { id, load: async () => cfg.sources[id]!.uri };
+    return {
+      id,
+      load: async () =>
+        configured.type === 'markdown' ? Bun.file(configured.uri).text() : configured.uri,
+    };
   };
   const stack = new ContextStack(buildLayers(c, { sourceResolver }));
   const manager = new ThreadRuntimeManager({
@@ -200,12 +185,12 @@ async function setup(
             }
           ).participants.find((x) => x.domain === 'conventions')!.request,
       );
-  return { dir, configStore, factory, store, auditor, calls, advice };
+  return { dir, project, configStore, factory, store, auditor, calls, advice };
 }
 
 test('a Warden call journals the versions it was composed from, and they recompose its exact text', async () => {
   const f = await setup();
-  const thread = f.factory.create('main');
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'First turn');
 
   const [request] = f.advice(thread.id);
@@ -217,7 +202,8 @@ test('a Warden call journals the versions it was composed from, and they recompo
   const pre = f.calls.filter((call) => call.phase === 'pre').at(-1)!;
   expect(pre.messages[0]!.content).toBe(chartered(f.auditor.recompose(versions.instructions)));
   const knowledge = f.auditor.recompose(versions.domainKnowledge);
-  expect(knowledge).toContain('## How I work');
+  expect(knowledge).toContain('## Conventions (region knowledge)');
+  expect(knowledge).toContain(REGION.knowledge);
   expect(pre.messages[1]!.content).toContain(knowledge);
 
   // The charter is a version too: written once, by a release.
@@ -231,7 +217,7 @@ test('a Warden call journals the versions it was composed from, and they recompo
 
 test('unchanged sources write nothing: every call names the same composition versions', async () => {
   const f = await setup();
-  const thread = f.factory.create('main');
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'one');
   const rows = f.configStore.audit.rows().length;
   await thread.dispatch('worker', 'two');
@@ -243,59 +229,50 @@ test('unchanged sources write nothing: every call names the same composition ver
   expect(f.configStore.audit.rows()).toHaveLength(rows);
 });
 
-test('a settings edit is one audit row with before and after; later calls name a new version, earlier calls keep theirs', async () => {
+test("an edit to a region's knowledge is a new version: later calls name it, earlier calls keep theirs", async () => {
   const f = await setup();
-  const thread = f.factory.create('main');
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'before');
-  await f.configStore.update((draft) => {
-    draft.agents['conventions-warden']!.prompt = 'EDITED_RULES';
-  });
-  await f.configStore.settled();
-  await thread.dispatch('worker', 'after');
+  writeFileSync(
+    join(f.project, '.foundry', 'regions', REGION.id, 'knowledge.md'),
+    'EDITED_KNOWLEDGE: the debounce wrapper exists.',
+  );
+  // A new thread composes the region as it now reads.
+  const later = f.factory.create('p-later', { projectId: 'P' });
+  await later.dispatch('worker', 'after');
 
-  const edit = f.configStore.audit.rows('agent:conventions-warden').at(-1)!;
-  expect(edit).toMatchObject({
-    action: 'update',
-    actor: { kind: 'user' },
-    cause: { settingsRevision: f.configStore.revision },
-  });
-  expect(edit.snapshot!.before).toMatchObject({ prompt: RULES });
-  expect(edit.snapshot!.after).toMatchObject({ prompt: 'EDITED_RULES' });
-
-  const [first, second] = f.advice(thread.id);
-  expect(first!.versions!.instructions).not.toBe(second!.versions!.instructions);
+  const [first] = f.advice(thread.id);
+  const [second] = f.advice(later.id);
+  expect(first!.versions!.domainKnowledge).not.toBe(second!.versions!.domainKnowledge);
+  expect(f.auditor.recompose(first!.versions!.domainKnowledge)).toContain(REGION.knowledge);
+  expect(f.auditor.recompose(second!.versions!.domainKnowledge)).toContain('EDITED_KNOWLEDGE');
+  // The instructions did not change: one version, the generated region prompt.
+  expect(first!.versions!.instructions).toBe(second!.versions!.instructions);
   expect(f.auditor.recompose(first!.versions!.instructions)).toBe(RULES);
-  expect(f.auditor.recompose(second!.versions!.instructions)).toBe('EDITED_RULES');
-  // The prompt's versions are the settings edits themselves: one per edit, by its author.
-  const prompt = f.configStore.audit.rows('prompt:agent:conventions-warden');
-  expect(prompt.map((row) => f.configStore.audit.text(row.id))).toEqual([RULES, 'EDITED_RULES']);
-  expect(prompt.at(-1)).toMatchObject({
-    actor: { kind: 'user' },
-    cause: { settingsRevision: edit.revision },
-  });
-  // The history route still reads the edit.
-  const [log] = await f.configStore.history('agent:conventions-warden');
-  expect(log!.entries.at(-1)!.author).toBe('user');
+  // The region text's versions are what was read, each detected on read.
+  const rows = f.configStore.audit.rows(SUBJECT);
+  expect(rows.map((row) => f.configStore.audit.text(row.id))).toEqual([
+    REGION.knowledge,
+    'EDITED_KNOWLEDGE: the debounce wrapper exists.',
+  ]);
 });
 
 test('per-message knowledge is stored raw with each call; the composition version stays the same', async () => {
   let n = 0;
   const f = await setup({ retrieved: () => `RETRIEVED_${++n}` });
-  const thread = f.factory.create('main');
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'one');
   await thread.dispatch('worker', 'two');
   const [a, b] = f.advice(thread.id);
   expect(a!.versions!.domainKnowledge).toBe(b!.versions!.domainKnowledge);
   const texts = [a!, b!].map((r) => {
     const retrieved = r.versions!.retrieved!;
-    expect(retrieved.map((x) => [x.slot, x.subject])).toEqual([
-      ['domainKnowledge', 'source-content:how-i-work'],
-    ]);
+    expect(retrieved.map((x) => [x.slot, x.subject])).toEqual([['domainKnowledge', SUBJECT]]);
     return f.auditor.recompose(r.versions!.domainKnowledge, retrieved);
   });
   expect(texts[0]).toContain('RETRIEVED_');
   expect(texts[0]).not.toBe(texts[1]);
-  expect(f.configStore.audit.rows('source-content:how-i-work')).toHaveLength(0);
+  expect(f.configStore.audit.rows(SUBJECT)).toHaveLength(0);
 });
 
 test('ladder files are attributed per file with their rung; the composed text is the file without its comments', async () => {
@@ -469,7 +446,7 @@ test('the settings history file Foundry kept before is not read (hard cut)', asy
 
 test('an audit failure never blocks a Warden: the call is journalled without versions', async () => {
   const f = await setup();
-  const thread = f.factory.create('main');
+  const thread = f.factory.create('p-thread', { projectId: 'P' });
   chmodSync(join(f.dir, 'audit.jsonl'), 0o400);
   try {
     await thread.dispatch('worker', 'audit is read-only');
@@ -480,19 +457,4 @@ test('an audit failure never blocks a Warden: the call is journalled without ver
   expect(request).toBeDefined();
   expect(request!.versions).toBeUndefined();
   expect(request!.composition).toBeUndefined();
-});
-
-test('captured memory is per-message text, never a source change', async () => {
-  const f = await setup({
-    edit: (c) => {
-      c.sources['how-i-work']!.type = 'file';
-    },
-  });
-  const thread = f.factory.create('main');
-  await thread.dispatch('worker', 'one');
-  const [request] = f.advice(thread.id);
-  expect(request!.versions!.retrieved?.map((r) => r.subject)).toEqual([
-    'source-content:how-i-work',
-  ]);
-  expect(f.configStore.audit.rows('source-content:how-i-work')).toHaveLength(0);
 });

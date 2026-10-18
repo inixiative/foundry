@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
+import { resolve } from 'node:path';
+import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
+import { privateDirectory } from './providers/decision-host';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
@@ -53,9 +56,10 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
-import { largestRoster } from './agents/configured-experts';
+import { largestRoster, largestStageCount } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
+import type { StageConfig, StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
@@ -173,11 +177,11 @@ if (subscription) {
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
 // Each project's chorus: said at startup, so a regions directory that did not resolve is never a
-// silent fall-back to the hand-named roster.
+// silent loss of the project's Wardens.
 for (const [projectId, project] of Object.entries(config.projects ?? {})) {
   if (project.enabled === false) continue;
   const view = resolveProjectView(config, projectId);
-  if (!view || (view.chorus.requested !== 'regions' && !view.chorus.reason)) continue;
+  if (!view || (!view.chorus.enabled && !view.chorus.reason)) continue;
   console.log(describeChorus(project.label ?? projectId, view.chorus));
 }
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
@@ -202,39 +206,94 @@ const inSession =
     : undefined;
 if (inSession)
   console.log("Wardens: held inside each thread's own Claude Code process (claude-in-session)");
+type DecisionEvents = Pick<
+  Parameters<typeof createSubscriptionDecisions>[0],
+  'onPressure' | 'onPrimedEvent'
+>;
+/** Pressure and recycles of every decision host (the decision host and each stage host) reach the viewer. */
+const decisionEvents: DecisionEvents = {
+  onPressure: (event: Parameters<NonNullable<DecisionEvents['onPressure']>>[0]) => {
+    const message =
+      event.kind === 'shed'
+        ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
+        : event.kind === 'closed'
+          ? `Decision admission closed until restart: ${event.reason}`
+          : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError('subscription-decisions', message, 'warn');
+  },
+  onPrimedEvent: (event: Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0]) => {
+    if (event.type === 'process-started')
+      console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
+    if (event.type !== 'process-recycled' && event.type !== 'violation') return;
+    const message =
+      event.type === 'violation'
+        ? `Decision violated the text-only policy (${event.detail}); process recycled`
+        : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError('subscription-decisions', message, 'warn');
+  },
+};
+/** Whether a classify stage runs on the decision host (its model and effort are the decision ones). */
+const onDecisionHost = (stage: StageConfig) =>
+  !subscription ||
+  ((stage.model ?? subscription.policy.model) === subscription.policy.model &&
+    (stage.effort ?? subscription.policy.effort) === subscription.policy.effort);
 const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
       source: subscription.decision,
       ...(inSession ? { inSession } : {}),
-      // Every decision role stays primed: an advice and a review key per Warden, plus the
-      // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      // Sized for the largest roster any project runs (a generated region roster is per project).
-      primedSessions: Math.max(16, 2 * largestRoster(config) + 8),
-      onPressure: (event) => {
-        const message =
-          event.kind === 'shed'
-            ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
-            : event.kind === 'closed'
-              ? `Decision admission closed until restart: ${event.reason}`
-              : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
-        console.warn(`[subscription-decisions] ${message}`);
-        eventStream.pushError('subscription-decisions', message, 'warn');
-      },
-      onPrimedEvent: (event) => {
-        if (event.type === 'process-started')
-          console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
-        if (event.type !== 'process-recycled' && event.type !== 'violation') return;
-        const message =
-          event.type === 'violation'
-            ? `Decision violated the text-only policy (${event.detail}); process recycled`
-            : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
-        console.warn(`[subscription-decisions] ${message}`);
-        eventStream.pushError('subscription-decisions', message, 'warn');
-      },
+      // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
+      // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
+      // Sized for the largest chorus any project runs (region Wardens are per project).
+      primedSessions: Math.max(
+        16,
+        (largestStageCount(config, onDecisionHost) + 1) * largestRoster(config) + 8,
+      ),
+      ...decisionEvents,
     })
   : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
+/**
+ * One decision host per model and effort a classify stage names (chorus.wardens.stages), started on
+ * first use on the same login and bounds as the decision host; a stage on the decision model and
+ * effort shares that host. API-token decisions have no per-stage host: such a stage is refused.
+ */
+const stageHosts = new Map<string, ReturnType<typeof createSubscriptionDecisions>>();
+const stageHost = (model: string | undefined, effort: StageEffort | undefined) => {
+  if (!subscription) return undefined;
+  const m = model ?? subscription.policy.model;
+  const e = effort ?? subscription.policy.effort;
+  // The decision model and effort: the Warden's own provider serves it.
+  if (m === subscription.policy.model && e === subscription.policy.effort) return null;
+  const key = `${m}|${e ?? ''}`;
+  let host = stageHosts.get(key);
+  if (!host) {
+    host = createSubscriptionDecisions({
+      ...subscription.policy,
+      source: subscription.decision,
+      model: m,
+      ...(e ? { effort: e } : {}),
+      // A key per stage this host serves, per Warden.
+      primedSessions: Math.max(
+        16,
+        largestStageCount(
+          config,
+          (stage) =>
+            (stage.model ?? subscription.policy.model) === m &&
+            (stage.effort ?? subscription.policy.effort) === e,
+        ) *
+          largestRoster(config) +
+          8,
+      ),
+      ...decisionEvents,
+    });
+    stageHosts.set(key, host);
+    console.log(`[subscription-decisions] stage host ${m}${e ? ` at ${e}` : ''} started`);
+  }
+  return host.provider;
+};
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 // API-token mode: agents saved on the decision provider's id resolve to the decision client.
 const decisionAlias = subscription
@@ -613,6 +672,7 @@ const runtimeManager = new ThreadRuntimeManager({
   atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
+  stageHost,
   // Foundry's own signals feed the memory store only while a configured "file" source reads it as
   // working memory. With none (a fresh install), nothing Foundry logs lands where a source reads it back.
   signalSinks: [
@@ -954,7 +1014,8 @@ await runStartupSelfTest({
   enabled: selfTestRequested,
   provider: decisions?.provider ?? provider,
   model: decisions ? decisionModel : config.defaults.model,
-  cwd: process.cwd(),
+  // A Foundry-owned folder, stamped for Archive: the self-test is Foundry's session, not the user's.
+  cwd: stampFoundryRun(privateDirectory(resolve(FOUNDRY_DIR, 'self-test'))),
   log: console.log,
   warn: console.warn,
   error: console.error,
@@ -973,7 +1034,12 @@ const shutdown = async () => {
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
-    Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown(), inSession?.close()]),
+    Promise.all([
+      sessionAdapter?.releaseAll?.(),
+      decisions?.shutdown(),
+      ...[...stageHosts.values()].map((host) => host.shutdown()),
+      inSession?.close(),
+    ]),
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();

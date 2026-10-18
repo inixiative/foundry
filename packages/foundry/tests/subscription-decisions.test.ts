@@ -296,7 +296,7 @@ test('actual factory classification, routing, advice, guard and learning use the
     },
     expert: {
       id: 'expert',
-      kind: 'decider',
+      kind: 'domain-librarian',
       flowRole: 'domain-advising',
       domain: 'docs',
       provider: f.provider.id,

@@ -290,7 +290,7 @@ computer, org, org personal, project, project personal) composes every slot of
 every role.
 
 - **Roles.** `main` is the thread's executor. Every model-backed middleware
-  role is its agent id: each Warden (`flowRole: "domain-advising"`) and the
+  role is its agent id: each Warden (a region Warden's id is its region id) and the
   Cartographer (its agent id, or `cartographer`). The Librarian makes no model
   call and has nothing to compose. Classifier and router agents still use their
   settings prompt and visible layers.
@@ -312,7 +312,7 @@ every role.
 | org or project personal | `.foundry/roles/<role>/<slot>.local.md` in any of those directories | personal_private |
 
   So "the org's Warden instructions for this project" is a file, for example
-  `~/code/inixiative/.foundry/roles/librarian-convention/instructions.md`.
+  `~/code/inixiative/.foundry/roles/naming/instructions.md`.
   A registered node with `"when": {"roles": [...], "slots": [...]}` can
   read from anywhere else.
 
@@ -351,7 +351,7 @@ rules, auto memory) compose into the slot. The default is `"all"` for
 instructions and none for domain knowledge, and role files compose either way.
 So a narrow Warden sets `"instructions": {"general": ["global"]}`: it keeps its
 role files at every rung and reads only the personal global CLAUDE.md, not the
-whole org and project stack. The Convention Warden sets `"domainKnowledge":
+whole org and project stack. The naming Warden sets `"domainKnowledge":
 {"general": ["org", "project"]}`, so the org and project CLAUDE.md are its
 domain knowledge.
 
@@ -384,8 +384,8 @@ characters. The default is none for `main` and 120,000 for middleware roles
 admitted with its instructions. A decision call refuses more than 160,000
 serialized characters (`DECISION_INPUT_CAP`), so the default leaves room for
 the charter, thread knowledge, thread state and the turn, and an overflow is
-reported as this budget's named error, not the cap's. Aron's hand-named stacks
-compose to 30,000–56,000 characters per role. Over budget, the phase does not
+reported as this budget's named error, not the cap's. (The retired hand-named
+Wardens composed to 30,000–56,000 characters per role.) Over budget, the phase does not
 run and nothing is truncated:
 
 - advice reports `error`;
@@ -394,9 +394,9 @@ run and nothing is truncated:
 - routing reports `error`.
 
 The message names the role, the sizes, the setting and the three largest
-files, and marks those a role opted in. For example: "conventions Warden (role
-librarian-convention): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
-budget of 120000 (composition.roles.librarian-convention.budget); largest:
+files, and marks those a role opted in. For example: "naming Warden (role
+naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
+budget of 120000 (composition.roles.naming.budget); largest:
 .../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
 
 ### Chorus (`projects[id].chorus`)
@@ -405,28 +405,41 @@ Aron, 2026-10-15: "Each project needs its own chorus, which is what we should
 call the set of wardens... you need it per project because all those docs are
 per project. The default should be per-project chorus."
 
-A project's **chorus** is the set of Wardens its threads run. When enabled it
-is built from the project's concept regions, the shards the template's region
-builder writes (plan: "Wardens built from docs"), one Warden per region.
-**It is opt-in** (Aron, 2026-10-16: regions on a repository's main stay off
-until the repository's own Foundry config turns them on); regions present but
-not enabled are reported as off and the hand-named roster runs, as it did
-before the regions existed.
+A project's **chorus** is the set of Wardens its threads run, and region
+Wardens are the only Wardens there are. When enabled it is built from the
+project's concept regions, the shards the template's region builder writes
+(plan: "Wardens built from docs"), one Warden per region. **It is opt-in**
+(Aron, 2026-10-16: regions on a repository's main stay off until the
+repository's own Foundry config turns them on); regions present but not
+enabled are reported as off, and the project has no Wardens.
+
+**The hand-named roster is retired (2026-10-17).** Aron: "We're just doing
+the region wardens… The hand-named roster should go away. We should just
+retire it." Why: region Wardens anticipated 23% of the corrections to the
+roster's 3% (finding `2026-10-15-region-wardens-vs-roster`), and two charters
+with opposite rules (the roster's advise-style "name the rule, then say what to
+do instead" against the region charter's point-only) invited confusion.
+Settings declare no Wardens: a `domain-advising`, `domain-librarian` or
+`decider` agent in `agents` or `projects[id].agents` is refused by name
+(`refuseHandNamedWardens`) with the fix, and `chorus.source` is refused by
+name too (`"source": "regions"` becomes `"enabled": true`; `"roster"` has no
+replacement). There is no alias, migration or fallback.
 
 ```
 <project>/.foundry/project.json   the repository's own Foundry settings, committed:
-                                  { "$comment"?: "…", "chorus"?: { source?, regions? | layers? } }
+                                  { "$comment"?: "…", "chorus"?: { enabled?, regions? | layers?,
+                                    consumed?, reception?, wardens?: { stages }, heralds?: { stages } } }
 ```
 
 The repository file carries only `chorus` (and an ignored `$comment`); any other
 key, or an invalid chorus, is reported (view `chorus.repository.error`, the
 doctor's `repository-settings-unreadable` error) and the file is ignored: a
 checkout never stops the daemon or turns its chorus on. The machine's
-`projects[id].chorus` wins key by key: its `source` over the repository's, and
+`projects[id].chorus` wins key by key: its `enabled` over the repository's, and
 its directories (`regions` or `layers`, one unit) over the repository's. It is
 not named `.foundry/settings.json` because that is a Foundry install's own
 settings, and Foundry's checkout is itself a registered project. The view
-names which layer won per key (`chorus.requestedBy` for `source`,
+names which layer won per key (`chorus.enabledBy` for `enabled`,
 `chorus.directoriesFrom` for the directories: `settings`, `repository` or
 `default`), so a surface can show a personal value overriding the shared one.
 
@@ -441,27 +454,61 @@ The regions:
 ```
 <project>/.foundry/regions/
   registry.json, GLOSSARY.md, ERRORS.md, ECOSYSTEM.md   corpus-level; composed into no Warden
-  <region id>/region.json      id, title, routing line, concepts, sources, tokens
+  <region id>/region.json      id, title, routing line, concepts, sources, tokens,
+                               role ("warden", the default, or "herald")
   <region id>/knowledge.md     the region's knowledge, in full (covers, domain,
                                every example by name, the specifics)
+  <region id>/<doc>.md         any other doc a stage reads (e.g. recognise.md, a
+                               short description for a recognising stage)
 ```
 
-- **Setting.** `projects[id].chorus` is `{ source?, regions? | layers? }`.
-  `source` is `"regions"` (turns it on) or `"roster"` (the default), the hand-named
-  `domain-advising` agents in settings, whatever regions exist (`regions` or
-  `layers` may stay written beside it, unread). `regions` points
-  the one layer at another directory (absolute, or relative to the project;
-  default `.foundry/regions`). With neither the settings nor the repository
-  asking, the hand-named roster runs; regions present are counted
-  (`view.chorus.available`) and the view, the startup log and the doctor say the
-  region chorus is off and how to turn it on. Regions asked for but not found:
-  the roster runs and they say why. `view.chorus.requestedBy` is `settings`,
-  `repository` or `default`. To turn a repository's chorus on for yourself
-  without committing, set `projects[id].chorus = { "source": "regions" }` in
-  settings, or edit its `.foundry/project.json` locally. A thread
-  without a project composes from the settings themselves and always runs the
-  hand-named roster. There is no global setting: a chorus is per project
-  because its docs are.
+`region.json` carries no classification settings: `stages` or `charter` there
+are refused by name (Aron, 2026-10-18: per-region overrides, "let's try and
+start without that"). A region's `role` says whose stages it runs; Herald
+regions never run (Heralds are not built) and the view says so.
+
+- **Setting.** `projects[id].chorus` is `{ enabled?, regions? | layers? }`.
+  `enabled: true` turns it on; absent or `false`, the project has no Wardens
+  (`regions` or `layers` may stay written, unread). `regions` points the one
+  layer at another directory (absolute, or relative to the project; default
+  `.foundry/regions`). With neither the settings nor the repository enabling
+  it, regions present are counted (`view.chorus.available`) and the view, the
+  startup log and the doctor say the chorus is off and how to turn it on.
+  Enabled but no regions found: no Warden runs, and they say why
+  (`view.chorus.reason`). `view.chorus.enabledBy` is `settings`, `repository`
+  or `default`. To turn a repository's chorus on for yourself without
+  committing, set `projects[id].chorus = { "enabled": true }` in settings, or
+  edit its `.foundry/project.json` locally. A thread without a project has no
+  Wardens. There is no global setting: a chorus is per project because its
+  docs are.
+- **Stages** (`chorus.wardens.stages`, `@inixiative/foundry/classify`). How the
+  region Wardens classify, as at most three stages; omitted, one stage, today's
+  Warden. Each stage is `{ model?, effort?, doc?, outcomes?, reason?, task?,
+  pointer?, escalate?, deadline? }`, every field defaulting to the default
+  stage's (`knowledge.md`, `binary`, `none`, `point`, `pointer: { any: true }`;
+  model and effort the decision model's):
+
+  ```json
+  "chorus": { "enabled": true, "wardens": { "stages": [
+    { "task": "recognise", "doc": "recognise.md", "outcomes": "ternary",
+      "escalate": ["yes", "unsure"], "deadline": 0.4 },
+    { "model": "claude-sonnet-5-5", "effort": "low", "deadline": 0.6 }
+  ] } }
+  ```
+
+  The machine's list replaces the repository's whole; `view.chorus.roles`
+  shows each role's resolved stages and the layer they came from, and the
+  Chorus page and `GET /api/projects/:id/chorus` add each stage's model, effort,
+  deadline share and its charter and protocol versions. Every region of the
+  role must hold every stage's doc: one that lacks it keeps the chorus from
+  being built, and `view.chorus.missingDocs` and its `reason` name the region,
+  the doc and the stage (checked on the composed chorus, so a later layer's
+  region brings its own docs). Charters stay Foundry's, per task and role:
+  `charter` or `sections` in a stage, or `charter` in `chorus`, is refused by
+  name (an eval run config may set a stage's sections). A stage naming a model or effort runs on its own
+  decision host (one per pair, on the decision login); with API-token decisions
+  such a stage is refused. `chorus.heralds` takes the same shape and runs
+  nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
 - **Layers.** A chorus may be built from layers, in order:
 
   ```json
@@ -487,14 +534,12 @@ The regions:
   composition defaults to `instructions: {general: []}` (the region is its
   knowledge; it does not read the CLAUDE.md stack), and a
   `composition.roles.<region id>` entry in settings still wins field by field.
-  The settings' hand-named Wardens are not that project's Wardens; a
-  hand-written project Warden entry is refused under a chorus of regions, since
+  A region id that collides with a settings agent or source is an error;
   overlays go through role files. The view reports the result (`view.chorus`:
-  effective `source`, what was `requested`, each layer as read, the composed
-  regions with the layer each came from, or the `reason` it fell back), and the
-  view's project entry carries the effective chorus normalized
-  (`chorus.source`, absolute `layers`), which is what `chorusSource` and the
-  charter read. `GET /api/projects/:id/resolved/agents` shows each generated
+  `on` (Wardens run), what was asked (`enabled`, `enabledBy`), each layer as
+  read, the composed regions with the layer each came from, or the `reason`
+  none run), and the view's project entry carries the effective chorus
+  normalized (`chorus.enabled`, absolute `layers`). `GET /api/projects/:id/resolved/agents` shows each generated
   agent with `scope: "project-generated"` and `generatedFrom`;
   `GET /api/projects/:id/chorus` and the doctor's `chorus` report list the
   layers and regions with sizes and keys; the viewer's project settings have a
@@ -503,7 +548,11 @@ The regions:
 - **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
   slot, whole, through a generated `markdown` source (`region:<id>`), so the
   audit log versions it as `source-content:region:<id>@project:<project>` and
-  every call records the exact text. The ladder then applies as for any role:
+  every call records the exact text; the post-work review reads it. A stage
+  reading another doc (`region:<id>:<doc>`, a first-stage `recognise.md`
+  included) composes it the same way, overlays included (`buildStageKnowledge`,
+  layer `role:<id>:domainKnowledge:<doc>`), and a later stage journals its own
+  versions with its request (`stageRequests`). The ladder then applies as for any role:
   `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
 - **Warm-cache key.** Each region has a key, the content hash of its composed
@@ -516,21 +565,62 @@ The regions:
   instruction file loads, is an error that names the region, never a Warden
   running with no knowledge; one that cannot be read shows `keyError` in the
   doctor and the Chorus page. Every Warden call journals it with its versions
-  (`versions.chorus: { region, key }`, THREAD-TREE spec B). The sharing itself
+  (`versions.chorus: { region, key }`, THREAD-TREE spec B; `doc` too when a
+  stage reads another doc, each doc keyed on its own text). The sharing itself
   is not built; the key is what it will be looked up by.
-- **Charter.** Region Wardens run under the classifier charter
-  (`WARDEN_CHARTER_CLASSIFY`, measured in the healthy-size test): two yes/no
-  questions, `NO_COMMENT` when either is no, else one pointer, `Look over here:
-  <name(s) or class> (<where it is written>)`. It is parsed into
-  `{ relevant, pointer, where, level: exact | candidates | class }` on the advice
+- **Charter.** Every pointing stage runs under the Warden charter,
+  `WARDEN_CHARTER` (the classifier wording; the roster's advise-style charter
+  was retired 2026-10-17), and a recognising stage under the recognise charter:
+  `NO_COMMENT`, or a pointer, ranked `Look over here: <name> (<where it is
+  written>) — <why>` then `Less likely: …`, an `All of these:` set, a `Choose
+  one:` sibling set (off with `pointer: { any: false }`, which also removes it
+  from the charter), or a class, at most three names. Wardens point; the main thread
+  decides. The advice and guard protocols are pointer-only (a guard finding is
+  advisory, with no suggestion). The pointer is parsed into
+  `{ relevant, shape, pointer, where, level, candidates }` on the advice
   result, each guard finding and the advice journal, and reaches the thread as
   "The <region> Warden chimed in:\n- Look over here: …". The charter version is
-  journalled with every call; a chorus change applies to new threads.
+  journalled with every call; a staged Warden's contribution also journals its
+  run (`classified`: outcome, whether it was delivered, any fallback, every
+  stage's trace), which the turn's flow graph shows on the Warden's node.
 - **Pool.** The primed decision pool is sized for the largest chorus any
-  project runs (`largestRoster`), so a 53-region project primes 2 × 53 + 8 keys.
+  project runs (`largestRoster`) and the stages each host serves
+  (`largestStageCount`): the decision host keeps a key per stage on the decision
+  model plus a review key per Warden, so a 53-region one-stage project primes
+  2 × 53 + 8 keys, and a stage host a key per stage it serves. A later stage's session is
+  `<thread>:aux:domain:<region>:stage:<n>` and never runs in-session.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
   scores a one-layer chorus from that directory, composed exactly as live
-  (project view, role layers, charter), without touching the daemon's settings.
+  (project view, role layers, charter), without touching the daemon's settings;
+  `--classify <run.json>` runs it under a stage configuration (the same stages,
+  `members` for a grouped recogniser, and two eval-only parameters below).
+- **Sections (eval only).** The prompt language a stage sends is named sections,
+  each a committed file: the point charter (`classify/charters/point/`:
+  `opening`, `build-is-reason`, `job`, `pointing`, `all-of`, `choose-one`,
+  `class`, `sourcing-bar`, `no-comment-default`, `moment`,
+  `data-not-instructions`), the recognise charter (`recognise/`: `opening`,
+  `build-is-reason`, `job`, `near-is-not-in`, `no-comment-default`, `moment`,
+  `data-not-instructions`) and the region Warden's instruction line
+  (`region/region-instructions.md`). A run's stage sets any of them:
+  `"sections": { "<name>": false | true | { "text": … } | { "file": … } }`,
+  with `"place": "before" | "after"` to inject beside the default instead of
+  replacing it; files resolve against run.json, and an unknown name is refused.
+  Choose-one is switched off only by `pointer: { any: false }`, so the parser
+  refuses what the charter no longer offers; switching `all-of` off leaves the
+  parser still reading it. Why: Aron (2026-10-18) wants every flag of a run to
+  carry a place for raw language, defaulting to the file; settings stay fixed.
+  score.json records each stage's charter version, every section's source
+  (default, off, text or file, with sha256) and, per region and stage, the
+  sha256 of the full system message (`systemPrompts`, also `systemHash` on each
+  staged call's trace).
+- **Debug (eval only).** `"debug": true` (or `{ "cells": "<file>" }` in the
+  `--cells` shape, `{ "<probe id>": ["<domain>", …] }`, for those cells only:
+  unlike `--cells`, a probe the file leaves out gets no debug readings) gives every stage of every call two
+  more readings on the same session and prefix: `inline`, the same prompt with
+  its protocol asking for the decision and its why in one answer, and `after`,
+  the real answer quoted back with "why did you answer that?". Rows go to
+  `debug.jsonl`; answers.jsonl is unchanged. A stage that already gives that
+  reading (`reason: inline` / `followup`) reuses it.
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to
@@ -578,33 +668,29 @@ Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
 nothing to the message. Every Warden runs under the fixed Warden charter
 ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
 
-**Aron's setup.** Main plus the Convention Warden, across computer, org, org
-personal, project and project personal:
+**An example setup.** Main plus one region Warden, `naming` (the repository's
+`.foundry/regions/naming/`, its chorus enabled in `.foundry/project.json`; no
+Warden is written in settings), reading the org and project CLAUDE.md as extra
+domain knowledge, across computer, org, org personal, project and project
+personal. (Until 2026-10-17 this example was a hand-named Convention Warden in
+settings; the roster is retired.)
 
 ```jsonc
-"agents": {
-  "librarian-convention": {
-    "id": "librarian-convention", "kind": "domain-librarian",
-    "flowRole": "domain-advising", "domain": "conventions",
-    "prompt": "...", "visibleLayers": [], "peers": [], "maxDepth": 1, "enabled": true
-    // no ownedLayers; no domainKnowledge sources: its knowledge is the ladder's
-  }
-},
 "composition": {
   "harnessLoading": "suppress",
   "roles": {
-    "librarian-convention": { "domainKnowledge": { "general": ["org", "project"] } }
+    "naming": { "domainKnowledge": { "general": ["org", "project"] } }
   }
 }
 ```
 
-| Rung | main: instructions | Convention Warden: instructions | Convention Warden: domain knowledge |
+| Rung | main: instructions | naming Warden: instructions | naming Warden: domain knowledge |
 |---|---|---|---|
-| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.claude/CLAUDE.md`, `~/.foundry/roles/librarian-convention/instructions.md` | `~/.foundry/roles/librarian-convention/domainKnowledge.md` |
-| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there (the org CLAUDE.md moved to domain knowledge) | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/librarian-convention/domainKnowledge.md` there |
-| org personal | `~/code/inixiative/CLAUDE.local.md` | the same | `.foundry/roles/librarian-convention/domainKnowledge.local.md` there |
-| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | role file only (project CLAUDE.md moved to domain knowledge) | `<repo>/CLAUDE.md` and the rest of the project node |
-| project personal | `<repo>/CLAUDE.local.md`, auto memory | the same | `.foundry/roles/librarian-convention/domainKnowledge.local.md` |
+| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.foundry/roles/naming/instructions.md` (a region Warden's instructions read no general files: `general: []`) | `~/.foundry/roles/naming/domainKnowledge.md` |
+| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/naming/domainKnowledge.md` there |
+| org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/naming/instructions.local.md` there | `.foundry/roles/naming/domainKnowledge.local.md` there |
+| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | role file only | `<repo>/CLAUDE.md` and the rest of the project node |
+| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/naming/instructions.local.md` | `.foundry/roles/naming/domainKnowledge.local.md` |
 
 **Test cases** (`tests/composition-view.test.ts`, core
 `markdown-hierarchy.test.ts`):
@@ -616,7 +702,7 @@ personal, project and project personal:
 - a budget overflow reported in every phase, Cartographer included;
 - re-priming only on a composition change;
 - the chimed-in append;
-- the Convention Warden's knowledge unchanged under the default config.
+- the naming Warden's knowledge unchanged under the default config.
 
 
 
@@ -630,6 +716,6 @@ personal, project and project personal:
 ```
 
 - `consumed`: the `consumed` trigger ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)). Off unless `enabled`. `tools` default to Linear issues and documents and Notion fetches (`mcp__*linear*__get_issue`, `mcp__*linear*__get_document`, `mcp__*notion*__*fetch*`, case-insensitive); `paths` to `**/tickets/**/*.{md,txt}`, `**/specs/**/*.{md,txt}`, `**/*.spec.md`, `**/SPEC*.md`, `**/docs/design/**/*.md`. Within `consumed`, each key the machine gives wins over the repository's.
-- `reception`: whether a region-chorus thread holds the reception charter (`chorus-reception` standing layer). On with a region chorus; `false` leaves it out. A roster chorus never has it.
+- `reception`: whether a thread of a running chorus holds the reception charter (`chorus-reception` standing layer). On with the chorus; `false` leaves it out. A thread with no Wardens never has it.
 
 The chorus card in the viewer shows both, with the layer that set them (yours or the repository's). Editing them there, "set this for me / for everyone", is not built yet; the files are the way in.

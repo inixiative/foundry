@@ -1,0 +1,47 @@
+{
+  "version": "2.1.303",
+  "status": 200,
+  "body": {
+    "stages": [
+      {
+        "stage": 0,
+        "task": "recognise",
+        "model": "claude-haiku-5-5",
+        "answered": true
+      },
+      {
+        "stage": 1,
+        "task": "point",
+        "model": "claude-sonnet-5-5",
+        "answered": true
+      }
+    ],
+    "recognised": "yes",
+    "pointed": true,
+    "delivered": true,
+    "stage1ReadOnlyItsDoc": true,
+    "stage2ReadTheCatalogue": true,
+    "stage2CarriedStage1": true,
+    "receipts": [
+      [
+        {
+          "valid": true,
+          "settled": true
+        }
+      ],
+      [
+        {
+          "valid": true,
+          "settled": true
+        }
+      ]
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-18T23:31:26.169Z",
+    "agentSession": "0.6.6",
+    "environment": "terminal"
+  }
+}

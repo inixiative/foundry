@@ -1,5 +1,5 @@
 {
-  "version": "2.1.302",
+  "version": "2.1.303",
   "status": 0,
   "body": {
     "kind": "process",
@@ -30,10 +30,10 @@
       "--no-chrome",
       "--no-session-persistence",
       "--resume",
-      "c239eb81-c8e3-4348-b138-88228f92ab4a",
+      "ab939c31-b830-421b-811c-6410f49ccb0d",
       "--fork-session",
       "--append-system-prompt-file",
-      "{{tmp}}/agent-session-base-47803-Vaqq0S/append-system-prompt.md",
+      "{{tmp}}/agent-session-base-66825-gDzKzw/append-system-prompt.md",
       "--setting-sources",
       ""
     ],
@@ -50,9 +50,9 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-17T17:58:26.693Z",
+    "recordedAt": "2026-10-18T23:31:08.042Z",
     "agentSession": "0.6.6",
     "environment": "terminal",
-    "durationMs": 32
+    "durationMs": 66
   }
 }

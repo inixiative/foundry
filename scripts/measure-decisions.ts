@@ -6,7 +6,7 @@
 // --gap-ms spaces messages like real turns (the worker's own run separates them);
 // back-to-back messages measure a request burst the provider may throttle.
 //
-// Builds a throwaway project with N domain experts, sends a warm-up message and
+// Builds a throwaway project with N region Wardens, sends a warm-up message and
 // then --runs messages to the main thread, and reads the timings Foundry already
 // journals: the turn accepted (session_turns.started_at) and the sealed plan
 // written immediately before the worker starts (session_phase.stored_at). Prints
@@ -25,7 +25,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { DECISION_MODEL } from '../packages/foundry/src/models/registry';
+// The measured Foundry captures to a fake Archive, never the machine's (ARCHIVE_URL/TOKEN inherited).
+import '../packages/foundry/tests/helpers/isolate-archive';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -82,12 +83,19 @@ async function start(label: string) {
   };
 }
 
-// 1. Starter configuration, then N experts with owned inline knowledge.
+// 1. Starter configuration, then N region Wardens: the throwaway project's own regions, its chorus
+// enabled in its .foundry/project.json (settings declare no Wardens since the roster was retired).
 const first = await start('generate');
 await first.stop();
+// The main thread runs in the first enabled project: register the throwaway one.
 const settingsPath = join(project, '.foundry', 'settings.json');
 const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-const model = settings.defaults.classifierModel ?? DECISION_MODEL;
+const projectId = crypto.randomUUID();
+settings.projects = {
+  ...settings.projects,
+  [projectId]: { id: projectId, label: 'Measurement project', path: project },
+};
+writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 const knowledge = (d: string) =>
   Array.from(
     { length: 40 },
@@ -95,30 +103,18 @@ const knowledge = (d: string) =>
       `- ${d} rule ${i}: changes under src/${d}/module${i} must keep the ${d} contract ${i % 3 === 0 ? 'backward compatible' : 'tested'}.`,
   ).join('\n');
 for (const d of DOMAINS) {
-  settings.agents[`${d}-expert`] = {
-    id: `${d}-expert`,
-    kind: 'decider',
-    flowRole: 'domain-advising',
-    domain: d,
-    prompt: `You are the ${d} expert. Advise which ${d} context the message needs, from your owned knowledge only.`,
-    provider: 'subscription-decisions',
-    model,
-    tools: false,
-    visibleLayers: [],
-    domainKnowledge: [`${d}-source`],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
-  };
-  settings.sources[`${d}-source`] = {
-    id: `${d}-source`,
-    label: d,
-    type: 'inline',
-    uri: knowledge(d),
-    enabled: true,
-  };
+  const dir = join(project, '.foundry', 'regions', d);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'region.json'),
+    JSON.stringify({ id: d, title: `${d} rules`, routing: `Is this about ${d}?`, concepts: [d] }),
+  );
+  writeFileSync(join(dir, 'knowledge.md'), `# ${d} rules\n\n${knowledge(d)}\n`);
 }
-writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+writeFileSync(
+  join(project, '.foundry', 'project.json'),
+  JSON.stringify({ chorus: { enabled: true } }, null, 2),
+);
 
 // 2. Measure.
 const foundryInstance = await start('measure');

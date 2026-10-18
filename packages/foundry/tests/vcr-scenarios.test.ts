@@ -18,6 +18,7 @@ import {
 } from '@inixiative/foundry-core';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
+import { validateStages } from '../src/classify';
 import { classifyCorrection, lintStatement } from '../src/feedback/sharpen';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -571,6 +572,183 @@ test(
         { valid: true, settled: true, prime: 'warm' },
         { valid: true, settled: true, prime: 'cold' },
       ],
+    });
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  'claude two-stage Warden: a Haiku recogniser escalates to a Sonnet pointer, each stage on its own primed host and session',
+  async () => {
+    const vcr = claudeVcr();
+    const out = await scenario(vcr, 'two-stage', async () => {
+      // One VCR per host: each pops its own cassettes in its own launch order.
+      const hosts = [
+        {
+          model: LIVE.claudeObservedModel,
+          transport: recordedClaudeTransport(
+            {
+              status: ['subscribed'],
+              decision: ['two-stage-recognise-1', 'two-stage-recognise-2'],
+            },
+            claudeVcr(),
+          ),
+        },
+        {
+          model: 'claude-sonnet-5-5',
+          transport: recordedClaudeTransport(
+            { status: ['subscribed'], decision: ['two-stage-point-1', 'two-stage-point-2'] },
+            claudeVcr(),
+          ),
+        },
+      ].map(({ model, transport }) => {
+        const directory = root(),
+          receipts = join(directory, 'receipts');
+        mkdirSync(receipts, { mode: 0o700 });
+        const decisionSource = source('claude', directory);
+        const primed = createPrimedDecisionHost({
+          source: decisionSource,
+          directory: receipts,
+          model,
+          effort: 'low',
+          maxConcurrent: 1,
+          callTimeoutMs: 30_000,
+          spawn: transport.spawn,
+          statusSpawn: () => transport.statusSpawn('unused'),
+        });
+        const decisions = buildSubscriptionDecisions(
+          {
+            directory: receipts,
+            source: decisionSource,
+            model,
+            maxCalls: 2,
+            maxQueued: 1,
+            maxConcurrent: 1,
+            callTimeoutMs: 30_000,
+          },
+          primed.createRun,
+        );
+        return { model, transport, primed, decisions };
+      });
+      const [haiku, sonnet] = hosts as [(typeof hosts)[number], (typeof hosts)[number]];
+      const layer = (id: string, text: string) => {
+        const l = new ContextLayer({ id });
+        l.set(text);
+        return l;
+      };
+      const instructions = layer(
+        'role:locks:instructions',
+        'You are the locks region Warden. Your region is named and described at the top of your domain knowledge.',
+      );
+      const recognise = layer(
+        'role:locks:domainKnowledge',
+        '# Region locks: Locks\n\nCovers mutual exclusion across processes and instances: making sure one job or one write never runs twice at once.\n\nNot this region: queues that only order work, retries, scheduling times.',
+      );
+      const knowledge = layer(
+        'role:locks:domainKnowledge:knowledge.md',
+        '# Locks\n\n- createLock (docs/CONCURRENCY.md § Distributed Lock): a Redis lock with a heartbeat lease; one holder across every instance.\n- db.findForUpdate (docs/CONCURRENCY.md § Row locks): one row, inside a transaction.',
+      );
+      const stages = validateStages('two-stage', [
+        { task: 'recognise', escalate: ['yes'] },
+        { model: 'claude-sonnet-5-5', effort: 'low' },
+      ]);
+      const warden = new DomainLibrarian({
+        domain: 'locks',
+        cache: recognise,
+        instructions,
+        role: 'locks',
+        signals: new SignalBus(),
+        llm: haiku.decisions.provider,
+        llmOpts: { threadId: 'T:aux:domain:locks', maxTokens: 512, temperature: 0 },
+        stages: [
+          { config: stages[0]! },
+          {
+            config: stages[1]!,
+            llm: sonnet.decisions.provider,
+            llmOpts: {
+              threadId: 'T:aux:domain:locks:stage:1',
+              maxTokens: 512,
+              temperature: 0,
+              model: 'claude-sonnet-5-5',
+            },
+            cache: knowledge,
+          },
+        ],
+      });
+      try {
+        const advice = await warden.advise(
+          'Make sure the nightly sync job never runs on two instances at the same time.',
+        );
+        const inputOf = (transport: (typeof hosts)[number]['transport']) =>
+          transport.launches
+            .filter((launch) => launch.stdin)
+            .map((launch) =>
+              launch.stdin
+                .split('\n')
+                .filter(Boolean)
+                .flatMap((line) => {
+                  const message = (
+                    JSON.parse(line) as { message?: { content: string | { text?: string }[] } }
+                  ).message;
+                  return !message
+                    ? []
+                    : [
+                        typeof message.content === 'string'
+                          ? message.content
+                          : message.content.map((b) => b.text ?? '').join(''),
+                      ];
+                })
+                .join('\n'),
+            )
+            .join('\n');
+        const stage = advice.classified?.stages ?? [];
+        return {
+          stages: stage.map((s) => ({
+            stage: s.stage,
+            task: s.task,
+            model: s.model,
+            answered: s.outcome !== undefined,
+          })),
+          recognised: stage[0]?.outcome,
+          pointed: advice.pointer?.relevant === true,
+          delivered: advice.classified?.delivered,
+          // Stage 1 read the short description only; stage 2 the catalogue, carrying stage 1's line.
+          stage1ReadOnlyItsDoc:
+            inputOf(haiku.transport).includes('Covers mutual exclusion') &&
+            !inputOf(haiku.transport).includes('createLock'),
+          stage2ReadTheCatalogue: inputOf(sonnet.transport).includes(
+            'createLock (docs/CONCURRENCY.md',
+          ),
+          stage2CarriedStage1: inputOf(sonnet.transport).includes('## An earlier stage'),
+          receipts: hosts.map(({ primed }) =>
+            readFileSync(primed.receiptsPath, 'utf8')
+              .trim()
+              .split('\n')
+              .map((line) => {
+                const r = JSON.parse(line);
+                return { valid: r.valid, settled: r.settled };
+              }),
+          ),
+        };
+      } finally {
+        for (const host of hosts) {
+          await host.decisions.shutdown();
+          await host.primed.close();
+        }
+      }
+    });
+    expect(out).toEqual({
+      stages: [
+        { stage: 0, task: 'recognise', model: LIVE.claudeObservedModel, answered: true },
+        { stage: 1, task: 'point', model: 'claude-sonnet-5-5', answered: true },
+      ],
+      recognised: 'yes',
+      pointed: true,
+      delivered: true,
+      stage1ReadOnlyItsDoc: true,
+      stage2ReadTheCatalogue: true,
+      stage2CarriedStage1: true,
+      receipts: [[{ valid: true, settled: true }], [{ valid: true, settled: true }]],
     });
   },
   LIVE_TIMEOUT,

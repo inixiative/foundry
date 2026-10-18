@@ -1,12 +1,13 @@
 {
   "name": "@inixiative/foundry-core",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./delivery-evidence": "./src/delivery-evidence.ts"
+    "./delivery-evidence": "./src/delivery-evidence.ts",
+    "./archive": "./src/feedback/archive-turns.ts"
   },
   "scripts": {
     "test": "bun test tests/",
@@ -30,5 +31,16 @@
   },
   "engines": {
     "bun": ">=1.4.2"
+  },
+  "peerDependencies": {
+    "@inixiative/archive": "^0.23.0"
+  },
+  "peerDependenciesMeta": {
+    "@inixiative/archive": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@inixiative/archive": "^0.23.0"
   }
 }

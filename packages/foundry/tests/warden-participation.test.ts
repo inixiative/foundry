@@ -10,19 +10,17 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import {
-  DomainLibrarian,
-  NO_COMMENT,
-  oneCall,
-  type ToolObservation,
-  validateAdviceResponse,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall, type ToolObservation } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { WARDEN_CHARTER } from '../src/agents/warden-charter';
+import {
+  NO_COMMENT,
+  validateAdviceResponse,
+  validateGuardResponse,
+  WARDEN_CHARTER,
+} from '../src/classify';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
@@ -242,7 +240,8 @@ test('a NO_COMMENT adds nothing to the message delivered to the native session',
   ]);
   const delivered = text(silent.inputs[0]!);
   expect(delivered).toContain(message);
-  expect(delivered).not.toContain('chimed in');
+  // The reception charter (a standing layer) describes chimes; no Warden chimed in.
+  expect(delivered).not.toContain('The security Warden chimed in');
   expect(delivered).not.toContain('Domain decisions');
   expect(delivered).not.toContain('no-comment');
   expect(delivered).not.toContain(NO_COMMENT);
@@ -615,7 +614,7 @@ test('the charter eval asks every Warden per probe as one turn, under the candid
       },
       { domain: 'prose', instructions: 'Prose Warden', domainKnowledge: 'Gloss jargon.' },
     ],
-    charter: 'CANDIDATE CHARTER',
+    charters: ['CANDIDATE CHARTER'],
     warden: {
       id: 'w',
       async complete(messages) {

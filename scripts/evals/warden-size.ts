@@ -51,6 +51,7 @@ import {
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
+import { PROMPT_SECTIONS } from '../../packages/foundry/src/classify';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import {
   claudeUsageWindows,
@@ -649,7 +650,20 @@ async function run() {
         for (const check of checks)
           if (built.get(check)!.some((c) => c.size === size && c.position === position))
             jobs.push({ check, cell: `${size / 1000}k-${position}`, rep });
-  const charter = join(ROOT, 'charter-classify.md');
+  // The size test's candidate charter, as a one-stage classify run (warden-charter.ts --classify):
+  // the whole file in the opening section's place and every other section off. It never offered a
+  // choose-one set, so pointer.any is off (choose-one is switched off only that way).
+  const runConfig = join(ROOT, 'classify-run.json');
+  const sections = Object.fromEntries(
+    PROMPT_SECTIONS.point
+      .map(([name]) => name)
+      .filter((name) => name !== 'choose-one')
+      .map((name) => [name, name === 'opening' ? { file: 'charter-classify.md' } : false]),
+  );
+  writePrivate(
+    runConfig,
+    JSON.stringify({ stages: [{ pointer: { any: false }, sections }] }, null, 1),
+  );
   console.error(`run ${runId}: ${jobs.length} cells, ${parallel} at once`);
   let next = 0;
   const worker = async () => {
@@ -701,8 +715,8 @@ async function run() {
           '4000000',
           '--input-cap',
           '4000000',
-          '--charter',
-          charter,
+          '--classify',
+          runConfig,
           '--no-judge',
           '--concurrency',
           '1',

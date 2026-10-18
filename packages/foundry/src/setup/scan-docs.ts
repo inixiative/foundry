@@ -1,6 +1,8 @@
 /**
  * Docs-layer scanner — detects a project's docs directory and emits a polished
- * config snippet (source + layer + agent) ready to merge into settings.json.
+ * config snippet (source + layer) ready to merge into settings.json. It wires no
+ * Warden: the hand-named docs Warden went with the roster (2026-10-17); a
+ * project's Wardens are its region Wardens (`agents/region-roster.ts`).
  *
  * This is the generalization of the template-docs probe (scripts/PROBE_FINDINGS.md):
  * the probe validated that for a 400KB markdown corpus, topology-B (path + H1 + H2)
@@ -16,7 +18,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
-import type { AgentSettingsConfig, DataSourceConfig, LayerSettingsConfig } from '../viewer/config';
+import type { DataSourceConfig, LayerSettingsConfig } from '../viewer/config';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -42,7 +44,7 @@ export interface DocsCandidate {
   score: number;
 }
 
-/** The chosen strategy for the docs warden's warm cache. */
+/** The chosen strategy for the docs layer's content. */
 export type DocsStrategy =
   /** Corpus too small or missing. Don't set up a docs layer. */
   | 'none'
@@ -55,7 +57,6 @@ export type DocsStrategy =
 export interface DocsConfigSnippet {
   source: DataSourceConfig;
   layer: LayerSettingsConfig;
-  agent: AgentSettingsConfig;
 }
 
 export interface DocsSetupPlan {
@@ -63,7 +64,7 @@ export interface DocsSetupPlan {
   chosen: DocsCandidate | null;
   /** All candidates considered, ranked by score (descending). */
   candidates: DocsCandidate[];
-  /** How the warden's cache should be populated. */
+  /** How the docs layer should be populated. */
   strategy: DocsStrategy;
   /** Human-readable explanation of the choice. */
   rationale: string;
@@ -79,7 +80,6 @@ export interface ScanOptions {
   /** IDs used in the emitted config snippet. */
   sourceId?: string;
   layerId?: string;
-  agentId?: string;
   /** Minimum total tokens for any layer at all. Below this: strategy = "none". */
   minTokens?: number;
   /** Threshold above which topology is preferred over inline content. */
@@ -95,43 +95,15 @@ const DEFAULT_CANDIDATE_DIRS = ['docs/claude', 'docs/ai', '.ai', 'docs', 'docume
 const DEFAULT_GLOB = '**/*.md';
 const DEFAULT_SOURCE_ID = 'docs-src';
 const DEFAULT_LAYER_ID = 'docs';
-const DEFAULT_AGENT_ID = 'librarian-docs';
 const DEFAULT_MIN_TOKENS = 200;
 const DEFAULT_TOPOLOGY_THRESHOLD = 3_000;
-
-/**
- * Docs-warden advise prompt — the baseline.
- *
- * Decent operating point on the template's 34-file docs/claude/ corpus:
- * P≈0.84, R≈0.62, F1≈0.68, zero violations across 15 routing fixtures
- * (prompt-sweep run over topology B, gemini-2.5-flash-lite, temp=0).
- *
- * The aspect-decomposition reasoning step ("list aspects, then pick files
- * per aspect") was the pareto-best variant in that sweep — small recall
- * gain over a pure precision-biased prompt without trading zero violations.
- *
- * Exported from here so start.ts + scan-docs stay on one string.
- */
-export const DOCS_ADVISE_PROMPT = [
-  "You are the docs-domain advisor. Pick the small set of doc files from the topology that would help the user's message.",
-  '',
-  'Procedure:',
-  '1. Identify the ASPECTS of the task (e.g. "database schema", "auth", "API routing", "notifications", "naming conventions").',
-  '2. For each aspect, find the file in the topology that covers it.',
-  '3. Collect those files as your answer. Typically 2–4 files, up to 5 for cross-cutting queries.',
-  '',
-  'Rules:',
-  '- Return ONLY file paths that appear EXACTLY in the topology below.',
-  '- Distinguish near-duplicate filenames by reading their H1 title AND H2 headings (e.g. a backend AUTH.md vs a frontend AUTHENTICATION.md). A doc from the wrong side of the stack is worse than a missing doc.',
-  '- Put the chosen file paths in "snippets" and this layer ("docs") in "layers".',
-].join('\n');
 
 // ---------------------------------------------------------------------------
 // Main entrypoint
 // ---------------------------------------------------------------------------
 
 /**
- * Scan a repo for its docs directory and plan how to wire the docs warden.
+ * Scan a repo for its docs directory and plan how to wire the docs layer.
  *
  * Always returns a plan — when nothing qualifies, strategy is "none" with a
  * rationale explaining why. Never throws for a missing repo; returns an empty
@@ -283,7 +255,6 @@ function emitConfigSnippet(
 ): DocsConfigSnippet {
   const sourceId = opts.sourceId ?? DEFAULT_SOURCE_ID;
   const layerId = opts.layerId ?? DEFAULT_LAYER_ID;
-  const agentId = opts.agentId ?? DEFAULT_AGENT_ID;
 
   const source: DataSourceConfig = {
     id: sourceId,
@@ -298,9 +269,9 @@ function emitConfigSnippet(
     domain: 'docs',
     contentShape:
       strategy === 'topology'
-        ? 'Compact path+H1+H2 index of the docs corpus. The warden picks file paths; bodies hydrate on demand.'
+        ? 'Compact path+H1+H2 index of the docs corpus; bodies hydrate on demand.'
         : 'Full markdown content of the docs corpus, joined with path headers.',
-    prompt: 'Project documentation. The docs warden routes reads against this cache.',
+    prompt: 'Project documentation: an index of the docs corpus to read from.',
     sourceIds: [sourceId],
     staleness: 60_000,
     enabled: true,
@@ -310,23 +281,7 @@ function emitConfigSnippet(
     },
   };
 
-  const agent: AgentSettingsConfig = {
-    id: agentId,
-    kind: 'domain-librarian',
-    flowRole: 'domain-advising',
-    domain: 'docs',
-    prompt: DOCS_ADVISE_PROMPT,
-    temperature: 0,
-    tools: false,
-    visibleLayers: [],
-    domainKnowledge: [sourceId],
-    peers: [],
-    maxDepth: 1,
-    invocation: 'on-demand',
-    enabled: true,
-  };
-
-  return { source, layer, agent };
+  return { source, layer };
 }
 
 // ---------------------------------------------------------------------------
@@ -365,12 +320,12 @@ function explainChoice(
 
   if (chosen.titleCoverage < 0.7) {
     parts.push(
-      `Note: only ${(chosen.titleCoverage * 100).toFixed(0)}% of files have an H1 title — the warden's disambiguation will be weaker. Adding \`# Title\` lines to untitled files would help.`,
+      `Note: only ${(chosen.titleCoverage * 100).toFixed(0)}% of files have an H1 title — disambiguation will be weaker. Adding \`# Title\` lines to untitled files would help.`,
     );
   }
   if (chosen.avgH2PerFile < 2) {
     parts.push(
-      `Note: average ${chosen.avgH2PerFile.toFixed(1)} H2 per file. H2 headings are what let the warden tell near-duplicate filenames apart — more structure → better routing.`,
+      `Note: average ${chosen.avgH2PerFile.toFixed(1)} H2 per file. H2 headings are what tell near-duplicate filenames apart — more structure → better routing.`,
     );
   }
 

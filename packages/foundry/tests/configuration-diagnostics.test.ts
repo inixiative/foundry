@@ -1,11 +1,25 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ContextLayer, ContextStack, type LLMProvider, Thread } from '@inixiative/foundry-core';
 import { resolveThreadDomains } from '../src/agents/configured-experts';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
 import { DEFAULT_THREAD_DOMAINS, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { resolveProjectView } from '../src/viewer/config-resolve';
+import { writeRegions } from './helpers/regions';
 
-function configuration(explicit = false) {
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+/**
+ * Settings with project P, whose repository holds the region `docs`: enabled (its Warden runs in P's
+ * threads), present but not enabled, or no project at all.
+ */
+function configuration(chorus: 'enabled' | 'off' | 'absent' = 'enabled') {
   const c = starterConfig('controlled', 'expert-model');
   c.agents = {};
   c.layers = Object.fromEntries(
@@ -20,32 +34,19 @@ function configuration(explicit = false) {
       },
     ]),
   );
-  if (explicit) {
-    c.sources['docs-source'] = {
-      id: 'docs-source',
-      type: 'inline',
-      label: 'Docs',
-      uri: 'PRIVATE_SOURCE',
-      enabled: true,
-    };
-    c.agents['docs-expert'] = {
-      id: 'docs-expert',
-      kind: 'decider',
-      flowRole: 'domain-advising',
-      domain: 'docs',
-      prompt: 'PRIVATE_EXPERT_INSTRUCTIONS',
-      model: 'expert-model',
-      provider: 'controlled',
-      tools: false,
-      visibleLayers: [],
-      domainKnowledge: ['docs-source'],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    };
+  if (chorus !== 'absent') {
+    const project = realpathSync(mkdtempSync(join(tmpdir(), 'foundry-diagnostics-')));
+    dirs.push(project);
+    writeRegions(project, [{ id: 'docs', knowledge: 'PRIVATE_SOURCE' }], {
+      enabled: chorus === 'enabled',
+    });
+    c.projects.P = { id: 'P', path: project };
   }
   return c;
 }
+
+/** A thread in project P (its chorus), or outside any project. */
+const inProject = (c: FoundryConfig) => (c.projects.P ? { projectId: 'P' } : {});
 
 function setup(config: FoundryConfig) {
   let calls = 0,
@@ -103,15 +104,14 @@ function setup(config: FoundryConfig) {
   };
 }
 
-for (const mode of ['explicit-enabled', 'agent-disabled', 'absent'] as const) {
-  test(`${mode} attaches without diagnostics, model calls or source loads`, () => {
-    const c = configuration(mode !== 'absent');
-    if (mode === 'agent-disabled') c.agents['docs-expert'].enabled = false;
+for (const mode of ['enabled', 'off', 'absent'] as const) {
+  test(`a chorus ${mode} attaches without diagnostics, model calls or source loads`, () => {
+    const c = configuration(mode);
     const f = setup(c);
     try {
-      const t = f.factory.create(mode),
+      const t = f.factory.create(mode, inProject(c)),
         runtime = f.manager.get(t.id)!;
-      expect(runtime.domainLibrarians.has('docs')).toBe(mode === 'explicit-enabled');
+      expect(runtime.domainLibrarians.has('docs')).toBe(mode === 'enabled');
       expect(f.warnings).toHaveLength(0);
       expect(f.calls).toBe(0);
       expect(f.loads).toBe(0);
@@ -121,40 +121,15 @@ for (const mode of ['explicit-enabled', 'agent-disabled', 'absent'] as const) {
   });
 }
 
-test('a Warden that owns a layer is refused before warnings or partial attachment', () => {
-  const c = configuration(true),
-    f = setup(c);
-  c.agents['docs-expert'].ownedLayers = ['docs'];
-  const manager = new ThreadRuntimeManager({
-    config: c,
-    llm: f.llm,
-    warn: (message) => f.warnings.push(message),
-  });
-  const t = new Thread('invalid', new ContextStack([new ContextLayer({ id: 'docs' })]));
-  try {
-    expect(() => manager.attach(t)).toThrow('reads its knowledge from the composition view');
-    expect(manager.runtimes.size).toBe(0);
-    expect(manager.stacks.size).toBe(0);
-    expect(t.stack.layers).toHaveLength(1);
-    expect(f.warnings).toHaveLength(0);
-    expect(f.calls).toBe(0);
-  } finally {
-    t.dispose();
-    manager.disposeAll();
-    f.manager.disposeAll();
-  }
-});
-
 test('explicit review override is reported while requested phase settings and pre profile remain intact', () => {
-  const c = configuration(true);
-  c.agents['docs-expert'].thinking = 'high';
+  const c = configuration();
   c.learning = {
     review: { provider: 'phase', model: 'review-model', thinking: 'medium', maxTokens: 1700 },
   };
   const original = JSON.stringify(c),
     f = setup(c);
   try {
-    const t = f.factory.create('override'),
+    const t = f.factory.create('override', inProject(c)),
       lib = f.manager.get(t.id)!.domainLibrarians.get('docs')!;
     expect(lib.reviewProviderId).toBe('phase');
     expect(lib.reviewOptions).toMatchObject({
@@ -165,20 +140,17 @@ test('explicit review override is reported while requested phase settings and pr
       maxTurns: 1,
       timeout: 0,
     });
+    const view = resolveProjectView(c, 'P')!.config;
     const resolved = resolveThreadDomains(
-      c,
-      new Map(buildLayers(c, { sourceResolver: () => null }).map((l) => [l.id, l])),
+      view,
+      new Map(buildLayers(view, { sourceResolver: () => null }).map((l) => [l.id, l])),
       { policy: DEFAULT_THREAD_DOMAINS, programmatic: [], llm: f.llm, providers: f.providers },
     ).find((d) => d.domain === 'docs')!;
-    expect(resolved.adviseOpts).toMatchObject({
-      model: 'expert-model',
-      thinking: 'high',
-      tools: false,
-      maxTurns: 1,
-    });
+    expect(resolved.adviseOpts).toMatchObject({ model: 'expert-model', tools: false, maxTurns: 1 });
+    expect(resolved.adviseOpts!.thinking).toBeUndefined();
     expect(f.warnings).toHaveLength(1);
     expect(f.warnings[0]).toContain('expert-review-profile-override');
-    expect(f.warnings[0]).toContain('domain="docs" agent="docs-expert"');
+    expect(f.warnings[0]).toContain('domain="docs" agent="docs"');
     expect(f.warnings[0]).toContain('learning.review');
     expect(f.warnings[0]).toContain('changed=provider,model,thinking,maxTokens');
     expect(f.warnings[0]).toContain('requested');
@@ -194,11 +166,11 @@ test('explicit review override is reported while requested phase settings and pr
 });
 
 test('an explicit review profile equal to the expert profile does not claim an override', () => {
-  const c = configuration(true);
+  const c = configuration();
   c.learning = { review: { provider: 'controlled', model: 'expert-model', maxTokens: 1600 } };
   const f = setup(c);
   try {
-    f.factory.create('same-profile');
+    f.factory.create('same-profile', inProject(c));
     expect(f.warnings).toHaveLength(0);
     expect(f.calls).toBe(0);
   } finally {
@@ -207,7 +179,7 @@ test('an explicit review profile equal to the expert profile does not claim an o
 });
 
 test('a later generated-layer conflict does not publish a successful resolution diagnostic', () => {
-  const c = configuration(),
+  const c = configuration('absent'),
     f = setup(c);
   const manager = new ThreadRuntimeManager({
     config: c,

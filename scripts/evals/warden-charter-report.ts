@@ -11,7 +11,8 @@
  *     [--out <report.json>]
  *
  * Stages. Stage 1 "recognise" is a chorus asked every region (Haiku live). Stage 2 "confirm+pick" is a
- * stronger model asked only the (moment, region) pairs stage 1 said yes to: pass the stage-1 run as
+ * stronger model asked only the (moment, region) pairs stage 1 said yes to: a `--classify` run of two
+ * stages is scored stage by stage from its answers' stage traces, or pass a stage-1 run as
  * --recognise and the --run is scored as stage 2 over it. Stage 3 "deliver" (what reaches the main
  * thread and whether it changes what it builds) is a placeholder until the intervention test. The
  * chorus roll-up is the system as the main thread sees it: stage 1 alone, or stage 1 → stage 2.
@@ -53,10 +54,7 @@ import {
   wardenPointerJudgeMessage,
   wilsonInterval,
 } from '../../packages/core/src';
-import {
-  WARDEN_CHARTER_CLASSIFY_VERSION,
-  WARDEN_CHARTER_VERSION,
-} from '../../packages/foundry/src/agents/warden-charter';
+import { WARDEN_CHARTER_VERSION } from '../../packages/foundry/src/classify';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
 import {
@@ -132,32 +130,37 @@ interface ScoreFile {
   period?: string;
   roster?: string[];
   foundryDir?: string;
-  /** --pipeline: what each stage ran (model, effort, charter version, knowledge file, fallbacks). */
-  pipeline?: {
-    recognise: {
+  /** --classify: what each stage ran (model, effort, task, doc, charter version) and how its answers went. */
+  classify?: {
+    stages: {
+      index: number;
       model: string;
       effort: string;
-      charter: string;
-      knowledge: string;
-      fallbackToKnowledge: string[];
-      parse?: {
-        missingPickers?: number;
-        dispatched?: number;
-        remarks: number;
-        regionsNamed: number;
-        parseErrorLines: number;
-        remarksWithErrors: number;
-        unknownRegions: number;
+      task: string;
+      doc: string;
+      outcomes: string;
+      reason: string;
+      charter: string | null;
+      /** The assembled charter's version, changed or not, and where each section came from. */
+      charterVersion?: string;
+      sections?: { name: string; source: string; place?: string; path?: string; sha256: string }[];
+      regionInstructions?: {
+        name: string;
+        source: string;
+        place?: string;
+        path?: string;
+        sha256: string;
       };
-    };
-    pick: {
-      model: string;
-      effort: string;
-      charter: string;
-      knowledge: string;
-      calls: number;
-      firedMoments: number;
-    };
+      asked: number;
+      malformed: number;
+      timedOut: number;
+      unknownRegions: number;
+    }[];
+    members: string | null;
+    fallbacks: number;
+    debug?: boolean | { cells: string };
+    /** Per region and stage, sha256 of the full system message the run sent. */
+    systemPrompts?: Record<string, Record<string, string>>;
   };
 }
 interface QuotaRow {
@@ -177,14 +180,12 @@ interface Run {
 }
 const turnKey = (probeId: string, trigger: WardenProbeTrigger | undefined) =>
   `${probeId}|${trigger ?? 'agent-action'}`;
-/** A run directory's answers; `stage: 'pick'` reads a --pipeline run's stage-2 files beside its stage-1 ones. */
-const loadRun = (dir: string, stage?: 'pick'): Run => {
-  const turns = readJsonl<WardenProbeTurn>(join(dir, stage ? 'turns.pick.jsonl' : 'turns.jsonl'));
-  const answersFile = stage
-    ? 'answers.pick.jsonl'
-    : existsSync(join(dir, 'answers.rejudged.jsonl'))
-      ? 'answers.rejudged.jsonl'
-      : 'answers.jsonl';
+/** A run directory's answers. */
+const loadRun = (dir: string): Run => {
+  const turns = readJsonl<WardenProbeTurn>(join(dir, 'turns.jsonl'));
+  const answersFile = existsSync(join(dir, 'answers.rejudged.jsonl'))
+    ? 'answers.rejudged.jsonl'
+    : 'answers.jsonl';
   const finished = new Set(turns.map((t) => turnKey(t.probeId, t.trigger)));
   const answers = readJsonl<WardenProbeAnswer>(join(dir, answersFile)).filter((a) =>
     finished.has(turnKey(a.probeId, a.trigger)),
@@ -203,14 +204,54 @@ const loadRun = (dir: string, stage?: 'pick'): Run => {
   };
 };
 const main = loadRun(run);
-// A --pipeline run carries both stages; an offline-derived stage 2 names its stage-1 run with --recognise.
-const pipelineRun = !values.recognise && existsSync(join(run, 'answers.pick.jsonl'));
+/**
+ * One stage of a staged `--classify` run, as rows of its own: each answer's trace at that stage (a
+ * yes or unsure there is the stage's yes), over the moments that stage asked. The judge graded the
+ * final remark, so a stage row carries the verdict only when it is the stage that answered last.
+ */
+const stageRun = (r: Run, index: number): Run => {
+  const answers = r.answers.flatMap((a): WardenProbeAnswer[] => {
+    const t = a.stages?.[index];
+    if (!t) return [];
+    const said = !t.error && t.outcome !== undefined && t.outcome !== 'no';
+    const last = a.stages!.length - 1 === index;
+    return [
+      {
+        probeId: a.probeId,
+        domain: a.domain,
+        ...(a.trigger ? { trigger: a.trigger } : {}),
+        ...(t.elapsedMs !== undefined ? { elapsedMs: t.elapsedMs } : {}),
+        ...(t.tokens ? { tokens: t.tokens } : {}),
+        noComment: !t.error && !said,
+        ...(t.error ? { error: t.error } : {}),
+        ...(said && t.remarks?.length ? { text: t.remarks.join('\n') } : {}),
+        ...(last && a.judged ? { judged: a.judged } : {}),
+      },
+    ];
+  });
+  const turns =
+    index === 0
+      ? r.turns
+      : [...new Set(answers.map((a) => turnKey(a.probeId, a.trigger)))].map((key) => {
+          const mine = answers.filter((a) => turnKey(a.probeId, a.trigger) === key);
+          return {
+            probeId: mine[0]!.probeId,
+            ...(mine[0]!.trigger ? { trigger: mine[0]!.trigger } : {}),
+            calls: mine.length,
+            wallMs: Math.max(0, ...mine.map((a) => a.elapsedMs ?? 0)),
+            notAdmitted: mine.filter((a) => a.error === 'not-admitted').length,
+          };
+        });
+  return { ...r, answers, turns, answersFile: `${r.answersFile}#stage-${index + 1}` };
+};
+// A staged --classify run carries every stage; an offline-derived stage 2 names its stage-1 run with --recognise.
+const stagedRun = !values.recognise && (main.score?.classify?.stages.length ?? 0) > 1;
 const recognise = values.recognise
   ? loadRun(resolve(values.recognise))
-  : pipelineRun
-    ? main
+  : stagedRun
+    ? stageRun(main, 0)
     : undefined;
-const stage2 = values.recognise ? main : pipelineRun ? loadRun(run, 'pick') : undefined;
+const stage2 = values.recognise ? main : stagedRun ? stageRun(main, 1) : undefined;
 
 // ---------------------------------------------------------------------------
 // Pointer ladder: every remark on a positive probe with a target, judged once and cached.
@@ -772,15 +813,18 @@ function provenance(
     effort?: string;
     charter?: string;
     knowledge?: string;
-    fallback?: string[];
+    sections?: unknown;
+    regionInstructions?: unknown;
   },
 ) {
   const s = r.score ?? {};
+  // `charter-roster` runs predate 2026-10-17 and scored the retired roster charter (advise-style);
+  // its version is kept here as history only, since that text no longer ships.
   const charterVersion =
-    s.charter === 'charter-regions'
-      ? WARDEN_CHARTER_CLASSIFY_VERSION
+    s.charter === 'charter-regions' || s.charter === 'charter-shipped'
+      ? WARDEN_CHARTER_VERSION
       : s.charter === 'charter-roster'
-        ? WARDEN_CHARTER_VERSION
+        ? 'charter-56af38aeaa90'
         : s.charter;
   const regions = s.regions ? basename(s.regions).replace(/^regions-/, '') : undefined;
   return {
@@ -794,7 +838,9 @@ function provenance(
     charter: stageModel?.charter ?? charterVersion ?? null,
     charterLabel: s.charter ?? null,
     knowledgeFile: stageModel?.knowledge ?? (s.regions ? 'knowledge.md' : null),
-    recogniseFallback: stageModel?.fallback ?? null,
+    sections: stageModel?.sections ?? null,
+    regionInstructions: stageModel?.regionInstructions ?? null,
+    systemPrompts: s.classify?.systemPrompts ?? null,
     regions: regions ?? null,
     regionsDir: s.regions ?? null,
     knowledge: s.knowledge ?? null,
@@ -813,14 +859,14 @@ function recogniseStage(
 ): StageReport & { moments: Moment[] } {
   const ms = moments(r);
   const w = wardens(ms);
-  const pl = r.score?.pipeline?.recognise;
+  const pl = r.score?.classify?.stages[0];
   const model = pl?.model ?? r.score?.model ?? 'claude-haiku-5-5';
   return {
     stage: 'recognise',
     status: 'measured',
     ...(pl
       ? {
-          note: `--pipeline stage 1: ${pl.model} ${pl.effort} under ${pl.charter}, holding recognise.md${pl.fallbackToKnowledge.length ? ` (${pl.fallbackToKnowledge.length} regions fell back to knowledge.md: ${pl.fallbackToKnowledge.join(', ')})` : ''}${pl.parse ? `; stage-1 output parsed: ${pl.parse.regionsNamed} regions named in ${pl.parse.remarks} remarks, parse errors ${pl.parse.parseErrorLines} lines in ${pl.parse.remarksWithErrors} remarks (${pl.parse.remarks ? Math.round((pl.parse.remarksWithErrors / pl.parse.remarks) * 1000) / 10 : 0}%), unknown region ids ${pl.parse.unknownRegions}${pl.parse.missingPickers !== undefined ? `, members without a picker ${pl.parse.missingPickers}, dispatched ${pl.parse.dispatched}` : ''}` : ''}`,
+          note: `--classify stage 1: ${pl.model} ${pl.effort}, ${pl.task} on ${pl.doc}, ${pl.outcomes}, reason ${pl.reason}, charter ${pl.charter ?? 'fixed'}; ${pl.malformed} of ${pl.asked} answers malformed, ${pl.timedOut} timed out, ${pl.unknownRegions} region ids outside the recogniser${r.score?.classify?.members ? ` (grouped: members ${r.score.classify.members})` : ''}`,
         }
       : {}),
     moments: ms,
@@ -837,9 +883,10 @@ function recogniseStage(
         ? {
             model: pl.model,
             effort: pl.effort,
-            charter: pl.charter,
-            knowledge: pl.knowledge,
-            fallback: pl.fallbackToKnowledge,
+            ...(pl.charter ? { charter: pl.charter } : {}),
+            knowledge: pl.doc,
+            ...(pl.sections ? { sections: pl.sections } : {}),
+            ...(pl.regionInstructions ? { regionInstructions: pl.regionInstructions } : {}),
           }
         : undefined,
     ),
@@ -855,13 +902,13 @@ function confirmStage(
 ): StageReport & { moments: Moment[] } {
   const ms = moments(r, base);
   const w = wardens(ms);
-  const pl = base.score?.pipeline?.pick;
+  const pl = base.score?.classify?.stages[1];
   const model = pl?.model ?? r.score?.model ?? 'claude-haiku-5-5';
   return {
     stage: 'confirm',
     status: 'measured',
     note: pl
-      ? `--pipeline stage 2: ${pl.model} ${pl.effort} under ${pl.charter}, holding knowledge.md, given the recogniser's line; asked only where stage 1 said yes`
+      ? `--classify stage 2: ${pl.model} ${pl.effort}, ${pl.task} on ${pl.doc}, charter ${pl.charter ?? 'fixed'}, given stage 1's line; asked only where stage 1 escalated; ${pl.malformed} of ${pl.asked} answers malformed, ${pl.timedOut} timed out, ${base.score?.classify?.fallbacks ?? 0} runs kept stage 1's outcome`
       : `asked only the (moment, region) pairs stage 1 (${base.dir}) said yes to`,
     moments: ms,
     ...split(ms, lad),
@@ -878,7 +925,14 @@ function confirmStage(
     provenance: provenance(
       r,
       pl
-        ? { model: pl.model, effort: pl.effort, charter: pl.charter, knowledge: pl.knowledge }
+        ? {
+            model: pl.model,
+            effort: pl.effort,
+            ...(pl.charter ? { charter: pl.charter } : {}),
+            knowledge: pl.doc,
+            ...(pl.sections ? { sections: pl.sections } : {}),
+            ...(pl.regionInstructions ? { regionInstructions: pl.regionInstructions } : {}),
+          }
         : undefined,
     ),
   };
@@ -1089,12 +1143,10 @@ if (explicitWindow && (explicitWindow.length !== 2 || explicitWindow.some(Number
 const mainWindow = explicitWindow
   ? explicitWindow[1]! - explicitWindow[0]!
   : windowGrowth(main.quota);
-// A --pipeline run's quota rows carry both stages: the pick phases are stage 2's window.
-const pickPhase = (q: QuotaRow) => q.phase === 'pick-start' || q.phase === 'pick-end';
-const pickWindow = pipelineRun ? windowGrowth(main.quota.filter(pickPhase)) : mainWindow;
-const stage1Window = pipelineRun
-  ? windowGrowth(main.quota.filter((q) => !pickPhase(q)))
-  : mainWindow;
+// A staged --classify run asks its stages moment by moment: the shared window is the whole run's
+// (stage 1's here), and each stage's own cost is read off its tokens.
+const pickWindow = stagedRun ? null : mainWindow;
+const stage1Window = mainWindow;
 const s1 = recognise
   ? recogniseStage(
       recognise,
@@ -1135,8 +1187,8 @@ const report: Record<string, unknown> = {
   schema: REPORT_SCHEMA,
   generatedAt: new Date().toISOString(),
   run,
-  kind: pipelineRun
-    ? '--pipeline run: stage 1 recognise + stage 2 confirm and pick'
+  kind: stagedRun
+    ? "--classify run: stage 1 recognise + stage 2 confirm and pick, from each answer's stage trace"
     : recognise
       ? 'stage-2 confirm over a stage-1 run (offline-derived)'
       : 'stage-1 recognise',
@@ -1416,7 +1468,7 @@ function renderStage(st: StageReport, title: string): string {
       .map(([m, w]) => `${m} ${w}`)
       .join(', ')}) |`,
     `| charter | ${p.charter ?? '–'} (${p.charterLabel ?? '–'}) |`,
-    `| knowledge held | ${p.knowledgeFile ?? '–'}${p.recogniseFallback?.length ? `; fell back to knowledge.md for ${p.recogniseFallback.length} regions (${p.recogniseFallback.join(', ')})` : ''} |`,
+    `| knowledge held | ${p.knowledgeFile ?? '–'} |`,
     `| regions | ${p.regions ?? '–'}${p.regionsDir ? ` (\`${p.regionsDir}\`)` : ''}${p.knowledge ? `; knowledge \`${p.knowledge}\`` : ''}; roster ${p.roster ?? '–'} |`,
     `| machine load (1 min avg) min / mean / max | ${p.load ? `${f(p.load.min, 0)} / ${f(p.load.mean, 0)} / ${f(p.load.max, 0)}` : '–'} |`,
     `| shared window | ${p.sharedWindow ? "yes: the five-hour window is the whole machine's Claude login" : 'no'} |`,

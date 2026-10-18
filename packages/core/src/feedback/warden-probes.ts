@@ -66,6 +66,55 @@ export function probeTriggers(probe: WardenProbe): WardenProbeTrigger[] {
   ];
 }
 
+/** A classification's answer: in the region (`yes`), possibly (`unsure`, ternary stages only), or not. */
+export type ClassifyOutcome = 'yes' | 'unsure' | 'no';
+
+/**
+ * One stage of a classification run (Foundry's `classify`), as answered: what it read, what it said
+ * and what it cost. A stage that failed or answered out of shape carries `error` and no outcome:
+ * counted, never guessed.
+ */
+export interface ClassifyStageTrace {
+  /** 0-based, in run order. */
+  readonly stage: number;
+  readonly task: 'recognise' | 'point';
+  /** The region doc it read (e.g. `knowledge.md`) and the content hash of what it read. */
+  readonly doc: string;
+  readonly docHash?: string;
+  /**
+   * sha256 of the full system message the stage sent (its charter above the Warden's instructions),
+   * so runs that change any prompt section, the region line included, are told apart per call.
+   */
+  readonly systemHash?: string;
+  /** The model and effort that answered, as the provider reported them. */
+  readonly model?: string;
+  readonly effort?: string;
+  readonly outcome?: ClassifyOutcome;
+  /** The why, when the stage was asked for one (`reason: inline | followup`). */
+  readonly why?: string;
+  /** `reason: followup`: whether the stage, asked why, kept its answer or names the one it now holds. */
+  readonly revised?: 'keep' | ClassifyOutcome;
+  /** `reason: followup`: the follow-up call failed (the stage's own answer stands). */
+  readonly followupError?: string;
+  /** Its remarks in order (advice snippets or guard finding descriptions). */
+  readonly remarks?: readonly string[];
+  /** A recognise stage: the regions it named, with their line and outcome. */
+  readonly regions?: readonly {
+    readonly regionId: string;
+    readonly why: string;
+    readonly outcome: ClassifyOutcome;
+  }[];
+  readonly tokens?: Omit<TokenCounts, 'providerUsage'>;
+  readonly elapsedMs?: number;
+  /** The answer was out of protocol (counted apart from failures of the call). */
+  readonly malformed?: true;
+  readonly error?: string;
+  /** No answer within the stage's share of the trigger's deadline: the run kept the previous stage's outcome. */
+  readonly timedOut?: true;
+  /** Region ids a recogniser named that it does not hold: counted, never followed. */
+  readonly unknownRegions?: readonly string[];
+}
+
 /** One Warden's answer on one probe, and the judge's verdict when it spoke. */
 export interface WardenProbeAnswer {
   readonly probeId: string;
@@ -79,9 +128,15 @@ export interface WardenProbeAnswer {
   readonly elapsedMs?: number;
   /** What the call used, as the provider reported it (cache reads show a warm, primed prefix). */
   readonly tokens?: Omit<TokenCounts, 'providerUsage'>;
+  /** An unstaged call: sha256 of its full system message (a staged row has it on each stage's trace). */
+  readonly systemHash?: string;
   /** Transport failures of earlier attempts at this call, re-asked before this answer. */
   readonly retried?: readonly string[];
   readonly judged?: WardenJudgement;
+  /** The run's final outcome; a final `unsure` is delivered as nothing (`noComment`). */
+  readonly outcome?: ClassifyOutcome;
+  /** Every stage the run asked, in order. */
+  readonly stages?: readonly ClassifyStageTrace[];
 }
 
 /** One probe run as a turn: every Warden asked at once, as the live chorus is. */
@@ -144,6 +199,8 @@ export interface CharterScore {
   >;
   readonly remarks: number;
   readonly silences: number;
+  /** Silences whose final outcome was `unsure` (a ternary last stage): delivered as nothing, counted apart. */
+  readonly unsure: number;
   /** Remarks the judge could not grade: counted as unmatched, reported apart. */
   readonly unjudged: number;
   /** Per-turn load at roster scale: calls and wall clock, when the run recorded turns. */
@@ -192,6 +249,7 @@ export function scoreCharterRun(
     remarksRight = 0,
     scope = 0,
     silences = 0,
+    unsure = 0,
     unjudged = 0;
   const recalled = new Set<string>();
   const anticipated = new Set<string>();
@@ -220,8 +278,10 @@ export function scoreCharterRun(
     };
     perTrigger.set(trigger, tally);
     tally.probes.add(probe.id);
-    if (a.noComment) silences++;
-    else {
+    if (a.noComment) {
+      silences++;
+      if (a.outcome === 'unsure') unsure++;
+    } else {
       remarks++;
       tally.remarks++;
       if (!a.judged) unjudged++;
@@ -284,6 +344,7 @@ export function scoreCharterRun(
     byTrigger,
     remarks,
     silences,
+    unsure,
     unjudged,
     ...(turns.length
       ? {

@@ -1,19 +1,14 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, type LLMProvider, SignalBus } from '@inixiative/foundry-core';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import {
   adviceResponseProtocol,
-  CLASSIFY_GUARD_RESPONSE_PROTOCOL,
-  DomainLibrarian,
-  GUARD_RESPONSE_PROTOCOL,
-  oneCall,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
-import {
   CHOOSE_ONE_CAVEAT,
+  GUARD_RESPONSE_PROTOCOL,
   MAX_POINTER_NAMES,
   parseWardenPointer,
-  WARDEN_CHARTER_CLASSIFY,
-} from '../src/agents/warden-charter';
+  validateGuardResponse,
+} from '../src/classify';
 
 // The classifier contract (Aron, 2026-10-17): a Warden judges only relevance and likelihood. Its
 // remarks are a ranked pointer, a choose-one sibling set, or a class, at most three names, each with
@@ -128,7 +123,7 @@ test('the class rung and non-pointers', () => {
   expect(parseWardenPointer([])).toEqual({ relevant: false });
 });
 
-test('no field of the parsed pointer, and no field the classifier guard protocol offers, is a verdict', () => {
+test('no field of the parsed pointer, and no field the guard protocol offers, is a verdict', () => {
   const fields = new Set<string>();
   for (const remarks of [
     [LOCK, QUEUE],
@@ -138,24 +133,24 @@ test('no field of the parsed pointer, and no field the classifier guard protocol
   expect([...fields].sort()).toEqual(
     ['candidates', 'level', 'pointer', 'relevant', 'shape', 'where', 'why'].sort(),
   );
-  // The classifier's guard protocol: advisory only, no suggested fix, no "violation" framing.
-  expect(CLASSIFY_GUARD_RESPONSE_PROTOCOL).toContain('"severity": "advisory"');
-  expect(CLASSIFY_GUARD_RESPONSE_PROTOCOL).not.toContain('critical');
-  expect(CLASSIFY_GUARD_RESPONSE_PROTOCOL).not.toContain('suggestion');
-  expect(CLASSIFY_GUARD_RESPONSE_PROTOCOL).not.toContain('violation');
-  expect(GUARD_RESPONSE_PROTOCOL).toContain('suggestion');
+  // The guard protocol: advisory only, no suggested fix, no "violation" framing.
+  expect(GUARD_RESPONSE_PROTOCOL).toContain('"severity": "advisory"');
+  expect(GUARD_RESPONSE_PROTOCOL).not.toContain('critical');
+  expect(GUARD_RESPONSE_PROTOCOL).not.toContain('suggestion');
+  expect(GUARD_RESPONSE_PROTOCOL).not.toContain('violation');
   const critical = JSON.stringify({ findings: [{ severity: 'critical', description: LOCK }] });
   const suggested = JSON.stringify({
     findings: [{ severity: 'advisory', description: LOCK, suggestion: 'use createLock' }],
   });
-  expect(validateGuardResponse(critical, { classify: true })).toEqual({
-    error: 'guard finding 0 under the classifier charter is advisory only, with no "suggestion"',
+  expect(validateGuardResponse(critical)).toEqual({
+    error: 'guard finding 0 requires "severity": "advisory"',
   });
-  expect('error' in validateGuardResponse(suggested, { classify: true })).toBe(true);
-  expect('findings' in validateGuardResponse(critical)).toBe(true);
-  // Every advice trigger under the classifier has the one bar: touches nothing, whatever it says to build.
+  expect(validateGuardResponse(suggested)).toEqual({
+    error: 'guard finding 0 has 1 field(s) outside the protocol',
+  });
+  // Every advice trigger has the one bar: touches nothing, whatever it says to build.
   for (const trigger of ['user-message', 'consumed', 'subagent-spawn'] as const) {
-    const protocol = adviceResponseProtocol(trigger, true);
+    const protocol = adviceResponseProtocol(trigger);
     expect(protocol).toContain(`trigger: ${trigger})`);
     expect(protocol).toContain('whatever it says to build or not to use');
     expect(protocol).not.toContain('would otherwise have to say themselves');
@@ -163,7 +158,7 @@ test('no field of the parsed pointer, and no field the classifier guard protocol
   }
 });
 
-test('a classifier Warden reads its pointer over all its remarks, in advice and in guard', async () => {
+test('a Warden reads its pointer over all its remarks, in advice and in guard', async () => {
   const answers = { advice: '', guard: '' };
   const seen: string[] = [];
   const llm: LLMProvider = {
@@ -182,7 +177,6 @@ test('a classifier Warden reads its pointer over all its remarks, in advice and 
     signals: new SignalBus(0),
     llm,
     guardTriggers: ['Write'],
-    charter: WARDEN_CHARTER_CLASSIFY,
   });
   answers.advice = JSON.stringify({ snippets: [LOCK, QUEUE], layers: [], confidence: 0.8 });
   expect((await warden.advise("Add a new lock table; don't use createLock")).pointer).toMatchObject(
@@ -203,7 +197,7 @@ test('a classifier Warden reads its pointer over all its remarks, in advice and 
   expect(guarded.status).toBe('completed');
   expect(guarded.findings[0]!.pointer).toMatchObject({ shape: 'choose-one', level: 'candidates' });
   expect(guarded.findings[1]!.pointer).toBeUndefined();
-  expect(seen.at(-1)).toContain(CLASSIFY_GUARD_RESPONSE_PROTOCOL);
+  expect(seen.at(-1)).toContain(GUARD_RESPONSE_PROTOCOL);
   // A verdict-shaped guard answer is an invalid response, never a completed check.
   answers.guard = JSON.stringify({ findings: [{ severity: 'critical', description: LOCK }] });
   expect((await warden.guard(oneCall({ tool: 'Write', input: {} }))).status).toBe(

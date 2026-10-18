@@ -1,5 +1,6 @@
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
 import { vendorOfProvider } from '@inixiative/foundry-core';
+import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
@@ -24,8 +25,10 @@ const diagnosticLabel = (value: string): string => {
 };
 
 /**
- * Resolve declarations only. No provider construction, layer writes or runtime attachment. A
- * Warden's instructions and domain knowledge come from the composition view (its `prompt` and
+ * Resolve declarations only. No provider construction, layer writes or runtime attachment. The
+ * Wardens of `config` are a project view's generated region Wardens (settings declare none; the
+ * hand-named roster was retired 2026-10-17), so a config without a project has none. A Warden's
+ * instructions and domain knowledge come from the composition view (its `prompt` and
  * `domainKnowledge` sources, then the ladder's files for its role); it owns no configured layer.
  */
 export function configuredExperts(config: FoundryConfig): {
@@ -42,8 +45,7 @@ export function configuredExperts(config: FoundryConfig): {
     if (typeof agent.enabled !== 'boolean') throw Error(`Invalid expert enablement: ${id}`);
     claimedDomains.add(agent.domain);
     if (!agent.enabled) continue;
-    if (!['decider', 'domain-librarian'].includes(agent.kind))
-      throw Error(`Unsupported configured expert kind: ${id}`);
+    if (agent.kind !== 'domain-librarian') throw Error(`Unsupported configured expert kind: ${id}`);
     if (agent.ownedLayers?.length)
       throw Error(
         `Expert ${id} owns layers (${agent.ownedLayers.join(', ')}); a Warden reads its knowledge from the composition view: list the sources in agents.${id}.domainKnowledge and drop ownedLayers`,
@@ -118,16 +120,33 @@ export function configuredExperts(config: FoundryConfig): {
 }
 
 /**
- * The largest Warden roster any thread of this Foundry runs: the global roster, or an enabled
- * project's view where it is bigger (a generated region roster, project Wardens). Sizes the primed
- * decision pool, which every project's threads share.
+ * The largest chorus any thread of this Foundry runs: an enabled project's region Wardens. Sizes the
+ * primed decision pool, which every project's threads share.
  */
 export function largestRoster(config: FoundryConfig): number {
-  let largest = configuredExperts(config).experts.length;
+  let largest = 0;
   for (const [id, project] of Object.entries(config.projects ?? {})) {
     if (project.enabled === false) continue;
     const view = resolveProjectView(config, id);
     if (view) largest = Math.max(largest, configuredExperts(view.config).experts.length);
+  }
+  return largest;
+}
+
+/**
+ * The most classify stages any running chorus asks per Warden, of those `counts` selects (the ones a
+ * given decision host serves): each keeps its own primed session.
+ */
+export function largestStageCount(
+  config: FoundryConfig,
+  counts: (stage: StageConfig) => boolean = () => true,
+): number {
+  let largest = DEFAULT_STAGES.filter(counts).length;
+  for (const [id, project] of Object.entries(config.projects ?? {})) {
+    if (project.enabled === false) continue;
+    const view = resolveProjectView(config, id);
+    if (view?.chorus.on)
+      largest = Math.max(largest, view.chorus.roles.warden.stages.filter(counts).length);
   }
   return largest;
 }
