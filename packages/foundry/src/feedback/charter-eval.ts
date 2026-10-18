@@ -86,74 +86,121 @@ export interface CharterEvalOptions {
   readonly onTurn?: (turn: WardenProbeTurn) => void;
   /**
    * Diagnostic runs only (`--diagnose`): after each `user-message` answer, ask the same Warden, on the
-   * same composed prompt, twice more: once with the protocol replaced by "YES or NO, then why"
-   * (does asking for a reason change the decision?), and once as a follow-up to its real answer
-   * (why did it answer that, and does it stand by it?). Live Wardens never do this.
+   * same composed prompt and under the same bar, three more readings: `bare` (the protocol swapped for
+   * one word, YES or NO: isolates the protocol swap), `oneshot` (YES or NO, the name it would point
+   * at, and why: against `bare`, whether producing a reason moves the decision), and `followup` (the
+   * live exchange quoted back, then "why?"). Rows reach `onDiagnosis` once their turn is recorded, so
+   * a run stopped mid-turn leaves none behind. Live Wardens never do this.
    */
   readonly diagnose?: boolean;
   readonly onDiagnosis?: (diagnosis: WardenDiagnosis) => void;
 }
 
-/** One cell's diagnostic: the real answer, the one-shot "yes/no + why", and the follow-up "why?". */
+type Tokens = WardenProbeAnswer['tokens'];
+
+/** One cell's diagnostic: the live answer and three readings of the same prompt. */
 export interface WardenDiagnosis {
   readonly probeId: string;
   readonly domain: string;
   readonly trigger: WardenProbeTrigger;
-  /** The real answer: true when the Warden pointed, false on NO_COMMENT. */
+  /** The live answer: true when the Warden pointed, false on NO_COMMENT. */
   readonly answered: boolean;
+  readonly bare: {
+    readonly decision?: 'yes' | 'no';
+    readonly error?: string;
+    readonly tokens?: Tokens;
+  };
   readonly oneshot: {
     readonly decision?: 'yes' | 'no';
+    /** The name it would point at; absent when it said none. */
+    readonly name?: string;
     readonly why?: string;
     readonly error?: string;
-    readonly tokens?: WardenProbeAnswer['tokens'];
+    readonly tokens?: Tokens;
   };
+  /**
+   * A quoted-answer review, not the Warden's own turn: on the primed transport the live answer
+   * reaches it as text inside one user message. Descriptive only.
+   */
   readonly followup: {
     readonly why?: string;
     /** `keep`, or the answer the Warden now says is right. */
     readonly revised?: 'keep' | 'yes' | 'no';
     readonly error?: string;
-    readonly tokens?: WardenProbeAnswer['tokens'];
+    readonly tokens?: Tokens;
   };
 }
 
-export const DIAGNOSE_ONESHOT_PROTOCOL = `This is a diagnostic run, not a live turn. Answer in exactly this shape and nothing else:
-Line 1: YES or NO. YES means you would point at something in your domain for this message; NO means you would answer ${'NO_COMMENT'}.
-Line 2: WHY: one or two sentences: what the message asks for, and which part of your domain it does or does not touch.`;
+/** The live bar, restated for the diagnostic readings so they decide on the same terms. */
+const DIAGNOSE_BAR = `Apply your usual bar: YES only when the message touches something your domain says already exists, something you can name from your knowledge (a pointer you cannot source is a guess, so NO); otherwise NO, whatever the message says to build or not to use.`;
 
-export const DIAGNOSE_FOLLOWUP = `This is a diagnostic question, not a live turn; your answer above stands as given. In at most two short lines, explain it:
+export const DIAGNOSE_BARE_PROTOCOL = `This is a diagnostic run, not a live turn. ${DIAGNOSE_BAR}
+Answer with one word and nothing else: YES or NO.`;
+
+export const DIAGNOSE_ONESHOT_PROTOCOL = `This is a diagnostic run, not a live turn. ${DIAGNOSE_BAR}
+Answer in exactly this shape and nothing else:
+Line 1: YES or NO.
+Line 2: NAME: the exact name from your knowledge you would point at, or none.
+Line 3: WHY: one or two sentences: what the message asks for, and which part of your domain it does or does not touch.`;
+
+export const DIAGNOSE_FOLLOWUP = `This is a diagnostic question, not a live turn. Above is the answer given to this message. In at most two short lines, explain it:
 1. What the message asks for, in your words.
 2. Which part of your domain it does or does not touch, and why.
-Then one last line, exactly \`REVISED: KEEP\` if you stand by your answer, or \`REVISED: YES\` / \`REVISED: NO\` if on reflection the other answer is right.`;
+Then one last line: \`REVISED: KEEP\` if that answer stands, or \`REVISED: YES\` / \`REVISED: NO\` if on reflection the other answer is right.`;
 
-/** Line 1 of a one-shot answer: YES or NO (markdown and punctuation tolerated); anything else is unparsed. */
-export function parseOneshot(text: string): { decision?: 'yes' | 'no'; why?: string } {
-  const lines = text
+const lines = (text: string) =>
+  text
     .trim()
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
-  const first = lines[0]
-    ?.replace(/[*_`#:.]/g, '')
-    .trim()
-    .toUpperCase();
-  const decision = first === 'YES' ? 'yes' : first === 'NO' ? 'no' : undefined;
-  const why = lines
-    .slice(decision ? 1 : 0)
-    .join(' ')
-    .replace(/^\**WHY\**:?\s*/i, '')
-    .trim();
-  return { ...(decision ? { decision } : {}), ...(why ? { why } : {}) };
+/** The answer's leading YES or NO (markdown and punctuation tolerated) and whatever follows it. */
+const leading = (text: string) => {
+  const m = /^[\W_]*(YES|NO)\b[\W_]*(.*)$/is.exec(text.trim());
+  return m ? { decision: m[1]!.toLowerCase() as 'yes' | 'no', rest: m[2]!.trim() } : undefined;
+};
+
+/** A bare reading: YES or NO, alone. */
+export function parseBare(text: string): { decision?: 'yes' | 'no' } {
+  const lead = leading(text);
+  return lead ? { decision: lead.decision } : {};
 }
 
-/** The follow-up's explanation and its last `REVISED:` line. */
+/** A one-shot reading: its YES or NO, the NAME line (`none` is no name) and the WHY. */
+export function parseOneshot(text: string): {
+  decision?: 'yes' | 'no';
+  name?: string;
+  why?: string;
+} {
+  const lead = leading(text);
+  const body = lines(lead ? lead.rest : text);
+  const field = (key: string) =>
+    body
+      .map((l) => new RegExp(`^[*_\\s]*${key}[*_\\s]*:\\s*(.*)$`, 'i').exec(l)?.[1]?.trim())
+      .find((v) => v !== undefined);
+  const name = field('NAME')?.replace(/[`*]/g, '').trim();
+  const why =
+    field('WHY') ??
+    body
+      .filter((l) => !/^[*_\s]*NAME[*_\s]*:/i.test(l))
+      .join(' ')
+      .trim();
+  return {
+    ...(lead ? { decision: lead.decision } : {}),
+    ...(name && !/^none\b/i.test(name) ? { name } : {}),
+    ...(why ? { why } : {}),
+  };
+}
+
+/** The follow-up's explanation and its last `REVISED:` verdict, wherever it stands. */
 export function parseFollowup(text: string): { why?: string; revised?: 'keep' | 'yes' | 'no' } {
-  const lines = text
-    .trim()
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const last = /REVISED:\s*(KEEP|YES|NO)\b/i.exec(lines.at(-1) ?? '');
-  const why = (last ? lines.slice(0, -1) : lines).join(' ').replace(/`/g, '').trim();
+  const all = [...text.matchAll(/REVISED:\s*\**\s*(KEEP|YES|NO)\b/gi)];
+  const last = all.at(-1);
+  const why = lines(text)
+    .filter((l) => !/REVISED:/i.test(l))
+    .join(' ')
+    .replace(/`/g, '')
+    .trim();
   return {
     ...(why ? { why } : {}),
     ...(last ? { revised: last[1]!.toLowerCase() as 'keep' | 'yes' | 'no' } : {}),
@@ -184,6 +231,11 @@ export async function runCharterEval(
       if (options.done?.(probe.id, trigger)) continue;
       const started = Date.now();
       const asked: WardenProbeAnswer[] = new Array(wardens.length);
+      // Diagnoses wait for their turn to be recorded, so a stopped turn leaves none behind.
+      const diagnosed: WardenDiagnosis[] = [];
+      const turnOptions = options.diagnose
+        ? { ...options, onDiagnosis: (d: WardenDiagnosis) => diagnosed.push(d) }
+        : options;
       let next = 0;
       await Promise.all(
         Array.from(
@@ -191,7 +243,7 @@ export async function runCharterEval(
           async () => {
             while (next < wardens.length) {
               const index = next++;
-              asked[index] = await askWithRetries(options, probe, wardens[index]!, trigger);
+              asked[index] = await askWithRetries(turnOptions, probe, wardens[index]!, trigger);
             }
           },
         ),
@@ -224,6 +276,7 @@ export async function runCharterEval(
         options.onAnswer?.(final);
       }
       options.onTurn?.(turns.at(-1)!);
+      for (const d of diagnosed) options.onDiagnosis?.(d);
     }
   }
   return { answers, turns };
@@ -374,9 +427,10 @@ export async function judge(
 }
 
 /**
- * The two diagnostic calls for one cell, on the Warden's own composed prompt (same system, same
- * primed prefix, so the knowledge is read from the cache): the protocol swapped for "YES or NO, then
- * why", and the real exchange followed by "why?". Failures are recorded, never retried into a guess.
+ * The three diagnostic readings for one cell, on the Warden's own composed prompt (same system, same
+ * primed prefix, so the knowledge is read from the cache): the protocol swapped for one word, for
+ * "YES or NO, NAME, WHY", and the live exchange followed by "why?". Failures are recorded, never
+ * retried into a guess.
  */
 async function diagnoseCell(
   provider: LLMProvider,
@@ -399,7 +453,9 @@ async function diagnoseCell(
   const last = messages.at(-1)!;
   // Diagnosis runs at the user's message only (see `ask`).
   const protocol = adviceResponseProtocol('user-message');
-  const call = async (msgs: LLMMessage[]) => {
+  const call = async (
+    msgs: LLMMessage[],
+  ): Promise<{ content?: string; tokens?: Tokens; error?: string }> => {
     try {
       const result = await provider.complete(msgs, opts);
       if (!result.tokens) return { content: result.content };
@@ -409,16 +465,24 @@ async function diagnoseCell(
       return { error: (err as Error)?.message ?? String(err) };
     }
   };
-  const oneshotCall = last.content.endsWith(protocol)
-    ? await call([
-        ...messages.slice(0, -1),
-        {
-          ...last,
-          content: `${last.content.slice(0, -protocol.length)}${DIAGNOSE_ONESHOT_PROTOCOL}`,
-        },
-      ])
-    : { error: 'the advice message does not end with its protocol' };
-  const followupCall = await call([
+  /** The live message with only its response protocol replaced. */
+  const swapped = (replacement: string) =>
+    last.content.endsWith(protocol)
+      ? call([
+          ...messages.slice(0, -1),
+          { ...last, content: `${last.content.slice(0, -protocol.length)}${replacement}` },
+        ])
+      : Promise.resolve({ error: 'the advice message does not end with its protocol' });
+  const read = <T>(
+    result: { content?: string; tokens?: Tokens; error?: string },
+    parse: (text: string) => T,
+  ) =>
+    result.error !== undefined
+      ? { error: result.error }
+      : { ...parse(result.content ?? ''), ...(result.tokens ? { tokens: result.tokens } : {}) };
+  const bare = await swapped(DIAGNOSE_BARE_PROTOCOL);
+  const oneshot = await swapped(DIAGNOSE_ONESHOT_PROTOCOL);
+  const followup = await call([
     ...messages,
     { role: 'assistant', content: raw },
     { role: 'user', content: DIAGNOSE_FOLLOWUP },
@@ -428,19 +492,8 @@ async function diagnoseCell(
     domain: warden.domain,
     trigger,
     answered,
-    oneshot:
-      'error' in oneshotCall
-        ? { error: oneshotCall.error! }
-        : {
-            ...parseOneshot(oneshotCall.content),
-            ...(oneshotCall.tokens ? { tokens: oneshotCall.tokens } : {}),
-          },
-    followup:
-      'error' in followupCall
-        ? { error: followupCall.error! }
-        : {
-            ...parseFollowup(followupCall.content),
-            ...(followupCall.tokens ? { tokens: followupCall.tokens } : {}),
-          },
+    bare: read(bare, parseBare),
+    oneshot: read(oneshot, parseOneshot),
+    followup: read(followup, parseFollowup),
   };
 }

@@ -54,10 +54,11 @@
  * a reviewed pre-registration (foundry-core `feedback/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
  * the design's path and hash land in <out>/experiment.json.
  * --diagnose (user-message only, a diagnostic, never the shipped path): after each answer the same
- * Warden is asked twice more on its own composed prompt: the protocol swapped for "YES or NO, then
- * why" (does asking for a reason change the decision?) and the real exchange followed by "why did you
- * answer that?" (its reason, and whether it stands by it). Rows land in <out>/diagnose.jsonl
- * (charter-eval.ts `WardenDiagnosis`); their tokens count toward the stop bounds.
+ * Warden is asked three more times on its own composed prompt, under the same bar: one word, YES or
+ * NO (the protocol swap alone); YES or NO with the NAME it would point at and WHY (against the bare
+ * reading, whether giving a reason moves the decision); and the live exchange quoted back, then "why
+ * did you answer that?" (a quoted-answer review). Rows land in <out>/diagnose.jsonl once their turn
+ * is recorded (charter-eval.ts `WardenDiagnosis`); their tokens count toward the stop bounds.
  * --pipeline is the two-stage EXPERIMENT (not Foundry's design): stage 1, every region Warden on
  * --model/--effort (Haiku low) under the --recognise-charter file, holding the region's `recognise.md`
  * when the regions directory has one (else its knowledge.md; score.json names those); its remark names
@@ -642,6 +643,15 @@ const writeRows = (path: string, rows: readonly unknown[]) => {
 };
 writeRows(answersFile, kept);
 writeRows(turnsFile, keptTurns);
+// --diagnose rows are written once their turn is recorded; --resume keeps those of finished turns only.
+const diagnoseFile = join(out, 'diagnose.jsonl');
+if (values.diagnose)
+  writeRows(
+    diagnoseFile,
+    readRows<WardenDiagnosis>(diagnoseFile).filter((d) =>
+      finished.has(turnKey(d.probeId, d.trigger)),
+    ),
+  );
 if (values.resume) console.error(`resuming: ${finished.size} turns already done`);
 let done = 0;
 try {
@@ -660,8 +670,8 @@ try {
       ? {
           diagnose: true,
           onDiagnosis: (d: WardenDiagnosis) => {
-            appendFileSync(join(out, 'diagnose.jsonl'), `${JSON.stringify(d)}\n`, { mode: 0o600 });
-            for (const part of [d.oneshot, d.followup])
+            appendFileSync(diagnoseFile, `${JSON.stringify(d)}\n`, { mode: 0o600 });
+            for (const part of [d.bare, d.oneshot, d.followup])
               if (part.tokens)
                 countTokens({ ...d, noComment: true, tokens: part.tokens }, wardenModel);
           },
