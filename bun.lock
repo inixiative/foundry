@@ -35,6 +35,15 @@
       "dependencies": {
         "uuidv7": "^1.0.2",
       },
+      "devDependencies": {
+        "@inixiative/archive": "^0.23.0",
+      },
+      "peerDependencies": {
+        "@inixiative/archive": "^0.23.0",
+      },
+      "optionalPeers": [
+        "@inixiative/archive",
+      ],
     },
     "packages/foundry": {
       "name": "@inixiative/foundry",
