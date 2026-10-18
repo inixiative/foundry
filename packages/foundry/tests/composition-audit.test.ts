@@ -28,9 +28,9 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { chartered, WARDEN_CHARTER } from '../src/agents/warden-charter';
 import { AuditLog } from '../src/audit/audit-log';
 import { type CallVersions, CompositionAuditor } from '../src/audit/compositions';
+import { chartered, WARDEN_CHARTER } from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';

@@ -10,10 +10,10 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
-import { GUARD_RESPONSE_PROTOCOL, reviewResponseProtocol } from '../src/agents/domain-librarian';
+import { reviewResponseProtocol } from '../src/agents/domain-librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { chartered } from '../src/agents/warden-charter';
+import { chartered, GUARD_RESPONSE_PROTOCOL } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';

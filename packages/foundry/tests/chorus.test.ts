@@ -22,6 +22,7 @@ import {
   SignalBus,
   segmentsText,
 } from '@inixiative/foundry-core';
+import { CHORUS_RECEPTION, CHORUS_RECEPTION_LAYER } from '../src/agents/chorus-reception';
 import { configuredExperts, largestRoster } from '../src/agents/configured-experts';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import {
@@ -30,6 +31,7 @@ import {
   DEFAULT_LAYER_LABEL,
   describeChorus,
   REGION_GUARD_TRIGGERS,
+  REGION_WARDEN_INSTRUCTIONS,
   readRegions,
   regionKey,
   regionOfSubject,
@@ -43,17 +45,9 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import {
-  CHOOSE_ONE_CAVEAT,
-  CHORUS_RECEPTION,
-  CHORUS_RECEPTION_LAYER,
-  chartered,
-  parseWardenPointer,
-  REGION_WARDEN_INSTRUCTIONS,
-  WARDEN_CHARTER,
-} from '../src/agents/warden-charter';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
+import { CHOOSE_ONE_CAVEAT, chartered, parseWardenPointer, WARDEN_CHARTER } from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';

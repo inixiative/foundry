@@ -8,7 +8,6 @@ import type {
   DataSourceConfig,
   ProjectSettingsConfig,
 } from '../viewer/config';
-import { REGION_WARDEN_INSTRUCTIONS } from './warden-charter';
 
 /** Where a project's regions live unless its `chorus` names a layer. */
 export const DEFAULT_REGIONS_DIR = '.foundry/regions';
@@ -237,6 +236,13 @@ export async function regionKey(
 ): Promise<string> {
   return contentHash(await claudemdSource(regionSourceId(region.id), region.knowledgePath).load());
 }
+
+/**
+ * A region Warden's generic instructions: its settings prompt opens with this line, then names its
+ * region (title and routing line). The region's own text is its domain knowledge, in full.
+ */
+export const REGION_WARDEN_INSTRUCTIONS =
+  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says: relevant or NO_COMMENT, and when relevant, a pointer in one of its shapes (ranked, choose one, or class) to the things it touches and where they are written.';
 
 /** A region Warden's settings prompt: the generic region instructions, then which region this is. */
 export function regionInstructions(

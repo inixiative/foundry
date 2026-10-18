@@ -6,7 +6,7 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { DomainLibrarian, type ReviewInput } from '../src/agents/domain-librarian';
-import { chartered } from '../src/agents/warden-charter';
+import { chartered } from '../src/classify';
 
 for (const custom of [false, true]) {
   test(`post-work response protocol survives ${custom ? 'custom' : 'default'} domain instructions`, async () => {

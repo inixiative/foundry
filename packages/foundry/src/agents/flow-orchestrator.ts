@@ -48,6 +48,7 @@ import {
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
+import type { WardenPointer } from '../classify';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -69,7 +70,6 @@ import {
   type TurnActivity,
 } from './domain-librarian';
 import type { Librarian } from './librarian';
-import type { WardenPointer } from './warden-charter';
 import type { AdviceTrigger, TriggerPoint } from './warden-triggers';
 
 // ---------------------------------------------------------------------------

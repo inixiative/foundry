@@ -53,7 +53,7 @@ import {
   wardenPointerJudgeMessage,
   wilsonInterval,
 } from '../../packages/core/src';
-import { WARDEN_CHARTER_VERSION } from '../../packages/foundry/src/agents/warden-charter';
+import { WARDEN_CHARTER_VERSION } from '../../packages/foundry/src/classify';
 import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import { decisionHost, privateDirectory } from '../../packages/foundry/src/providers/decision-host';
 import {

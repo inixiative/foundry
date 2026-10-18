@@ -24,6 +24,7 @@ import {
   type ThreadMeta,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
+import { WARDEN_CHARTER, WARDEN_CHARTER_VERSION } from '../classify';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -35,6 +36,11 @@ import {
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
+import {
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
+  CHORUS_RECEPTION_VERSION,
+} from './chorus-reception';
 import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
   activityTools,
@@ -72,13 +78,6 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import {
-  CHORUS_RECEPTION,
-  CHORUS_RECEPTION_LAYER,
-  CHORUS_RECEPTION_VERSION,
-  WARDEN_CHARTER,
-  WARDEN_CHARTER_VERSION,
-} from './warden-charter';
 import type { GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
 

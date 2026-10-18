@@ -5,7 +5,7 @@ import {
   segmentsText,
 } from '@inixiative/foundry-core';
 import { regionOfSubject } from '../agents/region-roster';
-import { WARDEN_CHARTER } from '../agents/warden-charter';
+import { WARDEN_CHARTER } from '../classify';
 import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import type { AuditLog } from './audit-log';

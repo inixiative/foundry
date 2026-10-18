@@ -1,17 +1,14 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, type LLMProvider, SignalBus } from '@inixiative/foundry-core';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import {
   adviceResponseProtocol,
-  DomainLibrarian,
-  GUARD_RESPONSE_PROTOCOL,
-  oneCall,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
-import {
   CHOOSE_ONE_CAVEAT,
+  GUARD_RESPONSE_PROTOCOL,
   MAX_POINTER_NAMES,
   parseWardenPointer,
-} from '../src/agents/warden-charter';
+  validateGuardResponse,
+} from '../src/classify';
 
 // The classifier contract (Aron, 2026-10-17): a Warden judges only relevance and likelihood. Its
 // remarks are a ranked pointer, a choose-one sibling set, or a class, at most three names, each with

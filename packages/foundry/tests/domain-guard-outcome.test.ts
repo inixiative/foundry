@@ -7,15 +7,10 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import {
-  DomainLibrarian,
-  GUARD_RESPONSE_PROTOCOL,
-  oneCall,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
-import { chartered } from '../src/agents/warden-charter';
+import { chartered, GUARD_RESPONSE_PROTOCOL, validateGuardResponse } from '../src/classify';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
 // The parent's protected domain-guard-evidence fixture proves failures differ from a completed all-clear;

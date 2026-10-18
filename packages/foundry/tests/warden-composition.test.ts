@@ -18,7 +18,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { chartered } from '../src/agents/warden-charter';
+import { chartered } from '../src/classify';
 import {
   type AgentSettingsConfig,
   ConfigStore,

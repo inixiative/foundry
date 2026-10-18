@@ -10,19 +10,17 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
-import {
-  DomainLibrarian,
-  NO_COMMENT,
-  oneCall,
-  type ToolObservation,
-  validateAdviceResponse,
-  validateGuardResponse,
-} from '../src/agents/domain-librarian';
+import { DomainLibrarian, oneCall, type ToolObservation } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { WARDEN_CHARTER } from '../src/agents/warden-charter';
+import {
+  NO_COMMENT,
+  validateAdviceResponse,
+  validateGuardResponse,
+  WARDEN_CHARTER,
+} from '../src/classify';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
@@ -716,7 +714,7 @@ test('the charter eval advises on the user ask at the user-message trigger and g
 test('--diagnose asks the same prompt bare, with name + why, and after the live answer; live answers are unchanged', async () => {
   const { runCharterEval, DIAGNOSE_BARE_PROTOCOL, DIAGNOSE_FOLLOWUP, DIAGNOSE_ONESHOT_PROTOCOL } =
     await import('../src/feedback/charter-eval');
-  const { ADVICE_RESPONSE_PROTOCOL } = await import('../src/agents/domain-librarian');
+  const { ADVICE_RESPONSE_PROTOCOL } = await import('../src/classify');
   const seen: LLMMessage[][] = [];
   const events: string[] = [];
   const { answers } = await runCharterEval({

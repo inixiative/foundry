@@ -20,12 +20,12 @@ import {
   wardenJudgeMessage,
 } from '@inixiative/foundry-core';
 import {
-  adviceResponseProtocol,
   DomainLibrarian,
   domainCachePrefix,
   oneCall,
   threadSection,
 } from '../agents/domain-librarian';
+import { adviceResponseProtocol } from '../classify';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {

@@ -100,7 +100,7 @@ import {
 } from '../../packages/foundry/src/agents/region-roster';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
-import { WARDEN_CHARTER } from '../../packages/foundry/src/agents/warden-charter';
+import { WARDEN_CHARTER } from '../../packages/foundry/src/classify';
 import {
   type EvalWarden,
   judge,

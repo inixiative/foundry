@@ -5,12 +5,8 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import {
-  ADVICE_RESPONSE_PROTOCOL,
-  DomainLibrarian,
-  validateAdviceResponse,
-} from '../src/agents/domain-librarian';
-import { chartered } from '../src/agents/warden-charter';
+import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../src/classify';
 
 // Author cases for the advice-phase response contract (Fable). Controlled provider only; no model.
 // The parent's protected protocol fixture covers the invalid-shape matrix; these cover the boundary

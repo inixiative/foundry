@@ -10,15 +10,12 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { CHORUS_RECEPTION, CHORUS_RECEPTION_LAYER } from '../src/agents/chorus-reception';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import {
-  CHOOSE_ONE_CAVEAT,
-  CHORUS_RECEPTION,
-  CHORUS_RECEPTION_LAYER,
-} from '../src/agents/warden-charter';
 import { consumedMatcher, DEFAULT_CONSUMED_MAX_CHARS, workItemOf } from '../src/agents/work-items';
 import { reduceMiddleware } from '../src/archives/reduced-middleware';
+import { CHOOSE_ONE_CAVEAT } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
