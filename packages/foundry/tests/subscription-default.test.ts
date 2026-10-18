@@ -29,6 +29,8 @@ import {
 } from '../src/providers/subscription-decisions';
 import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
 import { ConfigStore, defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
+import { resolveProjectView } from '../src/viewer/config-resolve';
+import { writeRegions } from './helpers/regions';
 import { appServerTransport, subscriptionTransport } from './helpers/subscription-transport';
 import {
   DECIDED,
@@ -93,6 +95,23 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     classifierModel: 'claude-haiku-5-5',
   });
   expect(resolved.rerouted).toEqual([]);
+});
+
+test("a project's region Wardens run on the subscription decision model: an enabled chorus loads under subscription-only", () => {
+  const root = userHome(),
+    project = join(root, 'project');
+  mkdirSync(project);
+  writeRegions(project, [{ id: 'locks' }]);
+  const config = defaultConfig();
+  config.projects.P = { id: 'P', path: project };
+  // Before 2026-10-18 a generated Warden carried no provider or model, so the policy refused the
+  // whole settings file once a repository enabled its chorus.
+  const resolved = resolveSubscriptionPolicy(config, { cwd: project })!;
+  expect(resolveProjectView(resolved.config, 'P')!.config.agents.locks).toMatchObject({
+    kind: 'domain-librarian',
+    provider: 'subscription-decisions',
+    model: 'claude-haiku-5-5',
+  });
 });
 
 test('Codex decisions are a setting: decisionRuntime selects the Codex login and its Luna default', () => {

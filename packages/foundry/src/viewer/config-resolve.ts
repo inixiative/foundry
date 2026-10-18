@@ -949,7 +949,15 @@ export function resolveProjectView(
         throw new Error(
           `[config] region ${region.id} (${region.path}) collides with project agent or source ${JSON.stringify(agent.id)}`,
         );
-      agents.set(agent.id, generatedAgent(agent, region));
+      // A Warden is a decision role: it runs on the project's decision provider and model, never on the
+      // main-thread default (an agent with no model resolves to defaults.model, the executor's).
+      const decision = {
+        ...(resolved.defaults.classifierProvider
+          ? { provider: resolved.defaults.classifierProvider }
+          : {}),
+        ...(resolved.defaults.classifierModel ? { model: resolved.defaults.classifierModel } : {}),
+      };
+      agents.set(agent.id, generatedAgent({ ...agent, ...decision }, region));
       resolved.sources[source.id] = source;
     }
     // A region Warden's instructions are its prompt and the role files for its region, not the whole
