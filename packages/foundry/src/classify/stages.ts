@@ -174,6 +174,11 @@ export function validateStages(
     throw Error(
       `${where}: the stages' deadline shares add up to ${Math.round(shared * 1000) / 1000}, more than the whole deadline`,
     );
+  const zero = deadlineShares(stages).findIndex((share) => share <= 1e-9);
+  if (zero >= 0)
+    throw Error(
+      `${where}[${zero}] has no share of the deadline left: the other stages' shares take it all`,
+    );
   return stages;
 }
 

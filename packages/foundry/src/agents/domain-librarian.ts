@@ -1035,12 +1035,16 @@ export class DomainLibrarian {
    * Why instructions plus domain knowledge do not fit this role's budget, naming the largest
    * contributions and the ones a role opted in; undefined when they fit.
    */
-  budgetError(instructions: string, domainKnowledge: string): string | undefined {
+  budgetError(
+    instructions: string,
+    domainKnowledge: string,
+    layer: ContextLayer = this._cache,
+  ): string | undefined {
     const total = instructions.length + domainKnowledge.length;
     if (total <= this._budget) return undefined;
     const largest = [
       ...contributions('instructions', this._instructions),
-      ...contributions('domainKnowledge', this._cache),
+      ...contributions('domainKnowledge', layer),
     ]
       .sort((a, b) => b.chars - a.chars)
       .slice(0, 3)
@@ -1484,11 +1488,13 @@ export class DomainLibrarian {
   ): Promise<StageCall> {
     const stage = this._stages[run.index]!;
     const first = run.index === 0;
-    const cacheContent = (first ? frame.cache : undefined) ?? stage.cache.content;
+    // The caller's frozen knowledge is the knowledge slot's: it applies to a stage reading that slot.
+    const frozen = first && stage.cache === this._cache;
+    const cacheContent = (frozen ? frame.cache : undefined) ?? stage.cache.content;
     const docHash = computeHash(cacheContent);
     if (!cacheContent) return { error: `cold-cache: ${run.stage.doc}`, docHash };
     if (!first) {
-      const over = this.budgetError(frame.system, cacheContent);
+      const over = this.budgetError(frame.system, cacheContent, stage.cache);
       if (over) return { error: over, docHash };
     }
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
@@ -1512,7 +1518,7 @@ export class DomainLibrarian {
     ];
     const composition = this.composition(
       frame.phase === 'advice' ? 'advise' : 'guard',
-      !first
+      !frozen
         ? { cache: cacheContent, composition: cacheCompositionOf(stage.cache) }
         : frame.cache !== undefined
           ? {
@@ -1584,12 +1590,14 @@ export class DomainLibrarian {
   }
 
   async advise(message: string, threadState?: string, opts?: AdviseOpts): Promise<AdviseResult> {
-    const cacheContent = opts?.cache ?? this._cache.content;
+    const head = this._stages[0]!.cache;
+    const frozen = head === this._cache ? opts?.cache : undefined;
+    const cacheContent = frozen ?? head.content;
     if (!cacheContent) {
       return { layers: [], snippets: [], confidence: 0, skipped: 'cold-cache' };
     }
     const system = this.advisePrompt;
-    const over = this.budgetError(system, cacheContent);
+    const over = this.budgetError(system, cacheContent, head);
     if (over) return { layers: [], snippets: [], confidence: 0, error: over };
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
@@ -1610,8 +1618,10 @@ export class DomainLibrarian {
         const call = await this._askStage(stage, {
           phase: 'advice',
           system,
-          ...(opts?.cache !== undefined ? { cache: opts.cache } : {}),
-          ...(opts?.cacheComposition ? { cacheComposition: opts.cacheComposition } : {}),
+          ...(frozen !== undefined ? { cache: frozen } : {}),
+          ...(frozen !== undefined && opts?.cacheComposition
+            ? { cacheComposition: opts.cacheComposition }
+            : {}),
           ...(opts?.threadKnowledge ? { understanding: opts.threadKnowledge } : {}),
           ...(threadState ? { threadState } : {}),
           moment:
@@ -1624,7 +1634,9 @@ export class DomainLibrarian {
           observe: (e: PhaseRequestEvidence) =>
             stage.index === 0 ? opts?.observeRequest?.(e as AdviceRequestEvidence) : later.push(e),
         });
-        if ('content' in call && call.served) opts?.observeServed?.(call.served);
+        // The served model of stage 0, the call `observeRequest` saw; later stages' are on their traces.
+        if (stage.index === 0 && 'content' in call && call.served)
+          opts?.observeServed?.(call.served);
         return call;
       },
     });
@@ -1688,7 +1700,8 @@ export class DomainLibrarian {
     }
 
     // LLM-based guard
-    const cacheContent = this._cache.content;
+    const head = this._stages[0]!.cache;
+    const cacheContent = head.content;
     if (!cacheContent) {
       return {
         findings: [],
@@ -1705,7 +1718,7 @@ export class DomainLibrarian {
     // turn's activity in call order, and the guard phase's response protocol supplied by this
     // phase, not by the instructions.
     const system = this.guardPrompt;
-    const over = this.budgetError(system, cacheContent);
+    const over = this.budgetError(system, cacheContent, head);
     if (over)
       return {
         findings: [],
@@ -1738,8 +1751,9 @@ export class DomainLibrarian {
         const call = await this._askStage(stage, {
           phase: 'guard',
           system,
-          cache: cacheContent,
-          cacheComposition: this.cacheComposition(),
+          ...(head === this._cache
+            ? { cache: cacheContent, cacheComposition: this.cacheComposition() }
+            : {}),
           ...(understanding ? { understanding } : {}),
           ...(threadState ? { threadState } : {}),
           moment: `\n## The agent's actions this turn (${activity.observations.length} tool call${activity.observations.length === 1 ? '' : 's'}, in order)\n${renderTurnActivity(activity)}`,

@@ -91,6 +91,15 @@ const CLASS = JSON.stringify({
   layers: [],
   confidence: 0.4,
 });
+const ALL_OF = JSON.stringify({
+  snippets: [
+    'All of these: Each applies; read every one.',
+    'createLock (CONCURRENCY.md § Distributed Lock) — the job must not overlap.',
+    'makeSerializedQueue (QUEUES.md § Serialized) — its runs are ordered.',
+  ],
+  layers: [],
+  confidence: 0.7,
+});
 const ADVICE_ANSWERS = [
   'NO_COMMENT',
   '  NO_COMMENT\n',
@@ -99,6 +108,7 @@ const ADVICE_ANSWERS = [
   RANKED,
   `\`\`\`json\n${RANKED}\n\`\`\``,
   CHOOSE_ONE,
+  ALL_OF,
   CLASS,
   'Look over here: createLock',
   JSON.stringify({ snippets: [], layers: [], confidence: 0 }),
@@ -124,6 +134,13 @@ const GUARD_ANSWERS = [
   JSON.stringify({
     findings: [
       finding('Choose one: Related systems; pick the one whose job matches.'),
+      finding('createLock (CONCURRENCY.md) — exclusion.'),
+      finding('makeSerializedQueue (QUEUES.md) — ordering.'),
+    ],
+  }),
+  JSON.stringify({
+    findings: [
+      finding('All of these: Each applies; read every one.'),
       finding('createLock (CONCURRENCY.md) — exclusion.'),
       finding('makeSerializedQueue (QUEUES.md) — ordering.'),
     ],

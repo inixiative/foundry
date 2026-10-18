@@ -357,8 +357,12 @@ const membersOf = (recogniser: string): string[] => {
 };
 const composed = new Map<string, EvalWarden[]>();
 const cold = new Map<string, string[]>();
-/** The docs a region's later stages read, composed as live composes a stage's doc (overlays included). */
+/** The docs a region's later stages read: a grouped chorus's members hold them, not its groups. */
 const laterDocs = stages.slice(1).map((s) => s.doc);
+/** The docs a region's own stages read beside its knowledge.md, composed as live composes them. */
+const ownDocs = [...new Set((membersDir ? stages.slice(0, 1) : stages).map((s) => s.doc))].filter(
+  (doc) => doc !== KNOWLEDGE_DOC,
+);
 for (const probe of probes) {
   const place = placeOf(probe);
   const key = `${place.projectId ?? ''}|${place.cwd}`;
@@ -378,15 +382,14 @@ for (const probe of probes) {
       alternate('instructions.md', agentId, probe.project) ?? slots.instructions.content;
     const budget = budgetOverride ?? roleComposition(view.composition, agentId).budget;
     const docs: Record<string, string> = {};
-    if (!membersDir)
-      for (const doc of new Set(laterDocs)) {
-        const layer = buildStageKnowledge(view, agentId, doc, regionDocSourceId(agentId, doc), {
-          resolveSource,
-          scope: place,
-        });
-        await layer.warm();
-        docs[doc] = layer.content;
-      }
+    for (const doc of ownDocs) {
+      const layer = buildStageKnowledge(view, agentId, doc, regionDocSourceId(agentId, doc), {
+        resolveSource,
+        scope: place,
+      });
+      await layer.warm();
+      docs[doc] = layer.content;
+    }
     const members = membersDir ? membersOf(agentId) : undefined;
     wardens.push({
       domain,
@@ -434,8 +437,7 @@ if (membersDir) {
     memberWardens.set(region.id, {
       domain: region.id,
       instructions: regionInstructions(region),
-      domainKnowledge:
-        docs[laterDocs[0] ?? KNOWLEDGE_DOC] ?? readFileSync(region.knowledgePath, 'utf8'),
+      domainKnowledge: readFileSync(region.knowledgePath, 'utf8'),
       docs,
       ...(budgetOverride !== undefined ? { budget: budgetOverride } : {}),
       ...(values.session ? { session: `${values.session}:member:${region.id}` } : {}),

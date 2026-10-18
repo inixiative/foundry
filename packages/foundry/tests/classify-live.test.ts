@@ -74,6 +74,8 @@ function project(stages: unknown[]) {
   c.sources = {};
   c.composition = { preset: 'none' };
   c.projects.P = { id: 'P', path };
+  // Subscription decisions, as live: stage hosts are the test's `stageHost`.
+  delete c.apiTokens;
   return c;
 }
 
@@ -275,14 +277,15 @@ test('a later stage that outlives its share of the advise deadline keeps the pre
     },
   });
   const stage2 = f.calls.find((c) => c.host === 'claude-sonnet-5-5')!;
-  expect(stage2.opts.timeout).toBeLessThanOrEqual(200);
+  // The last stage gets what the run has left of the 400 ms, less the margin.
+  expect(stage2.opts.timeout).toBeLessThanOrEqual(400);
 });
 
 test('a stage naming a model no host serves is refused by name; the default stage needs none', () => {
   const c = project([{ escalate: ['yes'] }, { model: 'claude-sonnet-5-5' }]);
   const f = runtime(c, () => 'NO_COMMENT');
   expect(() => f.factory.create('unserved', { projectId: 'P' })).toThrow(
-    'locks Warden: stage 2 of chorus.wardens.stages names claude-sonnet-5-5, and no decision host serves it (stage models run on subscription decisions)',
+    'chorus.wardens.stages[1] names claude-sonnet-5-5, and no decision host serves it (stage models run on subscription decisions)',
   );
   const plain = runtime(project([{}]), () => 'NO_COMMENT');
   expect(plain.factory.create('plain', { projectId: 'P' })).toBeDefined();

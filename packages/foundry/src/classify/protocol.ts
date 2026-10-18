@@ -412,7 +412,10 @@ export function readStageAnswer(
     remarks,
     ...('findings' in envelope ? { findings: envelope.findings } : { advice: envelope.advice }),
   };
-  if (envelope.outcome === 'no' || !remarks.length) return base;
+  if (envelope.outcome === 'no') return base;
+  if (spec.task === 'recognise' && !remarks.length)
+    return { error: 'recogniser answer names no region' };
+  if (!remarks.length) return base;
   if (spec.task === 'recognise') {
     const { regions, errors } = parseRecognition(remarks.join('\n'), spec.outcomes);
     if (errors.length)

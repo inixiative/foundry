@@ -1,5 +1,6 @@
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
 import { vendorOfProvider } from '@inixiative/foundry-core';
+import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
@@ -132,13 +133,20 @@ export function largestRoster(config: FoundryConfig): number {
   return largest;
 }
 
-/** The most classify stages any running chorus asks per Warden: each keeps its own primed session. */
-export function largestStageCount(config: FoundryConfig): number {
-  let largest = 1;
+/**
+ * The most classify stages any running chorus asks per Warden, of those `counts` selects (the ones a
+ * given decision host serves): each keeps its own primed session.
+ */
+export function largestStageCount(
+  config: FoundryConfig,
+  counts: (stage: StageConfig) => boolean = () => true,
+): number {
+  let largest = DEFAULT_STAGES.filter(counts).length;
   for (const [id, project] of Object.entries(config.projects ?? {})) {
     if (project.enabled === false) continue;
     const view = resolveProjectView(config, id);
-    if (view?.chorus.on) largest = Math.max(largest, view.chorus.roles.warden.stages.length);
+    if (view?.chorus.on)
+      largest = Math.max(largest, view.chorus.roles.warden.stages.filter(counts).length);
   }
   return largest;
 }

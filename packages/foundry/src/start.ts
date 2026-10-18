@@ -56,7 +56,7 @@ import {
 import { largestRoster, largestStageCount } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
-import type { StageEffort } from './classify';
+import type { StageConfig, StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
@@ -203,6 +203,39 @@ const inSession =
     : undefined;
 if (inSession)
   console.log("Wardens: held inside each thread's own Claude Code process (claude-in-session)");
+type DecisionEvents = Pick<
+  Parameters<typeof createSubscriptionDecisions>[0],
+  'onPressure' | 'onPrimedEvent'
+>;
+/** Pressure and recycles of every decision host (the decision host and each stage host) reach the viewer. */
+const decisionEvents: DecisionEvents = {
+  onPressure: (event: Parameters<NonNullable<DecisionEvents['onPressure']>>[0]) => {
+    const message =
+      event.kind === 'shed'
+        ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
+        : event.kind === 'closed'
+          ? `Decision admission closed until restart: ${event.reason}`
+          : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError('subscription-decisions', message, 'warn');
+  },
+  onPrimedEvent: (event: Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0]) => {
+    if (event.type === 'process-started')
+      console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
+    if (event.type !== 'process-recycled' && event.type !== 'violation') return;
+    const message =
+      event.type === 'violation'
+        ? `Decision violated the text-only policy (${event.detail}); process recycled`
+        : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
+    console.warn(`[subscription-decisions] ${message}`);
+    eventStream.pushError('subscription-decisions', message, 'warn');
+  },
+};
+/** Whether a classify stage runs on the decision host (its model and effort are the decision ones). */
+const onDecisionHost = (stage: StageConfig) =>
+  !subscription ||
+  ((stage.model ?? subscription.policy.model) === subscription.policy.model &&
+    (stage.effort ?? subscription.policy.effort) === subscription.policy.effort);
 const decisions = subscription
   ? createSubscriptionDecisions({
       ...subscription.policy,
@@ -211,28 +244,11 @@ const decisions = subscription
       // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
       // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
       // Sized for the largest chorus any project runs (region Wardens are per project).
-      primedSessions: Math.max(16, (largestStageCount(config) + 1) * largestRoster(config) + 8),
-      onPressure: (event) => {
-        const message =
-          event.kind === 'shed'
-            ? `Decision shed under load (thread ${event.threadId}, priority ${event.priority}, ${event.queued} queued)`
-            : event.kind === 'closed'
-              ? `Decision admission closed until restart: ${event.reason}`
-              : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
-        console.warn(`[subscription-decisions] ${message}`);
-        eventStream.pushError('subscription-decisions', message, 'warn');
-      },
-      onPrimedEvent: (event) => {
-        if (event.type === 'process-started')
-          console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
-        if (event.type !== 'process-recycled' && event.type !== 'violation') return;
-        const message =
-          event.type === 'violation'
-            ? `Decision violated the text-only policy (${event.detail}); process recycled`
-            : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
-        console.warn(`[subscription-decisions] ${message}`);
-        eventStream.pushError('subscription-decisions', message, 'warn');
-      },
+      primedSessions: Math.max(
+        16,
+        (largestStageCount(config, onDecisionHost) + 1) * largestRoster(config) + 8,
+      ),
+      ...decisionEvents,
     })
   : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
@@ -246,8 +262,8 @@ const stageHost = (model: string | undefined, effort: StageEffort | undefined) =
   if (!subscription) return undefined;
   const m = model ?? subscription.policy.model;
   const e = effort ?? subscription.policy.effort;
-  if (m === subscription.policy.model && e === subscription.policy.effort)
-    return decisions?.provider;
+  // The decision model and effort: the Warden's own provider serves it.
+  if (m === subscription.policy.model && e === subscription.policy.effort) return null;
   const key = `${m}|${e ?? ''}`;
   let host = stageHosts.get(key);
   if (!host) {
@@ -256,7 +272,19 @@ const stageHost = (model: string | undefined, effort: StageEffort | undefined) =
       source: subscription.decision,
       model: m,
       ...(e ? { effort: e } : {}),
-      primedSessions: Math.max(16, largestRoster(config) + 8),
+      // A key per stage this host serves, per Warden.
+      primedSessions: Math.max(
+        16,
+        largestStageCount(
+          config,
+          (stage) =>
+            (stage.model ?? subscription.policy.model) === m &&
+            (stage.effort ?? subscription.policy.effort) === e,
+        ) *
+          largestRoster(config) +
+          8,
+      ),
+      ...decisionEvents,
     });
     stageHosts.set(key, host);
     console.log(`[subscription-decisions] stage host ${m}${e ? ` at ${e}` : ''} started`);

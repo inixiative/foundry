@@ -323,7 +323,7 @@ export function missingRegionDocs(
  * region (title and routing line). The region's own text is its domain knowledge, in full.
  */
 export const REGION_WARDEN_INSTRUCTIONS =
-  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says: relevant or NO_COMMENT, and when relevant, a pointer in one of its shapes to the things it touches and where they are written.';
+  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says, and answer as the response protocol says.';
 
 /** A region Warden's settings prompt: the generic region instructions, then which region this is. */
 export function regionInstructions(
@@ -336,9 +336,9 @@ export interface RegionWarden {
   readonly region: RegionSummary;
   /** A standalone project agent: a full definition, so `resolveProjectView` treats it like one written in settings. */
   readonly agent: AgentSettingsConfig;
-  /** The project source its domain knowledge composes from: its first stage's doc, whole. */
+  /** The project source its domain knowledge composes from: its knowledge.md, whole. */
   readonly source: DataSourceConfig;
-  /** One project source per doc its stages read, the first stage's included (`regionDocSourceId`). */
+  /** One project source per doc it reads: knowledge.md, and each stage's (`regionDocSourceId`). */
   readonly sources: readonly DataSourceConfig[];
 }
 
@@ -364,7 +364,7 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
     uri: doc === KNOWLEDGE_DOC ? region.knowledgePath : region.docs[doc]!.path,
     enabled: true,
   });
-  const sources = stageDocs(stages).map(docSource);
+  const sources = [...new Set([KNOWLEDGE_DOC, ...stageDocs(stages)])].map(docSource);
   return {
     region,
     agent: {
@@ -377,7 +377,8 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
       temperature: 0,
       tools: false,
       visibleLayers: [],
-      domainKnowledge: [regionDocSourceId(region.id, stages[0]!.doc)],
+      // The knowledge slot is the region's knowledge.md; a stage reading another doc composes its own.
+      domainKnowledge: [regionSourceId(region.id)],
       guardTriggers: [...REGION_GUARD_TRIGGERS],
       peers: [],
       maxDepth: 1,

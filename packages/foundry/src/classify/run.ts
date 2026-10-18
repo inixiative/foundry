@@ -145,6 +145,21 @@ export function stageRuns(
 
 const TIMED_OUT = Symbol('timed-out');
 
+/** `work`, or TIMED_OUT once `ms` pass; the timer is cleared either way. */
+async function within<T>(work: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), Math.max(1, ms));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * What a multi-stage run keeps back from the trigger's deadline, so the caller's own deadline (the
  * same one) never fires before a fallback is returned.
@@ -173,13 +188,16 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       : undefined;
   for (let index = options.from?.index ?? 0; index < runs.length; index++) {
     const base = runs[index]!;
-    // A stage gets its share of the trigger's deadline, and never more than the run has left.
+    // A stage gets its share of the trigger's deadline, never more than the run has left; the last
+    // gets all that is left, so time an earlier stage did not use is not thrown away.
     const timeoutMs =
       options.deadlineMs === undefined
         ? undefined
-        : multi
-          ? Math.max(0, Math.min(options.deadlineMs * shares[index]!, end! - Date.now()))
-          : options.deadlineMs;
+        : !multi
+          ? options.deadlineMs
+          : index === runs.length - 1
+            ? Math.max(0, end! - Date.now())
+            : Math.max(0, Math.min(options.deadlineMs * shares[index]!, end! - Date.now()));
     const run: StageRun = {
       ...base,
       ...(carried ? { carried } : {}),
@@ -208,14 +226,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     const pending = options.ask(run);
     // A single stage keeps the provider's own deadline; stages share the trigger's, each its part.
     const call =
-      multi && timeoutMs !== undefined
-        ? await Promise.race([
-            pending,
-            new Promise<typeof TIMED_OUT>((resolve) =>
-              setTimeout(() => resolve(TIMED_OUT), Math.max(1, timeoutMs)).unref?.(),
-            ),
-          ])
-        : await pending;
+      multi && timeoutMs !== undefined ? await within(pending, timeoutMs) : await pending;
     const trace = (rest: Partial<ClassifyStageTrace>): ClassifyStageTrace => ({
       stage: index,
       task: base.stage.task,
@@ -288,7 +299,13 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     let followup: Partial<ClassifyStageTrace> = {};
     if (base.stage.reason === 'followup' && call.followUp) {
       try {
-        const answer = await call.followUp(FOLLOWUP_QUESTION);
+        // The follow-up stays inside the run's deadline: past it, the answer stands without its why.
+        const asked = call.followUp(FOLLOWUP_QUESTION);
+        const answer = end === undefined ? await asked : await within(asked, end - Date.now());
+        if (answer === TIMED_OUT) {
+          void asked.catch(() => undefined);
+          throw Error('the follow-up had no time left in the deadline');
+        }
         const parsed = parseFollowup(answer.content);
         followup = {
           ...(parsed.why ? { why: parsed.why } : {}),

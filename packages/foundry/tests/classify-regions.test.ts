@@ -60,6 +60,8 @@ function project(chorus: Record<string, unknown> = { enabled: true }) {
   c.sources = {};
   c.composition = { preset: 'none' };
   c.projects.P = { id: 'P', path };
+  // Subscription decisions: a stage may name its own model.
+  delete c.apiTokens;
   return { path, regions, config: c };
 }
 const recognise = (regions: string, id: string, text: string) =>
@@ -112,7 +114,8 @@ test('a stage whose doc a region lacks fails the chorus build, naming the region
   });
   expect(on.chorus.roles.warden.stages).toEqual(validateStages('s', TWO_STAGES));
   // Each doc a stage reads is its own project source; the first stage's is the Warden's knowledge.
-  expect(on.config.agents.locks!.domainKnowledge).toEqual(['region:locks:recognise.md']);
+  // The knowledge slot is knowledge.md; the first stage's own doc is composed beside it.
+  expect(on.config.agents.locks!.domainKnowledge).toEqual(['region:locks']);
   expect(Object.keys(on.config.sources).sort()).toEqual([
     'region:locks',
     'region:locks:recognise.md',
@@ -174,20 +177,19 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   const resolveSource = createSourceResolver({ memory: new FileMemory(memory) });
   const scope = { projectId: 'P', cwd: config.projects.P!.path };
   const slots = buildRoleLayers(view, 'locks', { resolveSource, scope });
-  const second = buildStageKnowledge(
+  // The knowledge slot stays knowledge.md (the review reads it); stage 1's doc composes on its own.
+  const first = buildStageKnowledge(
     view,
     'locks',
-    'knowledge.md',
-    regionDocSourceId('locks', 'knowledge.md'),
-    {
-      resolveSource,
-      scope,
-    },
+    'recognise.md',
+    regionDocSourceId('locks', 'recognise.md'),
+    { resolveSource, scope },
   );
-  await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm(), second.warm()]);
-  expect(slots.domainKnowledge.content).toContain('Mutual exclusion across instances.');
+  const second = slots.domainKnowledge;
+  await Promise.all([slots.instructions.warm(), second.warm(), first.warm()]);
+  expect(first.content).toContain('Mutual exclusion across instances.');
   expect(second.content).toContain('- createLock (CONCURRENCY.md)');
-  expect(second.id).toBe('role:locks:domainKnowledge:knowledge.md');
+  expect(first.id).toBe('role:locks:domainKnowledge:recognise.md');
 
   const answers = [
     '{"snippets":["locks: YES — a lock"],"layers":[],"confidence":0.8}',
@@ -207,7 +209,10 @@ test('each stage composes its own doc, journals its own versions, and recomposes
     instructions: slots.instructions,
     signals: new SignalBus(0),
     llm,
-    stages: [{ config: stages[0]! }, { config: stages[1]!, llm, cache: second }],
+    stages: [
+      { config: stages[0]!, cache: first },
+      { config: stages[1]!, llm, cache: second },
+    ],
   });
   const requests: Array<{
     stage?: number;
@@ -232,7 +237,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   );
   // One composition per doc, each recomposing to exactly the text that stage read.
   expect(versions[0]!.domainKnowledge).not.toBe(versions[1]!.domainKnowledge);
-  expect(auditor.recompose(versions[0]!.domainKnowledge)).toBe(slots.domainKnowledge.content);
+  expect(auditor.recompose(versions[0]!.domainKnowledge)).toBe(first.content);
   expect(auditor.recompose(versions[1]!.domainKnowledge)).toBe(second.content);
   expect(versions[0]!.instructions).toBe(versions[1]!.instructions);
   // Each stage's charter is its own version; the Warden charter keeps the auditor's own subject.
@@ -265,6 +270,8 @@ test('a doc source id names its region and doc; knowledge.md keeps the bare id',
 
 test('a stage list in settings is validated where it is written: refused in settings.json, reported from the repository', () => {
   const { path, config } = project();
+  // validateConfig checks the whole install: an API-token one, so the test's provider may run.
+  config.apiTokens = true;
   config.projects.P!.chorus = {
     wardens: { stages: [{ task: 'recognise', pointer: { any: false } }] },
   };
@@ -282,4 +289,16 @@ test('a stage list in settings is validated where it is written: refused in sett
     'chorus.wardens.stages[0].charter is not a setting',
   );
   expect(view.chorus.on).toBe(false);
+});
+
+test('with API-token decisions, a stage on its own model is named in the view: no host would serve it', () => {
+  const { regions, config } = project({ enabled: true, wardens: { stages: TWO_STAGES } });
+  recognise(regions, 'locks', '# Locks\n');
+  recognise(regions, 'queues', '# Queues\n');
+  config.apiTokens = true;
+  const view = resolveProjectView(config, 'P')!;
+  expect(view.chorus.on).toBe(false);
+  expect(view.chorus.reason).toStartWith(
+    'the chorus is not built: chorus.wardens.stages [1] name their own model or effort, which only subscription decisions serve (apiTokens is on)',
+  );
 });

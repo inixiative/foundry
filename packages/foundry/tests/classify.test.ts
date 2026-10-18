@@ -366,7 +366,9 @@ describe('the stage loop', () => {
       },
     );
     const result = await lib.advise('Add a lock.', undefined, { timeoutMs: 200 });
-    expect(two.calls[0]!.opts.timeout).toBe(100);
+    // The last stage gets what the run has left: 200 ms less stage 1's time and the margin.
+    expect(two.calls[0]!.opts.timeout).toBeGreaterThan(100);
+    expect(two.calls[0]!.opts.timeout).toBeLessThanOrEqual(190);
     // Stage 1 pointed: its pointer stands and reaches the thread.
     expect(result).toMatchObject({ snippets: [RANKED], pointer: { pointer: 'createLock' } });
     expect(result.classified).toMatchObject({

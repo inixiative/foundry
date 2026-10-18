@@ -26,6 +26,7 @@ import {
 } from '@inixiative/foundry-core';
 import {
   DEFAULT_STAGES,
+  KNOWLEDGE_DOC,
   type StageConfig,
   type StageEffort,
   validateStages,
@@ -378,13 +379,14 @@ export interface ThreadRuntimeDeps {
   /** Post-work learning deadline and knowledge size. */
   learning?: LearningConfig;
   /**
-   * The decision host for a classify stage that names its own model or effort (one host per pair);
-   * undefined when the stage takes the decision default (`llm`). A stage no host serves is refused.
+   * The decision host for a classify stage that names its own model or effort (one host per pair):
+   * `null` when that pair is the decision default (the Warden's own provider serves it), undefined
+   * when nothing serves it, and the stage is refused.
    */
   stageHost?: (
     model: string | undefined,
     effort: StageEffort | undefined,
-  ) => LLMProvider | undefined;
+  ) => LLMProvider | null | undefined;
   /** Persistence subscribers (file memory, postgres, muninn) attached to every thread's bus with that thread as owner. */
   signalSinks?: SignalSink[];
   /**
@@ -962,6 +964,20 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._onDisposed = onDisposed;
     this._clock = deps.learning?.clock ?? (() => performance.now());
     this.auxiliarySessionIds = [];
+    // A project chorus's region Wardens classify in its stages (chorus.wardens.stages); a Warden
+    // registered in code runs today's single stage. A stage no decision host serves is refused here,
+    // before the runtime attaches to anything.
+    const chorusStages = wardenStages(deps.config, thread.meta.projectId as string | undefined);
+    if (domains.some((dc) => dc.expert))
+      chorusStages.forEach((config, index) => {
+        if (
+          (config.model !== undefined || config.effort !== undefined) &&
+          deps.stageHost?.(config.model, config.effort) === undefined
+        )
+          throw Error(
+            `chorus.wardens.stages[${index}] names ${[config.model, config.effort].filter(Boolean).join(' at ')}, and no decision host serves it (stage models run on subscription decisions)`,
+          );
+      });
 
     // The shared factual thread record is not an expert's private interpretation.
     // Keep full learning signals on the original owned bus/journal for inspection;
@@ -1038,9 +1054,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       deps.learning?.hardTimeoutMs,
       60_000,
     );
-    // A project chorus's region Wardens classify in its stages (chorus.wardens.stages); a Warden
-    // registered in code runs today's single stage.
-    const chorusStages = wardenStages(deps.config, thread.meta.projectId as string | undefined);
     for (const dc of domains) {
       const role = dc.expert?.agentId;
       const slots = role
@@ -1056,34 +1069,40 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const stages = role ? chorusStages : DEFAULT_STAGES;
       const stageDocs: StageDoc[] = [];
       const bound: WardenStage[] = stages.map((config, index) => {
-        const host = deps.stageHost?.(config.model, config.effort);
-        if ((config.model !== undefined || config.effort !== undefined) && !host)
-          throw Error(
-            `${dc.domain} Warden: stage ${index + 1} of chorus.wardens.stages names ${[config.model, config.effort].filter(Boolean).join(' at ')}, and no decision host serves it (stage models run on subscription decisions)`,
-          );
+        const host =
+          config.model !== undefined || config.effort !== undefined
+            ? deps.stageHost?.(config.model, config.effort)
+            : undefined;
+        if (host) this._wardenProviders.add(host);
         const llmOpts = {
           ...(dc.adviseOpts ?? { maxTokens: 512, temperature: 0 }),
           ...(config.model ? { model: config.model } : {}),
+        };
+        // A stage reading another doc than the knowledge slot (knowledge.md) composes its own, the
+        // same way; the knowledge slot stays what guard defaults and the review read.
+        const own = () => {
+          const sourceId = regionDocSourceId(role!, config.doc);
+          const layer = buildStageKnowledge(deps.config, role!, config.doc, sourceId, {
+            resolveSource: deps.resolveSource,
+            scope: this._scope,
+          });
+          stageDocs.push({ layer, sourceId });
+          return layer;
         };
         if (index === 0)
           return {
             config,
             ...(host ? { llm: scopedProvider(host, { threadId: domainId, cwd }), llmOpts } : {}),
+            ...(role && config.doc !== KNOWLEDGE_DOC ? { cache: own() } : {}),
           };
         // Each later stage keeps its own primed session (its own charter and doc), keyed by stage.
         const stageId = auxiliarySessionId(thread.id, `domain:${dc.domain}:stage:${index}`);
         this.auxiliarySessionIds.push(stageId);
-        const sourceId = regionDocSourceId(role!, config.doc);
-        const layer = buildStageKnowledge(deps.config, role!, config.doc, sourceId, {
-          resolveSource: deps.resolveSource,
-          scope: this._scope,
-        });
-        stageDocs.push({ layer, sourceId });
         return {
           config,
           llm: scopedProvider(host ?? dc.adviseProvider ?? deps.llm, { threadId: stageId, cwd }),
           llmOpts,
-          cache: layer,
+          cache: config.doc === KNOWLEDGE_DOC ? cache : own(),
         };
       });
       if (role && slots) this._roleLayers.set(dc.domain, { role, stages, stageDocs, ...slots });
@@ -1357,6 +1376,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                   request: c.request,
                   threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
                   cacheHash: c.provenance.cacheHash,
+                  ...(c.classified ? { classified: c.classified } : {}),
+                  ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
                 })),
               // A Warden the pre-filter ruled out is one row with its score: auditable later.
               ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
@@ -2100,6 +2121,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               request: c.request,
               threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
               cacheHash: c.provenance.cacheHash,
+              ...(c.classified ? { classified: c.classified } : {}),
+              ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
             })),
           ...(report.prefilter ? { prefilter: report.prefilter } : {}),
           prefiltered: report.contributions

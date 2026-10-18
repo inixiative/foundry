@@ -47,9 +47,9 @@ export function markEvalRun(state: string): void {
 export interface EvalWarden {
   readonly domain: string;
   readonly instructions: string;
-  /** What its first stage reads (live: the role's composed knowledge of that stage's doc). */
+  /** Its knowledge slot: the region's knowledge.md as the role composes it. */
   readonly domainKnowledge: string;
-  /** What later stages read, by doc name, composed the same way. */
+  /** Every other doc a stage reads, by name, composed the same way. */
   readonly docs?: Readonly<Record<string, string>>;
   /** A group recogniser: the region ids it holds. Its first stage's yeses fan out to those regions. */
   readonly members?: readonly string[];
@@ -223,6 +223,16 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
   } else if (result.notStarted) return { noComment: false, error: 'not-admitted', ...staged };
   else if (result.error || result.skipped)
     return { noComment: false, error: result.error ?? result.skipped!, ...staged };
+  // A run that fell back is not the configuration's answer: its failed stage's error, counted apart
+  // (and re-asked when the transport lost it), never a yes or a silence.
+  if (classified?.fallback) {
+    const failed = classified.stages.at(-1);
+    return {
+      noComment: false,
+      error: `stage ${(failed?.stage ?? 0) + 1} ${classified.fallback}: ${failed?.error ?? 'no answer'}`,
+      ...staged,
+    };
+  }
   if (classified?.final)
     return classified.outcome === 'yes' && classified.final.remarks.length
       ? { noComment: false, text: classified.final.remarks.join('\n'), ...staged }
@@ -387,12 +397,10 @@ function librarian(
       (config.doc === KNOWLEDGE_DOC ? warden.domainKnowledge : undefined);
     return {
       config,
-      ...(index
-        ? {
-            llm: provider(index),
-            llmOpts: llmOpts(index),
-            cache: layer(`eval:${warden.domain}:${config.doc}`, doc ?? ''),
-          }
+      ...(index ? { llm: provider(index), llmOpts: llmOpts(index) } : {}),
+      // Live composes a stage's own doc only when it is not the knowledge slot.
+      ...(index || config.doc !== KNOWLEDGE_DOC
+        ? { cache: layer(`eval:${warden.domain}:${config.doc}`, doc ?? '') }
         : {}),
       ...(charter !== undefined ? { charter } : {}),
     };

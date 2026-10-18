@@ -545,13 +545,14 @@ regions never run (Heralds are not built) and the view says so.
   layers and regions with sizes and keys; the viewer's project settings have a
   read-only **Chorus** page; the daemon logs each project's chorus at startup.
   A malformed region is an error that names it.
-- **Knowledge.** The first stage's doc (`knowledge.md` by default) is the
-  Warden's `domainKnowledge` slot, whole, through a generated `markdown` source
-  (`region:<id>`; another doc is `region:<id>:<doc>`), so the audit log versions
-  it as `source-content:region:<id>@project:<project>` and every call records
-  the exact text. A later stage's doc is composed the same way, overlays
-  included (`buildStageKnowledge`, layer `role:<id>:domainKnowledge:<doc>`), and
-  journals its own versions with that stage's request (`stageRequests`). The ladder then applies as for any role:
+- **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
+  slot, whole, through a generated `markdown` source (`region:<id>`), so the
+  audit log versions it as `source-content:region:<id>@project:<project>` and
+  every call records the exact text; the post-work review reads it. A stage
+  reading another doc (`region:<id>:<doc>`, a first-stage `recognise.md`
+  included) composes it the same way, overlays included (`buildStageKnowledge`,
+  layer `role:<id>:domainKnowledge:<doc>`), and a later stage journals its own
+  versions with its request (`stageRequests`). The ladder then applies as for any role:
   `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
 - **Warm-cache key.** Each region has a key, the content hash of its composed
@@ -583,9 +584,10 @@ regions never run (Heralds are not built) and the view says so.
   run (`classified`: outcome, whether it was delivered, any fallback, every
   stage's trace), which the turn's flow graph shows on the Warden's node.
 - **Pool.** The primed decision pool is sized for the largest chorus any
-  project runs (`largestRoster`) and its stage count (`largestStageCount`): a
-  key per stage plus a review key per Warden, so a 53-region one-stage project
-  primes 2 × 53 + 8 keys. A later stage's session is
+  project runs (`largestRoster`) and the stages each host serves
+  (`largestStageCount`): the decision host keeps a key per stage on the decision
+  model plus a review key per Warden, so a 53-region one-stage project primes
+  2 × 53 + 8 keys, and a stage host a key per stage it serves. A later stage's session is
   `<thread>:aux:domain:<region>:stage:<n>` and never runs in-session.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
   scores a one-layer chorus from that directory, composed exactly as live

@@ -951,30 +951,46 @@ export function resolveProjectView(
     const heralds = heraldRegions.length
       ? `; ${heraldRegions.length} Herald region${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
       : '';
-    chorus = missingDocs.length
+    // A stage on its own model or effort needs its own decision host, which only subscription
+    // decisions start: with API-token decisions it is named here, not found when a thread starts.
+    const unserved =
+      config.apiTokens === true
+        ? roles.warden.stages.flatMap((stage, i) =>
+            stage.model !== undefined || stage.effort !== undefined ? [i] : [],
+          )
+        : [];
+    chorus = unserved.length
       ? {
           on: false,
           ...asked,
           roles,
           ...composed,
-          missingDocs,
-          reason: `the chorus is not built: ${missingDocs.map((m) => `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+          reason: `the chorus is not built: chorus.wardens.stages ${unserved.map((i) => `[${i}]`).join(', ')} name their own model or effort, which only subscription decisions serve (apiTokens is on)${unread}`,
         }
-      : wardenRegions.length
+      : missingDocs.length
         ? {
-            on: true,
-            ...asked,
-            roles,
-            ...composed,
-            ...(heralds ? { reason: heralds.slice(2) } : {}),
-          }
-        : {
             on: false,
             ...asked,
             roles,
             ...composed,
-            reason: `${heraldRegions.length ? `no Warden regions at ${dirs}${heralds}` : `no regions at ${dirs} (no <id>/region.json)`}; this project has no chorus${unread}`,
-          };
+            missingDocs,
+            reason: `the chorus is not built: ${missingDocs.map((m) => `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+          }
+        : wardenRegions.length
+          ? {
+              on: true,
+              ...asked,
+              roles,
+              ...composed,
+              ...(heralds ? { reason: heralds.slice(2) } : {}),
+            }
+          : {
+              on: false,
+              ...asked,
+              roles,
+              ...composed,
+              reason: `${heraldRegions.length ? `no Warden regions at ${dirs}${heralds}` : `no regions at ${dirs} (no <id>/region.json)`}; this project has no chorus${unread}`,
+            };
     generated = chorus.on ? regionWardens(wardenRegions, roles.warden.stages) : [];
   } else {
     const available = configuredLayers.reduce((n, l) => n + countRegions(l.regionsDir), 0);

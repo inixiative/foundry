@@ -35,7 +35,7 @@ export function parseRecognition(
     const m = LINE.exec(line);
     const ids = m
       ? m[1]!
-          .split(/\s*(?:,|\band\b|\/)\s*/i)
+          .split(/\s*,\s*|\s+(?:and|\/)\s+/i)
           .map((s) => s.trim().replace(/^`|`$/g, ''))
           .filter((s) => ID.test(s))
       : [];
