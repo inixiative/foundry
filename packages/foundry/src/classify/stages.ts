@@ -65,8 +65,11 @@ const STAGE_KEYS = [
   'escalate',
   'deadline',
 ] as const;
-/** Eval-only: a stage of a run config may carry candidate charter text, inline or as a file (`--classify`). */
-export const EVAL_STAGE_KEYS = ['charter', 'charterFile'] as const;
+/**
+ * Eval-only: a stage of a run config may set its charter's sections (`--classify`, charters/sections.ts).
+ * Settings never do: a live project's charters are Foundry's.
+ */
+export const EVAL_STAGE_KEYS = ['sections'] as const;
 const DOC = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.md$/;
 
 const oneOf = <T extends string>(where: string, value: unknown, allowed: readonly T[]): T => {
@@ -78,7 +81,7 @@ const oneOf = <T extends string>(where: string, value: unknown, allowed: readonl
 /**
  * Read a stage list (settings or a run config), filling each stage's omitted fields from the default
  * and checking that the stages fit together. `extraKeys` admits the eval-only keys a run config may
- * carry; settings pass none, so a charter in settings is refused by name. Errors name the field.
+ * carry; settings pass none, so charter sections in settings are refused by name. Errors name the field.
  */
 export function validateStages(
   where: string,
@@ -95,9 +98,9 @@ export function validateStages(
       throw Error(`${at} must be an object`);
     const s = raw as Record<string, unknown>;
     for (const key of Object.keys(s)) {
-      if ((key === 'charter' || key === 'charterFile') && !extraKeys.includes(key))
+      if (['charter', 'charterFile', 'sections'].includes(key) && !extraKeys.includes(key))
         throw Error(
-          `${at}.${key} is not a setting: charters are fixed per task and role, owned by Foundry (an eval run config may carry one)`,
+          `${at}.${key} is not a setting: charters are fixed per task and role, owned by Foundry (an eval run config may set a stage's sections)`,
         );
       if (!(STAGE_KEYS as readonly string[]).includes(key) && !extraKeys.includes(key))
         throw Error(`${at}.${key} is not a stage setting (${STAGE_KEYS.join(', ')})`);

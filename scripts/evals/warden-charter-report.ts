@@ -141,6 +141,16 @@ interface ScoreFile {
       outcomes: string;
       reason: string;
       charter: string | null;
+      /** The assembled charter's version, changed or not, and where each section came from. */
+      charterVersion?: string;
+      sections?: { name: string; source: string; place?: string; path?: string; sha256: string }[];
+      regionInstructions?: {
+        name: string;
+        source: string;
+        place?: string;
+        path?: string;
+        sha256: string;
+      };
       asked: number;
       malformed: number;
       timedOut: number;
@@ -148,6 +158,9 @@ interface ScoreFile {
     }[];
     members: string | null;
     fallbacks: number;
+    debug?: boolean | { cells: string };
+    /** Per region and stage, sha256 of the full system message the run sent. */
+    systemPrompts?: Record<string, Record<string, string>>;
   };
 }
 interface QuotaRow {
@@ -800,6 +813,8 @@ function provenance(
     effort?: string;
     charter?: string;
     knowledge?: string;
+    sections?: unknown;
+    regionInstructions?: unknown;
   },
 ) {
   const s = r.score ?? {};
@@ -823,6 +838,9 @@ function provenance(
     charter: stageModel?.charter ?? charterVersion ?? null,
     charterLabel: s.charter ?? null,
     knowledgeFile: stageModel?.knowledge ?? (s.regions ? 'knowledge.md' : null),
+    sections: stageModel?.sections ?? null,
+    regionInstructions: stageModel?.regionInstructions ?? null,
+    systemPrompts: s.classify?.systemPrompts ?? null,
     regions: regions ?? null,
     regionsDir: s.regions ?? null,
     knowledge: s.knowledge ?? null,
@@ -867,6 +885,8 @@ function recogniseStage(
             effort: pl.effort,
             ...(pl.charter ? { charter: pl.charter } : {}),
             knowledge: pl.doc,
+            ...(pl.sections ? { sections: pl.sections } : {}),
+            ...(pl.regionInstructions ? { regionInstructions: pl.regionInstructions } : {}),
           }
         : undefined,
     ),
@@ -910,6 +930,8 @@ function confirmStage(
             effort: pl.effort,
             ...(pl.charter ? { charter: pl.charter } : {}),
             knowledge: pl.doc,
+            ...(pl.sections ? { sections: pl.sections } : {}),
+            ...(pl.regionInstructions ? { regionInstructions: pl.regionInstructions } : {}),
           }
         : undefined,
     ),

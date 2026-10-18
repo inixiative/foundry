@@ -81,6 +81,11 @@ export interface ClassifyStageTrace {
   /** The region doc it read (e.g. `knowledge.md`) and the content hash of what it read. */
   readonly doc: string;
   readonly docHash?: string;
+  /**
+   * sha256 of the full system message the stage sent (its charter above the Warden's instructions),
+   * so runs that change any prompt section, the region line included, are told apart per call.
+   */
+  readonly systemHash?: string;
   /** The model and effort that answered, as the provider reported them. */
   readonly model?: string;
   readonly effort?: string;
@@ -123,6 +128,8 @@ export interface WardenProbeAnswer {
   readonly elapsedMs?: number;
   /** What the call used, as the provider reported it (cache reads show a warm, primed prefix). */
   readonly tokens?: Omit<TokenCounts, 'providerUsage'>;
+  /** An unstaged call: sha256 of its full system message (a staged row has it on each stage's trace). */
+  readonly systemHash?: string;
   /** Transport failures of earlier attempts at this call, re-asked before this answer. */
   readonly retried?: readonly string[];
   readonly judged?: WardenJudgement;

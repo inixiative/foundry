@@ -19,6 +19,14 @@ export {
 } from './charters/point.warden';
 export { RECOGNISE_CHARTER } from './charters/recognise.warden';
 export {
+  assemblePrompt,
+  defaultSection,
+  PROMPT_SECTIONS,
+  type SectionSource,
+  stageSections,
+  withRegionInstructions,
+} from './charters/sections';
+export {
   ALL_OF_CAVEAT,
   CHOOSE_ONE_CAVEAT,
   MAX_POINTER_NAMES,
@@ -58,6 +66,7 @@ export {
   classifiedSummary,
   runStages,
   type StageCall,
+  type StageDebug,
   type StageRun,
   stageRuns,
 } from './run';

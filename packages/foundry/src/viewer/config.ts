@@ -928,10 +928,10 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
     );
   // Charters are fixed per task and role, owned by Foundry (Aron, 2026-10-18: "keep it somewhat fixed
   // for now"); a project never sets one.
-  for (const key of ['charter', 'charters'])
+  for (const key of ['charter', 'charters', 'sections'])
     if (key in c)
       throw Error(
-        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may carry candidate text (scripts/evals/warden-charter.ts --classify)`,
+        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may set their sections (scripts/evals/warden-charter.ts --classify)`,
       );
   for (const key of Object.keys(c))
     if (!CHORUS_KEYS.includes(key))

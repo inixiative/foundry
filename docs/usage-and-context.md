@@ -504,8 +504,8 @@ regions never run (Heralds are not built) and the view says so.
   being built, and `view.chorus.missingDocs` and its `reason` name the region,
   the doc and the stage (checked on the composed chorus, so a later layer's
   region brings its own docs). Charters stay Foundry's, per task and role:
-  `charter` in a stage or in `chorus` is refused by name (an eval run config
-  may carry candidate text). A stage naming a model or effort runs on its own
+  `charter` or `sections` in a stage, or `charter` in `chorus`, is refused by
+  name (an eval run config may set a stage's sections). A stage naming a model or effort runs on its own
   decision host (one per pair, on the decision login); with API-token decisions
   such a stage is refused. `chorus.heralds` takes the same shape and runs
   nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
@@ -592,9 +592,35 @@ regions never run (Heralds are not built) and the view says so.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
   scores a one-layer chorus from that directory, composed exactly as live
   (project view, role layers, charter), without touching the daemon's settings;
-  `--classify <run.json>` runs it under a stage configuration (the same stages
-  plus eval-only candidate charter text, and `members` for a grouped
-  recogniser).
+  `--classify <run.json>` runs it under a stage configuration (the same stages,
+  `members` for a grouped recogniser, and two eval-only parameters below).
+- **Sections (eval only).** The prompt language a stage sends is named sections,
+  each a committed file: the point charter (`classify/charters/point/`:
+  `opening`, `build-is-reason`, `job`, `pointing`, `all-of`, `choose-one`,
+  `class`, `sourcing-bar`, `no-comment-default`, `moment`,
+  `data-not-instructions`), the recognise charter (`recognise/`: `opening`,
+  `build-is-reason`, `job`, `near-is-not-in`, `no-comment-default`, `moment`,
+  `data-not-instructions`) and the region Warden's instruction line
+  (`region/region-instructions.md`). A run's stage sets any of them:
+  `"sections": { "<name>": false | true | { "text": … } | { "file": … } }`,
+  with `"place": "before" | "after"` to inject beside the default instead of
+  replacing it; files resolve against run.json, and an unknown name is refused.
+  Choose-one is switched off only by `pointer: { any: false }`, so the parser
+  refuses what the charter no longer offers; switching `all-of` off leaves the
+  parser still reading it. Why: Aron (2026-10-18) wants every flag of a run to
+  carry a place for raw language, defaulting to the file; settings stay fixed.
+  score.json records each stage's charter version, every section's source
+  (default, off, text or file, with sha256) and, per region and stage, the
+  sha256 of the full system message (`systemPrompts`, also `systemHash` on each
+  staged call's trace).
+- **Debug (eval only).** `"debug": true` (or `{ "cells": "<file>" }` in the
+  `--cells` shape, `{ "<probe id>": ["<domain>", …] }`, for those cells only:
+  unlike `--cells`, a probe the file leaves out gets no debug readings) gives every stage of every call two
+  more readings on the same session and prefix: `inline`, the same prompt with
+  its protocol asking for the decision and its why in one answer, and `after`,
+  the real answer quoted back with "why did you answer that?". Rows go to
+  `debug.jsonl`; answers.jsonl is unchanged. A stage that already gives that
+  reading (`reason: inline` / `followup`) reuses it.
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to

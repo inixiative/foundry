@@ -1,0 +1,1 @@
+- **Class**, when you can only name the kind of thing: `Look over here: <the class, e.g. the primitives listed under <concept>> (<where it is written>)`.

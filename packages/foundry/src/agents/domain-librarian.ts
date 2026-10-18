@@ -14,6 +14,7 @@
 // architecture, memory) subclass or instantiate with domain-specific config.
 // ---------------------------------------------------------------------------
 
+import { createHash } from 'node:crypto';
 import {
   type CompletionOpts,
   type CompositionSnapshot,
@@ -29,6 +30,7 @@ import {
   type SourceSegment,
   segmentsText,
   servedModel,
+  type TokenCounts,
 } from '@inixiative/foundry-core';
 import {
   type Carried,
@@ -45,10 +47,12 @@ import {
   STRICT_RULE,
   type StageCall,
   type StageConfig,
+  type StageDebug,
   type StageRun,
   stageRuns,
   WARDEN_CHARTER,
   type WardenPointer,
+  withRegionInstructions,
 } from '../classify';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { AdviceTrigger } from './warden-triggers';
@@ -873,6 +877,8 @@ export interface DomainLibrarianConfig {
   stages?: readonly WardenStage[];
   /** The region ids a recogniser stage may name: a group's members. Default: its own domain. */
   holds?: readonly string[];
+  /** Eval only (`"debug": true`): each stage's two debug readings (classify `runStages`'s `debug`). */
+  debug?: (reading: StageDebug) => void;
 }
 
 /** One classification stage of a Warden, bound to what answers it and what it reads. */
@@ -885,6 +891,8 @@ export interface WardenStage {
   readonly cache?: ContextLayer;
   /** Candidate charter text under evaluation; the stage's fixed charter (task, role, pointer) when omitted. */
   readonly charter?: string;
+  /** Eval only: the region Warden's instruction line for this stage's calls (`region-instructions`; empty leaves it out). */
+  readonly regionInstructions?: string;
 }
 
 /** A stage with its defaults filled: what each call of it uses. */
@@ -894,6 +902,17 @@ interface BoundStage {
   readonly llmOpts: CompletionOpts;
   readonly cache: ContextLayer;
   readonly charter?: string;
+  readonly regionInstructions?: string;
+}
+
+/** A follow-up or re-asked answer: its text and its token counts, without the provider's raw usage. */
+function countedAnswer(result: { content: string; tokens?: TokenCounts }): {
+  content: string;
+  tokens?: Omit<TokenCounts, 'providerUsage'>;
+} {
+  if (!result.tokens) return { content: result.content };
+  const { providerUsage: _usage, ...tokens } = result.tokens;
+  return { content: result.content, tokens };
 }
 
 // ---------------------------------------------------------------------------
@@ -924,6 +943,7 @@ export class DomainLibrarian {
   private _threadKnowledge: ThreadKnowledge;
   private _stages: readonly BoundStage[];
   private _holds: readonly string[];
+  private _debug: ((reading: StageDebug) => void) | undefined;
   /** The point charter its review is chartered with: today's Warden charter. */
   private _reviewCharter: string;
 
@@ -957,9 +977,13 @@ export class DomainLibrarian {
         llmOpts: stage.llmOpts ?? this._llmOpts,
         cache: stage.cache ?? config.cache,
         ...(stage.charter !== undefined ? { charter: stage.charter } : {}),
+        ...(stage.regionInstructions !== undefined
+          ? { regionInstructions: stage.regionInstructions }
+          : {}),
       };
     });
     this._holds = config.holds ?? [config.domain];
+    this._debug = config.debug;
     const pointing = [...this._stages].reverse().find((s) => s.config.task === 'point');
     this._reviewCharter =
       pointing?.charter ?? charterFor('point', 'warden', pointing?.config.pointer).text;
@@ -1451,7 +1475,10 @@ export class DomainLibrarian {
       for (const system of systems)
         stage.llm.prestart(
           [
-            { role: 'system', content: chartered(system, runs[index]!.charter.text) },
+            {
+              role: 'system',
+              content: chartered(this._stageSystem(stage, system), runs[index]!.charter.text),
+            },
             { role: 'user', content: `${stablePrefix}${threadPrefix}` },
           ],
           { ...stage.llmOpts, stablePrefix, threadPrefix },
@@ -1464,8 +1491,16 @@ export class DomainLibrarian {
     return (
       this._stages.length === 1 &&
       this._stages[0]!.charter === undefined &&
+      this._stages[0]!.regionInstructions === undefined &&
       isDefaultStages([this._stages[0]!.config])
     );
+  }
+
+  /** A stage's instructions: the Warden's, with the region line its run sets (eval only). */
+  private _stageSystem(stage: BoundStage, system: string): string {
+    return stage.regionInstructions === undefined
+      ? system
+      : withRegionInstructions(system, stage.regionInstructions);
   }
 
   /**
@@ -1488,19 +1523,20 @@ export class DomainLibrarian {
   ): Promise<StageCall> {
     const stage = this._stages[run.index]!;
     const first = run.index === 0;
+    const system = this._stageSystem(stage, frame.system);
     // The caller's frozen knowledge is the knowledge slot's: it applies to a stage reading that slot.
     const frozen = first && stage.cache === this._cache;
     const cacheContent = (frozen ? frame.cache : undefined) ?? stage.cache.content;
     const docHash = computeHash(cacheContent);
     if (!cacheContent) return { error: `cold-cache: ${run.stage.doc}`, docHash };
     if (!first) {
-      const over = this.budgetError(frame.system, cacheContent, stage.cache);
+      const over = this.budgetError(system, cacheContent, stage.cache);
       if (over) return { error: over, docHash };
     }
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const threadPrefix = threadSection(frame.understanding);
     const messages: LLMMessage[] = [
-      { role: 'system', content: chartered(frame.system, run.charter.text) },
+      { role: 'system', content: chartered(system, run.charter.text) },
       {
         role: 'user',
         content: [
@@ -1566,18 +1602,35 @@ export class DomainLibrarian {
       return {
         content: result.content,
         docHash,
+        systemHash: createHash('sha256').update(messages[0]!.content).digest('hex'),
         ...(served ? { served } : {}),
         ...(tokens ? { tokens } : {}),
-        followUp: async (question) => {
-          const followed = await stage.llm.complete(
-            [
-              ...messages,
-              { role: 'assistant', content: result.content },
-              { role: 'user', content: question },
-            ],
-            opts,
+        followUp: async (question) =>
+          countedAnswer(
+            await stage.llm.complete(
+              [
+                ...messages,
+                { role: 'assistant', content: result.content },
+                { role: 'user', content: question },
+              ],
+              opts,
+            ),
+          ),
+        // Debug's inline reading: the same messages, the last one's protocol swapped, nothing journalled.
+        reask: async (protocol) => {
+          const last = messages.at(-1)!;
+          const tail = `\n${run.protocol}`;
+          if (!last.content.endsWith(tail))
+            throw Error('the stage message does not end with its protocol');
+          return countedAnswer(
+            await stage.llm.complete(
+              [
+                ...messages.slice(0, -1),
+                { ...last, content: `${last.content.slice(0, -tail.length)}\n${protocol}` },
+              ],
+              opts,
+            ),
           );
-          return { content: followed.content };
         },
       };
     } catch (err) {
@@ -1611,6 +1664,7 @@ export class DomainLibrarian {
       charters: this._stages.map((s) => s.charter),
       envelope: 'advice',
       trigger,
+      ...(this._debug ? { debug: this._debug } : {}),
       ...(opts?.timeoutMs !== undefined ? { deadlineMs: opts.timeoutMs } : {}),
       holds: this._holds,
       ...(opts?.from ? { from: opts.from } : {}),
@@ -1745,6 +1799,7 @@ export class DomainLibrarian {
       charters: this._stages.map((s) => s.charter),
       envelope: 'guard',
       trigger: 'agent-action',
+      ...(this._debug ? { debug: this._debug } : {}),
       holds: this._holds,
       ...(opts?.from ? { from: opts.from } : {}),
       ask: async (stage) => {

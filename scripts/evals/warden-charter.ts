@@ -52,20 +52,26 @@
  * --experiment <design.md>: a run of more than three moments, or of more than one stage, refuses to start without
  * a reviewed pre-registration (foundry-core `feedback/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
  * the design's path and hash land in <out>/experiment.json.
- * --classify <run.json> runs the chorus under a classify configuration (packages/foundry/src/classify):
- * `{ "stages": [ { model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline?,
- * charter? | charterFile? } ], "members"?: "<regions dir>" }`, the same stages a project's
- * `chorus.wardens.stages` takes, plus eval-only candidate charter text per stage (inline, or a file
- * relative to run.json). Every stage runs through the live call path (DomainLibrarian), each on its
+ * --classify <run.json> runs the chorus under a classify configuration (packages/foundry/src/classify,
+ * read by feedback/classify-run.ts): `{ "stages": [ { model?, effort?, doc?, outcomes?, reason?,
+ * task?, pointer?, escalate?, deadline?, sections? } ], "members"?: "<regions dir>", "debug"?: true |
+ * { "cells": "<file>" } }`, the same stages a project's `chorus.wardens.stages` takes. Eval only:
+ * `sections` sets the stage's prompt language by name (its charter's sections and
+ * `region-instructions`): `false`, `true`, `{ "text" }` or `{ "file" }` (relative to run.json), with
+ * `"place": "before" | "after"` to inject beside the default; `debug` gives every call (or the cells
+ * named) two more readings, the why inline and the why after its real answer, into debug.jsonl.
+ * Every stage runs through the live call path (DomainLibrarian), each on its
  * own host (one per model and effort; a stage without either takes --model / --effort), each region
  * reading its stage's doc as a live thread composes it; a region without that doc stops the run
  * before any call, named. `members` makes --regions a grouped chorus: each region.json there names
  * its `members`, its first stage asks the group once, and every member it names goes on as that
  * region (`<members>/<id>/`) from the next stage, carrying its line; ids outside the group are
  * counted, never followed. answers.jsonl holds one row per region with its stage trace (`stages`,
- * `outcome`); score.json's `classify` names what each stage ran. A run of more than three moments,
+ * `outcome`, each call's `systemHash`); score.json's `classify` names what each stage ran: charter
+ * version, every section's source and sha256, and each region's full system-prompt hashes. A run of more than three moments,
  * or of more than one stage, needs --experiment. Live defaults are untouched.
  */
+import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -94,20 +100,23 @@ import {
 } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
 import {
+  chartered,
+  charterFor,
   charterVersion,
   DEFAULT_STAGES,
-  EVAL_STAGE_KEYS,
   KNOWLEDGE_DOC,
   type StageConfig,
-  validateStages,
   WARDEN_CHARTER_VERSION,
+  withRegionInstructions,
 } from '../../packages/foundry/src/classify';
 import {
   type EvalWarden,
   judge,
   markEvalRun,
   runCharterEval,
+  type WardenDebug,
 } from '../../packages/foundry/src/feedback/charter-eval';
+import { readClassifyRun } from '../../packages/foundry/src/feedback/classify-run';
 import { roleComposition } from '../../packages/foundry/src/prompts/instruction-settings';
 import {
   claudeUsageWindows,
@@ -170,48 +179,14 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'default'] as const;
 const wardenEffort = values.effort as (typeof EFFORTS)[number] | undefined;
 if (wardenEffort !== undefined && !EFFORTS.includes(wardenEffort))
   throw Error(`--effort must be one of ${EFFORTS.join(', ')}`);
-/** --classify: the run's stages, each with its own candidate charter when the config gives one. */
-const runConfigPath = values.classify ? resolve(values.classify) : undefined;
-const runConfigText = runConfigPath ? readFileSync(runConfigPath, 'utf8') : undefined;
-const runConfig = runConfigText
-  ? (JSON.parse(runConfigText) as { stages?: unknown; members?: unknown; [key: string]: unknown })
-  : undefined;
-if (runConfig)
-  for (const key of Object.keys(runConfig))
-    if (key !== 'stages' && key !== 'members' && key !== '$comment')
-      throw Error(`--classify: ${key} is not a run setting (stages, members)`);
-const stages: readonly StageConfig[] = runConfig
-  ? validateStages('--classify stages', runConfig.stages, EVAL_STAGE_KEYS)
-  : DEFAULT_STAGES;
-/** The stages as a project's settings write them: the eval-only charter keys left out. */
-const settingsStages = runConfig
-  ? (runConfig.stages as Record<string, unknown>[]).map(
-      ({ charter: _c, charterFile: _f, ...stage }) => stage,
-    )
-  : undefined;
-const charters: (string | undefined)[] = runConfig
-  ? (runConfig.stages as Record<string, unknown>[]).map((stage, i) => {
-      if (stage.charter !== undefined && stage.charterFile !== undefined)
-        throw Error(`--classify stages[${i}] names both charter and charterFile`);
-      if (stage.charterFile !== undefined) {
-        if (typeof stage.charterFile !== 'string' || !stage.charterFile)
-          throw Error(`--classify stages[${i}].charterFile must be a path`);
-        return readFileSync(resolve(dirname(runConfigPath!), stage.charterFile), 'utf8').trim();
-      }
-      if (
-        stage.charter !== undefined &&
-        (typeof stage.charter !== 'string' || !stage.charter.trim())
-      )
-        throw Error(`--classify stages[${i}].charter must be the charter's text`);
-      return stage.charter as string | undefined;
-    })
-  : [];
-const membersDir =
-  typeof runConfig?.members === 'string' && runConfigPath
-    ? resolve(dirname(runConfigPath), runConfig.members)
-    : undefined;
-if (runConfig?.members !== undefined && !membersDir)
-  throw Error('--classify members must be a regions directory');
+/** --classify: the run's stages, each stage's charter as its sections set it, and debug. */
+const runConfig = values.classify ? readClassifyRun(values.classify) : undefined;
+const stages: readonly StageConfig[] = runConfig?.stages ?? DEFAULT_STAGES;
+/** The stages as a project's settings write them: the eval-only `sections` left out. */
+const settingsStages = runConfig?.settingsStages;
+const charters: readonly (string | undefined)[] = runConfig?.charters ?? [];
+const debug = runConfig?.debug ?? false;
+const membersDir = runConfig?.members;
 if ((stages.length > 1 || membersDir) && !values.regions)
   throw Error(
     '--classify with more than one stage, or with members, runs a regions chorus: pass --regions',
@@ -233,8 +208,8 @@ for (const t of triggers)
   if (t !== 'user-message' && t !== 'agent-action') throw Error(`unknown trigger ${t}`);
 if (values.regions && projects?.length !== 1)
   throw Error('--regions needs exactly one --projects entry: the project whose regions these are');
-const label = runConfigText
-  ? `charter-classify-${computeHash(runConfigText).slice(0, 12)}`
+const label = runConfig
+  ? `charter-classify-${runConfig.hash}`
   : values.regions
     ? 'charter-regions'
     : 'charter-shipped';
@@ -445,14 +420,61 @@ if (membersDir) {
   }
   if (!memberWardens.size) throw Error(`--classify members ${membersDir} holds no regions`);
 }
+// A stage that sets the region line needs every Warden's instructions to open with it: checked here,
+// before any call, so a mismatch stops the run instead of failing every call.
+for (const [i, line] of (runConfig?.regionInstructions ?? []).entries()) {
+  if (line === undefined) continue;
+  for (const w of [...[...composed.values()].flat(), ...memberWardens.values()])
+    try {
+      withRegionInstructions(w.instructions, line);
+    } catch (err) {
+      throw Error(
+        `--classify stages[${i}].sections.region-instructions: ${w.domain}: ${(err as Error).message}`,
+      );
+    }
+}
 const describeStages = stages
-  .map(
-    (s, i) =>
-      `stage ${i + 1} ${modelOf(s)} ${effortOf(s) ?? 'low'} ${s.task} ${s.doc} ${s.outcomes} reason:${s.reason}${charters[i] ? ` charter ${charterVersion(charters[i]!)}` : ''}`,
-  )
+  .map((s, i) => {
+    const charter = runConfig?.charterSources[i];
+    const line = runConfig?.regionInstructionSources[i];
+    const changed = [...(charter?.sections ?? []), ...(line ? [line] : [])].filter(
+      (c) => c.source !== 'default',
+    );
+    return `stage ${i + 1} ${modelOf(s)} ${effortOf(s) ?? 'low'} ${s.task} ${s.doc} ${s.outcomes} reason:${s.reason} charter ${charter?.version ?? charterVersion(charterFor(s.task, 'warden', s.pointer).text)}${changed.length ? ` (sections ${changed.map((c) => `${c.name}:${c.source}${c.place ? `-${c.place}` : ''}`).join(', ')})` : ''}`;
+  })
   .join('; ');
 if (runConfig)
-  console.error(`classify: ${describeStages}${membersDir ? `; members ${membersDir}` : ''}`);
+  console.error(
+    `classify: ${describeStages}${membersDir ? `; members ${membersDir}` : ''}${debug ? `; debug: two more readings per call${debug === true ? '' : ` on the cells in ${debug.file}`}` : ''}`,
+  );
+
+/**
+ * Per Warden and stage, sha256 of the full system message the run sends, as DomainLibrarian builds
+ * it (the stage's charter above the Warden's instructions, its region line set): the same hash each
+ * staged call's trace carries (`systemHash`). A grouped chorus's groups send stage 1, members the rest.
+ */
+const systemPrompts = () => {
+  const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+  const of = (w: EvalWarden, indices: readonly number[]) =>
+    Object.fromEntries(
+      indices.map((i) => {
+        const s = stages[i]!;
+        const line = runConfig?.regionInstructions[i];
+        const system =
+          line === undefined ? w.instructions : withRegionInstructions(w.instructions, line);
+        return [
+          i,
+          hash(chartered(system, charters[i] ?? charterFor(s.task, 'warden', s.pointer).text)),
+        ];
+      }),
+    );
+  const all = stages.map((_s, i) => i);
+  const prompts: Record<string, Record<number, string>> = {};
+  for (const w of [...composed.values()].flat())
+    prompts[w.domain] ??= of(w, membersDir ? [0] : all);
+  for (const w of memberWardens.values()) prompts[w.domain] ??= of(w, all.slice(1));
+  return prompts;
+};
 
 const scoreByProject = (answers: readonly WardenProbeAnswer[], turns: readonly WardenProbeTurn[]) =>
   Object.fromEntries(
@@ -622,6 +644,11 @@ const countTokens = (answer: WardenProbeAnswer) => {
   }
   if (answer.tokens) weigh(answer.tokens, wardenModel);
 };
+/** A debug row's two readings at the stage's model: the live call is already counted with its answer. */
+const countDebugTokens = (row: WardenDebug) => {
+  const model = modelOf(stages[row.stage] ?? stages[0]!);
+  for (const reading of [row.inline, row.after]) if (reading.tokens) weigh(reading.tokens, model);
+};
 const weigh = (t: NonNullable<WardenProbeAnswer['tokens']>, model: string) => {
   const kinds = {
     input: t.input ?? 0,
@@ -675,6 +702,7 @@ const judges = values['no-judge'] ? undefined : decisionHost('claude-opus-5-5', 
 const started = Date.now();
 const answersFile = join(out, 'answers.jsonl');
 const turnsFile = join(out, 'turns.jsonl');
+const debugFile = join(out, 'debug.jsonl');
 const readRows = <T>(path: string): T[] =>
   values.resume && existsSync(path)
     ? readFileSync(path, 'utf8')
@@ -696,6 +724,11 @@ const writeRows = (path: string, rows: readonly unknown[]) => {
 };
 writeRows(answersFile, kept);
 writeRows(turnsFile, keptTurns);
+if (debug)
+  writeRows(
+    debugFile,
+    readRows<WardenDebug>(debugFile).filter((d) => finished.has(turnKey(d.probeId, d.trigger))),
+  );
 if (values.resume) console.error(`resuming: ${finished.size} turns already done`);
 let done = 0;
 try {
@@ -706,6 +739,7 @@ try {
     stageProviders,
     stages,
     charters,
+    ...(runConfig ? { regionInstructions: runConfig.regionInstructions } : {}),
     ...(membersDir
       ? { memberWarden: (_probe: WardenProbe, id: string) => memberWardens.get(id) }
       : {}),
@@ -715,6 +749,20 @@ try {
     done: (probeId, trigger) => !!stopped || finished.has(turnKey(probeId, trigger)),
     beforeTurn: quotaGate,
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
+    ...(debug
+      ? {
+          onDebug: (row: WardenDebug) => {
+            appendFileSync(debugFile, `${JSON.stringify(row)}\n`);
+            countDebugTokens(row);
+          },
+          ...(debug !== true
+            ? {
+                debugCell: (probeId: string, domain: string) =>
+                  !!debug.cells[probeId]?.includes(domain),
+              }
+            : {}),
+        }
+      : {}),
     onAnswer: (answer) => {
       appendFileSync(answersFile, `${JSON.stringify(answer)}\n`);
       countTokens(answer);
@@ -729,9 +777,13 @@ try {
   // --classify: what each stage ran, and how the stages' answers went (malformed, fallbacks, ids).
   const classify = runConfig
     ? {
-        config: runConfigPath,
-        configHash: computeHash(runConfigText!).slice(0, 12),
+        config: runConfig.path,
+        configHash: runConfig.hash,
         members: membersDir ?? null,
+        debug: debug === false || debug === true ? debug : { cells: debug.file },
+        // Per (region, stage): sha256 of the full system message the run sends (charter above
+        // instructions), so arms that change any section, the region line included, are told apart.
+        systemPrompts: systemPrompts(),
         stages: stages.map((s, i) => ({
           index: i,
           model: modelOf(s),
@@ -743,7 +795,12 @@ try {
           ...(s.pointer ? { pointer: s.pointer } : {}),
           ...(s.escalate ? { escalate: s.escalate } : {}),
           ...(s.deadline !== undefined ? { deadline: s.deadline } : {}),
-          charter: charters[i] ? charterVersion(charters[i]!) : null,
+          charter: runConfig.charterSources[i]!.changed
+            ? runConfig.charterSources[i]!.version
+            : null,
+          charterVersion: runConfig.charterSources[i]!.version,
+          sections: runConfig.charterSources[i]!.sections,
+          regionInstructions: runConfig.regionInstructionSources[i]!,
           asked: answers.filter((a) => a.stages?.[i]).length,
           malformed: answers.filter((a) => a.stages?.[i]?.malformed).length,
           timedOut: answers.filter((a) => a.stages?.[i]?.timedOut).length,

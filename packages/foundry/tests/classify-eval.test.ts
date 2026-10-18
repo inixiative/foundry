@@ -2,14 +2,34 @@
 // (2026-10-18-three-way: stage 1 binary or ternary on knowledge.md, then a Sonnet pick on what it
 // escalates), and a grouped recogniser fanning out to its members. Stub providers only: no model calls.
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { LLMMessage, LLMProvider, WardenProbe } from '@inixiative/foundry-core';
 import {
   ADVICE_RESPONSE_PROTOCOL,
-  EVAL_STAGE_KEYS,
   NO_COMMENT,
+  PROMPT_SECTIONS,
   validateStages,
 } from '../src/classify';
 import { type EvalWarden, runCharterEval } from '../src/feedback/charter-eval';
+import { readClassifyRun } from '../src/feedback/classify-run';
+
+/** A whole candidate charter as sections: its text in the opening's place, every other section off. */
+const whole = (prompt: 'point' | 'recognise', text: string) => ({
+  sections: Object.fromEntries(
+    PROMPT_SECTIONS[prompt]
+      .map(([name]) => name as string)
+      .filter((name) => name !== 'choose-one')
+      .map((name) => [name, name === 'opening' ? { text } : false]),
+  ),
+});
+/** A run config written to a fresh folder and read as `warden-charter.ts --classify` reads it. */
+const runOf = (config: object) => {
+  const dir = mkdtempSync(join(tmpdir(), 'classify-run-'));
+  writeFileSync(join(dir, 'run.json'), JSON.stringify(config));
+  return readClassifyRun(join(dir, 'run.json'));
+};
 
 const RECOGNISE_2WAY = 'CANDIDATE RECOGNISE 2WAY';
 const RECOGNISE_3WAY = 'CANDIDATE RECOGNISE 3WAY';
@@ -17,17 +37,22 @@ const PICK = 'CANDIDATE PICK';
 /** The three-way design's two arms, as run configs (`warden-charter.ts --classify`). */
 const ARMS = {
   A: [
-    { task: 'recognise', outcomes: 'binary', escalate: ['yes'], charter: RECOGNISE_2WAY },
-    { model: 'claude-sonnet-5-5', effort: 'low', charter: PICK },
+    {
+      task: 'recognise',
+      outcomes: 'binary',
+      escalate: ['yes'],
+      ...whole('recognise', RECOGNISE_2WAY),
+    },
+    { model: 'claude-sonnet-5-5', effort: 'low', pointer: { any: false }, ...whole('point', PICK) },
   ],
   B: [
     {
       task: 'recognise',
       outcomes: 'ternary',
       escalate: ['yes', 'unsure'],
-      charter: RECOGNISE_3WAY,
+      ...whole('recognise', RECOGNISE_3WAY),
     },
-    { model: 'claude-sonnet-5-5', effort: 'low', charter: PICK },
+    { model: 'claude-sonnet-5-5', effort: 'low', pointer: { any: false }, ...whole('point', PICK) },
   ],
 } as const;
 
@@ -81,15 +106,15 @@ function hosts() {
 }
 
 async function arm(stagesConfig: readonly Record<string, unknown>[]) {
-  const config = validateStages('run', stagesConfig, EVAL_STAGE_KEYS);
+  const config = runOf({ stages: stagesConfig });
   const { haiku, sonnet, calls } = hosts();
   const run = await runCharterEval({
     probes: PROBES,
     wardensFor: () => [LOCKS],
     warden: haiku,
-    stages: config,
+    stages: config.stages,
     stageProviders: [haiku, sonnet],
-    charters: stagesConfig.map((s) => s.charter as string | undefined),
+    charters: config.charters,
     triggers: ['user-message'],
   });
   return { ...run, calls };
@@ -163,7 +188,7 @@ describe('a grouped recogniser', () => {
   });
 
   test('asks the group once and fans each named member out to its own later stages; others are silent', async () => {
-    const config = validateStages('run', ARMS.B, EVAL_STAGE_KEYS);
+    const config = runOf({ stages: ARMS.B }).stages;
     const seen: string[] = [];
     const provider: LLMProvider = {
       id: 'stub',

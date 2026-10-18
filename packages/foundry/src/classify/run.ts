@@ -49,8 +49,12 @@ export type StageCall =
       readonly served?: ServedModel;
       readonly tokens?: Tokens;
       readonly docHash?: string;
+      /** sha256 of the full system message sent (charter above instructions). */
+      readonly systemHash?: string;
       /** The same exchange with the answer quoted back and `question` asked (`reason: followup`). */
       readonly followUp?: (question: string) => Promise<{ content: string; tokens?: Tokens }>;
+      /** The same prompt with only its response protocol replaced (debug's inline reading). */
+      readonly reask?: (protocol: string) => Promise<{ content: string; tokens?: Tokens }>;
     }
   | { readonly error: string; readonly docHash?: string; readonly cause?: unknown }
   | { readonly notStarted: string };
@@ -69,6 +73,109 @@ export interface ClassifyRunOptions {
   /** Start at a later stage (a group recogniser's fan-out), carrying what the earlier one said. */
   readonly from?: { readonly index: number; readonly carried: Carried };
   readonly ask: (run: StageRun) => Promise<StageCall>;
+  /**
+   * Eval only (a run config's `"debug": true`): after each stage's answer, two more readings of the
+   * same cell on the same session and prefix, reported here and never into the run's result: the
+   * same prompt asking for the decision and its why in one answer (`inline`), and the real answer
+   * quoted back with "why did you answer that?" (`after`). A stage that already gives that reading
+   * (`reason: inline` / `followup`) reuses its own instead of asking again.
+   */
+  readonly debug?: (reading: StageDebug) => void;
+}
+
+/** One stage's debug readings beside its live answer. */
+export interface StageDebug {
+  readonly stage: number;
+  /** What the two readings took: the stage's trace and the row leave it out of their own time. */
+  readonly elapsedMs: number;
+  /** The live answer as the run read it; `malformed` when it was in no shape. */
+  readonly live: {
+    readonly outcome?: ClassifyOutcome;
+    readonly malformed?: true;
+    readonly tokens?: Tokens;
+  };
+  readonly inline: {
+    readonly outcome?: ClassifyOutcome;
+    readonly why?: string;
+    readonly error?: string;
+    readonly tokens?: Tokens;
+    /** The stage gives its why inline already: its live answer is this reading. */
+    readonly reused?: true;
+  };
+  readonly after: {
+    readonly why?: string;
+    readonly revised?: 'keep' | ClassifyOutcome;
+    readonly error?: string;
+    readonly tokens?: Tokens;
+    /** The stage asks this follow-up itself (`reason: followup`): its own is this reading. */
+    readonly reused?: true;
+  };
+}
+
+const message = (err: unknown) => (err as Error)?.message ?? String(err);
+
+/** The two debug readings of one answered stage; failures are recorded, never retried into a guess. */
+async function debugReadings(
+  base: Omit<StageRun, 'carried' | 'timeoutMs'>,
+  call: Extract<StageCall, { content: string }>,
+  live: StageReading | undefined,
+  followup: Partial<ClassifyStageTrace>,
+): Promise<Omit<StageDebug, 'elapsedMs'>> {
+  const liveTokens = call.tokens ? { tokens: call.tokens } : {};
+  let inline: StageDebug['inline'];
+  if (base.stage.reason === 'inline' && live)
+    inline = {
+      ...(live.outcome ? { outcome: live.outcome } : {}),
+      ...(live.why ? { why: live.why } : {}),
+      reused: true,
+    };
+  else if (!call.reask) inline = { error: 'the provider cannot re-ask this prompt' };
+  else {
+    const spec: ProtocolSpec = { ...base.spec, reason: 'inline' };
+    try {
+      const answer = await call.reask(responseProtocol(spec));
+      const read = readStageAnswer(answer.content, spec, base.stage.pointer);
+      const tokens = answer.tokens ? { tokens: answer.tokens } : {};
+      inline =
+        'error' in read
+          ? { error: read.error, ...tokens }
+          : { outcome: read.outcome, ...(read.why ? { why: read.why } : {}), ...tokens };
+    } catch (err) {
+      inline = { error: message(err) };
+    }
+  }
+  let after: StageDebug['after'];
+  if (
+    base.stage.reason === 'followup' &&
+    (followup.why || followup.revised || followup.followupError)
+  )
+    after = followup.followupError
+      ? { error: followup.followupError, reused: true }
+      : {
+          ...(followup.why ? { why: followup.why } : {}),
+          ...(followup.revised ? { revised: followup.revised } : {}),
+          reused: true,
+        };
+  else if (!call.followUp) after = { error: 'the provider cannot ask a follow-up' };
+  else {
+    try {
+      const answer = await call.followUp(FOLLOWUP_QUESTION);
+      const parsed = parseFollowup(answer.content);
+      after = {
+        ...(parsed.why ? { why: parsed.why } : {}),
+        ...(parsed.revised ? { revised: parsed.revised } : {}),
+        ...(answer.tokens ? { tokens: answer.tokens } : {}),
+      };
+    } catch (err) {
+      after = { error: message(err) };
+    }
+  }
+  return {
+    stage: base.index,
+    live: live ? { outcome: live.outcome, ...liveTokens } : { malformed: true, ...liveTokens },
+    inline,
+    after,
+  };
 }
 
 export interface ClassifyResult {
@@ -171,7 +278,8 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
   const runs = stageRuns(options);
   const shares = deadlineShares(options.stages);
   const multi = options.stages.length > 1;
-  const end =
+  // Pushed back by any debug readings' time, so debug never takes a later stage's share.
+  let end =
     options.deadlineMs === undefined
       ? undefined
       : Date.now() + options.deadlineMs - (multi ? deadlineMargin(options.deadlineMs) : 0);
@@ -204,6 +312,17 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     };
     const started = Date.now();
+    // Debug readings run inside the stage, but its trace keeps the live call's own time.
+    let debugMs = 0;
+    const debug = async (...args: Parameters<typeof debugReadings>) => {
+      if (!options.debug) return;
+      const at = Date.now();
+      const reading = await debugReadings(...args);
+      const elapsedMs = Date.now() - at;
+      debugMs += elapsedMs;
+      if (end !== undefined) end += elapsedMs;
+      options.debug({ ...reading, elapsedMs });
+    };
     // No time left for this stage: it is not asked, and the run keeps what it has.
     if (multi && timeoutMs !== undefined && timeoutMs < 1 && previous) {
       traces.push({
@@ -231,7 +350,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       stage: index,
       task: base.stage.task,
       doc: base.stage.doc,
-      elapsedMs: Date.now() - started,
+      elapsedMs: Date.now() - started - debugMs,
       ...rest,
     });
     const stop = (fallback: ClassifyResult['fallback'], failure: Partial<ClassifyResult>) => {
@@ -261,12 +380,14 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     }
     const meta = {
       ...(call.docHash ? { docHash: call.docHash } : {}),
+      ...(call.systemHash ? { systemHash: call.systemHash } : {}),
       ...(call.served?.model ? { model: call.served.model } : {}),
       ...(call.served?.effort ? { effort: call.served.effort } : {}),
       ...(call.tokens ? { tokens: call.tokens } : {}),
     };
     const read = readStageAnswer(call.content, base.spec, base.stage.pointer);
     if ('error' in read) {
+      await debug(base, call, undefined, {});
       traces.push(trace({ ...meta, malformed: true, error: read.error }));
       return stop('malformed', { error: read.error, malformed: true });
     }
@@ -277,6 +398,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       unknown = reading.regions.filter((r) => !held.has(r.regionId)).map((r) => r.regionId);
       const kept = reading.regions.filter((r) => held.has(r.regionId));
       if (!kept.length) {
+        await debug(base, call, undefined, {});
         traces.push(
           trace({
             ...meta,
@@ -315,6 +437,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
         followup = { followupError: (err as Error)?.message ?? String(err) };
       }
     }
+    await debug(base, call, reading, followup);
     const why =
       reading.why ?? reading.regions?.map((r) => r.why).join('; ') ?? reading.pointer?.why;
     traces.push(

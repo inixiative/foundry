@@ -12,6 +12,7 @@ import {
   adviceResponseProtocol,
   charterFor,
   DEFAULT_STAGE,
+  EVAL_STAGE_KEYS,
   GUARD_RESPONSE_PROTOCOL,
   isDefaultStages,
   parseWardenPointer,
@@ -51,6 +52,10 @@ describe('stage settings', () => {
     const refused: Array<[unknown, RegExp]> = [
       [[], /non-empty list/],
       [[{}, {}, {}, {}].map((s, i) => (i < 3 ? { ...s, escalate: ['yes'] } : s)), /at most 3/],
+      [
+        [{ sections: { job: false } }],
+        /sections is not a setting: charters are fixed per task and role/,
+      ],
       [[{ charter: 'x' }], /charter is not a setting: charters are fixed per task and role/],
       [[{ colour: 'x' }], /colour is not a stage setting/],
       [[{ task: 'recognise', pointer: { any: true } }], /pointer is for point stages/],
@@ -63,8 +68,8 @@ describe('stage settings', () => {
       [[{ escalate: ['yes'], deadline: 0.7 }, { deadline: 0.6 }], /add up to 1.3/],
     ];
     for (const [value, error] of refused) expect(() => validateStages('s', value)).toThrow(error);
-    // A run config may carry candidate charter text (eval only).
-    expect(validateStages('run', [{ charter: 'x' }], ['charter'])).toHaveLength(1);
+    // A run config may set a stage's sections (eval only).
+    expect(validateStages('run', [{ sections: { job: false } }], EVAL_STAGE_KEYS)).toHaveLength(1);
   });
 });
 

@@ -5,6 +5,7 @@
 // writes. Scoring and the probe contract live in foundry-core (`feedback/warden-probes`), so Oracle
 // scores runs the same way.
 
+import { createHash } from 'node:crypto';
 import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   type ClassifyStageTrace,
@@ -35,6 +36,7 @@ import {
   KNOWLEDGE_DOC,
   type Recognition,
   type StageConfig,
+  type StageDebug,
 } from '../classify';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
@@ -81,6 +83,11 @@ export interface CharterEvalOptions {
   readonly stages?: readonly StageConfig[];
   /** Candidate charter text per stage (eval only); a stage without one runs its fixed charter. */
   readonly charters?: readonly (string | undefined)[];
+  /**
+   * The region Warden's instruction line per stage (its `region-instructions` section; empty leaves
+   * it out); a stage without one sends the Warden's composed instructions unchanged.
+   */
+  readonly regionInstructions?: readonly (string | undefined)[];
   /** The grader of remarks; remarks are left unjudged when omitted (graded later, e.g. as pointers). */
   readonly judge?: LLMProvider;
   /** Wardens in flight at once: the decision queue's size. */
@@ -102,7 +109,26 @@ export interface CharterEvalOptions {
   readonly onAnswer?: (answer: WardenProbeAnswer) => void;
   /** Called once a turn's answers are all judged and passed to `onAnswer`. */
   readonly onTurn?: (turn: WardenProbeTurn) => void;
+  /**
+   * Debug runs only (a run config's `"debug": true`): every stage of every cell also takes its two
+   * debug readings (classify `StageDebug`: the why inline, and the why asked after the real answer),
+   * on the same session and prefix. Rows reach `onDebug` once their turn is recorded (after
+   * `onTurn`), so a run stopped mid-turn leaves none behind; answers are unchanged by it.
+   */
+  readonly onDebug?: (row: WardenDebug) => void;
+  /** Which cells take debug readings (the Warden asked: a group recogniser, else the region); all when omitted. */
+  readonly debugCell?: (probeId: string, domain: string) => boolean;
 }
+
+/** One stage's debug readings for one cell (`debug.jsonl`). */
+export interface WardenDebug extends StageDebug {
+  readonly probeId: string;
+  /** The Warden asked at that stage: a group recogniser at its first stage, the member after. */
+  readonly domain: string;
+  readonly trigger: WardenProbeTrigger;
+}
+
+type DebugSink = (domain: string, reading: StageDebug) => void;
 
 /**
  * Run each probe as one turn per trigger point: every Warden is asked at once, as the live chorus is,
@@ -128,6 +154,8 @@ export async function runCharterEval(
       if (options.done?.(probe.id, trigger)) continue;
       const started = Date.now();
       const asked: WardenProbeAnswer[][] = new Array(wardens.length);
+      // Debug rows wait for their turn to be recorded, so a stopped turn leaves none behind.
+      const debugged: WardenDebug[][] = new Array(wardens.length);
       let next = 0;
       await Promise.all(
         Array.from(
@@ -135,7 +163,9 @@ export async function runCharterEval(
           async () => {
             while (next < wardens.length) {
               const index = next++;
-              asked[index] = await askWithRetries(options, probe, wardens[index]!, trigger);
+              const cell = await askWithRetries(options, probe, wardens[index]!, trigger);
+              asked[index] = cell.rows;
+              debugged[index] = cell.debug;
             }
           },
         ),
@@ -171,6 +201,7 @@ export async function runCharterEval(
         options.onAnswer?.(final);
       }
       options.onTurn?.(turns.at(-1)!);
+      for (const row of debugged.flat()) options.onDebug?.(row);
     }
   }
   return { answers, turns };
@@ -193,17 +224,26 @@ async function askWithRetries(
   probe: WardenProbe,
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
-): Promise<WardenProbeAnswer[]> {
+): Promise<{ rows: WardenProbeAnswer[]; debug: WardenDebug[] }> {
   const lost = (rows: WardenProbeAnswer[]) =>
     rows.length > 0 && rows.every((a) => a.error && TRANSPORT_FAILURE.test(a.error));
-  let rows = await ask(options, probe, warden, trigger);
+  // Each attempt keeps its own debug rows: only the attempt that stands reports them.
+  const attempt = async () => {
+    const debug: WardenDebug[] = [];
+    const sink: DebugSink | undefined =
+      options.onDebug && (options.debugCell?.(probe.id, warden.domain) ?? true)
+        ? (domain, reading) => debug.push({ probeId: probe.id, domain, trigger, ...reading })
+        : undefined;
+    return { rows: await ask(options, probe, warden, trigger, sink), debug };
+  };
+  let cell = await attempt();
   const retried: string[] = [];
-  for (let attempt = 0; attempt < (options.retries ?? 2) && lost(rows); attempt++) {
-    retried.push(rows[0]!.error!);
-    await Bun.sleep((options.retryDelayMs ?? 5_000) * (attempt + 1));
-    rows = await ask(options, probe, warden, trigger);
+  for (let n = 0; n < (options.retries ?? 2) && lost(cell.rows); n++) {
+    retried.push(cell.rows[0]!.error!);
+    await Bun.sleep((options.retryDelayMs ?? 5_000) * (n + 1));
+    cell = await attempt();
   }
-  return retried.length ? rows.map((a) => ({ ...a, retried })) : rows;
+  return retried.length ? { ...cell, rows: cell.rows.map((a) => ({ ...a, retried })) } : cell;
 }
 
 type Row = Omit<WardenProbeAnswer, 'probeId' | 'domain' | 'trigger' | 'elapsedMs'>;
@@ -274,61 +314,85 @@ async function ask(
   probe: WardenProbe,
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
+  sink?: DebugSink,
 ): Promise<WardenProbeAnswer[]> {
   const stages = options.stages ?? DEFAULT_STAGES;
-  const staged = !isDefaultStages(stages) || !!options.charters?.some((c) => c !== undefined);
+  const staged =
+    !isDefaultStages(stages) ||
+    !!options.charters?.some((c) => c !== undefined) ||
+    !!options.regionInstructions?.some((r) => r !== undefined);
   const started = Date.now();
   // A one-stage call's usage as the provider reported it: cache reads show a warm, primed prefix.
   let tokens: WardenProbeAnswer['tokens'];
+  // An unstaged row's one call: its full system message's hash (a staged row has it per stage trace).
+  let systemHash: string | undefined;
   const counted = (provider: LLMProvider): LLMProvider =>
     Object.assign(Object.create(provider) as LLMProvider, {
       complete: async (...args: Parameters<LLMProvider['complete']>) => {
+        systemHash ??= createHash('sha256')
+          .update(args[0][0]?.content ?? '')
+          .digest('hex');
         const result = await provider.complete(...args);
-        if (result.tokens) {
+        // The first call is the live one: debug readings that follow it never replace its count.
+        if (result.tokens && !tokens) {
           const { providerUsage: _usage, ...counts } = result.tokens;
           tokens = counts;
         }
         return result;
       },
     });
-  const row = (domain: string, rest: Row): WardenProbeAnswer => ({
+  // Debug readings are timed apart, so a row's time is its live calls' with debug on or off. Each run
+  // keeps its own count: a group's members run at once, so one shared count would mix them.
+  const row = (domain: string, rest: Row, debugMs = 0): WardenProbeAnswer => ({
     probeId: probe.id,
     domain,
     trigger,
-    elapsedMs: Date.now() - started,
+    elapsedMs: Date.now() - started - debugMs,
     ...(!staged && tokens ? { tokens } : {}),
+    ...(!staged && systemHash ? { systemHash } : {}),
     ...rest,
   });
   const run = async (who: EvalWarden, holds?: readonly string[], from?: Carried) => {
-    const lib = librarian(options, who, stages, counted, holds);
+    let debugMs = 0;
+    const timed: DebugSink | undefined = sink
+      ? (domain, reading) => {
+          debugMs += reading.elapsedMs;
+          sink(domain, reading);
+        }
+      : undefined;
+    const lib = librarian(options, who, stages, counted, holds, timed);
     const fromOpts = from ? { from: { index: from.stage + 1, carried: from } } : {};
     if (trigger === 'user-message') {
       const advice = await lib.advise(probe.ask ?? '', undefined, {
         ...threadKnowledge(probe, who),
         ...fromOpts,
       });
-      return { result: advice as AdviseResult | GuardResult, classified: advice.classified };
+      return {
+        result: advice as AdviseResult | GuardResult,
+        classified: advice.classified,
+        debugMs,
+      };
     }
     const guard = await lib.guard(
       oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
       undefined,
       { ...threadKnowledge(probe, who), ...fromOpts },
     );
-    return { result: guard as AdviseResult | GuardResult, classified: guard.classified };
+    return { result: guard as AdviseResult | GuardResult, classified: guard.classified, debugMs };
   };
   const group = warden.members;
   if (!group) {
-    const { result, classified } = await run(warden);
-    return [row(warden.domain, rowOf(result, staged ? classified : undefined))];
+    const { result, classified, debugMs } = await run(warden);
+    return [row(warden.domain, rowOf(result, staged ? classified : undefined), debugMs)];
   }
   // A group recogniser asks its first stage once; each member it names goes on as that region's own
   // run from the next stage, carrying its line. Members it did not name are silent; its failure is theirs.
-  const { result, classified } = await run(warden, group);
+  const { result, classified, debugMs: groupMs } = await run(warden, group);
   const first = classified?.stages[0];
   const failed = rowOf(result, classified);
   if (failed.error || !first)
     return group.map((id) =>
-      row(id, { ...failed, ...(first ? { stages: [shared(first, group.length)] } : {}) }),
+      row(id, { ...failed, ...(first ? { stages: [shared(first, group.length)] } : {}) }, groupMs),
     );
   const mine = shared(first, group.length);
   const named = new Map<string, Recognition>(
@@ -338,7 +402,11 @@ async function ask(
     group.map(async (id): Promise<WardenProbeAnswer> => {
       const recognition = named.get(id);
       if (!recognition)
-        return row(id, { noComment: true, outcome: 'no', stages: [{ ...mine, outcome: 'no' }] });
+        return row(
+          id,
+          { noComment: true, outcome: 'no', stages: [{ ...mine, outcome: 'no' }] },
+          groupMs,
+        );
       const own: ClassifyStageTrace = {
         ...mine,
         outcome: recognition.outcome,
@@ -346,19 +414,23 @@ async function ask(
         regions: [recognition],
       };
       if (stages.length === 1 || !(stages[0]!.escalate ?? []).includes(recognition.outcome))
-        return row(id, {
-          noComment: recognition.outcome !== 'yes',
-          ...(recognition.outcome === 'yes' ? { text: `${id}: ${recognition.why}` } : {}),
-          outcome: recognition.outcome,
-          stages: [own],
-        });
+        return row(
+          id,
+          {
+            noComment: recognition.outcome !== 'yes',
+            ...(recognition.outcome === 'yes' ? { text: `${id}: ${recognition.why}` } : {}),
+            outcome: recognition.outcome,
+            stages: [own],
+          },
+          groupMs,
+        );
       const member = options.memberWarden?.(probe, id);
       if (!member)
-        return row(id, {
-          noComment: false,
-          error: `no member region ${id} for the later stages`,
-          stages: [own],
-        });
+        return row(
+          id,
+          { noComment: false, error: `no member region ${id} for the later stages`, stages: [own] },
+          groupMs,
+        );
       const later = await run(member, undefined, {
         stage: 0,
         outcome: recognition.outcome,
@@ -366,7 +438,11 @@ async function ask(
         ...(first.model ? { model: first.model } : {}),
       });
       const rest = rowOf(later.result, later.classified);
-      return row(id, { ...rest, stages: [own, ...(later.classified?.stages ?? [])] });
+      return row(
+        id,
+        { ...rest, stages: [own, ...(later.classified?.stages ?? [])] },
+        groupMs + later.debugMs,
+      );
     }),
   );
 }
@@ -378,6 +454,7 @@ function librarian(
   stages: readonly StageConfig[],
   counted: (provider: LLMProvider) => LLMProvider,
   holds?: readonly string[],
+  sink?: DebugSink,
 ): DomainLibrarian {
   const layer = (id: string, text: string) => {
     const l = new ContextLayer({ id });
@@ -392,6 +469,7 @@ function librarian(
   const asked = holds ? stages.slice(0, 1) : stages;
   const bound: WardenStage[] = asked.map((config, index) => {
     const charter = options.charters?.[index];
+    const regionInstructions = options.regionInstructions?.[index];
     const doc =
       warden.docs?.[config.doc] ??
       (config.doc === KNOWLEDGE_DOC ? warden.domainKnowledge : undefined);
@@ -403,6 +481,7 @@ function librarian(
         ? { cache: layer(`eval:${warden.domain}:${config.doc}`, doc ?? '') }
         : {}),
       ...(charter !== undefined ? { charter } : {}),
+      ...(regionInstructions !== undefined ? { regionInstructions } : {}),
     };
   });
   return new DomainLibrarian({
@@ -416,6 +495,7 @@ function librarian(
     ...(warden.budget !== undefined ? { budget: warden.budget } : {}),
     stages: bound,
     ...(holds ? { holds } : {}),
+    ...(sink ? { debug: (reading: StageDebug) => sink(warden.domain, reading) } : {}),
   });
 }
 

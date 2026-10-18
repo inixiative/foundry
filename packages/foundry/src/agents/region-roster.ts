@@ -1,7 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { claudemdSource, INSTRUCTION_FILE_LIMIT } from '@inixiative/foundry-core';
-import { DEFAULT_STAGES, KNOWLEDGE_DOC, type StageConfig, stageDocs } from '../classify';
+import {
+  DEFAULT_STAGES,
+  defaultSection,
+  KNOWLEDGE_DOC,
+  type StageConfig,
+  stageDocs,
+} from '../classify';
 import { contentHash } from '../persistence/journal-content';
 import type {
   AgentSettingsConfig,
@@ -320,10 +326,11 @@ export function missingRegionDocs(
 
 /**
  * A region Warden's generic instructions: its settings prompt opens with this line, then names its
- * region (title and routing line). The region's own text is its domain knowledge, in full.
+ * region (title and routing line). The region's own text is its domain knowledge, in full. The line is
+ * the `region-instructions` section (`classify/charters/region/region-instructions.md`), which an eval
+ * run may set like a charter section.
  */
-export const REGION_WARDEN_INSTRUCTIONS =
-  'You are a region Warden. Your region is named and described at the top of your domain knowledge; everything you hold is listed there by name. Classify each moment as the charter says, and answer as the response protocol says.';
+export const REGION_WARDEN_INSTRUCTIONS = defaultSection('region', 'region-instructions');
 
 /** A region Warden's settings prompt: the generic region instructions, then which region this is. */
 export function regionInstructions(
