@@ -1,0 +1,39 @@
+{
+  "version": "2.1.302",
+  "status": 200,
+  "body": {
+    "advised": [
+      true,
+      true,
+      true
+    ],
+    "primers": 2,
+    "primersCarriedComposition": true,
+    "secondPrimerChanged": true,
+    "cyclesSentOnlyTheTurn": true,
+    "receipts": [
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "cold"
+      },
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "warm"
+      },
+      {
+        "valid": true,
+        "settled": true,
+        "prime": "cold"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-18T15:44:18.397Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal"
+  }
+}

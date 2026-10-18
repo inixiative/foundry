@@ -1,0 +1,74 @@
+{
+  "version": "2.1.302",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "haiku",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "dontAsk",
+      "--include-hook-events",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-75233-c7qKgx/append-system-prompt.md",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"# System Context\\n\\nClassify the user message. Respond with JSON only, exactly {\\\"category\\\":\\\"feature\\\"}, {\\\"category\\\":\\\"bug\\\"} or {\\\"category\\\":\\\"question\\\"}.\\n\\n# User Message\\n\\nprivate-input: add a dark mode toggle to the settings page\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"29387cb0-cc17-4031-8fa1-dbe8ed2492c2\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.302\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"agent-sdk-dev\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/agent-sdk-dev/ea10b213686c\",\"source\":\"agent-sdk-dev@claude-plugins-official\"},{\"name\":\"feature-dev\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/feature-dev/ea10b213686c\",\"source\":\"feature-dev@claude-plugins-official\"},{\"name\":\"frontend-design\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/frontend-design/ea10b213686c\",\"source\":\"frontend-design@claude-plugins-official\"},{\"name\":\"learning-output-style\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/learning-output-style/1.0.0\",\"source\":\"learning-output-style@claude-plugins-official\",\"version\":\"1.0.0\"},{\"name\":\"linear\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/linear/ea10b213686c\",\"source\":\"linear@claude-plugins-official\"},{\"name\":\"playwright\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/playwright/ea10b213686c\",\"source\":\"playwright@claude-plugins-official\"},{\"name\":\"code-review\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/code-review/ea10b213686c\",\"source\":\"code-review@claude-plugins-official\"},{\"name\":\"ralph-loop\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0\",\"source\":\"ralph-loop@claude-plugins-official\",\"version\":\"1.0.0\"},{\"name\":\"typesafe\",\"path\":\"~/.claude/plugins/cache/typesafe-ai/typesafe/0.5.7\",\"source\":\"typesafe@typesafe-ai\",\"version\":\"0.5.7\"},{\"name\":\"slack\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/slack/1.4.1\",\"source\":\"slack@claude-plugins-official\",\"version\":\"1.4.1\"},{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\",\"mcp_call_result_not_for_model_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"515b434d-dd76-46b1-b318-2ea2cecf5408\",\"original_cwd\":\"{{cwd}}\",\"additional_directories\":[],\"messaging_socket_path\":\"/tmp/cc-socks/80235.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg9xjbdZ9JJKcrjqpXXKK\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"category\\\":\\\"feature\\\"}\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":408,\"cache_read_input_tokens\":2750,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":408},\"output_tokens\":8,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"29387cb0-cc17-4031-8fa1-dbe8ed2492c2\",\"uuid\":\"872a1afa-65f8-44e2-a963-546467452121\",\"timestamp\":\"2026-10-18T15:45:32.394Z\",\"request_id\":\"req_011Cg9xjbQef7XavcmZb949d\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed_warning\",\"resetsAt\":1792890000,\"rateLimitType\":\"seven_day\",\"utilization\":0.26,\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.35,\"resetsAt\":1792344000},\"seven_day\":{\"utilization\":0.26,\"resetsAt\":1792890000}},\"overageEnabled\":false},\"uuid\":\"5778408f-ad96-4296-8878-589f4c97fb09\",\"session_id\":\"29387cb0-cc17-4031-8fa1-dbe8ed2492c2\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":1465,\"stop_reason\":\"end_turn\",\"session_id\":\"29387cb0-cc17-4031-8fa1-dbe8ed2492c2\",\"total_cost_usd\":0.0001148,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":408,\"cache_read_input_tokens\":2750,\"output_tokens\":11,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":408,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":11,\"cache_read_input_tokens\":2750,\"cache_creation_input_tokens\":408,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":408},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":11,\"cacheReadInputTokens\":2750,\"cacheCreationInputTokens\":408,\"webSearchRequests\":0,\"costUSD\":0.0001148,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"category\\\":\\\"feature\\\"}\",\"ttft_ms\":1479,\"type\":\"result\",\"duration_ms\":1498,\"uuid\":\"9a428873-f00a-4cf6-ac88-6b33b9019ad7\",\"ttft_stream_ms\":1255,\"time_to_request_ms\":31,\"first_content_frame_ms\":1255,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-18T15:45:33.160Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal",
+    "durationMs": 2865,
+    "model": "claude-haiku-5-5"
+  }
+}

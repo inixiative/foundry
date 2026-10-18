@@ -1,0 +1,82 @@
+{
+  "version": "2.1.302",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "d9cd91d2-1859-48c3-8f3a-03b5fc340fef",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-75233-YTv1Mh/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\n\\n\\n## Message\\nMake sure the nightly sync job never runs on two instances at the same time.\\n\\n## Response protocol (advice phase, trigger: user-message)\\nNothing to add is the expected answer, and the most common one. Then respond with exactly NO_COMMENT and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread. Here it means the moment is in none of your regions, whatever it says to build or not to use.\\nOnly when it is in one of your regions, respond with JSON only, exactly this shape: { \\\"snippets\\\": string[], \\\"layers\\\": string[], \\\"confidence\\\": number }.\\n\\\"snippets\\\" are the regions the moment is in, one per line: `<region id>: <one line: what in the moment puts it in that region>`; \\\"layers\\\" are IDs of your domain's layers to inject (none for a recogniser); at least one of them is non-empty. \\\"confidence\\\" is a number from 0 to 1.\\nAny other answer, including JSON with empty lists or extra fields, is an error, not a comment.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"1a61cac8-79be-460e-a0f6-228f00fc050c\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.302\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"cc-plugin-agents-md\",\"path\":\"builtin\",\"source\":\"cc-plugin-agents-md@builtin\"},{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"},{\"name\":\"cc-plugin-plugin-authoring\",\"path\":\"builtin\",\"source\":\"cc-plugin-plugin-authoring@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"interrupt_send_now_v1\",\"msg_lifecycle_v1\",\"request_marker_lists_v1\",\"sdk_mcp_tools_list_changed\",\"sdk_mcp_manifests\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\",\"ui_surface_v1\",\"mcp_call_result_not_for_model_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"a3ed7cf3-78b3-463d-818c-7a75a648b381\",\"original_cwd\":\"{{cwd}}\",\"additional_directories\":[],\"messaging_socket_path\":\"/tmp/cc-socks/76573.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg9xeVhi6r3iy3Lp91k9E\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{ \\\"snippets\\\": [\\\"locks: The request is to ensure the nightly sync job never runs on two instances at once, which is mutual exclusion across processes/instances.\\\"], \\\"layers\\\": [], \\\"confidence\\\": 0.95 }\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":773,\"cache_read_input_tokens\":3374,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":773},\"output_tokens\":2,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":671}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"1a61cac8-79be-460e-a0f6-228f00fc050c\",\"uuid\":\"f6d75180-eadc-4f0a-823d-53de0af7d7d0\",\"timestamp\":\"2026-10-18T15:44:22.883Z\",\"request_id\":\"req_011Cg9xeVVKif3F8kZ1zkLRH\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed_warning\",\"resetsAt\":1792890000,\"rateLimitType\":\"seven_day\",\"utilization\":0.26,\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.35,\"resetsAt\":1792344000},\"seven_day\":{\"utilization\":0.26,\"resetsAt\":1792890000}},\"overageEnabled\":false},\"uuid\":\"2795de76-a5f1-4c95-83f2-414580d6d809\",\"session_id\":\"1a61cac8-79be-460e-a0f6-228f00fc050c\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":2391,\"stop_reason\":\"end_turn\",\"session_id\":\"1a61cac8-79be-460e-a0f6-228f00fc050c\",\"total_cost_usd\":0.0008599200000000001,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":773,\"cache_read_input_tokens\":3374,\"output_tokens\":72,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":773,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":72,\"cache_read_input_tokens\":3374,\"cache_creation_input_tokens\":773,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":773},\"type\":\"message\"}],\"speed\":\"standard\",\"fallback_credit\":null},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":4,\"outputTokens\":76,\"thinkingTokens\":0,\"cacheReadInputTokens\":4032,\"cacheCreationInputTokens\":3906,\"webSearchRequests\":0,\"costUSD\":0.0008599200000000001,\"contextWindow\":1000000,\"maxOutputTokens\":128000,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"safety_stops\":0,\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{ \\\"snippets\\\": [\\\"locks: The request is to ensure the nightly sync job never runs on two instances at once, which is mutual exclusion across processes/instances.\\\"], \\\"layers\\\": [], \\\"confidence\\\": 0.95 }\",\"ttft_ms\":1177,\"type\":\"result\",\"duration_ms\":1188,\"uuid\":\"465e6e67-32df-4c56-a173-c10046d373c0\",\"ttft_stream_ms\":879,\"time_to_request_ms\":28,\"first_content_frame_ms\":880,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-18T15:44:23.638Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal",
+    "durationMs": 2566,
+    "model": "claude-haiku-5-5"
+  }
+}

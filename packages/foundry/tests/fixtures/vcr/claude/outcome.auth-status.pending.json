@@ -1,0 +1,15 @@
+{
+  "version": "2.1.302",
+  "status": 200,
+  "body": {
+    "subscribed": true,
+    "withinStatusDeadline": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-10-18T15:43:40.743Z",
+    "agentSession": "0.6.7",
+    "environment": "terminal"
+  }
+}
