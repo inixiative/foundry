@@ -713,6 +713,63 @@ test('the charter eval advises on the user ask at the user-message trigger and g
   expect(judged[0]).toContain("## The user's message");
 });
 
+test('--diagnose asks the same prompt for yes/no + why, then follows the real answer with why; live answers are unchanged', async () => {
+  const { runCharterEval, DIAGNOSE_FOLLOWUP, DIAGNOSE_ONESHOT_PROTOCOL } = await import(
+    '../src/feedback/charter-eval'
+  );
+  const { ADVICE_RESPONSE_PROTOCOL } = await import('../src/agents/domain-librarian');
+  const seen: LLMMessage[][] = [];
+  const diagnoses: unknown[] = [];
+  const { answers } = await runCharterEval({
+    probes: [{ id: 'h1', kind: 'positive', ctx: 'x', moment: '', ask: 'Add a lock', hidden: '' }],
+    wardensFor: () => [
+      { domain: 'locks', instructions: 'Locks Warden', domainKnowledge: '`createLock` exists.' },
+    ],
+    triggers: ['user-message'],
+    diagnose: true,
+    onDiagnosis: (d) => diagnoses.push(d),
+    warden: {
+      id: 'w',
+      async complete(messages) {
+        seen.push(messages);
+        const last = String(messages.at(-1)!.content);
+        const content =
+          last === DIAGNOSE_FOLLOWUP
+            ? 'It asks for a lock.\nMy domain owns createLock, so it is mine.\nREVISED: YES'
+            : last.endsWith(DIAGNOSE_ONESHOT_PROTOCOL)
+              ? '**YES**\nWHY: a lock is createLock.'
+              : NO_COMMENT;
+        return { model: 'x', content };
+      },
+    },
+  });
+  expect(answers).toEqual([expect.objectContaining({ domain: 'locks', noComment: true })]);
+  expect(seen).toHaveLength(3);
+  // Same system and knowledge on every call; only the protocol, or the follow-up, differs.
+  expect(new Set(seen.map((m) => m[0]!.content)).size).toBe(1);
+  expect(String(seen[0]!.at(-1)!.content).endsWith(ADVICE_RESPONSE_PROTOCOL)).toBe(true);
+  expect(String(seen[1]!.at(-1)!.content)).toBe(
+    String(seen[0]!.at(-1)!.content).replace(ADVICE_RESPONSE_PROTOCOL, DIAGNOSE_ONESHOT_PROTOCOL),
+  );
+  expect(seen[2]!.slice(-2)).toEqual([
+    { role: 'assistant', content: NO_COMMENT },
+    { role: 'user', content: DIAGNOSE_FOLLOWUP },
+  ]);
+  expect(diagnoses).toEqual([
+    {
+      probeId: 'h1',
+      domain: 'locks',
+      trigger: 'user-message',
+      answered: false,
+      oneshot: { decision: 'yes', why: 'a lock is createLock.' },
+      followup: {
+        why: 'It asks for a lock. My domain owns createLock, so it is mine.',
+        revised: 'yes',
+      },
+    },
+  ]);
+});
+
 test('the charter eval asks a Warden again when the transport lost the call, never for its answer', async () => {
   const { runCharterEval } = await import('../src/feedback/charter-eval');
   let calls = 0;

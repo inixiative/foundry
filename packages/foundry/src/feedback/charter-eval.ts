@@ -7,6 +7,7 @@
 import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   ContextLayer,
+  type LLMMessage,
   type LLMProvider,
   parseWardenJudgement,
   probeTriggers,
@@ -18,7 +19,13 @@ import {
   type WardenProbeTurn,
   wardenJudgeMessage,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../agents/domain-librarian';
+import {
+  adviceResponseProtocol,
+  DomainLibrarian,
+  domainCachePrefix,
+  oneCall,
+  threadSection,
+} from '../agents/domain-librarian';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {
@@ -77,6 +84,80 @@ export interface CharterEvalOptions {
   readonly onAnswer?: (answer: WardenProbeAnswer) => void;
   /** Called once a turn's answers are all judged and passed to `onAnswer`. */
   readonly onTurn?: (turn: WardenProbeTurn) => void;
+  /**
+   * Diagnostic runs only (`--diagnose`): after each `user-message` answer, ask the same Warden, on the
+   * same composed prompt, twice more: once with the protocol replaced by "YES or NO, then why"
+   * (does asking for a reason change the decision?), and once as a follow-up to its real answer
+   * (why did it answer that, and does it stand by it?). Live Wardens never do this.
+   */
+  readonly diagnose?: boolean;
+  readonly onDiagnosis?: (diagnosis: WardenDiagnosis) => void;
+}
+
+/** One cell's diagnostic: the real answer, the one-shot "yes/no + why", and the follow-up "why?". */
+export interface WardenDiagnosis {
+  readonly probeId: string;
+  readonly domain: string;
+  readonly trigger: WardenProbeTrigger;
+  /** The real answer: true when the Warden pointed, false on NO_COMMENT. */
+  readonly answered: boolean;
+  readonly oneshot: {
+    readonly decision?: 'yes' | 'no';
+    readonly why?: string;
+    readonly error?: string;
+    readonly tokens?: WardenProbeAnswer['tokens'];
+  };
+  readonly followup: {
+    readonly why?: string;
+    /** `keep`, or the answer the Warden now says is right. */
+    readonly revised?: 'keep' | 'yes' | 'no';
+    readonly error?: string;
+    readonly tokens?: WardenProbeAnswer['tokens'];
+  };
+}
+
+export const DIAGNOSE_ONESHOT_PROTOCOL = `This is a diagnostic run, not a live turn. Answer in exactly this shape and nothing else:
+Line 1: YES or NO. YES means you would point at something in your domain for this message; NO means you would answer ${'NO_COMMENT'}.
+Line 2: WHY: one or two sentences: what the message asks for, and which part of your domain it does or does not touch.`;
+
+export const DIAGNOSE_FOLLOWUP = `This is a diagnostic question, not a live turn; your answer above stands as given. In at most two short lines, explain it:
+1. What the message asks for, in your words.
+2. Which part of your domain it does or does not touch, and why.
+Then one last line, exactly \`REVISED: KEEP\` if you stand by your answer, or \`REVISED: YES\` / \`REVISED: NO\` if on reflection the other answer is right.`;
+
+/** Line 1 of a one-shot answer: YES or NO (markdown and punctuation tolerated); anything else is unparsed. */
+export function parseOneshot(text: string): { decision?: 'yes' | 'no'; why?: string } {
+  const lines = text
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const first = lines[0]
+    ?.replace(/[*_`#:.]/g, '')
+    .trim()
+    .toUpperCase();
+  const decision = first === 'YES' ? 'yes' : first === 'NO' ? 'no' : undefined;
+  const why = lines
+    .slice(decision ? 1 : 0)
+    .join(' ')
+    .replace(/^\**WHY\**:?\s*/i, '')
+    .trim();
+  return { ...(decision ? { decision } : {}), ...(why ? { why } : {}) };
+}
+
+/** The follow-up's explanation and its last `REVISED:` line. */
+export function parseFollowup(text: string): { why?: string; revised?: 'keep' | 'yes' | 'no' } {
+  const lines = text
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const last = /REVISED:\s*(KEEP|YES|NO)\b/i.exec(lines.at(-1) ?? '');
+  const why = (last ? lines.slice(0, -1) : lines).join(' ').replace(/`/g, '').trim();
+  return {
+    ...(why ? { why } : {}),
+    ...(last ? { revised: last[1]!.toLowerCase() as 'keep' | 'yes' | 'no' } : {}),
+  };
 }
 
 /**
@@ -192,9 +273,12 @@ async function ask(
   instructions.set(warden.instructions);
   // The provider's usage report for this call: cache reads show whether the primed prefix was warm.
   let tokens: WardenProbeAnswer['tokens'];
+  // The real answer's text, as the model gave it: the follow-up quotes it back as its own turn.
+  let raw: string | undefined;
   const llm: LLMProvider = Object.assign(Object.create(options.warden) as LLMProvider, {
     complete: async (...args: Parameters<LLMProvider['complete']>) => {
       const result = await options.warden.complete(...args);
+      raw = result.content;
       if (result.tokens) {
         const { providerUsage: _usage, ...counts } = result.tokens;
         tokens = counts;
@@ -229,13 +313,26 @@ async function ask(
     ...rest,
   });
   if (trigger === 'user-message') {
-    const advice = await lib.advise(probe.ask ?? '', undefined, threadKnowledge(probe, warden));
+    let request: readonly LLMMessage[] | undefined;
+    const advice = await lib.advise(probe.ask ?? '', undefined, {
+      ...threadKnowledge(probe, warden),
+      observeRequest: (evidence) => {
+        request = evidence.messages;
+      },
+    });
     if (advice.notStarted) return answer({ noComment: false, error: 'not-admitted' });
     if (advice.error || advice.skipped)
       return answer({ noComment: false, error: advice.error ?? advice.skipped! });
     // Advice without a snippet adds nothing a Warden would say to the thread.
-    if (advice.noComment || !advice.snippets.length) return answer({ noComment: true });
-    return answer({ noComment: false, text: advice.snippets.join('\n') });
+    const final =
+      advice.noComment || !advice.snippets.length
+        ? answer({ noComment: true })
+        : answer({ noComment: false, text: advice.snippets.join('\n') });
+    if (options.diagnose && request && raw !== undefined)
+      options.onDiagnosis?.(
+        await diagnoseCell(options.warden, probe, warden, trigger, request, raw, !final.noComment),
+      );
+    return final;
   }
   const result = await lib.guard(
     oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
@@ -274,4 +371,76 @@ export async function judge(
     }
   }
   return undefined;
+}
+
+/**
+ * The two diagnostic calls for one cell, on the Warden's own composed prompt (same system, same
+ * primed prefix, so the knowledge is read from the cache): the protocol swapped for "YES or NO, then
+ * why", and the real exchange followed by "why?". Failures are recorded, never retried into a guess.
+ */
+async function diagnoseCell(
+  provider: LLMProvider,
+  probe: WardenProbe,
+  warden: EvalWarden,
+  trigger: WardenProbeTrigger,
+  request: readonly LLMMessage[],
+  raw: string,
+  answered: boolean,
+): Promise<WardenDiagnosis> {
+  const tk = threadKnowledge(probe, warden)?.threadKnowledge;
+  const opts = {
+    maxTokens: 512,
+    temperature: 0,
+    ...(warden.session ? { threadId: warden.session } : {}),
+    stablePrefix: domainCachePrefix(warden.domain, warden.domainKnowledge),
+    threadPrefix: threadSection(tk),
+  };
+  const messages = request.map((m) => ({ role: m.role, content: m.content }));
+  const last = messages.at(-1)!;
+  // Diagnosis runs at the user's message only (see `ask`).
+  const protocol = adviceResponseProtocol('user-message');
+  const call = async (msgs: LLMMessage[]) => {
+    try {
+      const result = await provider.complete(msgs, opts);
+      if (!result.tokens) return { content: result.content };
+      const { providerUsage: _usage, ...tokens } = result.tokens;
+      return { content: result.content, tokens };
+    } catch (err) {
+      return { error: (err as Error)?.message ?? String(err) };
+    }
+  };
+  const oneshotCall = last.content.endsWith(protocol)
+    ? await call([
+        ...messages.slice(0, -1),
+        {
+          ...last,
+          content: `${last.content.slice(0, -protocol.length)}${DIAGNOSE_ONESHOT_PROTOCOL}`,
+        },
+      ])
+    : { error: 'the advice message does not end with its protocol' };
+  const followupCall = await call([
+    ...messages,
+    { role: 'assistant', content: raw },
+    { role: 'user', content: DIAGNOSE_FOLLOWUP },
+  ]);
+  return {
+    probeId: probe.id,
+    domain: warden.domain,
+    trigger,
+    answered,
+    oneshot:
+      'error' in oneshotCall
+        ? { error: oneshotCall.error! }
+        : {
+            ...parseOneshot(oneshotCall.content),
+            ...(oneshotCall.tokens ? { tokens: oneshotCall.tokens } : {}),
+          },
+    followup:
+      'error' in followupCall
+        ? { error: followupCall.error! }
+        : {
+            ...parseFollowup(followupCall.content),
+            ...(followupCall.tokens ? { tokens: followupCall.tokens } : {}),
+          },
+  };
 }

@@ -53,6 +53,11 @@
  * --experiment <design.md>: a run of more than three moments, or --pipeline, refuses to start without
  * a reviewed pre-registration (foundry-core `feedback/experiment-gate.ts`, `.claude/skills/experiment/SKILL.md`);
  * the design's path and hash land in <out>/experiment.json.
+ * --diagnose (user-message only, a diagnostic, never the shipped path): after each answer the same
+ * Warden is asked twice more on its own composed prompt: the protocol swapped for "YES or NO, then
+ * why" (does asking for a reason change the decision?) and the real exchange followed by "why did you
+ * answer that?" (its reason, and whether it stands by it). Rows land in <out>/diagnose.jsonl
+ * (charter-eval.ts `WardenDiagnosis`); their tokens count toward the stop bounds.
  * --pipeline is the two-stage EXPERIMENT (not Foundry's design): stage 1, every region Warden on
  * --model/--effort (Haiku low) under the --recognise-charter file, holding the region's `recognise.md`
  * when the regions directory has one (else its knowledge.md; score.json names those); its remark names
@@ -100,6 +105,7 @@ import {
   judge,
   markEvalRun,
   runCharterEval,
+  type WardenDiagnosis,
 } from '../../packages/foundry/src/feedback/charter-eval';
 import { roleComposition } from '../../packages/foundry/src/prompts/instruction-settings';
 import {
@@ -144,6 +150,7 @@ const { values } = parseArgs({
     effort: { type: 'string' },
     experiment: { type: 'string' },
     pipeline: { type: 'boolean' },
+    diagnose: { type: 'boolean' },
     'recognise-charter': { type: 'string' },
     'pick-charter': { type: 'string' },
     'pick-regions': { type: 'string' },
@@ -174,6 +181,7 @@ const pickModel = values['pick-model'] ?? 'claude-sonnet-5-5';
 const pickEffort = (values['pick-effort'] ?? 'low') as (typeof EFFORTS)[number];
 if (!EFFORTS.includes(pickEffort))
   throw Error(`--pick-effort must be one of ${EFFORTS.join(', ')}`);
+if (values.diagnose && pipeline) throw Error('--diagnose runs on one stage: drop --pipeline');
 if (pipeline && !values.regions) throw Error('--pipeline runs a regions chorus: pass --regions');
 if (pipeline && values.charter)
   throw Error('--pipeline takes --recognise-charter and --pick-charter; drop --charter');
@@ -648,6 +656,17 @@ try {
     done: (probeId, trigger) => !!stopped || finished.has(turnKey(probeId, trigger)),
     beforeTurn: quotaGate,
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
+    ...(values.diagnose
+      ? {
+          diagnose: true,
+          onDiagnosis: (d: WardenDiagnosis) => {
+            appendFileSync(join(out, 'diagnose.jsonl'), `${JSON.stringify(d)}\n`, { mode: 0o600 });
+            for (const part of [d.oneshot, d.followup])
+              if (part.tokens)
+                countTokens({ ...d, noComment: true, tokens: part.tokens }, wardenModel);
+          },
+        }
+      : {}),
     onAnswer: (answer) => {
       appendFileSync(answersFile, `${JSON.stringify(answer)}\n`);
       countTokens(answer, wardenModel);
@@ -774,6 +793,7 @@ try {
         effort: wardenEffort ?? 'low',
         thinkingTokens: process.env.MAX_THINKING_TOKENS,
         pipeline: pick,
+        diagnose: !!values.diagnose,
         budget: budgetOverride,
         inputCap,
         roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],
