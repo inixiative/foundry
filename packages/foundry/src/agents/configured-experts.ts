@@ -132,6 +132,17 @@ export function largestRoster(config: FoundryConfig): number {
   return largest;
 }
 
+/** The most classify stages any running chorus asks per Warden: each keeps its own primed session. */
+export function largestStageCount(config: FoundryConfig): number {
+  let largest = 1;
+  for (const [id, project] of Object.entries(config.projects ?? {})) {
+    if (project.enabled === false) continue;
+    const view = resolveProjectView(config, id);
+    if (view?.chorus.on) largest = Math.max(largest, view.chorus.roles.warden.stages.length);
+  }
+  return largest;
+}
+
 /** The Cartographer's role in the composition view: the enabled cartographer agent's id, else "cartographer". */
 export function cartographerRoleId(config: FoundryConfig): string {
   return (

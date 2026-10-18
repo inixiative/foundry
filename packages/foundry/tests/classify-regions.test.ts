@@ -213,9 +213,11 @@ test('each stage composes its own doc, journals its own versions, and recomposes
     messages: readonly { content: string }[];
     composition?: unknown;
   }> = [];
-  await lib.advise('Add a nightly job that never overlaps.', undefined, {
+  const advice = await lib.advise('Add a nightly job that never overlaps.', undefined, {
     observeRequest: (r) => requests.push(r),
   });
+  // The first stage's request reaches the observer; later stages' ride on the result.
+  requests.push(...(advice.stageRequests ?? []));
   expect(requests.map((r) => r.stage)).toEqual([0, 1]);
   expect(requests[0]!.messages[0]!.content).toStartWith(RECOGNISE_CHARTER);
   expect(requests[1]!.messages[0]!.content).toStartWith(WARDEN_CHARTER);

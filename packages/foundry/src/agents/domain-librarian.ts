@@ -77,6 +77,8 @@ export interface AdviseResult {
   error?: string;
   /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
   classified?: ClassifyResult;
+  /** The exact input of every stage past the first (the first is `observeRequest`'s), frozen at its call. */
+  stageRequests?: PhaseRequestEvidence[];
 }
 
 /** Caller-supplied inputs for one advise call. */
@@ -730,6 +732,8 @@ export interface GuardResult {
   request: ParticipantRequest;
   /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
   classified?: ClassifyResult;
+  /** The exact input of every stage past the first (the first is `request`), frozen at its call. */
+  stageRequests?: PhaseRequestEvidence[];
 }
 
 /** Caller-supplied frozen inputs for one guard call. */
@@ -1012,10 +1016,11 @@ export class DomainLibrarian {
     return this._instructions;
   }
 
-  /** Warm whichever of its composed slots is not warm. */
+  /** Warm whichever of its composed slots, and its later stages' docs, is not warm. */
   async warm(): Promise<void> {
+    const layers = new Set([this._instructions, this._cache, ...this._stages.map((s) => s.cache)]);
     await Promise.all(
-      [this._instructions, this._cache]
+      [...layers]
         .filter((layer): layer is ContextLayer => !!layer && layer.checkStaleness() !== 'warm')
         .map((layer) => layer.warm()),
     );
@@ -1592,6 +1597,7 @@ export class DomainLibrarian {
     // instructions never have to restate the schema and never get rewritten to carry it. The domain
     // cache heads the message and changes only when the domain learns: a stable, primable prefix.
     const trigger = opts?.trigger ?? 'user-message';
+    const later: PhaseRequestEvidence[] = [];
     const run = await runStages({
       stages: this._stages.map((s) => s.config),
       charters: this._stages.map((s) => s.charter),
@@ -1615,18 +1621,16 @@ export class DomainLibrarian {
                 ? `\n## Work item the agent took in\n${message}`
                 : `\n## Message\n${message}`,
           opts: {},
-          ...(opts?.observeRequest
-            ? {
-                observe: (e: PhaseRequestEvidence) =>
-                  opts.observeRequest!(e as AdviceRequestEvidence),
-              }
-            : {}),
+          observe: (e: PhaseRequestEvidence) =>
+            stage.index === 0 ? opts?.observeRequest?.(e as AdviceRequestEvidence) : later.push(e),
         });
         if ('content' in call && call.served) opts?.observeServed?.(call.served);
         return call;
       },
     });
-    const classified = this._defaultStages ? {} : { classified: run };
+    const classified = this._defaultStages
+      ? {}
+      : { classified: run, ...(later.length ? { stageRequests: later } : {}) };
     if (run.notStarted)
       return { layers: [], snippets: [], confidence: 0, notStarted: run.notStarted, ...classified };
     // Protocol failure: an explicit, bounded error that never carries the model's text. A response
@@ -1722,6 +1726,7 @@ export class DomainLibrarian {
     let evidence: PhaseRequestEvidence | undefined;
     let served: ServedModel | undefined;
     let failure: unknown;
+    const later: PhaseRequestEvidence[] = [];
     const run = await runStages({
       stages: this._stages.map((s) => s.config),
       charters: this._stages.map((s) => s.charter),
@@ -1741,7 +1746,7 @@ export class DomainLibrarian {
           // Guards observe completed actions; queued decision capacity serves blocked turns first.
           opts: { priority: DECISION_PRIORITY.guard },
           observe: (observed) => {
-            if (stage.index !== 0) return;
+            if (stage.index !== 0) return void later.push(observed);
             opts?.observeRequest?.(observed);
             evidence = observed;
           },
@@ -1751,7 +1756,9 @@ export class DomainLibrarian {
         return call;
       },
     });
-    const classified = this._defaultStages ? {} : { classified: run };
+    const classified = this._defaultStages
+      ? {}
+      : { classified: run, ...(later.length ? { stageRequests: later } : {}) };
     const supplied: ParticipantRequest = evidence
       ? { status: 'supplied', ...evidence, ...(served ? { served } : {}) }
       : { status: 'not-sent', phase: 'guard', reason: 'no call' };

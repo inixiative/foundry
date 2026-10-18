@@ -159,12 +159,23 @@ export function isWardenSession(sessionKey: string): boolean {
   return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
-/** The in-session host serving this decision, when its thread's Wardens run in-session. */
+/** A later classify stage of a Warden (`domain:<d>:stage:<n>`): its own primed session, never in-session. */
+export function isStageSession(sessionKey: string): boolean {
+  const at = sessionKey.indexOf(AUXILIARY);
+  return at > 0 && /^domain:.+:stage:\d+$/.test(sessionKey.slice(at + AUXILIARY.length));
+}
+
+/**
+ * The in-session host serving this decision, when its thread's Wardens run in-session. A later
+ * classify stage is not: the in-session runtime holds one subagent per Warden, on the decision model
+ * (a stage on another model, held beside it, is not built).
+ */
 export function inSessionTarget(
   inSession: InSessionWardens | undefined,
   sessionKey: string | undefined,
 ): ClaudeInSessionDecisions | undefined {
-  if (!inSession || !sessionKey || !isWardenSession(sessionKey)) return undefined;
+  if (!inSession || !sessionKey || !isWardenSession(sessionKey) || isStageSession(sessionKey))
+    return undefined;
   const thread = decisionThread(sessionKey);
   return thread ? inSession.serving(thread) : undefined;
 }
@@ -641,7 +652,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   /** Keep a thread's Wardens pre-started in its own process (in-session threads only). */
   const prestart = (messages: LLMMessage[], opts: CompletionOpts) => {
     const sessionKey = opts.threadId;
-    if (!config.inSession || !sessionKey || !isWardenSession(sessionKey)) return;
+    if (
+      !config.inSession ||
+      !sessionKey ||
+      !isWardenSession(sessionKey) ||
+      isStageSession(sessionKey)
+    )
+      return;
     const thread = decisionThread(sessionKey)!;
     const { spec, standby } = primedRequest(messages, opts, sessionKey);
     if (standby === undefined) return;

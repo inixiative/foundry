@@ -89,6 +89,25 @@ export interface ClassifyResult {
   readonly notStarted?: string;
 }
 
+/** A run as the journal keeps it: its outcome, whether it reached the thread, why not, and every stage. */
+export interface ClassifiedSummary {
+  readonly outcome?: ClassifyOutcome;
+  readonly delivered: boolean;
+  readonly finalStage?: number;
+  readonly fallback?: ClassifyResult['fallback'];
+  readonly stages: readonly ClassifyStageTrace[];
+}
+
+export function classifiedSummary(result: ClassifyResult): ClassifiedSummary {
+  return {
+    ...(result.outcome ? { outcome: result.outcome } : {}),
+    delivered: result.delivered,
+    ...(result.finalStage !== undefined ? { finalStage: result.finalStage } : {}),
+    ...(result.fallback ? { fallback: result.fallback } : {}),
+    stages: result.stages,
+  };
+}
+
 /** The section a later stage's input carries: what the earlier stage said, and how much it settles. */
 export function carriedSection(carried: Carried): string {
   const who = `Stage ${carried.stage + 1}${carried.model ? ` (${carried.model})` : ''}`;
@@ -126,11 +145,21 @@ export function stageRuns(
 
 const TIMED_OUT = Symbol('timed-out');
 
+/**
+ * What a multi-stage run keeps back from the trigger's deadline, so the caller's own deadline (the
+ * same one) never fires before a fallback is returned.
+ */
+const deadlineMargin = (deadlineMs: number) => Math.min(250, deadlineMs * 0.05);
+
 /** Run the stages. A single stage with no deadline split behaves exactly as one call does. */
 export async function runStages(options: ClassifyRunOptions): Promise<ClassifyResult> {
   const runs = stageRuns(options);
   const shares = deadlineShares(options.stages);
   const multi = options.stages.length > 1;
+  const end =
+    options.deadlineMs === undefined
+      ? undefined
+      : Date.now() + options.deadlineMs - (multi ? deadlineMargin(options.deadlineMs) : 0);
   const traces: ClassifyStageTrace[] = [];
   let carried = options.from?.carried;
   // A fan-out starts past its recogniser: what that stage said is the outcome a failure falls back to.
@@ -144,14 +173,38 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       : undefined;
   for (let index = options.from?.index ?? 0; index < runs.length; index++) {
     const base = runs[index]!;
+    // A stage gets its share of the trigger's deadline, and never more than the run has left.
     const timeoutMs =
-      options.deadlineMs === undefined ? undefined : options.deadlineMs * shares[index]!;
+      options.deadlineMs === undefined
+        ? undefined
+        : multi
+          ? Math.max(0, Math.min(options.deadlineMs * shares[index]!, end! - Date.now()))
+          : options.deadlineMs;
     const run: StageRun = {
       ...base,
       ...(carried ? { carried } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     };
     const started = Date.now();
+    // No time left for this stage: it is not asked, and the run keeps what it has.
+    if (multi && timeoutMs !== undefined && timeoutMs < 1 && previous) {
+      traces.push({
+        stage: index,
+        task: base.stage.task,
+        doc: base.stage.doc,
+        elapsedMs: 0,
+        timedOut: true,
+        error: 'no time left in the deadline',
+      });
+      return {
+        outcome: previous.reading.outcome,
+        final: previous.reading,
+        finalStage: previous.index,
+        delivered: previous.delivered,
+        fallback: 'timeout',
+        stages: traces,
+      };
+    }
     const pending = options.ask(run);
     // A single stage keeps the provider's own deadline; stages share the trigger's, each its part.
     const call =

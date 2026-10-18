@@ -53,9 +53,10 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
-import { largestRoster } from './agents/configured-experts';
+import { largestRoster, largestStageCount } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
+import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
@@ -207,10 +208,10 @@ const decisions = subscription
       ...subscription.policy,
       source: subscription.decision,
       ...(inSession ? { inSession } : {}),
-      // Every decision role stays primed: an advice and a review key per Warden, plus the
-      // Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
+      // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
+      // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
       // Sized for the largest chorus any project runs (region Wardens are per project).
-      primedSessions: Math.max(16, 2 * largestRoster(config) + 8),
+      primedSessions: Math.max(16, (largestStageCount(config) + 1) * largestRoster(config) + 8),
       onPressure: (event) => {
         const message =
           event.kind === 'shed'
@@ -235,6 +236,33 @@ const decisions = subscription
     })
   : undefined;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
+/**
+ * One decision host per model and effort a classify stage names (chorus.wardens.stages), started on
+ * first use on the same login and bounds as the decision host; a stage on the decision model and
+ * effort shares that host. API-token decisions have no per-stage host: such a stage is refused.
+ */
+const stageHosts = new Map<string, ReturnType<typeof createSubscriptionDecisions>>();
+const stageHost = (model: string | undefined, effort: StageEffort | undefined) => {
+  if (!subscription) return undefined;
+  const m = model ?? subscription.policy.model;
+  const e = effort ?? subscription.policy.effort;
+  if (m === subscription.policy.model && e === subscription.policy.effort)
+    return decisions?.provider;
+  const key = `${m}|${e ?? ''}`;
+  let host = stageHosts.get(key);
+  if (!host) {
+    host = createSubscriptionDecisions({
+      ...subscription.policy,
+      source: subscription.decision,
+      model: m,
+      ...(e ? { effort: e } : {}),
+      primedSessions: Math.max(16, largestRoster(config) + 8),
+    });
+    stageHosts.set(key, host);
+    console.log(`[subscription-decisions] stage host ${m}${e ? ` at ${e}` : ''} started`);
+  }
+  return host.provider;
+};
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 // API-token mode: agents saved on the decision provider's id resolve to the decision client.
 const decisionAlias = subscription
@@ -613,6 +641,7 @@ const runtimeManager = new ThreadRuntimeManager({
   atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
+  stageHost,
   // Foundry's own signals feed the memory store only while a configured "file" source reads it as
   // working memory. With none (a fresh install), nothing Foundry logs lands where a source reads it back.
   signalSinks: [
@@ -973,7 +1002,12 @@ const shutdown = async () => {
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
-    Promise.all([sessionAdapter?.releaseAll?.(), decisions?.shutdown(), inSession?.close()]),
+    Promise.all([
+      sessionAdapter?.releaseAll?.(),
+      decisions?.shutdown(),
+      ...[...stageHosts.values()].map((host) => host.shutdown()),
+      inSession?.close(),
+    ]),
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();

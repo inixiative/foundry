@@ -392,6 +392,22 @@ function writebacksFor(learning, turnId) {
 }
 
 /**
+ * A staged Warden's run (classify) on one line: each stage's task, outcome and the model that
+ * answered, in order. Null for today's single stage, which journals no trace.
+ * @param {any} classified
+ * @returns {string | null}
+ */
+function stageLine(classified) {
+  if (!Array.isArray(classified?.stages) || !classified.stages.length) return null;
+  return classified.stages
+    .map(
+      (/** @type {any} */ s) =>
+        `${s.stage + 1} ${s.task} ${s.outcome ?? (s.timedOut ? 'timed out' : s.malformed ? 'malformed' : 'failed')}${s.model ? ` (${s.model})` : ''}`,
+    )
+    .join(' → ');
+}
+
+/**
  * One turn's recorded loop as a left-to-right graph. Edges carry the decision that connects two steps.
  * @param {unknown} turn
  * @param {{ learning?: unknown[] }} [options]
@@ -490,6 +506,8 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         elapsedMs: c.provenance?.elapsedMs ?? null,
         layers: c.layers ?? [],
         snippets: Array.isArray(c.snippets) ? c.snippets.length : 0,
+        stages: stageLine(c.classified),
+        fallback: c.classified?.fallback ?? null,
       }))
     : (expertParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
         id: p.id,
@@ -500,6 +518,8 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         elapsedMs: null,
         layers: p.layers,
         snippets: p.snippets.length,
+        stages: null,
+        fallback: null,
       }));
   const assessed = [];
   if (routed || participants.length) col++;
@@ -543,6 +563,8 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
           elapsed: fmtMs(p.elapsedMs),
           layers: p.layers?.join(', ') || 'none',
           snippets: p.snippets,
+          stages: p.stages,
+          fallback: p.fallback,
         },
       }),
     );

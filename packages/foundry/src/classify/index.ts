@@ -51,9 +51,11 @@ export {
 export { parseRecognition, type Recognition } from './recognition';
 export {
   type Carried,
+  type ClassifiedSummary,
   type ClassifyResult,
   type ClassifyRunOptions,
   carriedSection,
+  classifiedSummary,
   runStages,
   type StageCall,
   type StageRun,

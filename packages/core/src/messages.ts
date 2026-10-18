@@ -61,6 +61,8 @@ export type ParticipantRequest =
       readonly served?: ServedModel;
       /** What the call's instructions and domain knowledge were composed of; the journal stores version ids for it. */
       readonly composition?: CompositionSnapshot;
+      /** A staged classification (Foundry's classify): which stage, 0-based, this call was. */
+      readonly stage?: number;
     }
   | { readonly status: 'not-sent'; readonly phase: string; readonly reason: string }
   /** A call may have been made, but its input was never observed (e.g. the caller threw first). Not "not-sent". */

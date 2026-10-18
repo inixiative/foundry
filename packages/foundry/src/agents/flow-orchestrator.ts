@@ -48,7 +48,7 @@ import {
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
-import type { WardenPointer } from '../classify';
+import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -144,6 +144,10 @@ export interface DomainContribution {
    * Observed at the call boundary; a late answer cannot rewrite it. Not evidence of native receipt.
    */
   readonly request: ParticipantRequest;
+  /** A Warden with configured stages: its run, stage by stage (classify), and why it did or did not reach the thread. */
+  readonly classified?: ClassifiedSummary;
+  /** The exact input of every stage past the first (the first is `request`), each with its own composition. */
+  readonly stageRequests?: readonly ParticipantRequest[];
 }
 
 /** The immutable input every participant assessed. */
@@ -222,6 +226,20 @@ export interface InjectionPlan {
 export type PrefilterRun =
   | { readonly status: 'scored'; readonly elapsedMs: number; readonly skipped: number }
   | { readonly status: 'unavailable'; readonly elapsedMs: number; readonly reason: string };
+
+/** A call's frozen input as a journalled request, with the model that answered when known. */
+function suppliedRequest(e: PhaseRequestEvidence, served?: ServedModel | null): ParticipantRequest {
+  return {
+    status: 'supplied',
+    phase: e.phase,
+    providerId: e.providerId,
+    messages: e.messages,
+    capturedAt: e.capturedAt,
+    ...(served ? { served } : {}),
+    ...(e.composition ? { composition: e.composition } : {}),
+    ...(e.stage !== undefined ? { stage: e.stage } : {}),
+  };
+}
 
 function prefilterRun(outcome: PrefilterOutcome, skipped: number): PrefilterRun {
   return outcome.status === 'scored'
@@ -302,6 +320,10 @@ export interface GuardOutcome {
   readonly threadKnowledgeRevision?: number;
   /** The exact guard request supplied to the domain's provider, or why none was made. */
   readonly request?: ParticipantRequest;
+  /** A Warden with configured stages: its run, stage by stage (classify). */
+  readonly classified?: ClassifiedSummary;
+  /** The exact input of every stage past the first (the first is `request`), each with its own composition. */
+  readonly stageRequests?: readonly ParticipantRequest[];
 }
 
 /** Caller hooks for the post-action flow. `onRequest` fires at each domain's call boundary, before its answer. */
@@ -870,15 +892,7 @@ export class FlowOrchestrator {
       reason: string | undefined,
     ): ParticipantRequest =>
       observed
-        ? {
-            status: 'supplied',
-            phase: observed.phase,
-            providerId: observed.providerId,
-            messages: observed.messages,
-            capturedAt: observed.capturedAt,
-            ...(served ? { served } : {}),
-            ...(observed.composition ? { composition: observed.composition } : {}),
-          }
+        ? suppliedRequest(observed, served)
         : {
             status: 'not-sent',
             phase: 'advice',
@@ -889,7 +903,14 @@ export class FlowOrchestrator {
       extra: Partial<
         Pick<
           DomainContribution,
-          'reason' | 'layers' | 'snippets' | 'confidence' | 'prefilter' | 'pointer'
+          | 'reason'
+          | 'layers'
+          | 'snippets'
+          | 'confidence'
+          | 'prefilter'
+          | 'pointer'
+          | 'classified'
+          | 'stageRequests'
         >
       > = {},
     ): DomainContribution => ({
@@ -947,15 +968,23 @@ export class FlowOrchestrator {
     const outcome = raced.value;
     if (outcome.kind === 'error') return decided('error', { reason: outcome.error });
     const { result } = outcome;
-    if (result.error) return decided('error', { reason: result.error });
-    if (result.skipped) return decided('skipped', { reason: result.skipped });
-    if (result.notStarted) return decided('excluded', { reason: result.notStarted });
-    if (result.noComment) return decided('no-comment');
+    // A staged Warden's run is journalled whatever it decided, with every later stage's exact input.
+    const staged = {
+      ...(result.classified ? { classified: classifiedSummary(result.classified) } : {}),
+      ...(result.stageRequests?.length
+        ? { stageRequests: result.stageRequests.map((e) => suppliedRequest(e)) }
+        : {}),
+    };
+    if (result.error) return decided('error', { reason: result.error, ...staged });
+    if (result.skipped) return decided('skipped', { reason: result.skipped, ...staged });
+    if (result.notStarted) return decided('excluded', { reason: result.notStarted, ...staged });
+    if (result.noComment) return decided('no-comment', staged);
     return decided('contribute', {
       layers: [...result.layers],
       snippets: [...result.snippets],
       confidence: result.confidence,
       ...(result.pointer ? { pointer: result.pointer } : {}),
+      ...staged,
     });
   }
 
@@ -1343,6 +1372,12 @@ export class FlowOrchestrator {
           ? { threadKnowledgeRevision: r.threadKnowledgeRevision }
           : {}),
         request: r.request,
+        ...(r.classified ? { classified: classifiedSummary(r.classified) } : {}),
+        ...(r.stageRequests?.length
+          ? {
+              stageRequests: r.stageRequests.map((e) => suppliedRequest(e)),
+            }
+          : {}),
       });
     }
     const failed = outcomes
