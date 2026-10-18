@@ -20,6 +20,8 @@ export interface TranscriptTurn {
   interrupted?: boolean;
   /** Where the turn sits in its source, e.g. `line:42`. */
   sourceRef?: string;
+  /** Commit SHAs a tool result printed in this turn (`snapshotTurns` with `commits`). */
+  commits?: string[];
 }
 
 export interface CorrectionEvent {
