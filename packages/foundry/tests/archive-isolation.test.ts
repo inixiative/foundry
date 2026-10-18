@@ -5,6 +5,7 @@ import { join, relative } from 'node:path';
 import { DEFAULT_URL } from '@inixiative/archive/remote';
 
 const packages = join(import.meta.dir, '../..');
+const repo = join(packages, '..');
 /** Anything that builds a viewer, an Archive client or a daemon reaches the configured Archive. */
 const reachesArchive =
   /createViewer\(|registerArchiveRoutes\(|localArchive\(|ArchiveContextSource|runArchiveSetup|inspectReadiness\(|src\/start\.ts/;
@@ -16,15 +17,18 @@ const testFiles = (dir: string): string[] =>
     return entry.name.endsWith('.ts') ? [path] : [];
   });
 
-test('every test file or fixture that can reach an Archive imports the fake-Archive isolation', () => {
-  const missing = ['foundry/tests', 'acp/tests']
-    .flatMap((dir) => testFiles(join(packages, dir)))
+test('every test file, fixture or probe script that can reach an Archive imports the fake-Archive isolation', () => {
+  // Probe scripts start real Foundry instances; scripts/daemon is the machine's own daemon.
+  const missing = [
+    ...['foundry/tests', 'acp/tests'].flatMap((dir) => testFiles(join(packages, dir))),
+    ...testFiles(join(repo, 'scripts')).filter((file) => !file.includes('/scripts/daemon/')),
+  ]
     .filter((file) => !/isolate-archive\.ts$|archive-isolation\.test\.ts$/.test(file))
     .filter((file) => {
       const source = readFileSync(file, 'utf8');
       return reachesArchive.test(source) && !source.includes('isolate-archive');
     })
-    .map((file) => relative(packages, file));
+    .map((file) => relative(repo, file));
   expect(missing).toEqual([]);
 });
 
