@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { foundryRunKind } from '../src/archives/run-stamp';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
@@ -230,6 +231,13 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
     expect(primer!.base).toContain("Foundry's internal decision middleware");
     expect(primer!.base).toContain('ADVISE');
     for (const launch of decided) expect(launch.argv).toContain('--fork-session');
+    // The host's folder is stamped for Archive: its sessions are Foundry's own, never a person's work.
+    const [host] = readdirSync(join(run.root, 'receipts')).filter((name) =>
+      name.startsWith('primed-'),
+    );
+    expect(readFileSync(join(run.root, 'receipts', host!, '.archive-run'), 'utf8').trim()).toBe(
+      foundryRunKind(),
+    );
   } finally {
     await run.close();
   }
@@ -326,4 +334,11 @@ test('subagents: decisions are served by a bounded pool of dispatcher side sessi
   } finally {
     await run.close();
   }
+});
+
+test("Foundry's own folders take the harness's run kind, else foundry", () => {
+  expect(foundryRunKind({})).toBe('foundry');
+  expect(foundryRunKind({ ARCHIVE_RUN: 'oracle' })).toBe('oracle');
+  expect(foundryRunKind({ ARCHIVE_RUN: ' test ' })).toBe('test');
+  expect(foundryRunKind({ ARCHIVE_RUN: 'nonsense' })).toBe('foundry');
 });

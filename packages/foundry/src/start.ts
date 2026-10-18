@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
+import { resolve } from 'node:path';
+import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
+import { privateDirectory } from './providers/decision-host';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
@@ -1011,7 +1014,8 @@ await runStartupSelfTest({
   enabled: selfTestRequested,
   provider: decisions?.provider ?? provider,
   model: decisions ? decisionModel : config.defaults.model,
-  cwd: process.cwd(),
+  // A Foundry-owned folder, stamped for Archive: the self-test is Foundry's session, not the user's.
+  cwd: stampFoundryRun(privateDirectory(resolve(FOUNDRY_DIR, 'self-test'))),
   log: console.log,
   warn: console.warn,
   error: console.error,
