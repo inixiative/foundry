@@ -427,7 +427,8 @@ replacement). There is no alias, migration or fallback.
 
 ```
 <project>/.foundry/project.json   the repository's own Foundry settings, committed:
-                                  { "$comment"?: "…", "chorus"?: { enabled?, regions? | layers? } }
+                                  { "$comment"?: "…", "chorus"?: { enabled?, regions? | layers?,
+                                    consumed?, reception?, wardens?: { stages }, heralds?: { stages } } }
 ```
 
 The repository file carries only `chorus` (and an ignored `$comment`); any other
@@ -453,10 +454,18 @@ The regions:
 ```
 <project>/.foundry/regions/
   registry.json, GLOSSARY.md, ERRORS.md, ECOSYSTEM.md   corpus-level; composed into no Warden
-  <region id>/region.json      id, title, routing line, concepts, sources, tokens
+  <region id>/region.json      id, title, routing line, concepts, sources, tokens,
+                               role ("warden", the default, or "herald")
   <region id>/knowledge.md     the region's knowledge, in full (covers, domain,
                                every example by name, the specifics)
+  <region id>/<doc>.md         any other doc a stage reads (e.g. recognise.md, a
+                               short description for a recognising stage)
 ```
+
+`region.json` carries no classification settings: `stages` or `charter` there
+are refused by name (Aron, 2026-10-18: per-region overrides, "let's try and
+start without that"). A region's `role` says whose stages it runs; Herald
+regions never run (Heralds are not built) and the view says so.
 
 - **Setting.** `projects[id].chorus` is `{ enabled?, regions? | layers? }`.
   `enabled: true` turns it on; absent or `false`, the project has no Wardens
@@ -472,6 +481,34 @@ The regions:
   edit its `.foundry/project.json` locally. A thread without a project has no
   Wardens. There is no global setting: a chorus is per project because its
   docs are.
+- **Stages** (`chorus.wardens.stages`, `@inixiative/foundry/classify`). How the
+  region Wardens classify, as at most three stages; omitted, one stage, today's
+  Warden. Each stage is `{ model?, effort?, doc?, outcomes?, reason?, task?,
+  pointer?, escalate?, deadline? }`, every field defaulting to the default
+  stage's (`knowledge.md`, `binary`, `none`, `point`, `pointer: { any: true }`;
+  model and effort the decision model's):
+
+  ```json
+  "chorus": { "enabled": true, "wardens": { "stages": [
+    { "task": "recognise", "doc": "recognise.md", "outcomes": "ternary",
+      "escalate": ["yes", "unsure"], "deadline": 0.4 },
+    { "model": "claude-sonnet-5-5", "effort": "low", "deadline": 0.6 }
+  ] } }
+  ```
+
+  The machine's list replaces the repository's whole; `view.chorus.roles`
+  shows each role's resolved stages and the layer they came from, and the
+  Chorus page and `GET /api/projects/:id/chorus` add each stage's model, effort,
+  deadline share and its charter and protocol versions. Every region of the
+  role must hold every stage's doc: one that lacks it keeps the chorus from
+  being built, and `view.chorus.missingDocs` and its `reason` name the region,
+  the doc and the stage (checked on the composed chorus, so a later layer's
+  region brings its own docs). Charters stay Foundry's, per task and role:
+  `charter` in a stage or in `chorus` is refused by name (an eval run config
+  may carry candidate text). A stage naming a model or effort runs on its own
+  decision host (one per pair, on the decision login); with API-token decisions
+  such a stage is refused. `chorus.heralds` takes the same shape and runs
+  nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
 - **Layers.** A chorus may be built from layers, in order:
 
   ```json
@@ -508,10 +545,13 @@ The regions:
   layers and regions with sizes and keys; the viewer's project settings have a
   read-only **Chorus** page; the daemon logs each project's chorus at startup.
   A malformed region is an error that names it.
-- **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
-  slot, whole, through a generated `markdown` source (`region:<id>`), so the
-  audit log versions it as `source-content:region:<id>@project:<project>` and
-  every call records the exact text. The ladder then applies as for any role:
+- **Knowledge.** The first stage's doc (`knowledge.md` by default) is the
+  Warden's `domainKnowledge` slot, whole, through a generated `markdown` source
+  (`region:<id>`; another doc is `region:<id>:<doc>`), so the audit log versions
+  it as `source-content:region:<id>@project:<project>` and every call records
+  the exact text. A later stage's doc is composed the same way, overlays
+  included (`buildStageKnowledge`, layer `role:<id>:domainKnowledge:<doc>`), and
+  journals its own versions with that stage's request (`stageRequests`). The ladder then applies as for any role:
   `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
 - **Warm-cache key.** Each region has a key, the content hash of its composed
@@ -524,24 +564,35 @@ The regions:
   instruction file loads, is an error that names the region, never a Warden
   running with no knowledge; one that cannot be read shows `keyError` in the
   doctor and the Chorus page. Every Warden call journals it with its versions
-  (`versions.chorus: { region, key }`, THREAD-TREE spec B). The sharing itself
+  (`versions.chorus: { region, key }`, THREAD-TREE spec B; `doc` too when a
+  stage reads another doc, each doc keyed on its own text). The sharing itself
   is not built; the key is what it will be looked up by.
-- **Charter.** Every Warden runs under the one charter, `WARDEN_CHARTER` (the
-  classifier wording; the roster's advise-style charter was retired
-  2026-10-17): `NO_COMMENT`, or a pointer, ranked `Look over here: <name>
-  (<where it is written>) — <why>` then `Less likely: …`, a `Choose one:`
-  sibling set, or a class, at most three names. Wardens point; the main thread
+- **Charter.** Every pointing stage runs under the Warden charter,
+  `WARDEN_CHARTER` (the classifier wording; the roster's advise-style charter
+  was retired 2026-10-17), and a recognising stage under the recognise charter:
+  `NO_COMMENT`, or a pointer, ranked `Look over here: <name> (<where it is
+  written>) — <why>` then `Less likely: …`, an `All of these:` set, a `Choose
+  one:` sibling set (off with `pointer: { any: false }`, which also removes it
+  from the charter), or a class, at most three names. Wardens point; the main thread
   decides. The advice and guard protocols are pointer-only (a guard finding is
   advisory, with no suggestion). The pointer is parsed into
   `{ relevant, shape, pointer, where, level, candidates }` on the advice
   result, each guard finding and the advice journal, and reaches the thread as
   "The <region> Warden chimed in:\n- Look over here: …". The charter version is
-  journalled with every call.
+  journalled with every call; a staged Warden's contribution also journals its
+  run (`classified`: outcome, whether it was delivered, any fallback, every
+  stage's trace), which the turn's flow graph shows on the Warden's node.
 - **Pool.** The primed decision pool is sized for the largest chorus any
-  project runs (`largestRoster`), so a 53-region project primes 2 × 53 + 8 keys.
+  project runs (`largestRoster`) and its stage count (`largestStageCount`): a
+  key per stage plus a review key per Warden, so a 53-region one-stage project
+  primes 2 × 53 + 8 keys. A later stage's session is
+  `<thread>:aux:domain:<region>:stage:<n>` and never runs in-session.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
   scores a one-layer chorus from that directory, composed exactly as live
-  (project view, role layers, charter), without touching the daemon's settings.
+  (project view, role layers, charter), without touching the daemon's settings;
+  `--classify <run.json>` runs it under a stage configuration (the same stages
+  plus eval-only candidate charter text, and `members` for a grouped
+  recogniser).
 
 **Where the slots live.** A middleware role's slots are private layers,
 `role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to

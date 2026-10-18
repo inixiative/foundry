@@ -1,10 +1,12 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';
+import { computeHash } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
 import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
+import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
 import { MODEL_REGISTRY } from './models/registry';
 import { providerEnabled } from './models/vendors';
@@ -79,6 +81,37 @@ export interface ReadinessChorus {
     key?: string;
     /** Why the key could not be computed (the knowledge file could not be read). */
     keyError?: string;
+  }>;
+  /** How each role's regions classify (classify): the resolved stages, where they came from, and their versions. */
+  roles: {
+    warden: ReadinessRole;
+    herald: ReadinessRole & { built: false };
+  };
+  /** Docs a region lacks for its role's stages, by name: the chorus is not built while any is. */
+  missingDocs?: ResolvedChorus['missingDocs'];
+}
+
+/** One role's classification as the view shows it. */
+export interface ReadinessRole {
+  /** Which layer gave the stage list: the machine's settings, the repository's, or the default (today's Warden). */
+  from: ResolvedChorus['roles']['warden']['from'];
+  regions: number;
+  stages: Array<{
+    index: number;
+    task: StageConfig['task'];
+    doc: string;
+    outcomes: StageConfig['outcomes'];
+    reason: StageConfig['reason'];
+    /** The stage's own model and effort; `decision` when it takes the decision model's. */
+    model: string;
+    effort: string;
+    pointer?: StageConfig['pointer'];
+    escalate?: StageConfig['escalate'];
+    /** Its share of the trigger's deadline. */
+    deadline: number;
+    /** The fixed charter it runs under (task, role, pointer), and the version of each response protocol. */
+    charter: string;
+    protocols: { advice: string; guard: string };
   }>;
 }
 /** A native runtime's CLI as this Foundry would launch it: on PATH, or found in an app bundle. */
@@ -562,6 +595,11 @@ export async function describeReadinessChorus(
     ...(chorus.repository ? { repository: chorus.repository } : {}),
     ...(chorus.available ? { available: chorus.available } : {}),
     ...(chorus.reason ? { reason: chorus.reason } : {}),
+    roles: {
+      warden: readinessRole(chorus.roles.warden, 'warden'),
+      herald: { ...readinessRole(chorus.roles.herald, 'herald'), built: false },
+    },
+    ...(chorus.missingDocs?.length ? { missingDocs: chorus.missingDocs } : {}),
     layers: chorus.layers.map((layer) => ({
       label: layer.label,
       regionsDir: layer.regionsDir,
@@ -585,6 +623,42 @@ export async function describeReadinessChorus(
         )),
       })),
     ),
+  };
+}
+
+function readinessRole(
+  role: ResolvedChorus['roles']['warden'],
+  name: 'warden' | 'herald',
+): ReadinessRole {
+  const shares = deadlineShares(role.stages);
+  const version = (text: string) => `protocol-${computeHash(text).slice(0, 12)}`;
+  return {
+    from: role.from,
+    regions: role.regions,
+    stages: role.stages.map((stage, index) => {
+      const spec = { task: stage.task, outcomes: stage.outcomes, reason: stage.reason };
+      return {
+        index,
+        task: stage.task,
+        doc: stage.doc,
+        outcomes: stage.outcomes,
+        reason: stage.reason,
+        model: stage.model ?? 'decision',
+        effort: stage.effort ?? 'decision',
+        ...(stage.pointer ? { pointer: stage.pointer } : {}),
+        ...(stage.escalate ? { escalate: stage.escalate } : {}),
+        deadline: Math.round(shares[index]! * 1000) / 1000,
+        // Heralds have no charter yet: the socket only.
+        charter:
+          name === 'herald' ? 'not built' : charterFor(stage.task, 'warden', stage.pointer).version,
+        protocols: {
+          advice: version(
+            responseProtocol({ envelope: 'advice', trigger: 'user-message', ...spec }),
+          ),
+          guard: version(responseProtocol({ envelope: 'guard', trigger: 'agent-action', ...spec })),
+        },
+      };
+    }),
   };
 }
 

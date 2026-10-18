@@ -53,7 +53,7 @@ On `revise`: change the design, then review again. Editing the design after a `g
 
 Arms run **serially**, within the cost ceiling, with `--pause-at <n>` on the five-hour window, `--session <key>` per arm, and the window % recorded per arm. Halt at ≥ 90% of the seven-day window.
 
-The eval scripts refuse a wide run (more than three moments, or `--pipeline`; `warden-size.ts run` always) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). When `<design>.decisions.md` exists, the gate also refuses while it still holds a `TBD` value outside its `## Log`. The design's path and hash, and the companion's when there is one (`decisions`, `decisionsSha256`), land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
+The eval scripts refuse a wide run (more than three moments, or a `--classify` run of more than one stage; `warden-size.ts run` always) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). When `<design>.decisions.md` exists, the gate also refuses while it still holds a `TBD` value outside its `## Log`. The design's path and hash, and the companion's when there is one (`decisions`, `decisionsSha256`), land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
 
 ## 5. REPORT — the reporting standard
 

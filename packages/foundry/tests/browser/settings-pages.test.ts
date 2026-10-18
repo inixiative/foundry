@@ -177,6 +177,17 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.goBack();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);
 
+    // The chorus page shows how its Wardens classify: today's single stage, from the default.
+    await page.goto(`${origin}/projects/${project.id}/settings/chorus`);
+    await page.locator('.settings-section-label', { hasText: 'Classification' }).waitFor();
+    expect(await page.locator('.settings-body').innerText()).toContain(
+      "Wardens: 1 stage, from the default (today's Warden). Heralds: not built.",
+    );
+    expect(
+      await page.locator('.chorus-table').first().locator('tbody tr td').allInnerTexts(),
+    ).toEqual(expect.arrayContaining(['1', 'point', 'knowledge.md', 'binary', '–', '100%']));
+    await page.goto(`${origin}/projects/${project.id}/settings/integrations`);
+
     await page.getByRole('link', { name: 'Workspace' }).click();
     await page.locator('.proj-item', { hasText: 'Forge Master' }).click();
     await page.locator('.forge-master .settings-chat-title', { hasText: 'Forge Master' }).waitFor();
@@ -193,6 +204,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       '/settings/kingdom',
       '/settings/devices',
       `/projects/${project.id}/settings/archive`,
+      `/projects/${project.id}/settings/chorus`,
       '/analytics',
     ]) {
       await page.goto(`${origin}${path}`);

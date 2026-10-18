@@ -25,6 +25,7 @@ import {
   type StageSettings,
   starterConfig,
   validateChorusSettings,
+  validateConfig,
 } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
@@ -260,4 +261,25 @@ test('a doc source id names its region and doc; knowledge.md keeps the bare id',
     region: 'locks',
     doc: 'recognise.md',
   });
+});
+
+test('a stage list in settings is validated where it is written: refused in settings.json, reported from the repository', () => {
+  const { path, config } = project();
+  config.projects.P!.chorus = {
+    wardens: { stages: [{ task: 'recognise', pointer: { any: false } }] },
+  };
+  expect(() => validateConfig(config)).toThrow(
+    'projects.P.chorus.wardens.stages[0].pointer is for point stages; this one recognises',
+  );
+  delete config.projects.P!.chorus;
+  writeFileSync(
+    join(path, '.foundry', 'project.json'),
+    JSON.stringify({ chorus: { enabled: true, wardens: { stages: [{ charter: 'mine' }] } } }),
+  );
+  const view = resolveProjectView(config, 'P')!;
+  // A repository's checkout never stops the daemon: its malformed setting is reported, and ignored.
+  expect(view.chorus.repository?.error).toContain(
+    'chorus.wardens.stages[0].charter is not a setting',
+  );
+  expect(view.chorus.on).toBe(false);
 });
