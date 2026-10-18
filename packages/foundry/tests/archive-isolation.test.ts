@@ -7,13 +7,21 @@ import { DEFAULT_URL } from '@inixiative/archive/remote';
 const packages = join(import.meta.dir, '../..');
 const repo = join(packages, '..');
 /** Anything that builds a viewer, an Archive client or a daemon reaches the configured Archive. */
-const reachesArchive =
-  /createViewer\(|registerArchiveRoutes\(|localArchive\(|ArchiveContextSource|runArchiveSetup|inspectReadiness\(|src\/start\.ts/;
+const reachesArchive = new RegExp(
+  [
+    /createViewer\(|registerArchiveRoutes\(|localArchive\(|ArchiveContextSource|runArchiveSetup/,
+    /inspectReadiness\(|src\/start\.ts/,
+    // Starting Foundry through its CLI or the package script.
+    /cli\.ts['"]?,\s*['"]start\b|['"]run['"],\s*['"](?:start|dev)['"]|bun run (?:start|dev)\b/,
+  ]
+    .map((part) => part.source)
+    .join('|'),
+);
 
 const testFiles = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === 'fixtures' ? [] : testFiles(path);
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : testFiles(path);
     return entry.name.endsWith('.ts') ? [path] : [];
   });
 
