@@ -296,6 +296,7 @@ ACP over stdio has no remote mode of its own.
 
 - **Host-relayed remote** (Paseo relay, T3 Connect, a phone driving a desktop host): the host spawns foundry-acp on the Foundry machine, so the Foundry connection is still local, and the remote human is the host's to authenticate. Whoever holds owner on that host can drive Foundry; the `acp:<client>` tag records which host it was.
 - **Foundry on another machine** goes through Kingdom: Signet operations on the `foundry` integration (`thread.read`, `thread.prompt`, `prompt.resolve`; the catalog has `operations: []` today), metered through `AccessExecution`/`UsageEvent`. Do not open the daemon's ACP surface to the tunnel.
+- **Outside agents as members of a thread** use the same path. [CONVERSATIONS.md](CONVERSATIONS.md) is the approved design (2026-10-19): the conversation as a wrapper of the main thread, its members, floor modes and depth bounds, and the Signet operations (`thread.read`, `thread.prompt`, `thread.floor`, `prompt.resolve`) on the `foundry` integration's `threads` resource.
 
 ### 7.3 Thread identity per ACP session
 
