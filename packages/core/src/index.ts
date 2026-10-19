@@ -372,6 +372,19 @@ export {
   vendorOfProvider,
 } from './model-registry';
 export * from './native-evidence';
+// Native tools by what they do (tool gate, work items, Oracle's session reader)
+export {
+  DEFAULT_CONSUMED_TOOLS,
+  FETCH_TOOLS,
+  LINEAR_ISSUE_TOOLS,
+  READ_TOOLS,
+  SHELL_TOOLS,
+  toolCapability,
+  toolGlobMatcher,
+  WORK_ITEM_ID_KEYS,
+  WRITE_TOOLS,
+  workItemId,
+} from './native-tools';
 // Retry middleware
 export { type RetryConfig, retryMiddleware } from './retry';
 export { type Route, type RouteHandler, Router, type RouterConfig } from './router';

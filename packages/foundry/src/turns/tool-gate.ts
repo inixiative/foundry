@@ -5,6 +5,7 @@ import {
   newId,
   type PermissionLevel,
   permissionLevel,
+  toolCapability,
 } from '@inixiative/foundry-core';
 import type { PermissionMode } from '../providers/thread-launch';
 
@@ -23,10 +24,6 @@ export interface ToolRules {
   protectedPaths?: string[];
 }
 
-const SHELL = new Set(['Bash', 'BashOutput', 'KillShell', 'shell', 'exec_command']);
-const WRITE = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
-const READ = new Set(['Read', 'NotebookRead', 'LS', 'Glob', 'Grep']);
-const FETCH = new Set(['WebFetch', 'WebSearch']);
 const PATH_KEYS = ['file_path', 'path', 'notebook_path'] as const;
 
 /** Every path a call names: its own path keys, Claude's blocked path, Codex file changes. */
@@ -53,14 +50,10 @@ export function classifyTool(
   capability: Capability;
   paths: string[];
 } {
-  const { toolName } = request;
-  const paths = toolPaths(request);
-  if (SHELL.has(toolName)) return { capability: 'exec:shell', paths };
-  if (WRITE.has(toolName)) return { capability: 'file:write', paths };
-  if (READ.has(toolName)) return { capability: 'file:read', paths };
-  if (FETCH.has(toolName)) return { capability: 'net:fetch', paths: [] };
-  if (toolName.startsWith('mcp__')) return { capability: 'net:api', paths: [] };
-  return { capability: `tool:${toolName}`, paths };
+  const capability = toolCapability(request.toolName);
+  // A fetch or an API call names no local path.
+  const paths = capability === 'net:fetch' || capability === 'net:api' ? [] : toolPaths(request);
+  return { capability, paths };
 }
 
 const RANK: Record<PermissionLevel, number> = { allow: 0, prompt: 1, deny: 2 };
