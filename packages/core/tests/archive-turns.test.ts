@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { ArchiveEntry } from '@inixiative/archive';
 import { extractCorrections } from '../src';
-import { snapshotTurns } from '../src/feedback/archive-turns';
+import { commitsIn, commitsMade, snapshotTurns } from '../src/feedback/archive-turns';
 
 const at = (i: number) => Date.parse('2026-06-12T10:00:00Z') + i * 60_000;
 const entry = (i: number, kind: ArchiveEntry['kind'], text: string): ArchiveEntry => ({
@@ -61,4 +61,11 @@ test('the commit scan adds a turn where a tool result printed commits, and chang
     sourceRef: 'line:6',
     signals: expect.arrayContaining(['interruption']),
   });
+});
+
+test("commitsMade reads only git commit's [branch sha] line; commitsIn adds git log's", () => {
+  const sha = 'a'.repeat(40);
+  const text = `[feat/x 1234abc] add util\n 1 file changed\ncommit ${sha}\nAuthor: t`;
+  expect(commitsMade(text)).toEqual(['1234abc']);
+  expect(commitsIn(text)).toEqual(['1234abc', sha]);
 });

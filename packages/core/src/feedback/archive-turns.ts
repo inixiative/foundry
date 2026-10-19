@@ -9,9 +9,12 @@ const INTERRUPTED = /^\s*\[Request interrupted by user/;
 const COMMIT_BRACKET = /\[[^[\]\n]+\s([0-9a-f]{7,40})\]/g;
 const COMMIT_LINE = /^commit ([0-9a-f]{40})/gm;
 
+/** Commits a tool result says were made: `git commit`'s `[branch sha]` line only. */
+export const commitsMade = (text: string) => [...text.matchAll(COMMIT_BRACKET)].map((m) => m[1]!);
+
 /** Commit SHAs a tool result printed: `git commit`'s `[branch sha]` line, `git log`'s `commit <sha>`. */
 export const commitsIn = (text: string) => [
-  ...[...text.matchAll(COMMIT_BRACKET)].map((m) => m[1]!),
+  ...commitsMade(text),
   ...[...text.matchAll(COMMIT_LINE)].map((m) => m[1]!),
 ];
 
