@@ -66,6 +66,20 @@ test('the commit scan adds a turn where a tool result printed commits, and chang
 test("commitsMade reads only git commit's [branch sha] line; commitsIn adds git log's", () => {
   const sha = 'a'.repeat(40);
   const text = `[feat/x 1234abc] add util\n 1 file changed\ncommit ${sha}\nAuthor: t`;
-  expect(commitsMade(text)).toEqual(['1234abc']);
+  expect(commitsMade(text)).toEqual([{ branch: 'feat/x', sha: '1234abc' }]);
   expect(commitsIn(text)).toEqual(['1234abc', sha]);
+});
+
+test('commitsMade keeps the branch git printed: a root commit, a detached HEAD, several in one result', () => {
+  const text = [
+    '[main (root-commit) 0a1b2c3] first',
+    '[detached HEAD 4d5e6f7] wip',
+    '[fix/b-2 89abcde0] amend',
+    'see [notes] and [x y] for more',
+  ].join('\n');
+  expect(commitsMade(text)).toEqual([
+    { branch: 'main', sha: '0a1b2c3' },
+    { branch: 'detached HEAD', sha: '4d5e6f7' },
+    { branch: 'fix/b-2', sha: '89abcde0' },
+  ]);
 });

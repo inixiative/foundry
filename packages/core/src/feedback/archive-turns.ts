@@ -6,15 +6,31 @@ import type { TranscriptTurn } from './correction';
 // `foundry repeats` and Oracle's session miner; its own export, so the core root never loads Archive.
 
 const INTERRUPTED = /^\s*\[Request interrupted by user/;
-const COMMIT_BRACKET = /\[[^[\]\n]+\s([0-9a-f]{7,40})\]/g;
+const COMMIT_BRACKET = /\[([^[\]\n]+?)\s([0-9a-f]{7,40})\]/g;
+/** `git commit` adds this to the branch on a repository's first commit. */
+const ROOT_COMMIT = /\s+\(root-commit\)$/;
 const COMMIT_LINE = /^commit ([0-9a-f]{40})/gm;
 
-/** Commits a tool result says were made: `git commit`'s `[branch sha]` line only. */
-export const commitsMade = (text: string) => [...text.matchAll(COMMIT_BRACKET)].map((m) => m[1]!);
+/** A commit a session made, as `git commit` printed it: the branch it was on, and its short SHA. */
+export interface MadeCommit {
+  /** As git printed it: `main`, `feat/x`, `detached HEAD`; `(root-commit)` dropped. */
+  readonly branch: string;
+  readonly sha: string;
+}
+
+/**
+ * Commits a tool result says were made: `git commit`'s `[branch sha]` line only, with the branch,
+ * so a reader can tell work on a PR's own branch (amended or rebased away later) from other work.
+ */
+export const commitsMade = (text: string): MadeCommit[] =>
+  [...text.matchAll(COMMIT_BRACKET)].map((m) => ({
+    branch: m[1]!.replace(ROOT_COMMIT, ''),
+    sha: m[2]!,
+  }));
 
 /** Commit SHAs a tool result printed: `git commit`'s `[branch sha]` line, `git log`'s `commit <sha>`. */
 export const commitsIn = (text: string) => [
-  ...commitsMade(text),
+  ...commitsMade(text).map((made) => made.sha),
   ...[...text.matchAll(COMMIT_LINE)].map((m) => m[1]!),
 ];
 
