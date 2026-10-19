@@ -9,21 +9,16 @@
 
 import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
-import { computeHash } from '@inixiative/foundry-core';
+import {
+  computeHash,
+  DEFAULT_CONSUMED_TOOLS,
+  toolGlobMatcher,
+  workItemId,
+} from '@inixiative/foundry-core';
 import { classifyTool } from '../turns/tool-gate';
 import type { ConsumedSettings } from '../viewer/config';
 import type { ToolObservation } from './domain-librarian';
 import type { WorkItemMoment } from './flow-orchestrator';
-
-/**
- * Linear issues and documents, Notion pages, under any MCP server name that says which it is. Tool
- * names match case-insensitively (`mcp__claude_ai_Notion__notion-fetch`, `mcp__plugin_linear_linear__get_issue`).
- */
-export const DEFAULT_CONSUMED_TOOLS: readonly string[] = Object.freeze([
-  'mcp__*linear*__get_issue',
-  'mcp__*linear*__get_document',
-  'mcp__*notion*__*fetch*',
-]);
 
 /** Where tickets and specs are usually written in a repository: prose files only, never test specs. */
 export const DEFAULT_CONSUMED_PATHS: readonly string[] = Object.freeze([
@@ -43,12 +38,10 @@ export const DEFAULT_CONSUMED_MAX_CHARS = 12_000;
 /** A file larger than this is not read from disk for a work item; its observed output is used, or nothing. */
 const MAX_FILE_BYTES = 1_000_000;
 
-/** Fields a fetch tool names its item by, in the order they are tried. */
-const ID_KEYS = ['id', 'issueId', 'issue_id', 'documentId', 'pageId', 'page_id', 'url'] as const;
-
 /** A project's consumed trigger with its defaults applied; undefined while it is off. */
 export interface ConsumedMatcher {
-  readonly tools: readonly Bun.Glob[];
+  /** Whether a tool name is one the trigger reads (`toolGlobMatcher`). */
+  readonly tools: (toolName: string) => boolean;
   readonly paths: readonly Bun.Glob[];
   readonly maxChars: number;
 }
@@ -58,9 +51,7 @@ export function consumedMatcher(
 ): ConsumedMatcher | undefined {
   if (!settings?.enabled) return undefined;
   return {
-    tools: (settings.tools ?? DEFAULT_CONSUMED_TOOLS).map(
-      (glob) => new Bun.Glob(glob.toLowerCase()),
-    ),
+    tools: toolGlobMatcher(settings.tools ?? DEFAULT_CONSUMED_TOOLS),
     paths: (settings.paths ?? DEFAULT_CONSUMED_PATHS).map((glob) => new Bun.Glob(glob)),
     maxChars: settings.maxChars ?? DEFAULT_CONSUMED_MAX_CHARS,
   };
@@ -126,14 +117,11 @@ export function workItemOf(
       ...clip(text, matcher.maxChars),
     };
   }
-  const tool = observation.tool.toLowerCase();
-  if (!matcher.tools.some((glob) => glob.match(tool))) return undefined;
+  if (!matcher.tools(observation.tool)) return undefined;
   const text = observation.output;
   if (!text?.trim()) return undefined;
   const input = observation.input ?? {};
-  const id = ID_KEYS.map((key) => input[key]).find(
-    (value): value is string => typeof value === 'string' && value.trim().length > 0,
-  );
+  const id = workItemId(input);
   const name = id ?? observation.tool;
   const itemId = `${observation.tool}:${name}`;
   return {
