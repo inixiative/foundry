@@ -73,10 +73,10 @@ export class VCR {
   /** Where this process last wrote each cassette (pending on drift), so an in-run replay reads the new recording. */
   static written = new Map<string, string>();
 
-  /** Live calls this process has made; recording refuses past FOUNDRY_VCR_MAX_LIVE (default 40). */
+  /** Live calls this process has made; recording refuses past FOUNDRY_VCR_MAX_LIVE (default 80). */
   static liveCalls = 0;
   static spendLive(what: string): void {
-    const limit = Number(process.env.FOUNDRY_VCR_MAX_LIVE ?? 40);
+    const limit = Number(process.env.FOUNDRY_VCR_MAX_LIVE ?? 80);
     if (++VCR.liveCalls > limit)
       throw Error(`VCR: live call budget of ${limit} spent; refusing ${what}`);
   }
