@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind constant
+ * @partOf feature:wardens
+ */
 import { computeHash } from '@inixiative/foundry-core';
 import { ALL_OF_CAVEAT, CHOOSE_ONE_CAVEAT } from '../classify/pointer';
 

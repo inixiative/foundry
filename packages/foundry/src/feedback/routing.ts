@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import type { Cartographer, RouteResult } from '../agents/cartographer';
 import { configuredExperts } from '../agents/configured-experts';
 import type { FoundryConfig } from '../viewer/config';

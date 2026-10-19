@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:journal, primitive:memory
+ */
 import type { EventStream, Thread } from '@inixiative/foundry-core';
 import type {
   ThreadKnowledgeBundle,

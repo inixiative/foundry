@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:devices, feature:viewer
+ */
 import type { Hono } from 'hono';
 import { enrollLocalDevice, localInventory } from '../../devices/local-inventory';
 import type { ConfigStore } from '../config';

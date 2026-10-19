@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * Score the Warden chorus against real-session probes (scripts/evals/warden-probes.ts).
  *
  *   bun scripts/evals/warden-charter.ts --probes ~/.foundry/evals/warden-probes.jsonl \

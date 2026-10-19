@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:archive
+ */
 /** Kingdom's API redirects /dashboard to its web dashboard; only https or a loopback Kingdom is linked. */
 export const hostedSetupUrl = (kingdomUrl) => {
   try {

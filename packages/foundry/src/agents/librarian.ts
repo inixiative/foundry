@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf feature:flow
+ */
 // ---------------------------------------------------------------------------
 // Librarian — sole writer to the thread-state layer (FLOW.md)
 //

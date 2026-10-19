@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:agents, primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // Tool-use loop — agents call tools, get results, iterate
 // ---------------------------------------------------------------------------

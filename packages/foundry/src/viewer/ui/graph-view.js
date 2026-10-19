@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:flow, feature:viewer
+ */
+/**
  * Graph panel — the center panel's graph mode. Three views of structures Foundry records:
  *   Threads        thread + subagent hierarchy (the live `threads` stream the store already holds)
  *   Turn flow      one turn's recorded loop (the `flow:<threadId>` stream, held only while shown)

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:logger
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 // ---------------------------------------------------------------------------

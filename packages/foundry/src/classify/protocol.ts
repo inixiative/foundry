@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind schema
+ * @partOf primitive:classify
+ */
 // The response protocols every Warden phase answers under, and their strict reading. NO_COMMENT is the
 // expected answer in every phase; anything else is one JSON object in the phase's envelope (advice
 // snippets, or guard findings), and an answer in neither shape is an error, never a guess.

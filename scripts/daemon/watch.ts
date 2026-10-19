@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon
+ */
+/**
  * Periodic update check for a daemon that is already running.
  *
  * The supervisor only stages updates at startup, so a daemon left running for

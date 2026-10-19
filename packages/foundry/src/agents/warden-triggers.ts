@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 // ---------------------------------------------------------------------------
 // Warden trigger points — the moments a Warden is asked
 //

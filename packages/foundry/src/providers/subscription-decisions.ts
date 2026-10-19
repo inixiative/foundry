@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:decisions
+ */
 import type { PrimedEvent } from '@inixiative/agent-session';
 import {
   type CompletionOpts,

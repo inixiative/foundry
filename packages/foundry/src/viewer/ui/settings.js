@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, primitive:settings
+ */
+/**
  * Settings pages — Foundry-wide at /settings/:section, per project at
  * /projects/:id/settings/:section (ui/route.js).
  *

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threads, feature:viewer
+ */
 import type { NativeEvidence } from '@inixiative/foundry-core';
 import type { LearningState, ThreadKnowledgeBundle } from '../agents/thread-runtime';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';

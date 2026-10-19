@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 // The pre-filter's local model: install (setup), serve (the daemon), and whether it is installed
 // (doctor). Kev (Jared Palmer, Apache-2.0): a LoRA and pointer head on Qwen3.5-4B-Base that answers
 // TypeSafe's System One API, run through MLX on Apple Silicon. Everything lives under

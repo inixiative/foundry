@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 // The Warden pre-filter: before a trigger fans out to the Wardens, one local decision-model call
 // asks, per Warden, "is this moment about your domain?" A Warden is skipped only on a confident no
 // (its score below `skipBelow`); an unsure score, a failed call or a missing model asks every

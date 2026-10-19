@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf primitive:decisions
+ */
 import type { LLMProvider } from '@inixiative/foundry-core';
 import {
   MODEL_REGISTRY,

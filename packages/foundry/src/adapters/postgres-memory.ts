@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf infrastructure:prisma, primitive:memory
+ */
 import type {
   ContextRef,
   ContextSource,

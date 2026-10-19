@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:acp
+ */
 /** `foundry` from a foundry-acp install: Foundry's own command line (`foundry repeats`). */
 import { runFoundryCli } from '@inixiative/foundry/cli';
 

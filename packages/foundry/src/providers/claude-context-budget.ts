@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:usage, primitive:nativeSessions
+ */
 /** Claude's native auto-compaction policy, independent of cumulative spend
  * and Foundry's per-layer caches. This is a target window, not request admission.
  */

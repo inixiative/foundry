@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 // ---------------------------------------------------------------------------
 // Work items: what the `consumed` trigger asks the Wardens about
 //

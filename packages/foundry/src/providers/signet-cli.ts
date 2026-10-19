@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:kingdom
+ */
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readPrivateJson, SignetClient, signetCredentialSchema } from '@inixiative/signet';

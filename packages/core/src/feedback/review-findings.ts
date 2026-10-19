@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import {
   type Authorship,
   CONCEPT_CLUSTERS,

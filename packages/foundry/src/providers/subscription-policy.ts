@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf primitive:decisions
+ */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';

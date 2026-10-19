@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:composition
+ */
 import type {
   HierarchyFileSource,
   HierarchyMatch,

@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind helper
+ * @partOf feature:daemon
+ */
+/**
  * Gate for installing the daemon.
  *
  * A daemon that restarts forever on a configuration it can never satisfy is

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import { createHash } from 'node:crypto';
 
 // The Prospector's correction detection (moved from Oracle's session miner), shared by Oracle's

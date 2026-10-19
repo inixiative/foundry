@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:composition
+ */
+/**
  * Prompt Composer — composes and decomposes project identity files.
  *
  * The project's base identity (common + per-runtime overrides) is stored as

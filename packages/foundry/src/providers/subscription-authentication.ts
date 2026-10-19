@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth
+ */
 import { withProfile } from './default-profiles';
 import {
   NativeAuthentication,

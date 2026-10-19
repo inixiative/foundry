@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:logger
+ */
 // ---------------------------------------------------------------------------
 // Pino adapter — structured JSON output for production
 // ---------------------------------------------------------------------------

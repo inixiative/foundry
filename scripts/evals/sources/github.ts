@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind client
+ * @partOf feature:evals
+ */
+/**
  * The Prospector's GitHub source: a reviewer's PR reviews, inline review comments and PR comments,
  * read through `gh api graphql` (the caller's own gh login; read-only, never writes to GitHub).
  */

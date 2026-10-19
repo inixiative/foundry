@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:traces
+ */
 import type { ThreadMeta } from '@inixiative/foundry-core';
 
 export interface CheckpointImport {

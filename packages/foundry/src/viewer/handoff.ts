@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer, integration:kingdom
+ */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE, sessionValue } from './request-auth';
 

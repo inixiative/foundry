@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:classify
+ */
 // The stage loop: ask each stage in order, read its answer under its protocol, and go on only with
 // the outcomes it escalates, carrying their tag and why. The caller frames the moment and makes the
 // call (`ask`); this module never builds a provider. A later stage that fails, answers out of shape or

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth, integration:kingdom
+ */
 import { createHash } from 'node:crypto';
 import { mkdirSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';

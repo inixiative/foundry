@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
 import { html } from './lib.js';
 
 /** An on/off switch: a checkbox with role="switch", labelled for assistive tech. */

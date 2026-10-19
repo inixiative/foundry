@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:composition, primitive:contextLayers
+ */
 import {
   ContextLayer,
   type ContextSource,

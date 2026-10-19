@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf feature:evals
+ */
 import type { WardenProbe } from './warden-probes';
 
 /** One Warden of the roster as the labeler sees it. */

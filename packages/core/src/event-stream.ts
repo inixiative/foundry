@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:signals
+ */
 import type { ActionPrompt } from './action-prompt';
 import type { LifecycleEvent } from './cache-lifecycle';
 import type { DispatchContext } from './middleware';

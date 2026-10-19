@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind transformer
+ * @partOf feature:threadTree, integration:archive
+ */
+/**
  * Spec A (docs/THREAD-TREE.md): each middleware call of a turn becomes one small entry — its state
  * and its result, never the message it was sent. Raw middleware rows stay in the journal under a
  * retention setting; Archive only ever gets these.

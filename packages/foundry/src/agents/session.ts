@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:threads
+ */
 import {
   type BaseAgent,
   ContextLayer,

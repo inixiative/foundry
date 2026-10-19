@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
+/**
  * Thread name and work context, shared by the thread list, header, drawer and graph.
  * The server resolves which name is in effect (`title`: a person's name, else the agent's).
  */

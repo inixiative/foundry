@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:secrets
+ */
 /** Credential references belong in configuration; secrets stay behind the resolver. */
 /** `kingdom-signet` names the Signet a paired Kingdom granted, by the destination's origin plus the owner it was paired as. */
 export type CredentialReference =

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind middleware
+ * @partOf primitive:middleware
+ */
 import { CapabilityDeniedError } from './capability';
 import type { DispatchContext, Middleware, MiddlewareNext } from './middleware';
 import { BudgetExceededError } from './token-tracker';

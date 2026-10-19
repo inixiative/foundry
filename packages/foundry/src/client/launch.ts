@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:daemon
+ */
 import { randomBytes } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';

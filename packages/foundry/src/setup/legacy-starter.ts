@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:setup
+ */
 import { isDeepStrictEqual } from 'node:util';
 import {
   type AgentSettingsConfig,

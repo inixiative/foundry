@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/handler.ts and adapted: the viewer
 // authorizes the connection before upgrade (request-auth), so there is no
 // authenticate/logout frame; subscribe/unsubscribe become data-stream open/close.

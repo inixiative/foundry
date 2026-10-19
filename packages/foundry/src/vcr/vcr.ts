@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:vcr
+ */
 // Ported from the template's packages/shared/src/vcr/vcr.ts. Differences, all driven by
 // Foundry's live-first policy: the mode is explicit (replay never calls live; record always
 // does), a recording is stamped with who/what/when, and a recording whose structure drifted

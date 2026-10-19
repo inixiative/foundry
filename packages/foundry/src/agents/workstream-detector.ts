@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:flow
+ */
+/**
  * Workstream-overload detector — a Herald PatternDetector that fires when
  * a single thread has accreted multiple distinct workstreams.
  *

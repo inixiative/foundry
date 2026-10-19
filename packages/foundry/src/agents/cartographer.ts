@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf feature:flow
+ */
 // ---------------------------------------------------------------------------
 // Cartographer — context routing role (FLOW.md)
 //

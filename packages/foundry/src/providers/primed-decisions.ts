@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:decisions
+ */
 import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf feature:mcpBridge
+ */
 // ---------------------------------------------------------------------------
 // Live bridge transport (T2)
 //

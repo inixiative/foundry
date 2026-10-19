@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind registry
+ * @partOf primitive:modelRegistry
+ */
+/**
  * The registry itself lives in `@inixiative/foundry-core`, so that consumers
  * depending on core alone can reason about models. Re-exported here so every
  * existing `models/registry` import path keeps working.

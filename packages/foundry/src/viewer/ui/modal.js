@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * Shared centered modal: a titled panel with a close (×) button, closed by Escape and, unless
  * `dismissOnBackdrop` is false, by a click on the backdrop.
  *

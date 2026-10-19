@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:vcr
+ */
 // WebSocket sessions as cassettes. Received frames are tagged with how many frames the client
 // had sent, so replay answers each send exactly as the server did live.
 

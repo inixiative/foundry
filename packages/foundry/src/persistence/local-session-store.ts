@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threads, primitive:journal
+ */
 import { Database, type Statement } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';

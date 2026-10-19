@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:threads
+ */
 import { type ContextStack, Thread, type ThreadConfig } from '@inixiative/foundry-core';
 import { containingPath, listWorktrees } from '../git/worktree';
 import type { ProjectSettingsConfig } from '../viewer/config';

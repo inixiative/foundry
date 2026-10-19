@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf feature:feedback
+ */
 import type { CorrectionCategory, CorrectionSignal } from '@inixiative/foundry-core';
 
 /**

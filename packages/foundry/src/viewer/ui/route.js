@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind utils
+ * @partOf feature:viewer
+ */
+/**
  * Page routes. The workspace lives at `/` (its view state stays in the hash);
  * settings and analytics are pages, global or per project:
  *   /settings/:section                 /analytics

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // JustBashShell — ShellTool adapter wrapping just-bash for sandboxed execution
 // ---------------------------------------------------------------------------

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:nativeSessions
+ */
 import type {
   DeliveredPart,
   LLMMessage,

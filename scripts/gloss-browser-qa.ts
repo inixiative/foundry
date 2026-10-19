@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:gloss
+ */
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createGlossPreview } from './gloss-preview';

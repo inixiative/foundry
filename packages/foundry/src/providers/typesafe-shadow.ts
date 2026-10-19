@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:typesafe
+ */
 import type { GateContext } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import type { TypeSafeContent, TypeSafeDecisionClient } from './typesafe';

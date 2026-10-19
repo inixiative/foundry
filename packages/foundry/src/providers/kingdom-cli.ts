@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:kingdom
+ */
 import { hostname } from 'node:os';
 import { parseArgs } from 'node:util';
 import { createTerminalPrompts } from '../setup/prompts';

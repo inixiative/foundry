@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:flow, feature:viewer
+ */
+/**
  * Layers, Agents and Activity — the runtime lists that used to sit under the thread list, now
  * Settings sections. Each lists the active thread's instances (active, then inactive, then
  * definitions not yet instantiated) and shows the selected one's detail beneath the list.

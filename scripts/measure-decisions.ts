@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
 // Live pre-message latency on the machine's own logins, through a Foundry
 // instance on a spare VIEWER_PORT (never the daemon's 4500).
 //

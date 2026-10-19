@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, integration:kingdom
+ */
 import { createHash } from 'node:crypto';
 import { readPrivateJson, SignetHttpError, signetCredentialSchema } from '@inixiative/signet';
 import type { Hono } from 'hono';

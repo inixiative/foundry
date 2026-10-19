@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind registry
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/registry.ts. Foundry runs several
 // viewers in one process (tests), so the maps live on an instance instead of the
 // module. Siblings attach meaning: subscriptions.ts (byStream), delivery.ts

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/subscriptions.ts. The connection's
 // own `streams` set and the byStream reverse-index are two halves of one fact;
 // both mutate together so delivery and cleanup stay consistent.

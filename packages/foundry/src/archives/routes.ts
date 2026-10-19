@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf integration:archive
+ */
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { type ArchiveClient, ArchiveRequestError, localArchive } from '@inixiative/archive/remote';
 import type { EventStream } from '@inixiative/foundry-core';

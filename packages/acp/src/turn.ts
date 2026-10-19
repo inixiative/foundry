@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:acp
+ */
 import type { SessionUpdate, StopReason, ToolCallStatus } from '@agentclientprotocol/sdk';
 import type { LiveActivity, StreamBufferSnapshot } from '@inixiative/foundry/client';
 import { type ContextSummary, contextSummary } from './context';

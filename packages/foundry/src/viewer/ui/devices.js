@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:devices, feature:viewer
+ */
+/**
  * Settings → Devices: this machine and its peers, and the tunnel that lets Kingdom (and you, away
  * from this machine) reach this Foundry. Kingdom drives both: peers are other Foundries your Kingdom
  * knows, and the tunnel's address is what this Foundry advertises to it.

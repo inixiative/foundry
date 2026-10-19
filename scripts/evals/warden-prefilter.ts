@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * Labelled fixtures for the Warden prefilter: which Warden domains a moment touches. Writes outside
  * the repository only (fixtures hold session text and company code excerpts).
  *

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind constant
+ * @partOf feature:wardens
+ */
 import {
   ClaudeInSessionDecisions,
   type InSessionSetup,

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:secrets
+ */
 import {
   closeSync,
   constants,

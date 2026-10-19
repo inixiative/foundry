@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, primitive:settings
+ */
 import { isAbsolute } from 'node:path';
 import type { EventStream, Harness, InterventionLog, StreamEvent } from '@inixiative/foundry-core';
 import { newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';

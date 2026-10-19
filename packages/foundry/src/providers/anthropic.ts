@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:providers
+ */
 import { parseClaudeUsage } from '@inixiative/agent-session';
 import type {
   CompletionOpts,

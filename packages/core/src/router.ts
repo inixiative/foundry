@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf primitive:agents
+ */
 import type { AgentConfig } from './base-agent';
 import type { ContextStack } from './context-stack';
 import { Decider, type DeciderConfig, type Decision } from './decider';

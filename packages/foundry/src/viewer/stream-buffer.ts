@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:viewer, primitive:websockets
+ */
 import { type NativeEvidence, sameNativeOwner } from '@inixiative/foundry-core';
 
 export interface LiveActivity {

@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * The Warden healthy-size test: how much conceptual ownership one Warden can hold before it stops
  * classifying moments well. One check type at a time (its moments under
  * `<root>/<check>/moments.jsonl`, its target region in `<root>/<check>/check.json`), knowledge grown

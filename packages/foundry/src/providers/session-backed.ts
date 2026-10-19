@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:nativeSessions
+ */
 import type { HarnessSession } from '@inixiative/agent-session';
 import {
   type CompletionOpts,

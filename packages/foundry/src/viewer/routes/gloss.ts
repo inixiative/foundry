@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, integration:gloss
+ */
 import { Hono } from 'hono';
 import type { ConfigStore } from '../config';
 import { type GlossAction, GlossError, GlossService } from '../gloss/service';

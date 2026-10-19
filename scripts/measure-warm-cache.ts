@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
 // Measures how a thread's context delivery mode affects Claude's prompt cache.
 //
 //   bun run scripts/measure-warm-cache.ts [--turns 10] [--model claude-haiku-5-5]

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:agents
+ */
 import type { ExecutionResult } from './base-agent';
 import { BoundedSet } from './bounded-set';
 import type { ClarificationResult, ClarifyPayload } from './clarifier';

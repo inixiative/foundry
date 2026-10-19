@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, primitive:settings
+ */
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { registryModel, resolveDecisionModel, subscriptionWorker } from '../../models/registry';

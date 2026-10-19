@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf primitive:vcr
+ */
 // Runs inside the throwaway LaunchAgent. Reports what launchd gave it, then the live smoke.
 import { writeFileSync } from 'node:fs';
 import { $ } from 'bun';

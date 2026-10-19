@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf integration:kingdom
+ */
 import {
   kingdomUrl,
   readPrivateJson,

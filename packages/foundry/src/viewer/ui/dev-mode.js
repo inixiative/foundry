@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind utils
+ * @partOf feature:viewer
+ */
+/**
  * Dev mode: a per-viewer switch at the bottom of Settings that reveals dev-only fields (a custom
  * Kingdom URL, a provider's API root). Remembered in this browser only; it changes no setting.
  */

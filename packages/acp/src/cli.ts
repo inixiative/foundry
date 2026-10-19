@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:acp
+ */
+/**
  * `foundry-acp`: Foundry as an ACP agent over stdio. A host (Paseo, T3 Code, Zed) spawns it per
  * connection; it reaches the local daemon through the ACP launch file and starts the daemon when
  * it is down. stdout carries only ACP; diagnostics go to stderr.

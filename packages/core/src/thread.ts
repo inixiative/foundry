@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:thread
+ */
 import type { BaseAgent, ExecutionResult } from './base-agent';
 import { CacheLifecycle } from './cache-lifecycle';
 import type { ContextStack, ContextStackView, LayerFilter } from './context-stack';

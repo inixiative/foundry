@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * CommandPalette — Cmd+K quick action overlay.
  * Fuzzy-matches against available commands and recent actions.
  */

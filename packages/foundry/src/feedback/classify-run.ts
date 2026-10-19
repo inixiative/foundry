@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:evals
+ */
 // A classify run config (`scripts/evals/warden-charter.ts --classify <run.json>`), read into what the
 // eval runs: the stages a project's `chorus.wardens.stages` takes, each stage's charter as its
 // `sections` set it (its charter's sections and the region Warden's instruction line), a grouped

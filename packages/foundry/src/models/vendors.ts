@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind config
+ * @partOf primitive:modelRegistry
+ */
+/**
  * Vendor settings: one entry per vendor (Anthropic, OpenAI, Google, ...), each with a subscription
  * mode and an API mode, either or both on. The registry's providers stay the transports: a vendor's
  * subscription mode is served by its native CLI provider (claude-code, codex) and its API mode by

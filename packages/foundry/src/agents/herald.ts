@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf feature:flow
+ */
 import type { TokenCounts } from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------

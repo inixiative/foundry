@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:vcr
+ */
 // A `fetch` seam backed by queued cassettes, in the template's captureResponse shape:
 // status, headers and body, plus the request that produced them for review.
 

@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf primitive:vcr
+ */
+/**
  * bun run test:live — the live tier. Runs every cassette-backed test against this machine's
  * real subscriptions (Claude on ~/.claude, Codex's ChatGPT login on ~/.codex, local Kingdom),
  * re-records the cassettes, then replays them all. Structural drift from a committed cassette

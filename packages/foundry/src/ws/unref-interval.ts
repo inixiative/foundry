@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind utils
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/lib/utils/makeUnrefInterval.ts.
 // A background ticker that never keeps the process alive: start once, stop cleanly.
 

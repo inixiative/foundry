@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:classify
+ */
 // A recognise stage's remarks name regions, one per line: `<region id>: <why>`, and in a ternary
 // stage `<region id>: YES — <why>` or `<region id>: UNSURE — <why>`. A recogniser may hold one region
 // or a group of them (`members` in a group's region.json): an id outside what it holds is counted,

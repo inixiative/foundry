@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf infrastructure:git
+ */
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 

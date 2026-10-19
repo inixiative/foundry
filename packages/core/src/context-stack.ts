@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:contextLayers
+ */
 import { type ContextLayer, computeHash, type LayerState } from './context-layer';
 import type { OwnershipScope } from './scope';
 

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:usage
+ */
 /** Cache counts, when supplied, are disjoint from input. Thinking and TTL
  * breakdowns are subsets of output/cacheWrite, never additional tokens.
  * Missing optional counters mean unreported, not a measured zero.

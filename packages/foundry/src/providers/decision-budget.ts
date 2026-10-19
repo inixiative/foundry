@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:decisions
+ */
+/**
  * Latency budget for Foundry's pre-message decisions. Advisors must be fast: the
  * budget holds by structure (one concurrent round of decisions per message, each on
  * a warm primed session, slow ones hedged) and is checked live by

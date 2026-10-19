@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:usage
+ */
 import { sumTokenCounts, type TokenCounts, totalTokenCount } from './token-counts';
 
 // ---------------------------------------------------------------------------

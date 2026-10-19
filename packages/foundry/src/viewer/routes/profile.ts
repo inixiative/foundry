@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, integration:kingdom
+ */
 import type { Hono } from 'hono';
 import { defaultInstallationName, installationNameOf } from '../../providers/kingdom-cli';
 import type { ConfigStore } from '../config';

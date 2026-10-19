@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind definition
+ * @partOf primitive:classify
+ */
 // The prompt language a classify stage sends, as named sections in order: the point charter, the
 // recognise charter and the region Warden's opening instruction line. Each section's default text is a
 // committed markdown file beside this module (`<prompt>/<section>.md`), so the language under test is

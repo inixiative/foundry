@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:setup
+ */
 import * as readline from 'node:readline';
 import { Writable } from 'node:stream';
 

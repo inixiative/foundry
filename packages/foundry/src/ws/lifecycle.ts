@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/lifecycle.ts.
 import { clearRegistry, removeConnection, type WSRegistry } from './registry';
 import type { WSSocket } from './types';

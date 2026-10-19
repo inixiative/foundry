@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:flow, feature:viewer
+ */
+/**
  * LayerBand — thin colored strip between agent calls showing active context layers.
  *
  * Each layer gets a persistent color (hashed from ID). The band is a row of

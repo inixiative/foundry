@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:providers
+ */
 import type { LLMProvider } from '@inixiative/foundry-core';
 
 /** Per-instance evidence, not a guess based on a provider name or an error message. */

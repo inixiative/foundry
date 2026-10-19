@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * The Warden eval report: one `report.json` (schema `warden-eval-report/2`) and one rendered `REPORT.md`
  * per run of the charter eval (scripts/evals/warden-charter.ts), organised by stage. The schema is
  * documented in Oracle docs/foundry/EVAL-REPORTING.md.

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:vcr
+ */
 // Structure of a recording, independent of what the model happened to say. Drift in
 // structure is a finding for a human; drift in content is expected between live runs.
 

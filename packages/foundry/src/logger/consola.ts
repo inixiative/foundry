@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:logger
+ */
 // ---------------------------------------------------------------------------
 // Consola adapter — colorful, human-readable output for development
 // ---------------------------------------------------------------------------

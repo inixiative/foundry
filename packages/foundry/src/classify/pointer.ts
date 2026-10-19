@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:classify
+ */
 // The pointer a Warden's remarks make under the point charter: ranked (`one`: the likely one, then
 // less likely fallbacks; a class is a ranked pointer at the class level), all of a set (`all`: "A and
 // B", each applies) or a choose-one sibling set (`any`: "A or B"), at most three names. Read off the

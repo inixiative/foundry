@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:kingdom
+ */
+/**
  * Settings → GitHub and Settings → Linear: what is connected today (the local Archive links sessions
  * to the integration's references) and, coming soon, connecting an account, whose credentials will
  * live in Kingdom under the access model rather than on this machine.

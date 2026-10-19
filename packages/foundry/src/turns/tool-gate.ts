@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind middleware
+ * @partOf feature:toolGate
+ */
 import type { ToolDecision, ToolGate, ToolRequest } from '@inixiative/agent-session';
 import {
   type ActionQueue,

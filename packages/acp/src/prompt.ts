@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:acp
+ */
 import type { ContentBlock } from '@agentclientprotocol/sdk';
 
 /**

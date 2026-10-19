@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:setup
+ */
+/**
  * Docs-layer scanner — detects a project's docs directory and emits a polished
  * config snippet (source + layer) ready to merge into settings.json. It wires no
  * Warden: the hand-named docs Warden went with the roster (2026-10-17); a

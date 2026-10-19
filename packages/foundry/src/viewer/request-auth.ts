@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind middleware
+ * @partOf feature:viewer
+ */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'foundry_session';

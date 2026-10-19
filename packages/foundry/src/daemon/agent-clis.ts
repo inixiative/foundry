@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:daemon
+ */
 import { $ } from 'bun';
 
 export const SYSTEM_PATH = [

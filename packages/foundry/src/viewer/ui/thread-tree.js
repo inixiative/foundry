@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threadTree, feature:viewer
+ */
+/**
  * Thread list — the lower half of the navigation column: the threads of the selected scope
  * (a project, Global, or Forge Master's one thread), each with its status, branch and references.
  */

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import type { StoredPhase } from '../persistence/local-session-store';
 import {
   type FeedbackApplyRecord,

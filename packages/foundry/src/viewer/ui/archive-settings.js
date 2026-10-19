@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:archive
+ */
 import { hostedSetupUrl } from './hosted-archive-link.js';
 import { html, useEffect, useState } from './lib.js';
 import { onLink, settingsPath } from './route.js';

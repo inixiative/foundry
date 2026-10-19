@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf integration:archive
+ */
 // Foundry's own harness sessions (decision hosts, the startup self-test) run in folders Foundry makes,
 // stamped for Archive so they never enter it as a person's work (Aron, 2026-10-18: no Foundry-generated
 // sessions in the Archive). A process already stamped by a test or eval harness (ARCHIVE_RUN) keeps its kind.

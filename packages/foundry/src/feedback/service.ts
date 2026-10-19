@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import {

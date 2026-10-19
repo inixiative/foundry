@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind utils
+ * @partOf primitive:signals
+ */
+/**
  * A set with bounded capacity that evicts oldest entries when full.
  * Used for message deduplication at harness ingress.
  */

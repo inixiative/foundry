@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf feature:feedback, integration:archive
+ */
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { typedPrompt } from '@inixiative/archive/import';
 import type { TranscriptTurn } from './correction';

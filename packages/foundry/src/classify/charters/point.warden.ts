@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind definition
+ * @partOf primitive:classify
+ */
 // The point charter for Wardens: how every Warden works when it points
 //
 // One fixed meta-instruction set, part of Foundry and never settings: it is not edited per project,

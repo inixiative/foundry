@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:flow, feature:viewer
+ */
+/**
  * Graph builders for the viewer's graph panel: recorded data in, positioned nodes and edges out.
  * No DOM. Every builder reads what the runtime recorded (thread meta, the `flow:<threadId>` stream's
  * bounded turn records, learning signals) through the inspector's existing extractors; absent data

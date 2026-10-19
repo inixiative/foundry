@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind handler
+ * @partOf primitive:jobs, primitive:traces
+ */
 import type { PersistedTraceRecord } from '../../persistence/trace-record';
 import { upsertTraceRecord } from '../../persistence/trace-record';
 import { makeJob } from '../makeJob';

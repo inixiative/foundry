@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
+/**
  * Navigation column — the workspace's left column.
  *
  * Top: the pinned scopes, Global (threads no project owns), Forge Master (the internal

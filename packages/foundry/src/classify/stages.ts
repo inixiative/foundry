@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:classify
+ */
 // A classification run is an ordered list of stages (at most three). Each stage names who answers
 // (model, effort), what it reads (a region doc), what it may answer (outcomes), whether it gives its
 // why (reason), what it does (recognise, or point) and which of its outcomes go on to the next stage.

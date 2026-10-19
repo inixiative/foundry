@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * Recogniser granularity (eval-only): group regions so one recogniser covers several. Design:
  * ~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md.
  *

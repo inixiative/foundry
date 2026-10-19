@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:kingdom
+ */
+/**
  * Settings → Kingdom (also the standalone /kingdom page): what Kingdom is, a link to it, and every
  * paired Kingdom as a table row named the way Kingdom describes it (owner, you, the integration this
  * Foundry is, who approved it). Pairing runs in the background: Kingdom shows a review code, a person

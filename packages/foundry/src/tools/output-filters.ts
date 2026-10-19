@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // Output filters — RTK-style token reduction for shell output
 // ---------------------------------------------------------------------------
