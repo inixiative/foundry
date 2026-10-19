@@ -643,9 +643,13 @@ export const CLAUDE_HARNESS_INSTRUCTIONS_OFF: Readonly<Record<string, string>> =
   CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
 });
 
-/** Codex app-server skips project AGENTS.md files; its CODEX_HOME AGENTS.md is not a thread setting. */
+/**
+ * Codex app-server skips project AGENTS.md files and its memories, as Claude Code skips auto memory;
+ * its CODEX_HOME AGENTS.md is not a thread setting.
+ */
 export const CODEX_HARNESS_INSTRUCTIONS_OFF: Readonly<Record<string, unknown>> = Object.freeze({
   project_doc_max_bytes: 0,
+  'memories.use_memories': false,
 });
 
 /** Whether the native harness loads instruction files itself (`composition.harnessLoading`). */
