@@ -1,0 +1,46 @@
+{
+  "id": "context-memory",
+  "title": "Context layers and memory adapters",
+  "routing": "Is this about what context an agent is given and where it comes from: ContextLayer (sources, staleness, maxTokens, warm / set / invalidate / clear, cold \u2192 warming \u2192 warm \u2192 stale), ContextStack (addLayer, warmAll, refresh, merge, sliceByIds, snapshot, assemble), CacheLifecycle, HydrationRegistry, RefSource and ContextRef pointers, assembledToMessages, buildInjectionArtifact, createSourceResolver, markdownSource; or the memory adapters as context sources (FileMemory, MemoryView, SqliteMemory, MarkdownDocs, HttpMemory, RedisMemory, PostgresMemory, MuninnMemory, SupermemoryAdapter, fileSource, inlineSource, claudemdSource, readInstructionFile, selectMemory, signalWriter, Entry, KnowledgePersistence)? Plain jobs: add a block of context, refresh it when it goes stale, keep it under a token budget, load a docs folder or a CLAUDE.md, point at content instead of copying it, store and search memories, write corrections back to memory.",
+  "concepts": ["context-layers", "memory-adapters"],
+  "tokens": 14675,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2032,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 14675
+    }
+  },
+  "runsAgreed": 1,
+  "sources": {
+    "docs": ["README.md", "docs/SYSTEM.md", "docs/api/ADAPTERS.md", "docs/api/PRIMITIVES.md"],
+    "docUnits": [
+      "doc:docs/api/PRIMITIVES.md#contextlayer",
+      "doc:docs/api/PRIMITIVES.md#contextstack",
+      "doc:docs/api/PRIMITIVES.md#hydration",
+      "doc:README.md#key-concepts",
+      "doc:docs/SYSTEM.md#3-adapters-src-adapters",
+      "doc:docs/api/ADAPTERS.md#preface",
+      "doc:docs/api/ADAPTERS.md#built-in-adapters-zero-deps",
+      "doc:docs/api/ADAPTERS.md#optional-adapters-peer-deps",
+      "doc:docs/api/ADAPTERS.md#writing-custom-adapters",
+      "doc:docs/api/ADAPTERS.md#wiring-it-together"
+    ],
+    "catalogClusters": [
+      "primitive-agents",
+      "primitive-contextLayers",
+      "primitive-memory",
+      "primitive-signals"
+    ],
+    "codeEntries": 49,
+    "docMembers": 25
+  },
+  "bypassLines": 17,
+  "glossaryTerms": 30
+}

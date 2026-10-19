@@ -1,0 +1,35 @@
+{
+  "id": "chorus",
+  "title": "A project's region Wardens",
+  "routing": "Is this about which Wardens a project runs and how they are built: the chorus setting (projects[id].chorus over <project>/.foundry/project.json, enabled, regions or layers, consumed, reception, wardens.stages), the .foundry/regions/<id>/ directories (region.json, knowledge.md), region-roster.ts (readRegions, composeChorus, regionWardens, regionKey), resolveProjectView, DomainLibrarian, warm-cache keys, priming, the chorus-reception charter, or a chime reaching the thread? Plain jobs: add or turn on a Warden, stack template regions under a project's, see why no Warden runs, give a Warden its knowledge.",
+  "concepts": ["chorus"],
+  "tokens": 17551,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1708,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 17551
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["CLAUDE.md", "docs/FLOW.md", "docs/usage-and-context.md"],
+    "docUnits": [
+      "doc:docs/FLOW.md#the-core-model/wardens-the-shared-pattern",
+      "doc:docs/usage-and-context.md#composition-view/chorus-projects-id-chorus",
+      "doc:CLAUDE.md#key-mental-models",
+      "doc:CLAUDE.md#config"
+    ],
+    "catalogClusters": ["feature-wardens"],
+    "codeEntries": 37,
+    "docMembers": 23
+  },
+  "bypassLines": 33,
+  "glossaryTerms": 28
+}

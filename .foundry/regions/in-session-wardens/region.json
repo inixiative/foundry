@@ -1,0 +1,46 @@
+{
+  "id": "in-session-wardens",
+  "title": "Wardens inside the thread's process",
+  "routing": "Is this about decisionRuntime 'claude-in-session': a thread's Wardens held as background subagents inside its own Claude Code process (InSessionWardens, agent-session ClaudeInSessionDecisions), the setup turn and the foundry-root / foundry-dispatch / foundry-warden tree, the moment / answer / next tools, queued turns and ThreadMeta.setup while it sets up, dispatcher recycle, orphans, perTaskStopAffordance, or the subagent cap raise? Plain jobs: run Wardens without a process per Warden, hold Wardens ready between messages, keep Warden activity from waking the main model.",
+  "concepts": ["in-session-wardens"],
+  "tokens": 13515,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1649,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 13515
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/THREAD-TREE.md", "docs/subscription-decisions.md"],
+    "docUnits": [
+      "doc:docs/THREAD-TREE.md#c-1-spec",
+      "doc:docs/THREAD-TREE.md#c-2-why-these-mechanisms-the-experiment-2026-10-13",
+      "doc:docs/THREAD-TREE.md#c-3-what-exists-and-what-moves",
+      "doc:docs/THREAD-TREE.md#c-4-record-shapes",
+      "doc:docs/THREAD-TREE.md#c-5-who-does-what-and-when",
+      "doc:docs/THREAD-TREE.md#c-7-original-intent",
+      "doc:docs/THREAD-TREE.md#c-8-open-questions",
+      "doc:docs/THREAD-TREE.md#c-9-as-built-2026-10-15",
+      "doc:docs/THREAD-TREE.md#c-10-next-a-warm-set-of-concept-region-wardens-design-note-not-built",
+      "doc:docs/subscription-decisions.md#wardens-in-the-thread-s-own-process-claude-in-session"
+    ],
+    "catalogClusters": [
+      "feature-threadTree",
+      "feature-threads",
+      "feature-wardens",
+      "primitive-decisions"
+    ],
+    "codeEntries": 2,
+    "docMembers": 31
+  },
+  "bypassLines": 18,
+  "glossaryTerms": 24
+}

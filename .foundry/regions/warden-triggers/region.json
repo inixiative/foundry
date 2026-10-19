@@ -1,0 +1,34 @@
+{
+  "id": "warden-triggers",
+  "title": "When Wardens are asked",
+  "routing": "Is this about the moments a Warden is asked and what happens there: the user-message, agent-action, subagent-spawn and consumed trigger points, the one guard per turn (FlowOrchestrator.postAction, guardTriggers, guard: \"per-call\"), the subagent handoff brief (FlowOrchestrator.brief, queueNotes), consumed work items (workItemOf, consumedMatcher, chorus.consumed), the advise deadline, guard findings as signals, or load (subscriptionOnly.maxConcurrent, excluded / not-admitted)? Plain jobs: ask the Wardens when the agent reads a ticket, check the turn's edits, brief a subagent, keep a guard from blocking.",
+  "concepts": ["warden-triggers"],
+  "tokens": 11714,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1325,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 11714
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/FLOW.md"],
+    "docUnits": [
+      "doc:docs/FLOW.md#the-core-model/when-a-warden-weighs-in-the-charter-trigger-points-and-no-comment",
+      "doc:docs/FLOW.md#the-core-model/why-correctness-checking-matters-more-as-sessions-grow",
+      "doc:docs/FLOW.md#loop-3-post-action-correctness-checking"
+    ],
+    "catalogClusters": ["feature-wardens"],
+    "codeEntries": 4,
+    "docMembers": 27
+  },
+  "bypassLines": 19,
+  "glossaryTerms": 25
+}

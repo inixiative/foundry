@@ -1,0 +1,48 @@
+{
+  "id": "models-providers",
+  "title": "Models, providers and usage",
+  "routing": "Is this about which models and providers exist and what they can do (MODEL_REGISTRY, MODEL_VENDORS, capabilities, tiers, main-thread labs, subscription workers, decision model constants, vendor settings with subscription and API modes), the API-key LLM providers (LLMProvider, AnthropicProvider, OpenAIProvider, GeminiProvider, createRegisteredProvider, Cursor/Ollama factories, embedding providers, splitSystemMessage, scopedProvider, streaming, zero-SDK raw fetch), or token and cache usage (TokenTracker, UsageEntry, recordWindows, usageRecord, windowDelta, totalTokenCount, sumTokenCounts, estimateTokens, BudgetExceededError, AnalyticsStore, Claude Code native compaction via contextBudget)? Plain jobs: 'which model can do judgment', 'add a new model to the list', 'call OpenRouter / xAI / Ollama', 'I'll import the openai SDK', 'count the tokens including cache', 'stop when we hit the budget', 'change when Claude compacts'.",
+  "concepts": ["model-registry", "api-providers", "usage-telemetry"],
+  "tokens": 18277,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2907,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 18277
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": [
+      "@inixiative/agent-session/README.md",
+      "README.md",
+      "docs/SYSTEM.md",
+      "docs/usage-and-context.md"
+    ],
+    "docUnits": [
+      "doc:docs/SYSTEM.md#2-providers-src-providers",
+      "doc:docs/usage-and-context.md#preface",
+      "doc:docs/usage-and-context.md#counters-and-tags",
+      "doc:docs/usage-and-context.md#attribution-and-window-readings",
+      "doc:docs/usage-and-context.md#native-compaction",
+      "doc:README.md#usage-telemetry-and-context-budgets",
+      "doc:@inixiative/agent-session/README.md#usage-telemetry"
+    ],
+    "catalogClusters": [
+      "feature-usage",
+      "feature-viewer",
+      "primitive-modelRegistry",
+      "primitive-providers"
+    ],
+    "codeEntries": 81,
+    "docMembers": 25
+  },
+  "bypassLines": 29,
+  "glossaryTerms": 28
+}

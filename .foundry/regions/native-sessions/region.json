@@ -1,0 +1,50 @@
+{
+  "id": "native-sessions",
+  "title": "Native sessions and agent-session",
+  "routing": "Is this about running a thread's worker as a persistent native Claude Code or Codex session: the session adapters (ClaudeCodeSessionAdapter, CodexSessionAdapter), SessionBackedProvider, createNativeTextProvider, the thread-to-session id store (FileExternalSessionStore, InMemoryExternalSessionStore), native launch argv and MCP wiring (withNativeBridge, withClientMcpServers, appServerBridgeConfiguration, appServerClientMcpConfiguration, clientMcpServers, ThreadLaunchSettings, nativeLaunchEvidence), or @inixiative/agent-session itself (HarnessSession, createSession and TRANSPORTS, interruptNative, onToolRequest stages, subagent events, rate_limit events, SubscriptionPool, continueOn)? Plain jobs: 'I'll spawn claude -p for this turn', 'run this thread on Codex instead', 'pass the host's MCP servers to the CLI', 'resume the session after a restart', 'stop the running native turn', 'pick another login when this one is rate-limited'.",
+  "concepts": ["native-sessions", "agent-session"],
+  "tokens": 15648,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1699,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 15648
+    }
+  },
+  "runsAgreed": 2,
+  "sources": {
+    "docs": [
+      "@inixiative/agent-session/README.md",
+      "@inixiative/agent-session/docs/transports-pools-routing.md",
+      "docs/isolated-fixture-transport.md",
+      "docs/native-authentication.md"
+    ],
+    "docUnits": [
+      "doc:docs/isolated-fixture-transport.md#installed-cli-investigation",
+      "doc:docs/native-authentication.md#package-and-validation",
+      "doc:@inixiative/agent-session/README.md#preface",
+      "doc:@inixiative/agent-session/README.md#why-it-s-different",
+      "doc:@inixiative/agent-session/README.md#interface",
+      "doc:@inixiative/agent-session/README.md#transports",
+      "doc:@inixiative/agent-session/README.md#subagents",
+      "doc:@inixiative/agent-session/README.md#roadmap",
+      "doc:@inixiative/agent-session/README.md#provenance",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#preface",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#transports",
+      "doc:@inixiative/agent-session/README.md#pools-routing-and-continuity",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#ownership",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#pools-routing-limits-continuity"
+    ],
+    "catalogClusters": ["primitive-nativeSessions"],
+    "codeEntries": 22,
+    "docMembers": 20
+  },
+  "bypassLines": 18,
+  "glossaryTerms": 28
+}

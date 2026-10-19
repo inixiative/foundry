@@ -1,0 +1,51 @@
+{
+  "id": "conventions",
+  "title": "Repo structure and conventions",
+  "routing": "Is this about where code belongs or how we build here: the three packages (packages/core @inixiative/foundry-core, packages/foundry @inixiative/foundry, packages/acp @inixiative/foundry-acp) and their boundaries (core is primitives and pure data; providers, HTTP and processes stay in foundry; foundry-acp imports only @inixiative/foundry/client), the module import order (agents \u2192 providers \u2192 adapters \u2192 eval \u2192 viewer), licenses (MIT, BSL 1.1), the tech stack (Bun, strict TypeScript, bun test, BullMQ, Prisma/Postgres, SQLite), atlas (@atlas blocks with @kind / @partOf / @uses, .atlas/concepts.ts, bunx atlas stamp / query / graph / generate, atlas check at 100%), or the design principles and common mistakes (don't reinvent Claude Code, no backwards-compat shims, no opinions in core, no hand-named Wardens, Haiku on decisions)? Plain jobs: 'which package does this go in', 'can core import this', 'where is this concept in the code', 'I added a new file', 'is this allowed here'.",
+  "concepts": ["repo-structure", "atlas", "design-rules"],
+  "tokens": 6790,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 772,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 6790
+    }
+  },
+  "runsAgreed": 1,
+  "sources": {
+    "docs": ["CLAUDE.md", "README.md"],
+    "docUnits": [
+      "doc:CLAUDE.md#preface",
+      "doc:CLAUDE.md#monorepo-structure",
+      "doc:CLAUDE.md#tech-stack",
+      "doc:README.md#preface",
+      "doc:README.md#what-this-is",
+      "doc:README.md#structure",
+      "doc:README.md#license",
+      "doc:CLAUDE.md#atlas-the-code-map",
+      "doc:CLAUDE.md#design-principles",
+      "doc:CLAUDE.md#common-mistakes-for-ai-assistants"
+    ],
+    "catalogClusters": [
+      "feature-acp",
+      "feature-feedback",
+      "feature-setup",
+      "feature-threads",
+      "feature-wardens",
+      "primitive-agents",
+      "primitive-modelRegistry",
+      "primitive-providers",
+      "primitive-thread"
+    ],
+    "codeEntries": 0,
+    "docMembers": 11
+  },
+  "bypassLines": 11,
+  "glossaryTerms": 27
+}

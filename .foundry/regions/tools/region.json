@@ -1,0 +1,43 @@
+{
+  "id": "tools",
+  "title": "Agent tools and execution environments",
+  "routing": "Is this about the tools Foundry's own agents use and where their code runs: ToolRegistry (register, summary, byKind, allByKind), CapabilityGate with BROWSER_POLICY or RESTRICTED_POLICY and capabilities like exec:shell or browser:execute, the tool adapters (BashShell, JustBashShell, BunScript, HttpApi, PlaywrightBrowser, MemoryToolAdapter), an agent's executionEnv (bash, just-bash, typescript, browser, hybrid) and browser mode (playwright-mcp, js-execute, hybrid), output filters (rtk, compose, OutputFilter), or native tool-name helpers (toolCapability, toolGlobMatcher, LINEAR_ISSUE_TOOLS, DEFAULT_CONSUMED_TOOLS, workItemId, createNativeToolProjector)? Plain jobs: give an agent a shell, a sandbox, a browser or an HTTP client, run agent-written code safely, ask a human before a risky action, cut noisy command output, let an agent search memory mid-task, tell which capability a tool call uses.",
+  "concepts": ["tools"],
+  "tokens": 15958,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1591,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 15958
+    }
+  },
+  "runsAgreed": 3,
+  "sources": {
+    "docs": ["docs/EXECUTION_ENVIRONMENTS.md"],
+    "docUnits": [
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#the-problem",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#available-environments",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#decision-matrix",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#configuring-agents",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#capability-gating",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#token-efficiency-guidelines",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#native-tool-adapters",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#wiring-tools-into-agents",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#future-sandboxed-typescript-with-just-js",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#memorytool-on-demand-memory-queries",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#output-filters-rtk-style-token-reduction",
+      "doc:docs/EXECUTION_ENVIRONMENTS.md#complete-wiring-example"
+    ],
+    "catalogClusters": ["primitive-tools"],
+    "codeEntries": 33,
+    "docMembers": 20
+  },
+  "bypassLines": 19,
+  "glossaryTerms": 26
+}

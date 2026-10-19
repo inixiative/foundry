@@ -3,6 +3,7 @@ dist
 *.tsbuildinfo
 **/.foundry/*
 !/.foundry/roles/
+!/.foundry/regions/
 
 # Environment files (keep .example files)
 .env

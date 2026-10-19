@@ -1,0 +1,34 @@
+{
+  "id": "tool-gate-mcp",
+  "title": "Structural tool gate and MCP bridge",
+  "routing": "Is this about allowing, asking or denying a native Claude Code / Codex tool call by the user's structural rules (the toolRules setting, protectedPaths, classifyTool, structuralLevel, permissionLevel, rulesFor, createToolGate, lateBoundToolGate, UNBOUND_GATE, the SessionBackedProvider gate, gate-request / gate-outcome phases, deny is final in bypassPermissions), or about the foundry MCP server a native session pulls context from mid-session (createFoundryMcp, foundry_query / foundry_conventions / foundry_memory / foundry_threads / foundry_signal / foundry_device, createLiveBridge, nativeBridgeSource, runProxy, the stdio and SSE transports, the fixture bridge's fixture_read / fixture_write / fixture_command)?",
+  "concepts": ["tool-gate", "mcp-bridge"],
+  "tokens": 11605,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2194,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 11605
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/FLOW.md", "docs/isolated-fixture-transport.md", "docs/reference/FOUNDRY-ACP.md"],
+    "docUnits": [
+      "doc:docs/reference/FOUNDRY-ACP.md#5-middleware-on-the-acp-path",
+      "doc:docs/FLOW.md#loop-2-mid-session-bridge-mcp",
+      "doc:docs/isolated-fixture-transport.md#preface"
+    ],
+    "catalogClusters": ["feature-mcpBridge", "feature-toolGate"],
+    "codeEntries": 20,
+    "docMembers": 32
+  },
+  "bypassLines": 9,
+  "glossaryTerms": 27
+}

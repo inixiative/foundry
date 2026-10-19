@@ -1,0 +1,35 @@
+{
+  "id": "warden-prefilter-evals",
+  "title": "Warden pre-filter and evals",
+  "routing": "Is this about skipping Wardens before they are asked (the local pre-filter: WardenPrefilter, prefilter.enabled / skipBelow / baseUrl, Kev-4B on the System One API, installPrefilterModel, startPrefilterServer, fail-open, journalled skips) or measuring Wardens (the charter eval runCharterEval, probes from real sessions, correction-target labels, judging, scoreCharterRun, classify run configs, cost weights, Wilson intervals, the experiment gate requireExperiment, markEvalRun)? Plain jobs: 'don't ask every Warden every time', 'score this charter against real corrections', 'judge whether the Warden said it first', 'label what the correction pushed toward'.",
+  "concepts": ["warden-prefilter", "warden-evals"],
+  "tokens": 12943,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2270,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 12943
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/subscription-decisions.md"],
+    "docUnits": ["doc:docs/subscription-decisions.md#warden-pre-filter"],
+    "catalogClusters": [
+      "feature-evals",
+      "feature-wardens",
+      "primitive-decisions",
+      "primitive-journal"
+    ],
+    "codeEntries": 71,
+    "docMembers": 20
+  },
+  "bypassLines": 14,
+  "glossaryTerms": 25
+}

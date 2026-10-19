@@ -1,0 +1,49 @@
+{
+  "id": "archive",
+  "title": "Local Archive and session capture",
+  "routing": "Is this about the machine's local Archive (`@inixiative/archive`) and Foundry's use of it: `bun run archive setup` / runArchiveSetup / startLocalArchive (`archive up`, Docker Compose, 127.0.0.1:4700, server.token), automatic journal capture (ArchiveCapture, 30-second retry, whole-thread snapshots), running the Archive CLI (runArchiveCli, runFoundryArchiveCli, preview/import/collect/list/search/export), the `archive` context source (ArchiveContextSource), run stamps (stampFoundryRun, `.archive-run`, run:foundry), ThreadContextTracker, the `/api/archives` viewer routes, ArchiveSettings / ProjectArchive, or the Archive server itself (collectors, `archive agents`, destinations.json routing, tags, references, claims, retention, `captureRunSessions`, `captureToolCallsAndResults`, the `/api/v1/archive/<action>` HTTP API)? Plain jobs: 'save this session history', 'search past sessions', 'start the archive', 'publish sessions to the org's hosted archive', 'mark these sessions as test runs'.",
+  "concepts": ["archive-capture", "archive-server"],
+  "tokens": 18825,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1359,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 18825
+    }
+  },
+  "runsAgreed": 3,
+  "sources": {
+    "docs": ["@inixiative/archive/README.md", "README.md", "docs/session-archives.md"],
+    "docUnits": [
+      "doc:docs/session-archives.md#preface",
+      "doc:docs/session-archives.md#set-up-the-local-archive",
+      "doc:docs/session-archives.md#local-capture",
+      "doc:docs/session-archives.md#archive-commands",
+      "doc:docs/session-archives.md#feed-archives-into-foundry-context",
+      "doc:docs/session-archives.md#archive-console",
+      "doc:docs/session-archives.md#fidelity-and-current-scope",
+      "doc:README.md#session-archives",
+      "doc:@inixiative/archive/README.md#what-runs-today",
+      "doc:@inixiative/archive/README.md#local-setup",
+      "doc:@inixiative/archive/README.md#connect-to-byo-hosting",
+      "doc:@inixiative/archive/README.md#always-on-local-archiving",
+      "doc:@inixiative/archive/README.md#connect-through-kingdom",
+      "doc:@inixiative/archive/README.md#routing",
+      "doc:@inixiative/archive/README.md#tags-references-actors-and-retention",
+      "doc:@inixiative/archive/README.md#tags-references-actors-and-retention/http-api",
+      "doc:@inixiative/archive/README.md#limits",
+      "doc:@inixiative/archive/README.md#development"
+    ],
+    "catalogClusters": ["integration-archive"],
+    "codeEntries": 22,
+    "docMembers": 12
+  },
+  "bypassLines": 11,
+  "glossaryTerms": 25
+}
