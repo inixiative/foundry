@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf integration:kingdom
+ */
 import { isAbsolute } from 'node:path';
 import {
   kingdomUrl,

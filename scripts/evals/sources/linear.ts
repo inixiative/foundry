@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind client
+ * @partOf feature:evals
+ */
+/**
  * The Prospector's Linear source: the API key's user's own comments, the issues and projects they
  * wrote, read through Linear's GraphQL API (read-only). The key is read from an env file and never
  * printed.

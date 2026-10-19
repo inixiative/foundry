@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:contextLayers
+ */
 import type { ContextLayer, LayerState } from './context-layer';
 import type { ContextStack } from './context-stack';
 

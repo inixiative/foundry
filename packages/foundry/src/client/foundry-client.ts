@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf feature:threads
+ */
 import type { ActionPrompt } from '@inixiative/foundry-core';
 import type { FeedbackView } from '../feedback/view';
 import type { MessageSummary } from '../persistence/local-session-store';

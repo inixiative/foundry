@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:traces
+ */
 import type { TokenCounts } from './token-counts';
 /**
  * A single span in a message's journey through the system.

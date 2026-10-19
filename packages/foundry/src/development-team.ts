@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:flow
+ */
 import type { AgentSettingsConfig } from './viewer/config';
 
 /**

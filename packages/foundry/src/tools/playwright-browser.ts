@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // PlaywrightBrowser — BrowserTool adapter wrapping Playwright
 // ---------------------------------------------------------------------------

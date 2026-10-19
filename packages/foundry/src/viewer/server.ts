@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:viewer
+ */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:memory
+ */
 import type { ContextRef, ContextSource, HydrationAdapter, Signal } from '@inixiative/foundry-core';
 
 /**

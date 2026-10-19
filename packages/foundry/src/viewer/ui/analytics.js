@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:usage, feature:viewer
+ */
+/**
  * Analytics — first-class cost & token tracking panel.
  *
  * Shows: session totals, per-thread costs, model rankings, time-series,

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';

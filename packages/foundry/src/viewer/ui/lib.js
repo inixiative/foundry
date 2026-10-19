@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind utils
+ * @partOf feature:viewer
+ */
+/**
  * Foundry UI lib — one local, pinned Preact/HTM/Signals module graph.
  * No external bootstrap dependency or build step. See vendor/manifest.json
  * for pinned source hashes/transformations and vendor/licenses.json for licenses.

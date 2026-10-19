@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:evals
+ */
 // The Warden charter eval: run a chorus over real-session probes under one classify configuration and
 // score how quiet, how right and how in-scope it is. Same code path as live (DomainLibrarian running
 // classify's stages, each charter composed above the Warden's instructions), at both trigger points:

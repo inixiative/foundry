@@ -28,10 +28,14 @@ bun run test:live      # Same tests live against this machine's subscriptions; r
 bun run test:live:daemon  # Live smoke inside a throwaway LaunchAgent with the daemon's environment
 bun run typecheck      # core, foundry, acp, scripts, browser (5 targets)
 bun run test:acp       # foundry-acp tests
-bun run check          # typecheck + lint + test (the full check)
+bun run check          # typecheck + lint + atlas check + test (the full check)
 bun run acp            # Run the ACP agent on stdio
 bun run viewer         # Dashboard only
 ```
+
+## Atlas — the code map
+
+This repo is mapped by **atlas** (`@inixiative/atlas`): a top-of-file `@atlas` block on every source file (`@kind` / `@partOf` / `@uses`), validated against Foundry's concept registry in `.atlas/concepts.ts` (features, primitives, infrastructure, integrations; broad but closed). Navigate by concept (`bunx atlas graph --json`, `bunx atlas query --partOf primitive:classify`, `bunx atlas generate` for a local `MAP.md`) before grepping. When you add or move a file, run `bunx atlas stamp <path> --write` (it fills `@kind` / `@partOf` from `.atlas/config.ts`; write a `@kind` by hand when no rule classifies the file) and keep the block true; a new concept goes in `concepts.ts`. `bun run check` runs `atlas check` and fails below 100% coverage. Guide: the atlas README (`node_modules/@inixiative/atlas/README.md`).
 
 Tests that touch the agent CLIs or Kingdom replay real recordings (`packages/foundry/src/vcr`). Live runs are the truth: run `test:live` whenever a CLI, `@inixiative/agent-session` or a transport changes, and treat its drift findings as bugs to review. See [live-first testing](docs/live-testing.md).
 

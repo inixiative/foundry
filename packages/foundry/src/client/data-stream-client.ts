@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf primitive:websockets
+ */
 import type { FoundryEndpoint } from './foundry-client';
 
 /** What a holder of one data stream receives: its snapshot (again after any reconnect or resync), then appends. */

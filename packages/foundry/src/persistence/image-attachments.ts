@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:journal
+ */
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

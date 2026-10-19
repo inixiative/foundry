@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // BunScript — ScriptTool adapter using Bun subprocess isolation
 // ---------------------------------------------------------------------------

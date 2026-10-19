@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf primitive:agents
+ */
 import { type AgentConfig, BaseAgent, type ExecutionResult } from './base-agent';
 import { computeHash, REQUIRED_CONTEXT_BLOCKED } from './context-layer';
 import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';

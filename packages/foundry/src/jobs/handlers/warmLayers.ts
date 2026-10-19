@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind handler
+ * @partOf primitive:contextLayers, primitive:jobs
+ */
 import { makeSingletonJob } from '../makeSingletonJob';
 
 export type WarmLayersPayload = {

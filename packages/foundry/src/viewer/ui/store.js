@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind store
+ * @partOf feature:viewer
+ */
+/**
  * Foundry UI store — data-stream socket, state management via signals.
  *
  * All state lives in signals. Components subscribe automatically.

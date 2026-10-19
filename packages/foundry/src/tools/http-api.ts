@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // HttpApi — ApiTool adapter wrapping fetch with structured I/O
 // ---------------------------------------------------------------------------

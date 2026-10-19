@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf feature:viewer, primitive:websockets
+ */
 // Port of the template's packages/ui/src/lib/ws/createApiWebsocket.ts for the
 // viewer's data streams. The connection is authorized at upgrade (loopback, or
 // the tunnel session cookie), so there are no identity frames.

@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:acp
+ */
+/**
  * The "Foundry: context" item: what the middleware decided for a turn, read from the turn's
  * sealed route and advice phase rows on the `flow:<threadId>` stream. These rows are written
  * before the executor runs, so the host sees them before the agent's first output.

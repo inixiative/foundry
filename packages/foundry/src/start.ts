@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon, feature:flow
+ */
 import { resolve } from 'node:path';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:viewer, primitive:secrets
+ */
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,

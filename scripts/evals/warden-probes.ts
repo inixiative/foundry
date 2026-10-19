@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * Build Warden probes. Writes JSONL outside the repo: probes hold session text.
  *
  * From a correction harvest (the deep-scan kit: detector candidates, Haiku classifications and the

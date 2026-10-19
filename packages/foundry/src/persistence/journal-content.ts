@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:journal
+ */
 import { createHash } from 'node:crypto';
 
 /**

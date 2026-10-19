@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon
+ */
+/**
  * Auto-update with two copies of the code. The daemon never runs the working
  * checkout: it runs a release, an exported commit with its own install under
  * <config>/releases/<sha>. An update builds origin/main as the candidate; the

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:evals
+ */
 // Warden probes: the offline measurement of how well a Warden charter keeps the chorus quiet, in
 // scope and right. Data and pure functions only, so Oracle can score runs on a core-only dependency;
 // callers bring the probes, the Warden calls and the judge call.

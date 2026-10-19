@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind generator
+ * @partOf feature:daemon
+ */
+/**
  * LaunchAgent plist generation — pure, so it can be tested without touching disk.
  */
 

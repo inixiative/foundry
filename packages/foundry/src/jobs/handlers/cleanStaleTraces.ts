@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind handler
+ * @partOf primitive:jobs, primitive:traces
+ */
 import { idAtTime } from '@inixiative/foundry-core';
 import { makeSingletonJob } from '../makeSingletonJob';
 

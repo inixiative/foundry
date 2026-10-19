@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf primitive:jobs
+ */
 import type { ContextStack } from '@inixiative/foundry-core';
 import type { Job, Queue } from 'bullmq';
 import type Redis from 'ioredis';

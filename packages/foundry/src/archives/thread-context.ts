@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:archive
+ */
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { archiveReferences, provenanceReferences } from '@inixiative/archive/tags';
 import type { Thread, ThreadContext, ThreadReference } from '@inixiative/foundry-core';

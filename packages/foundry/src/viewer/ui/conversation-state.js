@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
 /** Patch one response, never whichever response happened to be appended last. */
 export function updateTurnMessage(messages, turnId, patch) {
   const index = messages.findIndex(

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth
+ */
 import { createHash } from 'node:crypto';
 import {
   existsSync,

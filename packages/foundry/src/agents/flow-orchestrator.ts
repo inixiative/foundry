@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:flow
+ */
 // ---------------------------------------------------------------------------
 // Flow Orchestrator — wires the five FLOW.md roles into a coherent pipeline
 //

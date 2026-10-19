@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf primitive:agents
+ */
 import { type AgentConfig, BaseAgent, type ExecutionResult } from './base-agent';
 import { computeHash } from './context-layer';
 import type { ContextStack, LayerFilter } from './context-stack';

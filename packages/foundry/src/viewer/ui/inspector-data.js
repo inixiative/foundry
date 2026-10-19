@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:flow, feature:viewer
+ */
 export function traceSpans(root) {
   if (!root) return [];
   return [root, ...(root.children || []).flatMap(traceSpans)];

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:viewer, primitive:settings
+ */
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, watch } from 'node:fs';
 import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises';

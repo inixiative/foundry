@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf integration:typesafe
+ */
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { CapabilityGate, GateContext } from '@inixiative/foundry-core';
 import { z } from 'zod';

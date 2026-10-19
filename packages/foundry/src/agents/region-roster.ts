@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { claudemdSource, INSTRUCTION_FILE_LIMIT } from '@inixiative/foundry-core';

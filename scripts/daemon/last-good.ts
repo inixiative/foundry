@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon, primitive:settings
+ */
+/**
  * Boot safety for settings. The settings a boot succeeded on are kept as
  * last-good. When a boot fails on settings that differ from them, the failed
  * file is set aside (never deleted) and last-good restored, so the relaunch

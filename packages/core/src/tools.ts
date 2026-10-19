@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // Tools — typed interfaces for agent execution environments
 // ---------------------------------------------------------------------------

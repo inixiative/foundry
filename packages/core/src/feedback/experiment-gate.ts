@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind helper
+ * @partOf feature:evals
+ */
+/**
  * The experiment gate (`.claude/skills/experiment/SKILL.md`), shared by Foundry's eval scripts and
  * Oracle's replay runner: a wide run (more than TINY_MOMENTS moments, or whatever else the caller
  * counts as wide) needs `--experiment <design.md>` whose pre-registration sections are filled and

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:acp
+ */
 import { isAbsolute } from 'node:path';
 import {
   type AgentContext,

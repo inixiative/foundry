@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, integration:kingdom
+ */
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { defaultKingdomUrl, installationNameOf } from '../../providers/kingdom-cli';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind constant
+ * @partOf primitive:tools
+ */
 import type { Capability } from './capability';
 
 // Native harness tools by what they do: one list for Foundry's tool gate and work items, and for

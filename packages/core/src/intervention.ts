@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:signals
+ */
 import { newId } from './id';
 import type { Signal, SignalBus } from './signal';
 import type { Span, Trace } from './trace';

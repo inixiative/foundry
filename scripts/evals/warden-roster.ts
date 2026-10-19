@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * History: the hand-named roster was retired 2026-10-17. This reads an archived settings file (the
  * pre-filter eval's `--settings`) to replay its measurements; live settings declare no Wardens.
  *

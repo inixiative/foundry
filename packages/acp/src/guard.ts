@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:acp, feature:wardens
+ */
+/**
  * Warden findings on a tool call, as host comments: the `guard-outcome` phase rows the post-action
  * review journals (on the `flow:<threadId>` stream). Wardens are a chorus: their findings are shown,
  * never turned into a block.

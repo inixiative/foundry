@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/delivery.ts (local delivery only).
 //
 // Snapshot the id set before iterating: a dead socket triggers removeConnection,

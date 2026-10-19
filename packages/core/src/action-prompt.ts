@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:signals
+ */
 // ---------------------------------------------------------------------------
 // ActionPrompt — blocking agent→human interaction primitive
 // ---------------------------------------------------------------------------

@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon
+ */
 import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 /**

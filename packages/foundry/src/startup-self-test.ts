@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:setup, primitive:decisions
+ */
 import type { LLMProvider } from '@inixiative/foundry-core';
 import { auxiliarySessionId } from './agents/thread-runtime';
 

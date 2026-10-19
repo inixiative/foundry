@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:flow, feature:wardens
+ */
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
 import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';

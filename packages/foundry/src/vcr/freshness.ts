@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:vcr
+ */
 // The freshness policy, enforced by `bun run test`: a cassette is evidence about the live
 // CLIs only while it is recent and was recorded on the CLI people actually run.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';

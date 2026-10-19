@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:viewer
+ */
 import { type Thread, type Trace, threadTitle } from '@inixiative/foundry-core';
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:usage, feature:viewer
+ */
 // ---------------------------------------------------------------------------
 // Analytics Store — persistent usage tracking with time-series rollups
 // ---------------------------------------------------------------------------

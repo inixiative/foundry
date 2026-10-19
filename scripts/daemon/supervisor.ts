@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon
+ */
+/**
  * Daemon entrypoint. Stages an update before launching, then boots a release (see
  * update.ts) and keeps watching, because a daemon left running for days would
  * otherwise never see main move. Local services come up first. A candidate

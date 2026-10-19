@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf feature:wardens
+ */
 // ---------------------------------------------------------------------------
 // Domain Librarian — the shared pattern for all domain sub-agents (FLOW.md)
 //

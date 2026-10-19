@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:gloss
+ */
 import { BookOpen, RotateCw, X } from 'https://esm.sh/lucide-preact@0.468.0?deps=preact@10.25.4';
 import { html, signal, useEffect, useRef, useState } from './lib.js';
 import { authFetch } from './store.js';

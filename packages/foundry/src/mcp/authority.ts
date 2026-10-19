@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:mcpBridge
+ */
 // ---------------------------------------------------------------------------
 // Live-runtime authority for the MCP bridge (T1)
 //

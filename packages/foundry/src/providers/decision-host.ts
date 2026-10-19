@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:decisions
+ */
 import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { probeClaudeLimits } from '@inixiative/agent-session';

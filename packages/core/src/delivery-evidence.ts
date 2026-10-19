@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:nativeSessions
+ */
 /** Portable SHA-256 for public evidence, shared by Bun and the historical browser.
  * This is an integrity join, not a signature or native delivery acknowledgment. */
 export function evidenceDigest(text: string): string {

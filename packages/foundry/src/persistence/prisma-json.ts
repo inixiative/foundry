@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf infrastructure:prisma
+ */
 import { Prisma } from '@prisma/client';
 
 export type PrismaJsonValue = Prisma.InputJsonValue | typeof Prisma.JsonNull;

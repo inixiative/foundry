@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threads, feature:viewer
+ */
 import { Thread, type ThreadMeta } from '@inixiative/foundry-core';
 import type { ProjectRegistry } from '../agents/project';
 import type { ThreadFactory } from '../agents/thread-factory';

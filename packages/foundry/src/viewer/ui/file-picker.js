@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * Shared file/directory picker modal.
  *
  * Usage:

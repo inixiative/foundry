@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
+/**
  * Forge Master — the persistent thread for talking to this Foundry about
  * itself. It opens from the workspace sidebar and sits beside every settings
  * page, where it knows what the operator is viewing (scope/section/focus).

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:nativeSessions
+ */
 import { computeHash } from './context-layer';
 import type { PromptBlock } from './context-stack';
 

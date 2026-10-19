@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:tools
+ */
 import {
   type NativeEvidence,
   type NativeOwner,

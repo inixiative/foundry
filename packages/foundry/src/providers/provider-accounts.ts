@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth
+ */
 import { vendorOfProvider } from '@inixiative/foundry-core';
 import { whichOn } from '../daemon/agent-clis';
 import { MODEL_REGISTRY, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../models/registry';

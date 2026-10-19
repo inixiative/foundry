@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind transformer
+ * @partOf feature:threads
+ */
+/**
  * Instruction wrappers a host adds around the user's words. T3 Code sends ACP agents its own
  * context in the user prompt (`t3:packages/provider-core/src/server/orchestrationInstructions.ts`):
  * `<t3_code_instructions>…</t3_code_instructions>\n\n<user_request>\n…\n</user_request>`, or the

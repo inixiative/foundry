@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:mcpBridge
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import {
   freezeEvidence,

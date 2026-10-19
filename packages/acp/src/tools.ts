@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf feature:acp
+ */
 import { isAbsolute, join } from 'node:path';
 import type { PlanEntry, ToolCallLocation, ToolKind } from '@agentclientprotocol/sdk';
 

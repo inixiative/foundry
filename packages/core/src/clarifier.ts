@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf primitive:agents
+ */
 import type { AgentConfig } from './base-agent';
 import type { Classification } from './classifier';
 import type { ContextStack } from './context-stack';

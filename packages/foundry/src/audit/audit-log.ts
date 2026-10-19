@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:auditLog
+ */
 import { appendFileSync, closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { computeHash, type VersionEntry, type VersionLog } from '@inixiative/foundry-core';

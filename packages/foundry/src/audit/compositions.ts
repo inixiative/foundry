@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:auditLog, feature:composition
+ */
 import {
   type CompositionSnapshot,
   type OmittedSource,

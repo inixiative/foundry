@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:contextLayers
+ */
 import type { OwnershipScope } from './scope';
 
 /**

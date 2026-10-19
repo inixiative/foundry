@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:acp
+ */
 import {
   copyFileSync,
   existsSync,

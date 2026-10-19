@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf primitive:vcr
+ */
+/**
  * bun run vcr:refresh — the scheduled cadence (nightly, and after any claude, codex or
  * @inixiative/agent-session upgrade): the live tier, then the launchd tier. Exits non-zero
  * on any failure or drift so a scheduler can alert. Run it from a worktree, never from the

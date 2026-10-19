@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:kingdom
+ */
 import { FilePicker } from './file-picker.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { authFetch } from './store.js';

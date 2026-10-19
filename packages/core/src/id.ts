@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind utils
+ * @partOf primitive:thread
+ */
 import { uuidv7 } from 'uuidv7';
 
 /**

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threads
+ */
 import type {
   EventStream,
   HarnessResult,

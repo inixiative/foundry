@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:kingdom
+ */
 import { existsSync } from 'node:fs';
 import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf primitive:providers
+ */
 // Re-export shim — all provider types now live in @inixiative/foundry-core
 export {
   assembledToMessages,

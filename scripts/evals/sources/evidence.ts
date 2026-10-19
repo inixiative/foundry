@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf feature:evals
+ */
 /** Who wrote a comment: the person's own Claude Code and Codex sessions as evidence. */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

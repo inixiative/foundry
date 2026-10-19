@@ -1,5 +1,10 @@
 #!/usr/bin/env bun
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf primitive:vcr
+ */
+/**
  * bun run test:live:daemon — the launchd tier. Submits a throwaway LaunchAgent built by the
  * daemon's own buildPlist, with the installed daemon's PATH and ProcessType and no terminal
  * environment, and runs a small live smoke inside it: the status probes and one decision per

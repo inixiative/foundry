@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * DetailDrawer — right panel.
  *
  * Shows (in priority order):

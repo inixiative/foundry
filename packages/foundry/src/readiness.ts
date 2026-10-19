@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf feature:wardens
+ */
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';

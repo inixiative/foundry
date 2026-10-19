@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:jobs
+ */
 import { isValidHandlerName, type JobPayloads } from './handlers';
 import type { JobOptions, JobsQueue, JobType } from './types';
 

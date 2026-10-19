@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:vcr
+ */
 // Stdio sessions as cassettes. A recording keeps every stdin write and every stdout/stderr
 // line, each output tagged with how many stdin events (writes or end) preceded it. Replay
 // releases each output once the same number of stdin events has happened, so request/response

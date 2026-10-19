@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind client
+ * @partOf feature:viewer, primitive:websockets
+ */
 // Port of the template's packages/shared/src/ws/createWebSocketClient.ts.
 // Generic browser WebSocket client — transport only. Owns the socket lifecycle
 // (connect, auto-reconnect) and forwards parsed inbound frames to a single

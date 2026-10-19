@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:mcpBridge
+ */
 // ---------------------------------------------------------------------------
 // Foundry MCP Server — mid-session bridge (FLOW.md Loop 2)
 //

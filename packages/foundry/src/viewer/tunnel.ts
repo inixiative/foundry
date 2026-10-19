@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer, integration:kingdom
+ */
 // ---------------------------------------------------------------------------
 // Tunnel — expose the local viewer over a public URL with auth
 // ---------------------------------------------------------------------------

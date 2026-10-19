@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind route
+ * @partOf feature:viewer, primitive:settings
+ */
 import { constants } from 'node:fs';
 import { resolve as resolveFilePath } from 'node:path';
 import type { ActionQueue, Harness, TokenTracker, ToolRegistry } from '@inixiative/foundry-core';

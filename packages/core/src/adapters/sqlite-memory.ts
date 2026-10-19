@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:memory
+ */
 import { Database } from 'bun:sqlite';
 import type { ContextSource } from '../context-layer';
 import type { ContextRef, HydrationAdapter } from '../hydrator';

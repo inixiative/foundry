@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind type
+ * @partOf primitive:thread
+ */
+/**
  * Ownership scope — which thread and project an operation belongs to.
  *
  * Threads bind their context sources and tool calls to a scope so that

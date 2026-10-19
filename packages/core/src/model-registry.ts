@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind registry
+ * @partOf primitive:modelRegistry
+ */
+/**
  * The model registry: the vocabulary of what models are worth using for, the
  * table of providers and models, and the lookups over it.
  *

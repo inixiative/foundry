@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
 // Voice for the composer: browser dictation in, spoken replies out. The thread's
 // own model does the work; neither Claude Code nor the Codex exec path exposes a
 // native voice channel, so speech is converted at the browser edge.

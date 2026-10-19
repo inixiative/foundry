@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf integration:kingdom
+ */
 import { mkdir, rmdir } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { readPrivateJson, writePrivateJson } from '@inixiative/signet';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:memory, primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // MemoryToolAdapter — wraps any Foundry memory backend into a MemoryTool
 //

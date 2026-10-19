@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf primitive:nativeSessions
+ */
+/**
  * What a host (an ACP client, or the viewer) chose for one thread's executor session: the
  * permission mode, model and effort it runs with and the MCP servers it carries. Access follows
  * the host: a mode is the native runtime's own permission mode, full access included, and Foundry

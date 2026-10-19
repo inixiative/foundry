@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, primitive:settings
+ */
+/**
  * Setup Wizard — first-run configuration flow.
  * Shows when setupComplete is false/undefined in the config.
  * Steps: Welcome → Providers → Default Provider → Executor Model → Classifier Model → Done.

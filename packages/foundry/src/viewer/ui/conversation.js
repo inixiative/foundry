@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
+/**
  * Conversation — center panel. Always chat mode.
  *
  * User types a message → harness processes it → agent responds.

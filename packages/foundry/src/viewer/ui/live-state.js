@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, primitive:websockets
+ */
 import { terminalMessagePatch } from './conversation-state.js';
 
 /** Local execution and native/RPC observations are independent. Legacy full

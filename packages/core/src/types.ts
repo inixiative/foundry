@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf primitive:agents
+ */
 import type { TokenCounts } from './token-counts';
 // ---------------------------------------------------------------------------
 // Shared types — used by harness for conditional invocation/activation

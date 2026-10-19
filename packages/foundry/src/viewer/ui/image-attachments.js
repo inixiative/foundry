@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:threads, feature:viewer
+ */
+/**
  * Images in the composer: what is accepted, the downscale before upload, and the upload itself.
  * The server checks the same limits and sniffs the type from the bytes; these checks only give
  * the sender a clear answer before anything is sent.

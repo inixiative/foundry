@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf integration:kingdom
+ */
 import type {
   ApiRequest,
   ApiResponse,

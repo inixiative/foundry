@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threads
+ */
 import type { LLMMessage, LLMProvider, Thread } from '@inixiative/foundry-core';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 

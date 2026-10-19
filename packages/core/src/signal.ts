@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf primitive:signals
+ */
+/**
  * Signal kinds — the Librarian's taxonomy.
  * Extensible via string union, not a closed enum.
  */

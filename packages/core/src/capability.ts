@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:agents, primitive:tools
+ */
 // ---------------------------------------------------------------------------
 // Capability — permission flags and gating for dangerous operations
 // ---------------------------------------------------------------------------

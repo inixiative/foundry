@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind utils
+ * @partOf feature:viewer
+ */
+/**
  * Foundry hotkey system — lightweight keyboard shortcut manager.
  * No dependencies. Supports chords, modifiers, and customizable bindings.
  */

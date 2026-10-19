@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:traces
+ */
 import type { Trace as FoundryTrace, Span } from '@inixiative/foundry-core';
 import type { Prisma } from '@prisma/client';
 import { toOptionalPrismaJson, toPrismaJson } from './prisma-json';

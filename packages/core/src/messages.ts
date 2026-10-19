@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:nativeSessions
+ */
 import type {
   CompositionSnapshot,
   LayerInstanceState,

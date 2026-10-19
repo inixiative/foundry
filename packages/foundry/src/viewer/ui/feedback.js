@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:feedback, feature:viewer
+ */
+/**
  * Feedback in front of the user. One set of items (the `feedback` stream, `feedbackItems`) in three
  * scopes: the pinned Feedback inbox (everything), a project's strip and list, and a thread (a marker on
  * the turn an item refers to, and the list in the detail panel). Explicit feedback (`/feedback`) is

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:flow
+ */
 import type { CompletionOpts, LLMProvider } from '@inixiative/foundry-core';
 import type { LearningConfig } from './thread-runtime';
 

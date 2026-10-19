@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:wardens
+ */
 // The Warden pre-filter: one cheap local yes/no per Warden before it is asked. Data and pure
 // functions only, so Oracle scores runs the same way; Foundry's provider makes the call. It fails
 // open: a Warden is skipped only on a confident no, and anything else (an unsure score, an error, no

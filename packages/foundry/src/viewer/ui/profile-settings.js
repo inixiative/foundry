@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:kingdom
+ */
+/**
  * Settings → Profile: who this Foundry is (its installation name, the one Kingdom pairing uses) and
  * who runs it (the operator, as a paired Kingdom describes them).
  */

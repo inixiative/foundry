@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:nativeSessions
+ */
 import { createHash } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';

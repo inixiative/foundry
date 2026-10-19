@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:flow
+ */
 import {
   ContextLayer,
   type ContextStack,

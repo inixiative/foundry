@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, primitive:settings
+ */
+/**
  * Settings → Providers: one row per vendor (Anthropic, OpenAI, Google, ...) with its on/off switch.
  * A vendor reaches its models in a subscription mode (a native CLI on the person's own login) and an
  * API mode (an API key); either or both may be on. Expanding a vendor shows each mode's models with

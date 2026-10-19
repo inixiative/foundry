@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind adapter
+ * @partOf primitive:nativeSessions
+ */
 import { type ClaudeContextBudget, claudeContextEnvironment } from './claude-context-budget';
 import type {
   NativeAuthenticationLaunch,

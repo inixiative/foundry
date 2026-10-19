@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf primitive:vcr
+ */
 /** bun run vcr:accept — adopt reviewed live drift: each `.pending.json` replaces its cassette. */
 import { renameSync } from 'node:fs';
 import { display, driftOf, pendingCassettes } from './shared';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind handler
+ * @partOf primitive:jobs
+ */
 import { makeJob } from '../makeJob';
 
 export type Actor = 'user' | 'agent' | 'system';

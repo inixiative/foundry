@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:archive
+ */
 import { localArchive } from '@inixiative/archive/remote';
 import type { SetupPrompts } from '../setup/prompts';
 import {

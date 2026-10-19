@@ -1,3 +1,9 @@
+/**
+ * @atlas
+ * @kind constructor
+ * @partOf primitive:jobs
+ * @constructs job handlers
+ */
 import type { JobHandler, JobHandlerArgs } from './types';
 
 const REDIS_NS = 'foundry:job';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:nativeSessions
+ */
 import {
   freezeEvidence,
   type NativeEvidence,

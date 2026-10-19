@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:kingdom
+ */
 import { kingdomUrl } from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';

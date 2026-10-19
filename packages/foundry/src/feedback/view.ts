@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf feature:feedback
+ */
 import { activeChanges, type FeedbackItem } from './lifecycle';
 import type { FeedbackService } from './service';
 

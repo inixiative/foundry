@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:mcpBridge
+ */
 
 // ---------------------------------------------------------------------------
 // Foundry MCP Server — standalone entrypoint

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind middleware
+ * @partOf integration:typesafe
+ */
 import type { DispatchContext, Middleware } from '@inixiative/foundry-core';
 import type {
   TypeSafeContent,

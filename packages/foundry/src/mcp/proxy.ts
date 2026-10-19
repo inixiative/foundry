@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:mcpBridge
+ */
 
 // ---------------------------------------------------------------------------
 // Foundry bridge proxy (T2): thin stdio MCP proxy for a native CLI.

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind registry
+ * @partOf feature:flow
+ */
 import type {
   HookContext,
   HookHandler,

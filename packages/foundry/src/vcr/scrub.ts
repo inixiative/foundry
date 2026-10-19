@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:vcr
+ */
 // Every recorded string passes through here before it touches disk. Paths the replay needs
 // become placeholders it can fill back in; identity and secrets are replaced for good.
 import { realpathSync } from 'node:fs';

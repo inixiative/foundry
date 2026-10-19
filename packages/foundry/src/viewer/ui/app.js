@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:viewer
+ */
+/**
  * Foundry Viewer — main app shell.
  * Workspace: navigation (pinned scopes, projects, the scope's threads) | conversation | detail drawer.
  * Settings and analytics are pages beside it (ui/route.js).

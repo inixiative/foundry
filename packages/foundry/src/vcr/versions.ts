@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind helper
+ * @partOf primitive:vcr
+ */
 // Ported from the template's cliVersion.ts and fetchVersion.ts: the version callbacks that
 // stamp a cassette with what it was recorded against.
 import { exec } from 'node:child_process';

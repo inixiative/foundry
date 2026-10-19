@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:archive
+ */
 import { userInfo } from 'node:os';
 import { resolve } from 'node:path';
 import {

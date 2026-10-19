@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind transformer
+ * @partOf primitive:nativeSessions
+ */
 /** Public, owned projection. Raw protocol and reasoning are deliberately absent. */
 export interface NativeOwner {
   readonly threadId: string;

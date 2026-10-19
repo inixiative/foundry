@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind handler
+ * @partOf primitive:jobs, primitive:signals
+ */
 import { makeJob } from '../makeJob';
 
 export type PersistSignalPayload = {

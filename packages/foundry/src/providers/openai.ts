@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:providers
+ */
 import type {
   CompletionOpts,
   CompletionResult,

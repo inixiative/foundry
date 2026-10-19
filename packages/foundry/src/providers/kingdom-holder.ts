@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:kingdom
+ */
 import { SignetClient, SignetHttpError, signetCredentialFile } from '@inixiative/signet';
 import {
   type SignetHolder,

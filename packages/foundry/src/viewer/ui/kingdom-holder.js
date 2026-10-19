@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer, integration:kingdom
+ */
 /** Names from a paired Kingdom's holder description (GET /api/kingdom/status → integrations[].holder). */
 
 /** The person a paired Kingdom says holds this Foundry: the owner when a person, else who approved it. */

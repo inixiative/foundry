@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind provider
+ * @partOf primitive:providers
+ */
 import type { LLMProvider } from '@inixiative/foundry-core';
 import {
   type FoundryProviderInfo,

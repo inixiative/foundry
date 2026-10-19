@@ -16,3 +16,6 @@ dist
 
 # Worktree slots (per-machine)
 .worktrees/
+
+# Atlas-generated code map (regenerate with: bunx atlas generate)
+MAP.md

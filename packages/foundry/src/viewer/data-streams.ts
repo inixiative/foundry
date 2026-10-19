@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer, primitive:websockets
+ */
 import type {
   ActionPrompt,
   ActionQueue,

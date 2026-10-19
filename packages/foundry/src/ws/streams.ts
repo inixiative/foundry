@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:websockets
+ */
 // Data streams: open a stream, get its data, close it.
 //
 //   client → { action: 'open', stream }        authorize, then

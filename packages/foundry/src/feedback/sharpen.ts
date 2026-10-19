@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:feedback
+ */
 import { createHash, randomBytes } from 'node:crypto';
 import {
   CORRECTION_CLASSIFY_PREFIX,

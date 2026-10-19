@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:threadTree
+ */
 import { createHash } from 'node:crypto';
 import type { EventStream, NativeEvidence, ThreadMeta } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';

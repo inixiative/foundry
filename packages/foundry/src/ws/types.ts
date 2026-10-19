@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind type
+ * @partOf primitive:websockets
+ */
 // Copied from the template's apps/api/src/ws/types.ts and adapted: no identity
 // (the viewer authorizes the whole connection at upgrade), channels become data streams.
 import type { ServerWebSocket } from 'bun';

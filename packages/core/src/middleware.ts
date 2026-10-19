@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf primitive:middleware
+ */
 import type { ExecutionResult } from './base-agent';
 import type { ContextStackView } from './context-stack';
 

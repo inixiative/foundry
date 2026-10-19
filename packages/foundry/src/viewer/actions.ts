@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer, primitive:settings
+ */
 import type { EventStream, Harness, InterventionLog, Thread } from '@inixiative/foundry-core';
 
 // ---------------------------------------------------------------------------

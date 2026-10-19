@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer
+ */
 import type { LLMMessage, LLMProvider, ToolRegistry } from '@inixiative/foundry-core';
 import { toolUseLoop } from '../agents/tool-loop';
 import { MODEL_REGISTRY } from '../models/registry';

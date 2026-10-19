@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:typesafe
+ */
 import fixtures from '../fixtures/typesafe-shadow.json';
 import { ActionQueue, CapabilityGate } from '../packages/core/src';
 import {

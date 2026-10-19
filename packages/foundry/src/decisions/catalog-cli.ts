@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:typesafe
+ */
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ActionQueue, CapabilityGate } from '@inixiative/foundry-core';

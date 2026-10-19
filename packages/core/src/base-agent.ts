@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind agent
+ * @partOf primitive:agents
+ */
 import { computeHash } from './context-layer';
 import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';
 import type { TokenCounts } from './token-counts';

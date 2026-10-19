@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf integration:archive
+ */
 import { createTerminalPrompts } from '../setup/prompts';
 import { runArchiveCli } from './local';
 import { runArchiveSetup } from './setup';

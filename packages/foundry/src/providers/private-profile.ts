@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth
+ */
 import { lstatSync, mkdirSync, readlinkSync, renameSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { writePrivateFile } from '../client/private-file';

@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:archive
+ */
 import { fileURLToPath } from 'node:url';
 import { type ArchiveClient, DEFAULT_URL } from '@inixiative/archive/remote';
 import type { ArchiveSettings } from '@inixiative/archive/schemas';

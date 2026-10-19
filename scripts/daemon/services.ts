@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon
+ */
+/**
  * Local services before launch. Starts the docker-compose.yml services that this
  * Foundry's environment points at on this machine; a service configured
  * elsewhere, or not configured, is left alone.

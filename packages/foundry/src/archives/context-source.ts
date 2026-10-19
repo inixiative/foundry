@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf integration:archive
+ */
 import { tokenCount } from '@inixiative/archive';
 import { localArchive } from '@inixiative/archive/remote';
 import type { ContextSource, OwnershipScope, SourceLoadHint } from '@inixiative/foundry-core';

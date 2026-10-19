@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:setup
+ */
 import { REPEATS_USAGE, runRepeats } from './feedback/repeats-cli';
 
 const USAGE = `foundry <command>
