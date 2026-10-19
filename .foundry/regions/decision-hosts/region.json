@@ -1,0 +1,45 @@
+{
+  "id": "decision-hosts",
+  "title": "Decision hosts and scheduler",
+  "routing": "Is this about how Foundry's cheap decision calls (classifiers, routers, Cartographer, Librarian, Wardens, review, thread naming) actually run: createSubscriptionDecisions, createPrimedDecisionHost, decisionHost for offline jobs, createDecisionProvider on the apiTokens path, primed sessions (ClaudePrimedSessions, CodexPrimedSessions, CompletionOpts.stablePrefix), the decision scheduler (CompletionOpts.priority / DECISION_PRIORITY, fairness, shedding, rate limits), budgets and limits (subscriptionOnly.maxCalls / maxConcurrent / maxQueued / effort / hedgeAfterMs / callTimeoutMs, DECISION_DEADLINE_MS, DECISION_INPUT_CAP, SUBSCRIPTION_DEFAULTS, largestRoster), subscriptionOnly.decisionRuntime and subscriptionOnly.model, or decisions.jsonl receipts? Plain jobs: 'run this decision on the user's login', 'spawn a claude process for this check', 'keep a warm session per Warden', 'queue these model calls', 'add a timeout to the classifier', 'get decisions in an offline eval'.",
+  "concepts": ["decision-hosts"],
+  "tokens": 16691,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1927,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 16691
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": [
+      "@inixiative/agent-session/README.md",
+      "@inixiative/agent-session/docs/transports-pools-routing.md",
+      "docs/subscription-decisions.md"
+    ],
+    "docUnits": [
+      "doc:docs/subscription-decisions.md#settings",
+      "doc:docs/subscription-decisions.md#claude-decisions",
+      "doc:docs/subscription-decisions.md#codex-decisions",
+      "doc:docs/subscription-decisions.md#scheduling",
+      "doc:docs/subscription-decisions.md#latency",
+      "doc:docs/subscription-decisions.md#ownership-and-bounds",
+      "doc:docs/subscription-decisions.md#validation",
+      "doc:@inixiative/agent-session/README.md#primed-decision-sessions",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#primed-decision-sessions",
+      "doc:@inixiative/agent-session/docs/transports-pools-routing.md#migration-notes-for-foundry"
+    ],
+    "catalogClusters": ["primitive-decisions"],
+    "codeEntries": 24,
+    "docMembers": 32
+  },
+  "bypassLines": 21,
+  "glossaryTerms": 27
+}

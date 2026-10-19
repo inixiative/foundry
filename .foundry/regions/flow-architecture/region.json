@@ -1,0 +1,45 @@
+{
+  "id": "flow-architecture",
+  "title": "Harness data flow and loops",
+  "routing": "Is this about how data moves through the Foundry harness: the four channels (pre-message system prompt and per-turn delta, mid-session MCP pull, post-action native event stream, feedback on a later turn), progressive depth and middleware tiers, the thread-state layer vs the session store, the delivery ledger (standing parts, deltas, compaction, no retraction, wrapsThread), the writeback loop, thread bootstrap and staleness, failure modes, or what is built vs designed; or about adding a Claude Code hook, MCP push or .foundry-context.md?",
+  "concepts": ["flow-loops"],
+  "tokens": 14724,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 704,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 14724
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["CLAUDE.md", "docs/FLOW.md", "docs/SYSTEM.md"],
+    "docUnits": [
+      "doc:docs/FLOW.md#preface",
+      "doc:docs/FLOW.md#why-this-exists",
+      "doc:docs/FLOW.md#the-core-model",
+      "doc:docs/FLOW.md#design-principles",
+      "doc:docs/FLOW.md#progressive-depth-tiered-frequency-model",
+      "doc:docs/FLOW.md#the-four-communication-channels",
+      "doc:docs/FLOW.md#loop-1-pre-message-context-routing-domain-advising",
+      "doc:docs/FLOW.md#loop-4-writeback-signal-reconciliation-system-learning",
+      "doc:docs/FLOW.md#thread-lifecycle",
+      "doc:docs/FLOW.md#complete-decision-reference",
+      "doc:docs/FLOW.md#failure-modes",
+      "doc:docs/FLOW.md#what-exists-vs-what-needs-building",
+      "doc:docs/SYSTEM.md#architecture-overview",
+      "doc:CLAUDE.md#communication-channels"
+    ],
+    "catalogClusters": ["feature-flow", "feature-threads", "primitive-journal"],
+    "codeEntries": 0,
+    "docMembers": 5
+  },
+  "bypassLines": 17,
+  "glossaryTerms": 27
+}

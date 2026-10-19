@@ -1,0 +1,39 @@
+{
+  "id": "journal-thread-tree",
+  "title": "Journal and thread tree",
+  "routing": "Is this about Foundry's local record of a thread: the journal (LocalSessionStore, phase rows in session_phase, appendPhase, encodeRecord / decodeRecord, contentHash, referencedHashes, the content store, ImageAttachmentStore, imageMediaType, openTurnDetail) or the thread tree (SessionBackedProvider.observeSubagents, SubagentRecorder observed child threads, handoff / handoff-return rows, middleware-reduced rows, reduceMiddleware, compactClosedTurns, pruneRawMiddleware, journal.rawMiddlewareDays, Archive lineage, tree(rootSessionId), the Archive claim lease)? Plain jobs: 'save this turn locally', 'store this big blob in the journal', 'keep the pasted image', 'track the subagents it spawned', 'shrink the Warden rows after the turn', 'clean up old raw rows', 'archive the whole tree as one thing'.",
+  "concepts": ["journal", "thread-tree"],
+  "tokens": 13357,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1625,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 13357
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/THREAD-TREE.md"],
+    "docUnits": [
+      "doc:docs/THREAD-TREE.md#preface",
+      "doc:docs/THREAD-TREE.md#a-1-spec",
+      "doc:docs/THREAD-TREE.md#a-2-what-exists-and-what-this-changes",
+      "doc:docs/THREAD-TREE.md#a-3-record-shapes",
+      "doc:docs/THREAD-TREE.md#a-4-who-writes-what-and-when",
+      "doc:docs/THREAD-TREE.md#a-6-original-intent",
+      "doc:docs/THREAD-TREE.md#a-7-open-questions",
+      "doc:docs/THREAD-TREE.md#a-8-as-built-2026-10-15"
+    ],
+    "catalogClusters": ["feature-threadTree", "primitive-journal"],
+    "codeEntries": 23,
+    "docMembers": 27
+  },
+  "bypassLines": 20,
+  "glossaryTerms": 27
+}

@@ -1,0 +1,47 @@
+{
+  "id": "core-agents",
+  "title": "Core agents, middleware, signals, traces",
+  "routing": "Is this about foundry-core's agent building blocks: BaseAgent and its kinds (Executor, Decider, Classifier, Router, Clarifier, Planner), the Harness (classify \u2192 route \u2192 dispatch, every message traced), thread.dispatch / thread.fan(), toolUseLoop, resolveAgentOpts; the MiddlewareChain around dispatch (use / useWhen, retryMiddleware, ReactiveMiddleware, budgetGuardHook, planModeHook, HookRegistry, lifecycle hooks, DispatchContext); the side channels (SignalBus, EventStream, InterventionLog, ActionQueue, BoundedSet, Signal and Intervention rows); or Trace spans and trace records (serializeTrace, upsertTraceRecord, prepareCheckpointImport)? Plain jobs: make an agent that returns only a decision, pick where a message goes, wrap or retry every dispatch, stop agents once the budget is spent, broadcast a correction, stream events to the UI, record and replay how one message travelled.",
+  "concepts": ["core-agents", "middleware-chain", "signals", "traces"],
+  "tokens": 16225,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2216,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 16225
+    }
+  },
+  "runsAgreed": 1,
+  "sources": {
+    "docs": ["docs/SYSTEM.md", "docs/api/PRIMITIVES.md"],
+    "docUnits": [
+      "doc:docs/SYSTEM.md#1-agents-src-agents",
+      "doc:docs/api/PRIMITIVES.md#preface",
+      "doc:docs/api/PRIMITIVES.md#core-concepts",
+      "doc:docs/api/PRIMITIVES.md#agents",
+      "doc:docs/api/PRIMITIVES.md#harness",
+      "doc:docs/api/PRIMITIVES.md#middleware",
+      "doc:docs/api/PRIMITIVES.md#signals",
+      "doc:docs/api/PRIMITIVES.md#interventions",
+      "doc:docs/api/PRIMITIVES.md#eventstream",
+      "doc:docs/api/PRIMITIVES.md#traces"
+    ],
+    "catalogClusters": [
+      "primitive-agents",
+      "primitive-contextLayers",
+      "primitive-middleware",
+      "primitive-signals",
+      "primitive-traces"
+    ],
+    "codeEntries": 48,
+    "docMembers": 24
+  },
+  "bypassLines": 19,
+  "glossaryTerms": 27
+}

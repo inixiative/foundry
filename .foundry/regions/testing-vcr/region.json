@@ -1,0 +1,41 @@
+{
+  "id": "testing-vcr",
+  "title": "Testing and the VCR",
+  "routing": "Is this about how Foundry is tested and checked: the test and check scripts (`bun run test`, `test:core`, `test:foundry`, `test:acp`, `test:all`, `test:live`, `typecheck`, `lint`, `atlas:check`, `check`), live-first testing, or the VCR that records real CLI, HTTP and WebSocket interactions as cassettes and replays them (VCR, ProcessCassettes, httpCassettes, webSocketCassettes, `FOUNDRY_VCR=record|replay`, `FOUNDRY_VCR_MAX_LIVE`, `packages/foundry/tests/fixtures/vcr/<service>/<method>.<name>.json`, outcome cassettes, sameAsLive, LIVE_FILES), cassette scrubbing (scrubText, scrubLine, scrubValue, findLeaks, rehydrate), freshness (checkFreshness, policy.json, blessed and installed versions, cliVersion, fetchVersion), drift (`.pending.json`, compareSignatures, volatileDifferences, driftOf, noticesOf, `vcr:accept`, `vcr:refresh`), or the live run's environment (cleanEnvironment, liveEnvironment, livePath, refuseDaemonCheckout)? Plain jobs: 'record the real call once and replay it', 'don't hit the live CLI in tests', 'CI says the cassettes are stale', 'the recording drifted', 'redact my email from the fixture', 'run the full check before merging'.",
+  "concepts": ["testing", "vcr"],
+  "tokens": 13037,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1979,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 13037
+    }
+  },
+  "runsAgreed": 3,
+  "sources": {
+    "docs": ["CLAUDE.md", "README.md", "docs/live-testing.md"],
+    "docUnits": [
+      "doc:docs/live-testing.md#preface",
+      "doc:docs/live-testing.md#tiers",
+      "doc:CLAUDE.md#running",
+      "doc:CLAUDE.md#atlas-the-code-map",
+      "doc:README.md#testing",
+      "doc:docs/live-testing.md#the-vcr",
+      "doc:docs/live-testing.md#cassettes",
+      "doc:docs/live-testing.md#freshness-rules",
+      "doc:docs/live-testing.md#drift",
+      "doc:docs/live-testing.md#adding-a-scenario"
+    ],
+    "catalogClusters": ["primitive-vcr"],
+    "codeEntries": 59,
+    "docMembers": 12
+  },
+  "bypassLines": 17,
+  "glossaryTerms": 26
+}

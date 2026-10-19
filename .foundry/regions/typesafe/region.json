@@ -1,0 +1,37 @@
+{
+  "id": "typesafe",
+  "title": "TypeSafe / Jev typed decisions",
+  "routing": "Is this about TypeSafe's Jev service (System One typed decisions: Choice, Score, Noul) in Foundry: TypeSafeDecisionClient, createTypeSafeMiddleware, TypeSafeShadowRunner, the Jev decision catalog (buildDecisionCatalog, refreshDecisionCatalog, decisionInput, decisionManifestSchema, decisions/catalog.ts, scripts/jev-catalog.ts), the shadow experiment (scripts/typesafe-shadow.ts, fixtures/typesafe-shadow.json), TYPESAFE_API_KEY, or the `typesafe` entry in MODEL_REGISTRY? Plain jobs: 'ask a typed yes/no or pick-one question about this state', 'score urgency or pick a domain with a confidence', 'try Jev in shadow without acting', 'call the TypeSafe API'.",
+  "concepts": ["typesafe"],
+  "tokens": 8426,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1174,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 8426
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/typesafe-jev.md"],
+    "docUnits": [
+      "doc:docs/typesafe-jev.md#preface",
+      "doc:docs/typesafe-jev.md#account-setup",
+      "doc:docs/typesafe-jev.md#explicit-middleware-integration",
+      "doc:docs/typesafe-jev.md#verification-and-remaining-end-to-end-work",
+      "doc:docs/typesafe-jev.md#two-stage-shadow-experiment",
+      "doc:docs/typesafe-jev.md#refreshable-atlas-catalog"
+    ],
+    "catalogClusters": ["integration-typesafe", "primitive-modelRegistry"],
+    "codeEntries": 9,
+    "docMembers": 14
+  },
+  "bypassLines": 15,
+  "glossaryTerms": 24
+}

@@ -1,0 +1,614 @@
+{
+  "version": 1,
+  "project": "foundry",
+  "builtFrom": {
+    "docs": ["docs/**", "CLAUDE.md", "README.md"],
+    "catalog": "code read through the Atlas map (.atlas/), described with the feat/warden-catalog describer prompts; clusters are the Atlas concepts (~/.foundry/evals/warden-regions/foundry/catalog.ts)",
+    "atlas": ".atlas/concepts.ts",
+    "libraries": {
+      "agent-session": "cb4691c",
+      "signet": "3607e85",
+      "archive": "d8ee0d6"
+    },
+    "method": "three independent LLM proposals (Opus 5.5), item-level majority vote (~/.foundry/evals/warden-regions/foundry)"
+  },
+  "concepts": [
+    {
+      "tag": "chorus",
+      "atlas": "feature:wardens",
+      "description": "A project's region Wardens: generated one per region from .foundry/regions, the chorus setting (projects[id].chorus over .foundry/project.json), layers, warm keys, DomainLibrarian, the reception charter",
+      "region": "chorus"
+    },
+    {
+      "tag": "warden-triggers",
+      "atlas": "feature:wardens",
+      "description": "When a Warden is asked and what it does there: user-message advice, one guard per turn over agent-action, subagent-spawn handoff briefs, consumed work items, review; how a chime reaches the thread",
+      "region": "warden-triggers"
+    },
+    {
+      "tag": "classify",
+      "atlas": "primitive:classify",
+      "description": "The one classification primitive: stages, the point and recognise charters and their sections and modes, response protocols, NO_COMMENT, pointer shapes",
+      "region": "classify"
+    },
+    {
+      "tag": "warden-prefilter",
+      "atlas": "feature:wardens",
+      "description": "The local-model pre-filter that may skip a Warden on a confident no: off by default, fails open, its model install and server, readiness",
+      "region": "warden-prefilter-evals"
+    },
+    {
+      "tag": "warden-evals",
+      "atlas": "feature:evals",
+      "description": "Warden eval machinery: probes from real sessions, labels, charter runs and classify run configs, judging, cost weights, reports, the experiment gate",
+      "region": "warden-prefilter-evals"
+    },
+    {
+      "tag": "feedback",
+      "atlas": "feature:feedback",
+      "description": "Explicit feedback and its lifecycle: /feedback capture, sharpen, routing to Warden roles, tuning, apply/revert, the inbox views",
+      "region": "feedback"
+    },
+    {
+      "tag": "corrections",
+      "atlas": "feature:feedback",
+      "description": "Detecting corrections in sessions and reviews: the Prospector correction detector, review findings and evidence sources, foundry repeats",
+      "region": "feedback"
+    },
+    {
+      "tag": "decision-hosts",
+      "atlas": "primitive:decisions",
+      "description": "How decision roles run on subscription logins: decision provider and host, primed Claude/Codex decision sessions, budgets, priority, thread naming",
+      "region": "decision-hosts"
+    },
+    {
+      "tag": "subscription-policy",
+      "atlas": "primitive:decisions",
+      "description": "Subscription-only by default: which login the worker and decisions use, apiTokens opt-in, which model each role runs, integration limits",
+      "region": "subscription-policy"
+    },
+    {
+      "tag": "in-session-wardens",
+      "atlas": "primitive:decisions",
+      "description": "decisionRuntime claude-in-session: a thread's Wardens held as subagents inside its own Claude Code process, setup turn, queued turns while it sets up",
+      "region": "in-session-wardens"
+    },
+    {
+      "tag": "native-sessions",
+      "atlas": "primitive:nativeSessions",
+      "description": "Native Claude Code / Codex sessions: session adapters, SessionBacked providers, native launch and environment, thread launch choices, native evidence",
+      "region": "native-sessions"
+    },
+    {
+      "tag": "agent-session",
+      "atlas": null,
+      "description": "@inixiative/agent-session: HarnessSession, transports and capabilities, subagent events, subscription pools, routing and leases",
+      "region": "native-sessions"
+    },
+    {
+      "tag": "session-delivery",
+      "atlas": "primitive:nativeSessions",
+      "description": "What a native session receives each turn: standing parts in the system prompt, per-turn deltas, the delivery ledger and delivery evidence",
+      "region": "session-delivery"
+    },
+    {
+      "tag": "model-registry",
+      "atlas": "primitive:modelRegistry",
+      "description": "The model registry: capability vocabulary, provider/model table, vendors with subscription and API modes",
+      "region": "models-providers"
+    },
+    {
+      "tag": "api-providers",
+      "atlas": "primitive:providers",
+      "description": "The LLMProvider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible family, embeddings)",
+      "region": "models-providers"
+    },
+    {
+      "tag": "usage-telemetry",
+      "atlas": "feature:usage",
+      "description": "Token counts, cache telemetry, TokenTracker attribution and usage windows, analytics, native context budgets and compaction",
+      "region": "models-providers"
+    },
+    {
+      "tag": "typesafe",
+      "atlas": "integration:typesafe",
+      "description": "TypeSafe / Jev typed decisions: client, middleware, shadow runner, decision catalog",
+      "region": "typesafe"
+    },
+    {
+      "tag": "native-auth",
+      "atlas": "feature:nativeAuth",
+      "description": "Which login a native session runs on: credential sources, native profiles, gateway modes, profile locks, sharing the user's own logins",
+      "region": "logins-secrets"
+    },
+    {
+      "tag": "secrets",
+      "atlas": "primitive:secrets",
+      "description": "Credential references, private 0600 files and tokens, bound launch environments, secret detection and scrubbing",
+      "region": "logins-secrets"
+    },
+    {
+      "tag": "kingdom-pairing",
+      "atlas": "integration:kingdom",
+      "description": "Pairing a Foundry with Kingdoms as an Installation: installation connection, held Signets, holders, the runtime seam",
+      "region": "kingdom"
+    },
+    {
+      "tag": "kingdom-access",
+      "atlas": "integration:kingdom",
+      "description": "Kingdom resource access grants and the foundry_access tool: configure, describe, read, attribution and failure handling",
+      "region": "kingdom"
+    },
+    {
+      "tag": "signets",
+      "atlas": "integration:kingdom",
+      "description": "The Signet protocol and SignetClient (@inixiative/signet): DPoP presentation, renewal, cancellation, task settlement",
+      "region": "kingdom"
+    },
+    {
+      "tag": "archive-capture",
+      "atlas": "integration:archive",
+      "description": "Foundry's use of the local Archive: setup, journal capture, archive commands, archive as a context source, thread context",
+      "region": "archive"
+    },
+    {
+      "tag": "archive-server",
+      "atlas": "integration:archive",
+      "description": "The Archive itself (@inixiative/archive): deployment, collectors, routing, tags/references/retention, HTTP API",
+      "region": "archive"
+    },
+    {
+      "tag": "threads",
+      "atlas": "feature:threads",
+      "description": "The thread runtime and the one turn path: TurnService, queued turns, projects, ThreadFactory, thread runtime manager, the daemon client",
+      "region": "threads"
+    },
+    {
+      "tag": "core-thread",
+      "atlas": "primitive:thread",
+      "description": "Core Thread, SessionManager blueprints, ownership scope, ids, persisted thread and message models",
+      "region": "threads"
+    },
+    {
+      "tag": "journal",
+      "atlas": "primitive:journal",
+      "description": "The local journal: LocalSessionStore, phase rows, content-addressed records, image attachments",
+      "region": "journal-thread-tree"
+    },
+    {
+      "tag": "thread-tree",
+      "atlas": "feature:threadTree",
+      "description": "A thread is a tree: native subagents as observed child threads, handoff rows, reduced middleware entries, stitching into Archive",
+      "region": "journal-thread-tree"
+    },
+    {
+      "tag": "instruction-ladder",
+      "atlas": "feature:composition",
+      "description": "Standing instructions: the registered hierarchy (computer, org, project, personal), discovery like Claude Code, @imports, tiers and dedupe",
+      "region": "composition"
+    },
+    {
+      "tag": "composition-view",
+      "atlas": "feature:composition",
+      "description": "Roles x slots x ladder nodes: what each role composes, role layers and files, budgets, the prompt composer",
+      "region": "composition"
+    },
+    {
+      "tag": "audit-log",
+      "atlas": "feature:auditLog",
+      "description": "The one audit log: source versions, composition versions, recompose (THREAD-TREE spec B)",
+      "region": "audit-log"
+    },
+    {
+      "tag": "flow-loops",
+      "atlas": "feature:flow",
+      "description": "The harness data flow: what Foundry is, the four channels and loops (pre-message, MCP pull, post-action, writeback), progressive depth, thread-state, failure modes",
+      "region": "flow-architecture"
+    },
+    {
+      "tag": "flow-roles",
+      "atlas": "feature:flow",
+      "description": "The FLOW.md roles as agents: Cartographer, Librarian (sole thread-state writer), Herald (not wired), FlowOrchestrator, routed agents",
+      "region": "flow-roles"
+    },
+    {
+      "tag": "core-agents",
+      "atlas": "primitive:agents",
+      "description": "foundry-core agent primitives: BaseAgent, Executor, Decider, Classifier, Router, Clarifier, Harness, Planner, the tool-use loop",
+      "region": "core-agents"
+    },
+    {
+      "tag": "middleware-chain",
+      "atlas": "primitive:middleware",
+      "description": "MiddlewareChain, hooks, retry, built-in hooks, reactive middleware rules",
+      "region": "core-agents"
+    },
+    {
+      "tag": "signals",
+      "atlas": "primitive:signals",
+      "description": "SignalBus, EventStream, interventions, action prompts / ActionQueue",
+      "region": "core-agents"
+    },
+    {
+      "tag": "traces",
+      "atlas": "primitive:traces",
+      "description": "Trace spans, trace records, checkpoint import",
+      "region": "core-agents"
+    },
+    {
+      "tag": "context-layers",
+      "atlas": "primitive:contextLayers",
+      "description": "ContextLayer, ContextStack, cache lifecycle, hydration registry and refs; layers are independent token caches",
+      "region": "context-memory"
+    },
+    {
+      "tag": "memory-adapters",
+      "atlas": "primitive:memory",
+      "description": "Memory and knowledge adapters (file, sqlite, http, markdown, postgres, redis, Muninn, Supermemory) as context sources and the MemoryTool",
+      "region": "context-memory"
+    },
+    {
+      "tag": "tools",
+      "atlas": "primitive:tools",
+      "description": "Agent tools and execution environments: ToolRegistry, CapabilityGate, native tool classes, shell/browser/http/script adapters, output filters",
+      "region": "tools"
+    },
+    {
+      "tag": "tool-gate",
+      "atlas": "feature:toolGate",
+      "description": "The user's structural tool rules: the only thing in Foundry that can deny a native tool call",
+      "region": "tool-gate-mcp"
+    },
+    {
+      "tag": "mcp-bridge",
+      "atlas": "feature:mcpBridge",
+      "description": "The foundry MCP server: the mid-session pull bridge, its tools, the loopback proxy, live authority, fixture bridge",
+      "region": "tool-gate-mcp"
+    },
+    {
+      "tag": "acp",
+      "atlas": "feature:acp",
+      "description": "foundry-acp: ACP hosts (Paseo, T3 Code, Zed) drive Foundry threads; method map, session/update projection, modes, setup",
+      "region": "acp"
+    },
+    {
+      "tag": "viewer-shell",
+      "atlas": "feature:viewer",
+      "description": "The local dashboard: HTTP server and routes, Preact UI, store, navigation, conversation, settings pages",
+      "region": "viewer"
+    },
+    {
+      "tag": "turn-inspector",
+      "atlas": "feature:viewer",
+      "description": "The viewer's turn flow graph, inspector data, live state, layer bands and delivery evidence view",
+      "region": "viewer-inspector"
+    },
+    {
+      "tag": "data-streams",
+      "atlas": "primitive:websockets",
+      "description": "Data streams over WebSocket: registry, subscriptions, delivery, serialized queue, stream buffers, browser socket clients",
+      "region": "viewer-inspector"
+    },
+    {
+      "tag": "gloss",
+      "atlas": "integration:gloss",
+      "description": "Gloss margin notes in the viewer: viewing, maintenance actions, boundaries",
+      "region": "viewer-inspector"
+    },
+    {
+      "tag": "daemon",
+      "atlas": "feature:daemon",
+      "description": "The LaunchAgent daemon: install, supervisor, PATH for agent CLIs, two-copy auto-update, last-good settings",
+      "region": "install-daemon"
+    },
+    {
+      "tag": "setup",
+      "atlas": "feature:setup",
+      "description": "Setup, doctor, readiness, legacy starter removal, docs scan, startup self-test, the foundry CLI",
+      "region": "install-daemon"
+    },
+    {
+      "tag": "devices",
+      "atlas": "feature:devices",
+      "description": "Local device identity and inventory, linked project checkouts, foundry_device",
+      "region": "install-daemon"
+    },
+    {
+      "tag": "git-worktrees",
+      "atlas": "infrastructure:git",
+      "description": "Git and worktree detection, a thread's worktree and branch",
+      "region": "install-daemon"
+    },
+    {
+      "tag": "settings",
+      "atlas": "primitive:settings",
+      "description": "The settings model: .foundry/settings.json, ConfigStore with patch semantics and revisions, resolution, settings routes",
+      "region": "settings-runtime"
+    },
+    {
+      "tag": "jobs",
+      "atlas": "primitive:jobs",
+      "description": "BullMQ queue on Redis, makeJob / makeSingletonJob, worker, handlers",
+      "region": "settings-runtime"
+    },
+    {
+      "tag": "logger",
+      "atlas": "primitive:logger",
+      "description": "Pluggable logger (consola, pino) with async scopes",
+      "region": "settings-runtime"
+    },
+    {
+      "tag": "database",
+      "atlas": "infrastructure:prisma",
+      "description": "Postgres via Prisma (schema, db scripts, JSON helpers) and Redis",
+      "region": "settings-runtime"
+    },
+    {
+      "tag": "testing",
+      "atlas": null,
+      "description": "How Foundry is tested and checked: test tiers and commands, the full check, live-first practice",
+      "region": "testing-vcr"
+    },
+    {
+      "tag": "vcr",
+      "atlas": "primitive:vcr",
+      "description": "The VCR: cassettes for process stdio, HTTP and WebSocket, freshness rules, drift, scrubbing, re-recording",
+      "region": "testing-vcr"
+    },
+    {
+      "tag": "repo-structure",
+      "atlas": null,
+      "description": "Packages and their boundaries (core vs foundry vs acp), tech stack, licenses, dev commands",
+      "region": "conventions"
+    },
+    {
+      "tag": "atlas",
+      "atlas": null,
+      "description": "Atlas, the code map: @atlas blocks, the concept registry, navigating by concept",
+      "region": "conventions"
+    },
+    {
+      "tag": "design-rules",
+      "atlas": null,
+      "description": "How we build here: design principles and common mistakes for AI assistants",
+      "region": "conventions"
+    }
+  ],
+  "regions": [
+    {
+      "id": "chorus",
+      "tokens": 17551,
+      "recogniseTokens": 1708,
+      "concepts": ["chorus"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "warden-triggers",
+      "tokens": 11714,
+      "recogniseTokens": 1325,
+      "concepts": ["warden-triggers"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "classify",
+      "tokens": 12491,
+      "recogniseTokens": 1569,
+      "concepts": ["classify"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "warden-prefilter-evals",
+      "tokens": 12943,
+      "recogniseTokens": 2270,
+      "concepts": ["warden-prefilter", "warden-evals"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "feedback",
+      "tokens": 16724,
+      "recogniseTokens": 3042,
+      "concepts": ["feedback", "corrections"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "decision-hosts",
+      "tokens": 16691,
+      "recogniseTokens": 1927,
+      "concepts": ["decision-hosts"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "subscription-policy",
+      "tokens": 7521,
+      "recogniseTokens": 810,
+      "concepts": ["subscription-policy"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "in-session-wardens",
+      "tokens": 13515,
+      "recogniseTokens": 1649,
+      "concepts": ["in-session-wardens"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "native-sessions",
+      "tokens": 15648,
+      "recogniseTokens": 1699,
+      "concepts": ["native-sessions", "agent-session"],
+      "runsAgreed": 2
+    },
+    {
+      "id": "session-delivery",
+      "tokens": 7692,
+      "recogniseTokens": 1104,
+      "concepts": ["session-delivery"],
+      "runsAgreed": null
+    },
+    {
+      "id": "models-providers",
+      "tokens": 18277,
+      "recogniseTokens": 2907,
+      "concepts": ["model-registry", "api-providers", "usage-telemetry"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "typesafe",
+      "tokens": 8426,
+      "recogniseTokens": 1174,
+      "concepts": ["typesafe"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "logins-secrets",
+      "tokens": 16043,
+      "recogniseTokens": 2455,
+      "concepts": ["native-auth", "secrets"],
+      "runsAgreed": 2
+    },
+    {
+      "id": "kingdom",
+      "tokens": 19519,
+      "recogniseTokens": 2666,
+      "concepts": ["kingdom-pairing", "kingdom-access", "signets"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "archive",
+      "tokens": 18825,
+      "recogniseTokens": 1359,
+      "concepts": ["archive-capture", "archive-server"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "threads",
+      "tokens": 9481,
+      "recogniseTokens": 1696,
+      "concepts": ["threads", "core-thread"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "journal-thread-tree",
+      "tokens": 13357,
+      "recogniseTokens": 1625,
+      "concepts": ["journal", "thread-tree"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "composition",
+      "tokens": 17823,
+      "recogniseTokens": 2590,
+      "concepts": ["instruction-ladder", "composition-view"],
+      "runsAgreed": 1
+    },
+    {
+      "id": "audit-log",
+      "tokens": 9077,
+      "recogniseTokens": 950,
+      "concepts": ["audit-log"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "flow-architecture",
+      "tokens": 14724,
+      "recogniseTokens": 704,
+      "concepts": ["flow-loops"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "flow-roles",
+      "tokens": 8773,
+      "recogniseTokens": 1255,
+      "concepts": ["flow-roles"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "core-agents",
+      "tokens": 16225,
+      "recogniseTokens": 2216,
+      "concepts": ["core-agents", "middleware-chain", "signals", "traces"],
+      "runsAgreed": 1
+    },
+    {
+      "id": "context-memory",
+      "tokens": 14675,
+      "recogniseTokens": 2032,
+      "concepts": ["context-layers", "memory-adapters"],
+      "runsAgreed": 1
+    },
+    {
+      "id": "tools",
+      "tokens": 15958,
+      "recogniseTokens": 1591,
+      "concepts": ["tools"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "tool-gate-mcp",
+      "tokens": 11605,
+      "recogniseTokens": 2194,
+      "concepts": ["tool-gate", "mcp-bridge"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "acp",
+      "tokens": 18857,
+      "recogniseTokens": 1579,
+      "concepts": ["acp"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "viewer",
+      "tokens": 16335,
+      "recogniseTokens": 2739,
+      "concepts": ["viewer-shell"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "viewer-inspector",
+      "tokens": 14511,
+      "recogniseTokens": 2456,
+      "concepts": ["turn-inspector", "data-streams", "gloss"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "install-daemon",
+      "tokens": 16986,
+      "recogniseTokens": 2748,
+      "concepts": ["daemon", "setup", "devices", "git-worktrees"],
+      "runsAgreed": 1
+    },
+    {
+      "id": "settings-runtime",
+      "tokens": 12532,
+      "recogniseTokens": 1895,
+      "concepts": ["settings", "jobs", "logger", "database"],
+      "runsAgreed": 0
+    },
+    {
+      "id": "testing-vcr",
+      "tokens": 13037,
+      "recogniseTokens": 1979,
+      "concepts": ["testing", "vcr"],
+      "runsAgreed": 3
+    },
+    {
+      "id": "conventions",
+      "tokens": 6790,
+      "recogniseTokens": 772,
+      "concepts": ["repo-structure", "atlas", "design-rules"],
+      "runsAgreed": 1
+    }
+  ],
+  "dropped": {
+    "doc:docs/SYSTEM.md#4-eval-src-eval": "Describes the removed src/eval PR-fixture system (PRFixture, DiffScorer no longer exist in the repo); no current mechanism.",
+    "doc:docs/SYSTEM.md#7-project-stats": "Stale line/test counts; establishes nothing.",
+    "doc:docs/THREAD-TREE.md#a-5-test-cases": "Test-case list for spec A (acceptance cases, not a mechanism).",
+    "doc:docs/THREAD-TREE.md#b-6-test-cases": "Test-case list for spec B.",
+    "doc:docs/THREAD-TREE.md#c-6-test-cases": "Test-case list for spec C.",
+    "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface": "Empty H2 heading (5 tokens); its H3 subsections carry the content.",
+    "doc:docs/reference/FOUNDRY-ACP.md#8-test-cases": "Test-case list for the ACP slices.",
+    "doc:@inixiative/agent-session/README.md#license": "License line only (MIT).",
+    "doc:@inixiative/agent-session/README.md#runtime": "agent-session's own Bun pin for its development; nothing Foundry acts on."
+  }
+}

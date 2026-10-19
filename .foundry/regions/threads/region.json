@@ -1,0 +1,34 @@
+{
+  "id": "threads",
+  "title": "Threads and the turn path",
+  "routing": "Is this about a Foundry thread's life: the one turn path (TurnService accept / per-thread queue / dispatch / settle, POST /api/messages/send, the interrupt route, isOpenTurn, stopTurn), building, finding and wiring threads (core Thread, Thread.dispatch, thread.fan(), ThreadFactory, SessionManager blueprints and inheritLayers, ThreadRuntimeManager, Project / ProjectRegistry), the daemon client (FoundryClient), thread names (ThreadNamer, renameThread, threadTitle), the Postgres Message / ThreadState models, or time-ordered ids (newId, idAtTime, timeFromId)? Plain jobs: 'send a turn to this thread', 'make a new thread for this', 'hook the Wardens onto the thread', 'call the daemon from the CLI', 'stop the running turn', 'name the thread', 'mint an id'.",
+  "concepts": ["threads", "core-thread"],
+  "tokens": 9481,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1696,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 9481
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/api/PRIMITIVES.md", "docs/reference/FOUNDRY-ACP.md"],
+    "docUnits": [
+      "doc:docs/reference/FOUNDRY-ACP.md#3-dogfooding-one-turn-path",
+      "doc:docs/api/PRIMITIVES.md#thread",
+      "doc:docs/api/PRIMITIVES.md#sessions"
+    ],
+    "catalogClusters": ["feature-threads", "primitive-thread"],
+    "codeEntries": 34,
+    "docMembers": 16
+  },
+  "bypassLines": 13,
+  "glossaryTerms": 28
+}

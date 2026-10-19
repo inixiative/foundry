@@ -1,0 +1,38 @@
+{
+  "id": "logins-secrets",
+  "title": "Logins, profiles and secrets",
+  "routing": "Is this about which login a native Claude Code or Codex session runs on, or about keeping credentials private: NativeAuthentication and its sources (nativeAuthentication setting, gateway vs native-profile mode, environment/command credential references, nativeAuthenticationSelections, defaults.nativeAuthenticationId), SubscriptionAuthentication on the machine's own login, Kingdom-held logins (KingdomSubscriptionAuthentication, ProjectCapacityAuthentication, kingdomInference, kingdomLogin, `bun run kingdom login|capacity`, kingdom-token-helper.ts), profile env (profileEnvironment, withProfile, withoutCompetingCredentials, CLAUDE_CONFIG_DIR, CODEX_HOME), private Codex homes and symlinked auth.json (writeCredentialHome, privateHome), profile locks (.foundry-auth-lock, .foundry-auth-shared), or private 0600 files and secret detection (writePrivateFile, writePrivateJson, readPrivateJson, privateDirectory, secretInText, unredactedSecretInText, scrubSecrets)? Plain jobs: 'run this project on the Kingdom pool', 'set CLAUDE_CONFIG_DIR for the child', 'copy auth.json into a new home', 'put the token in settings', 'write the token to a file', 'make sure no token leaked into the log'.",
+  "concepts": ["native-auth", "secrets"],
+  "tokens": 16043,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2455,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 16043
+    }
+  },
+  "runsAgreed": 2,
+  "sources": {
+    "docs": ["docs/native-authentication.md", "docs/subscription-decisions.md"],
+    "docUnits": [
+      "doc:docs/native-authentication.md#preface",
+      "doc:docs/native-authentication.md#configure-a-source",
+      "doc:docs/native-authentication.md#credential-delivery-and-renewal",
+      "doc:docs/native-authentication.md#concurrency-history-and-revocation",
+      "doc:docs/native-authentication.md#ownership-recovery",
+      "doc:docs/native-authentication.md#kingdom-held-subscription-logins",
+      "doc:docs/subscription-decisions.md#sharing-the-user-s-own-logins"
+    ],
+    "catalogClusters": ["feature-nativeAuth", "integration-kingdom", "primitive-secrets"],
+    "codeEntries": 39,
+    "docMembers": 38
+  },
+  "bypassLines": 29,
+  "glossaryTerms": 28
+}

@@ -1,0 +1,39 @@
+{
+  "id": "audit-log",
+  "title": "Composition audit log",
+  "routing": "Is this about recording who changed what in an instruction or knowledge source and which versions a Warden call saw: the one AuditLog (<configDir>/audit.jsonl, rows as version ids, AuditLog.text), source versions (subject, before/after hash, actor, cause), composition versions (composition_version, parts, omissions, composedHash), CompositionAuditor and the call's versions {charter, instructions, domainKnowledge}, recompose, or settings history (ConfigStore.history, GET /api/settings/history)? Plain jobs: 'keep a history of the agent prompt', 'which instructions did this Warden see', 'who changed this file and why', 'rebuild the exact prompt it got', 'version the composed text'.",
+  "concepts": ["audit-log"],
+  "tokens": 9077,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 950,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 9077
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/THREAD-TREE.md"],
+    "docUnits": [
+      "doc:docs/THREAD-TREE.md#b-1-spec",
+      "doc:docs/THREAD-TREE.md#b-2-the-template-pattern-and-how-it-maps",
+      "doc:docs/THREAD-TREE.md#b-3-what-exists-already",
+      "doc:docs/THREAD-TREE.md#b-4-record-shapes",
+      "doc:docs/THREAD-TREE.md#b-5-who-writes-what-and-when",
+      "doc:docs/THREAD-TREE.md#b-7-original-intent",
+      "doc:docs/THREAD-TREE.md#b-9-as-built-2026-10-15",
+      "doc:docs/THREAD-TREE.md#b-8-open-questions"
+    ],
+    "catalogClusters": ["feature-auditLog", "primitive-journal"],
+    "codeEntries": 4,
+    "docMembers": 13
+  },
+  "bypassLines": 8,
+  "glossaryTerms": 20
+}

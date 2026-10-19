@@ -1,0 +1,30 @@
+{
+  "id": "session-delivery",
+  "title": "Session context delivery",
+  "routing": "Is this about what a native Claude Code or Codex session receives at start and on each turn, and the evidence of it: baseContextOf and the system prompt (--append-system-prompt; Codex's first message), sessionTurn and per-turn deltas, standing parts labelled `## Context: <id>`, the Librarian's delivery ledger (SessionDelivery.held, commitDelivery), compaction re-send (session_compacted), resume and relaunch, wrapsThread, DeliveryRecord.session, or native output and delivery evidence (projectNative, servedModel, verifyExpertDelivery, evidenceDigest)? Plain jobs: 'send the context again every turn', 'only send the layers that changed', 'the session compacted, do we resend everything', 'which model actually answered', 'check the expert got what we said it got'.",
+  "concepts": ["session-delivery"],
+  "tokens": 7692,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1104,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 7692
+    }
+  },
+  "runsAgreed": null,
+  "sources": {
+    "docs": ["docs/FLOW.md"],
+    "docUnits": ["doc:docs/FLOW.md#loop-1-pre-message-context-routing-domain-advising"],
+    "catalogClusters": ["feature-threads", "primitive-nativeSessions"],
+    "codeEntries": 14,
+    "docMembers": 13
+  },
+  "bypassLines": 14,
+  "glossaryTerms": 22
+}

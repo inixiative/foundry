@@ -1,0 +1,36 @@
+{
+  "id": "composition",
+  "title": "Standing instructions and composition",
+  "routing": "Is this about what text a session or a middleware role is composed from: the instruction ladder (claude-code preset, composition.nodes, rungs computer / org / org personal / project / project personal), finding CLAUDE.md / AGENTS.md / rules / auto memory and @imports (discoverInstructionStack, discoverHierarchy), tiers, audience and dedupe (dedupeHierarchy, dedupeHierarchySlots), suppressing the harness's own loading (composition.harnessLoading, CLAUDE_HARNESS_INSTRUCTIONS_OFF, CODEX_HARNESS_INSTRUCTIONS_OFF), or the composition view of roles x slots (composeRoleView, buildRoleLayers, role files under .foundry/roles/<role>/<slot>.md, composition.roles.<role>, budgets, invalidateComposition)? Plain jobs: 'load the user's CLAUDE.md into the session', 'give this Warden its own instructions', 'don't inject the file twice', 'keep personal notes away from the team', 'the role's prompt is too big', 'pick up the edited rules file'.",
+  "concepts": ["instruction-ladder", "composition-view"],
+  "tokens": 17823,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2590,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 17823
+    }
+  },
+  "runsAgreed": 1,
+  "sources": {
+    "docs": ["docs/usage-and-context.md"],
+    "docUnits": [
+      "doc:docs/usage-and-context.md#standing-instructions",
+      "doc:docs/usage-and-context.md#standing-instructions/the-default-ladder",
+      "doc:docs/usage-and-context.md#standing-instructions/registering-levels",
+      "doc:docs/usage-and-context.md#standing-instructions/tiers-and-dedupe",
+      "doc:docs/usage-and-context.md#composition-view"
+    ],
+    "catalogClusters": ["feature-composition"],
+    "codeEntries": 51,
+    "docMembers": 41
+  },
+  "bypassLines": 18,
+  "glossaryTerms": 27
+}

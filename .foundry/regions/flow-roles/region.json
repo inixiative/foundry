@@ -1,0 +1,36 @@
+{
+  "id": "flow-roles",
+  "title": "The FLOW.md roles as agents",
+  "routing": "Is this about which named agent fills a FLOW.md role: the Cartographer routing context, the Librarian as sole writer of thread state, the Herald and its cross-thread detectors (not wired), the FlowOrchestrator wiring them into pre-message and post-action, the Artificer as the executor, the routed classifier/router agents, the notes a brief or consumed work item becomes, the CorpusCompiler, or learning settings; or about merging roles, writing thread state, or driving the roles by hand?",
+  "concepts": ["flow-roles"],
+  "tokens": 8773,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1255,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 8773
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["CLAUDE.md", "docs/FLOW.md"],
+    "docUnits": [
+      "doc:docs/FLOW.md#the-core-model/the-five-roles-in-the-flow",
+      "doc:docs/FLOW.md#the-core-model/roles-agents-current-naming",
+      "doc:docs/FLOW.md#how-writeback-connects-to-the-corpus-pipeline",
+      "doc:CLAUDE.md#the-five-flow-md-roles",
+      "doc:CLAUDE.md#key-mental-models"
+    ],
+    "catalogClusters": ["feature-flow"],
+    "codeEntries": 28,
+    "docMembers": 10
+  },
+  "bypassLines": 12,
+  "glossaryTerms": 24
+}

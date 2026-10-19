@@ -1,0 +1,39 @@
+{
+  "id": "settings-runtime",
+  "title": "Settings, jobs, logging and database",
+  "routing": "Is this about Foundry's runtime config and plumbing: `.foundry/settings.json` and how it is read, defaulted, validated and saved (ConfigStore with JSON patch semantics and revisions, configFromSaved, defaultConfig / starterConfig / defaultAgents, validateConfig, registerConfigValidator, settingsChanges, readRepositorySettings for `.foundry/project.json`, the viewer's loadSettings / settingsConfig and the control / models / runtime settings routes), what the settings define (vendors, installationName, project agents with `extends` / `override`, `journal.rawMiddlewareDays`, wrapsThread and the unwrapped fresh install), live settings edits and the audit history; or the background job queue (BullMQ on Redis: createQueue, enqueueJob, initializeWorker, makeJob, makeSingletonJob, warmLayers), the logger (createConsolaLogger, createPinoLogger, logScope, LogScope, addLogBroadcast), or Postgres via Prisma (`prisma/schema.prisma` models, `bun run db:push`, `db:push:test`, `test:db`)? Plain jobs: 'save this setting', 'add a config check', 'what does a fresh install get', 'run this in the background', 'only the latest run should survive', 'tag these logs', 'capture this run's logs', 'push the schema'.",
+  "concepts": ["settings", "jobs", "logger", "database"],
+  "tokens": 12532,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1895,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 12532
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["CLAUDE.md", "docs/SYSTEM.md"],
+    "docUnits": [
+      "doc:CLAUDE.md#config",
+      "doc:docs/SYSTEM.md#6-database-schema-prisma-schema-prisma"
+    ],
+    "catalogClusters": [
+      "feature-setup",
+      "infrastructure-prisma",
+      "primitive-jobs",
+      "primitive-logger",
+      "primitive-settings"
+    ],
+    "codeEntries": 49,
+    "docMembers": 15
+  },
+  "bypassLines": 20,
+  "glossaryTerms": 28
+}

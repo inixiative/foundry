@@ -1,0 +1,41 @@
+{
+  "id": "viewer-inspector",
+  "title": "Viewer inspector, streams and Gloss",
+  "routing": "Is this about what the viewer shows of a turn and how it gets there: the graph panel (GraphPanel, threadGraph, turnFlowGraph, learningLoop, applyFlowFrame, flowSnapshot, readTurn, readLearning, taskLists / TASK_SOURCES from TodoWrite and update_plan), inspector data (deliveredUnderstanding vs domainUnderstanding, expertParticipants, deliverySummary, selectionSummary, verifyExpertDelivery), live turn state (applyTurnFrame, mergeLiveSnapshot, liveExecutionStatus, liveThreadStatus, workLog); the WebSocket data-stream machinery (createDataStreams, createWebSocketServer, createRegistry, sendToStreamLocal, drainConnections, closeAllConnections, createSerializedQueue, StreamBufferRegistry, holdStream, resyncStreams, createDataStreamSocket, DataStreamClient); or Gloss margin notes in the viewer (GlossService, GlossReview, Gloss settings and maintenance actions, projectPath / sourcePath)?",
+  "concepts": ["turn-inspector", "data-streams", "gloss"],
+  "tokens": 14511,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2456,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 14511
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["docs/GLOSS.md"],
+    "docUnits": [
+      "doc:docs/GLOSS.md#preface",
+      "doc:docs/GLOSS.md#viewing",
+      "doc:docs/GLOSS.md#setup-and-maintenance",
+      "doc:docs/GLOSS.md#boundaries",
+      "doc:docs/GLOSS.md#verification"
+    ],
+    "catalogClusters": [
+      "feature-threadTree",
+      "feature-viewer",
+      "integration-gloss",
+      "primitive-websockets"
+    ],
+    "codeEntries": 102,
+    "docMembers": 11
+  },
+  "bypassLines": 16,
+  "glossaryTerms": 29
+}

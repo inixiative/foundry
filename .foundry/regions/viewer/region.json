@@ -1,0 +1,30 @@
+{
+  "id": "viewer",
+  "title": "Viewer dashboard shell",
+  "routing": "Is this about the local Foundry dashboard (bun run viewer, createViewer / startViewer, the Hono server API under /api: threads, traces, events, actions, settings, assist, analytics, POST /api/messages/send) or its Preact + htm + Signals UI with no build step (html, signal, the store in ui/store.js: activeThreadId, activeProjectId, selectScope, sendMessage, createThread, forkThread, authFetch, showToast; routes: navigate, onLink, parseRoute, settingsPath; hotkeys, CommandPalette, Modal, DetailDrawer, ThreadList, ProjectSidebar, Conversation, the browser message cache, image attachments, dictation, the settings pages and AI Assist, self-chat)?",
+  "concepts": ["viewer-shell"],
+  "tokens": 16335,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 2739,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 16335
+    }
+  },
+  "runsAgreed": 0,
+  "sources": {
+    "docs": ["README.md", "docs/SYSTEM.md"],
+    "docUnits": ["doc:docs/SYSTEM.md#5-viewer-src-viewer", "doc:README.md#viewer"],
+    "catalogClusters": ["feature-viewer", "primitive-websockets"],
+    "codeEntries": 158,
+    "docMembers": 14
+  },
+  "bypassLines": 14,
+  "glossaryTerms": 26
+}

@@ -1,0 +1,47 @@
+{
+  "id": "acp",
+  "title": "Headless Foundry over ACP",
+  "routing": "Is this about foundry-acp (packages/acp) letting an ACP host such as Paseo, T3 Code or Zed drive Foundry threads: the ACP method map (initialize, session/new, load, resume, prompt, cancel, close, set_mode, request_permission), session/update projection (TurnProjection, the Foundry: context and Foundry: guard items), ACP modes and --permission-mode, configOptions, client MCP servers, the ACP launch file and capability, @inixiative/foundry/client, foundry-acp setup and bun run acp, or host instruction wrappers; or about hooking a vendor CLI instead?",
+  "concepts": ["acp"],
+  "tokens": 18857,
+  "tokenMethod": "chars/4",
+  "files": {
+    "recognise": {
+      "path": "recognise.md",
+      "tokens": 1579,
+      "experimental": true,
+      "note": "recognise/pick split under test (model round); not the standard"
+    },
+    "knowledge": {
+      "path": "knowledge.md",
+      "tokens": 18857
+    }
+  },
+  "runsAgreed": 3,
+  "sources": {
+    "docs": ["docs/reference/FOUNDRY-ACP.md"],
+    "docUnits": [
+      "doc:docs/reference/FOUNDRY-ACP.md#preface",
+      "doc:docs/reference/FOUNDRY-ACP.md#0-decisions",
+      "doc:docs/reference/FOUNDRY-ACP.md#1-intent",
+      "doc:docs/reference/FOUNDRY-ACP.md#2-the-three-projects",
+      "doc:docs/reference/FOUNDRY-ACP.md#3-dogfooding-one-turn-path",
+      "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface/4-1-protocol-version",
+      "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface/4-2-method-map",
+      "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface/4-3-session-update-projection",
+      "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface/4-4-mcp-servers-passed-by-the-client",
+      "doc:docs/reference/FOUNDRY-ACP.md#4-the-acp-surface/4-5-modes-and-models-slice-2",
+      "doc:docs/reference/FOUNDRY-ACP.md#5-middleware-on-the-acp-path",
+      "doc:docs/reference/FOUNDRY-ACP.md#6-downward-agent-session",
+      "doc:docs/reference/FOUNDRY-ACP.md#7-identity-and-authority",
+      "doc:docs/reference/FOUNDRY-ACP.md#9-build-order",
+      "doc:docs/reference/FOUNDRY-ACP.md#10-pointing-a-host-at-foundry",
+      "doc:docs/reference/FOUNDRY-ACP.md#history"
+    ],
+    "catalogClusters": ["feature-acp"],
+    "codeEntries": 30,
+    "docMembers": 34
+  },
+  "bypassLines": 25,
+  "glossaryTerms": 27
+}
