@@ -111,6 +111,8 @@ export const SUMMARY_META_KEYS = [
   'inputEvidence',
   'deliveryAcknowledgment',
   'neverSent',
+  /** A conversation member's post delivered as a turn: who posted it (CONVERSATIONS.md §4.7). */
+  'postedBy',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;

@@ -41,7 +41,7 @@ import {
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
-import { KingdomPostTool } from '../tools/kingdom-post';
+import { kingdomPostDelivery } from '../tools/kingdom-post';
 import { SubagentRecorder } from '../turns/subagents';
 import {
   createToolGate,
@@ -605,12 +605,7 @@ export function createViewer(config: ViewerConfig) {
       hosted: () => kingdom.hostedSignets(),
       subscriptions: () => kingdom.threadSubscriptions(),
       events: eventStream,
-      deliverPost: (record) => {
-        const tool = config.assistTools?.get('kingdom_post');
-        return tool instanceof KingdomPostTool
-          ? tool.deliver(record)
-          : Promise.resolve({ error: 'No Kingdom access is configured to post with' });
-      },
+      deliverPost: kingdomPostDelivery(config.assistTools),
       changed: (threadId) => streams.threadsChanged(threadId),
       journalChanged: (thread) =>
         eventStream.push({

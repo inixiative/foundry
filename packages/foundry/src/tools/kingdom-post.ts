@@ -151,3 +151,16 @@ export function registerKingdomPost(
     'Post into a conversation another Foundry hosts, through a Kingdom access ID this project holds. url="post", body={accessId, threadId, text, inReplyTo?}. Every post is held for the owner\'s review before it leaves; released, it is posted once. Failed posts are not retried automatically.',
   );
 }
+
+/**
+ * How the conversation wrapper delivers a released post: through the registered `kingdom_post`
+ * tool's access sources (looked up per delivery, so a registry filled later still serves).
+ */
+export function kingdomPostDelivery(tools: ToolRegistry | undefined) {
+  return (record: HeldRecord): Promise<{ executionId?: string; error?: string }> => {
+    const tool = tools?.get('kingdom_post');
+    return tool instanceof KingdomPostTool
+      ? tool.deliver(record)
+      : Promise.resolve({ error: 'No Kingdom access is configured to post with' });
+  };
+}

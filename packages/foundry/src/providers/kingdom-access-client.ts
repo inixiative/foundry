@@ -62,8 +62,12 @@ export class KingdomAccessClient {
       onDispatch,
     );
   }
-  /** Read per entry (signet 0.5): a resource whose lens this package can't read is dropped, never the grant. */
-  async describe() {
+  /**
+   * The grant as Kingdom describes it now, every operation, checked to be this source's own and
+   * unexpired. Read per entry (signet 0.5): a resource whose lens this package can't read is
+   * dropped, never the grant.
+   */
+  private async granted() {
     const { dropped: _dropped, ...description } = await new SignetClient(
       this.source.url,
       this.source.credentialFile,
@@ -76,6 +80,11 @@ export class KingdomAccessClient {
       throw Error('Kingdom access credential belongs to another grant');
     if (description.expiresAt && Date.parse(description.expiresAt) <= Date.now())
       throw Error('Kingdom access expired');
+    return description;
+  }
+  /** What the read-only access tool may use: the grant's read operations. */
+  async describe() {
+    const description = await this.granted();
     return {
       ...description,
       operations: description.operations.filter(
@@ -143,7 +152,7 @@ export class KingdomAccessClient {
     input: { threadId: string; postId: string; text: string; inReplyTo?: string },
     onDispatch?: () => void,
   ) {
-    const description = await this.describe();
+    const description = await this.granted();
     const resource = description.operations
       .find((operation) => operation.key === 'thread.prompt')
       ?.resources.find(
