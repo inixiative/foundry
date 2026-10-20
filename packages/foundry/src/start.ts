@@ -69,6 +69,7 @@ import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
+import type { LocalSessionStore } from './persistence/local-session-store';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   CODEX_HARNESS_INSTRUCTIONS_OFF,
@@ -98,6 +99,7 @@ import { registerKingdomAccess } from './tools/kingdom-access';
 import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
+import { journalHistory } from './turns/journal-history';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
@@ -339,10 +341,14 @@ for (const project of Object.values(config.projects)) {
 // What hosts chose per thread, and each thread's tool gate (bound once the viewer exists).
 const threadLaunch = new ThreadLaunchSettings();
 let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
+// The journal a fresh executor session is seeded from; bound once the viewer opens it.
+let journalStore: Pick<LocalSessionStore, 'journalEntries'> | null | undefined;
 const hostSettings = {
   launch: threadLaunch,
   // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
   toolGate: lateBoundToolGate(() => toolGateFor),
+  history: (threadId: string, turnId?: string) =>
+    journalStore ? journalHistory(journalStore, threadId, turnId) : undefined,
 };
 
 // Which project a thread (or its auxiliary session) belongs to; bound once the runtimes exist.
@@ -1003,6 +1009,7 @@ const viewer = await startViewer({
     : {}),
 });
 toolGateFor = viewer.toolGate;
+journalStore = viewer.localStore;
 conversationService = viewer.conversations;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);

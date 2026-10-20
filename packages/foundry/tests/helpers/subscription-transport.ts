@@ -147,6 +147,8 @@ export function appServerTransport(
     threadId?: string;
     /** Tools every configured MCP server reports once connected. */
     mcpTools?: readonly string[];
+    /** Thread ids whose rollout is gone: `thread/resume` answers as Codex does ("no rollout found"). */
+    missingThreads?: readonly string[];
   } = {},
 ) {
   const launches: {
@@ -154,6 +156,8 @@ export function appServerTransport(
     env: Record<string, string | undefined>;
     cwd: string;
     exited: boolean;
+    /** End this app-server process, as a crash or a kill would. */
+    exit?: (code: number) => void;
   }[] = [];
   const requests: { method: string; params: any }[] = [],
     turns: string[] = [];
@@ -172,7 +176,7 @@ export function appServerTransport(
       return peak;
     },
     spawn: (argv: string[], config: { cwd: string; env: Record<string, string | undefined> }) => {
-      const launch = { argv, ...config, exited: false };
+      const launch: (typeof launches)[number] = { argv, ...config, exited: false };
       launches.push(launch);
       let controller!: ReadableStreamDefaultController<Uint8Array>, exit!: (code: number) => void;
       const stdout = new ReadableStream<Uint8Array>({
@@ -194,6 +198,7 @@ export function appServerTransport(
           exit(code);
         }
       };
+      launch.exit = finish;
       const inflight = new Map<string, () => void>();
       let threadConfig: Record<string, unknown> = {};
       const handle = (m: any) => {
@@ -231,6 +236,11 @@ export function appServerTransport(
           case 'thread/start':
           case 'thread/resume':
           case 'thread/fork': {
+            if (m.method === 'thread/resume' && options.missingThreads?.includes(p.threadId))
+              return emit({
+                id: m.id,
+                error: { code: -32600, message: `no rollout found for thread id ${p.threadId}` },
+              });
             ++threads;
             if (m.method !== 'thread/fork') threadConfig = p.config ?? {};
             return reply({

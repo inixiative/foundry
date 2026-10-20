@@ -203,16 +203,34 @@ export class TurnService {
     this.harnesses = new Map([[deps.harness.thread.id, deps.harness]]);
   }
 
-  /** The Harness that runs a thread's turns, created on first use. */
+  /** The Harness that runs a thread's turns, created on first use (and again for a reopened thread). */
   harness(threadId: string): Harness | null {
     const existing = this.harnesses.get(threadId);
-    if (existing) return existing;
     const thread = this.deps.directory.get(threadId);
+    if (existing && (existing.thread === thread || !thread)) return existing;
     if (!thread) return null;
     const scoped = new Harness(thread);
     configureHarness(scoped, this.deps.configStore);
     this.harnesses.set(threadId, scoped);
     return scoped;
+  }
+
+  /**
+   * Reopen an archived thread (the directory rebuilds it; see `ViewerThreadDirectory.reopen`) and
+   * record it open. A thread that isn't archived is left as it is.
+   */
+  reopen(threadId: string): void {
+    const current = this.deps.directory.get(threadId);
+    if (!current || !this.deps.directory.canReopen(threadId)) return;
+    const thread = this.deps.directory.reopen(threadId);
+    if (!thread || thread === current) return;
+    this.deps.localStore?.saveThread(thread);
+    this.deps.streams.threadsChanged(threadId);
+  }
+
+  /** Whether a message or a post can bring this archived thread back. */
+  canReopen(threadId: string): boolean {
+    return this.deps.directory.canReopen(threadId);
   }
 
   /** Every Harness created so far, one per thread. */
@@ -247,6 +265,9 @@ export class TurnService {
     const { db, localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
+    // An archived thread comes back when a message or a member's post arrives for it: its native
+    // session is gone, and the turn below resumes it or starts it fresh from the journal.
+    this.reopen(threadId);
     const harness = this.harness(threadId);
     if (!harness) return { ok: false, status: 404, body: { error: 'thread not found' } };
     if (harness.thread.disposed)

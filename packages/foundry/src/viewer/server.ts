@@ -599,6 +599,8 @@ export function createViewer(config: ViewerConfig) {
     conversations = new ConversationService({
       store: localStore,
       thread: (id) => directory.get(id),
+      reopen: (id) => turns.reopen(id),
+      canReopen: (id) => turns.canReopen(id),
       turns: () => turns,
       queue: config.actionQueue ?? null,
       project: (id) => configStore.config.projects[id],

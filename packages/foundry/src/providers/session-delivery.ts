@@ -53,6 +53,11 @@ export function sessionTurn(
      * are sent. Unknown (a resume from another process): every part is sent.
      */
     readonly ledgerHeld?: boolean;
+    /**
+     * The conversation so far, for a session that started fresh on a thread with turns behind it
+     * (`turns/journal-history.ts`): it rides this turn ahead of the context, once.
+     */
+    readonly history?: string;
   },
 ): SessionTurn {
   const base = new Map(session.base.map((part) => [part.id, part.hash]));
@@ -64,6 +69,7 @@ export function sessionTurn(
       : !unknownHistory && base.get(part.id) === part.hash;
   const sent = delivery.standing.filter((part) => !holds(part));
   const system = [
+    ...(session.history ? [session.history] : []),
     ...sent.map((part) => block(part, true)),
     ...(delivery.turn.trim() ? [delivery.turn] : []),
   ].join('\n\n');

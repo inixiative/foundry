@@ -3,7 +3,7 @@
  * @kind service
  * @partOf primitive:nativeSessions
  */
-import type { HarnessSession } from '@inixiative/agent-session';
+import { type HarnessSession, nativeBindingMissing } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -43,6 +43,12 @@ export interface SessionBackedProviderConfig {
   launch?: ThreadLaunchSettings;
   /** The thread's tool gate, registered on every executor session (never an auxiliary's). */
   toolGate?: (threadId: string) => ThreadToolGate | undefined;
+  /**
+   * The thread's conversation so far from Foundry's journal (`turns/journal-history.ts`), given to
+   * an executor session that starts fresh on a thread with turns behind it: its native conversation
+   * couldn't be resumed, or the thread moved to this runtime. `turnId` is the turn being sent.
+   */
+  history?: (threadId: string, turnId?: string) => string | undefined;
 }
 
 /**
@@ -142,6 +148,8 @@ export class SessionBackedProvider implements LLMProvider {
   private _bases = new WeakMap<HarnessSession, readonly DeliveredPart[]>();
   /** Sessions that completed a delivered turn; until then the thread's ledger belongs to an earlier session. */
   private _delivered = new WeakSet<HarnessSession>();
+  /** Sessions that already took the journal's history (a fresh session takes it once). */
+  private _seeded = new WeakSet<HarnessSession>();
   /**
    * The native conversation each thread's delivery ledger describes: the binding of its last
    * delivered turn in this process. A relaunch that resumes it (a host launch change, a cwd move)
@@ -172,6 +180,7 @@ export class SessionBackedProvider implements LLMProvider {
   private _cleanupOutcomes = new WeakMap<HarnessSession, 'pending' | 'unknown'>();
   private _launch?: ThreadLaunchSettings;
   private _toolGate?: SessionBackedProviderConfig['toolGate'];
+  private _history?: SessionBackedProviderConfig['history'];
   readonly completionLifecycle: NonNullable<LLMProvider['completionLifecycle']> = Object.freeze({
     kind: 'session' as const,
     admission: ({ result, error }: { result?: CompletionResult; error?: unknown }) => {
@@ -293,6 +302,7 @@ export class SessionBackedProvider implements LLMProvider {
     this._defaultCwd = config.defaultCwd ?? process.cwd();
     this._launch = config.launch;
     this._toolGate = config.toolGate;
+    this._history = config.history;
   }
 
   /**
@@ -474,6 +484,7 @@ export class SessionBackedProvider implements LLMProvider {
     messages: LLMMessage[],
     opts: CompletionOpts | undefined,
     call: ProviderInvocation,
+    rebound = false,
   ): Promise<CompletionResult> {
     const threadId = opts?.threadId ?? `${this.id}:default`;
     const cwd = opts?.cwd ?? this._defaultCwd;
@@ -554,7 +565,18 @@ export class SessionBackedProvider implements LLMProvider {
     bridge?.check();
     // Warm-cache delivery: standing context lives in the session's system prompt; a turn carries only
     // what the session does not hold, plus the per-turn context.
-    const resumedBinding = this.warmProfile(threadId, cwd)?.resumedBinding ?? null;
+    const warm = this.warmProfile(threadId, cwd);
+    const resumedBinding = warm?.resumedBinding ?? null;
+    // A fresh session on a thread with turns behind it carries none of them: its first turn gets
+    // the conversation so far from the journal (T3's handoff pattern: verbatim, capped, inline).
+    const seed =
+      !textOnly &&
+      !this._delivered.has(session) &&
+      !this._seeded.has(session) &&
+      warm?.bindingSource === 'construction' &&
+      resumedBinding === null
+        ? this._history?.(threadId, observation?.owner.messageId)
+        : undefined;
     const turn: SessionTurn | undefined = delivery
       ? sessionTurn(delivery, messages, {
           base: this._bases.get(session) ?? [],
@@ -562,9 +584,13 @@ export class SessionBackedProvider implements LLMProvider {
           resumed: resumedBinding !== null,
           ledgerHeld:
             resumedBinding !== null && this._ledgerBindings.get(threadId) === resumedBinding,
+          ...(seed ? { history: seed } : {}),
         })
       : undefined;
-    const prompt = formatMessagesForNativeSession(turn?.messages ?? messages);
+    const prompt = formatMessagesForNativeSession(
+      turn?.messages ??
+        (seed ? [{ role: 'system' as const, content: seed }, ...messages] : messages),
+    );
     let images: Array<{ mediaType: ImageMediaType; data: string }>;
     try {
       images = sessionImages(session, messages);
@@ -617,6 +643,18 @@ export class SessionBackedProvider implements LLMProvider {
       const evidence = this._ownedProjection(session, attempt, observation?.owner);
       bridge?.observe(evidence);
       this._observe(observation, evidence);
+      // The native conversation this session resumed is gone (Codex has no rollout for it). Nothing
+      // ran, so the turn goes to a fresh session, seeded from the journal, once.
+      if (
+        !rebound &&
+        !textOnly &&
+        evidence.dispatch === 'not-dispatched' &&
+        nativeBindingMissing(error) &&
+        (await this._forget(threadId, cwd, session))
+      ) {
+        this._sessionCalls.get(session)?.delete(call);
+        return this._complete(messages, opts, call, true);
+      }
       if (error && typeof error === 'object') {
         if (evidence.dispatch === 'not-dispatched') {
           this._notAdmitted.add(error);
@@ -776,6 +814,8 @@ export class SessionBackedProvider implements LLMProvider {
         externalSessionId: result.externalSessionId,
         events,
         profile: this.warmProfile(threadId, cwd),
+        ...(seed ? { seededHistoryChars: seed.length } : {}),
+        ...(rebound ? { rebound: 'native-binding-missing' } : {}),
         nativeModel,
         budgets: {
           requested: { maxTurns, maxTokens: opts?.maxTokens, thinking: opts?.thinking },
@@ -792,6 +832,7 @@ export class SessionBackedProvider implements LLMProvider {
         },
       },
     };
+    if (seed) this._seeded.add(session);
     if (turn) {
       this._delivered.add(session);
       if (result.externalSessionId) this._ledgerBindings.set(threadId, result.externalSessionId);
@@ -854,6 +895,40 @@ export class SessionBackedProvider implements LLMProvider {
     });
   }
 
+  /** Forget a session object that can't be used again; its native binding is the adapter's. */
+  private _drop(key: string, session: HarnessSession): void {
+    this._released.add(session);
+    if (this._sessions.has(key)) this._sessions.delete(key);
+    this._profiles.delete(key);
+    this._bridgeSources.delete(key);
+    this._idle.delete(key);
+    this._uncertain.delete(key);
+  }
+
+  /**
+   * The session's native conversation is gone and nothing is running on it: end its process, drop
+   * it and clear its binding, so the next session for the thread starts fresh. False when it can't
+   * be ended cleanly (it stays, and the turn fails as it would have).
+   */
+  private async _forget(threadId: string, cwd: string, session: HarnessSession): Promise<boolean> {
+    const key = JSON.stringify([cwd, threadId]);
+    if (
+      this._sessions.get(key) &&
+      (await this._sessions.get(key)?.catch(() => undefined)) !== session
+    )
+      return false;
+    const released = this._adapter.releaseIdleSession
+      ? await this._adapter.releaseIdleSession(session).catch(() => 'unknown' as const)
+      : 'unknown';
+    if (released !== 'released') {
+      session.kill();
+      if (session.alive) return false;
+    }
+    this._drop(key, session);
+    await this._adapter.clearSession(threadId);
+    return true;
+  }
+
   /**
    * Retire a thread's executor session in another cwd: released when idle and settled, or simply
    * dropped when its process is already gone (no work can still be running there).
@@ -899,6 +974,8 @@ export class SessionBackedProvider implements LLMProvider {
     source?: NativeBridgeSource,
     /** The executor's base context, used only when this call starts the session. */
     base?: { text: string; parts: readonly DeliveredPart[] },
+    /** Already started fresh after a missing binding: a second one is not retried. */
+    rebound = false,
   ): Promise<HarnessSession> {
     const key = JSON.stringify([cwd, threadId]);
     const existing = this._sessions.get(key);
@@ -955,7 +1032,20 @@ export class SessionBackedProvider implements LLMProvider {
           ),
         );
       }
-      return existing;
+      // A session whose process ended (crashed, killed, the machine slept) is gone, not reusable:
+      // it is dropped and the next one resumes the thread's binding. Whether a turn that was running
+      // when it died left uncertain native work is the journal's call (its capacity gate), not this.
+      return existing.then((session) => {
+        if (
+          session.alive !== false ||
+          this._sessions.get(key) !== existing ||
+          (this._activeCalls.get(key) ?? 0) > 1 ||
+          this._releasing.has(key)
+        )
+          return session;
+        this._drop(key, session);
+        return this._getSession(threadId, cwd, requested, source, base);
+      });
     }
 
     // One native session per thread: a thread that moved to another cwd retires its session there
@@ -1122,12 +1212,18 @@ export class SessionBackedProvider implements LLMProvider {
           throw error;
         }
       })
-      .catch((error) => {
+      .catch(async (error) => {
         void bridge?.close().catch(() => {});
         if (this._sessions.get(key) === created) {
           this._sessions.delete(key);
           this._profiles.delete(key);
           this._bridgeSources.delete(key);
+        }
+        // The transcript it was told to resume is gone (Claude says so at launch, before anything
+        // is sent): forget the binding and start fresh, once; the first turn is seeded.
+        if (!rebound && nativeBindingMissing(error)) {
+          await this._adapter.clearSession(threadId);
+          return this._getSession(threadId, cwd, requested, source, base, true);
         }
         throw error;
       });
