@@ -344,7 +344,7 @@ The lens has no retention term. The request and the grant show the member that i
    3. Aron replies. His agent calls `send_to_member(JobCo, …)`, the call is held for review, and Aron approves the text.
    4. JobCo's `thread.read` returns its two posts and that send.
 
-   Checks: one `AccessExecution` per call; the grant and both enrollments are in the audit log; Kingdom holds no message text; T and its Archive capture include JobCo's posts.
+   Checks: one `AccessExecution` per call; the grant is in the audit log (Signet issue, revise, revoke) and both enrollments are on their `SignetEnrollment` rows (presenting a Signet is not a change to it); Kingdom holds no message text; T and its Archive capture include JobCo's posts.
 2. **Revival with `turn` delivery.** A member with `delivery: 'turn'` posts to a thread idle for days, with no loaded harness. The turn sits `queued` while the native session resumes, then the main agent answers. A post to an archived thread is refused with `thread_closed` and nothing is recorded.
 3. **Join by request.** JobCo knows the integration, resource and thread ids. It calls `requestSignet` with `threads: {form: 'ids', ids: [T]}`. The request is not auto-approved. Aron approves and narrows `delivery` from `turn` to `note`. An approval that widens `view` to `thread` is refused.
 4. **Who may admit, on every path.** Each case runs three times: through `owner/grant` (invitation), through `ownerReviseSignet` (revise), and through `signetRequest` approval:
