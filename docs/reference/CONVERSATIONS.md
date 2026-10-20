@@ -388,7 +388,7 @@ The lens has no retention term. The request and the grant show the member that i
     - JobCo closes the stream. The members panel shows it no longer present.
 26. **Kingdom closes it.**
     - **Revocation:** Aron revokes JobCo's Signet, and the stream closes at once (app event), well inside the 45 s sweep.
-    - **Host offline:** the host's socket drops, the stream closes with `host_offline`, and a reopen once the host is back gets a fresh snapshot.
+    - **Host offline:** the host's socket drops, the stream closes with `hostOffline` (a close reason, `accessThreadCloseReasonSchema`), and a reopen once the host is back gets a fresh snapshot.
     - **Lapsed renewal:** JobCo never sends `renewPresentation`, and the stream closes when its access token expires.
 27. **Gap and resync.** The host's socket reconnects within the TTL, so its subscriptions are dropped. JobCo gets `resync`, reopens, and receives a full snapshot. Nothing is replayed.
     - **Atomic subscribe:** an entry written while the open is in flight appears exactly once, either in the snapshot or as an append with a higher `journalSeq`. An append at or below the snapshot's `journalSeq` is dropped.
