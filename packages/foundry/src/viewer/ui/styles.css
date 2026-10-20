@@ -6547,6 +6547,11 @@ a.thread-ref:hover {
   border-left: 2px solid var(--border);
   padding-left: 6px;
 }
+.conversation-post-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
 .conversation-post.is-unread {
   border-left-color: var(--accent);
 }

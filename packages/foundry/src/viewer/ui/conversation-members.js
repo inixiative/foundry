@@ -211,8 +211,10 @@ export function ParticipantsPanel() {
               (
                 p,
               ) => html`<li key=${p.journalSeq} class="conversation-post ${p.unread ? 'is-unread' : ''} ${p.withdrawn ? 'is-withdrawn' : ''}">
-                <span class="conversation-post-who">${p.displayName}</span>
-                <span class="conversation-dim">${p.delivery === 'turn' ? 'woke the agent' : 'note'} · ${ago(p.at)}${p.withdrawn ? ' · withdrawn' : ''}</span>
+                <div class="conversation-post-head">
+                  <span class="conversation-post-who">${p.displayName}</span>
+                  <span class="conversation-dim">${p.delivery === 'turn' ? 'woke the agent' : 'note'} · ${ago(p.at)}${p.withdrawn ? ' · withdrawn' : ''}</span>
+                </div>
                 <div class="conversation-post-text">${p.text}</div>
               </li>`,
             )}
