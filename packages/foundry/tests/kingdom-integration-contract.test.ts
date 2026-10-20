@@ -116,6 +116,7 @@ test('read routes the exact discovered resource Integration and rejects foreign 
                   name: 'Controlled',
                   kind: 'document',
                   integrationId: resourceIntegrationId,
+                  lens: {},
                 },
               ],
             },

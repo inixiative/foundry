@@ -159,7 +159,8 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
     onSignet(action, body) {
       calls++;
       expect(action).toBe('describe');
-      expect(body).toEqual({});
+      // The Signet names itself; nothing else is sent.
+      expect(body).toEqual({ signetId: expect.any(String) });
       if (rejected) return new Response('PRIVATE_TOKEN_FAILURE', { status: 401 });
       return {
         signetId: f.source.signetId,
@@ -181,6 +182,7 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
                 name: 'Issue',
                 kind: 'issue',
                 integrationId: f.source.integrationId,
+                lens: {},
               },
             ],
           },

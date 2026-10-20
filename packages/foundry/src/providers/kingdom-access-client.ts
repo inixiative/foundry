@@ -9,7 +9,6 @@ import {
   readPrivateJson,
   SignetClient,
   signetCredentialSchema,
-  signetDescriptionSchema,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -54,15 +53,20 @@ export class KingdomAccessClient {
   constructor(private source: KingdomAccessSource) {
     this.source = kingdomAccessSourceSchema.parse(source);
   }
-  private post(action: 'describe' | 'execute', body: unknown, onDispatch?: () => void) {
+  private post(action: 'execute', body: unknown, onDispatch?: () => void) {
     return new SignetClient(this.source.url, this.source.credentialFile, this.source.signetId).post(
       action,
       body,
       onDispatch,
     );
   }
+  /** Read per entry (signet 0.5): a resource whose lens this package can't read is dropped, never the grant. */
   async describe() {
-    const description = signetDescriptionSchema.parse(await this.post('describe', {}));
+    const { dropped: _dropped, ...description } = await new SignetClient(
+      this.source.url,
+      this.source.credentialFile,
+      this.source.signetId,
+    ).describe();
     if (
       description.integrationId !== this.source.integrationId ||
       description.signetId !== this.source.signetId
