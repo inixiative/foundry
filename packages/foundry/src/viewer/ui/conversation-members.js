@@ -12,6 +12,8 @@
  */
 
 import { html, useEffect, useState } from './lib.js';
+// settings.js imports this module's settings card; the signal is read at render, so the cycle is safe.
+import { settingsConfig } from './settings.js';
 import { activeThreadId, showToast, threadData } from './store.js';
 
 const FLOORS = [
@@ -115,6 +117,19 @@ function MemberRow({ member, threadId, conch }) {
   </li>`;
 }
 
+/** Open Kingdom's grant form for this thread (§5.5), read on demand. */
+async function invite(threadId) {
+  try {
+    const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`);
+    const url = res.ok ? (await res.json()).invites?.find((candidate) => candidate.url)?.url : null;
+    if (url) window.open(url, '_blank', 'noopener');
+    else
+      showToast('Kingdom did not describe where to invite from; check Settings → Kingdom', 'warn');
+  } catch (error) {
+    showToast(`Invite unavailable: ${error.message}`, 'error');
+  }
+}
+
 /**
  * The participants panel, shown on a thread that has a conversation (its line in the sessions list
  * carries `conversation`), or folded to its invite link on any other thread.
@@ -125,9 +140,12 @@ export function ParticipantsPanel() {
   const [view, setView] = useState(null);
   const [open, setOpen] = useState(true);
   const lineKey = JSON.stringify(line);
+  // Read only for a thread that has a conversation (its line says so): other threads never fetch
+  // in the background; their invite is read when the owner asks for it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-read when the thread's line changes.
   useEffect(() => {
-    if (!threadId) return;
+    setView(null);
+    if (!threadId || !line) return;
     let live = true;
     fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`)
       .then((res) => (res.ok ? res.json() : null))
@@ -141,14 +159,15 @@ export function ParticipantsPanel() {
       live = false;
     };
   }, [threadId, lineKey]);
-  if (!threadId || !view) return null;
-  const invite = view.invites?.find((candidate) => candidate.url);
-  if (!view.conversation && !view.members.length)
-    return invite
+  if (!threadId) return null;
+  if (!line)
+    return settingsConfig.value?.kingdomIntegrations?.length
       ? html`<div class="conversation-panel conversation-panel--empty">
-        <a class="proj-btn" href=${invite.url} target="_blank" rel="noopener">Invite to this conversation</a>
+        <button class="proj-btn" onClick=${() => invite(threadId)}>Invite to this conversation</button>
       </div>`
       : null;
+  if (!view) return null;
+  const invite = view.invites?.find((candidate) => candidate.url);
   const unread = view.posts.filter((p) => p.unread).length;
   const conch = view.floor.mode === 'conch';
   const base = `/api/threads/${encodeURIComponent(threadId)}/conversation`;
