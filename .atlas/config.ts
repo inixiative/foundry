@@ -135,6 +135,7 @@ export default defineConfig({
     { include: `${FOUNDRY}/agents/tool-loop.ts`, partOf: 'primitive:agents' },
 
     // foundry: the turn path
+    { include: `${FOUNDRY}/conversations/**`, partOf: 'feature:conversations' },
     { include: `${FOUNDRY}/turns/{turn-service,host-instructions}.ts`, partOf: 'feature:threads' },
     { include: `${FOUNDRY}/turns/tool-gate.ts`, partOf: 'feature:toolGate' },
     { include: `${FOUNDRY}/turns/subagents.ts`, partOf: 'feature:threadTree' },

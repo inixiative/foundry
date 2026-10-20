@@ -8,7 +8,9 @@ import {
   kingdomUrl,
   readPrivateJson,
   SignetClient,
+  selectsThread,
   signetCredentialSchema,
+  threadsResourceKind,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -126,6 +128,47 @@ export class KingdomAccessClient {
           ...(description.taskId ? { taskId: description.taskId } : {}),
           operation: readOperationSchema.parse(input.operation),
           input: { resourceId: input.resourceId, limit: input.limit },
+        },
+        onDispatch,
+      ),
+    );
+  }
+
+  /**
+   * Post into a conversation this Foundry joined (the joining side, `kingdom_post`): the held
+   * Signet's `thread.prompt` on the `threads` resource whose lens selects the thread. `postId` is
+   * the post's own id, kept across a retry; each call is a new request id.
+   */
+  async threadPrompt(
+    input: { threadId: string; postId: string; text: string; inReplyTo?: string },
+    onDispatch?: () => void,
+  ) {
+    const description = await this.describe();
+    const resource = description.operations
+      .find((operation) => operation.key === 'thread.prompt')
+      ?.resources.find(
+        (candidate) =>
+          candidate.kind === threadsResourceKind &&
+          'threads' in candidate.lens &&
+          selectsThread(candidate.lens.threads, input.threadId),
+      );
+    if (!resource) throw Error('This Signet does not reach that conversation thread');
+    return z.object({ executionId: z.string().uuid(), result: z.unknown() }).parse(
+      await this.post(
+        'execute',
+        {
+          requestId: crypto.randomUUID(),
+          integrationId: resource.integrationId,
+          signetId: this.source.signetId,
+          ...(description.taskId ? { taskId: description.taskId } : {}),
+          operation: 'thread.prompt',
+          input: {
+            resourceId: resource.id,
+            threadId: input.threadId,
+            postId: input.postId,
+            text: input.text,
+            ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
+          },
         },
         onDispatch,
       ),

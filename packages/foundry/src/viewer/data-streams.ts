@@ -86,6 +86,11 @@ export function createViewerStreams(deps: {
   journal?: FlowJournal;
   /** The feedback lifecycle behind `feedback` / `feedback:<projectId>`; created after the streams. */
   feedback?: () => FeedbackService | null;
+  /**
+   * A conversation thread's line in the sessions list (unread member posts, a pause, held sends),
+   * derived from its journal (docs/reference/CONVERSATIONS.md §4.2); re-sent on `threadsChanged`.
+   */
+  conversation?: (threadId: string) => Record<string, unknown> | undefined;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -127,7 +132,10 @@ export function createViewerStreams(deps: {
       const projectId = suffix(stream, 'threads:');
       const scope = () => directory.scope(projectId ?? undefined) ?? [];
       // What subscribers already hold, so a change is sent once and an unchanged thread never.
-      const sent = new Map<string, { text: string; json: ReturnType<typeof threadToJSON> }>();
+      const sent = new Map<
+        string,
+        { text: string; json: ReturnType<typeof threadToJSON> & { conversation?: unknown } }
+      >();
       const sync = (only?: string) => {
         const current = new Map<string, Thread>(scope().map((t) => [t.id, t]));
         for (const id of only ? [only] : new Set([...sent.keys(), ...current.keys()])) {
@@ -136,7 +144,8 @@ export function createViewerStreams(deps: {
             if (sent.delete(id)) append({ removed: id });
             continue;
           }
-          const json = threadToJSON(found),
+          const conversation = deps.conversation?.(id);
+          const json = { ...threadToJSON(found), ...(conversation ? { conversation } : {}) },
             text = JSON.stringify(json);
           if (sent.get(id)?.text === text) continue;
           sent.set(id, { text, json });

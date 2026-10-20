@@ -9,7 +9,11 @@ import {
   verifySignetProof,
   writePrivateJson,
 } from '@inixiative/signet';
-import { type RegistrationRequest, requestRegistrationSchema } from '@inixiative/signet/contracts';
+import {
+  type HostedSignet,
+  type RegistrationRequest,
+  requestRegistrationSchema,
+} from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
 
 /** Kingdom's owner reference for an owner key (`ownerModel:userId:organizationId:spaceId`). */
@@ -93,10 +97,16 @@ export function mockKingdom(
   const logins: Record<string, unknown>[] = [];
   let url = '';
 
+  /** Signets issued on the installations' integrations: a conversation's members (signet 0.5). */
+  const hosted = new Map<string, HostedSignet>();
   const snapshotOf = (installation: Installation) => ({
     pending: installation.pending,
     declinedAt: installation.declinedAt,
     inquiries: installation.inquiries,
+    hostedSignetRequests: [],
+    hostedSignets: [...hosted.values()].filter(
+      (signet) => integrations.get(signet.integrationId)?.thumbprint === installation.thumbprint,
+    ),
     signets: [...signets.values()]
       .filter(
         (signet) =>
@@ -238,8 +248,8 @@ export function mockKingdom(
           });
         }
         case 'installationInquiries': {
-          const { pending, declinedAt, inquiries } = snapshotOf(installation);
-          return data({ pending, declinedAt, inquiries });
+          const { pending, declinedAt, inquiries, hostedSignetRequests } = snapshotOf(installation);
+          return data({ pending, declinedAt, inquiries, hostedSignetRequests });
         }
         case 'cancelInstallationInquiry': {
           const inquiry = installation.inquiries.find(
@@ -251,8 +261,10 @@ export function mockKingdom(
           push(installation);
           return data({ id: inquiry.id });
         }
-        case 'installationSignets':
-          return data({ signets: snapshotOf(installation).signets });
+        case 'installationSignets': {
+          const { signets, hostedSignets } = snapshotOf(installation);
+          return data({ signets, hostedSignets });
+        }
         case 'collectSignet': {
           const inquiry = installation.inquiries.find((item) => item.id === body.inquiryId);
           if (!inquiry) return refuse(404);
@@ -410,6 +422,51 @@ export function mockKingdom(
       signet.listed = listed;
       const { thumbprint } = integrations.get(signet.integrationId)!;
       push(installations.get(thumbprint)!);
+    },
+    /**
+     * Issue (or revise) a Signet on an installation's integration: a member of its conversations, as
+     * Kingdom lists it in `hostedSignets`. The snapshot is pushed.
+     */
+    host(signet: HostedSignet) {
+      hosted.set(signet.signetId, signet);
+      const { thumbprint } = integrations.get(signet.integrationId)!;
+      push(installations.get(thumbprint)!);
+    },
+    /** Revoke a hosted Signet: the next snapshot no longer lists it. */
+    unhost(signetId: string) {
+      const signet = hosted.get(signetId);
+      if (!signet) return;
+      hosted.delete(signetId);
+      push(installations.get(integrations.get(signet.integrationId)!.thumbprint)!);
+    },
+    /**
+     * Send a conversation frame (`thread.request`, `thread.subscribe`, `thread.unsubscribe`,
+     * `thread.lease`) down every authenticated Installation socket, as Kingdom's relay does.
+     */
+    threadFrame(frame: Record<string, unknown>) {
+      for (const [ws, thumbprint] of sockets) if (thumbprint) ws.send(JSON.stringify(frame));
+    },
+    /** The host's answer to a request or subscribe, once it arrives. */
+    async threadResponse(requestId: string, ms = 3_000): Promise<Record<string, any>> {
+      const end = performance.now() + ms;
+      for (;;) {
+        const found = frames.find(
+          (frame) => frame.action === 'thread.response' && frame.requestId === requestId,
+        );
+        if (found) return found;
+        if (performance.now() > end) throw Error(`no thread.response for ${requestId}`);
+        await Bun.sleep(5);
+      }
+    },
+    /** Every `thread.append` the host pushed for one subscription, in arrival order. */
+    appends(subscriptionId: string): Record<string, any>[] {
+      return frames.filter(
+        (frame) => frame.action === 'thread.append' && frame.subscriptionId === subscriptionId,
+      );
+    },
+    /** Drop every Installation socket (the host reconnects on its own). */
+    dropSockets() {
+      for (const ws of sockets.keys()) ws.close();
     },
     /** Revokes every installation: their sockets hear it and stop for good. */
     revokeInstallations() {

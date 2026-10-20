@@ -37,6 +37,7 @@ import {
   validateStages,
   WARDEN_CHARTER_VERSION,
 } from '../classify';
+import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
@@ -400,6 +401,11 @@ export interface ThreadRuntimeDeps {
    * re-emitted with an `auxiliary_` prefix so they never invalidate the ledger.
    */
   sessionAdapter?: SessionAdapter;
+  /**
+   * The conversation wrapper (docs/reference/CONVERSATIONS.md §4.1): a conversation thread is always
+   * wrapped, and the member notes admitted since the owner last spoke ride the owner's next turn.
+   */
+  conversations?: ConversationWrapper;
   log?: (line: string) => void;
   warn?: (line: string) => void;
 }
@@ -532,7 +538,8 @@ export interface PhaseRecordInput {
     | 'middleware-reduced'
     | 'handoff'
     | 'handoff-return'
-    | FeedbackPhase;
+    | FeedbackPhase
+    | ConversationPhase;
   readonly record: Record<string, unknown>;
 }
 export type PhaseJournal = (runtime: ThreadRuntime, record: PhaseRecordInput) => void;
@@ -1246,6 +1253,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         warn(
           `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
         );
+      // Member posts delivered as notes ride the owner's turn, labelled, after the fresh advice.
+      const memberNotes = deps.conversations?.notesFor(thread.id, identity?.messageId) ?? [];
+      if (memberNotes.length) flow.queueNotes(memberNotes);
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
         plan = await flow.preMessage(message, identity);
@@ -1302,10 +1312,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         // Nothing wraps an unwrapped thread (no layers, decision roles or Wardens): the message reaches
         // the session as typed, with no Cartographer call, no plan and no thread-state. Settings that
         // add a layer wrap it from the next turn.
+        // A conversation thread is always wrapped, so a member's note reaches the session.
         const wrapped =
           !!started ||
           domainLibrarians.size > 0 ||
-          stack.layers.some((layer) => layer !== this.librarian.layer);
+          stack.layers.some((layer) => layer !== this.librarian.layer) ||
+          !!deps.conversations?.wraps(thread.id);
         this.librarian.setDelivered(wrapped);
         const {
           barrier,
@@ -1676,6 +1688,32 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           | undefined;
         if (!content?.handoffId || !content.childThreadId) return;
         await this._briefHandoff(signal.id, content);
+      }),
+    );
+    // A conversation member's post was admitted as a note: content the thread takes in, so the chorus
+    // is asked between turns (the `consumed` moment, CONVERSATIONS.md §4.2), whether or not the
+    // project's work-item trigger is on. What it says rides the next turn with the note.
+    this._unsubs.push(
+      signals.on('member_post', async (signal) => {
+        const content = signal.content as
+          | { postId?: string; displayName?: string; text?: string }
+          | undefined;
+        if (!content?.postId || !content.text || !this.domainLibrarians.size) return;
+        const item: WorkItemMoment = {
+          itemId: `member-post:${content.postId}`,
+          name: `post from ${content.displayName ?? 'a conversation member'}`,
+          tool: 'conversation',
+          text: content.text,
+        };
+        await this._askBetweenTurns({
+          trigger: 'consumed',
+          turnId: null,
+          wraps: item.itemId,
+          label: `member ${item.name}`,
+          ask: (flow) => flow.consume(item),
+          record: { memberPost: { postId: content.postId, chars: content.text.length } },
+          notes: (report) => consumedNotes(item, report),
+        });
       }),
     );
     // The main thread took in a work item: the chorus is asked what of its domain the work touches
