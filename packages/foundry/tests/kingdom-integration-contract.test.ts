@@ -11,6 +11,7 @@ import {
   kingdomEnvelopeSchema,
   kingdomSelectionSchema,
 } from '../src/providers/kingdom-client';
+import { parseHeldSignetDescription } from '../src/providers/kingdom-holder';
 import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installation';
 
 test('Kingdom Integration selection/envelope use canonical wire fields and reject old or ambiguous names', async () => {
@@ -116,6 +117,7 @@ test('read routes the exact discovered resource Integration and rejects foreign 
                   name: 'Controlled',
                   kind: 'document',
                   integrationId: resourceIntegrationId,
+                  lens: {},
                 },
               ],
             },
@@ -168,4 +170,38 @@ test('read routes the exact discovered resource Integration and rejects foreign 
     kingdom.stop();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('signet 0.5: a describe resource this package cannot read costs that resource, never the grant or its holder', () => {
+  const integrationId = crypto.randomUUID();
+  const resource = (lens?: unknown) => ({
+    id: crypto.randomUUID(),
+    name: 'Library',
+    kind: 'archiveLibrary',
+    integrationId,
+    ...(lens === undefined ? {} : { lens }),
+  });
+  const described = parseHeldSignetDescription({
+    signetId: crypto.randomUUID(),
+    integrationId,
+    provider: 'archive',
+    name: 'Held',
+    expiresAt: null,
+    lifecycle: 'ongoing',
+    taskId: null,
+    currentRevision: 1,
+    remainingRequests: null,
+    // A Kingdom before K1 sends no lens; a newer one may send a lens of another shape.
+    operations: [
+      {
+        key: 'documents.read',
+        name: 'Read',
+        resources: [resource({}), resource(), resource({ threads: { form: 'ids', ids: ['t'] } })],
+      },
+    ],
+    holder: null,
+  });
+  expect(described.operations[0]!.resources).toHaveLength(1);
+  expect(described.dropped).toHaveLength(2);
+  expect(described.holder).toBeNull();
 });

@@ -5,10 +5,11 @@
  */
 import { SignetClient, SignetHttpError, signetCredentialFile } from '@inixiative/signet';
 import {
+  parseSignetDescription,
   type SignetHolder,
-  signetDescriptionSchema,
   signetHolderSchema,
 } from '@inixiative/signet/contracts';
+import { z } from 'zod';
 import {
   type KingdomIntegration,
   kingdomInstallationPaths,
@@ -17,10 +18,12 @@ import {
 
 /**
  * Who holds a paired Kingdom's Signet, from Kingdom's extended `access/describe` (`holder`; null
- * for a person-held Signet). `signetDescriptionSchema` strips unknown fields, so it is added here.
+ * for a person-held Signet). The description is read per entry (`parseSignetDescription`), so a
+ * resource this package can't read costs that resource, never the holder.
  */
-export const heldSignetDescriptionSchema = signetDescriptionSchema.extend({
-  holder: signetHolderSchema.nullable(),
+export const parseHeldSignetDescription = (value: unknown) => ({
+  ...parseSignetDescription(value),
+  holder: z.object({ holder: signetHolderSchema.nullable() }).parse(value).holder,
 });
 
 export interface HolderView {
@@ -93,7 +96,7 @@ export class KingdomHolders {
       integration.signetId,
     );
     try {
-      const described = heldSignetDescriptionSchema.parse(
+      const described = parseHeldSignetDescription(
         await this.describe(file, integration.url, integration.signetId),
       );
       return { status: 'described', holder: described.holder ?? null, checkedAt };

@@ -17,7 +17,9 @@ import type {
   Trace,
 } from '@inixiative/foundry-core';
 import { Harness, newId } from '@inixiative/foundry-core';
+import type { ConversationMember } from '@inixiative/signet';
 import type { PostgresMemory } from '../adapters/postgres-memory';
+import { memberPostReception } from '../agents/chorus-reception';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
@@ -76,6 +78,22 @@ export interface TurnRequest {
   clientId?: string;
   /** Images sent with the message (bytes loaded); the journal keeps their identity only. */
   images?: readonly ImageInput[];
+  /**
+   * A conversation member's post delivered as a turn (docs/reference/CONVERSATIONS.md §4.2). The
+   * journal keeps the member's own words, attributed; the executor and the Wardens read it labelled
+   * as data from an outside party. Nothing in it is the owner's: no host instructions are split off
+   * it, and feedback capture and thread naming never read it.
+   */
+  origin?: TurnOrigin;
+}
+
+/** Who a turn's message came from when it isn't the owner. */
+export interface TurnOrigin {
+  member: ConversationMember;
+  displayName: string;
+  postId: string;
+  /** The Kingdom `AccessExecution` the post arrived under. */
+  executionId: string;
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */
@@ -204,14 +222,15 @@ export class TurnService {
 
   /** Accept a turn durably, then run it after any turn already on its thread. */
   accept(request: TurnRequest): TurnAcceptance {
-    const { clientId } = request;
+    const { clientId, origin } = request;
     // A host's instruction wrappers go to the executor verbatim; everything that learns from the
-    // message (and the journal's user message) reads only the user's words.
-    const split = splitHostInstructions(request.payload);
+    // message (and the journal's user message) reads only the user's words. A member's post is
+    // never split: wrappers in it are its own text.
+    const split = origin ? null : splitHostInstructions(request.payload);
     const payload = split?.userText ?? request.payload;
     const images = request.images ?? [];
     const userMeta =
-      split || images.length
+      split || images.length || origin
         ? {
             ...(split
               ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
@@ -219,8 +238,12 @@ export class TurnService {
             ...(images.length
               ? { images: images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes })) }
               : {}),
+            ...(origin ? { origin: { ...origin }, postedBy: origin.displayName } : {}),
           }
         : undefined;
+    // What the harness runs on: the member's post labelled as data (the Wardens and the executor
+    // both read it so); the owner's message as typed.
+    const harnessPayload = origin ? memberPostReception(origin.displayName, payload) : payload;
     const { db, localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
@@ -275,8 +298,10 @@ export class TurnService {
 
     const buffer = streams.turns.open(turnId, threadId, harness.thread.meta.projectId);
     streams.threadsChanged(threadId);
+    // The accepted message is journalled: readers that follow the journal (a conversation's members) see it now.
+    this.journalChanged(harness.thread, turnId);
     try {
-      this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
+      if (!origin) this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
     } catch (error) {
       console.warn('[Feedback] capture not started:', (error as Error).message);
     }
@@ -325,11 +350,12 @@ export class TurnService {
               harness,
               state,
               turnId,
-              payload,
+              harnessPayload,
               buffer,
               clientId,
               split && request.payload,
               images,
+              !origin,
             ),
           );
         }
@@ -716,6 +742,8 @@ export class TurnService {
     /** The verbatim prompt for the executor, when host instructions were split off `payload`. */
     executorPayload?: string | null,
     images: readonly ImageInput[] = [],
+    /** The owner typed it: only then does the thread namer read the exchange. */
+    ownerTyped = true,
   ): Promise<TurnOutcome> {
     const thread = harness.thread;
     const threadId = thread.id;
@@ -750,7 +778,8 @@ export class TurnService {
       if (completed.meta.persistence !== 'failed') {
         this.persistAgentMessage(threadId, turnId, completed);
         this.persistTrace(turnId, result.trace);
-        this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
+        if (ownerTyped)
+          this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
       }
       return { kind: 'completed', completed, result };
     } catch (err) {

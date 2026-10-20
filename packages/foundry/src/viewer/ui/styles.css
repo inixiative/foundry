@@ -6476,3 +6476,109 @@ a.thread-ref:hover {
   list-style: none;
   margin: 6px 0;
 }
+
+/* Agent conversations: the participants panel and the sessions-list marker */
+.conversation-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-deeper, #1a1a2e);
+  font-size: 11px;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.conversation-panel--empty {
+  display: flex;
+  justify-content: flex-end;
+}
+.conversation-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.conversation-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.conversation-floor,
+.conversation-requests {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.conversation-members,
+.conversation-posts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conversation-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.conversation-presence {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+}
+.conversation-member.is-present .conversation-presence {
+  background: #4ade80;
+}
+.conversation-member-name,
+.conversation-post-who {
+  font-weight: 600;
+  color: var(--text);
+}
+.conversation-dim {
+  color: var(--text-dim);
+}
+.conversation-post {
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+}
+.conversation-post-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.conversation-post.is-unread {
+  border-left-color: var(--accent);
+}
+.conversation-post.is-withdrawn {
+  opacity: 0.5;
+}
+.conversation-post-text,
+.conversation-held-text {
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.conversation-unread,
+.conversation-unread-badge {
+  color: var(--bg, #111);
+  background: var(--accent);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.conversation-paused,
+.conversation-paused-badge {
+  color: var(--warn);
+  font-size: 10px;
+}
+.chat-msg-from {
+  font-size: 10px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}

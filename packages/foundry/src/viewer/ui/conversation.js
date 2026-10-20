@@ -11,6 +11,7 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
+import { HeldPromptCard, ParticipantsPanel } from './conversation-members.js';
 import {
   browserStorageNotice,
   browserStorageSummary,
@@ -559,6 +560,11 @@ function UserMessage({ msg, index }) {
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
       <${MessageActions} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
+      ${
+        msg.meta?.postedBy
+          ? html`<div class="chat-msg-from" title="A conversation member's post: data from an outside party, not your instructions">from ${msg.meta.postedBy}</div>`
+          : null
+      }
       ${msg.content ? html`<div class="chat-msg-content">${msg.content}</div>` : null}
       <${BrowserStorageWarning} msg=${msg} />
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
@@ -875,6 +881,7 @@ function threadBreadcrumb(threadId) {
 
 function PromptCard({ prompt }) {
   if (prompt.meta?.feedback) return html`<${FeedbackPrompt} prompt=${prompt} />`;
+  if (prompt.meta?.conversationHeld) return html`<${HeldPromptCard} prompt=${prompt} />`;
   return html`<${ActionPromptCard} prompt=${prompt} />`;
 }
 
@@ -1074,6 +1081,7 @@ export function Conversation({ onTraceSelect }) {
     <div class="conversation">
       <${ContextBar} />
       <${TokenBar} />
+      <${ParticipantsPanel} />
       <div class="chat-messages" ref=${scrollRef}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />

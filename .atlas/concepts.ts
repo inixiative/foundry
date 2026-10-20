@@ -24,6 +24,7 @@ export const CONCEPTS: ConceptRegistry = {
   'feature:setup': {}, // setup, doctor, legacy starter, docs scan, startup self-test
   'feature:nativeAuth': { docs: ['native-authentication.md'] }, // which login a native session runs on: profiles, accounts, Kingdom-held logins
   'feature:devices': { docs: ['DEVICE-PROJECT-IDENTITY.md'] }, // local device inventory and linked project checkouts
+  'feature:conversations': { docs: ['reference/CONVERSATIONS.md'] }, // agent conversations: the wrapper of a main thread members reach through Kingdom
 
   // ── primitives: reusable building blocks (core is all primitives) ──────────
   'primitive:agents': { docs: ['api/PRIMITIVES.md'] }, // BaseAgent, classifier, router, executor, decider, clarifier, Harness, tool loop

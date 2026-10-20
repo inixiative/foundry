@@ -111,6 +111,8 @@ export const SUMMARY_META_KEYS = [
   'inputEvidence',
   'deliveryAcknowledgment',
   'neverSent',
+  /** A conversation member's post delivered as a turn: who posted it (CONVERSATIONS.md §4.7). */
+  'postedBy',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;
@@ -342,7 +344,7 @@ export class LocalSessionStore {
       // Hold the file lock until close: a second viewer must not recover live turns.
       this.db.exec('PRAGMA busy_timeout=1000; PRAGMA locking_mode=EXCLUSIVE;');
       const version = this.query('PRAGMA user_version').get() as { user_version: number };
-      if (version.user_version > 5)
+      if (version.user_version > 6)
         throw new Error(`Unsupported session store version: ${version.user_version}`);
       this.db.exec(`
       PRAGMA journal_mode = WAL;
@@ -413,7 +415,23 @@ export class LocalSessionStore {
         parts_hash TEXT NOT NULL, created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS composition_version_parts ON composition_version(parts_hash);
-      PRAGMA user_version = 5;
+      CREATE TABLE IF NOT EXISTS session_journal (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL REFERENCES session_threads(id),
+        source TEXT NOT NULL, ref TEXT NOT NULL UNIQUE
+      );
+      CREATE INDEX IF NOT EXISTS session_journal_thread ON session_journal(thread_id, seq);
+      CREATE TABLE IF NOT EXISTS session_conversations (
+        thread_id TEXT PRIMARY KEY REFERENCES session_threads(id), record TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+      // v6: one order over a main thread's messages and conversation entries (the journal seq a
+      // member reads by). Existing messages are ordered as they were written.
+      if (version.user_version < 6)
+        this.db.exec(`
+      INSERT OR IGNORE INTO session_journal(thread_id, source, ref)
+        SELECT thread_id, 'message', id FROM session_messages ORDER BY seq;
+      PRAGMA user_version = 6;
     `);
     } catch (error) {
       this.closeDatabase();
@@ -698,6 +716,11 @@ export class LocalSessionStore {
         checksum(record),
         storedAt,
       );
+      // Conversation entries take their place in the thread's one order (`journalEntries`).
+      if ((JOURNAL_ORDERED_PHASES as readonly string[]).includes(input.phase))
+        this.query(
+          "INSERT INTO session_journal(thread_id, source, ref) VALUES (?, 'phase', ?)",
+        ).run(thread.id, input.id);
       // A middleware row that lands after its turn closed (a late guard outcome) is reduced now.
       if (
         input.turnId &&
@@ -1118,6 +1141,231 @@ export class LocalSessionStore {
       if (checksum(row.record) !== row.checksum)
         throw new Error('Learning event checksum mismatch');
       return { threadId, signal: this.decode<Signal>(row.record), storedAt: row.stored_at };
+    });
+  }
+
+  /**
+   * Run `work` in one synchronous transaction (a savepoint inside the caller's). Callers keep it
+   * free of `await`: under single-threaded JS over synchronous SQLite that makes it atomic, no lock.
+   */
+  transaction<T>(work: () => T): T {
+    return this.db.transaction(work)();
+  }
+
+  /** A thread's conversation record (the wrapper's state), when it has one. */
+  conversation<T>(threadId: string): T | undefined {
+    const row = this.query('SELECT record FROM session_conversations WHERE thread_id=?').get(
+      threadId,
+    ) as { record: string } | null;
+    return row ? (JSON.parse(row.record) as T) : undefined;
+  }
+
+  saveConversation(thread: Pick<Thread, 'id' | 'meta'>, record: unknown): void {
+    this.db.transaction(() => {
+      this.saveThread(thread);
+      this.query(
+        'INSERT INTO session_conversations(thread_id, record, updated_at) VALUES (?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET record=excluded.record, updated_at=excluded.updated_at',
+      ).run(thread.id, JSON.stringify(record), Date.now());
+    })();
+  }
+
+  /** Threads that carry a conversation record. */
+  conversationThreads(): string[] {
+    return (
+      this.query('SELECT thread_id FROM session_conversations').all() as Array<{
+        thread_id: string;
+      }>
+    ).map((row) => row.thread_id);
+  }
+
+  /** The thread's journal seq now: the seq of its newest ordered entry (0 when it has none). */
+  journalSeq(threadId: string): number {
+    const row = this.query('SELECT MAX(seq) AS seq FROM session_journal WHERE thread_id=?').get(
+      threadId,
+    ) as { seq: number | null };
+    return row.seq ?? 0;
+  }
+
+  /**
+   * A main thread's messages and conversation entries in their one order, oldest first: those after
+   * `after` (or, with `newest`, the newest `limit`). Phase rows come back decoded.
+   */
+  journalEntries(
+    threadId: string,
+    opts: { after?: number; limit?: number; newest?: boolean } = {},
+  ): JournalEntry[] {
+    const limit = boundedLimit(opts.limit ?? 1000);
+    const rows = this.query(
+      `SELECT j.seq, j.source, m.actor, m.record AS message, p.phase, p.record AS phase_record,
+              p.checksum, p.stored_at, p.turn_id AS phase_turn
+         FROM session_journal j
+         LEFT JOIN session_messages m ON j.source = 'message' AND m.id = j.ref
+         LEFT JOIN session_phase p ON j.source = 'phase' AND p.id = j.ref
+        WHERE j.thread_id=? AND j.seq > ?
+        ORDER BY j.seq ${opts.newest ? 'DESC' : 'ASC'} LIMIT ?`,
+    ).all(threadId, opts.after ?? 0, limit) as Array<{
+      seq: number;
+      source: 'message' | 'phase';
+      actor: StoredMessage['actor'] | null;
+      message: string | null;
+      phase: string | null;
+      phase_record: string | null;
+      checksum: string | null;
+      stored_at: number | null;
+      phase_turn: string | null;
+    }>;
+    if (opts.newest) rows.reverse();
+    return rows.flatMap((row): JournalEntry[] => {
+      if (row.source === 'message' && row.message !== null)
+        return [{ seq: row.seq, source: 'message', message: this.decode(row.message) }];
+      if (row.source === 'phase' && row.phase_record !== null) {
+        if (checksum(row.phase_record) !== row.checksum)
+          throw new Error('Phase record checksum mismatch');
+        return [
+          {
+            seq: row.seq,
+            source: 'phase',
+            phase: row.phase!,
+            turnId: row.phase_turn,
+            record: this.decode<Record<string, unknown>>(row.phase_record),
+            storedAt: row.stored_at!,
+          },
+        ];
+      }
+      return [];
+    });
+  }
+
+  /**
+   * The journal seq of the thread's newest message the owner typed (a user message no member's post
+   * opened and no observer recorded), at or before `before` when given; 0 when there is none.
+   */
+  lastOwnerSeq(threadId: string, before?: number): number {
+    const row = this.query(
+      `SELECT MAX(j.seq) AS seq FROM session_journal j JOIN session_messages m ON m.id = j.ref
+        WHERE j.thread_id=? AND j.source='message' AND m.actor='user'
+          AND json_extract(m.record, '$.meta.origin') IS NULL
+          AND json_extract(m.record, '$.meta.observed') IS NULL${before === undefined ? '' : ' AND j.seq <= ?'}`,
+    ).get(...(before === undefined ? [threadId] : [threadId, before])) as { seq: number | null };
+    return row.seq ?? 0;
+  }
+
+  /** The journal seq of one turn's user message (undefined when the turn has none). */
+  turnMessageSeq(turnId: string): number | undefined {
+    const row = this.query(
+      `SELECT j.seq FROM session_journal j JOIN session_messages m ON m.id = j.ref
+        WHERE j.source='message' AND m.turn_id=? AND m.actor='user'`,
+    ).get(turnId) as { seq: number } | null;
+    return row?.seq;
+  }
+
+  /** The journal seq of one ordered phase row. */
+  phaseSeq(phaseId: string): number | undefined {
+    const row = this.query("SELECT seq FROM session_journal WHERE source='phase' AND ref=?").get(
+      phaseId,
+    ) as { seq: number } | null;
+    return row?.seq;
+  }
+
+  /**
+   * One phase's rows of a thread, oldest first; with `match`, only those whose top-level record field
+   * equals the value (read in SQL, so the field stays inline: short ids, never bulk text).
+   */
+  phasesOf(threadId: string, phase: string, match?: { key: string; value: string }): StoredPhase[] {
+    if (match && !/^[A-Za-z]+$/.test(match.key))
+      throw new Error('Phase key must be a plain field name');
+    const rows = this.query(
+      `SELECT id, turn_id, dispatch_id, record, checksum, stored_at FROM session_phase
+        WHERE thread_id=? AND phase=?${match ? ` AND json_extract(record, '$.${match.key}') = ?` : ''} ORDER BY seq`,
+    ).all(...(match ? [threadId, phase, match.value] : [threadId, phase])) as Array<{
+      id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      record: string;
+      checksum: string;
+      stored_at: number;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        id: row.id,
+        threadId,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase,
+        record: this.decode<Record<string, unknown>>(row.record),
+        storedAt: row.stored_at,
+      };
+    });
+  }
+
+  /** One ordered phase's rows of a thread after journal seq `after`, oldest first, with their seq. */
+  orderedPhases(
+    threadId: string,
+    phase: (typeof JOURNAL_ORDERED_PHASES)[number],
+    after = 0,
+  ): Array<StoredPhase & { seq: number }> {
+    const rows = this.query(
+      `SELECT j.seq, p.id, p.turn_id, p.dispatch_id, p.record, p.checksum, p.stored_at
+         FROM session_journal j JOIN session_phase p ON p.id = j.ref
+        WHERE j.thread_id=? AND j.source='phase' AND p.phase=? AND j.seq > ? ORDER BY j.seq`,
+    ).all(threadId, phase, after) as Array<{
+      seq: number;
+      id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      record: string;
+      checksum: string;
+      stored_at: number;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        seq: row.seq,
+        id: row.id,
+        threadId,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase,
+        record: this.decode<Record<string, unknown>>(row.record),
+        storedAt: row.stored_at,
+      };
+    });
+  }
+
+  /**
+   * Held outbound items no answer has settled, across threads, oldest first: the prompts to raise
+   * again after a restart (docs/reference/CONVERSATIONS.md §4.5).
+   */
+  pendingHeld(): StoredPhase[] {
+    const rows = this.query(
+      `SELECT p.id, p.thread_id, p.turn_id, p.dispatch_id, p.record, p.checksum, p.stored_at
+         FROM session_phase p
+        WHERE p.phase='outbound-held' AND json_extract(p.record, '$.status')='pending'
+          AND NOT EXISTS (SELECT 1 FROM session_phase r WHERE r.thread_id=p.thread_id
+            AND r.phase='outbound-resolution'
+            AND json_extract(r.record, '$.heldId') = json_extract(p.record, '$.heldId'))
+        ORDER BY p.seq`,
+    ).all() as Array<{
+      id: string;
+      thread_id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      record: string;
+      checksum: string;
+      stored_at: number;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        id: row.id,
+        threadId: row.thread_id,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase: 'outbound-held',
+        record: this.decode<Record<string, unknown>>(row.record),
+        storedAt: row.stored_at,
+      };
     });
   }
 
@@ -2063,6 +2311,10 @@ export class LocalSessionStore {
     this.query(
       'INSERT INTO session_messages(id, thread_id, turn_id, actor, record) VALUES (?, ?, ?, ?, ?)',
     ).run(message.id, message.threadId, message.turnId, message.actor, record);
+    this.query("INSERT INTO session_journal(thread_id, source, ref) VALUES (?, 'message', ?)").run(
+      message.threadId,
+      message.id,
+    );
   }
 
   /** A trace's spans and its root tree share their annotations by reference; the row is bounded. */
@@ -2113,6 +2365,28 @@ const TRACE_RECORD_LIMIT = 200_000;
 /** Root keys the store reads in SQL (`$.content.domain`, `$.summary`); spilling moves only what is below them. */
 const SQL_READ_KEYS = ['content', 'summary', 'meta'];
 const CONTENT_CACHE_CHARS = 16_000_000;
+/**
+ * Phase rows that take a place in a thread's one journal order beside its messages: what a
+ * conversation's members read (docs/reference/CONVERSATIONS.md §4.7).
+ */
+export const JOURNAL_ORDERED_PHASES = [
+  'member-post',
+  'outbound-held',
+  'outbound-resolution',
+] as const;
+
+/** One entry of a main thread's journal in order: a message, or an ordered phase row. */
+export type JournalEntry =
+  | { seq: number; source: 'message'; message: StoredMessage }
+  | {
+      seq: number;
+      source: 'phase';
+      phase: string;
+      turnId: string | null;
+      record: Record<string, unknown>;
+      storedAt: number;
+    };
+
 /** Key on a record whose bulk spilled: why, at what size, and which paths moved out (`SpillNote`). */
 export const JOURNAL_SPILL_KEY = '$journal';
 

@@ -25,6 +25,7 @@ import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
+import { ConversationService } from '../conversations/service';
 import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
@@ -40,6 +41,7 @@ import {
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { kingdomPostDelivery } from '../tools/kingdom-post';
 import { SubagentRecorder } from '../turns/subagents';
 import {
   createToolGate,
@@ -60,6 +62,7 @@ import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS } from './config';
 import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin, sameSecret } from './request-auth';
 import { registerControlRoutes } from './routes/control';
+import { registerConversationRoutes } from './routes/conversations';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
@@ -275,12 +278,15 @@ export function createViewer(config: ViewerConfig) {
   const kingdomLost = () => !kingdom.authorized;
   const revoke = () =>
     closeAllConnections(socket.registry, 1008, 'Kingdom authorization unavailable');
+  // The conversation wrapper of main threads (docs/reference/CONVERSATIONS.md); built once turns exist.
+  let conversations: ConversationService | null = null;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({
     directory,
     eventStream,
     actionQueue: config.actionQueue,
     feedback: () => feedback,
+    conversation: (threadId) => conversations?.summary(threadId),
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,
@@ -587,6 +593,47 @@ export function createViewer(config: ViewerConfig) {
     images: new ImageAttachmentStore(join(configDir, 'attachments', 'images')),
     ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
+  // Agent conversations: Kingdom's relayed frames reach this wrapper over each Installation socket
+  // (served before the sockets start), and held sends survive a restart (raised again here).
+  if (localStore) {
+    conversations = new ConversationService({
+      store: localStore,
+      thread: (id) => directory.get(id),
+      turns: () => turns,
+      queue: config.actionQueue ?? null,
+      project: (id) => configStore.config.projects[id],
+      hosted: () => kingdom.hostedSignets(),
+      subscriptions: () => kingdom.threadSubscriptions(),
+      events: eventStream,
+      deliverPost: kingdomPostDelivery(config.assistTools),
+      changed: (threadId) => streams.threadsChanged(threadId),
+      journalChanged: (thread) =>
+        eventStream.push({
+          kind: 'journal',
+          threadId: thread.id,
+          projectId: thread.meta.projectId,
+          turnId: null,
+          scope: 'phase',
+          timestamp: Date.now(),
+        }),
+      log: (message) => log.warn(message),
+    });
+    const service = conversations;
+    kingdom.serveThreads(service.host(), (hosted, dropped) =>
+      service.hostedChanged(hosted, dropped),
+    );
+    service.raisePending();
+    registerConversationRoutes(
+      app,
+      service,
+      {
+        integrations: async () => (await configStore.load()).kingdomIntegrations ?? [],
+        holders,
+      },
+      configStore,
+    );
+    localStore.onClose(() => service.dispose());
+  }
   // "Setting up your thread": the thread's setup streams on `threads` with its meta.
   config.threadSetup?.onSetup((threadId, setup) => {
     const thread = directory.get(threadId);
@@ -817,6 +864,7 @@ export function createViewer(config: ViewerConfig) {
     tunnelHolder,
     localStore,
     directory,
+    conversations,
     startSocket() {
       socket.startStaleSweep();
       kingdomWatch.start();
@@ -920,6 +968,7 @@ export async function startViewer(config: ViewerConfig) {
     tunnelHolder,
     localStore,
     kingdom: viewer.kingdom,
+    conversations: viewer.conversations,
   };
 }
 

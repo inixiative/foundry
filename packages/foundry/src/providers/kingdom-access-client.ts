@@ -8,8 +8,9 @@ import {
   kingdomUrl,
   readPrivateJson,
   SignetClient,
+  selectsThread,
   signetCredentialSchema,
-  signetDescriptionSchema,
+  threadsResourceKind,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -54,15 +55,24 @@ export class KingdomAccessClient {
   constructor(private source: KingdomAccessSource) {
     this.source = kingdomAccessSourceSchema.parse(source);
   }
-  private post(action: 'describe' | 'execute', body: unknown, onDispatch?: () => void) {
+  private post(action: 'execute', body: unknown, onDispatch?: () => void) {
     return new SignetClient(this.source.url, this.source.credentialFile, this.source.signetId).post(
       action,
       body,
       onDispatch,
     );
   }
-  async describe() {
-    const description = signetDescriptionSchema.parse(await this.post('describe', {}));
+  /**
+   * The grant as Kingdom describes it now, every operation, checked to be this source's own and
+   * unexpired. Read per entry (signet 0.5): a resource whose lens this package can't read is
+   * dropped, never the grant.
+   */
+  private async granted() {
+    const { dropped: _dropped, ...description } = await new SignetClient(
+      this.source.url,
+      this.source.credentialFile,
+      this.source.signetId,
+    ).describe();
     if (
       description.integrationId !== this.source.integrationId ||
       description.signetId !== this.source.signetId
@@ -70,6 +80,11 @@ export class KingdomAccessClient {
       throw Error('Kingdom access credential belongs to another grant');
     if (description.expiresAt && Date.parse(description.expiresAt) <= Date.now())
       throw Error('Kingdom access expired');
+    return description;
+  }
+  /** What the read-only access tool may use: the grant's read operations. */
+  async describe() {
+    const description = await this.granted();
     return {
       ...description,
       operations: description.operations.filter(
@@ -107,24 +122,80 @@ export class KingdomAccessClient {
       )
     )
       throw Error('Kingdom operation or resource unavailable');
-    return z.object({ executionId: z.string().uuid(), result: z.unknown() }).parse(
-      await this.post(
-        'execute',
-        {
-          requestId: input.requestId,
-          runId: input.runId,
-          integrationId:
-            description.operations
-              .flatMap((operation) => operation.resources)
-              .find((resource) => resource.id === input.resourceId)?.integrationId ??
-            this.source.integrationId,
-          signetId: this.source.signetId,
-          ...(description.taskId ? { taskId: description.taskId } : {}),
-          operation: readOperationSchema.parse(input.operation),
-          input: { resourceId: input.resourceId, limit: input.limit },
+    return this.execute(
+      {
+        requestId: input.requestId,
+        runId: input.runId,
+        integrationId:
+          description.operations
+            .flatMap((operation) => operation.resources)
+            .find((resource) => resource.id === input.resourceId)?.integrationId ??
+          this.source.integrationId,
+        operation: readOperationSchema.parse(input.operation),
+        input: { resourceId: input.resourceId, limit: input.limit },
+      },
+      description.taskId,
+      onDispatch,
+    );
+  }
+
+  /** One execution under this source's Signet (and its task, when it has one); never retried. */
+  private async execute(
+    request: {
+      requestId: string;
+      runId?: string;
+      integrationId: string;
+      operation: string;
+      input: Record<string, unknown>;
+    },
+    taskId: string | null,
+    onDispatch?: () => void,
+  ) {
+    return z
+      .object({ executionId: z.string().uuid(), result: z.unknown() })
+      .parse(
+        await this.post(
+          'execute',
+          { ...request, signetId: this.source.signetId, ...(taskId ? { taskId } : {}) },
+          onDispatch,
+        ),
+      );
+  }
+
+  /**
+   * Post into a conversation this Foundry joined (the joining side, `kingdom_post`): the held
+   * Signet's `thread.prompt` on the `threads` resource whose lens selects the thread. `postId` is
+   * the post's own id, kept across a retry; each call is a new request id.
+   */
+  async threadPrompt(
+    input: { threadId: string; postId: string; text: string; inReplyTo?: string },
+    onDispatch?: () => void,
+  ) {
+    const description = await this.granted();
+    const resource = description.operations
+      .find((operation) => operation.key === 'thread.prompt')
+      ?.resources.find(
+        (candidate) =>
+          candidate.kind === threadsResourceKind &&
+          'threads' in candidate.lens &&
+          selectsThread(candidate.lens.threads, input.threadId),
+      );
+    if (!resource) throw Error('This Signet does not reach that conversation thread');
+    return this.execute(
+      {
+        requestId: crypto.randomUUID(),
+        integrationId: resource.integrationId,
+        operation: 'thread.prompt',
+        input: {
+          resourceId: resource.id,
+          threadId: input.threadId,
+          postId: input.postId,
+          text: input.text,
+          ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
         },
-        onDispatch,
-      ),
+      },
+      description.taskId,
+      onDispatch,
     );
   }
 }

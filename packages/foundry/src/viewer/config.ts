@@ -26,6 +26,10 @@ import { isRoleLayerId } from '../agents/role-layers';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type StageConfig, validateStages } from '../classify';
+import {
+  type ConversationSettingsInput,
+  validateConversationSettings,
+} from '../conversations/types';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import { subscriptionWorker } from '../models/registry';
 import {
@@ -261,6 +265,11 @@ export interface ProjectSettingsConfig {
    * docs/usage-and-context.md, "Chorus".
    */
   chorus?: ChorusSettings;
+  /**
+   * This project's agent conversations (docs/reference/CONVERSATIONS.md §4.6): floor mode, depth
+   * bound and conch, over the repository's `conversations`, each thread's own overrides last.
+   */
+  conversations?: ConversationSettingsInput;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
   /** Required when `capacity` is `kingdom`. */
@@ -1096,6 +1105,7 @@ export function validateConfig(config: FoundryConfig): void {
           `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ enabled }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
         );
     validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
+    validateConversationSettings(`projects.${pid}.conversations`, project?.conversations);
   }
   if ('instructions' in config)
     throw Error(

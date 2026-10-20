@@ -799,6 +799,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
 
     const prompt = actionQueue.get(id);
+    // A held conversation send or post is answered on its own route, which validates the answer.
+    if (prompt?.meta?.conversationHeld)
+      return c.json(
+        {
+          error: `Answer a held item at /api/conversations/held/${(prompt.meta.conversationHeld as { heldId: string }).heldId}/answer`,
+        },
+        409,
+      );
     const ok = actionQueue.resolve(id, body.action, {
       by: 'human',
       input: typeof body.input === 'string' ? body.input : undefined,

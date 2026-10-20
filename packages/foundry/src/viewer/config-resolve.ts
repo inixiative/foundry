@@ -20,6 +20,10 @@ import {
 } from '../agents/region-roster';
 import { DEFAULT_STAGES, type StageConfig, validateStages } from '../classify';
 import {
+  type ConversationSettingsInput,
+  validateConversationSettings,
+} from '../conversations/types';
+import {
   type AgentExtension,
   type AgentSettingsConfig,
   type BrowserConfig,
@@ -801,23 +805,33 @@ function resolveLayerDefinition(
  * file that is missing reads as none; one that is malformed is reported, not thrown, so a repository's
  * checkout never stops the daemon or turns its chorus on.
  */
-export function readRepositorySettings(
-  projectPath: string,
-): { file: string; chorus?: ChorusSettings; error?: string } | undefined {
+export function readRepositorySettings(projectPath: string):
+  | {
+      file: string;
+      chorus?: ChorusSettings;
+      conversations?: ConversationSettingsInput;
+      error?: string;
+    }
+  | undefined {
   const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
   if (!existsSync(file)) return undefined;
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-      throw Error('must be an object: { "chorus"? }');
+      throw Error('must be an object: { "chorus"?, "conversations"? }');
     const settings = raw as Record<string, unknown>;
     for (const key of Object.keys(settings))
-      if (key !== 'chorus' && key !== '$comment')
-        throw Error(`${key} is not a repository setting (chorus, $comment)`);
+      if (key !== 'chorus' && key !== 'conversations' && key !== '$comment')
+        throw Error(`${key} is not a repository setting (chorus, conversations, $comment)`);
     validateChorusSettings('chorus', settings.chorus);
-    return settings.chorus === undefined
-      ? { file }
-      : { file, chorus: settings.chorus as ChorusSettings };
+    validateConversationSettings('conversations', settings.conversations);
+    return {
+      file,
+      ...(settings.chorus === undefined ? {} : { chorus: settings.chorus as ChorusSettings }),
+      ...(settings.conversations === undefined
+        ? {}
+        : { conversations: settings.conversations as ConversationSettingsInput }),
+    };
   } catch (error) {
     return { file, error: (error as Error).message };
   }

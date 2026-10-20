@@ -184,6 +184,16 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
               : null
           }
         </span>
+        ${
+          thread.conversation?.unread
+            ? html`<span class="conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
+            : null
+        }
+        ${
+          thread.conversation?.paused
+            ? html`<span class="conversation-paused-badge" title="Conversation paused">paused</span>`
+            : null
+        }
         ${(() => {
           const count = (promptCounts.value || {})[thread.id] || 0;
           return count > 0
@@ -353,6 +363,7 @@ export function ThreadList() {
         branch: threadPlace(t.meta).branch,
         cwd: t.meta?.cwd || null,
         parentThreadId: t.meta?.parentThreadId || null,
+        conversation: t.conversation || null,
         children: [],
       },
     ]),
@@ -363,6 +374,8 @@ export function ThreadList() {
     if (parent && parent !== node) parent.children.push(node);
     else threadNodes.push(node);
   }
+  // A thread with an unread member post rises to the top (a post revived it).
+  threadNodes.sort((a, b) => (b.conversation?.unread ? 1 : 0) - (a.conversation?.unread ? 1 : 0));
 
   return html`
     <section class="thread-list" aria-label="Threads">

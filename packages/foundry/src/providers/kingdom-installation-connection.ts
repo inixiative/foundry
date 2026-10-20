@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   type HeldSignet,
+  type HostedSignet,
   holdInstallationSignets,
   type InstallationSnapshot,
   InstallationSocket,
@@ -17,6 +18,9 @@ import {
   kingdomUrl,
   setInstallationCredential,
   signetCredentialFile,
+  type ThreadEntry,
+  type ThreadHost,
+  type ThreadSubscription,
 } from '@inixiative/signet';
 import { z } from 'zod';
 import { ownerKeySchema } from './kingdom-client';
@@ -181,7 +185,27 @@ export interface KingdomInstallationOptions {
   /** How long `start` waits for the first snapshot. */
   firstContactMs?: number;
   warn?: (message: string) => void;
+  /**
+   * Conversations this Foundry hosts (docs/reference/CONVERSATIONS.md §4): the handlers Kingdom's
+   * relayed frames reach, bound before the sockets start (`serveThreads`).
+   */
+  threads?: ThreadHost;
+  /**
+   * A snapshot from one Kingdom arrived: the Signets issued on this Foundry's integrations may have
+   * changed. Read them across every paired Kingdom (`KingdomInstallationConnections.hostedSignets`),
+   * never from one alone: a member another Kingdom lists is not revoked by this one's snapshot.
+   */
+  onHostedChanged?: () => void;
 }
+
+/** In `onHosted`'s dropped set: Kingdom's hosted list itself was missing or unreadable. */
+export const UNKNOWN_HOSTED = '*';
+
+/** A member's live view this host pushes, with the line it is pushed on. */
+export type HeldThreadSubscription = ThreadSubscription & {
+  /** Push one entry already filtered to this member's view; false when the subscription is gone. */
+  append(entry: ThreadEntry): boolean;
+};
 
 /**
  * This Foundry's live line to one Kingdom, as its Installation. Kingdom pushes a snapshot of the
@@ -201,6 +225,10 @@ export class KingdomInstallationConnection {
   private revoked = false;
   private viewerUrl: string | null = null;
   private firstContact: PromiseWithResolvers<void> = Promise.withResolvers<void>();
+  /** Snapshot entries already reported unreadable, so a Kingdom ahead of this package warns once. */
+  private reported = new Set<string>();
+  /** Hosted Signets the latest snapshot couldn't read (`UNKNOWN_HOSTED`: the list itself). */
+  private droppedHosted: ReadonlySet<string> = new Set([UNKNOWN_HOSTED]);
   constructor(
     url: string,
     integrations: readonly KingdomIntegration[],
@@ -223,6 +251,23 @@ export class KingdomInstallationConnection {
   /** The Signets this Foundry holds an enrollment for at this Kingdom, as of the last snapshot. */
   get signets(): readonly HeldSignet[] {
     return this.held;
+  }
+  /** The Signets issued on this Foundry's integrations at this Kingdom, as of the last snapshot. */
+  get hostedSignets(): readonly HostedSignet[] {
+    return this.latest?.hostedSignets ?? [];
+  }
+  /** Hosted Signets the latest snapshot couldn't read; everything, until a snapshot arrives. */
+  get hostedDropped(): ReadonlySet<string> {
+    return this.droppedHosted;
+  }
+  /** The members' live views this host is pushing through this Kingdom. */
+  threadSubscriptions(): HeldThreadSubscription[] {
+    const socket = this.socket;
+    if (!socket) return [];
+    return socket.threadSubscriptions().map((subscription) => ({
+      ...subscription,
+      append: (entry) => socket.appendThread(subscription.subscriptionId, entry),
+    }));
   }
   all() {
     return [...this.integrations.values()];
@@ -252,6 +297,7 @@ export class KingdomInstallationConnection {
         viewerUrl: this.viewerUrl,
         sessionCount: this.options.sessionCount,
         ...this.options.socket,
+        ...(this.options.threads ? { threads: this.options.threads } : {}),
         onSnapshot: (snapshot) => this.receive(snapshot),
         onRevoked: () => {
           this.revoked = true;
@@ -299,6 +345,27 @@ export class KingdomInstallationConnection {
       at: Date.now(),
       signetIds: new Set(snapshot.signets.map((signet) => signet.signetId)),
     };
+    // Read per entry (signet 0.5): what this package can't read is reported once, never the snapshot.
+    for (const dropped of snapshot.dropped) {
+      const key = `${dropped.list}|${dropped.id ?? dropped.index}|${dropped.reason}`;
+      if (this.reported.has(key)) continue;
+      this.reported.add(key);
+      this.warn(
+        `[Kingdom] ${this.url} snapshot entry ${dropped.list}[${dropped.index}]${dropped.id ? ` (${dropped.id})` : ''} unreadable: ${dropped.reason}`,
+      );
+    }
+    // A hosted Signet this package couldn't read is not gone; a missing list (a Kingdom before
+    // conversations) says nothing about any member (`UNKNOWN_HOSTED`).
+    this.droppedHosted = new Set(
+      snapshot.dropped
+        .filter((entry) => entry.list === 'hostedSignets')
+        .map((entry) => (entry.index === -1 ? UNKNOWN_HOSTED : (entry.id ?? UNKNOWN_HOSTED))),
+    );
+    try {
+      this.options.onHostedChanged?.();
+    } catch (error) {
+      this.warn(`[Kingdom] ${this.url} hosted Signets not applied: ${(error as Error).message}`);
+    }
     await this.hold();
     this.firstContact.resolve();
     this.changed();
@@ -411,6 +478,30 @@ export class KingdomInstallationConnections {
       this.connections.delete(connection.url);
     }
     this.options.onChange?.();
+  }
+  /**
+   * Serve the conversations this Foundry hosts on every Installation socket (bound before `start`;
+   * a socket already open takes them on its next connect).
+   */
+  serveThreads(
+    threads: ThreadHost,
+    onHosted: (hosted: readonly HostedSignet[], dropped: ReadonlySet<string>) => void,
+  ) {
+    this.options.threads = threads;
+    // Every Kingdom's snapshot is read together: the union of what they list and couldn't read.
+    this.options.onHostedChanged = () =>
+      onHosted(
+        this.hostedSignets(),
+        new Set(this.all().flatMap((connection) => [...connection.hostedDropped])),
+      );
+  }
+  /** Every Signet issued on this Foundry's integrations, across paired Kingdoms. */
+  hostedSignets(): HostedSignet[] {
+    return this.all().flatMap((connection) => [...connection.hostedSignets]);
+  }
+  /** Every member's live view this host is pushing, across paired Kingdoms. */
+  threadSubscriptions(): HeldThreadSubscription[] {
+    return this.all().flatMap((connection) => connection.threadSubscriptions());
   }
   /** Runs a pairing against `url` without the live connection dropping the Signet it collects. */
   whilePairing<T>(url: string, pair: () => Promise<T>): Promise<T> {

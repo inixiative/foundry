@@ -66,6 +66,8 @@ import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
 import type { StageConfig, StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
+import type { ConversationService } from './conversations/service';
+import { lateConversationWrapper } from './conversations/types';
 import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -91,7 +93,9 @@ import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-pr
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
 import { BunScript } from './tools/bun-script';
+import { CONVERSATION_TOOL_DESCRIPTION, ConversationTool } from './tools/conversation';
 import { registerKingdomAccess } from './tools/kingdom-access';
+import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
@@ -588,6 +592,13 @@ const sourceResolver = createSourceResolver({ memory });
 
 const tools = new ToolRegistry();
 registerKingdomAccess(tools, config.kingdomAccess);
+// Agent conversations (docs/reference/CONVERSATIONS.md): the host's send_to_member and pass_conch, and
+// the joining side's kingdom_post, reach the viewer's conversation wrapper once it exists.
+let conversationService: ConversationService | null = null;
+// Hosting needs a paired Kingdom: an unpaired Foundry's sessions don't carry tools with no job.
+if (config.kingdomIntegrations?.length)
+  tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
+registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -692,6 +703,8 @@ const runtimeManager = new ThreadRuntimeManager({
   // to the thread bus, auxiliaries (classifier/router/cartographer/wardens)
   // to a side bus that never invalidates the central ledger.
   sessionAdapter,
+  // Conversation threads are always wrapped and carry their members' notes; bound once the viewer exists.
+  conversations: lateConversationWrapper(() => conversationService ?? undefined),
 });
 
 const factory = new ThreadFactory({
@@ -990,6 +1003,7 @@ const viewer = await startViewer({
     : {}),
 });
 toolGateFor = viewer.toolGate;
+conversationService = viewer.conversations;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

@@ -14,6 +14,7 @@
 
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
+import { ProjectConversations } from './conversation-members.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { DevicesSection } from './devices.js';
 import { FeedbackSettings } from './feedback.js';
@@ -549,6 +550,8 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
     return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. Its controls arrive with the Gloss rollout.</${ComingSoon}>`;
   if (section === 'chorus')
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
+  if (section === 'conversations')
+    return html`<${ProjectConversations} key=${projectId} projectId=${projectId} />`;
   if (section === 'overrides')
     return html`<${ComingSoon}>Overrides: this project's own defaults, agents and layers on top of Foundry's. Until then a project inherits everything from Foundry settings (edit <code>projects[id]</code> in settings.json to override by hand).</${ComingSoon}>`;
   if (section === 'sources') {
