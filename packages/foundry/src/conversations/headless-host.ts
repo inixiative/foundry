@@ -7,9 +7,9 @@
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import {
   ActionQueue,
-  ContextLayer,
   ContextStack,
   EventStream,
+  FileMemory,
   Harness,
   InterventionLog,
   type LLMMessage,
@@ -17,13 +17,20 @@ import {
   newId,
   ToolRegistry,
 } from '@inixiative/foundry-core';
-import { buildAgents, ThreadFactory } from '../agents/thread-factory';
+import { ProjectRegistry } from '../agents/project';
+import {
+  buildAgents,
+  buildLayers,
+  createSourceResolver,
+  ThreadFactory,
+} from '../agents/thread-factory';
 import { ThreadRuntimeManager } from '../agents/thread-runtime';
 import { pairKingdomIntegration } from '../providers/kingdom-pairing';
 import { CONVERSATION_TOOL_DESCRIPTION, ConversationTool } from '../tools/conversation';
-import { ConfigStore } from '../viewer/config';
+import { ConfigStore, createProject } from '../viewer/config';
 import { createViewer } from '../viewer/server';
 import {
+  type HeadlessHostCommand,
   type HeadlessHostEvent,
   type HeadlessThreadState,
   headlessHostCommandSchema,
@@ -66,9 +73,9 @@ async function main() {
   const options = headlessHostOptionsSchema.parse(JSON.parse(process.env[headlessHostEnv] ?? '{}'));
   // why: HOME holds the machine's Archive token, device identity and logins; a test host must not touch them.
   const home = relative(dirname(resolve(options.configDir)), process.env.HOME ?? '/');
-  if (home.startsWith('..') || isAbsolute(home))
+  if (!home || home.startsWith('..') || isAbsolute(home))
     throw Error(
-      'Give the headless host its own HOME beside its configDir: it runs as its own machine',
+      'Give the headless host its own HOME inside the directory holding its configDir: it runs as its own machine',
     );
   const store = new ConfigStore(options.configDir);
   if (!(await store.load()).kingdomIntegrations?.length)
@@ -79,6 +86,10 @@ async function main() {
       socketOptions: { retryBaseMs: 50 },
     });
   await store.update((draft) => {
+    if (options.project && !Object.values(draft.projects).some((p) => p.path === options.project)) {
+      const project = createProject(options.project, { label: 'Headless project' });
+      draft.projects = { ...draft.projects, [project.id]: project };
+    }
     draft.defaults.provider = 'claude-code';
     draft.defaults.model = 'claude-opus-5-5';
     draft.layers = {};
@@ -101,11 +112,11 @@ async function main() {
   const [integration] = config.kingdomIntegrations ?? [];
   if (!integration) throw Error('Pairing saved no Kingdom integration');
 
-  const knowledge = options.warden
-    ? new ContextLayer({ id: options.warden.domain, segment: 'domain-knowledge' })
-    : null;
-  if (knowledge && options.warden) knowledge.set(options.warden.knowledge);
-  const stack = new ContextStack(knowledge ? [knowledge] : []);
+  const memory = new FileMemory(`${options.configDir}/memory`);
+  await memory.load();
+  const sourceResolver = createSourceResolver({ memory });
+  const stack = new ContextStack(buildLayers(config, { sourceResolver }));
+  await stack.warmAll();
   const events = new EventStream();
   const queue = new ActionQueue();
   const tools = new ToolRegistry();
@@ -136,8 +147,10 @@ async function main() {
       return { model: 'headless', content: answer.content };
     },
   };
+  // why: stands where start.ts's subscription decision host does: its id, and a prestart, so Warden caches warm at thread start.
   const warden: LLMProvider = {
-    id: 'headless-warden',
+    id: 'subscription-decisions',
+    prestart() {},
     async complete(messages, opts) {
       const answer = await ask('warden', opts?.threadId ?? null, messages.map(textOf).join('\n'));
       return { model: 'headless', content: answer.content };
@@ -146,22 +159,34 @@ async function main() {
   const runtime = new ThreadRuntimeManager({
     config,
     llm: warden,
+    providers: new Map([
+      [agent.id, agent],
+      [warden.id, warden],
+    ]),
     eventStream: events,
-    domains: options.warden
-      ? [{ domain: options.warden.domain, layerId: options.warden.domain, guardTriggers: [] }]
-      : [],
+    resolveSource: sourceResolver,
     learning: { enabled: false },
     conversations: lateConversationWrapper(() => viewer?.conversations ?? undefined),
     log() {},
-    warn() {},
+    warn: (line) => console.warn(line),
   });
+  const agents = { provider: agent, tools };
   const factory = new ThreadFactory({
     stack,
     runtime,
     nativeTools: tools,
-    agents: buildAgents(config, stack, { provider: agent, tools }),
+    agents: buildAgents(config, stack, agents),
+    configuration: { config, layers: { sourceResolver }, agents },
   });
-  const harness = new Harness(factory.create('main', { description: 'Main conversation thread' }));
+  const projectRegistry = new ProjectRegistry();
+  projectRegistry.loadFromConfigs(config.projects);
+  const firstProject = projectRegistry.all.values().next().value;
+  const main = factory.create('main', {
+    description: 'Main conversation thread',
+    ...(firstProject ? { projectId: firstProject.id } : {}),
+  });
+  firstProject?.addThread(main);
+  const harness = new Harness(main);
   harness.setDefaultExecutor('worker');
   viewer = createViewer({
     harness,
@@ -172,6 +197,7 @@ async function main() {
     kingdomIntegrations: config.kingdomIntegrations,
     actionQueue: queue,
     threadFactory: factory,
+    projectRegistry,
   });
   const host = viewer;
   const { conversations, localStore } = host;
@@ -217,10 +243,9 @@ async function main() {
     localStore.close();
   };
 
-  process.on('message', async (message) => {
-    const command = headlessHostCommandSchema.parse(message);
+  const answer = async (command: HeadlessHostCommand) => {
     if (command.type === 'model') {
-      answers.get(command.callId)?.({ content: command.content, sends: command.sends });
+      answers.get(command.callId)?.({ content: command.content, sends: command.sends ?? [] });
       answers.delete(command.callId);
       return;
     }
@@ -246,6 +271,20 @@ async function main() {
       body = text ? JSON.parse(text) : null;
     } catch {}
     emit({ type: 'reply', requestId: command.requestId, status: response.status, body });
+  };
+  // A command that fails is answered (500), so the parent never waits on a host that dropped it.
+  process.on('message', (message) => {
+    const command = headlessHostCommandSchema.safeParse(message);
+    if (!command.success) return emit({ type: 'failed', error: command.error.message });
+    answer(command.data).catch((error: unknown) => {
+      const requestId = 'requestId' in command.data ? command.data.requestId : null;
+      const text = error instanceof Error ? error.message : String(error);
+      emit(
+        requestId
+          ? { type: 'reply', requestId, status: 500, body: { error: text } }
+          : { type: 'failed', error: text },
+      );
+    });
   });
   emit({ type: 'ready', integrationId: integration.integrationId });
 }

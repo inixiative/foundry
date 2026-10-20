@@ -12,7 +12,7 @@ import { z } from 'zod';
  */
 
 /** What the parent passes in `FOUNDRY_HEADLESS_HOST` (JSON). */
-/** Started with its own HOME beside `configDir` (it refuses any other): it runs as its own machine. */
+/** Started with its own HOME, a directory inside the one holding `configDir` (it refuses any other): it runs as its own machine. */
 export const headlessHostOptionsSchema = z.strictObject({
   /** The Kingdom API origin to pair with (once per directory) and serve conversations through. */
   url: z.string().url(),
@@ -20,8 +20,12 @@ export const headlessHostOptionsSchema = z.strictObject({
   configDir: z.string().min(1),
   /** The installation name shown in Kingdom's review. */
   name: z.string().min(1).max(120).default('Headless Foundry'),
-  /** One Warden over a domain-knowledge layer, so member notes get the chorus's `consumed` pass. */
-  warden: z.strictObject({ domain: z.string().min(1), knowledge: z.string() }).optional(),
+  /**
+   * A repository to register as the host's project (absolute path), as `start.ts` registers its
+   * directory: its committed `.foundry/` (regions, `project.json` with the chorus and `conversations`
+   * settings) gives the project's region Wardens. Threads opened with `cwd` there belong to it.
+   */
+  project: z.string().min(1).optional(),
 });
 export type HeadlessHostOptions = z.input<typeof headlessHostOptionsSchema>;
 

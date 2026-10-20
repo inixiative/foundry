@@ -2129,6 +2129,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     if (this._disposed) return;
     const flow = this.flowOrchestrator;
     const node = moment.node && moment.node.id !== this.thread.id ? moment.node : undefined;
+    // As before a turn: a Warden whose cache is still warming (a thread just started) is waited for
+    // within the deadline, not skipped as cold.
+    for (const shortfall of await flow.warmWithin(
+      [...this.domainLibrarians].map(([id, lib]) => ({ id, warm: () => lib.warm() })),
+    ))
+      this._warn(
+        `  [flow:${this.thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
+      );
     let report: BriefReport;
     try {
       report = await moment.ask(flow);
