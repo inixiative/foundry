@@ -1,5 +1,5 @@
 {
-  "version": "2.1.303",
+  "version": "2.1.304",
   "status": 200,
   "body": {
     "native": "tangerine-lighthouse-42",
@@ -9,7 +9,7 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-10-18T23:59:03.691Z",
+    "recordedAt": "2026-10-20T00:30:26.933Z",
     "agentSession": "0.6.7",
     "environment": "terminal"
   }
