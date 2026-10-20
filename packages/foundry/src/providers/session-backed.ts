@@ -1003,7 +1003,11 @@ export class SessionBackedProvider implements LLMProvider {
       // (Codex) refuses on the next turn instead of running warm past the new rules.
       // A thread rebuilt with a new native bridge (an archived thread reopened: its Thread object,
       // and so its bridge, is new) relaunches the same way; a tool-policy change never does.
-      const bridgeMoved = this._bridgeSources.get(key) !== source;
+      // Both ends carry a bridge: a call without one never relaunches a bridged session (or back).
+      const bridgeMoved =
+        this._bridgeSources.get(key) !== source &&
+        source !== undefined &&
+        current.bridgeKey !== undefined;
       if (
         (changed.includes('launchRevision') ||
           changed.includes('structuralRules') ||

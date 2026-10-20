@@ -320,3 +320,81 @@ test("the owner's message to an archived thread brings it back: same id and jour
     expect.arrayContaining(['before archive', 'are you still there?']),
   );
 });
+
+test('archive, then a message in the same daemon run, on the real provider: the thread is rebuilt and its native session resumes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'native-revival-same-run-'));
+  const cli = claudeCli(new Set(), `claude-${crypto.randomUUID()}`);
+  const adapter = new ClaudeCodeSessionAdapter({
+    store: new FileExternalSessionStore(join(dir, 'sessions.json')),
+    contextBudget: false,
+    defaults: { spawn: (argv) => cli.spawn(argv) },
+  });
+  cleanups.push(() => adapter.releaseAll());
+  const provider = new SessionBackedProvider({
+    id: 'claude-code',
+    adapter,
+    defaultModel: 'haiku',
+    defaultCwd: dir,
+  });
+  const config = starterConfig('claude-code', 'haiku');
+  config.agents = {
+    worker: {
+      id: 'worker',
+      kind: 'executor',
+      provider: 'claude-code',
+      model: 'haiku',
+      prompt: '',
+      temperature: 0,
+      visibleLayers: [],
+      peers: [],
+      maxDepth: 1,
+      enabled: true,
+    },
+  };
+  const stack = new ContextStack();
+  const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider }) });
+  const harness = new Harness(factory.create('main'));
+  harness.setDefaultExecutor('worker');
+  const configStore = new ConfigStore(dir);
+  await configStore.save(config);
+  const viewer = createViewer({
+    harness,
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+    configStore,
+    threadFactory: factory,
+  });
+  cleanups.push(() => {
+    viewer.localStore!.close();
+    for (const t of viewer.directory.all()) t.dispose();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await viewer.app.request('/api/threads', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'thread_same_run', cwd: dir }),
+  });
+  const say = (id: string, message: string) =>
+    viewer.app.request('/api/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, threadId: 'thread_same_run', message }),
+    });
+  expect((await say('turn_one', 'before archive')).status).toBe(200);
+  expect(cli.launches).toHaveLength(1);
+  await Bun.sleep(20);
+  const binding = await adapter.getExternalSessionId('thread_same_run');
+  expect(binding).toBeTruthy();
+  const archived = viewer.directory.get('thread_same_run')!;
+  archived.archive();
+  viewer.localStore!.saveThread(archived);
+  const answer = await say('turn_two', 'back again?');
+  expect(answer.status).toBe(200);
+  expect(viewer.directory.get('thread_same_run')!.disposed).toBe(false);
+  // The rebuilt thread's turn reached the native session: the cached one, or a relaunch resuming it.
+  const last = cli.launches.at(-1)!;
+  expect(last.turns.at(-1)).toContain('back again?');
+  if (cli.launches.length > 1) expect(last.argv).toContain(binding!);
+  expect(last.turns.at(-1)).not.toContain('# The conversation so far');
+});

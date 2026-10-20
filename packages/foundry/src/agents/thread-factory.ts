@@ -432,17 +432,17 @@ export class ThreadFactory {
     return [...deferred, ...(this._runtime?.reconfigure(config) ?? [])];
   }
 
+  /** Whether `create` would build a thread for this project (a disabled project's are refused). */
+  canCreate(projectId: string): boolean {
+    return this._configuration?.config.projects[projectId]?.enabled !== false;
+  }
+
   /**
    * Create a Thread with its own stack and agents, seeded from the template.
    * Scope-aware sources are bound to this thread; the project is resolved
    * lazily so assignment after creation (project.addThread) is honored on
    * every later warm and refresh.
    */
-  /** Whether `create` would build a thread for this project (a disabled project's are refused). */
-  canCreate(projectId: string): boolean {
-    return this._configuration?.config.projects[projectId]?.enabled !== false;
-  }
-
   create(id: string, opts?: ThreadConfig): Thread {
     let thread: Thread | undefined;
     const scope: OwnershipScope = {

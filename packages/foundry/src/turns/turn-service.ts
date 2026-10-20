@@ -275,6 +275,7 @@ export class TurnService {
         status: 409,
         body: { error: 'turn already accepted or live capacity unavailable', id: turnId },
       };
+    const before = this.deps.directory.get(threadId);
     const reopened = this.reopen(threadId);
     const harness = this.harness(threadId);
     if (!harness) return { ok: false, status: 404, body: { error: 'thread not found' } };
@@ -290,8 +291,19 @@ export class TurnService {
     try {
       localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
     } catch (err) {
-      // Not accepted after all: the thread goes back to archived (its store row never left it).
-      if (reopened) harness.thread.archive();
+      // Not accepted after all: the thread goes back to archived, in memory and in the store
+      // (reopen recorded it open), with its original archive time.
+      if (reopened) {
+        const archivedAt = before?.meta.archivedAt;
+        harness.thread.archive();
+        if (archivedAt !== undefined) harness.thread.meta.archivedAt = archivedAt;
+        try {
+          localStore?.saveThread(harness.thread);
+        } catch {
+          /* the store may be what failed; restore reads the archived row it still holds */
+        }
+        streams.threadsChanged(threadId);
+      }
       return {
         ok: false,
         status: 503,
