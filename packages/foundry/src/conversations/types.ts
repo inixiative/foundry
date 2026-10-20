@@ -162,6 +162,13 @@ export interface ConversationWrapper {
    * delivered to it.
    */
   deliverNotes(threadId: string, turnId: string | undefined): PromptBlock[];
+  /**
+   * Who is in and each member's terms, in plain words (§4.5); undefined: not a conversation.
+   * `held`: the thread's context already carries a roster, so one is due even when no member is left.
+   */
+  roster(threadId: string, held?: boolean): string | undefined;
+  /** The floor now, for the turn being sent; undefined: not a conversation. */
+  floorNow(threadId: string): string | undefined;
   /** One admitted post, labelled, for the Wardens' between-turns pass on it. */
   notePost(
     threadId: string,
@@ -177,6 +184,8 @@ export function lateConversationWrapper(
   return {
     wraps: (threadId) => resolve()?.wraps(threadId) ?? false,
     deliverNotes: (threadId, turnId) => resolve()?.deliverNotes(threadId, turnId) ?? [],
+    roster: (threadId, held) => resolve()?.roster(threadId, held),
+    floorNow: (threadId) => resolve()?.floorNow(threadId),
     notePost: (threadId, signetId, postId) => resolve()?.notePost(threadId, signetId, postId),
   };
 }

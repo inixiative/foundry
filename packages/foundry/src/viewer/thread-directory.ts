@@ -54,6 +54,45 @@ export class ViewerThreadDirectory {
   }
 
   /**
+   * Bring an archived thread back: a message or a member's post arrived for it (docs/reference/
+   * CONVERSATIONS.md §4.2, revival). Archiving disposed the Thread object for good, so the thread
+   * is rebuilt the way a restart restores it (`factory.create` with its stored meta), with the same
+   * id, journal and native binding, and replaces the archived object. Returns the live thread, the
+   * thread itself when it isn't archived, or undefined when it can't be reopened (unknown, an
+   * observed subagent's record, no factory, or a project that is gone).
+   */
+  reopen(id: string): Thread | undefined {
+    const archived = this.get(id);
+    if (!archived || !archived.disposed) return archived;
+    if (!this.canReopen(id) || !this.factory) return undefined;
+    const meta: ThreadMeta = structuredClone(archived.meta);
+    meta.status = 'waiting';
+    delete meta.archivedAt;
+    const project = meta.projectId ? this.projects?.get(meta.projectId) : undefined;
+    const thread = this.factory.create(id, meta);
+    Object.assign(thread.meta, meta);
+    if (project) project.replaceThread(thread);
+    // Restore lists project threads here too: the archived object goes wherever it was.
+    if (!project || this.threads.has(id)) this.threads.set(id, thread);
+    return thread;
+  }
+
+  /** An archived thread this directory can rebuild (see `reopen`). */
+  canReopen(id: string): boolean {
+    const thread = this.get(id);
+    // The main thread is the viewer's own Harness thread: nothing rebuilds the objects holding it.
+    if (!thread || thread === this.main || id === this.main.id) return false;
+    const project = thread.meta.projectId ? this.projects?.get(thread.meta.projectId) : undefined;
+    return (
+      thread.disposed &&
+      thread.meta.status === 'archived' &&
+      !thread.meta.spawn?.observed &&
+      !!this.factory &&
+      (!thread.meta.projectId || (!!project && this.factory.canCreate(thread.meta.projectId)))
+    );
+  }
+
+  /**
    * An observed subagent's child thread (spec A): recorded from the native stream, viewable, never
    * dispatched to — no runtime, no Wardens, no agents.
    */

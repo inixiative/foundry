@@ -36,6 +36,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
+import { conversationFloor, conversationRoster } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
   type ConversationRecord,
@@ -56,6 +57,13 @@ export interface ConversationServiceDeps {
   store: LocalSessionStore;
   /** A thread this Foundry runs (restored threads included). */
   thread: (threadId: string) => Thread | undefined;
+  /**
+   * Bring an archived thread back (TurnService.reopen): an admitted post revives it (§4.2). The
+   * turn path reopens on its own; a note needs this.
+   */
+  reopen?: (threadId: string) => void;
+  /** Whether `reopen` can bring this archived thread back; one that can't stays closed. */
+  canReopen?: (threadId: string) => boolean;
   /** The one turn path; bound once the routes exist. */
   turns: () => {
     accept(request: TurnRequest): TurnAcceptance;
@@ -267,13 +275,17 @@ export class ConversationService implements ConversationWrapper {
     }
     if (outcome.kind === 'duplicate')
       return threadResult({ accepted: true as const, journalSeq: outcome.seq, duplicate: true });
+    // An archived thread is revived by an admitted post (a `turn` post was reopened by the turn
+    // path already); from here on its live object is the one the runtime runs.
+    if (thread.disposed) this.deps.reopen?.(thread.id);
+    const live = this.deps.thread(thread.id) ?? thread;
     this.pump(thread.id);
-    this.deps.journalChanged?.(thread);
+    this.deps.journalChanged?.(live);
     this.deps.changed?.(thread.id);
     // A note is content the thread takes in: the chorus is asked between turns (§4.2, the
     // `consumed` moment), and what it says rides the next turn with the note.
-    if (outcome.post.delivery === 'note')
-      void thread.signals
+    if (outcome.post.delivery === 'note' && !live.disposed)
+      void live.signals
         .emit({
           id: newId('sig-member-post'),
           kind: 'member_post',
@@ -615,9 +627,70 @@ export class ConversationService implements ConversationWrapper {
   // The thread's runtime and the viewer read these
   // -----------------------------------------------------------------------
 
-  /** A conversation thread is always wrapped: its notes must reach the executor (§4.1). */
+  /**
+   * A conversation thread is always wrapped: its notes and its roster must reach the executor
+   * (§4.1). It is one once its wrapper has state, or as soon as a grant selects it (a member joined
+   * and hasn't posted yet).
+   */
   wraps(threadId: string): boolean {
-    return this.deps.store.conversation(threadId) !== undefined;
+    return (
+      this.deps.store.conversation(threadId) !== undefined ||
+      this.deps.hosted().some((signet) => this.grantOn(signet, threadId) !== undefined)
+    );
+  }
+
+  /**
+   * The roster the main agent reads ("F1 follow-ups"): who is in, and each member's lens in plain
+   * words. Read on every turn of a conversation thread, so a join, a leave or a revision reaches the
+   * next turn. `held`: the thread's context already carries a roster, so one is due even when no
+   * member is left.
+   */
+  roster(threadId: string, held = false): string | undefined {
+    if (!held && !this.wraps(threadId)) return undefined;
+    if (!this.deps.thread(threadId)) return undefined;
+    return conversationRoster(
+      this.members(threadId).map((member) => ({
+        id: member.member.id,
+        displayName: member.displayName,
+        listed: member.listed,
+        ...(member.recipientModel ? { recipientModel: member.recipientModel } : {}),
+        ...(member.lens
+          ? { lens: { view: member.lens.view, delivery: member.lens.delivery } }
+          : {}),
+        outbound: member.outbound,
+      })),
+    );
+  }
+
+  /** The floor now (mode, conch, reply invitations, a pause), for the turn being sent. */
+  floorNow(threadId: string): string | undefined {
+    if (!this.wraps(threadId)) return undefined;
+    const thread = this.deps.thread(threadId);
+    if (!thread) return undefined;
+    const record = this.record(threadId);
+    const floor = this.floorState(thread);
+    const now = Date.now();
+    const members = this.members(threadId);
+    const name = (id: string) =>
+      members.find((member) => member.member.id === id)?.displayName ?? id;
+    const invited = new Map<string, number>();
+    for (const invitation of record.invitations)
+      if (
+        !invitation.standing &&
+        invitation.to.kind === 'signet' &&
+        (!invitation.expiresAt || Date.parse(invitation.expiresAt) > now)
+      )
+        invited.set(invitation.to.id, (invited.get(invitation.to.id) ?? 0) + 1);
+    return conversationFloor({
+      floor: floor.mode,
+      conch:
+        floor.holder?.kind === 'signet'
+          ? { holder: name(floor.holder.id), expiresAt: floor.expiresAt }
+          : null,
+      invited: [...invited].map(([id, invitations]) => ({ displayName: name(id), invitations })),
+      paused:
+        this.paused(threadId, record) && record.paused ? { reason: record.paused.reason } : null,
+    });
   }
 
   /**
@@ -756,8 +829,11 @@ export class ConversationService implements ConversationWrapper {
   private closedReason(thread: Thread | undefined): ThreadRefusal | null {
     // An observed subagent's thread is a record of native work, not a conversation anyone joins.
     if (!thread || thread.meta.spawn?.observed) return 'unknown_thread';
-    // The owner can unarchive; until then nothing is recorded on it (TurnService refuses it too).
-    if (thread.disposed || thread.meta.status === 'archived') return 'thread_closed';
+    // An archived thread is not closed to its members: an admitted post brings it back (§4.2,
+    // Aron 2026-10-20), when it can be rebuilt. One that can't, or one disposed otherwise (its
+    // project removed), is closed.
+    if (thread.disposed && !(thread.meta.status === 'archived' && this.deps.canReopen?.(thread.id)))
+      return 'thread_closed';
     return null;
   }
 

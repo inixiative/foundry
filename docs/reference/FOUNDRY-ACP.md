@@ -301,7 +301,7 @@ ACP over stdio has no remote mode of its own.
 ### 7.3 Thread identity per ACP session
 
 - **One ACP session = one Foundry thread.** `sessionId === thread.id`.
-- **Restarts:** threads persist in the local store and are restored on daemon restart (`pf/viewer/server.ts:227-232`). A host that kept the `sessionId` calls `session/resume` (slice 1) or `session/load` (slice 2) and gets the same thread with its knowledge, ledger and journal.
+- **Restarts:** threads persist in the local store and are restored on daemon restart (`pf/viewer/server.ts:227-232`). A host that kept the `sessionId` calls `session/resume` (slice 1) or `session/load` (slice 2) and gets the same thread with its knowledge, ledger and journal. When the thread's native session is gone (its process died, its transcript or rollout was cleaned up, the thread was archived), the next turn brings it back: it resumes the binding, or starts a fresh native session seeded from the journal ([CONVERSATIONS.md](CONVERSATIONS.md), "Revival when the native session is gone").
 - **Two hosts, one thread:** their turns queue on the thread (§2.2).
 
 ### 7.4 Project and worktree mapping

@@ -37,6 +37,7 @@ import {
   validateStages,
   WARDEN_CHARTER_VERSION,
 } from '../classify';
+import { CONVERSATION_FLOOR_LAYER, CONVERSATION_ROSTER_LAYER } from '../conversations/roster';
 import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
@@ -1190,6 +1191,47 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       stack.addLayer(reception);
     }
 
+    // A conversation thread holds its roster the same way: a standing layer, read through the
+    // wrapper (who is in, each member's lens in plain words, the floor). Its source reports a change
+    // when the roster moves (a join, a leave, a revision, the conch), so the next turn re-warms it
+    // and delivery sends it as the replacing version; an unchanged roster is not sent again.
+    const conversations = deps.conversations;
+    let rosterLayer: ContextLayer | undefined;
+    let floorLayer: ContextLayer | undefined;
+    const refreshRoster = async () => {
+      if (!conversations) return;
+      if (!rosterLayer) {
+        if (conversations.roster(thread.id) === undefined) return;
+        let loaded: string | undefined;
+        rosterLayer = new ContextLayer({
+          id: CONVERSATION_ROSTER_LAYER,
+          owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
+          sources: [
+            {
+              id: CONVERSATION_ROSTER_LAYER,
+              load: async () => {
+                loaded = conversations.roster(thread.id, true) ?? '';
+                return loaded;
+              },
+              changed: () => (conversations.roster(thread.id, true) ?? '') !== loaded,
+            },
+          ],
+        });
+        stack.addLayer(rosterLayer);
+        // The floor moves with nearly every exchange: it rides each turn, never the standing context.
+        floorLayer = new ContextLayer({
+          id: CONVERSATION_FLOOR_LAYER,
+          owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
+          perTurn: true,
+        });
+        stack.addLayer(floorLayer);
+      }
+      rosterLayer.checkStaleness();
+      if (!rosterLayer.isWarm) await rosterLayer.warm();
+      const floor = conversations.floorNow(thread.id) ?? '';
+      if (floorLayer && floorLayer.content !== floor) floorLayer.set(floor, 'foundry');
+    };
+
     // Classifier/router auxiliaries are named by the factory-built agents
     // (see thread-factory.ts); list them so their native events can be bound.
     for (const [agentId, agentCfg] of Object.entries(deps.config.agents)) {
@@ -1256,6 +1298,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Member posts delivered as notes ride the owner's turn, labelled, after the fresh advice.
       const memberNotes = deps.conversations?.deliverNotes(thread.id, identity?.messageId) ?? [];
       if (memberNotes.length) flow.queueNotes(memberNotes);
+      await refreshRoster();
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
         plan = await flow.preMessage(message, identity);

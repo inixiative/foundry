@@ -122,6 +122,18 @@ export class Project {
     if (this.status !== 'archived') this.status = 'active';
   }
 
+  /**
+   * Put a rebuilt thread in place of its archived (disposed) object with the same id: an archived
+   * thread that was reopened (`ViewerThreadDirectory.reopen`). A live thread is never replaced.
+   */
+  replaceThread(thread: Thread): void {
+    const previous = this._threads.get(thread.id);
+    if (previous && !previous.disposed)
+      throw new Error(`Thread "${thread.id}" is live in project "${this.id}"`);
+    this._threads.delete(thread.id);
+    this.addThread(thread);
+  }
+
   getThread(id: string): Thread | undefined {
     return this._threads.get(id);
   }

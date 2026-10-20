@@ -302,3 +302,85 @@ test("a host's launch change relaunches the idle executor session on the next tu
   expect(adapter.created[2].permissionMode).toBeUndefined();
   expect(adapter.created[2].toolGate).toBeUndefined();
 });
+
+test('a thread rebuilt with a new native bridge (an archived thread reopened) relaunches its idle session, resuming the binding, instead of refusing', async () => {
+  class BridgedSession extends FakeSession {
+    readonly admissionProtocol = 'prewrite-v1';
+    private readonly attempts = new Map<string, Record<string, unknown>>();
+    inspectAttempt(id: string) {
+      return this.attempts.get(id);
+    }
+    override async send(
+      message: string,
+      opts?: { timeout?: number; onAdmission?: (attempt: unknown) => Promise<void> },
+    ): Promise<SessionResult> {
+      const admissionId = `admission-${this.sent.length + 1}-${Math.random()}`;
+      await opts?.onAdmission?.({
+        admissionId,
+        dispatch: 'not-dispatched',
+        nativeOutcome: 'unknown',
+        localOutcome: 'pending',
+      });
+      const settled = {
+        admissionId,
+        dispatch: 'attempted',
+        nativeOutcome: 'completed',
+        localOutcome: 'resolved',
+        rpcOutcome: 'resolved',
+      };
+      this.attempts.set(admissionId, settled);
+      return { ...(await super.send(message, opts)), ...settled } as SessionResult;
+    }
+  }
+  const adapter = new FakeAdapter() as FakeAdapter & {
+    releaseIdleSession(session: HarnessSession): Promise<'released'>;
+  };
+  adapter.createSession = async (opts): Promise<HarnessSession> => {
+    adapter.created.push(opts);
+    const session = new BridgedSession();
+    adapter.sessions.push(session);
+    return session as unknown as HarnessSession;
+  };
+  const released: HarnessSession[] = [];
+  adapter.releaseIdleSession = async (session) => {
+    released.push(session);
+    session.kill();
+    return 'released';
+  };
+  const lease = (id: string) =>
+    ({
+      id,
+      configurationHash: id,
+      owner: { threadId: 'thread' },
+      check() {},
+      register() {},
+      observe() {},
+      evidence: () => [],
+      close: async () => {},
+    }) as never;
+  const source = (key: string) =>
+    ({ key, check() {}, acquire: async () => lease(`lease-${key}`) }) as never;
+  const observation = (bridge: unknown, messageId: string) =>
+    ({
+      owner: { threadId: 'thread', messageId, generation: 'g' },
+      bridge,
+      register: async () => {},
+      observe() {},
+    }) as never;
+  const provider = new SessionBackedProvider({ id: 'claude-code', adapter, defaultModel: 'fable' });
+  const before = source('bridge-before');
+  await provider.complete([{ role: 'user', content: 'first' }], {
+    threadId: 'thread',
+    nativeObservation: observation(before, 'm1'),
+  });
+  // Archived and reopened: the rebuilt Thread object carries a new bridge source.
+  const after = source('bridge-after');
+  await provider.complete([{ role: 'user', content: 'second' }], {
+    threadId: 'thread',
+    nativeObservation: observation(after, 'm2'),
+  });
+  expect(released).toEqual([adapter.sessions[0]]);
+  expect(adapter.created).toHaveLength(2);
+  expect(adapter.created[1]?.nativeBridge).toMatchObject({ id: 'lease-bridge-after' });
+  expect(adapter.sessions[1]!.sent).toHaveLength(1);
+});
