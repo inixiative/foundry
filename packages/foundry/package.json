@@ -1,6 +1,6 @@
 {
   "name": "@inixiative/foundry",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -14,6 +14,8 @@
     "./runtime": "./src/runtime/index.ts",
     "./classify": "./src/classify/index.ts",
     "./kingdom": "./src/kingdom/index.ts",
+    "./headless-host": "./src/conversations/headless-host.ts",
+    "./headless-host/protocol": "./src/conversations/headless-host-protocol.ts",
     "./client": "./src/client/index.ts",
     "./daemon": "./src/daemon/index.ts",
     "./repeats": "./src/feedback/repeats-cli.ts",
