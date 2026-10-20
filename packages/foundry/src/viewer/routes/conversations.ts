@@ -3,7 +3,7 @@
  * @kind route
  * @partOf feature:viewer, feature:conversations
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { floorModeSchema } from '@inixiative/signet';
 import type { Hono } from 'hono';
@@ -185,7 +185,10 @@ export function registerConversationRoutes(
         if (value === null) delete current.conversations;
         else current.conversations = value;
         mkdirSync(dirname(file), { recursive: true });
-        writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
+        // Whole or not at all: a temp file renamed over it. Git tracks the file's history.
+        const temp = `${file}.${process.pid}.tmp`;
+        writeFileSync(temp, `${JSON.stringify(current, null, 2)}\n`);
+        renameSync(temp, file);
       }
     } catch (error) {
       return c.json({ error: (error as Error).message }, 409);

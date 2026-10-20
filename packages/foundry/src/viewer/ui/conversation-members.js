@@ -238,6 +238,12 @@ const LAYER = { default: 'the default', repository: 'the repository', settings: 
 export function ProjectConversations({ projectId }) {
   const [state, setState] = useState(undefined);
   const [draft, setDraft] = useState(null);
+  // Only the fields the owner changed are written: the rest keep coming from their layer.
+  const [touched, setTouched] = useState(new Set());
+  const change = (field, next) => {
+    setDraft(next);
+    setTouched(new Set([...touched, field]));
+  };
   const base = `/api/projects/${encodeURIComponent(projectId)}/conversations`;
   const load = () =>
     fetch(base)
@@ -245,6 +251,7 @@ export function ProjectConversations({ projectId }) {
       .then((body) => {
         setState(body);
         if (body) setDraft(body.settings);
+        setTouched(new Set());
       })
       .catch(() => setState(null));
   // biome-ignore lint/correctness/useExhaustiveDependencies: load once per project.
@@ -254,12 +261,20 @@ export function ProjectConversations({ projectId }) {
   if (state === undefined) return html`<div class="settings-empty">Reading conversations…</div>`;
   if (state === null || !draft)
     return html`<div class="settings-empty">The conversations setting could not be read.</div>`;
-  const value = {
-    floor: draft.floor,
-    maxAgentTurns: Number(draft.maxAgentTurns),
-    conch: { holdSeconds: Number(draft.conch.holdSeconds), agentMayPass: draft.conch.agentMayPass },
-  };
   const save = async (scope, clear) => {
+    // Merged over what that layer already says, so saving one field never pins the others.
+    const layer = (scope === 'me' ? state.mine : state.repository) ?? {};
+    const conch = {
+      ...layer.conch,
+      ...(touched.has('holdSeconds') ? { holdSeconds: Number(draft.conch.holdSeconds) } : {}),
+      ...(touched.has('agentMayPass') ? { agentMayPass: draft.conch.agentMayPass } : {}),
+    };
+    const value = {
+      ...layer,
+      ...(touched.has('floor') ? { floor: draft.floor } : {}),
+      ...(touched.has('maxAgentTurns') ? { maxAgentTurns: Number(draft.maxAgentTurns) } : {}),
+      ...(Object.keys(conch).length ? { conch } : {}),
+    };
     const res = await fetch(base, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -279,21 +294,21 @@ export function ProjectConversations({ projectId }) {
     </div>
     ${state.repositoryError ? html`<p class="settings-desc">${state.repositoryFile}: ${state.repositoryError}</p>` : null}
     <label>Floor
-      <select value=${draft.floor} onChange=${(e) => setDraft({ ...draft, floor: e.target.value })}>
+      <select value=${draft.floor} onChange=${(e) => change('floor', { ...draft, floor: e.target.value })}>
         ${FLOORS.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
       </select> ${from('floor')}</label>
     <label>Agent turns before a pause
       <input type="number" min="1" max="100" value=${draft.maxAgentTurns}
-        onInput=${(e) => setDraft({ ...draft, maxAgentTurns: e.target.value })} /> ${from('maxAgentTurns')}</label>
+        onInput=${(e) => change('maxAgentTurns', { ...draft, maxAgentTurns: e.target.value })} /> ${from('maxAgentTurns')}</label>
     <label>Conch hold (seconds)
       <input type="number" min="10" value=${draft.conch.holdSeconds}
-        onInput=${(e) => setDraft({ ...draft, conch: { ...draft.conch, holdSeconds: e.target.value } })} /> ${from('holdSeconds')}</label>
+        onInput=${(e) => change('holdSeconds', { ...draft, conch: { ...draft.conch, holdSeconds: e.target.value } })} /> ${from('holdSeconds')}</label>
     <label><input type="checkbox" checked=${draft.conch.agentMayPass}
-        onChange=${(e) => setDraft({ ...draft, conch: { ...draft.conch, agentMayPass: e.target.checked } })} />
+        onChange=${(e) => change('agentMayPass', { ...draft, conch: { ...draft.conch, agentMayPass: e.target.checked } })} />
       The agent may pass the conch ${from('agentMayPass')}</label>
     <div class="settings-card-actions">
-      <button class="action-btn" onClick=${() => save('me')}>Set this for me</button>
-      <button class="action-btn" onClick=${() => save('everyone')} title=${`Writes ${state.repositoryFile}`}>Set this for everyone</button>
+      <button class="action-btn" disabled=${!touched.size} onClick=${() => save('me')}>Set this for me</button>
+      <button class="action-btn" disabled=${!touched.size} onClick=${() => save('everyone')} title=${`Writes ${state.repositoryFile}`}>Set this for everyone</button>
       ${state.mine ? html`<button class="action-btn" onClick=${() => save('me', true)}>Drop my override</button>` : null}
     </div>
     ${state.mine ? html`<p class="settings-desc">Your settings override the repository's for: ${Object.keys(state.mine).join(', ')}.</p>` : null}
