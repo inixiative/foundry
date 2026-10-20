@@ -623,10 +623,15 @@ export function createViewer(config: ViewerConfig) {
       service.hostedChanged(hosted, dropped),
     );
     service.raisePending();
-    registerConversationRoutes(app, service, {
-      integrations: async () => (await configStore.load()).kingdomIntegrations ?? [],
-      holders,
-    });
+    registerConversationRoutes(
+      app,
+      service,
+      {
+        integrations: async () => (await configStore.load()).kingdomIntegrations ?? [],
+        holders,
+      },
+      configStore,
+    );
     localStore.onClose(() => service.dispose());
   }
   // "Setting up your thread": the thread's setup streams on `threads` with its meta.

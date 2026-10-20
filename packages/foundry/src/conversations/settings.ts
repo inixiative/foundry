@@ -52,3 +52,25 @@ export function resolveConversationSettings(
         : 'default';
   return { settings, floorFrom };
 }
+
+/** Where each field of a project's effective `conversations` setting comes from (the settings view). */
+export function conversationSettingSources(
+  project: Pick<ProjectSettingsConfig, 'path' | 'conversations'>,
+): Record<'floor' | 'maxAgentTurns' | 'holdSeconds' | 'agentMayPass', SettingLayer> {
+  const repository = readRepositorySettings(project.path)?.conversations;
+  const mine = project.conversations;
+  const from = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
+    mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
+  return {
+    floor: from(mine?.floor !== undefined, repository?.floor !== undefined),
+    maxAgentTurns: from(mine?.maxAgentTurns !== undefined, repository?.maxAgentTurns !== undefined),
+    holdSeconds: from(
+      mine?.conch?.holdSeconds !== undefined,
+      repository?.conch?.holdSeconds !== undefined,
+    ),
+    agentMayPass: from(
+      mine?.conch?.agentMayPass !== undefined,
+      repository?.conch?.agentMayPass !== undefined,
+    ),
+  };
+}

@@ -879,7 +879,7 @@ Every branching point in the system, who decides, and how. (Named Wardens are th
 - **Native sessions** — the Artificer is a persistent native Claude Code or Codex session run through `@inixiative/agent-session` (`providers/session-adapter.ts`). Standing context goes in the system prompt, changes as per-turn deltas ([Delivery](#delivery-what-a-native-session-receives-each-turn)).
 - **Turn service** — per-thread queue, `queued` turn status, stop (`turns/turn-service.ts`).
 - **Tool gate** — structural `toolRules` decide each tool request through core's `permissionLevel` (`turns/tool-gate.ts`); asks go to the ActionQueue; Claude permission prompts and Codex approvals both route to it.
-- **MCP server** — seven tools (`foundry_device`, `foundry_query`, `foundry_conventions`, `foundry_memory`, `foundry_access`, `foundry_threads`, `foundry_signal`), plus the conversation tools when they are registered (`send_to_member`, `pass_conch`, `kingdom_post`; [CONVERSATIONS.md](reference/CONVERSATIONS.md)). `packages/foundry/src/mcp/server.ts`
+- **MCP server** — seven tools (`foundry_device`, `foundry_query`, `foundry_conventions`, `foundry_memory`, `foundry_access`, `foundry_threads`, `foundry_signal`), plus the conversation tools when they are registered (`send_to_member` and `pass_conch` on a Kingdom-paired Foundry, `kingdom_post` with a Kingdom access source; [CONVERSATIONS.md](reference/CONVERSATIONS.md)). `packages/foundry/src/mcp/server.ts`
 - **ACP agent** — `packages/acp` (foundry-acp) lets ACP hosts drive Foundry threads ([FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md)).
 - **Librarian** — sole writer to the thread-state layer. `packages/foundry/src/agents/librarian.ts`
 - **Thread-state layer** — compact materialized view, updated by the Librarian.

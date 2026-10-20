@@ -122,25 +122,44 @@ export class KingdomAccessClient {
       )
     )
       throw Error('Kingdom operation or resource unavailable');
-    return z.object({ executionId: z.string().uuid(), result: z.unknown() }).parse(
-      await this.post(
-        'execute',
-        {
-          requestId: input.requestId,
-          runId: input.runId,
-          integrationId:
-            description.operations
-              .flatMap((operation) => operation.resources)
-              .find((resource) => resource.id === input.resourceId)?.integrationId ??
-            this.source.integrationId,
-          signetId: this.source.signetId,
-          ...(description.taskId ? { taskId: description.taskId } : {}),
-          operation: readOperationSchema.parse(input.operation),
-          input: { resourceId: input.resourceId, limit: input.limit },
-        },
-        onDispatch,
-      ),
+    return this.execute(
+      {
+        requestId: input.requestId,
+        runId: input.runId,
+        integrationId:
+          description.operations
+            .flatMap((operation) => operation.resources)
+            .find((resource) => resource.id === input.resourceId)?.integrationId ??
+          this.source.integrationId,
+        operation: readOperationSchema.parse(input.operation),
+        input: { resourceId: input.resourceId, limit: input.limit },
+      },
+      description.taskId,
+      onDispatch,
     );
+  }
+
+  /** One execution under this source's Signet (and its task, when it has one); never retried. */
+  private async execute(
+    request: {
+      requestId: string;
+      runId?: string;
+      integrationId: string;
+      operation: string;
+      input: Record<string, unknown>;
+    },
+    taskId: string | null,
+    onDispatch?: () => void,
+  ) {
+    return z
+      .object({ executionId: z.string().uuid(), result: z.unknown() })
+      .parse(
+        await this.post(
+          'execute',
+          { ...request, signetId: this.source.signetId, ...(taskId ? { taskId } : {}) },
+          onDispatch,
+        ),
+      );
   }
 
   /**
@@ -162,25 +181,21 @@ export class KingdomAccessClient {
           selectsThread(candidate.lens.threads, input.threadId),
       );
     if (!resource) throw Error('This Signet does not reach that conversation thread');
-    return z.object({ executionId: z.string().uuid(), result: z.unknown() }).parse(
-      await this.post(
-        'execute',
-        {
-          requestId: crypto.randomUUID(),
-          integrationId: resource.integrationId,
-          signetId: this.source.signetId,
-          ...(description.taskId ? { taskId: description.taskId } : {}),
-          operation: 'thread.prompt',
-          input: {
-            resourceId: resource.id,
-            threadId: input.threadId,
-            postId: input.postId,
-            text: input.text,
-            ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
-          },
+    return this.execute(
+      {
+        requestId: crypto.randomUUID(),
+        integrationId: resource.integrationId,
+        operation: 'thread.prompt',
+        input: {
+          resourceId: resource.id,
+          threadId: input.threadId,
+          postId: input.postId,
+          text: input.text,
+          ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
         },
-        onDispatch,
-      ),
+      },
+      description.taskId,
+      onDispatch,
     );
   }
 }

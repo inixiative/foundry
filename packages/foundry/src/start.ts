@@ -595,7 +595,9 @@ registerKingdomAccess(tools, config.kingdomAccess);
 // Agent conversations (docs/reference/CONVERSATIONS.md): the host's send_to_member and pass_conch, and
 // the joining side's kingdom_post, reach the viewer's conversation wrapper once it exists.
 let conversationService: ConversationService | null = null;
-tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
+// Hosting needs a paired Kingdom: an unpaired Foundry's sessions don't carry tools with no job.
+if (config.kingdomIntegrations?.length)
+  tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
 registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)

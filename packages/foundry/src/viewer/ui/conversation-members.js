@@ -166,7 +166,9 @@ export function ParticipantsPanel() {
         ? html`<div class="conversation-panel-body">
         <div class="conversation-floor">
           <label>Floor
-            <select value=${view.floor.mode} onChange=${(e) => post(`${base}/floor`, { mode: e.target.value })}>
+            <select value=${view.floorFrom === 'thread' ? view.floor.mode : ''}
+              onChange=${(e) => post(`${base}/floor`, { mode: e.target.value || null })}>
+              <option value="">Inherit (${FLOORS.find(([id]) => id === view.inherited)?.[1] ?? view.inherited})</option>
               ${FLOORS.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
             </select>
           </label>
@@ -225,4 +227,75 @@ export function ParticipantsPanel() {
         : null
     }
   </section>`;
+}
+
+const LAYER = { default: 'the default', repository: 'the repository', settings: 'your settings' };
+
+/**
+ * A project's `conversations` setting (§4.6): each field with the layer it comes from, set for me
+ * (this machine's project settings, which win) or for everyone (the repository's committed file).
+ */
+export function ProjectConversations({ projectId }) {
+  const [state, setState] = useState(undefined);
+  const [draft, setDraft] = useState(null);
+  const base = `/api/projects/${encodeURIComponent(projectId)}/conversations`;
+  const load = () =>
+    fetch(base)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        setState(body);
+        if (body) setDraft(body.settings);
+      })
+      .catch(() => setState(null));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load once per project.
+  useEffect(() => {
+    load();
+  }, [projectId]);
+  if (state === undefined) return html`<div class="settings-empty">Reading conversations…</div>`;
+  if (state === null || !draft)
+    return html`<div class="settings-empty">The conversations setting could not be read.</div>`;
+  const value = {
+    floor: draft.floor,
+    maxAgentTurns: Number(draft.maxAgentTurns),
+    conch: { holdSeconds: Number(draft.conch.holdSeconds), agentMayPass: draft.conch.agentMayPass },
+  };
+  const save = async (scope, clear) => {
+    const res = await fetch(base, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope, value: clear ? null : value }),
+    });
+    if (!res.ok) showToast((await res.json()).error || 'Not saved', 'error');
+    else {
+      showToast(scope === 'me' ? 'Saved for you' : 'Saved for everyone', 'ok');
+      load();
+    }
+  };
+  const from = (field) => html`<span class="settings-desc">from ${LAYER[state.from[field]]}</span>`;
+  return html`<div class="settings-card conversation-settings">
+    <div class="settings-card-header">
+      <span class="settings-card-title">Conversations</span>
+      <span class="settings-desc">How members of this project's conversations take turns.</span>
+    </div>
+    ${state.repositoryError ? html`<p class="settings-desc">${state.repositoryFile}: ${state.repositoryError}</p>` : null}
+    <label>Floor
+      <select value=${draft.floor} onChange=${(e) => setDraft({ ...draft, floor: e.target.value })}>
+        ${FLOORS.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
+      </select> ${from('floor')}</label>
+    <label>Agent turns before a pause
+      <input type="number" min="1" max="100" value=${draft.maxAgentTurns}
+        onInput=${(e) => setDraft({ ...draft, maxAgentTurns: e.target.value })} /> ${from('maxAgentTurns')}</label>
+    <label>Conch hold (seconds)
+      <input type="number" min="10" value=${draft.conch.holdSeconds}
+        onInput=${(e) => setDraft({ ...draft, conch: { ...draft.conch, holdSeconds: e.target.value } })} /> ${from('holdSeconds')}</label>
+    <label><input type="checkbox" checked=${draft.conch.agentMayPass}
+        onChange=${(e) => setDraft({ ...draft, conch: { ...draft.conch, agentMayPass: e.target.checked } })} />
+      The agent may pass the conch ${from('agentMayPass')}</label>
+    <div class="settings-card-actions">
+      <button class="action-btn" onClick=${() => save('me')}>Set this for me</button>
+      <button class="action-btn" onClick=${() => save('everyone')} title=${`Writes ${state.repositoryFile}`}>Set this for everyone</button>
+      ${state.mine ? html`<button class="action-btn" onClick=${() => save('me', true)}>Drop my override</button>` : null}
+    </div>
+    ${state.mine ? html`<p class="settings-desc">Your settings override the repository's for: ${Object.keys(state.mine).join(', ')}.</p>` : null}
+  </div>`;
 }

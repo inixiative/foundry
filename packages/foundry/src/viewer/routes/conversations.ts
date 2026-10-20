@@ -3,15 +3,28 @@
  * @kind route
  * @partOf feature:viewer, feature:conversations
  */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { floorModeSchema } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { REPOSITORY_SETTINGS_FILE } from '../../agents/region-roster';
 import type { ConversationService } from '../../conversations/service';
+import {
+  conversationSettingSources,
+  resolveConversationSettings,
+} from '../../conversations/settings';
+import {
+  type ConversationSettingsInput,
+  validateConversationSettings,
+} from '../../conversations/types';
 import type { KingdomHolders } from '../../providers/kingdom-holder';
 import {
   type KingdomIntegration,
   kingdomIntegrationId,
 } from '../../providers/kingdom-installation-connection';
+import type { ConfigStore } from '../config';
+import { readRepositorySettings } from '../config-resolve';
 
 const floorBody = z.strictObject({ mode: floorModeSchema.nullable() });
 const conchBody = z.strictObject({ to: z.string().min(1).max(128).nullable() });
@@ -40,6 +53,7 @@ export function registerConversationRoutes(
   app: Hono,
   conversations: ConversationService,
   kingdom: { integrations: () => Promise<readonly KingdomIntegration[]>; holders: KingdomHolders },
+  configStore: ConfigStore,
 ) {
   const guard = async (run: () => unknown) => {
     try {
@@ -115,5 +129,67 @@ export function registerConversationRoutes(
       ),
     );
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
+  });
+
+  // A project's `conversations` setting (§4.6): what is in effect and which layer each field is from;
+  // set it for me (this machine's project settings) or for everyone (the repository's file).
+  app.get('/api/projects/:id/conversations', async (c) => {
+    await configStore.load();
+    const project = configStore.config.projects[c.req.param('id')];
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    const repository = readRepositorySettings(project.path);
+    return c.json({
+      settings: resolveConversationSettings(project, undefined).settings,
+      from: conversationSettingSources(project),
+      mine: project.conversations ?? null,
+      repository: repository?.conversations ?? null,
+      repositoryFile: join(project.path, REPOSITORY_SETTINGS_FILE),
+      ...(repository?.error ? { repositoryError: repository.error } : {}),
+    });
+  });
+
+  app.put('/api/projects/:id/conversations', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      scope?: unknown;
+      value?: unknown;
+    } | null;
+    const scope = body?.scope;
+    if (scope !== 'me' && scope !== 'everyone')
+      return c.json({ error: 'scope must be me or everyone' }, 400);
+    const value = (body?.value ?? null) as ConversationSettingsInput | null;
+    try {
+      if (value !== null) validateConversationSettings('conversations', value);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const id = c.req.param('id');
+    await configStore.load();
+    const project = configStore.config.projects[id];
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    try {
+      if (scope === 'me')
+        await configStore.update((draft) => {
+          const mine = draft.projects[id];
+          if (!mine) throw Error('project not found');
+          if (value === null) delete mine.conversations;
+          else mine.conversations = value;
+        });
+      else {
+        // The repository's file keeps its other keys; it is committed and shared with the team.
+        const file = join(project.path, REPOSITORY_SETTINGS_FILE);
+        const repository = readRepositorySettings(project.path);
+        if (repository?.error) throw Error(`${file}: ${repository.error}`);
+        const current: Record<string, unknown> = existsSync(file)
+          ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
+          : {};
+        if (value === null) delete current.conversations;
+        else current.conversations = value;
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
+      }
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+    return c.json({ ok: true });
   });
 }

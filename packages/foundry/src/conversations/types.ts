@@ -60,7 +60,8 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = Object.freeze
 /**
  * The one floor mechanism (§4.3). `speak-when-spoken-to`: one per released send, consumed by the
  * reply that names it; its id is the send's journal seq, which is what the member reads. `conch`:
- * one standing invitation, refreshed while its holder posts, expired lazily at admission.
+ * one standing invitation, held from when it was given for `holdSeconds` (posting doesn't extend it),
+ * expired lazily at admission.
  */
 export interface Invitation {
   id: string;
@@ -156,8 +157,17 @@ export interface HeldDeliveryRecord {
 export interface ConversationWrapper {
   /** A conversation thread is always wrapped, so its notes reach the executor (§4.1). */
   wraps(threadId: string): boolean;
-  /** Member posts delivered as notes that ride this owner turn, labelled (§4.2, §4.5). */
-  notesFor(threadId: string, turnId: string | undefined): PromptBlock[];
+  /**
+   * Member notes not yet delivered that ride this owner turn, labelled (§4.2, §4.5); marked
+   * delivered to it.
+   */
+  deliverNotes(threadId: string, turnId: string | undefined): PromptBlock[];
+  /** One admitted post, labelled, for the Wardens' between-turns pass on it. */
+  notePost(
+    threadId: string,
+    signetId: string,
+    postId: string,
+  ): { displayName: string; text: string } | undefined;
 }
 
 /** A wrapper bound later (the service exists once the viewer does); until then nothing is wrapped. */
@@ -166,7 +176,8 @@ export function lateConversationWrapper(
 ): ConversationWrapper {
   return {
     wraps: (threadId) => resolve()?.wraps(threadId) ?? false,
-    notesFor: (threadId, turnId) => resolve()?.notesFor(threadId, turnId) ?? [],
+    deliverNotes: (threadId, turnId) => resolve()?.deliverNotes(threadId, turnId) ?? [],
+    notePost: (threadId, signetId, postId) => resolve()?.notePost(threadId, signetId, postId),
   };
 }
 
@@ -176,6 +187,7 @@ export const MAX_HELD_TEXT = threadTextLimit;
 export type ConversationPhase =
   | 'member-post'
   | 'member-post-withdrawn'
+  | 'member-post-delivered'
   | 'outbound-held'
   | 'outbound-resolution'
   | 'outbound-delivered';

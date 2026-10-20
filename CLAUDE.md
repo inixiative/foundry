@@ -75,7 +75,7 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 ## Communication Channels
 
 1. **Pre-message** (Foundry -> Session): standing context in the system prompt at session start (`--append-system-prompt-file`, a private file agent-session removes when the session ends), then changed layers and Warden notes with each user message (`providers/session-delivery.ts`)
-2. **Mid-session** (Session -> Foundry): the `foundry` MCP server's tools when the agent discovers a gap, plus, where a conversation is hosted or joined, `send_to_member`, `pass_conch` and `kingdom_post` ([CONVERSATIONS.md](docs/reference/CONVERSATIONS.md))
+2. **Mid-session** (Session -> Foundry): the `foundry` MCP server's tools when the agent discovers a gap, plus `send_to_member` and `pass_conch` on a Kingdom-paired Foundry and `kingdom_post` where a Kingdom access source is configured ([CONVERSATIONS.md](docs/reference/CONVERSATIONS.md))
 3. **Post-action** (Session -> Foundry): tool calls observed on the native event stream; the structural tool gate (`turns/tool-gate.ts`) answers permission requests before a call runs
 4. **Feedback** (Foundry -> Session): guard findings become signals and reach the session on a later turn at best. No push path is built.
 

@@ -1299,6 +1299,40 @@ export class LocalSessionStore {
     });
   }
 
+  /** One ordered phase's rows of a thread after journal seq `after`, oldest first, with their seq. */
+  orderedPhases(
+    threadId: string,
+    phase: (typeof JOURNAL_ORDERED_PHASES)[number],
+    after = 0,
+  ): Array<StoredPhase & { seq: number }> {
+    const rows = this.query(
+      `SELECT j.seq, p.id, p.turn_id, p.dispatch_id, p.record, p.checksum, p.stored_at
+         FROM session_journal j JOIN session_phase p ON p.id = j.ref
+        WHERE j.thread_id=? AND j.source='phase' AND p.phase=? AND j.seq > ? ORDER BY j.seq`,
+    ).all(threadId, phase, after) as Array<{
+      seq: number;
+      id: string;
+      turn_id: string | null;
+      dispatch_id: string | null;
+      record: string;
+      checksum: string;
+      stored_at: number;
+    }>;
+    return rows.map((row) => {
+      if (checksum(row.record) !== row.checksum) throw new Error('Phase record checksum mismatch');
+      return {
+        seq: row.seq,
+        id: row.id,
+        threadId,
+        turnId: row.turn_id,
+        dispatchId: row.dispatch_id,
+        phase,
+        record: this.decode<Record<string, unknown>>(row.record),
+        storedAt: row.stored_at,
+      };
+    });
+  }
+
   /**
    * Held outbound items no answer has settled, across threads, oldest first: the prompts to raise
    * again after a restart (docs/reference/CONVERSATIONS.md §4.5).

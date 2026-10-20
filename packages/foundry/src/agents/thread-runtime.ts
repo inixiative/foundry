@@ -1254,7 +1254,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
         );
       // Member posts delivered as notes ride the owner's turn, labelled, after the fresh advice.
-      const memberNotes = deps.conversations?.notesFor(thread.id, identity?.messageId) ?? [];
+      const memberNotes = deps.conversations?.deliverNotes(thread.id, identity?.messageId) ?? [];
       if (memberNotes.length) flow.queueNotes(memberNotes);
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
@@ -1695,15 +1695,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // project's work-item trigger is on. What it says rides the next turn with the note.
     this._unsubs.push(
       signals.on('member_post', async (signal) => {
-        const content = signal.content as
-          | { postId?: string; displayName?: string; text?: string }
-          | undefined;
-        if (!content?.postId || !content.text || !this.domainLibrarians.size) return;
+        const content = signal.content as { postId?: string; signetId?: string } | undefined;
+        if (!content?.postId || !content.signetId || !this.domainLibrarians.size) return;
+        const post = deps.conversations?.notePost(thread.id, content.signetId, content.postId);
+        if (!post) return;
         const item: WorkItemMoment = {
-          itemId: `member-post:${content.postId}`,
-          name: `post from ${content.displayName ?? 'a conversation member'}`,
+          itemId: `member-post:${content.signetId}:${content.postId}`,
+          name: `post from ${post.displayName}`,
           tool: 'conversation',
-          text: content.text,
+          text: post.text,
         };
         await this._askBetweenTurns({
           trigger: 'consumed',
@@ -1711,7 +1711,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           wraps: item.itemId,
           label: `member ${item.name}`,
           ask: (flow) => flow.consume(item),
-          record: { memberPost: { postId: content.postId, chars: content.text.length } },
+          record: { memberPost: { postId: content.postId, chars: post.text.length } },
           notes: (report) => consumedNotes(item, report),
         });
       }),

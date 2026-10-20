@@ -190,8 +190,12 @@ export interface KingdomInstallationOptions {
    * relayed frames reach, bound before the sockets start (`serveThreads`).
    */
   threads?: ThreadHost;
-  /** The Signets issued on this Foundry's integrations changed (for display and revocation cleanup). */
-  onHosted?: (hosted: readonly HostedSignet[], dropped: ReadonlySet<string>) => void;
+  /**
+   * A snapshot from one Kingdom arrived: the Signets issued on this Foundry's integrations may have
+   * changed. Read them across every paired Kingdom (`KingdomInstallationConnections.hostedSignets`),
+   * never from one alone: a member another Kingdom lists is not revoked by this one's snapshot.
+   */
+  onHostedChanged?: () => void;
 }
 
 /** In `onHosted`'s dropped set: Kingdom's hosted list itself was missing or unreadable. */
@@ -223,6 +227,8 @@ export class KingdomInstallationConnection {
   private firstContact: PromiseWithResolvers<void> = Promise.withResolvers<void>();
   /** Snapshot entries already reported unreadable, so a Kingdom ahead of this package warns once. */
   private reported = new Set<string>();
+  /** Hosted Signets the latest snapshot couldn't read (`UNKNOWN_HOSTED`: the list itself). */
+  private droppedHosted: ReadonlySet<string> = new Set([UNKNOWN_HOSTED]);
   constructor(
     url: string,
     integrations: readonly KingdomIntegration[],
@@ -249,6 +255,10 @@ export class KingdomInstallationConnection {
   /** The Signets issued on this Foundry's integrations at this Kingdom, as of the last snapshot. */
   get hostedSignets(): readonly HostedSignet[] {
     return this.latest?.hostedSignets ?? [];
+  }
+  /** Hosted Signets the latest snapshot couldn't read; everything, until a snapshot arrives. */
+  get hostedDropped(): ReadonlySet<string> {
+    return this.droppedHosted;
   }
   /** The members' live views this host is pushing through this Kingdom. */
   threadSubscriptions(): HeldThreadSubscription[] {
@@ -344,17 +354,15 @@ export class KingdomInstallationConnection {
         `[Kingdom] ${this.url} snapshot entry ${dropped.list}[${dropped.index}]${dropped.id ? ` (${dropped.id})` : ''} unreadable: ${dropped.reason}`,
       );
     }
+    // A hosted Signet this package couldn't read is not gone; a missing list (a Kingdom before
+    // conversations) says nothing about any member (`UNKNOWN_HOSTED`).
+    this.droppedHosted = new Set(
+      snapshot.dropped
+        .filter((entry) => entry.list === 'hostedSignets')
+        .map((entry) => (entry.index === -1 ? UNKNOWN_HOSTED : (entry.id ?? UNKNOWN_HOSTED))),
+    );
     try {
-      // A hosted Signet this package couldn't read is not gone; a missing list (a Kingdom before
-      // conversations) says nothing about any member (`UNKNOWN_HOSTED`).
-      this.options.onHosted?.(
-        snapshot.hostedSignets,
-        new Set(
-          snapshot.dropped
-            .filter((entry) => entry.list === 'hostedSignets')
-            .map((entry) => (entry.index === -1 ? UNKNOWN_HOSTED : (entry.id ?? UNKNOWN_HOSTED))),
-        ),
-      );
+      this.options.onHostedChanged?.();
     } catch (error) {
       this.warn(`[Kingdom] ${this.url} hosted Signets not applied: ${(error as Error).message}`);
     }
@@ -475,9 +483,17 @@ export class KingdomInstallationConnections {
    * Serve the conversations this Foundry hosts on every Installation socket (bound before `start`;
    * a socket already open takes them on its next connect).
    */
-  serveThreads(threads: ThreadHost, onHosted: NonNullable<KingdomInstallationOptions['onHosted']>) {
+  serveThreads(
+    threads: ThreadHost,
+    onHosted: (hosted: readonly HostedSignet[], dropped: ReadonlySet<string>) => void,
+  ) {
     this.options.threads = threads;
-    this.options.onHosted = onHosted;
+    // Every Kingdom's snapshot is read together: the union of what they list and couldn't read.
+    this.options.onHostedChanged = () =>
+      onHosted(
+        this.hostedSignets(),
+        new Set(this.all().flatMap((connection) => [...connection.hostedDropped])),
+      );
   }
   /** Every Signet issued on this Foundry's integrations, across paired Kingdoms. */
   hostedSignets(): HostedSignet[] {
