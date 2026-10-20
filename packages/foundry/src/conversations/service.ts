@@ -36,7 +36,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
-import { conversationRoster } from './roster';
+import { conversationFloor, conversationRoster } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
   type ConversationRecord,
@@ -640,34 +640,16 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * The roster the main agent reads (§4.5): who is in, and each member's lens in plain words. Read
-   * on every turn of a conversation thread, so a join, a leave or a revision reaches the next turn.
-   * `held`: the thread's context already carries a roster, so one is due even when no member is left.
+   * The roster the main agent reads ("F1 follow-ups"): who is in, and each member's lens in plain
+   * words. Read on every turn of a conversation thread, so a join, a leave or a revision reaches the
+   * next turn. `held`: the thread's context already carries a roster, so one is due even when no
+   * member is left.
    */
   roster(threadId: string, held = false): string | undefined {
     if (!held && !this.wraps(threadId)) return undefined;
-    const thread = this.deps.thread(threadId);
-    if (!thread) return undefined;
-    const record = this.record(threadId);
-    const floor = this.floorState(thread);
-    const now = Date.now();
-    const invited = (id: string) =>
-      record.invitations.filter(
-        (invitation) =>
-          !invitation.standing &&
-          invitation.to.kind === 'signet' &&
-          invitation.to.id === id &&
-          (!invitation.expiresAt || Date.parse(invitation.expiresAt) > now),
-      ).length;
-    return conversationRoster({
-      floor: floor.mode,
-      conch:
-        floor.holder?.kind === 'signet'
-          ? { holder: floor.holder.id, expiresAt: floor.expiresAt }
-          : null,
-      paused:
-        this.paused(threadId, record) && record.paused ? { reason: record.paused.reason } : null,
-      members: this.members(threadId).map((member) => ({
+    if (!this.deps.thread(threadId)) return undefined;
+    return conversationRoster(
+      this.members(threadId).map((member) => ({
         id: member.member.id,
         displayName: member.displayName,
         listed: member.listed,
@@ -676,9 +658,38 @@ export class ConversationService implements ConversationWrapper {
           ? { lens: { view: member.lens.view, delivery: member.lens.delivery } }
           : {}),
         outbound: member.outbound,
-        holdsConch: member.holdsConch,
-        invitations: invited(member.member.id),
       })),
+    );
+  }
+
+  /** The floor now (mode, conch, reply invitations, a pause), for the turn being sent. */
+  floorNow(threadId: string): string | undefined {
+    if (!this.wraps(threadId)) return undefined;
+    const thread = this.deps.thread(threadId);
+    if (!thread) return undefined;
+    const record = this.record(threadId);
+    const floor = this.floorState(thread);
+    const now = Date.now();
+    const members = this.members(threadId);
+    const name = (id: string) =>
+      members.find((member) => member.member.id === id)?.displayName ?? id;
+    const invited = new Map<string, number>();
+    for (const invitation of record.invitations)
+      if (
+        !invitation.standing &&
+        invitation.to.kind === 'signet' &&
+        (!invitation.expiresAt || Date.parse(invitation.expiresAt) > now)
+      )
+        invited.set(invitation.to.id, (invited.get(invitation.to.id) ?? 0) + 1);
+    return conversationFloor({
+      floor: floor.mode,
+      conch:
+        floor.holder?.kind === 'signet'
+          ? { holder: name(floor.holder.id), expiresAt: floor.expiresAt }
+          : null,
+      invited: [...invited].map(([id, invitations]) => ({ displayName: name(id), invitations })),
+      paused:
+        this.paused(threadId, record) && record.paused ? { reason: record.paused.reason } : null,
     });
   }
 

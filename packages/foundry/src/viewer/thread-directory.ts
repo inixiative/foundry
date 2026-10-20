@@ -71,21 +71,24 @@ export class ViewerThreadDirectory {
     const project = meta.projectId ? this.projects?.get(meta.projectId) : undefined;
     const thread = this.factory.create(id, meta);
     Object.assign(thread.meta, meta);
-    if (project) project.addThread(thread);
-    else this.threads.set(id, thread);
+    if (project) project.replaceThread(thread);
+    // Restore lists project threads here too: the archived object goes wherever it was.
+    if (!project || this.threads.has(id)) this.threads.set(id, thread);
     return thread;
   }
 
   /** An archived thread this directory can rebuild (see `reopen`). */
   canReopen(id: string): boolean {
     const thread = this.get(id);
+    // The main thread is the viewer's own Harness thread: nothing rebuilds the objects holding it.
+    if (!thread || thread === this.main || id === this.main.id) return false;
+    const project = thread.meta.projectId ? this.projects?.get(thread.meta.projectId) : undefined;
     return (
-      !!thread &&
       thread.disposed &&
       thread.meta.status === 'archived' &&
       !thread.meta.spawn?.observed &&
       !!this.factory &&
-      (!thread.meta.projectId || !!this.projects?.get(thread.meta.projectId))
+      (!thread.meta.projectId || (!!project && this.factory.canCreate(thread.meta.projectId)))
     );
   }
 

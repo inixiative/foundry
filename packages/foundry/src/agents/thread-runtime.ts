@@ -37,7 +37,7 @@ import {
   validateStages,
   WARDEN_CHARTER_VERSION,
 } from '../classify';
-import { CONVERSATION_ROSTER_LAYER } from '../conversations/roster';
+import { CONVERSATION_FLOOR_LAYER, CONVERSATION_ROSTER_LAYER } from '../conversations/roster';
 import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
 import { roleComposition } from '../prompts/instruction-settings';
@@ -1197,6 +1197,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // and delivery sends it as the replacing version; an unchanged roster is not sent again.
     const conversations = deps.conversations;
     let rosterLayer: ContextLayer | undefined;
+    let floorLayer: ContextLayer | undefined;
     const refreshRoster = async () => {
       if (!conversations) return;
       if (!rosterLayer) {
@@ -1217,9 +1218,18 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           ],
         });
         stack.addLayer(rosterLayer);
+        // The floor moves with nearly every exchange: it rides each turn, never the standing context.
+        floorLayer = new ContextLayer({
+          id: CONVERSATION_FLOOR_LAYER,
+          owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
+          perTurn: true,
+        });
+        stack.addLayer(floorLayer);
       }
       rosterLayer.checkStaleness();
       if (!rosterLayer.isWarm) await rosterLayer.warm();
+      const floor = conversations.floorNow(thread.id) ?? '';
+      if (floorLayer && floorLayer.content !== floor) floorLayer.set(floor, 'foundry');
     };
 
     // Classifier/router auxiliaries are named by the factory-built agents

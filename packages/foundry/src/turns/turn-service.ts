@@ -219,13 +219,14 @@ export class TurnService {
    * Reopen an archived thread (the directory rebuilds it; see `ViewerThreadDirectory.reopen`) and
    * record it open. A thread that isn't archived is left as it is.
    */
-  reopen(threadId: string): void {
+  reopen(threadId: string): boolean {
     const current = this.deps.directory.get(threadId);
-    if (!current || !this.deps.directory.canReopen(threadId)) return;
+    if (!current || !this.deps.directory.canReopen(threadId)) return false;
     const thread = this.deps.directory.reopen(threadId);
-    if (!thread || thread === current) return;
+    if (!thread || thread === current) return false;
     this.deps.localStore?.saveThread(thread);
     this.deps.streams.threadsChanged(threadId);
+    return true;
   }
 
   /** Whether a message or a post can bring this archived thread back. */
@@ -266,8 +267,15 @@ export class TurnService {
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
     // An archived thread comes back when a message or a member's post arrives for it: its native
-    // session is gone, and the turn below resumes it or starts it fresh from the journal.
-    this.reopen(threadId);
+    // session is gone, and the turn below resumes it or starts it fresh from the journal. Only a turn
+    // that can be taken reopens it: a refused one leaves it archived.
+    if (localStore?.turn(turnId) || !streams.turns.canOpen(turnId))
+      return {
+        ok: false,
+        status: 409,
+        body: { error: 'turn already accepted or live capacity unavailable', id: turnId },
+      };
+    const reopened = this.reopen(threadId);
     const harness = this.harness(threadId);
     if (!harness) return { ok: false, status: 404, body: { error: 'thread not found' } };
     if (harness.thread.disposed)
@@ -279,15 +287,11 @@ export class TurnService {
         status: 409,
         body: { error: 'an observed subagent thread takes no turns; message its parent thread' },
       };
-    if (localStore?.turn(turnId) || !streams.turns.canOpen(turnId))
-      return {
-        ok: false,
-        status: 409,
-        body: { error: 'turn already accepted or live capacity unavailable', id: turnId },
-      };
     try {
       localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
     } catch (err) {
+      // Not accepted after all: the thread goes back to archived (its store row never left it).
+      if (reopened) harness.thread.archive();
       return {
         ok: false,
         status: 503,

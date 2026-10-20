@@ -17,7 +17,8 @@ export const JOURNAL_HISTORY_CHARS = 40_000;
  * or rollout is gone) or never existed on this runtime (the thread moved to another one). It is the
  * thread as a reader of it sees it: the owner's messages, the agent's answers, members' posts
  * (labelled as data from an outside party, as they reached the agent) and released sends, oldest
- * first, verbatim, with the oldest dropped first past the budget. Tool calls, Warden notes and
+ * first, verbatim (each entry as a member reads it, cut at the 16,000-character read cap), with the
+ * oldest dropped first past the budget. Tool calls, Warden notes and
  * composed context are not part of it; the session gets its standing context the usual way.
  * Undefined when there is nothing before this turn.
  */
@@ -34,10 +35,13 @@ export function journalHistory(
   const entries = store
     .journalEntries(threadId, { newest: true, limit: 5000 })
     .sort((a, b) => b.seq - a.seq);
+  // Contiguous: the first entry that doesn't fit ends the history, so no answer loses its question.
+  let full = false;
   for (const entry of entries) {
     const line = render(entry, currentTurnId);
     if (!line) continue;
-    if (chars + line.length > maxChars) {
+    if (full || chars + line.length > maxChars) {
+      full = true;
       omitted++;
       continue;
     }

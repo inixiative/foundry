@@ -636,11 +636,15 @@ export class SessionBackedProvider implements LLMProvider {
             }
           : {}),
       };
+      // Seeded once: a turn that may have reached the session carried the history.
+      if (seed) this._seeded.add(session);
       result = await session.send(prompt, sendOptions);
     } catch (error) {
       const attempt =
         error && typeof error === 'object' ? (error as { attempt?: unknown }).attempt : undefined;
       const evidence = this._ownedProjection(session, attempt, observation?.owner);
+      // Nothing was sent: the next turn on this session still needs the history.
+      if (seed && evidence.dispatch === 'not-dispatched') this._seeded.delete(session);
       bridge?.observe(evidence);
       this._observe(observation, evidence);
       // The native conversation this session resumed is gone (Codex has no rollout for it). Nothing
@@ -832,7 +836,6 @@ export class SessionBackedProvider implements LLMProvider {
         },
       },
     };
-    if (seed) this._seeded.add(session);
     if (turn) {
       this._delivered.add(session);
       if (result.externalSessionId) this._ledgerBindings.set(threadId, result.externalSessionId);
@@ -883,22 +886,16 @@ export class SessionBackedProvider implements LLMProvider {
         this._settled.add(error);
         throw error;
       }
-      this._released.add(session);
-      if (this._sessions.get(key) === existing) {
-        this._sessions.delete(key);
-        this._profiles.delete(key);
-        this._bridgeSources.delete(key);
-        this._idle.delete(key);
-        this._uncertain.delete(key);
-      }
+      if (this._sessions.get(key) === existing) this._drop(key, session);
+      else this._released.add(session);
       return recreate();
     });
   }
 
   /** Forget a session object that can't be used again; its native binding is the adapter's. */
-  private _drop(key: string, session: HarnessSession): void {
-    this._released.add(session);
-    if (this._sessions.has(key)) this._sessions.delete(key);
+  private _drop(key: string, session: HarnessSession | undefined): void {
+    if (session) this._released.add(session);
+    this._sessions.delete(key);
     this._profiles.delete(key);
     this._bridgeSources.delete(key);
     this._idle.delete(key);
@@ -925,6 +922,8 @@ export class SessionBackedProvider implements LLMProvider {
       if (session.alive) return false;
     }
     this._drop(key, session);
+    for (const [id, entry] of this._registeredAdmissions)
+      if (entry.session === session) this._registeredAdmissions.delete(id);
     await this._adapter.clearSession(threadId);
     return true;
   }
@@ -947,12 +946,7 @@ export class SessionBackedProvider implements LLMProvider {
       !this._releasing.has(key) &&
       (!session || !session.alive)
     ) {
-      if (session) this._released.add(session);
-      this._sessions.delete(key);
-      this._profiles.delete(key);
-      this._bridgeSources.delete(key);
-      this._idle.delete(key);
-      this._uncertain.delete(key);
+      this._drop(key, session);
       return 'released';
     }
     return this._releaseIdle({ threadId, cwd }, true);
@@ -1007,12 +1001,17 @@ export class SessionBackedProvider implements LLMProvider {
       // A host changed this thread's launch settings, or its structural rules appeared or went:
       // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
       // (Codex) refuses on the next turn instead of running warm past the new rules.
+      // A thread rebuilt with a new native bridge (an archived thread reopened: its Thread object,
+      // and so its bridge, is new) relaunches the same way; a tool-policy change never does.
+      const bridgeMoved = this._bridgeSources.get(key) !== source;
       if (
-        (changed.includes('launchRevision') || changed.includes('structuralRules')) &&
+        (changed.includes('launchRevision') ||
+          changed.includes('structuralRules') ||
+          (bridgeMoved && !requested.textOnly && !requested.toolPolicyIdentity)) &&
         changed.every((field) =>
-          ['launchRevision', 'structuralRules', 'requestedModel'].includes(field),
+          ['launchRevision', 'structuralRules', 'requestedModel', 'bridgeKey'].includes(field),
         ) &&
-        this._bridgeSources.get(key) === source
+        (!bridgeMoved || !current.toolPolicyIdentity)
       )
         return this._relaunch(key, existing, () =>
           this._getSession(threadId, cwd, requested, source, base),

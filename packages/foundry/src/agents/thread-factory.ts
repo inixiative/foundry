@@ -438,6 +438,11 @@ export class ThreadFactory {
    * lazily so assignment after creation (project.addThread) is honored on
    * every later warm and refresh.
    */
+  /** Whether `create` would build a thread for this project (a disabled project's are refused). */
+  canCreate(projectId: string): boolean {
+    return this._configuration?.config.projects[projectId]?.enabled !== false;
+  }
+
   create(id: string, opts?: ThreadConfig): Thread {
     let thread: Thread | undefined;
     const scope: OwnershipScope = {
