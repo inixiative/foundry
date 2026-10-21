@@ -6,7 +6,7 @@
       "name": "@inixiative/foundry-monorepo",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
-        "@inixiative/atlas": "^0.4.0",
+        "@inixiative/atlas": "^0.4.1",
         "@inixiative/config": "^0.5.120",
         "@prisma/client": "6",
         "@types/bun": "1.4.2",
@@ -129,7 +129,7 @@
 
     "@inixiative/archive": ["@inixiative/archive@0.24.0", "", { "dependencies": { "@inixiative/agent-session": "^0.6.7", "@inixiative/signet": "^0.4.6", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-w75jPfKsRAyOX9/K8xFX6WNOBxntth7sfH2YWpXkHhvdt62PIxFaDEnYkgcig6dvIk9i+D2q/vsX5gUawx3ohA=="],
 
-    "@inixiative/atlas": ["@inixiative/atlas@0.4.0", "", { "dependencies": { "@inixiative/json-rules": "^3.5.4" }, "bin": { "atlas": "bin/atlas.ts" } }, "sha512-1o2HE4VCW6Crpl9S8SahtlBUO5QFBO0wiXaZH3vzzNkttynKulmogXISzeUvN3Exh0ebJz0JEZTF0h5ql2AqQQ=="],
+    "@inixiative/atlas": ["@inixiative/atlas@0.4.1", "", { "dependencies": { "@inixiative/json-rules": "^3.5.4" }, "bin": { "atlas": "bin/atlas.ts" } }, "sha512-iQIpMJVjsqxCexnfCBoo1aM6Z/doNnrg4YvvVVVhXcfVw91OHh4f3M7/Gegix2nosz9IWsoySqESIhl1KwIYPg=="],
 
     "@inixiative/config": ["@inixiative/config@0.5.120", "", { "peerDependencies": { "@biomejs/biome": ">=2.5.0", "tsup": ">=8.5.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@biomejs/biome", "tsup", "typescript"], "bin": { "inixiative-config": "dist/cli.js" } }, "sha512-RNWC1d93i7/oM9CE7Yd5CQ3t5sNTLnA2S1mUbOxPHjrquiZJHhNo+8X+GInpv+82y0wnK1JW3OMVvGC/bRmZew=="],
 
