@@ -22,6 +22,12 @@ Add a second mode and a toggle between the two (Aron, 2026-10-23):
 
 ## Why (Aron, 2026-10-23)
 
+The goal for the working space: when something comes up that needs work, it should **start a
+session already, with the agent in context**. Not "go and say, okay, this thing happened" and then
+start a session: the thing arrives already in session. A new Slack alert comes in; there is a session
+there to talk about it and tell you about it, which has already looked into it, with a prompt ready.
+The inbox is the list of those sessions.
+
 - Agents spawn threads. A thread an agent started must show up in the inbox as a first-class active
   thread and session, the same as one a person opened.
 - Other systems' agents will ask to start a session with you. That incoming request shows up in the
@@ -34,6 +40,9 @@ new record kind: an incoming session request from another system.
 
 ## Open questions
 
+- What starts a session unasked: which inbound events (a Slack alert, a PR, a failed job, another
+  system's request) spawn a thread that investigates first, and what the thread is given as its
+  opening prompt.
 - What exactly counts as needing attention in inbox mode: pending prompt cards awaiting
   approve/reject, Warden `agent-question` answers, hand-backs, finished turns not yet read? Aron
   described it as "some sort of thing that shows your attention thoughts"; the set is his to name.
