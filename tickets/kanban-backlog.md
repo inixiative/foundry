@@ -12,6 +12,7 @@ kanban
     AGENT-003-tool-observation-signals
     AGENT-001-herald-cross-thread
     AGENT-002-writeback-pipeline
+    VIEWER-001-inbox-mode
   In Progress
   Done
 ```
@@ -29,6 +30,12 @@ These tickets capture the connections between components that are individually b
 | [AGENT-002](./AGENT-002-writeback-pipeline.md) | Loop 4 | CorpusCompiler pipeline works but Librarian doesn't feed it | Medium |
 | [AGENT-001](./AGENT-001-herald-cross-thread.md) | Cross-thread | Herald class exists but isn't instantiated | Medium |
 
+### Backlog — Viewer
+
+| Ticket | Gap | Priority |
+|--------|-----|----------|
+| [VIEWER-001](./VIEWER-001-inbox-mode.md) | Left column is directory-only; no cross-project inbox of active threads and attention items | Medium |
+
 ---
 
-_Last updated: 2026-04-09_
+_Last updated: 2026-10-23_
