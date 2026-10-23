@@ -25,7 +25,7 @@ export type SocketLike = Pick<WebSocket, 'addEventListener' | 'removeEventListen
   onopen: ((event: Event) => void) | null;
   onmessage: ((event: MessageEvent) => void) | null;
   onclose: ((event: CloseEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
 };
 export type SocketFactory = (url: string | URL, protocols?: string | string[]) => SocketLike;
 
@@ -101,7 +101,7 @@ class ReplaySocket extends EventTarget implements SocketLike {
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
   private next = 0;
   private sent = 0;
   constructor(private transcript: SocketTranscript) {
