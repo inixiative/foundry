@@ -56,7 +56,7 @@
     "prisma": "6",
     "typescript": "6.0.3",
     "@biomejs/biome": "2.5.2",
-    "@inixiative/config": "^0.5.142",
+    "@inixiative/config": "^0.5.143",
     "lefthook": "2.1.9",
     "@inixiative/atlas": "^0.4.1"
   },
