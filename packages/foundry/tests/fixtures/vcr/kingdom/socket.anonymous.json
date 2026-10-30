@@ -1,5 +1,5 @@
 {
-  "version": "caf0b056dca0",
+  "version": "6132d20c2857",
   "status": 101,
   "body": {
     "kind": "websocket",
@@ -12,7 +12,7 @@
       {
         "after": 0,
         "stream": "in",
-        "data": "{\"type\":\"connected\",\"connectionId\":\"120ad35a-da10-4186-8cca-d7bd911be6ef\"}"
+        "data": "{\"type\":\"connected\",\"connectionId\":\"7a20d5b3-f825-4e5e-8e6d-eb8ae4f4cb51\"}"
       },
       {
         "after": 1,
@@ -34,9 +34,9 @@
   },
   "recorded": {
     "service": "kingdom",
-    "recordedAt": "2026-10-08T06:09:48.186Z",
-    "agentSession": "0.3.1",
+    "recordedAt": "2026-10-30T02:05:17.767Z",
+    "agentSession": "0.6.8",
     "environment": "terminal",
-    "durationMs": 1156
+    "durationMs": 6
   }
 }
