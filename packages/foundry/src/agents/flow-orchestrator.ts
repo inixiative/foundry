@@ -531,6 +531,19 @@ export class FlowOrchestrator {
     this._unsubscribes.push(this._signals.onAny((signal) => this._handleInvalidation(signal)));
   }
 
+  /** The deadlines, concurrency bound and contribution budget this orchestrator runs under, as resolved. */
+  get timing(): Required<Omit<FlowTimingConfig, 'planTimeoutMs'>> & {
+    readonly planTimeoutMs: number | undefined;
+  } {
+    return {
+      maxAdviseParallel: this._maxAdviseParallel,
+      adviseTimeoutMs: this._adviseTimeoutMs,
+      routingTimeoutMs: this._routingTimeoutMs,
+      planTimeoutMs: this._planTimeoutMs,
+      contributionBudget: this._contributionBudget,
+    };
+  }
+
   /** Whether the current injection plan is stale and should be re-fired. */
   get isInvalidated(): boolean {
     return this._invalidated;

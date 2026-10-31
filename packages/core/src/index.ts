@@ -166,7 +166,13 @@ export {
 } from './delivery-evidence';
 // Observability
 export { EventStream, type SessionEvent, type StreamEvent } from './event-stream';
-export { type ExecuteHandler, type ExecuteMeta, Executor, type ExecutorConfig } from './executor';
+export {
+  type ExecuteHandler,
+  type ExecuteMeta,
+  Executor,
+  type ExecutorConfig,
+  withAfterMessageNotes,
+} from './executor';
 // Feedback: correction detection (the Prospector's), shared by Oracle, live capture and `foundry repeats`
 export {
   AGAIN_CORRECTION,

@@ -8,7 +8,11 @@ import { resolve } from 'node:path';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
-import { privateDirectory } from './providers/decision-host';
+import {
+  type DecisionEvents,
+  liveDecisionHosts,
+  privateDirectory,
+} from './providers/decision-host';
 import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
@@ -26,7 +30,6 @@ import {
 } from './providers/native-authentication';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
-import { createSubscriptionDecisions } from './providers/subscription-decisions';
 import { resolveSubscriptionPolicy } from './providers/subscription-policy';
 
 /**
@@ -61,10 +64,10 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
-import { largestRoster, largestStageCount } from './agents/configured-experts';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
-import type { StageConfig, StageEffort } from './classify';
+import { atlasRootOf, configureHarness } from './agents/thread-factory';
+import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
@@ -104,7 +107,6 @@ import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
   createProject,
-  DEFAULT_EXECUTOR_ID,
   defaultAgents,
   type FoundryConfig,
   starterConfig,
@@ -217,10 +219,6 @@ const inSession =
     : undefined;
 if (inSession)
   console.log("Wardens: held inside each thread's own Claude Code process (claude-in-session)");
-type DecisionEvents = Pick<
-  Parameters<typeof createSubscriptionDecisions>[0],
-  'onPressure' | 'onPrimedEvent'
->;
 /** Pressure and recycles of every decision host (the decision host and each stage host) reach the viewer. */
 const decisionEvents: DecisionEvents = {
   onPressure: (event: Parameters<NonNullable<DecisionEvents['onPressure']>>[0]) => {
@@ -245,66 +243,20 @@ const decisionEvents: DecisionEvents = {
     eventStream.pushError('subscription-decisions', message, 'warn');
   },
 };
-/** Whether a classify stage runs on the decision host (its model and effort are the decision ones). */
-const onDecisionHost = (stage: StageConfig) =>
-  !subscription ||
-  ((stage.model ?? subscription.policy.model) === subscription.policy.model &&
-    (stage.effort ?? subscription.policy.effort) === subscription.policy.effort);
-const decisions = subscription
-  ? createSubscriptionDecisions({
-      ...subscription.policy,
-      source: subscription.decision,
+// The decision host and one host per other model and effort a classify stage names
+// (chorus.wardens.stages), started on first use on the same login and bounds. API-token decisions
+// have no per-stage host: such a stage is refused.
+const live = subscription
+  ? liveDecisionHosts(config, subscription, {
       ...(inSession ? { inSession } : {}),
-      // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
-      // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-      // Sized for the largest chorus any project runs (region Wardens are per project).
-      primedSessions: Math.max(
-        16,
-        (largestStageCount(config, onDecisionHost) + 1) * largestRoster(config) + 8,
-      ),
-      ...decisionEvents,
+      events: decisionEvents,
+      log: (line) => console.log(line),
     })
   : undefined;
+const decisions = live?.decisions;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
-/**
- * One decision host per model and effort a classify stage names (chorus.wardens.stages), started on
- * first use on the same login and bounds as the decision host; a stage on the decision model and
- * effort shares that host. API-token decisions have no per-stage host: such a stage is refused.
- */
-const stageHosts = new Map<string, ReturnType<typeof createSubscriptionDecisions>>();
-const stageHost = (model: string | undefined, effort: StageEffort | undefined) => {
-  if (!subscription) return undefined;
-  const m = model ?? subscription.policy.model;
-  const e = effort ?? subscription.policy.effort;
-  // The decision model and effort: the Warden's own provider serves it.
-  if (m === subscription.policy.model && e === subscription.policy.effort) return null;
-  const key = `${m}|${e ?? ''}`;
-  let host = stageHosts.get(key);
-  if (!host) {
-    host = createSubscriptionDecisions({
-      ...subscription.policy,
-      source: subscription.decision,
-      model: m,
-      ...(e ? { effort: e } : {}),
-      // A key per stage this host serves, per Warden.
-      primedSessions: Math.max(
-        16,
-        largestStageCount(
-          config,
-          (stage) =>
-            (stage.model ?? subscription.policy.model) === m &&
-            (stage.effort ?? subscription.policy.effort) === e,
-        ) *
-          largestRoster(config) +
-          8,
-      ),
-      ...decisionEvents,
-    });
-    stageHosts.set(key, host);
-    console.log(`[subscription-decisions] stage host ${m}${e ? ` at ${e}` : ''} started`);
-  }
-  return host.provider;
-};
+const stageHost = (model: string | undefined, effort: StageEffort | undefined) =>
+  live ? live.stageHost(model, effort) : undefined;
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 // API-token mode: agents saved on the decision provider's id resolve to the decision client.
 const decisionAlias = subscription
@@ -667,12 +619,7 @@ if (prefilterServer?.status === 'not-installed') {
 } else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
 
 // atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
-const atlasRoot =
-  Object.values(config.projects)
-    .map((p) => p.path)
-    .filter((p): p is string => !!p)
-    .find((p) => existsSync(`${p}/.atlas`) || existsSync(`${p}/MAP.md`)) ??
-  (existsSync('.atlas') || existsSync('MAP.md') ? process.cwd() : undefined);
+const atlasRoot = atlasRootOf(config);
 
 // Every factory-created thread (main included) gets its own Librarian,
 // Cartographer, Wardens, FlowOrchestrator, reactive rules, event bridges and
@@ -796,19 +743,8 @@ console.log(
 
 const harness = new Harness(thread);
 
-// Auto-detect classifier/router/executor from config agent kinds
-for (const [id, agentCfg] of Object.entries(config.agents)) {
-  if (!agentCfg.enabled) continue;
-  if (agentCfg.kind === 'classifier') harness.setClassifier(id);
-  else if (agentCfg.kind === 'router') harness.setRouter(id);
-}
-harness.setDefaultExecutor(
-  Object.entries(config.agents).find(([_, a]) => a.kind === 'executor' && a.enabled)?.[0] ??
-    DEFAULT_EXECUTOR_ID,
-);
-
-// Load invocation/activation modes from config
-harness.loadModes(config.agents, config.layers);
+// Classifier/router/executor from config agent kinds, and invocation/activation modes.
+configureHarness(harness, config);
 
 // ---------------------------------------------------------------------------
 // Postgres persistence (optional — requires DATABASE_URL)
@@ -1060,12 +996,7 @@ const shutdown = async () => {
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
-    Promise.all([
-      sessionAdapter?.releaseAll?.(),
-      decisions?.shutdown(),
-      ...[...stageHosts.values()].map((host) => host.shutdown()),
-      inSession?.close(),
-    ]),
+    Promise.all([sessionAdapter?.releaseAll?.(), live?.shutdown(), inSession?.close()]),
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();
