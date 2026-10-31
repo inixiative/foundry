@@ -21,6 +21,7 @@ import {
   type ExecuteMeta,
   Executor,
   type FileMemory,
+  type Harness,
   inlineSource,
   type LLMMessage,
   type LLMProvider,
@@ -41,7 +42,11 @@ import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings
 import { compositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import type { SessionAdapter } from '../providers/session-adapter';
-import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
+import {
+  type AgentSettingsConfig,
+  DEFAULT_EXECUTOR_ID,
+  type FoundryConfig,
+} from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { configuredExperts } from './configured-experts';
 import { createNativeToolProjector } from './native-tool-projection';
@@ -241,6 +246,41 @@ export function buildAgents(
   }
 
   return agents;
+}
+
+/**
+ * A thread's harness as the daemon drives it: the configured classifier and router stages, the first
+ * enabled executor as the default (else the default executor id), and each agent's and layer's
+ * invocation mode.
+ */
+export function configureHarness(harness: Harness, config: FoundryConfig): void {
+  for (const [id, agentCfg] of Object.entries(config.agents)) {
+    if (!agentCfg.enabled) continue;
+    if (agentCfg.kind === 'classifier') harness.setClassifier(id);
+    else if (agentCfg.kind === 'router') harness.setRouter(id);
+  }
+  harness.setDefaultExecutor(
+    Object.entries(config.agents).find(([_, a]) => a.kind === 'executor' && a.enabled)?.[0] ??
+      DEFAULT_EXECUTOR_ID,
+  );
+  harness.loadModes(config.agents, config.layers);
+}
+
+/**
+ * The Cartographer's atlas root: the first atlas-mapped project (it has `.atlas/` or `MAP.md`), else
+ * `cwd` when it is mapped.
+ */
+export function atlasRootOf(
+  config: FoundryConfig,
+  cwd: string = process.cwd(),
+): string | undefined {
+  const mapped = (dir: string) => existsSync(`${dir}/.atlas`) || existsSync(`${dir}/MAP.md`);
+  return (
+    Object.values(config.projects)
+      .map((p) => p.path)
+      .filter((p): p is string => !!p)
+      .find(mapped) ?? (mapped(cwd) ? cwd : undefined)
+  );
 }
 
 // ---------------------------------------------------------------------------

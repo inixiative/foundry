@@ -5,7 +5,7 @@
  */
 import { type AgentConfig, BaseAgent, type ExecutionResult } from './base-agent';
 import { computeHash, REQUIRED_CONTEXT_BLOCKED } from './context-layer';
-import type { AssembledContext, ContextStack, LayerFilter } from './context-stack';
+import type { AssembledContext, ContextStack, LayerFilter, PromptBlock } from './context-stack';
 import { buildInjectionArtifact, type InjectionArtifact, type MessageDecoration } from './messages';
 import type { NativeEvidence, NativeObservation } from './native-evidence';
 import {
@@ -55,6 +55,16 @@ export interface ExecuteMeta {
   recordDelivery?: (report: SessionDeliveryReport) => void;
   /** Images sent with the payload; the handler puts them on the user message it sends. */
   images?: readonly ImageInput[];
+}
+
+/**
+ * The user's message as a turn sends it: the after-message notes (Wardens chiming in) appended to
+ * its end below a rule, each note's text in order. No notes: the message as typed.
+ */
+export function withAfterMessageNotes(message: string, notes: readonly PromptBlock[]): string {
+  return notes.length
+    ? `${message}\n\n---\n\n${notes.map((note) => note.text).join('\n\n')}`
+    : message;
 }
 
 export type ExecuteHandler<TPayload, TResult> = (
@@ -219,9 +229,7 @@ export class Executor<TPayload = unknown, TResult = unknown> extends BaseAgent<T
     let recording = true;
     try {
       const sent = (
-        notes.length && typeof payload === 'string'
-          ? `${payload}\n\n---\n\n${notes.map((note) => note.text).join('\n\n')}`
-          : payload
+        typeof payload === 'string' ? withAfterMessageNotes(payload, notes) : payload
       ) as TPayload;
       output = await this._handler(context, sent, {
         ...meta,
