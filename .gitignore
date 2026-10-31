@@ -20,3 +20,4 @@ dist
 
 # Atlas-generated code map (regenerate with: bunx atlas generate)
 MAP.md
+/tmp/*
