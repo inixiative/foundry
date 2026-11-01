@@ -40,6 +40,12 @@ export interface StageConfig {
   readonly pointer?: PointerSettings;
   /** Every stage but the last: the outcomes that go on to the next stage, carrying their tag and why. */
   readonly escalate?: readonly Exclude<ClassifyOutcome, 'no'>[];
+  /**
+   * Every stage but the last: whether the next stage is handed this stage's why with its outcome.
+   * Omitted, it is (true). False hands on the outcome alone, so the next stage judges the moment
+   * without the earlier reading's argument (2026-11-01 l2-charter: a carried wrong why kept false yeses).
+   */
+  readonly carryWhy?: boolean;
   /** Its share of the trigger's deadline, in (0, 1]. Omitted, an even split of what the others leave. */
   readonly deadline?: number;
 }
@@ -68,6 +74,7 @@ const STAGE_KEYS = [
   'task',
   'pointer',
   'escalate',
+  'carryWhy',
   'deadline',
 ] as const;
 /**
@@ -161,6 +168,10 @@ export function validateStages(
       escalate = list;
     } else if (!last)
       throw Error(`${at}.escalate is required: which outcomes go on to stage ${index + 1}`);
+    if (s.carryWhy !== undefined) {
+      if (last) throw Error(`${at}.carryWhy: the last stage hands nothing on`);
+      if (typeof s.carryWhy !== 'boolean') throw Error(`${at}.carryWhy must be true or false`);
+    }
     if (s.deadline !== undefined) {
       if (typeof s.deadline !== 'number' || !(s.deadline > 0 && s.deadline <= 1))
         throw Error(`${at}.deadline must be a share of the trigger's deadline, in (0, 1]`);
@@ -174,6 +185,7 @@ export function validateStages(
       task,
       ...(pointer ? { pointer: Object.freeze(pointer) } : {}),
       ...(escalate ? { escalate: Object.freeze([...escalate]) } : {}),
+      ...(typeof s.carryWhy === 'boolean' ? { carryWhy: s.carryWhy } : {}),
       ...(typeof s.deadline === 'number' ? { deadline: s.deadline } : {}),
     });
   });
@@ -212,6 +224,7 @@ function sameStage(a: StageConfig, b: StageConfig): boolean {
     a.reason === b.reason &&
     a.task === b.task &&
     a.pointer?.any === b.pointer?.any &&
+    a.carryWhy === b.carryWhy &&
     a.deadline === b.deadline
   );
 }

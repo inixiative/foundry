@@ -135,8 +135,6 @@ export interface CharterEvalOptions {
     domain: string,
     trigger: WardenProbeTrigger,
   ) => WardenProbeAnswer | undefined;
-  /** With `carry`: hand stage 2 stage 1's why (live does). Default true. */
-  readonly carryWhy?: boolean;
 }
 
 /** One stage's debug readings for one cell (`debug.jsonl`). */
@@ -420,7 +418,7 @@ async function ask(
     const later = await run(warden, undefined, {
       stage: 0,
       outcome,
-      ...(options.carryWhy !== false && why ? { why } : {}),
+      ...(stages[0]!.carryWhy !== false && why ? { why } : {}),
       ...(first.model ? { model: first.model } : {}),
     });
     return [
