@@ -174,7 +174,9 @@ export function ProjectArchive({ projectId }) {
       routing &&
       (routing.organizationId
         ? html`<p class="settings-desc">Organization: <strong>${routing.organizationId}</strong></p>`
-        : html`<div class="settings-row">
+        : !routing.paired || !libraries.length
+          ? null
+          : html`<div class="settings-row">
             <input class="settings-input small" list="archive-organizations" aria-label="Organization" placeholder="Organization this project belongs to" value=${organization} onInput=${(e) => setOrganization(e.target.value)} />
             <datalist id="archive-organizations">${(routing.organizations ?? []).map((id) => html`<option key=${id} value=${id} />`)}</datalist>
           </div>`)

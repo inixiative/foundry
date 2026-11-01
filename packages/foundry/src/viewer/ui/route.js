@@ -37,7 +37,7 @@ export const PROJECT_SETTINGS = [
   ['archive', 'Archive'],
   ['sources', 'Sources'],
   ['gloss', 'Gloss', null, true],
-  ['overrides', 'Overrides', null, true],
+  ['overrides', 'Overrides', null],
 ];
 
 /** { page: 'workspace' | 'settings' | 'analytics', projectId: string | null, section?: string } */

@@ -531,6 +531,54 @@ function ComingSoon({ children }) {
   </section>`;
 }
 
+/** What this project sets on top of Foundry's settings, read-only (edit `projects[id]` in settings.json). */
+const OVERRIDE_GROUPS = [
+  ['defaults', 'Defaults', 'Executor and classifier provider and model'],
+  ['toolRules', 'Tool rules', 'Capabilities here override the global ones; protected paths add up'],
+  ['feedback', 'Feedback', 'Each field overrides the global one'],
+  ['prompts', 'Prompts', 'Base identity prompt files'],
+  ['agents', 'Agents', 'Standalone, or extending a global agent'],
+  ['layers', 'Layers', 'Merged over the global layers'],
+];
+
+function overrideEntries(value) {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).filter(([, v]) => v !== undefined);
+}
+
+function overrideValue(key, value) {
+  if (key === 'agents' && value && typeof value === 'object')
+    return 'extends' in value ? `extends ${value.extends}` : 'standalone';
+  if (value === null || typeof value !== 'object') return String(value);
+  return JSON.stringify(value);
+}
+
+function ProjectOverrides({ project }) {
+  const groups = OVERRIDE_GROUPS.map(([key, label, desc]) => ({
+    key,
+    label,
+    desc,
+    entries: overrideEntries(project[key]),
+  })).filter((g) => g.entries.length);
+  return html`<section class="settings-card project-overrides">
+    <p class="settings-desc">What this project sets on top of Foundry's settings. Everything not listed is inherited. Read-only here: edit <code>projects[${project.id}]</code> in settings.json.</p>
+    ${
+      groups.length
+        ? groups.map(
+            (g) => html`<div key=${g.key} class="override-group" data-override=${g.key}>
+              <h3>${g.label}</h3>
+              <p class="settings-desc">${g.desc}</p>
+              <dl class="override-list">${g.entries.map(
+                ([k, v]) =>
+                  html`<div key=${k}><dt><code>${k}</code></dt><dd><code>${overrideValue(g.key, v)}</code></dd></div>`,
+              )}</dl>
+            </div>`,
+          )
+        : html`<p class="settings-empty">No overrides: this project inherits everything from Foundry settings.</p>`
+    }
+  </section>`;
+}
+
 function FoundrySection({ section, config }) {
   const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
     id,
@@ -570,8 +618,7 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
   if (section === 'conversations')
     return html`<${ProjectConversations} key=${projectId} projectId=${projectId} />`;
-  if (section === 'overrides')
-    return html`<${ComingSoon}>Overrides: this project's own defaults, agents and layers on top of Foundry's. Until then a project inherits everything from Foundry settings (edit <code>projects[id]</code> in settings.json to override by hand).</${ComingSoon}>`;
+  if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
   if (section === 'sources') {
     const sources = Object.values(project.sources || {});
     return html`
