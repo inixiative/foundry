@@ -222,7 +222,7 @@ export function extractCorrections(
 }
 
 const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/sk-ant-[A-Za-z0-9_-]{8,}/g, '[REDACTED:anthropic-key]'],
+  [/sk-ant-[A-Za-z0-9_-]{20,}/g, '[REDACTED:anthropic-key]'],
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED:api-key]'],
   [/gh[pousr]_[A-Za-z0-9]{20,}/g, '[REDACTED:github-token]'],
   [/github_pat_[A-Za-z0-9_]{20,}/g, '[REDACTED:github-token]'],

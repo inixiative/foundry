@@ -7,6 +7,7 @@
 // become placeholders it can fill back in; identity and secrets are replaced for good.
 import { realpathSync } from 'node:fs';
 import { hostname, tmpdir, userInfo } from 'node:os';
+import { scrubSecrets } from '@inixiative/foundry-core';
 import { secretInText, unredactedSecretInText } from '../providers/kingdom-secrets';
 
 export type ScrubContext = { cwd?: string };
@@ -14,6 +15,10 @@ export type ScrubContext = { cwd?: string };
 const REDACTED_UUID = '00000000-0000-4000-8000-000000000000';
 const REDACTED_EMAIL = 'redacted@example.invalid';
 
+/**
+ * Cassette placeholders the replay and the leak check know. Every other credential shape is
+ * core's one secret table (`scrubSecrets`), applied after these.
+ */
 const SECRETS: [RegExp, string][] = [
   [/sk-ant-[A-Za-z0-9_-]{8,}/g, 'sk-ant-REDACTED'],
   [/\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}/g, 'sk-REDACTED'],
@@ -75,7 +80,7 @@ export function scrubText(text: string, context: ScrubContext = {}): string {
   let out = text;
   for (const [pattern, replacement] of [...pathRules(context), ...SECRETS])
     out = out.replace(pattern, replacement);
-  return out;
+  return scrubSecrets(out).text;
 }
 
 const redactIdentity = (value: string) =>
