@@ -1,3 +1,8 @@
+/**
+ * @atlas
+ * @kind config
+ * @partOf feature:viewer, primitive:settings
+ */
 import { existsSync, mkdirSync, watch } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import {
