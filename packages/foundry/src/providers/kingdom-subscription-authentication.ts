@@ -8,6 +8,13 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { kingdomUrl } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
+import { defaultProfileDirectory } from './default-profiles';
+import {
+  claudeSettingsFiles,
+  type HarnessSettingsLaunch,
+  shareUserSetup,
+  subscriptionSettingsGuard,
+} from './harness-settings';
 import {
   KingdomClient,
   type KingdomLimitReading,
@@ -74,6 +81,8 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       directory: string;
       capacity: (threadId: string) => Promise<KingdomCapacity>;
       warn?: (message: string) => void;
+      /** The user's own Claude home shared into each login's home; default ~/.claude. */
+      userClaudeDirectory?: string;
     },
   ) {
     if (!isAbsolute(options.directory)) throw Error('Kingdom profile directory must be absolute');
@@ -142,7 +151,11 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       capacityId: released.capacityId,
       mode: 'kingdom-subscription' as const,
       check,
-      launch: (argv: string[], inherited: Record<string, string | undefined>) => {
+      launch: (
+        argv: string[],
+        inherited: Record<string, string | undefined>,
+        harness?: HarnessSettingsLaunch,
+      ) => {
         check();
         if (active) throw Error('Authentication launch already owns a process');
         const env = withoutCompetingCredentials(inherited);
@@ -154,7 +167,15 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
             throw Error('Subscription launch override refused');
           env.CLAUDE_CONFIG_DIR = home;
           env.CLAUDE_CODE_OAUTH_TOKEN = released.accessToken;
-          launchArgs = [...launchArgs, '--setting-sources', ''];
+          if (harness) {
+            // The login's home is Foundry's; the user's own setup is shared into it.
+            shareUserSetup(
+              home,
+              this.options.userClaudeDirectory ?? defaultProfileDirectory('claude'),
+            );
+            const guard = subscriptionSettingsGuard(claudeSettingsFiles(home, harness));
+            launchArgs = [...launchArgs, '--setting-sources', harness.sources, '--settings', guard];
+          } else launchArgs = [...launchArgs, '--setting-sources', ''];
         } else {
           assertCodexLaunchArguments(argv);
           this.writeCodexLogin(home, released);

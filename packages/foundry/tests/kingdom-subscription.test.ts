@@ -32,7 +32,7 @@ const temporary = async () => {
 
 const setupToken = `sk-ant-oat01-${'a'.repeat(40)}`;
 
-async function kingdomWithLogin(runtime: 'claude' | 'codex') {
+async function kingdomWithLogin(runtime: 'claude' | 'codex', userClaudeDirectory?: string) {
   const directory = await temporary();
   const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
   const bindingId = crypto.randomUUID(),
@@ -84,6 +84,7 @@ async function kingdomWithLogin(runtime: 'claude' | 'codex') {
       model: 'claude-opus-5-5',
       effort: 'high',
     }),
+    ...(userClaudeDirectory ? { userClaudeDirectory } : {}),
   });
   return {
     directory,
@@ -141,6 +142,31 @@ test('a Kingdom-capacity Claude thread runs on the released login, in memory, in
     'releaseSubscription',
   ]);
   expect(() => again.launch(['claude', '--settings', '{}'], {})).toThrow('override refused');
+});
+
+test('a pool main thread loads the user’s own setup into the login’s home, under the guard', async () => {
+  const user = await mkdtemp(join(tmpdir(), 'kingdom-user-claude-'));
+  cleanups.push(() => rm(user, { recursive: true, force: true }));
+  await mkdir(join(user, 'commands'));
+  await Bun.write(
+    join(user, 'settings.json'),
+    JSON.stringify({ apiKeyHelper: 'echo paid', env: { AWS_PROFILE: 'p' } }),
+  );
+  const { directory, auth, loginId } = await kingdomWithLogin('claude', user);
+  const home = join(directory, 'subscriptions', loginId, 'claude');
+  const launch = await auth.prepare('thread-1', 'claude');
+  const child = launch.launch(['claude', '-p'], {}, { sources: 'user', cwd: directory });
+  expect(child.argv.slice(0, 4)).toEqual(['claude', '-p', '--setting-sources', 'user']);
+  expect(child.argv[4]).toBe('--settings');
+  const guard = JSON.parse(child.argv[5]!);
+  expect(guard.apiKeyHelper).toBe('');
+  expect(guard.env.AWS_PROFILE).toBe('');
+  expect(child.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(setupToken);
+  expect(JSON.parse(await readFile(join(home, 'settings.json'), 'utf8')).apiKeyHelper).toBe(
+    'echo paid',
+  );
+  expect(existsSync(join(home, 'commands'))).toBe(true);
+  launch.release();
 });
 
 test('limit readings from the native session go back to Kingdom for the run', async () => {

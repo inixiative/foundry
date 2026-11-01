@@ -1,0 +1,218 @@
+/**
+ * @atlas
+ * @kind service
+ * @partOf feature:nativeAuth
+ */
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  symlinkSync,
+  unlinkSync,
+} from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
+import { writePrivateFile } from '../client/private-file';
+
+/**
+ * What a main thread's Claude loads of the user's own setup (CORE-003): settings, commands, skills,
+ * agents, plugins, hooks and permissions. `user` alone outside a registered project, because a
+ * project's committed hooks run in headless Claude whether or not anyone trusted the folder
+ * (measured on Claude 2.1.316); a registered project is one the user chose. CLAUDE.md files are a
+ * separate switch (`composition.harnessLoading`, `CLAUDE_CODE_DISABLE_CLAUDE_MDS`).
+ */
+export type HarnessSettingSources = 'user' | 'user,project,local';
+
+export interface HarnessSettingsLaunch {
+  sources: HarnessSettingSources;
+  /** The thread's working directory, whose `.claude/settings*.json` the project sources read. */
+  cwd: string;
+}
+
+const real = (path: string) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+/** `user,project,local` inside a registered project, else `user`. */
+export function harnessSettingSources(
+  cwd: string,
+  projectPaths: readonly string[],
+): HarnessSettingSources {
+  const at = real(cwd);
+  const inside = projectPaths.some((path) => {
+    const step = relative(real(path), at);
+    return step === '' || (!step.startsWith(`..${sep}`) && step !== '..' && !step.startsWith(sep));
+  });
+  return inside ? 'user,project,local' : 'user';
+}
+
+/** Settings keys that hand Claude a credential other than the subscription login. */
+const CREDENTIAL_SETTINGS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport'] as const;
+
+/**
+ * Blanked whatever the files say: every provider switch and every credential, endpoint or
+ * identity variable Claude 2.1.316 reads (from the binary). Claude re-reads settings during a
+ * session, so a key added after launch is still covered.
+ */
+const ALWAYS_BLANK_ENV = [
+  'ANTHROPIC_API_HOST',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_AWS_API_KEY',
+  'ANTHROPIC_AWS_AUTH',
+  'ANTHROPIC_AWS_BASE_URL',
+  'ANTHROPIC_AWS_WORKSPACE_ID',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
+  'ANTHROPIC_CONFIG_DIR',
+  'ANTHROPIC_CUSTOM_HEADERS',
+  'ANTHROPIC_FEDERATION_RULE_ID',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
+  'ANTHROPIC_FOUNDRY_BASE_URL',
+  'ANTHROPIC_FOUNDRY_RESOURCE',
+  'ANTHROPIC_GOOGLE_CLOUD_AUTH',
+  'ANTHROPIC_GOOGLE_CLOUD_BASE_URL',
+  'ANTHROPIC_GOOGLE_CLOUD_PROJECT',
+  'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID',
+  'ANTHROPIC_IDENTITY_TOKEN',
+  'ANTHROPIC_IDENTITY_TOKEN_FILE',
+  'ANTHROPIC_ORGANIZATION_ID',
+  'ANTHROPIC_PROFILE',
+  'ANTHROPIC_SERVICE_ACCOUNT_ID',
+  'ANTHROPIC_UNIX_SOCKET',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
+  'ANTHROPIC_WORKSPACE_ID',
+  'CLAUDE_CODE_FEDERATION_CACHE_DIR',
+  'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_GATEWAY',
+  'CLAUDE_CODE_USE_MANTLE',
+  'CLAUDE_CODE_USE_VERTEX',
+] as const;
+
+/**
+ * Also blanked when a loaded file sets them: keys a later Claude may add, cloud credentials, and
+ * proxy and CA settings. Proxy and CA are blanked only when a file sets them, so a proxy the user
+ * runs Foundry behind still works; Node reads a CA only at start, so one added later can't apply.
+ */
+const CREDENTIAL_ENV =
+  /^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_API_KEY|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_APPLICATION_CREDENTIALS$|CLOUD_ML_|VERTEX_|NODE_EXTRA_CA_CERTS$|NODE_TLS_REJECT_UNAUTHORIZED$|SSL_CERT_FILE$|HTTPS?_PROXY$|https?_proxy$)/;
+
+/** The settings files Claude reads for these sources. Managed settings are the machine admin's. */
+export function claudeSettingsFiles(
+  configDirectory: string,
+  launch: HarnessSettingsLaunch,
+): string[] {
+  const files = [join(configDirectory, 'settings.json')];
+  if (launch.sources === 'user,project,local')
+    files.push(
+      join(launch.cwd, '.claude', 'settings.json'),
+      join(launch.cwd, '.claude', 'settings.local.json'),
+    );
+  return files;
+}
+
+function envKeys(file: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return []; // Claude refuses an unreadable settings file itself.
+  }
+  const env = (parsed as { env?: unknown } | null)?.env;
+  return env && typeof env === 'object' && !Array.isArray(env) ? Object.keys(env) : [];
+}
+
+/**
+ * The `--settings` a subscription launch adds over the loaded files. Flag settings outrank user,
+ * project and local, so a blank here wins: no loaded `apiKeyHelper` or `env` can move the thread
+ * to an API key or send the login's token to another endpoint (each did, measured on 2.1.316).
+ * A file that sets the subscription token itself is refused: blanking it would end the login.
+ */
+export function subscriptionSettingsGuard(files: readonly string[]): string {
+  const blank = new Set<string>(ALWAYS_BLANK_ENV);
+  for (const file of files)
+    for (const key of envKeys(file)) {
+      if (key === 'CLAUDE_CODE_OAUTH_TOKEN')
+        throw Error(
+          `Claude settings at ${file} set CLAUDE_CODE_OAUTH_TOKEN; Foundry runs this thread on its subscription login. Remove it, or turn harness settings off (composition.harnessSettings: "off").`,
+        );
+      if (CREDENTIAL_ENV.test(key)) blank.add(key);
+    }
+  return JSON.stringify({
+    ...Object.fromEntries(CREDENTIAL_SETTINGS.map((key) => [key, ''])),
+    env: Object.fromEntries([...blank].sort().map((key) => [key, ''])),
+  });
+}
+
+/** The user's own folders, reached from a Foundry-owned home. */
+// Not plugins: every Claude on the login writes its own plugin state there, so a link would
+// let pool sessions rewrite the user's installed plugins. The user's plugins are not shared yet.
+const USER_FOLDERS = ['commands', 'skills', 'agents', 'output-styles'] as const;
+
+/**
+ * A Kingdom pool login runs on a Foundry-owned CLAUDE_CONFIG_DIR, so `user` would read an empty
+ * home. Give it the user's own setup: their settings.json as a private copy (the profile check
+ * refuses a linked settings file; the guard blanks its credentials) and their folders by link.
+ * A real folder found where a link goes is moved aside, kept, not deleted. Links are swapped by rename, so another thread on the login never sees a gap.
+ * Nothing that holds the user's login (`.credentials.json`, the keychain entry) is reachable.
+ * User-scope MCP servers (`~/.claude.json`) and plugins are not shared.
+ */
+export function shareUserSetup(home: string, userDirectory: string): void {
+  const settings = join(userDirectory, 'settings.json');
+  const copy = join(home, 'settings.json');
+  if (existsSync(settings)) {
+    const text = readFileSync(settings, 'utf8');
+    let same = false;
+    try {
+      same = readFileSync(copy, 'utf8') === text;
+    } catch {
+      /* No copy yet. */
+    }
+    // Other threads on this login hold the home open: rewrite only what changed.
+    if (!same) writePrivateFile(copy, text);
+  } else
+    try {
+      unlinkSync(copy);
+    } catch {
+      /* Nothing to remove. */
+    }
+  for (const name of USER_FOLDERS) {
+    const link = join(home, name);
+    const target = join(userDirectory, name);
+    let current: ReturnType<typeof lstatSync> | undefined;
+    try {
+      current = lstatSync(link);
+    } catch {
+      /* Missing. */
+    }
+    const wanted = existsSync(target);
+    if (current?.isSymbolicLink() && wanted && readlinkSync(link) === target) continue;
+    if (current && !current.isSymbolicLink())
+      renameSync(link, `${link}.before-foundry-${Date.now()}`);
+    if (!wanted) {
+      if (current?.isSymbolicLink()) unlinkSync(link);
+      continue;
+    }
+    const temporary = join(home, `.${name}-${crypto.randomUUID()}`);
+    symlinkSync(target, temporary);
+    renameSync(temporary, link);
+  }
+}

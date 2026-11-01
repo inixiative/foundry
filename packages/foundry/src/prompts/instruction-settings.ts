@@ -51,6 +51,13 @@ export interface CompositionSettings {
    * exactly when an enabled layer reads an enabled `instructions` source. Applies on restart.
    */
   harnessLoading?: 'suppress' | 'load';
+  /**
+   * Whether a main thread's Claude loads the user's own settings, commands, skills, agents,
+   * plugins and hooks (CORE-003). "load" (default): `user` everywhere, plus the project's own
+   * inside a registered project; "off": none. Credentials in them never replace the subscription
+   * login. CLAUDE.md files follow `harnessLoading`. Applies to new sessions.
+   */
+  harnessSettings?: 'load' | 'off';
   /** The ladder `nodes` merge over: "claude-code" (default; Claude Code's own discovery) or "none". */
   preset?: 'claude-code' | 'none';
   /** Registered nodes by id. A preset id replaces that node; `enabled: false` removes it. */
@@ -333,6 +340,9 @@ export function validateCompositionSettings(
   const loading = settings.harnessLoading;
   if (loading !== undefined && loading !== 'suppress' && loading !== 'load')
     throw Error('composition.harnessLoading must be "suppress" or "load"');
+  const harness = settings.harnessSettings;
+  if (harness !== undefined && harness !== 'load' && harness !== 'off')
+    throw Error('composition.harnessSettings must be "load" or "off"');
   if (
     settings.preset !== undefined &&
     settings.preset !== 'claude-code' &&

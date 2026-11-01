@@ -44,6 +44,7 @@ import {
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import type { HarnessSettingSources } from './harness-settings';
 import type { InSessionWardens } from './in-session-wardens';
 import {
   appServerBridgeConfiguration,
@@ -532,6 +533,11 @@ export interface ClaudeCodeSessionAdapterConfig {
    * subagents inside its own process (docs/THREAD-TREE.md spec C).
    */
   inSession?: InSessionWardens;
+  /**
+   * Which of the user's own Claude settings a main thread loads (CORE-003), by its working
+   * directory; absent, none. Decision and fixture sessions never load them.
+   */
+  harnessSettings?: (cwd: string) => HarnessSettingSources | undefined;
 }
 
 export class ClaudeCodeSessionAdapter implements SessionAdapter {
@@ -549,9 +555,11 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   private _defaults: ClaudeCodeSessionAdapterConfig['defaults'];
   private _controlledFixtureSpawn?: ClaudeCodeSessionAdapterConfig['controlledFixtureSpawn'];
   private _signals: ThreadSignalBindings;
+  private _harnessSettings?: ClaudeCodeSessionAdapterConfig['harnessSettings'];
 
   constructor(config: ClaudeCodeSessionAdapterConfig) {
     this._store = config.store;
+    this._harnessSettings = config.harnessSettings;
     this._authentication = config.authentication;
     // Validate before creating a session, and preserve the caller's spawner.
     claudeContextEnvironment({}, config.contextBudget);
@@ -634,8 +642,18 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
         options,
       );
     let ownedExit: Promise<number> | undefined;
+    // A main thread is the user's own Claude: their settings, commands, skills and hooks load.
+    // Not with in-session Wardens: they run as subagents in this process, and the user's hooks,
+    // denies and env (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) would reach every Warden call.
+    const mainThread =
+      opts.tools !== false && !fixture && !opts.threadId.includes(':aux:') && !this._inSession;
+    const sources = mainThread ? this._harnessSettings?.(opts.cwd) : undefined;
     const trackedSpawn: NonNullable<ClaudeCodeSessionConfig['spawn']> = (cmd, options) => {
-      const launch = auth?.launch(cmd, options.env);
+      const launch = auth?.launch(
+        cmd,
+        options.env,
+        sources ? { sources, cwd: opts.cwd } : undefined,
+      );
       let child: ReturnType<typeof defaultSpawn>;
       try {
         child = fixture

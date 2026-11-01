@@ -1,6 +1,6 @@
 # CORE-003: Main threads load the harness's own settings, commands and skills
 
-**Status**: 📝 Proposed (not built). Direction from Aron 2026-11-01; mechanism verified live, needs his yes.
+**Status**: 🔨 Built for Claude (2026-11-01, Aron: "let's start with that and see if there are any problems with it"). Codex not yet.
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-11-01
@@ -32,7 +32,19 @@ That turns off the user's commands, skills, hooks, MCP config and permissions, s
 
 So commands load without CLAUDE.md, and nothing loads twice.
 
-## Problems to settle
+## What the live probes found (Claude 2.1.316, 2026-11-01)
+
+| Concern | Result | What the build does |
+|---|---|---|
+| CLAUDE.md with settings on | `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` hides it; `/ping` still runs | Keeps the existing switch (`composition.harnessLoading`), not `claudeMdExcludes` |
+| `disableAllHooks: true` | Foundry's control-protocol PreToolUse callback still fires | Nothing needed |
+| User `permissions.allow` | Skips the runtime's `can_use_tool` ask; the PreToolUse callback still sees and journals the call; a gate deny beats the allow | Nothing needed: the user's own allow is honoured, structural rules hold at pre-use |
+| Settings `defaultMode: bypassPermissions` | The launch's `--permission-mode` wins | Nothing needed |
+| `apiKeyHelper` / `env.ANTHROPIC_API_KEY` in settings | **Replace the subscription login** ("Invalid API key"), even from an untrusted project | `--settings` blanks them (flag settings outrank user/project/local) |
+| `env.ANTHROPIC_BASE_URL` in settings | **Sends the login's token to that endpoint** | Blanked the same way |
+| Project hooks in an untrusted folder | **Run** in headless Claude | Project sources load only inside a registered project; `user` elsewhere |
+
+## Problems to settle (as first written)
 
 1. **Pool launches use a private config directory per login** (`CLAUDE_CONFIG_DIR = home`). `user` settings there are the login's empty home, not `~/.claude`, so the user's own commands, skills and agents wouldn't load even with `user` on. The candidates are: link `~/.claude/{commands,skills,agents}` into the login's home, or pass them with `--plugin-dir` / `--add-dir`. The token must stay in memory, so `~/.claude/settings.json` can't be copied blind (it may hold an `apiKeyHelper` or env).
 2. **The launch guards refuse settings overrides** (`/^(--settings|--setting-sources|--fallback-model)/` in both files). They exist so a subscription launch can't be redirected to an API key. The new launch must keep that guarantee: no `apiKeyHelper`, `ANTHROPIC_API_KEY` or `env` from loaded settings may override the subscription token.

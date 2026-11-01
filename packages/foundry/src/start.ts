@@ -15,6 +15,7 @@ import {
   privateDirectory,
 } from './providers/decision-host';
 import { createDecisionProvider } from './providers/decision-provider';
+import { harnessSettingSources } from './providers/harness-settings';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import {
@@ -414,6 +415,16 @@ function createProvider(config: FoundryConfig): {
         store: sessionStore,
         authentication: routed,
         ...(inSession ? { inSession } : {}),
+        // Read live: a project registered or the switch flipped applies to the next session.
+        harnessSettings: (cwd: string) =>
+          configStore.config.composition?.harnessSettings === 'off'
+            ? undefined
+            : harnessSettingSources(
+                cwd,
+                Object.values(configStore.config.projects ?? {})
+                  .filter((project) => project.enabled !== false && project.path)
+                  .map((project) => project.path!),
+              ),
         defaults: {
           model: config.defaults.model,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),

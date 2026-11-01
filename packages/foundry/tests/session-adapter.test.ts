@@ -4,6 +4,7 @@ import { type Signal, SignalBus } from '@inixiative/foundry-core';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { InSessionWardens } from '../src/providers/in-session-wardens';
 import {
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
@@ -1078,5 +1079,93 @@ test('context policy survives fresh sessions, resume and native forks without ex
     session.kill();
     fork.kill();
     resumed.kill();
+  }
+});
+
+test('only a main thread asks its launch for the user’s harness settings (CORE-003)', async () => {
+  const seen: Array<{ threadId: string; harness: unknown }> = [];
+  const auth = {
+    bindingId: (threadId: string) => threadId,
+    prepare: async (threadId: string) => ({
+      bindingId: threadId,
+      sourceId: 'source',
+      integrationId: 'integration',
+      mode: 'native-profile' as const,
+      check: () => {},
+      launch: (argv: string[], env: Record<string, string | undefined>, harness?: unknown) => {
+        seen.push({ threadId, harness });
+        return { argv, env };
+      },
+      release: () => {},
+    }),
+  };
+  const asked: string[] = [];
+  const adapter = new ClaudeCodeSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    authentication: auth,
+    harnessSettings: (cwd) => {
+      asked.push(cwd);
+      return 'user,project,local';
+    },
+    defaults: { spawn: () => makeFakeProc().proc },
+  });
+  const main = await adapter.createSession({ threadId: 'main', cwd: '/repo' });
+  const aux = await adapter.createSession({ threadId: 'main:aux:domain:x', cwd: '/repo' });
+  const text = await adapter.createSession({ threadId: 'text', cwd: '/repo', tools: false });
+  try {
+    await Promise.all([main.start(), aux.start(), text.start()]);
+    expect(seen).toEqual([
+      { threadId: 'main', harness: { sources: 'user,project,local', cwd: '/repo' } },
+      { threadId: 'main:aux:domain:x', harness: undefined },
+      { threadId: 'text', harness: undefined },
+    ]);
+    expect(asked).toEqual(['/repo']);
+  } finally {
+    for (const session of [main, aux, text]) session.kill();
+  }
+});
+
+test('with in-session Wardens a main thread loads no harness settings, so user hooks never reach a Warden', async () => {
+  const { ClaudeCodeSessionAdapter: Adapter } = await import('../src/providers/session-adapter');
+  const seen: unknown[] = [];
+  const adapter = new Adapter({
+    store: new InMemoryExternalSessionStore(),
+    authentication: {
+      bindingId: (threadId: string) => threadId,
+      prepare: async (threadId: string) => ({
+        bindingId: threadId,
+        sourceId: 'source',
+        integrationId: 'integration',
+        mode: 'native-profile' as const,
+        check: () => {},
+        launch: (argv: string[], env: Record<string, string | undefined>, harness?: unknown) => {
+          seen.push(harness);
+          return { argv, env };
+        },
+        release: () => {},
+      }),
+    },
+    harnessSettings: () => 'user,project,local',
+    // A host with no agents: only whether one is attached matters here.
+    inSession: {
+      attach: () => ({
+        agents: {},
+        mcpServers: [],
+        attach: () => {},
+        started: () => {},
+        mcp: () => {},
+        preToolUse: () => undefined,
+        permission: () => undefined,
+      }),
+      detached: () => {},
+    } as unknown as InSessionWardens,
+    defaults: { spawn: () => makeFakeProc().proc },
+  });
+  const main = await adapter.createSession({ threadId: 'main', cwd: '/repo' });
+  try {
+    await main.start();
+    expect(seen).toEqual([undefined]);
+  } finally {
+    main.kill();
   }
 });

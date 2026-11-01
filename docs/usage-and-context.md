@@ -259,8 +259,8 @@ restart.
 
 - Claude Code: `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on the worker. It drops every
   CLAUDE.md, rule, AGENTS.md and auto memory file, at launch and on demand.
-  `--setting-sources ''` (the subscription worker's isolation) already drops the
-  CLAUDE.md files but not auto memory, so `load` on that worker keeps only memory.
+  With `harnessSettings` on (below), `load` gives a main thread the
+  CLAUDE.md files as Claude Code finds them; off, it keeps only auto memory.
 - Codex app-server: thread config `project_doc_max_bytes: 0` drops project
   AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting. Subscription
   and native-profile workers run on a Foundry-private CODEX_HOME without one, so
@@ -268,6 +268,45 @@ restart.
   it natively, so Foundry leaves that level out.
 - The off switch is kept through every authentication launch (subscription,
   gateway, Kingdom), which otherwise clear `CLAUDE_CODE_*` variables.
+
+**The user's own Claude setup (CORE-003).** `composition.harnessSettings`
+(`load`, the default, or `off`) decides whether a main thread's Claude loads the
+user's settings, commands, skills, agents, plugins, hooks and permissions, as
+their own Claude does. Inside a registered project it loads `user,project,local`;
+elsewhere `user` only, because a project's committed hooks run in headless Claude
+whether or not anyone trusted the folder. Warden, decision and fixture sessions
+load none, and neither does a main thread while in-session Wardens are on
+(`decisionRuntime: claude-in-session`), since its Wardens run inside it. It is
+read when each session starts, and applies to subscription launches; a thread
+with no subscription policy is the user's own Claude, which loads everything.
+
+- **The subscription stays the login.** Settings can switch Claude to an API key
+  (`apiKeyHelper`, `env.ANTHROPIC_API_KEY`) or send the login's token elsewhere
+  (`env.ANTHROPIC_BASE_URL`); each did on Claude 2.1.316. The launch adds
+  `--settings` that blank `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+  the core credential variables and every credential or endpoint variable a loaded
+  file sets (`providers/harness-settings.ts`). Every provider switch and
+  credential or endpoint variable Claude reads (Bedrock, Vertex, Foundry, AWS,
+  Google Cloud, gateway, Mantle, federation, custom headers, unix socket) is blanked whatever
+  the files say, because Claude re-reads settings during a session. Proxy and CA
+  settings are blanked when a loaded file sets them. Flag settings outrank the
+  user's, so the blanks win. A file that sets `CLAUDE_CODE_OAUTH_TOKEN` is
+  refused. Hooks never see the login's token: Claude strips it from their
+  environment (checked on 2.1.316).
+- **Foundry's gate still sees every call.** Its PreToolUse callback runs over
+  the control protocol, which `disableAllHooks` does not turn off. A structural
+  deny beats a user allow rule. The launch's `--permission-mode` beats a settings
+  `defaultMode`. A user allow rule skips only the runtime's own ask, as in their
+  own Claude.
+- **Kingdom pool logins** run in a Foundry-owned `CLAUDE_CONFIG_DIR`. The user's
+  `settings.json` is copied into it (private, rewritten only when it changes) and
+  their `commands`, `skills`, `agents` and `output-styles` folders are linked,
+  swapped in by rename; a real folder found where a link goes is moved aside
+  (`<name>.before-foundry-<time>`), not deleted. Plugins are not shared: every
+  Claude on the login writes its own plugin state into `plugins/`, so a link
+  would let pool sessions rewrite the user's. Nor are user-scope MCP servers
+  (`~/.claude.json`).
+- Codex keeps its private `CODEX_HOME`; its prompts and config are not loaded yet.
 
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
 `instructions` source injects that file twice. Remove the `markdown` source.
