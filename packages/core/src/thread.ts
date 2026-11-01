@@ -43,10 +43,19 @@ export interface ThreadCheckout {
   readonly main: boolean;
   /** Template mode: the slot the worktree holds (main checkout = 0). */
   readonly slot?: number;
+  /** The branch was squash-merged into the repository's default branch (tree equality), and when it was first seen. */
+  readonly merged?: { readonly into: string; readonly at: number };
   /** `recreating`: the mode's create is running for a released worktree. */
   readonly state: 'live' | 'released' | 'recreating';
   /** The last recreate failed: the command's error. */
   readonly error?: string;
+}
+
+/** What a thread finished: a merge of its branch, or a plan outcome marked done. */
+export interface ThreadDone {
+  readonly kind: 'merged' | 'milestone';
+  readonly text: string;
+  readonly at: number;
 }
 
 /** One item of a plan section: a short line, and its detail when the line is not enough. */
@@ -166,6 +175,12 @@ export interface ThreadMeta {
 
   /** Current status. */
   status: ThreadStatus;
+
+  /**
+   * The thread's last finished piece of work, shown as its done state until the next task starts:
+   * its branch merged (`merged`), or a plan outcome reached `done` (`milestone`, with its text).
+   */
+  done?: ThreadDone;
 
   /** The agent's plan for the thread's work (`set_plan`, the Plan view): what, why, and how. */
   plan?: ThreadPlan;

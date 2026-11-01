@@ -33,6 +33,7 @@ import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
+import { releaseWorktree } from '../git';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
@@ -64,7 +65,7 @@ import { makeUnrefInterval } from '../ws/unref-interval';
 import { ActionHandler } from './actions';
 import { AIAssist } from './ai-assist';
 import { AnalyticsStore } from './analytics';
-import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS } from './config';
+import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
 import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin, sameSecret } from './request-auth';
 import { registerControlRoutes } from './routes/control';
@@ -453,7 +454,40 @@ export function createViewer(config: ViewerConfig) {
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,
+    onMerged: (thread, into) => void settleMerged(thread, into),
   });
+  /**
+   * A thread's branch merged: `threadOnMerge` decides (project, then Foundry-wide, default `done`).
+   * done: the thread shows "Merged into <base>" until its next task. auto-archive: archived, and its
+   * worktree released with the project's mode (FEAT-003), never forced; a refusal stays on the record.
+   */
+  const settleMerged = async (thread: Thread, into: string) => {
+    const mode = threadOnMerge(await configStore.load(), thread.meta.projectId);
+    if (mode === 'done') {
+      thread.meta.done = { kind: 'merged', text: `Merged into ${into}`, at: Date.now() };
+      threadChanged(thread);
+      return;
+    }
+    await actions.execute({
+      kind: 'thread:archive',
+      target: thread.id,
+      operator: 'foundry',
+      timestamp: Date.now(),
+    });
+    const context = thread.meta.context;
+    const checkout = context?.checkout;
+    if (!context || !checkout?.path || !checkout.root || checkout.main || checkout.mode === 'none')
+      return;
+    const released = await releaseWorktree({
+      mode: checkout.mode,
+      root: checkout.root,
+      path: checkout.path,
+    });
+    if ('error' in released) {
+      thread.meta.context = { ...context, checkout: { ...checkout, error: released.error } };
+      threadChanged(thread);
+    } else void threadContext.refresh(thread.id);
+  };
   // Archive capture covers every journalled thread at startup and after each turn.
   const archiveCapture = localStore
     ? registerArchiveRoutes(app, localStore, eventStream, (snapshot) => {
@@ -902,8 +936,16 @@ export function createViewer(config: ViewerConfig) {
       setPlan(threadId: string, patch: PlanPatch): ThreadPlan {
         const thread = directory.get(threadId);
         if (!thread || thread.disposed) throw Error('This thread is not live here');
+        const before = new Set(
+          (thread.meta.plan?.outcomes ?? []).filter((o) => o.status === 'done').map((o) => o.text),
+        );
         const plan = applyPlanPatch(thread.meta.plan, patch);
         thread.meta.plan = plan;
+        // An outcome newly done is a milestone: the thread shows it as done until its next task.
+        const reached = plan.outcomes
+          .filter((o) => o.status === 'done' && !before.has(o.text))
+          .at(-1);
+        if (reached) thread.meta.done = { kind: 'milestone', text: reached.text, at: Date.now() };
         threadChanged(thread);
         return plan;
       },
