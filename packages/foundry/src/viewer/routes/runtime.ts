@@ -44,6 +44,7 @@ import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
+import { threadAtlas } from '../thread-atlas';
 import { ViewerThreadDirectory } from '../thread-directory';
 import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
 import { turnTimeline } from '../turn-timeline';
@@ -768,6 +769,21 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       (projectId ? projectRegistry?.all.get(projectId)?.path : undefined);
     if (!cwd) return c.json({ base: null, commits: [] });
     return c.json(await branchCommits(cwd));
+  });
+
+  // -- What a thread touches, in Atlas concepts (and which other threads share them) --
+
+  app.get('/api/threads/:id/atlas', async (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    const projectId = thread.meta.projectId;
+    const project = projectId ? projectRegistry?.all.get(projectId) : undefined;
+    if (!project) return c.json({ mapped: false, reason: 'no project' });
+    const siblings = [...project.threads.values()]
+      .filter((t) => !t.disposed)
+      .map((t) => ({ id: t.id, name: t.meta.name?.text ?? t.meta.description ?? t.id }));
+    return c.json(await threadAtlas(localStore, thread.id, project.path, siblings));
   });
 
   // -- Worktrees (read-only detection of existing git worktrees) --
