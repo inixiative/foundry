@@ -14,7 +14,6 @@ import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossButton, GlossReview } from './gloss.js';
-import { GraphPanel } from './graph-view.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { html, render, useEffect, useState } from './lib.js';
 import { ProjectSidebar } from './project-sidebar.js';
@@ -154,27 +153,6 @@ function PanelNavigation() {
   </nav>`;
 }
 
-// Center panel mode: the conversation, or graphs of the structures behind it.
-function CenterViews() {
-  const current = ['graph', 'feedback'].includes(activePanel.value)
-    ? activePanel.value
-    : 'conversation';
-  return html`<div class="center-views" role="tablist" aria-label="Center view">
-    ${[
-      ['conversation', 'Chat'],
-      ['graph', 'Graph'],
-      ['feedback', 'Feedback'],
-    ].map(
-      ([id, label]) => html`<button key=${id} role="tab"
-      class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
-      title=${id === 'graph' ? 'Threads, turn flow and learning loops (g)' : id === 'feedback' ? 'Feedback given in this scope’s threads' : 'Conversation'}
-      onClick=${() => {
-        activePanel.value = id;
-      }}>${label}</button>`,
-    )}
-  </div>`;
-}
-
 // ---------------------------------------------------------------------------
 // Toast
 // ---------------------------------------------------------------------------
@@ -210,9 +188,10 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      focusTree: () => document.querySelector('.panel-projects')?.focus(),
-      focusConversation: () => document.querySelector('.conversation')?.focus(),
-      focusDetail: () => document.querySelector('.detail-drawer')?.focus(),
+      centerTabs: ['Thread', 'Brief', 'Work', 'Loop'],
+      showCenterTab: (i) => {
+        activePanel.value = ['conversation', 'brief', 'work', 'graph'][i];
+      },
       nextItem: () => {
         /* TODO: span navigation */
       },
@@ -304,13 +283,10 @@ function App() {
               : inbox
                 ? html`<${FeedbackInbox} />`
                 : html`
-            <${CenterViews} />
             ${
-              activePanel.value === 'graph'
-                ? html`<${GraphPanel} onLayerClick=${inspectLayer} />`
-                : activePanel.value === 'feedback'
-                  ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+              activePanel.value === 'feedback'
+                ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }

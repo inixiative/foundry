@@ -215,7 +215,7 @@ test('graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     await shot('1440-learning-loop-inspect-layer');
 
     // ---- Stream lifecycle: closed with the view, re-opened (fresh snapshot) when it returns ----
-    await page.locator('.center-view', { hasText: 'Chat' }).click();
+    await page.locator('.center-view', { hasText: 'Thread' }).click();
     await until(() => !flowOpen(), 'flow:a closed when the graph panel is hidden');
     await page.keyboard.press('g');
     await until(flowOpen, 'flow:a re-opened by the g hotkey');

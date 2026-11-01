@@ -110,21 +110,12 @@ export function initHotkeys() {
 
 export function registerDefaults(actions) {
   // Navigation
-  bind('1', {
-    description: 'Focus thread tree',
-    category: 'navigation',
-    action: actions.focusTree,
-  });
-  bind('2', {
-    description: 'Focus conversation',
-    category: 'navigation',
-    action: actions.focusConversation,
-  });
-  bind('3', {
-    description: 'Focus detail drawer',
-    category: 'navigation',
-    action: actions.focusDetail,
-  });
+  for (const [i, key] of ['1', '2', '3', '4'].entries())
+    bind(key, {
+      description: `Centre: ${actions.centerTabs[i]}`,
+      category: 'navigation',
+      action: () => actions.showCenterTab(i),
+    });
 
   // Movement
   bind('j', { description: 'Next trace / span', category: 'navigation', action: actions.nextItem });
@@ -185,7 +176,7 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: actions.toggleEvents,
   });
-  bind('g', { description: 'Toggle graph view', category: 'panels', action: actions.toggleGraph });
+  bind('g', { description: 'Loop (the graph)', category: 'panels', action: actions.toggleGraph });
   bind(']', {
     description: 'Open / fold the right panel',
     category: 'panels',

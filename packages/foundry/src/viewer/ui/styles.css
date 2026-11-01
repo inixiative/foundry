@@ -6897,3 +6897,225 @@ a.thread-ref:hover {
 .rp-strip-tab .rp-count {
   writing-mode: horizontal-tb;
 }
+
+/* ---- Centre: header band (two rows + tabs on its edge), framed content ---- */
+.conversation {
+  padding: 10px 10px 0;
+  gap: 8px;
+}
+.center-band {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 4px 0;
+}
+.thread-band {
+  background: none;
+  border: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.band-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.band-row .context-bar-title {
+  max-width: none;
+  flex: 0 1 auto;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.band-row--facts {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.band-chip {
+  font-size: 11.5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.band-chip--shared {
+  color: var(--shared);
+}
+.band-fact {
+  white-space: nowrap;
+}
+.band-meter {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.band-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface2);
+  border-radius: 10px;
+  border: none;
+}
+.band-tabs .center-view {
+  border-radius: 8px;
+  padding: 4px 12px;
+}
+.band-tabs .center-view--active {
+  background: var(--surface);
+  box-shadow: var(--frame-shadow);
+  color: var(--text);
+}
+.center-frame {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 1rem;
+  box-shadow: var(--frame-shadow);
+  padding: 14px 16px;
+}
+.center-frame[hidden] {
+  display: none;
+}
+.center-frame--loop {
+  padding: 8px;
+  display: flex;
+}
+.loop-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.loop-graph {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.loop-graph > * {
+  flex: 1;
+}
+.lifecycle {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+.lifecycle-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.lifecycle-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--st-idle);
+}
+.lifecycle-step.is-done .lifecycle-mark {
+  background: var(--st-done);
+}
+.lifecycle-step.is-current {
+  color: var(--text);
+  box-shadow: var(--frame-shadow);
+}
+.lifecycle-step.is-current .lifecycle-mark {
+  background: var(--st-working);
+}
+.brief {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+.brief-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.brief-about {
+  margin: 0;
+  color: var(--text-dim);
+}
+.brief-line {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+}
+.brief-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-top: 3px;
+}
+.brief-value {
+  min-width: 0;
+}
+.brief-now,
+.brief-needs,
+.brief-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brief-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brief-link {
+  margin: 0;
+  color: var(--text);
+}
+.brief-refs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.work-turn {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+.work-turn-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-actions,
+.work-prs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.context-stats .context-bar-stack {
+  margin-top: 8px;
+}

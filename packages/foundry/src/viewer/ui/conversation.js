@@ -11,6 +11,7 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
+import { Brief } from './brief.js';
 import { HeldPromptCard } from './conversation-members.js';
 import {
   browserStorageNotice,
@@ -29,10 +30,13 @@ import {
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
+import { LoopView } from './loop-view.js';
 import { StatusIcon } from './status-icons.js';
 import {
+  activePanel,
   activeThreadId,
   allThreads,
+  contextWindowOf,
   focusTurnId,
   forkThread,
   giveFeedback,
@@ -41,6 +45,7 @@ import {
   loadOlderMessages,
   loadTraceDetail,
   messages,
+  projects,
   prompts,
   resolvePrompt,
   revertThread,
@@ -50,11 +55,13 @@ import {
   stopTurn,
   threadContextTokens,
   threadData,
+  threadLaunch,
   threadStatusOf,
   threadUsage,
   tokenUsage,
 } from './store.js';
 import {
+  harnessName,
   isUnnamed,
   nameSourceLabel,
   ReferenceChips,
@@ -68,6 +75,7 @@ import {
   startDictation,
   toggleSpeakReplies,
 } from './voice.js';
+import { Work } from './work.js';
 
 // ---------------------------------------------------------------------------
 // Token bar — this thread's recorded usage, plus the Foundry session budget
@@ -79,7 +87,7 @@ function fmtNum(n) {
   return String(n);
 }
 
-function TokenBar() {
+export function TokenBar() {
   const usage = tokenUsage.value;
   const used = threadUsage(usage, activeThreadId.value);
   // An empty thread has nothing to account for; neither does one with no recorded calls.
@@ -145,22 +153,18 @@ function TokenBar() {
 
 const WARM_LAYER_STATES = new Set(['warm', 'warming']);
 
-function ContextBar() {
+/** The thread's working-context numbers: agents, layers, warm / system / thread tokens and the warm-layer
+ * stack against the window. Shown on the right panel's Context tab. */
+export function ContextStats() {
   const data = threadData.value;
   const msgList = messages.value;
   const usage = tokenUsage.value;
   if (!data) return null;
-
-  const meta = data.meta || {};
   const layers = data.layers || [];
   const agents = data.agents || [];
   const warmLayers = layers.filter((l) => WARM_LAYER_STATES.has(l.state));
-
-  // Rough token estimate: ~4 chars per token (same heuristic as store.estimateContextTokens)
-
-  // Warm: the pool of layer content currently cached on the thread (may or may not be injected).
+  // Rough token estimate: ~4 chars per token (same heuristic as store.estimateContextTokens).
   const warmTokens = warmLayers.reduce((sum, l) => sum + Math.ceil((l.contentLength || 0) / 4), 0);
-
   // System: what the last agent turn actually injected (from the Librarian's injection ledger on msg.meta).
   const lastAgent = [...msgList]
     .reverse()
@@ -170,60 +174,85 @@ function ContextBar() {
     (sum, l) => sum + (l.tokens ?? Math.ceil((l.contentLength || 0) / 4)),
     0,
   );
-
-  // Thread: estimated tokens of the full conversation history so far.
   const threadTokens = threadContextTokens.value;
-
-  const contextWindow = usage?.contextWindow ?? null;
+  const launch = threadLaunch.value;
+  const contextWindow =
+    contextWindowOf(launch?.provider, launch?.model) ?? usage?.contextWindow ?? null;
   const denom =
     contextWindow && contextWindow > 0
       ? contextWindow
       : Math.max(warmTokens, systemTokens, threadTokens, 1);
+  const segments = warmLayers.map((l) => {
+    const tokens = Math.ceil((l.contentLength || 0) / 4);
+    return { id: l.id, tokens, pct: (tokens / denom) * 100, color: layerColor(l.id) };
+  });
+  const row = (label, value, tooltip) =>
+    html`<dt title=${tooltip}>${label}</dt><dd class="rp-mono">${value}</dd>`;
+  return html`<section class="rp-section context-stats">
+    <h3 class="rp-section-title">Working context</h3>
+    <dl class="rp-facts">
+      ${row('Agents', agents.length, 'Agents on this thread')}
+      ${row('Layers', `${warmLayers.length} warm / ${layers.length}`, 'Warm / total context layers')}
+      ${row('Warm', fmtNum(warmTokens), 'Warm layer cache pool (tokens of currently-warm layer content)')}
+      ${row('System', fmtNum(systemTokens), 'Layers injected on the last agent turn')}
+      ${row('Thread', fmtNum(threadTokens), 'Estimated tokens of the conversation so far')}
+      ${contextWindow ? row('Window', fmtNum(contextWindow), 'This thread’s model context window') : null}
+    </dl>
+    ${
+      segments.length > 0
+        ? html`<div class="context-bar-stack" title="Warm layers vs. model context window">
+          ${segments.map(
+            (s) => html`<span key=${s.id} class="context-bar-seg"
+              style="width: ${s.pct}%; background: ${s.color}"
+              title="${s.id}: ${fmtNum(s.tokens)} tok (${s.pct.toFixed(1)}% of window)"></span>`,
+          )}
+        </div>`
+        : null
+    }
+  </section>`;
+}
 
+/**
+ * The centre's header band: row 1 is the thread (status, name, project, participants); row 2 is how it
+ * runs (model · effort · harness, branch, worktree, references, context fill, tokens).
+ */
+function ContextBar() {
+  const data = threadData.value;
+  const usage = tokenUsage.value;
+  if (!data) return null;
+  const meta = data.meta || {};
   const title = threadName(data);
   const titleSource = data.title?.source || null;
   const place = threadPlace(meta);
-
-  // Stacked bar: segment-per-warm-layer, sized against context window so empty space = remaining budget.
-  const segments = warmLayers.map((l) => {
-    const tokens = Math.ceil((l.contentLength || 0) / 4);
-    const pct = (tokens / denom) * 100;
-    return { id: l.id, tokens, pct, color: layerColor(l.id) };
-  });
-
-  const stat = (label, tokens, tooltip) => html`
-    <span class="context-bar-stat" title=${tooltip}>
-      <span class="context-bar-stat-label">${label}</span>
-      <span class="context-bar-stat-value">${fmtNum(tokens)}</span>
-    </span>
-  `;
+  const launch = threadLaunch.value;
+  const project = meta.projectId ? projects.value.find((p) => p.id === meta.projectId) : null;
+  const members = data.conversation?.members ?? 0;
+  const contextWindow =
+    contextWindowOf(launch?.provider, launch?.model) ?? usage?.contextWindow ?? null;
+  const fill = contextWindow
+    ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
+    : null;
+  const used = threadUsage(usage, data.threadId);
+  const runs = [launch?.model, launch?.effort, harnessName(launch?.provider)].filter(Boolean);
 
   return html`
-    <div class="context-bar">
-      <div class="context-bar-head">
+    <div class="context-bar thread-band">
+      <div class="context-bar-head band-row">
         <${StatusIcon} state=${threadStatusOf(data.threadId, liveThreadStatus(messages.value))} />
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
-          title=${`${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
+          title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
+        ${project ? html`<span class="band-chip" title=${`Project: ${project.label}`}>Project: ${project.label}</span>` : html`<span class="band-chip">Global</span>`}
+        ${members ? html`<span class="band-chip band-chip--shared" title="Members in this thread">${members} ${members === 1 ? 'member' : 'members'}</span>` : null}
+      </div>
+      <div class="band-row band-row--facts">
+        ${runs.length ? html`<span class="band-fact" title="Model · effort · harness">${runs.join(' · ')}</span>` : null}
         ${place.branch ? html`<span class="context-bar-chip context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${place.branch}</span>` : null}
         ${place.worktreeShort ? html`<span class="context-bar-chip context-bar-chip--dim" title=${place.worktree}>${place.worktreeShort}</span>` : null}
         <${ReferenceChips} meta=${meta} />
         <span class="context-bar-spacer"></span>
-        <span class="context-bar-count" title="agents">${agents.length} agent${agents.length === 1 ? '' : 's'}</span>
-        <span class="context-bar-count" title="warm / total layers">${warmLayers.length}/${layers.length} layers</span>
-        ${stat('warm', warmTokens, 'Warm layer cache pool (tokens of currently-warm layer content)')}
-        ${stat('system', systemTokens, 'System injection — layers injected on the last agent turn')}
-        ${stat('thread', threadTokens, 'Thread context — estimated tokens of the conversation so far')}
-        ${
-          contextWindow
-            ? html`
-          <span class="context-bar-stat context-bar-stat--window" title="Model context window">
-            <span class="context-bar-stat-label">window</span>
-            <span class="context-bar-stat-value">${fmtNum(contextWindow)}</span>
-          </span>
-        `
-            : null
-        }
+        ${fill !== null ? html`<span class="band-fact band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>ctx ${fill.toFixed(0)}%</span>` : null}
+        ${used ? html`<span class="band-fact" title="Tokens this thread used, cache included">${fmtNum(used.total)} tok</span>` : null}
       </div>
       ${
         meta.setup?.status === 'starting'
@@ -235,21 +264,6 @@ function ContextBar() {
                 Thread ready; ${meta.setup.wardens.failed.length} Warden${meta.setup.wardens.failed.length === 1 ? '' : 's'} could not be held and run the slower way.
               </div>`
             : null
-      }
-      ${
-        segments.length > 0
-          ? html`
-        <div class="context-bar-stack" title="Warm layers vs. model context window">
-          ${segments.map(
-            (s) => html`
-            <span key=${s.id} class="context-bar-seg"
-              style="width: ${s.pct}%; background: ${s.color}"
-              title="${s.id}: ${fmtNum(s.tokens)} tok (${s.pct.toFixed(1)}% of window)"></span>
-          `,
-          )}
-        </div>
-      `
-          : null
       }
     </div>
   `;
@@ -1030,7 +1044,30 @@ function CacheStatus({ msgList }) {
   return html`<div class="chat-cache-status" role="status">${summary.message}</div>`;
 }
 
-export function Conversation({ onTraceSelect }) {
+/** The centre's tabs, on the band's lower edge. Ids are the store's `activePanel` values. */
+const CENTER_TABS = [
+  ['conversation', 'Thread', 1],
+  ['brief', 'Brief', 2],
+  ['work', 'Work', 3],
+  ['graph', 'Loop', 4],
+];
+
+function CenterTabs() {
+  const current = activePanel.value;
+  return html`<nav class="center-views band-tabs" role="tablist" aria-label="Center view">
+    ${CENTER_TABS.map(
+      ([id, label, key]) => html`<button key=${id} role="tab"
+        class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
+        title=${`${label} (${key})`}
+        onClick=${() => {
+          activePanel.value = id;
+        }}>${label}</button>`,
+    )}
+  </nav>`;
+}
+
+export function Conversation({ onTraceSelect, onLayerClick }) {
+  const view = activePanel.value;
   const msgList = messages.value;
   const scrollRef = useRef(null);
   const threadId = activeThreadId.value;
@@ -1080,9 +1117,20 @@ export function Conversation({ onTraceSelect }) {
 
   return html`
     <div class="conversation">
-      <${ContextBar} />
-      <${TokenBar} />
-      <div class="chat-messages" ref=${scrollRef}>
+      <header class="center-band">
+        <${ContextBar} />
+        <${CenterTabs} />
+      </header>
+      ${
+        view === 'brief'
+          ? html`<div class="center-frame"><${Brief} /></div>`
+          : view === 'work'
+            ? html`<div class="center-frame"><${Work} /></div>`
+            : view === 'graph'
+              ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
+              : null
+      }
+      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${view !== 'conversation'}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />
         ${

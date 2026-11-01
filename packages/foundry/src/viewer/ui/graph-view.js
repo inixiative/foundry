@@ -425,7 +425,7 @@ function TurnStrip({ turns, selected, onSelect }) {
   </div>`;
 }
 
-function TaskLists({ turn }) {
+export function TaskLists({ turn }) {
   const lists = turn?.tasks ?? [];
   if (!lists.length)
     return html`<div class="graph-tasks graph-tasks--empty">No task list recorded on this turn.</div>`;

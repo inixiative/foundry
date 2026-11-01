@@ -93,6 +93,14 @@ export const RIGHT_TABS = [
 export const rightTab = signal('context');
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
+/** The model registry (GET /api/models), once read: providers and their models with context windows. */
+export const modelRegistry = signal(null);
+
+/** A model's context window from the registry, or null when unknown. */
+export function contextWindowOf(provider, model) {
+  const entry = modelRegistry.value?.providers?.find((p) => p.id === provider);
+  return entry?.models?.find((m) => m.id === model)?.contextWindow ?? null;
+}
 export const compactPanel = signal('conversation');
 
 // Action prompts — pending agent→human interactions
@@ -1067,6 +1075,7 @@ export async function loadTokenUsage() {
     const analytics = analyticsRes.ok ? await analyticsRes.json() : {};
     const settings = settingsRes.ok ? await settingsRes.json() : {};
     const registry = modelsRes ?? {};
+    if (modelsRes) modelRegistry.value = modelsRes;
     const provider = registry.providers?.find((p) => p.id === settings.defaults?.provider);
     const model = provider?.models?.find((m) => m.id === settings.defaults?.model);
     tokenUsage.value = {
@@ -1799,7 +1808,18 @@ export function dismissToast() {
 // View state — persist to URL hash so refresh restores position
 // ---------------------------------------------------------------------------
 
-const VIEW_KEYS = ['project', 'thread', 'panel', 'sidebar', 'detail', 'forge', 'feedback'];
+const VIEW_KEYS = [
+  'project',
+  'thread',
+  'panel',
+  'sidebar',
+  'detail',
+  'forge',
+  'feedback',
+  'rtab',
+  'rail',
+  'view',
+];
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
