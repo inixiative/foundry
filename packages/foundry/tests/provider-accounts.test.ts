@@ -7,9 +7,19 @@ import { providerAccounts } from '../src/providers/provider-accounts';
 import { defaultConfig } from '../src/viewer/config';
 
 const roots: string[] = [];
+const home = process.env.HOME;
 afterEach(() => {
+  process.env.HOME = home;
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+/** A HOME holding default logins for these runtimes only, so a test never reads this machine's. */
+function homeWithLogins(...runtimes: Array<'.claude' | '.codex'>) {
+  const root = mkdtempSync(join(tmpdir(), 'provider-accounts-home-'));
+  roots.push(root);
+  for (const dir of runtimes) mkdirSync(join(root, dir), { mode: 0o700 });
+  process.env.HOME = root;
+}
 
 function privateProfile() {
   const root = mkdtempSync(join(tmpdir(), 'provider-accounts-'));
@@ -51,6 +61,7 @@ test('subscription mode reports the main-thread and decision profiles where they
   };
   config.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-5.6-luna' };
   enable(config, 'claude-code', 'codex', 'anthropic');
+  homeWithLogins('.codex');
 
   const accounts = Object.fromEntries(
     providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
@@ -74,12 +85,17 @@ test('subscription mode reports the main-thread and decision profiles where they
 test('by default the Claude login runs both the main thread and the decisions', () => {
   const config = defaultConfig();
   enable(config, 'claude-code', 'codex');
-  const accounts = Object.fromEntries(
-    providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
-  );
-  expect(accounts['claude-code']!.uses).toEqual(['main thread', 'decisions']);
-  // Codex is on: any thread may choose it as its worker.
-  expect(accounts.codex!.uses).toEqual(['main thread']);
+  const accounts = () =>
+    Object.fromEntries(
+      providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
+    );
+  homeWithLogins('.claude', '.codex');
+  expect(accounts()['claude-code']!.uses).toEqual(['main thread', 'decisions']);
+  // Codex is on with its login here: any thread may choose it as its worker.
+  expect(accounts().codex!.uses).toEqual(['main thread']);
+  // On without a login here, it runs no main thread.
+  homeWithLogins('.claude');
+  expect(accounts().codex!.uses).toEqual([]);
 });
 
 test('API providers report their variable by name, never its value', () => {
