@@ -288,6 +288,7 @@ export function createViewer(config: ViewerConfig) {
     actionQueue: config.actionQueue,
     feedback: () => feedback,
     conversation: (threadId) => conversations?.summary(threadId),
+    permissionMode: (threadId) => threadLaunch.forLaunch(threadId).permissionMode,
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,
@@ -834,6 +835,8 @@ export function createViewer(config: ViewerConfig) {
     const thread = directory.get(threadId);
     if (thread?.disposed) threadLaunch.clear(threadId);
     else if (thread) forgetOnDispose(thread);
+    // The list rows show the mode (a Dangerous mark): send the thread again.
+    streams.threadsChanged(threadId);
   });
 
   /** A thread's tool gate: structural rules, then asks to whoever answers first (viewer, ACP host). */

@@ -364,7 +364,7 @@ function ContextBar() {
           }
           ${
             MODES[launch?.permissionMode]
-              ? html`<span class="band-pill band-mode" title=${MODES[launch.permissionMode].label}>
+              ? html`<span class="band-pill band-mode" data-mode=${MODES[launch.permissionMode].word.toLowerCase()} title=${MODES[launch.permissionMode].label}>
                   <${ModeIcon} mode=${launch.permissionMode} />${MODES[launch.permissionMode].word}
                 </span>`
               : null

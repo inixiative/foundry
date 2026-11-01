@@ -1,0 +1,23 @@
+/* Permission-mode pills: Manual neutral, Plan blue, Auto green, Dangerous red (AF). */
+.band-mode[data-mode="manual"] {
+  color: hsl(var(--muted-foreground));
+}
+.band-mode[data-mode="plan"] {
+  color: hsl(205 70% 75%);
+  background: hsl(205 70% 60% / 0.14);
+}
+.band-mode[data-mode="auto"] {
+  color: hsl(var(--app-primary));
+  background: hsl(var(--app-primary) / 0.14);
+}
+.band-dangerous,
+.row-dangerous {
+  color: hsl(7 100% 74%);
+  background: hsl(7 100% 74% / 0.14);
+}
+.row-dangerous {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 5px;
+  line-height: 16px;
+}

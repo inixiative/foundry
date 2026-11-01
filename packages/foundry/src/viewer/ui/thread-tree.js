@@ -12,7 +12,7 @@ import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { RenameModal } from './modal.js';
 import { isSnoozed, snooze, snoozedUntil, tomorrowMorning, unsnooze } from './snooze.js';
-import { StatusIcon } from './status-icons.js';
+import { isDangerous, StatusIcon } from './status-icons.js';
 import {
   activePanel,
   activeProjectId,
@@ -170,6 +170,7 @@ export function threadTree(threads) {
         parentThreadId: subagentParentOf(t.meta),
         conversation: t.conversation || null,
         lastTurn: t.lastTurn || null,
+        permissionMode: t.permissionMode || null,
         children: [],
       },
     ]),
@@ -225,6 +226,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
         <div class="tree-row tree-row--meta">
           <span class="row-project">${projectLabel(thread.meta.projectId)}</span>
           <${StatusIcon} state=${nodeState(thread)} />
+          ${isDangerous(thread.permissionMode) ? html`<span class="row-dangerous" title="Dangerous: every permission check is skipped">Dangerous</span>` : null}
           ${
             thread.conversation?.unread
               ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
