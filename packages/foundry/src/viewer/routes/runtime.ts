@@ -1074,6 +1074,22 @@ export function registerRuntimeRoutes(
     }
   });
 
+  // A fork's source, for its header: the source thread's name and the turn the fork was cut at.
+  app.get('/api/threads/:id/forked-from', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    const fork = thread.meta.forkedFrom;
+    if (!fork) return c.json({ error: 'not a fork' }, 404);
+    const source = directory.get(fork.threadId)?.meta ?? localStore?.threadMeta(fork.threadId);
+    const at = localStore?.turnAtSeq(fork.threadId, fork.journalSeq);
+    return c.json({
+      threadId: fork.threadId,
+      title: source ? (threadTitle(source)?.text ?? fork.threadId) : null,
+      turnId: at?.turnId ?? null,
+      turn: at?.ordinal ?? null,
+    });
+  });
+
   app.get('/api/messages', async (c) => {
     const threadId = c.req.query('threadId');
     const limit = Number(c.req.query('limit') ?? 100);
