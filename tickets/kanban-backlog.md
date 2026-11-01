@@ -13,6 +13,11 @@ kanban
     AGENT-001-herald-cross-thread
     AGENT-002-writeback-pipeline
     VIEWER-001-inbox-mode
+    BOARD-001-shared-threads
+    BOARD-002-sidecar-joining-side
+    BOARD-003-inbound-items
+    BOARD-004-outside-requests
+    BOARD-005-g1-untrusted-content
   In Progress
   Done
 ```
@@ -34,8 +39,18 @@ These tickets capture the connections between components that are individually b
 
 | Ticket | Gap | Priority |
 |--------|-----|----------|
-| [VIEWER-001](./VIEWER-001-inbox-mode.md) | Left column is directory-only; no cross-project inbox of active threads and attention items | Medium |
+| [VIEWER-001](./VIEWER-001-inbox-mode.md) | The attention board: default view, private and shared zones, attention first | High |
+
+### Backlog — Attention board (Foundry Version 4)
+
+| Ticket | Gap | Priority |
+|--------|-----|----------|
+| [BOARD-001](./BOARD-001-shared-threads.md) | Shared threads: one member path (local or Kingdom), private entries and what each side was shown, `/private` and `/btw` (spec awaiting Aron) | High |
+| [BOARD-002](./BOARD-002-sidecar-joining-side.md) | The joining side's copy of a shared thread (F2 under the new model) | High |
+| [BOARD-003](./BOARD-003-inbound-items.md) | Inbound items arrive as threads already investigating (Kingdom receivers first) | High |
+| [BOARD-004](./BOARD-004-outside-requests.md) | Outside requests on the board, granted with a Signet | Medium |
+| [BOARD-005](./BOARD-005-g1-untrusted-content.md) | G1: content nobody typed is data on every thread | High |
 
 ---
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-31_

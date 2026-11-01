@@ -1,59 +1,63 @@
-# VIEWER-001: Inbox mode beside directory mode
+# VIEWER-001: The attention board
 
-**Status**: 🆕 Not Started
+**Status**: 📐 Spec (blocked on BOARD-001's spec answers)
 **Assignee**: TBD
-**Priority**: Medium
+**Priority**: High
 **Created**: 2026-10-23
-**Updated**: 2026-10-23
+**Updated**: 2026-10-31
 
 ---
 
 ## Overview
 
-The viewer's left column is a directory: pinned Global and Forge Master, the projects, and below
-them the threads of the selected scope (`packages/foundry/src/viewer/thread-directory.ts`). That is
-the right view for finding a thread. It is the wrong view for working across many of them.
+The attention board is the default Foundry view once basic setup is done: one list of open threads across every project, things that need Aron first, with the thread beside it. Projects stays a tab next to it ("Active | Projects").
 
-Add a second mode and a toggle between the two (Aron, 2026-10-23):
+It replaces the 10-23 "inbox mode beside directory mode" idea. The directory is still how you find any thread; the board is where you work.
 
-- **Directory mode**: today's column. All projects, all threads, navigate by scope.
-- **Inbox mode**: everything active across every project in one list. What is running, and some
-  form of "what needs your attention" surfaced ahead of the rest.
+## Why (Aron)
 
-## Why (Aron, 2026-10-23)
+2026-10-23: when something comes up that needs work, it should "start a session already, with the agent in context". It shouldn't be "go and say, okay, this thing happened" followed by starting a session yourself.
 
-The goal for the working space: when something comes up that needs work, it should **start a
-session already, with the agent in context**. Not "go and say, okay, this thing happened" and then
-start a session: the thing arrives already in session. A new Slack alert comes in; there is a session
-there to talk about it and tell you about it, which has already looked into it, with a prompt ready.
-The inbox is the list of those sessions.
+2026-10-31: "I want this attention view. I think that's the primary place I'd like to work." And "It's just the list on the left of the open threads… one is private, one is shared… just to keep you from putting your foot in your mouth a lot."
 
-- Agents spawn threads. A thread an agent started must show up in the inbox as a first-class active
-  thread and session, the same as one a person opened.
-- Other systems' agents will ask to start a session with you. That incoming request shows up in the
-  inbox too, as a thing awaiting your answer.
-- One area for everything you are asking about, whoever or whatever started it.
+## What it shows
 
-Inbox mode is a filter and a sort over records the viewer already has (thread status `waiting` /
-`active` in the directory, pending prompt cards, Warden agent-questions, hand-backs), plus the one
-new record kind: an incoming session request from another system.
+- **Two zones in the left column.** Private on top, shared below. A thread sits in the shared zone exactly while it has a live member other than its owner (BOARD-001); when the last one leaves it moves back.
+- **Every project, one list.** Global threads are in it too.
+- **A card per thread:**
+  - source (Slack / Email / Linear / the project name);
+  - title;
+  - one state word (Working, New, Draft ready, Starting, Back on your list, Shared until <day>, Overlaps your thread);
+  - an activity dot.
+- **Order.** Attention items first, then running threads, each by recency.
+- **Goals on a thread.** An inbound item that joins an existing thread (BOARD-003, matched by the first Herald, AGENT-001) adds a goal to it ("2 · PayPal option, from Priya's email"). It is not just one more message.
 
-## Open questions
+## What counts as needing Aron (first cut, for Aron to confirm)
 
-- What starts a session unasked: which inbound events (a Slack alert, a PR, a failed job, another
-  system's request) spawn a thread that investigates first, and what the thread is given as its
-  opening prompt.
-- What exactly counts as needing attention in inbox mode: pending prompt cards awaiting
-  approve/reject, Warden `agent-question` answers, hand-backs, finished turns not yet read? Aron
-  described it as "some sort of thing that shows your attention thoughts"; the set is his to name.
-- Ordering within the inbox: by recency of activity, or attention items first then running threads?
-- Does inbox mode replace the project list entirely, or keep a project filter?
-- What carries an incoming session request from another system's agent: Signet, or something new?
-  What does accepting one create: a thread in which project?
-- Where the toggle lives: header, beside Workspace / Settings / Analytics, or at the top of the
-  column?
+- a pending `ActionQueue` prompt: a tool ask (`pf/turns/tool-gate.ts:181`), a held send (`pf/conversations/service.ts:1185`), a held shared answer (BOARD-001), or feedback;
+- a hand-back: a turn finished since Aron last opened the thread (needs a new "seen by Aron" mark, see below);
+- a new inbound item (BOARD-003);
+- a pending access request from outside (BOARD-004).
+
+## Built on
+
+| Need | Existing piece | Change |
+|---|---|---|
+| Thread rows | `threads` stream, `pf/viewer/data-streams.ts:130-170`; `ThreadList`/`ThreadNode`, `pf/viewer/ui/thread-tree.js` | A cross-project stream (`threads:all`) and a zone field from the conversation summary |
+| Status | Thread status (`pc/thread.ts:16`), turn status (`pf/persistence/local-session-store.ts:58`) | — |
+| Prompts | `prompts` stream (`data-streams.ts:172-185`), `promptCounts` (`pf/viewer/ui/store.js:86-92`) | — |
+| Unread | `ConversationService.summary` (`service.ts:747-758`) | Today "unread" means *not yet delivered to the agent*. The board needs a second mark, *not yet seen by Aron* (last-opened seq per thread), so that hand-backs show |
+
+No new store: the board is a filter and a sort over these streams, plus the seen-by-Aron mark.
+
+## Open questions (for Aron)
+
+- Is the first cut above the right set?
+- Board as the default view: right after setup, or only once a project has a chorus?
+- Should the board also show other machines' threads (his Foundry on another machine)? That goes through Kingdom, so it isn't in v1.
 
 ## Related
 
-- README "Viewer": the current three-panel layout and left-column navigation.
-- `packages/foundry/src/viewer/thread-directory.ts`: directory mode as built.
+- Planning doc: Oracle `docs/foundry/ATTENTION-BOARD.md` §5.
+- BOARD-001 (zones come from links), BOARD-003 (inbound items), BOARD-004 (outside requests), AGENT-001 (thread matching).
+- ACP: other clients' turns aren't live in ACP (`packages/acp/src/agent.ts:334-367`). This is tracked in inixiative-77's T3/Paseo parity review.
