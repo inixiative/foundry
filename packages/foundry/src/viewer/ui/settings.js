@@ -587,6 +587,10 @@ function FoundrySection({ section, config }) {
   }));
   if (section === 'profile') return html`<${ProfileSection} onSaved=${saved} />`;
   if (section === 'about') return html`<${AboutSection} />`;
+  if (section === 'loops')
+    return html`<div class="settings-soon"><span class="badge">Coming soon</span><p>Saved loops you reuse: a <b>Repeat until</b> (do, check, stop) or a <b>Learn from this</b> made from a message's ⋯ menu, kept here to run again in any thread.</p></div>`;
+  if (section === 'skills')
+    return html`<div class="settings-soon"><span class="badge">Coming soon</span><p>Skills your agents can use: the harness's own skills pass through untouched; Foundry's will be listed and managed here.</p></div>`;
   if (section === 'providers')
     return html`<${ProvidersSection} vendors=${config.vendors} onSaved=${saved} />`;
   if (section === 'kingdom')

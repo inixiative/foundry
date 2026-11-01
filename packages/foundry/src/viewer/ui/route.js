@@ -24,6 +24,8 @@ export const FOUNDRY_SETTINGS = [
   ['github', 'GitHub', 'Integrations'],
   ['linear', 'Linear', 'Integrations'],
   ['devices', 'Devices'],
+  ['loops', 'Loops'],
+  ['skills', 'Skills'],
   ['layers', 'Layers', 'Advanced'],
   ['agents', 'Agents', 'Advanced'],
   ['activity', 'Activity', 'Advanced'],

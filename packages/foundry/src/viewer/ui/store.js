@@ -345,7 +345,7 @@ export function selectScope(scope) {
 }
 
 /** `/feedback <text>`: record feedback on a thread (its last turn unless one is named). Never a turn. */
-export async function giveFeedback(threadId, text, { turnId, messageId, about } = {}) {
+export async function giveFeedback(threadId, text, { turnId, messageId, about, tags } = {}) {
   if (!threadId) {
     showToast('Open a thread to give feedback on it', 'warn');
     return false;
@@ -360,6 +360,7 @@ export async function giveFeedback(threadId, text, { turnId, messageId, about } 
         ...(turnId ? { turnId } : {}),
         ...(messageId ? { messageId } : {}),
         ...(about ? { about: { kind: about.kind, label: about.label } } : {}),
+        ...(tags?.length ? { tags } : {}),
       }),
     });
     const body = await res.json().catch(() => ({}));
