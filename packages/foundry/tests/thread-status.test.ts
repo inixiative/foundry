@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { snooze, unsnooze } from '../src/viewer/ui/snooze.js';
 import { STATES, statusSvg } from '../src/viewer/ui/status-icons.js';
 import { categoryOf, promptState, threadState } from '../src/viewer/ui/thread-status.js';
 
@@ -78,13 +77,14 @@ describe('the icon set', () => {
 });
 
 test('a snoozed thread reads as snoozed until the snooze ends; a request for you still shows', () => {
-  const thread = { threadId: 'nap', meta: { status: 'idle', tags: [] } };
-  snooze('nap', Date.now() + 60_000);
-  expect(threadState(thread)).toBe('snoozed');
+  const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+  const thread = (until?: string) => ({
+    threadId: 'nap',
+    meta: { status: 'idle', tags: [], ...(until ? { snooze: { until, setAt: at(0) } } : {}) },
+  });
+  expect(threadState(thread(at(60_000)))).toBe('snoozed');
   expect(categoryOf('snoozed')).toBe('idle');
-  expect(threadState(thread, { prompts: [{ kind: 'approval' }] })).toBe('approve');
-  snooze('nap', Date.now() - 1);
-  expect(threadState(thread)).toBe('idle');
-  unsnooze('nap');
-  expect(threadState(thread)).toBe('idle');
+  expect(threadState(thread(at(60_000)), { prompts: [{ kind: 'approval' }] })).toBe('approve');
+  expect(threadState(thread(at(-1)))).toBe('idle');
+  expect(threadState(thread())).toBe('idle');
 });

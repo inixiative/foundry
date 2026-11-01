@@ -106,13 +106,13 @@ export const searchOpen = signal(false);
 export const projectHomeOpen = signal(false);
 /** Which project page is open: its home, or its Knowledge and chorus page. */
 export const projectPage = signal('home');
-/** The board's filter: 'all', 'project:<id>', 'global', 'forge' or 'this'. */
-export const boardFilter = signal('all');
+/** The board's chip filter: { project?: Set, kingdom?: Set, device?: Set } (FilterChips' selection). */
+export const boardFilter = signal({});
 
 /** Open the board filtered to one project. */
 export function openProjectBoard(projectId) {
   batch(() => {
-    boardFilter.value = `project:${projectId}`;
+    boardFilter.value = { project: new Set([projectId]) };
     projectHomeOpen.value = false;
     watchtowerOpen.value = false;
     searchOpen.value = false;
@@ -1513,6 +1513,24 @@ export async function forkThread(messageIndex) {
 }
 
 /** Set a person's name on a thread (a hard override); an empty name hands naming back to the agent. */
+/** Recreate a thread's released worktree from its branch (the project's worktree mode). */
+export async function recreateWorktree(threadId) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/worktree/recreate`, {
+      method: 'POST',
+    });
+    if (res.ok) return true;
+    const { error } = await res.json().catch(() => ({}));
+    toast.value = {
+      message: `Couldn’t recreate the worktree: ${error ?? res.status}`,
+      type: 'error',
+    };
+  } catch (err) {
+    toast.value = { message: `Couldn’t recreate the worktree: ${err.message}`, type: 'error' };
+  }
+  return false;
+}
+
 export async function renameThread(threadId, name) {
   try {
     const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {

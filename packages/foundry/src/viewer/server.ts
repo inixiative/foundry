@@ -30,7 +30,6 @@ import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
-import { log } from '../logger';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
@@ -160,7 +159,7 @@ export function createViewer(config: ViewerConfig) {
       holders.stale();
       if (kingdomLost()) revoke();
     },
-    warn: (message) => log.warn(message),
+    warn: (message) => console.warn(message),
   });
 
   const holders = new KingdomHolders(configDir);
@@ -181,7 +180,7 @@ export function createViewer(config: ViewerConfig) {
             configDir,
             saved.kingdomIntegrations ?? [],
             tunnel.token,
-            (message) => log.warn(message),
+            (message) => console.warn(message),
           ),
         )
         .catch(() => {});
@@ -301,11 +300,11 @@ export function createViewer(config: ViewerConfig) {
   if (localStore) {
     const recovered = localStore.recoverInterrupted();
     if (recovered.interrupted || recovered.neverSent)
-      log.warn(
+      console.warn(
         `[Recovery] ${recovered.interrupted} turn(s) interrupted (native outcome unknown), ${recovered.neverSent} queued turn(s) never sent`,
       );
     for (const warning of directory.restore(localStore.threads()))
-      log.warn(`[Recovery] ${warning}`);
+      console.warn(`[Recovery] ${warning}`);
     for (const thread of directory.all()) localStore.saveThread(thread);
     // A turn a restart closed is reduced before its first capture (spec A).
     localStore.compactClosedTurns();
@@ -340,7 +339,7 @@ export function createViewer(config: ViewerConfig) {
             timestamp: Date.now(),
           })
           .catch((error: unknown) =>
-            log.warn(
+            console.warn(
               `[Subagents] brief of ${spawn.node.id} not started: ${(error as Error).message}`,
             ),
           );
@@ -367,7 +366,7 @@ export function createViewer(config: ViewerConfig) {
                 timestamp: Date.now(),
               })
               .catch((error: unknown) =>
-                log.warn(
+                console.warn(
                   `[Subagents] guard of ${turn.node.id} not started: ${(error as Error).message}`,
                 ),
               );
@@ -395,7 +394,7 @@ export function createViewer(config: ViewerConfig) {
                 timestamp: Date.now(),
               })
               .catch((error: unknown) =>
-                log.warn(
+                console.warn(
                   `[Subagents] guard of ${call.node.id} not started: ${(error as Error).message}`,
                 ),
               );
@@ -410,7 +409,7 @@ export function createViewer(config: ViewerConfig) {
         try {
           subagents.observe(threadId, evidence);
         } catch (error) {
-          log.warn(`[Subagents] ${threadId}: ${(error as Error).message}`);
+          console.warn(`[Subagents] ${threadId}: ${(error as Error).message}`);
         }
       });
   }
@@ -419,7 +418,7 @@ export function createViewer(config: ViewerConfig) {
       localStore?.saveThread(thread);
       streams.threadsChanged(thread.id);
     } catch (error) {
-      log.warn(`[Viewer] thread ${thread.id} metadata not saved: ${(error as Error).message}`);
+      console.warn(`[Viewer] thread ${thread.id} metadata not saved: ${(error as Error).message}`);
     }
   };
   const namer = config.namingProvider
@@ -447,11 +446,11 @@ export function createViewer(config: ViewerConfig) {
         const days = configStore.config.journal?.rawMiddlewareDays ?? DEFAULT_RAW_MIDDLEWARE_DAYS;
         const pruned = localStore.pruneRawMiddleware(Date.now() - days * 86_400_000);
         if (pruned.rows)
-          log.info(
+          console.info(
             `[Journal] pruned ${pruned.rows} raw middleware row(s), ${pruned.content} content`,
           );
       } catch (error) {
-        log.warn(`[Journal] raw middleware retention failed: ${(error as Error).message}`);
+        console.warn(`[Journal] raw middleware retention failed: ${(error as Error).message}`);
       }
     };
     prune();
@@ -529,7 +528,7 @@ export function createViewer(config: ViewerConfig) {
         roots: (thread) => feedbackRoots(thread, configStore.config),
         changed: (item) => streams.feedbackChanged(item),
         audit: configStore.audit,
-        log: (message) => log.warn(message),
+        log: (message) => console.warn(message),
       })
     : null;
   registerKingdomRoutes(
@@ -554,7 +553,7 @@ export function createViewer(config: ViewerConfig) {
   const analyticsReady = analyticsStore?.load() ?? Promise.resolve();
   // Retain rejection for constructors that await readiness; do not expose paths
   // or parsed private file contents in a startup diagnostic.
-  analyticsReady.catch(() => log.warn('[Viewer] analytics history unavailable'));
+  analyticsReady.catch(() => console.warn('[Viewer] analytics history unavailable'));
   if (analyticsStore && config.tokenTracker) {
     analyticsStore.connectTracker(config.tokenTracker);
   }
@@ -626,7 +625,7 @@ export function createViewer(config: ViewerConfig) {
           timestamp: Date.now(),
         }),
       fork: () => fork,
-      log: (message) => log.warn(message),
+      log: (message) => console.warn(message),
     });
     const service = conversations;
     kingdom.serveThreads(service.host(), (hosted, dropped) =>
@@ -835,7 +834,7 @@ export function createViewer(config: ViewerConfig) {
               timestamp: Date.now(),
             });
         } catch (error) {
-          log.warn(`[Gate] ${phase} not journalled: ${(error as Error).message}`);
+          console.warn(`[Gate] ${phase} not journalled: ${(error as Error).message}`);
         }
       },
     });
@@ -910,7 +909,7 @@ export async function startViewer(config: ViewerConfig) {
   let server: ReturnType<typeof Bun.serve<WSData>>;
   try {
     for (const id of await viewer.kingdom.start())
-      log.warn(`[Kingdom] Paired Kingdom ${id} unavailable; reconnect at /kingdom`);
+      console.warn(`[Kingdom] Paired Kingdom ${id} unavailable; reconnect at /kingdom`);
     server = Bun.serve<WSData>({
       port,
       hostname: '127.0.0.1',
@@ -932,7 +931,7 @@ export async function startViewer(config: ViewerConfig) {
     return stopServer(closeActiveConnections);
   };
 
-  log.info(`Foundry Viewer running at http://localhost:${server.port}`);
+  console.info(`Foundry Viewer running at http://localhost:${server.port}`);
 
   // Automatic tunnel: off until it can work, then on.
   if (
@@ -952,10 +951,10 @@ export async function startViewer(config: ViewerConfig) {
     try {
       await tunnelHolder.tunnel.start();
       const info = tunnelHolder.tunnel.info;
-      if (info) log.info(`[Tunnel] ${info.provider} active: ${info.url}`);
+      if (info) console.info(`[Tunnel] ${info.provider} active: ${info.url}`);
       tunnelHolder.changed?.();
     } catch (err) {
-      log.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
+      console.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
     }
   }
 

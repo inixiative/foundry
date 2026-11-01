@@ -239,7 +239,6 @@ export default defineConfig({
     { include: `${FOUNDRY}/prompts/**`, partOf: 'feature:composition' },
 
     // foundry: infrastructure primitives
-    { include: `${FOUNDRY}/logger/**`, partOf: 'primitive:logger' },
     { include: `${FOUNDRY}/ws/**`, partOf: 'primitive:websockets' },
     { include: `${FOUNDRY}/client/data-stream-client.ts`, partOf: 'primitive:websockets' },
     { include: [`${FOUNDRY}/vcr/**`, 'scripts/vcr/**'], partOf: 'primitive:vcr' },

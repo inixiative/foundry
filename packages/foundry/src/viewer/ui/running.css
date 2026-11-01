@@ -104,3 +104,6 @@
   min-height: var(--footer-h, auto);
   box-sizing: border-box;
 }
+.running-row.s-ended {
+  opacity: 0.6;
+}
