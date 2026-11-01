@@ -100,24 +100,11 @@ export {
   getCurrentBranch,
   listWorktrees,
 } from './git';
-// Logger
-export { initLogger, type Logger, type LogLevel, log } from './logger';
 // MCP — mid-session bridge (FLOW.md Loop 2)
 export {
   createFoundryMcpServer,
   type FoundryMcpConfig,
 } from './mcp';
-// Prompts — project identity composition
-export {
-  compose as composePrompts,
-  type DecomposedSections,
-  decompose as decomposePrompts,
-  decomposeBack,
-  RUNTIME_OUTPUT_FILES,
-  readFileRef,
-  writeComposed as writeComposedPrompts,
-  writeFileRef,
-} from './prompts';
 export {
   type AnthropicConfig,
   AnthropicProvider,
@@ -242,7 +229,6 @@ export {
   type LayerSettingsOverride,
   type ListPatch,
   type ProjectAgentSettings,
-  type ProjectPrompts,
   type ProjectSettingsConfig,
   starterConfig,
 } from './viewer/config';

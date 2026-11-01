@@ -8,13 +8,6 @@ import { resolve as resolveFilePath } from 'node:path';
 import type { ActionQueue, Harness, TokenTracker, ToolRegistry } from '@inixiative/foundry-core';
 import type { Context, Hono } from 'hono';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
-import {
-  decomposeBack,
-  RUNTIME_OUTPUT_FILES,
-  readFileRef,
-  writeComposed,
-  writeFileRef,
-} from '../../prompts/composer';
 import { providerAccounts } from '../../providers/provider-accounts';
 import { describeReadinessChorus, inspectNativeClis } from '../../readiness';
 import type { ActionHandler, OperatorAction } from '../actions';
@@ -31,7 +24,8 @@ import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
 import { projectAbout } from '../project-about';
 import { SESSION_COOKIE, sessionValue } from '../request-auth';
-import { FoundryTunnel, type TunnelHolder, type TunnelInfo } from '../tunnel';
+import { settingsIndex } from '../settings-search';
+import { FoundryTunnel, type TunnelHolder } from '../tunnel';
 import { registerAccessRoutes } from './access';
 
 /** Optional optimistic-concurrency token for settings writes; GET and writes echo the committed revision. */
@@ -400,6 +394,19 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const project = cfg.projects[id];
     if (!project) return c.json({ error: 'not found' }, 404);
     return c.json(project);
+  });
+
+  // Every setting with its value and where it comes from, for Search (a project's too, given one).
+  app.get('/api/settings/index', async (c) => {
+    const cfg = await configStore.load();
+    const projectId = c.req.query('projectId');
+    const project = projectId
+      ? (projectRegistry?.get(projectId)?.summary() ?? cfg.projects[projectId])
+      : undefined;
+    if (projectId && !project) return c.json({ error: 'project not found' }, 404);
+    return c.json({
+      settings: settingsIndex(cfg, project ? { id: projectId!, path: project.path } : undefined),
+    });
   });
 
   app.get('/api/projects/:id/about', async (c) => {

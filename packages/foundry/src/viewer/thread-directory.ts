@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:threads, feature:viewer
  */
-import { Thread, type ThreadMeta } from '@inixiative/foundry-core';
+import { Thread, type ThreadMachine, type ThreadMeta } from '@inixiative/foundry-core';
 import type { ProjectRegistry } from '../agents/project';
 import type { ThreadFactory } from '../agents/thread-factory';
 
@@ -15,8 +15,18 @@ export class ViewerThreadDirectory {
     private readonly main: Thread,
     private readonly projects?: ProjectRegistry,
     private readonly factory?: ThreadFactory,
+    /** This machine, stamped on every thread the directory holds that has none (`meta.machine`). */
+    private readonly machine?: () => ThreadMachine | undefined,
   ) {
+    this.stamp(main);
     this.threads.set(main.id, main);
+  }
+
+  /** A thread this Foundry holds runs here: record the machine once, unless it already names one. */
+  private stamp(thread: Thread): void {
+    if (thread.meta.machine) return;
+    const machine = this.machine?.();
+    if (machine) thread.meta.machine = machine;
   }
 
   get(id: string): Thread | undefined {
@@ -50,6 +60,7 @@ export class ViewerThreadDirectory {
   add(thread: Thread): void {
     const existing = this.get(thread.id);
     if (existing && existing !== thread) throw new Error(`Thread already registered: ${thread.id}`);
+    this.stamp(thread);
     this.threads.set(thread.id, thread);
   }
 
@@ -219,6 +230,7 @@ export class ViewerThreadDirectory {
         thread.meta.status = 'waiting';
         thread.stop();
       }
+      this.stamp(thread);
     }
     return warnings;
   }

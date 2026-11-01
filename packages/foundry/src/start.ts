@@ -101,6 +101,7 @@ import { registerKingdomAccess } from './tools/kingdom-access';
 import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
+import { PLAN_TOOL_DESCRIPTION, type ThreadPlans, ThreadPlanTool } from './tools/thread-plan';
 import { journalHistory } from './turns/journal-history';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
@@ -272,25 +273,6 @@ console.log(
 );
 
 // ---------------------------------------------------------------------------
-// Compose project identity files (CLAUDE.md, .cursorrules, etc.)
-// ---------------------------------------------------------------------------
-
-import { RUNTIME_OUTPUT_FILES, writeComposed } from './prompts/composer';
-
-for (const project of Object.values(config.projects)) {
-  if (!project.prompts || !project.path) continue;
-  try {
-    const written = await writeComposed(project.path, project.prompts);
-    if (written.size > 0) {
-      const files = [...written.keys()].map((rt) => RUNTIME_OUTPUT_FILES[rt]).join(', ');
-      console.log(`Composed identity files for ${project.label || project.id}: ${files}`);
-    }
-  } catch (err) {
-    console.warn(`Failed to compose prompts for ${project.label || project.id}:`, err);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Create LLM provider
 // ---------------------------------------------------------------------------
 
@@ -298,7 +280,10 @@ for (const project of Object.values(config.projects)) {
 const threadLaunch = new ThreadLaunchSettings();
 let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
 // The journal a fresh executor session is seeded from; bound once the viewer opens it.
-let journalStore: Pick<LocalSessionStore, 'journalEntries'> | null | undefined;
+let journalStore:
+  | Pick<LocalSessionStore, 'journalEntries' | 'threadMeta' | 'phasesOf'>
+  | null
+  | undefined;
 const hostSettings = {
   launch: threadLaunch,
   // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
@@ -578,6 +563,9 @@ let conversationService: ConversationService | null = null;
 // post and the plain-text controls must reach an unpaired one too.
 tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
 registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
+// The thread's own plan (set_plan), recorded on its meta by the viewer once it exists.
+let threadPlans: ThreadPlans | null = null;
+tools.register(new ThreadPlanTool(() => threadPlans), PLAN_TOOL_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -924,6 +912,7 @@ const viewer = await startViewer({
 toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
+threadPlans = viewer.plans;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

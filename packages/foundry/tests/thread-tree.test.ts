@@ -562,3 +562,18 @@ test('a long turn is reduced whole, past any read window', () => {
     .get().n;
   expect(reduced).toBe(5 + 1_100);
 });
+
+test("a fork archives with Archive's fork lineage, its source and no root: it is top-level", () => {
+  const store = journal();
+  const source = main();
+  store.saveThread(source);
+  const fork = main('fork');
+  store.saveThread({
+    ...fork,
+    meta: { ...fork.meta, forkedFrom: { threadId: 'main', journalSeq: 3 } },
+  });
+  expect(captureThread(store, crypto.randomUUID(), 'fork').lineage).toEqual({
+    kind: 'fork',
+    parentSessionId: 'main',
+  });
+});

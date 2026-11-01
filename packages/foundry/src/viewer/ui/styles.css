@@ -7528,26 +7528,6 @@ a.thread-ref:hover {
   letter-spacing: -0.02em;
   margin: 0;
 }
-.board-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.board-filter {
-  background: var(--surface2);
-  border: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-.board-filter.is-active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--frame-shadow);
-}
 .board-columns {
   flex: 1;
   min-height: 0;

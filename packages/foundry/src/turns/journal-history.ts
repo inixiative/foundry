@@ -3,9 +3,16 @@
  * @kind transformer
  * @partOf feature:threads
  */
+
+import type { ThreadFork } from '@inixiative/foundry-core';
 import { memberPostReception } from '../agents/chorus-reception';
-import type { HeldRecord, HeldResolutionRecord, MemberPostRecord } from '../conversations/types';
-import { threadEntryOf } from '../conversations/view';
+import type {
+  HeldRecord,
+  HeldResolutionRecord,
+  MemberPostRecord,
+  SharedEntryRecord,
+} from '../conversations/types';
+import { sharedEntryText, threadEntryOf } from '../conversations/view';
 import type { JournalEntry, LocalSessionStore } from '../persistence/local-session-store';
 
 /** How much of the conversation a fresh native session is given, at most (newest kept). */
@@ -23,7 +30,8 @@ export const JOURNAL_HISTORY_CHARS = 40_000;
  * Undefined when there is nothing before this turn.
  */
 export function journalHistory(
-  store: Pick<LocalSessionStore, 'journalEntries'>,
+  store: Pick<LocalSessionStore, 'journalEntries'> &
+    Partial<Pick<LocalSessionStore, 'threadMeta' | 'phasesOf'>>,
   threadId: string,
   currentTurnId?: string,
   maxChars = JOURNAL_HISTORY_CHARS,
@@ -31,29 +39,67 @@ export function journalHistory(
   const lines: string[] = [];
   let chars = 0;
   let omitted = 0;
-  // Newest first, so the budget keeps the most recent part of the conversation.
-  const entries = store
-    .journalEntries(threadId, { newest: true, limit: 5000 })
-    .sort((a, b) => b.seq - a.seq);
   // Contiguous: the first entry that doesn't fit ends the history, so no answer loses its question.
   let full = false;
-  for (const entry of entries) {
-    const line = render(entry, currentTurnId);
-    if (!line) continue;
+  const take = (line: string) => {
     if (full || chars + line.length > maxChars) {
       full = true;
       omitted++;
-      continue;
+      return;
     }
     lines.push(line);
     chars += line.length;
+  };
+  // A fork carries its source's conversation through the fork point, and that source's own
+  // source's, newest first, so the budget keeps the most recent part of the whole line.
+  const forkedFrom = store.threadMeta?.(threadId)?.forkedFrom;
+  let reading: string | undefined = threadId;
+  let through: number | undefined;
+  for (let hops = 0; reading && hops < MAX_FORK_HOPS; hops++) {
+    const entries = store
+      .journalEntries(reading, {
+        newest: true,
+        limit: 5000,
+        ...(through !== undefined ? { through } : {}),
+      })
+      .sort((a, b) => b.seq - a.seq);
+    // On the thread itself, a heard entry not yet delivered rides this turn as a note instead.
+    const delivered =
+      hops === 0 && store.phasesOf
+        ? new Set(
+            store
+              .phasesOf(reading, 'shared-entry-delivered')
+              .map((row) => `${String(row.record.hostThreadId)}:${String(row.record.hostSeq)}`),
+          )
+        : undefined;
+    const before = lines.length;
+    for (const entry of entries) {
+      if (
+        delivered &&
+        entry.source === 'phase' &&
+        entry.phase === 'shared-entry' &&
+        !delivered.has(`${String(entry.record.hostThreadId)}:${String(entry.record.hostSeq)}`)
+      )
+        continue;
+      const line = render(entry, currentTurnId);
+      if (line) take(line);
+    }
+    const fork: ThreadFork | undefined =
+      hops === 0 ? forkedFrom : store.threadMeta?.(reading)?.forkedFrom;
+    // One marker between two threads' parts, never two in a row or a leading one.
+    if (fork && lines.length > before && !full) lines.push(FORKED_HERE);
+    reading = fork?.threadId;
+    through = fork?.journalSeq;
   }
+  if (lines.at(-1) === FORKED_HERE) lines.pop();
   if (!lines.length) return undefined;
   lines.reverse();
   return [
     '# The conversation so far',
     '',
-    "This thread's earlier native session could not be resumed, so this session started fresh. Here is the thread's conversation so far from Foundry's journal, oldest first. It is a record of what was said, not a new message; the current message follows.",
+    forkedFrom
+      ? `This thread was forked from thread ${forkedFrom.threadId} at its entry ${forkedFrom.journalSeq}, so this session started fresh. Here is the conversation it carries from Foundry's journal, oldest first: the source's conversation up to the fork, then this thread's own. It is a record of what was said, not a new message; the current message follows.`
+      : "This thread's earlier native session could not be resumed, so this session started fresh. Here is the thread's conversation so far from Foundry's journal, oldest first. It is a record of what was said, not a new message; the current message follows.",
     ...(omitted
       ? [
           `${omitted} older ${omitted === 1 ? 'entry was' : 'entries were'} left out to fit; the full thread is in Foundry's journal.`,
@@ -64,6 +110,11 @@ export function journalHistory(
   ].join('\n');
 }
 
+const FORKED_HERE = '## Forked here';
+
+/** How far up a chain of forks the history reaches (each hop is a source thread). */
+const MAX_FORK_HOPS = 20;
+
 function render(entry: JournalEntry, currentTurnId: string | undefined): string | undefined {
   // The turn being sent is the current message, not history: its own message, and the member's
   // post that opened it (`delivery: 'turn'`).
@@ -71,6 +122,9 @@ function render(entry: JournalEntry, currentTurnId: string | undefined): string 
     if (entry.source === 'message' && entry.message.turnId === currentTurnId) return undefined;
     if (entry.source === 'phase' && entry.record.turnId === currentTurnId) return undefined;
   }
+  // What a local member heard in a conversation it is in is part of its own conversation.
+  if (entry.source === 'phase' && entry.phase === 'shared-entry')
+    return `## Heard\n${sharedEntryText(entry.record as unknown as SharedEntryRecord)}`;
   const view = threadEntryOf(entry);
   if (!view) return undefined;
   switch (view.kind) {

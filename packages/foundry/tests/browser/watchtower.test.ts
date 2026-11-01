@@ -64,6 +64,41 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
       'Blocked',
     ]);
 
+    // A card's actor is you on this machine; the filter is Actors (people and machines), not People.
+    const machine = (await (await fetch(`${origin}/api/profile`)).json()).installationName;
+    const you = tower.locator('.wt-card .actor.is-me', { hasText: 'You · this machine' }).first();
+    await you.waitFor();
+    expect(await you.getAttribute('title')).toBe(`You on ${machine}`);
+    const filters = tower.getByRole('toolbar', { name: 'Filters' });
+    await filters.getByRole('button', { name: /^Actors/ }).waitFor();
+    expect(await filters.getByRole('button', { name: /^People/ }).count()).toBe(0);
+    // The Watching sidebar: Kingdoms, projects, connectors (Manage), people and their machines.
+    const watching = tower.getByRole('complementary', { name: 'Watching' });
+    for (const name of ['Kingdoms', 'Projects', 'Connectors', 'People and their machines'])
+      await watching.getByRole('region', { name }).waitFor();
+    await watching.locator('.wdev', { hasText: machine }).waitFor();
+
+    // The machine's icon is picked in its rename window (the footer, off the Watchtower).
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !location.hash.includes('view=watch'));
+    await page.locator('.nav-footer-machine').hover();
+    await page.locator('.nav-footer-edit').click();
+    await page.locator('.rename-modal').getByRole('radio', { name: 'peak' }).click();
+    await page.waitForFunction(
+      async (url: string) => (await (await fetch(url)).json()).installationIcon?.glyph === 'peak',
+      `${origin}/api/profile`,
+    );
+    expect(
+      await page
+        .locator('.rename-modal')
+        .getByRole('radio', { name: 'peak' })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    await page.keyboard.press('Escape');
+    await page.locator('body').click();
+    await page.keyboard.press('h');
+    await tower.waitFor();
+
     // The scope switch names whose work is shown; Esc leaves.
     await tower.getByRole('tab', { name: 'Involves me' }).click();
     expect(await tower.locator('.wt-meta').innerText()).toBe("Work you're on, on any machine");

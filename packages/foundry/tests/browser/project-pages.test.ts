@@ -115,6 +115,8 @@ test('Project home shows About and opens Knowledge and chorus and its board', as
     const boxes = await home.locator('.ph-box h4').allInnerTexts();
     expect(boxes.some((h: string) => /^Threads/.test(h) || h === 'Archive')).toBe(false);
 
+    const activeRow = page.locator('.proj-item.proj-active');
+    expect(await activeRow.innerText()).toContain('acme-shop');
     await home.getByRole('button', { name: 'Knowledge and chorus' }).click();
     const know = page.locator('.knowledge');
     await know.locator('h2', { hasText: 'Knowledge and chorus' }).waitFor();
@@ -138,6 +140,7 @@ test('Project home shows About and opens Knowledge and chorus and its board', as
       true,
     );
 
+    expect(await activeRow.innerText()).toContain('acme-shop');
     // Reload keeps the page; Esc goes back to the project's home.
     await page.reload();
     await know.locator('h2', { hasText: 'Knowledge and chorus' }).waitFor();
@@ -145,7 +148,18 @@ test('Project home shows About and opens Knowledge and chorus and its board', as
     await about.waitFor();
 
     await home.getByRole('button', { name: 'Board for this project' }).click();
-    await page.locator('.board-filter.is-active', { hasText: 'acme-shop' }).waitFor();
+    await page.locator('.filter-chip.is-on', { hasText: 'Project' }).waitFor();
+    await page.locator('.filter-chip.is-on', { hasText: 'Project' }).click();
+    expect(
+      await page
+        .getByRole('group', { name: 'Project' })
+        .getByRole('button', { name: /^acme-shop/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    // The project's row stays highlighted on its threads too.
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1&rail=projects`);
+    await page.locator('.context-bar-title', { hasText: 'Cap retries' }).waitFor();
+    expect(await page.locator('.proj-item.proj-active').innerText()).toContain('acme-shop');
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

@@ -38,7 +38,6 @@
     "@inixiative/signet": "^0.9.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.6.0",
-    "consola": "^3.4.2",
     "hono": "^4.7.0",
     "prisma": "^6.6.0",
     "uuidv7": "^1.0.2",
@@ -46,7 +45,6 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.2",
-    "pino": "^10.3.1",
     "playwright": "^1.63.0"
   },
   "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core \u2014 providers, session adapters, the viewer and the daemon",

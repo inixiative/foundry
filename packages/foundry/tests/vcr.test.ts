@@ -11,6 +11,7 @@ import {
   ProcessCassettes,
   type ProcessTranscript,
   scrubLine,
+  scrubText,
   scrubValue,
   signatureOf,
   VCR,
@@ -597,6 +598,15 @@ describe('http and websocket cassettes', () => {
 });
 
 describe('scrubbing and freshness', () => {
+  it("cassettes also drop every shape core's secret table knows, keeping their own placeholders", () => {
+    const text = scrubText(
+      'aws AKIAABCDEFGHIJKLMNOP hook https://hooks.slack.com/services/T0/B0/x key sk-ant-REDACTED',
+    );
+    expect(text).not.toContain('AKIAABCDEFGHIJKLMNOP');
+    expect(text).not.toContain('hooks.slack.com/services');
+    expect(text).toContain('sk-ant-REDACTED');
+  });
+
   it('scrubs secrets, identity keys, emails and the account home, keeping JSON valid', () => {
     const home = userInfo().homedir;
     const line = scrubLine(

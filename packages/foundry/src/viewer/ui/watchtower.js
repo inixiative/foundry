@@ -12,10 +12,12 @@
 
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
+import { ActorChip, loadMachineProfile, machineIcon, machineProfile } from './machine-icons.js';
 import { settingsConfig } from './settings.js';
 import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
-import { threadName } from './thread-labels.js';
+import { projectKingdom, threadName } from './thread-labels.js';
 import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
+import { WatchingSidebar } from './watching.js';
 
 export const STAGES = [
   ['idea', 'Idea · pain · bug'],
@@ -63,15 +65,21 @@ function Card({ item, machine }) {
         ([k, n]) =>
           html`<span key=${k} class="wt-src s-${k}">${k === 'github' ? 'GitHub' : k === 'linear' ? 'Linear' : 'Sessions'} ${n}</span>`,
       )}</span>
-    <span class="wt-who">${people.filter((p) => p !== 'You').map((p) => html`<span key=${p}>${p}</span>`)}
-      ${item.mine ? html`<span class="wt-you is-here">You · ${machine}</span>` : null}</span>
+    <span class="wt-actors">
+      ${item.mine ? html`<${ActorChip} person="You" machine=${machine} icon=${machineIcon()} me=${true} here=${true} />` : null}
+      ${people.filter((p) => p !== 'You').map((p) => html`<${ActorChip} key=${p} person=${p} />`)}
+    </span>
   </button>`;
 }
 
 export function Watchtower() {
   const [scope, setScope] = useState('everyone');
   const [chips, setChips] = useState({});
-  const machine = settingsConfig.value?.installationName ?? 'this Mac';
+  useEffect(() => {
+    loadMachineProfile();
+  }, []);
+  const machine =
+    machineProfile.value?.installationName ?? settingsConfig.value?.installationName ?? 'this Mac';
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.target.closest?.('input, textarea, select, [contenteditable]'))
@@ -82,7 +90,7 @@ export function Watchtower() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
   const label = (id) => (id ? (projects.value.find((p) => p.id === id)?.label ?? id) : 'Global');
-  const kingdomOf = (id) => projects.value.find((x) => x.id === id)?.tags?.[0] ?? 'This Foundry';
+  const kingdomOf = projectKingdom;
   const all = allThreads.value
     .filter((t) => !subagentParentOf(t.meta) && !isClosedThread(t))
     .map((thread) => {
@@ -117,7 +125,7 @@ export function Watchtower() {
   const valuesOf = {
     kingdom: (i) => i.kingdom,
     project: (i) => i.projectId,
-    people: (i) => i.people.filter((p) => !p.startsWith('+')),
+    actors: (i) => i.people.filter((p) => !p.startsWith('+')),
     device: (i) => i.device,
   };
   const inScope = all.filter(
@@ -149,7 +157,7 @@ export function Watchtower() {
         inScope.map((i) => i.projectId),
       ),
     },
-    { id: 'people', label: 'People', options: options('people', inScope.flatMap(valuesOf.people)) },
+    { id: 'actors', label: 'Actors', options: options('actors', inScope.flatMap(valuesOf.actors)) },
     {
       id: 'device',
       label: 'Device',
@@ -167,6 +175,9 @@ export function Watchtower() {
       <h2>Watchtower</h2><span class="wt-chip" title="A proposal: the name isn't decided">working name</span>
       <span class="wt-meta">${subtitle}</span>
     </header>
+    <div class="wt-wrap">
+    <${WatchingSidebar} machine=${machine} />
+    <div class="wt-main">
     <div class="wt-filters">
       <div class="wt-scope" role="tablist" aria-label="Whose work">
         ${SCOPES.map(
@@ -193,6 +204,8 @@ export function Watchtower() {
                 )}</div>`,
           )}`,
       )}
+    </div>
+    </div>
     </div>
   </section>`;
 }

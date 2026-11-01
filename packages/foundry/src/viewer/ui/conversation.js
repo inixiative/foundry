@@ -19,6 +19,7 @@ import {
   isUnsavedCompletion,
 } from './conversation-state.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
+import { ForkLink } from './fork-link.js';
 import {
   IMAGE_TYPES,
   IMAGES_PER_MESSAGE,
@@ -342,6 +343,7 @@ function ContextBar() {
           <span class="band-pill band-status" data-state=${state}>
             <${StatusIcon} state=${state} still=${true} />${STATES[state]?.label ?? state}
           </span>
+          <${ForkLink} threadId=${data.threadId} forkedFrom=${meta.forkedFrom} />
           <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}
             aria-label=${`${agentNames.length} agent session${agentNames.length === 1 ? '' : 's'} · open Participants`}>
             <span class="band-glyph" aria-hidden="true">🤖</span>${agentNames.length}

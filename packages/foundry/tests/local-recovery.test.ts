@@ -266,7 +266,7 @@ test('G4: viewer startup restores a projectless thread, rename and terminal arch
   expect(rejected.status).toBe(409);
 });
 
-test('G4: fork and rewind cannot acknowledge a view-only native history change', async () => {
+test("G4: rewind cannot acknowledge a view-only native history change; a fork leaves the source's history untouched", async () => {
   const { make } = setup();
   const runtime = make();
   cleanup.push(() => {
@@ -281,9 +281,11 @@ test('G4: fork and rewind cannot acknowledge a view-only native history change',
     });
   await post('/api/messages', { id: 'original', message: 'Keep this evidence', threadId: 'main' });
   expect((await post('/api/threads/main/revert', { keepCount: 0 })).status).toBe(501);
-  expect((await post('/api/threads/main/fork', { copyCount: 1 })).status).toBe(501);
+  // A fork is a new top-level thread seeded from the journal (CORE-004's portable form).
+  const original = runtime.localStore.messages('main').find((m) => m.actor === 'user')!;
+  expect((await post('/api/threads/main/fork', { messageId: original.id })).status).toBe(201);
   expect(runtime.localStore.messages('main')).toHaveLength(2);
-  expect(runtime.localStore.threads()).toHaveLength(1);
+  expect(runtime.localStore.threads().map((t) => t.meta.forkedFrom?.threadId)).toContain('main');
 });
 
 test('an archive is undone: thread:unarchive reopens the thread with its journal', async () => {

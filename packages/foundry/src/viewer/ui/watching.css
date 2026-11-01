@@ -1,0 +1,220 @@
+/* Watchtower v3: the Watching sidebar beside the map, both scrolling inside the page's frame. */
+.watchtower {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wt-wrap {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+.wt-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.watching {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.watching h4 {
+  margin: 0;
+  color: var(--text-dim);
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ws {
+  display: grid;
+  gap: 6px;
+}
+.ws > b {
+  font-size: 12.5px;
+}
+.ws > small {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.wrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.wrow small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.wrow .kd {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+}
+.wrow button {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 11.5px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.wrow button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.wtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.wtags span {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.wtags .mut {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+.wperson {
+  display: grid;
+  gap: 3px;
+}
+.wp1 {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+.wdev {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 2px 7px;
+  align-items: center;
+  margin-left: 26px;
+  font-size: 12.5px;
+}
+.wdev small {
+  grid-column: 2;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* Machines and actors. */
+.dva {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--dc) 22%, transparent);
+  color: var(--dc);
+  flex: none;
+}
+.dva svg {
+  width: 72%;
+  height: 72%;
+}
+.pva {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  font-size: 9.5px;
+  font-weight: 700;
+  flex: none;
+}
+.wt-actors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.actor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px 2px 2px;
+  font-size: 12px;
+}
+.actor {
+  max-width: 100%;
+}
+.actor b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.actor.is-me {
+  border-color: var(--accent);
+}
+.actor .dvcorner {
+  position: absolute;
+  left: 14px;
+  bottom: -3px;
+}
+.actor .dvcorner .dva {
+  background: var(--bg);
+}
+.actor .pva + .dvcorner + b {
+  margin-left: 2px;
+}
+
+/* The icon picker in the machine's rename window. */
+.machine-icon-picker {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.mip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mip-row button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  padding: 3px;
+  cursor: pointer;
+}
+.mip-row button[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.mip-row .mip-color {
+  width: 22px;
+  height: 22px;
+  background: var(--dc);
+}
+.nav-footer .dva {
+  margin-right: 4px;
+  vertical-align: middle;
+}

@@ -15,6 +15,7 @@ import {
 import { ProjectRegistry } from '../../src/agents/project';
 import { ConfigStore, defaultAgents, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
+import { writeRegions } from '../helpers/regions';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 const { chromium } = createRequire(import.meta.url)(
@@ -22,54 +23,49 @@ const { chromium } = createRequire(import.meta.url)(
 );
 
 const GRAPH = {
-  conceptToFiles: { 'feature:checkout': ['src/checkout/retry.ts'], 'feature:search': ['src/s.ts'] },
+  conceptToFiles: { 'feature:checkout': ['src/checkout/retry.ts'] },
   usesConsumers: {},
-  fileToConcepts: {},
+  fileToConcepts: {
+    'src/checkout/retry.ts': { kind: ['service'], partOf: ['feature:checkout'], uses: [] },
+  },
   docToConcepts: {},
   thesaurus: { 'feature:checkout': { phrases: ['checkout'], doc: 'docs/CHECKOUT.md' } },
 };
 
-// / opens Search; one input searches threads, linked PRs and tickets, and the projects' Atlas
-// concepts, a scope chip narrows to one project, groups without a source say so, Esc goes back.
-test('Search finds threads, linked PRs and Atlas concepts, narrows by project, and Esc goes back', async () => {
+// Search is its own page: settings, docs, Atlas and Heralds come before threads; each group shows
+// five until "Show all"; ↑↓ moves the preview and Enter opens; a setting opens in Settings
+// highlighted; Esc returns to the thread as it was.
+test('Search: its own page, settings and docs first, preview, open a setting, Esc back', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-search-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
   try {
-    const shopPath = join(dir, 'shop');
-    mkdirSync(join(shopPath, '.atlas'), { recursive: true });
-    mkdirSync(join(shopPath, 'node_modules', '.bin'), { recursive: true });
-    writeFileSync(join(shopPath, 'graph.json'), JSON.stringify(GRAPH));
-    const bin = join(shopPath, 'node_modules', '.bin', 'atlas');
-    writeFileSync(bin, `#!/bin/sh\ncat "${join(shopPath, 'graph.json')}"\n`);
+    const repo = join(dir, 'shop');
+    mkdirSync(join(repo, '.atlas'), { recursive: true });
+    mkdirSync(join(repo, 'node_modules', '.bin'), { recursive: true });
+    writeFileSync(join(repo, 'graph.json'), JSON.stringify(GRAPH));
+    const bin = join(repo, 'node_modules', '.bin', 'atlas');
+    writeFileSync(bin, `#!/bin/sh\ncat "${join(repo, 'graph.json')}"\n`);
     chmodSync(bin, 0o755);
-    const blogPath = join(dir, 'blog');
-    mkdirSync(blogPath);
+    writeRegions(repo, [
+      {
+        id: 'checkout',
+        knowledge: '# Checkout\n\n## Retries\n\nCap checkout retries at three with withRetry.\n',
+      },
+    ]);
 
     const projects = new ProjectRegistry();
     const shop = projects.register({
       id: 'shop',
       label: 'acme-shop',
-      path: shopPath,
+      path: repo,
       tags: [],
       runtime: 'claude-code',
     });
-    const blog = projects.register({
-      id: 'blog',
-      label: 'blog',
-      path: blogPath,
-      tags: [],
-      runtime: 'claude-code',
-    });
-    const retries = new Thread('shop-1', new ContextStack(), {
-      description: 'Cap checkout retries',
-      projectId: 'shop',
-    });
-    shop.addThread(retries);
-    blog.addThread(
-      new Thread('blog-1', new ContextStack(), {
-        description: 'Checkout the new theme',
-        projectId: 'blog',
+    shop.addThread(
+      new Thread('shop-1', new ContextStack(), {
+        description: 'Cap checkout retries',
+        projectId: 'shop',
       }),
     );
 
@@ -77,6 +73,8 @@ test('Search finds threads, linked PRs and Atlas concepts, narrows by project, a
     const config = starterConfig('controlled', 'controlled');
     config.agents = defaultAgents();
     config.setupComplete = true;
+    config.installationName = 'Checkout Studio';
+    config.projects.shop = { id: 'shop', path: repo, label: 'acme-shop' };
     await configStore.save(config);
     const viewer = createViewer({
       harness: new Harness(new Thread('main', new ContextStack(), { description: 'Global' })),
@@ -88,23 +86,6 @@ test('Search finds threads, linked PRs and Atlas concepts, narrows by project, a
       projectRegistry: projects,
     });
     cleanup.unshift(['store', () => viewer.localStore?.close()]);
-    // A turn that links the PR: capture records the thread's references from its Archive snapshot.
-    const store = viewer.localStore!;
-    store.beginTurn(retries, 'turn-1', 'Cap retries; see https://github.com/acme/shop/pull/57');
-    store.completeTurn(
-      retries,
-      'turn-1',
-      'Opened acme/shop#57.',
-      {},
-      {
-        id: 'trace-turn-1',
-        messageId: 'turn-1',
-        startedAt: 1,
-        root: {},
-        summary: {},
-        spans: [],
-      },
-    );
     const server = Bun.serve({
       hostname: '127.0.0.1',
       port: 0,
@@ -121,52 +102,85 @@ test('Search finds threads, linked PRs and Atlas concepts, narrows by project, a
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
-    await page.goto(`http://127.0.0.1:${server.port}/`);
-    await page.locator('.search-button').waitFor();
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
+    await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('/');
+
+    // Its own page: the top bar and Search, no rail, thread panel or composer.
     const search = page.locator('.search-page');
-    const input = search.locator('input.search-input');
+    const input = search.getByRole('searchbox', { name: 'Search everything' });
     await input.waitFor();
-    await page.waitForFunction(() => location.hash.includes('view=search'));
+    expect(new URL(page.url()).pathname).toBe('/search');
+    for (const panel of ['.panel-projects', '.panel-right', 'textarea.chat-input'])
+      expect(await page.locator(panel).count()).toBe(0);
+
+    // Settings, docs, Atlas and Heralds come first.
     await input.fill('checkout');
-
-    const group = (name: string) => search.getByRole('region', { name });
-    await group('Threads').locator('.search-hit', { hasText: 'Cap checkout retries' }).waitFor();
-    await group('Threads').locator('.search-hit', { hasText: 'Checkout the new theme' }).waitFor();
-    await group('Docs and Atlas')
-      .locator('.search-hit', { hasText: 'feature:checkout † docs/CHECKOUT.md' })
-      .waitFor();
-    expect(await group('Threads').locator('mark').first().innerText()).toBe('checkout');
-    await group('People').locator('.search-empty', { hasText: 'Not indexed yet' }).waitFor();
-    // Messages come from the local Archive (the test's fake), which holds the captured threads.
-    await group('Messages').locator('.search-hit', { hasText: 'Cap checkout retries' }).waitFor();
-
-    await input.fill('#57');
-    await group('PRs and tickets')
-      .locator('.search-hit', { hasText: 'acme/shop#57' })
-      .waitFor({ timeout: 30_000 });
-
-    // A project chip narrows every group to it.
-    await input.fill('checkout');
+    const groups = search.locator('.search-group h4');
     await search
-      .getByRole('group', { name: 'Scope' })
-      .getByRole('button', { name: 'blog', exact: true })
-      .click();
-    await group('Threads').locator('.search-hit', { hasText: 'Checkout the new theme' }).waitFor();
-    expect(await group('Threads').locator('.search-hit').count()).toBe(1);
-    await group('Docs and Atlas')
-      .locator('.search-empty', { hasText: 'Not indexed yet' })
+      .getByRole('region', { name: 'Docs' })
+      .locator('.search-hit', { hasText: 'Retries' })
       .waitFor();
+    const order = (await groups.allInnerTexts()).map((t: string) => t.split(' · ')[0]);
+    expect(order).toEqual([
+      'SETTINGS',
+      'DOCS',
+      'ATLAS',
+      'HERALDS',
+      'THREADS',
+      'MESSAGES',
+      'PRS AND TICKETS',
+      'FEEDBACK',
+      'PEOPLE',
+    ]);
+    await search
+      .getByRole('region', { name: 'Atlas' })
+      .locator('.search-hit', { hasText: 'feature:checkout' })
+      .waitFor();
+    await search
+      .getByRole('region', { name: 'Threads' })
+      .locator('.search-hit', { hasText: 'Cap checkout retries' })
+      .waitFor();
+    // The highlighted result previews beside the list: a doc section with its pointer.
+    const docHit = search
+      .getByRole('region', { name: 'Docs' })
+      .locator('.search-hit', { hasText: 'Retries' });
+    await docHit.hover();
+    const preview = search.getByRole('complementary', { name: 'Preview' });
+    await preview
+      .locator('.sp-pointer', { hasText: '† .foundry/regions/checkout/knowledge.md §Retries' })
+      .waitFor();
+    await preview.locator('pre', { hasText: 'withRetry' }).waitFor();
 
-    // Esc goes back; a hit opens its thread.
-    await input.press('Escape');
-    await search.waitFor({ state: 'detached' });
-    await page.locator('.search-button').click();
-    await input.fill('retries');
-    await group('Threads').locator('.search-hit', { hasText: 'Cap checkout retries' }).click();
+    // A group shows five until Show all.
+    await input.fill('a');
+    const settings = search.getByRole('region', { name: 'Settings' });
+    await settings.getByRole('button', { name: /^Show all \d+/ }).waitFor();
+    expect(await settings.locator('.search-hit').count()).toBe(5);
+
+    // ↑↓ moves the highlight; Enter on a setting opens its Settings section, the setting highlighted.
+    await input.fill('installationName');
+    const first = settings.locator('.search-hit').first();
+    await first.waitFor();
+    // Once: Foundry-wide settings aren't repeated under each project.
+    expect(await settings.locator('.search-hit').count()).toBe(1);
+    expect(await first.getAttribute('aria-selected')).toBe('true');
+    await preview.locator('dd', { hasText: 'Checkout Studio' }).waitFor();
+    await preview.locator('dd', { hasText: 'Set by you' }).waitFor();
+    await input.press('Enter');
+    await page.waitForURL(/\/settings\/profile$/);
+    await page.locator('.settings-searched', { hasText: 'installationName' }).waitFor();
+
+    // Esc from Search returns where you were: the thread, as it was.
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
     await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
-    expect(await search.count()).toBe(0);
+    await page.locator('.search-button').click();
+    await input.waitFor();
+    await input.press('Escape');
+    await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
+    expect(new URL(page.url()).hash).toContain('thread=shop-1');
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

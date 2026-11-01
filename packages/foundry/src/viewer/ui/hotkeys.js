@@ -9,13 +9,13 @@
  */
 
 import { stepSize } from './panel-sizes.js';
+import { openSearch } from './route.js';
 import {
   actionPaletteOpen,
   boardOpen,
   commandPaletteOpen,
   createThread,
   helpOpen,
-  openSearch,
 } from './store.js';
 
 // ---------------------------------------------------------------------------

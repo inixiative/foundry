@@ -35,6 +35,7 @@ import { readOperationSchema } from '../providers/kingdom-access-client';
 import { ConversationTool } from '../tools/conversation';
 import { KingdomAccessTool } from '../tools/kingdom-access';
 import { KingdomPostTool } from '../tools/kingdom-post';
+import { type PlanPatch, planPatchSchema, ThreadPlanTool } from '../tools/thread-plan';
 import {
   type AuthorityRefusal,
   bindLiveAuthority,
@@ -575,6 +576,24 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
 
   // -----------------------------------------------------------------------
+  // set_plan — the thread's own plan, for the Plan view (tools/thread-plan.ts)
+  // -----------------------------------------------------------------------
+  if (config.tools?.get('plan') instanceof ThreadPlanTool)
+    server.tool(
+      'set_plan',
+      "Record this thread's plan so the person sees it in the Plan view, and keep it current as the work moves. Give any sections; each one given replaces that section. outcomes: what the person gets, each with its status (todo, doing, done, you = waits on the person). pains: what hurts today. strategy: how the work goes. reasons: why this way. technical: one row per concern the work touches (auth, permissions, db access, requests, locks, jobs, events, errors, ...): the existing system it uses and where it lives (reuse, extend, combine, refactor, migrate), or decision 'new' with why none fits and what would have made the closest one fit, or 'none' when the concern needs nothing. Lines are short; put more in detail.",
+      planPatchSchema.shape,
+      guarded<PlanPatch>('set_plan', async (args) => {
+        const result = await config.tools!.dispatch(
+          'plan_request',
+          { url: 'set_plan', method: 'POST', body: args },
+          { scope: authority.scope() },
+        );
+        return { status: result.ok ? 'ok' : 'error', text: result.summary };
+      }),
+    );
+
+  // -----------------------------------------------------------------------
   // Conversations (docs/reference/CONVERSATIONS.md §4.5): the host's send and conch, the joiner's post
   // -----------------------------------------------------------------------
   /** One call to a conversation tool on this thread's scope; its answer is the tool's own sentence. */
@@ -667,6 +686,18 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       guarded<{ member: string | null }>(
         'give_conch',
         conversationCall('conversation', 'give_conch'),
+      ),
+    );
+    server.tool(
+      'fork_thread',
+      'Fork this thread into a new top-level thread that carries its conversation so far, when the owner says so in his own message ("take this and go do it in its own thread"). task: the first message the fork works on; name: its name. Otherwise the owner is asked to confirm first.',
+      {
+        name: z.string().min(1).max(200).optional(),
+        task: z.string().min(1).max(16_000).optional(),
+      },
+      guarded<{ name?: string; task?: string }>(
+        'fork_thread',
+        conversationCall('conversation', 'fork_thread'),
       ),
     );
   }

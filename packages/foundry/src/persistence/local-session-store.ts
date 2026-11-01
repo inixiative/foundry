@@ -1198,7 +1198,7 @@ export class LocalSessionStore {
    */
   journalEntries(
     threadId: string,
-    opts: { after?: number; limit?: number; newest?: boolean } = {},
+    opts: { after?: number; through?: number; limit?: number; newest?: boolean } = {},
   ): JournalEntry[] {
     const limit = boundedLimit(opts.limit ?? 1000);
     const rows = this.query(
@@ -1207,9 +1207,9 @@ export class LocalSessionStore {
          FROM session_journal j
          LEFT JOIN session_messages m ON j.source = 'message' AND m.id = j.ref
          LEFT JOIN session_phase p ON j.source = 'phase' AND p.id = j.ref
-        WHERE j.thread_id=? AND j.seq > ?
+        WHERE j.thread_id=? AND j.seq > ? AND j.seq <= ?
         ORDER BY j.seq ${opts.newest ? 'DESC' : 'ASC'} LIMIT ?`,
-    ).all(threadId, opts.after ?? 0, limit) as Array<{
+    ).all(threadId, opts.after ?? 0, opts.through ?? Number.MAX_SAFE_INTEGER, limit) as Array<{
       seq: number;
       source: 'message' | 'phase';
       actor: StoredMessage['actor'] | null;
@@ -1437,6 +1437,49 @@ export class LocalSessionStore {
         meta: string;
       }>
     ).map((row) => ({ id: row.id, meta: JSON.parse(row.meta) }));
+  }
+
+  /** A message's place in its thread's journal (undefined when it isn't that thread's). */
+  messageSeq(threadId: string, messageId: string): number | undefined {
+    const row = this.query(
+      "SELECT seq FROM session_journal WHERE thread_id=? AND source='message' AND ref=?",
+    ).get(threadId, messageId) as { seq: number } | null;
+    return row?.seq;
+  }
+
+  /** The journal row at a seq: what it points at (a message id or a phase row id). */
+  journalRef(
+    threadId: string,
+    seq: number,
+  ): { source: 'message' | 'phase'; ref: string } | undefined {
+    return (
+      (this.query('SELECT source, ref FROM session_journal WHERE thread_id=? AND seq=?').get(
+        threadId,
+        seq,
+      ) as { source: 'message' | 'phase'; ref: string } | null) ?? undefined
+    );
+  }
+
+  /** Where a cut at journal `seq` falls: the turn of its last message and how many turns came through it. */
+  turnAtSeq(threadId: string, seq: number): { turnId: string; ordinal: number } | undefined {
+    const at = this.query(
+      `SELECT m.turn_id AS turnId FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=? ORDER BY j.seq DESC LIMIT 1`,
+    ).get(threadId, seq) as { turnId: string } | null;
+    if (!at) return undefined;
+    const { n } = this.query(
+      `SELECT COUNT(DISTINCT m.turn_id) AS n FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=?`,
+    ).get(threadId, seq) as { n: number };
+    return { turnId: at.turnId, ordinal: n };
+  }
+
+  /** One stored thread's meta (a live or archived thread), or undefined. */
+  threadMeta(id: string): ThreadMeta | undefined {
+    const row = this.query('SELECT meta FROM session_threads WHERE id=?').get(id) as {
+      meta: string;
+    } | null;
+    return row ? JSON.parse(row.meta) : undefined;
   }
 
   turn(id: string): StoredTurn | undefined {
@@ -2431,6 +2474,9 @@ export const JOURNAL_ORDERED_PHASES = [
   'member-post',
   'outbound-held',
   'outbound-resolution',
+  // What a local member heard in a conversation it is in: part of its own conversation, so a
+  // fresh or forked session is seeded with it (`turns/journal-history.ts`).
+  'shared-entry',
 ] as const;
 
 /** One entry of a main thread's journal in order: a message, or an ordered phase row. */

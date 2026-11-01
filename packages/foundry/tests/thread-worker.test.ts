@@ -451,9 +451,9 @@ test("a Kingdom project's default worker needs no login on this machine; its thr
 });
 
 test("a fork carries its source's worker", async () => {
-  const { call } = await viewer({ localStore: null });
+  const { call } = await viewer({});
   const source = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
-  const fork = await call('POST', `/api/threads/${source.body.threadId}/fork`, { copyCount: 1 });
+  const fork = await call('POST', `/api/threads/${source.body.threadId}/fork`, { atSeq: 0 });
   expect(fork.status).toBe(201);
   expect((fork.body.meta as ThreadMeta).worker).toBe('codex');
 });

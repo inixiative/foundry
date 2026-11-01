@@ -64,6 +64,13 @@ export function harnessName(provider) {
   return null;
 }
 
+/**
+ * The Kingdom a project's work belongs to, for filters and lanes. Foundry records no Kingdom link per
+ * project yet, so its first organisation tag stands in, else "This Foundry".
+ */
+export const projectKingdom = (projectId) =>
+  projects.value.find((p) => p.id === projectId)?.tags?.[0] ?? 'This Foundry';
+
 /** A project's label by id; Global for none. */
 export function projectLabel(projectId) {
   if (!projectId) return 'Global';

@@ -49,6 +49,42 @@ export interface ThreadCheckout {
   readonly error?: string;
 }
 
+/** One item of a plan section: a short line, and its detail when the line is not enough. */
+export interface ThreadPlanItem {
+  readonly text: string;
+  readonly detail?: string;
+}
+
+/**
+ * The thread's plan, written by its agent through Foundry's `set_plan` tool. Outcomes are what the
+ * person gets (`you`: waits on the person); pains what hurts today; strategy how the work goes;
+ * reasons why this way. Each technical row names, per concern (auth, permissions, db access,
+ * requests, locks, jobs, events, errors…), the existing system it uses and where, or why none fits.
+ */
+export interface ThreadPlan {
+  readonly outcomes: readonly (ThreadPlanItem & {
+    readonly status: 'todo' | 'doing' | 'done' | 'you';
+  })[];
+  readonly pains: readonly ThreadPlanItem[];
+  readonly strategy: readonly ThreadPlanItem[];
+  readonly reasons: readonly ThreadPlanItem[];
+  readonly technical: readonly {
+    readonly concern: string;
+    readonly decision: 'reuse' | 'extend' | 'new' | 'combine' | 'refactor' | 'migrate' | 'none';
+    readonly system: string;
+    readonly path?: string;
+    readonly reason: string;
+  }[];
+  readonly updatedAt: number;
+}
+
+/** Where a thread runs: the Foundry device it was recorded on, and that Foundry's name then. */
+export interface ThreadMachine {
+  readonly deviceId: string;
+  readonly deviceName: string;
+  readonly installationName?: string;
+}
+
 /**
  * A thread snoozed by its person: quiet until `until` (ISO), then cleared. `condition` names what
  * the time was resolved from (`quota-reset`: when the reached usage window resets). A snooze never
@@ -81,6 +117,17 @@ export function threadTitle(
   if (meta.name?.text) return { text: meta.name.text, source: 'human' };
   if (meta.foundryName?.text) return { text: meta.foundryName.text, source: 'foundry' };
   return meta.description ? { text: meta.description, source: 'description' } : undefined;
+}
+
+/**
+ * Where a forked thread came from: provenance, not nesting. A fork is a top-level thread (Aron,
+ * 2026-11-01: delegated threads are top-level; nesting is for subagents), so it is not a
+ * `parentThreadId`. Its first session is seeded with the source's conversation through `journalSeq`.
+ */
+export interface ThreadFork {
+  readonly threadId: string;
+  /** The source's journal seq the fork was cut at. */
+  readonly journalSeq: number;
 }
 
 /** How a subagent thread came to be: who spawned it, through what, and its native identity. */
@@ -120,6 +167,11 @@ export interface ThreadMeta {
   /** Current status. */
   status: ThreadStatus;
 
+  /** The agent's plan for the thread's work (`set_plan`, the Plan view): what, why, and how. */
+  plan?: ThreadPlan;
+  /** The machine (Foundry device identity, `~/.foundry/device.json`) the thread runs on. */
+  machine?: ThreadMachine;
+
   /** Put out of mind until a time (or a condition, resolved to its time); status is untouched. */
   snooze?: ThreadSnooze;
 
@@ -134,6 +186,9 @@ export interface ThreadMeta {
 
   /** The parent's turn that spawned this thread (a subagent). */
   parentTurnId?: string;
+
+  /** The thread and point this one was forked from (provenance; a fork is top-level). */
+  forkedFrom?: ThreadFork;
 
   /** How this subagent thread was spawned. */
   spawn?: ThreadSpawn;
@@ -262,6 +317,8 @@ export interface ThreadConfig {
   branch?: string;
   /** Parent thread when this thread is a subagent spawned by another. */
   parentThreadId?: string;
+  /** The thread and point this one was forked from. */
+  forkedFrom?: ThreadFork;
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
   /** The harness running this thread's main session. */
@@ -316,6 +373,7 @@ export class Thread {
       cwd: opts?.cwd,
       branch: opts?.branch,
       parentThreadId: opts?.parentThreadId,
+      ...(opts?.forkedFrom ? { forkedFrom: opts.forkedFrom } : {}),
       projectId: opts?.projectId,
       ...(opts?.worker ? { worker: opts.worker } : {}),
       createdAt: now,
