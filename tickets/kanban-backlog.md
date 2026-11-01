@@ -39,18 +39,18 @@ These tickets capture the connections between components that are individually b
 
 | Ticket | Gap | Priority |
 |--------|-----|----------|
-| [VIEWER-001](./VIEWER-001-inbox-mode.md) | The attention board: default view, private and shared zones, attention first | High |
+| [VIEWER-001](./VIEWER-001-inbox-mode.md) | The attention board: default view, three lanes (Needs you, Just in, Running), `meta.attention`, the controls, private and shared zones | High |
 
 ### Backlog — Attention board (Foundry Version 4)
 
 | Ticket | Gap | Priority |
 |--------|-----|----------|
-| [BOARD-001](./BOARD-001-shared-threads.md) | Shared threads: one member path (local or Kingdom), private entries and what each side was shown, `/private` and `/btw` (spec awaiting Aron) | High |
-| [BOARD-002](./BOARD-002-sidecar-joining-side.md) | The joining side's copy of a shared thread (F2 under the new model) | High |
-| [BOARD-003](./BOARD-003-inbound-items.md) | Inbound items arrive as threads already investigating (Kingdom receivers first) | High |
-| [BOARD-004](./BOARD-004-outside-requests.md) | Outside requests on the board, granted with a Signet | Medium |
+| [BOARD-001](./BOARD-001-shared-threads.md) | Shared threads: one member path (local or Kingdom), everything visible except tool calls, a private home and fresh session when shared, `/btw` only (rev 4; §4 to Aron) | High |
+| [BOARD-002](./BOARD-002-sidecar-joining-side.md) | The other side's thread: a bridge, not a chat (F2) | High |
+| [BOARD-003](./BOARD-003-inbound-items.md) | Slack/Linear/GitHub tags and DMs arrive as threads already investigating; held replies (Kingdom INTEG-002/003 first) | High |
+| [BOARD-004](./BOARD-004-outside-requests.md) | Parties off the machine: requests, standing Signets, teammate sessions that wait for Aron (Kingdom FEAT-023 first) | High |
 | [BOARD-005](./BOARD-005-g1-untrusted-content.md) | G1: content nobody typed is data on every thread | High |
 
 ---
 
-_Last updated: 2026-10-31_
+_Last updated: 2026-11-01_
