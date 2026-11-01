@@ -1410,6 +1410,20 @@ export class LocalSessionStore {
     );
   }
 
+  /** Where a cut at journal `seq` falls: the turn of its last message and how many turns came through it. */
+  turnAtSeq(threadId: string, seq: number): { turnId: string; ordinal: number } | undefined {
+    const at = this.query(
+      `SELECT m.turn_id AS turnId FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=? ORDER BY j.seq DESC LIMIT 1`,
+    ).get(threadId, seq) as { turnId: string } | null;
+    if (!at) return undefined;
+    const { n } = this.query(
+      `SELECT COUNT(DISTINCT m.turn_id) AS n FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=?`,
+    ).get(threadId, seq) as { n: number };
+    return { turnId: at.turnId, ordinal: n };
+  }
+
   /** One stored thread's meta (a live or archived thread), or undefined. */
   threadMeta(id: string): ThreadMeta | undefined {
     const row = this.query('SELECT meta FROM session_threads WHERE id=?').get(id) as {
