@@ -5,16 +5,14 @@
  */
 /**
  * Running: what this thread has going right now, pinned at the bottom of the right panel. Today that
- * is its open subagents (child threads). Background processes and scheduled jobs need Foundry's
- * Running record per thread, which isn't built: the flow stream that carries tool calls has one
- * holder at a time (the centre's views), so this panel can't read shells from it.
+ * is its live subagents: child threads whose status is active (idle means finished). Background
+ * processes, Stop and scheduled jobs have no data source: the native session's background-task
+ * frames don't reach Foundry yet.
  */
 
 import { html } from './lib.js';
 import { allThreads, railExpanded, railView, selectThread } from './store.js';
 import { threadName } from './thread-labels.js';
-
-const CLOSED = new Set(['archived', 'completed', 'done']);
 
 const since = (at) => {
   if (!at) return '';
@@ -24,7 +22,8 @@ const since = (at) => {
 
 export function Running({ threadId }) {
   const subagents = allThreads.value.filter(
-    (t) => t.meta?.parentThreadId === threadId && !CLOSED.has(t.meta?.status ?? 'idle'),
+    // A subagent is live while its thread is active; idle means it finished.
+    (t) => t.meta?.parentThreadId === threadId && t.meta?.status === 'active',
   );
   const reveal = () => {
     railView.value = 'open';
@@ -46,6 +45,6 @@ export function Running({ threadId }) {
           }}>Open</button></span>
       </div>`,
     )}
-    <div class="running-none" title="Needs Foundry's Running record per thread">Background processes and scheduled jobs: not built yet.</div>
+    <div class="running-none" title="The native session doesn't report its background shells to Foundry yet">Processes: not tracked yet.</div>
   </section>`;
 }

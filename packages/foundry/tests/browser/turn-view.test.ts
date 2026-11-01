@@ -44,13 +44,15 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     await view.locator('.tv-group').first().waitFor();
     const groups = await view.locator('.tv-group h3').allTextContents();
     expect(groups[0]).toBe('Foundry, before');
-    expect(groups).toContain("The agent's work");
-    const all = await view.locator('.tv-step').count();
-    expect(all).toBeGreaterThan(2);
+    expect(groups.at(-1)).toBe('Foundry, after');
+    // The chorus step lists each region's answer.
+    const chorus = view.locator('.tv-step', { hasText: 'Chorus' });
+    expect(await chorus.locator('.tv-regions li').count()).toBeGreaterThan(0);
+    expect(await view.locator('.tv-step').count()).toBeGreaterThan(2);
 
-    // Foundry hides the agent's own work.
-    await view.getByRole('tab', { name: 'Foundry' }).click();
-    expect(await view.locator('.tv-group h3').allTextContents()).not.toContain("The agent's work");
+    // This turn made no tool calls: Tools shows nothing; All brings the steps back.
+    await view.getByRole('tab', { name: 'Tools' }).click();
+    expect(await view.locator('.tv-step').count()).toBe(0);
     await view.getByRole('tab', { name: 'All' }).click();
 
     // Arrow keys move between steps; Raw shows the step's record.

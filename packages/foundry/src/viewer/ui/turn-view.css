@@ -198,3 +198,52 @@
 .chat-fulltrace-btn:hover {
   color: hsl(var(--app-primary));
 }
+.tv-dim {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+.tv-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid hsl(7 100% 74% / 0.5);
+  color: hsl(7 100% 74%);
+  margin-bottom: 10px;
+}
+.tv-regions,
+.tv-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.tv-regions li[data-decision="no-comment"],
+.tv-regions li[data-decision="abstain"] {
+  opacity: 0.6;
+}
+.tv-decision {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: hsl(var(--muted));
+}
+.tv-regions li[data-decision="contribute"] .tv-decision {
+  background: hsl(var(--app-primary) / 0.3);
+}
+.tv-regions li[data-decision="error"] .tv-decision {
+  background: hsl(7 100% 74% / 0.3);
+}
+.tv-round,
+.tv-said,
+.tv-pointer,
+.tv-chime {
+  font-size: 12px;
+  padding-left: 10px;
+}
+.tv-pointer {
+  color: hsl(var(--app-primary));
+}
+.tv-parts li[data-outcome="held"] {
+  color: hsl(var(--muted-foreground));
+}
