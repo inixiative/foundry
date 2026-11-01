@@ -93,8 +93,44 @@ export async function projectConcepts(root: string) {
     files: files.length,
     doc: graph.thesaurus?.[concept]?.doc ?? null,
     phrases: graph.thesaurus?.[concept]?.phrases ?? [],
+    // The concept's files with their kind (component, service, route…), the first dozen.
+    members: files.slice(0, 12).map((path) => ({
+      path,
+      kind: graph.fileToConcepts?.[path]?.kind?.join(', ') ?? '',
+    })),
   }));
   return { mapped: true as const, concepts };
+}
+
+/** Pairs of a project's threads that touch the same concepts: what Heralds would tell you about. */
+export async function projectOverlaps(
+  store: TurnReads,
+  root: string,
+  threads: readonly { id: string; name: string }[],
+) {
+  if (!atlasMapped(root)) return { mapped: false as const, overlaps: [] };
+  const graph = await graphOf(root);
+  if (!graph) return { mapped: false as const, overlaps: [] };
+  const touched = threads.map((t) => ({
+    ...t,
+    concepts: new Set(conceptsTouched(graph, threadPaths(store, t.id, root)).map((c) => c.concept)),
+  }));
+  const overlaps: {
+    a: { id: string; name: string };
+    b: { id: string; name: string };
+    concepts: string[];
+  }[] = [];
+  for (let i = 0; i < touched.length; i++)
+    for (let j = i + 1; j < touched.length; j++) {
+      const shared = [...touched[i]!.concepts].filter((c) => touched[j]!.concepts.has(c));
+      if (shared.length)
+        overlaps.push({
+          a: { id: touched[i]!.id, name: touched[i]!.name },
+          b: { id: touched[j]!.id, name: touched[j]!.name },
+          concepts: shared,
+        });
+    }
+  return { mapped: true as const, overlaps };
 }
 
 /** The thread's concepts, and the other threads of its project that share any of them. */

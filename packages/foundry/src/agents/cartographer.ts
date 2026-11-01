@@ -106,6 +106,8 @@ export interface AtlasGraph {
   usesConsumers: Record<string, string[]>;
   /** A concept's doc, resolved to a repo path (its gloss section). */
   thesaurus?: Record<string, { phrases: string[]; doc?: string }>;
+  /** Each file's kind and the concepts it is part of and uses. */
+  fileToConcepts?: Record<string, { kind: string[]; partOf: string[]; uses: string[] }>;
 }
 
 /**
