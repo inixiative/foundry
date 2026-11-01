@@ -147,14 +147,13 @@ async function invite(threadId) {
  * The participants panel, shown on a thread that has a conversation (its line in the sessions list
  * carries `conversation`), or folded to its invite link on any other thread.
  */
-export function ParticipantsPanel() {
-  const threadId = activeThreadId.value;
-  const line = threadData.value?.conversation ?? null;
+/**
+ * The thread's conversation view (members, floor, posts), read only for a thread whose line in the
+ * sessions list carries `conversation`, and re-read whenever that line changes.
+ */
+export function useConversationView(threadId, line) {
   const [view, setView] = useState(null);
-  const [open, setOpen] = useState(true);
   const lineKey = JSON.stringify(line);
-  // Read only for a thread that has a conversation (its line says so): other threads never fetch
-  // in the background; their invite is read when the owner asks for it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-read when the thread's line changes.
   useEffect(() => {
     setView(null);
@@ -172,6 +171,14 @@ export function ParticipantsPanel() {
       live = false;
     };
   }, [threadId, lineKey]);
+  return [view];
+}
+
+export function ParticipantsPanel() {
+  const threadId = activeThreadId.value;
+  const line = threadData.value?.conversation ?? null;
+  const [view] = useConversationView(threadId, line);
+  const [open, setOpen] = useState(true);
   if (!threadId) return null;
   if (!line)
     return settingsConfig.value?.kingdomIntegrations?.length

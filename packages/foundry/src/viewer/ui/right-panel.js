@@ -16,7 +16,6 @@ import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
-import { useFlowStream } from './graph-view.js';
 import { html } from './lib.js';
 import {
   activeThreadId,
@@ -24,7 +23,6 @@ import {
   boardOpen,
   detailDrawerOpen,
   dismissTraceSelection,
-  focusTurnId,
   inspectTarget,
   RIGHT_TABS,
   rightTab,
@@ -34,14 +32,13 @@ import {
   threadData,
   threadLaunch,
 } from './store.js';
-import { harnessName } from './thread-labels.js';
+import { harnessName, ReferenceChips } from './thread-labels.js';
 
 const TAB_LABELS = {
   context: 'Context',
   participants: 'Participants',
   permissions: 'Permissions',
   heralds: 'Heralds',
-  pointers: 'Pointers',
   feedback: 'Feedback',
 };
 
@@ -49,7 +46,7 @@ const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
 
 /** Each tab's one line of facts for the header band, and its count for the collapsed strip. */
-function tabFacts(tab, threadId, pointerCount) {
+function tabFacts(tab, threadId) {
   const launch = threadLaunch.value;
   const members = threadData.value?.conversation?.members ?? 0;
   switch (tab) {
@@ -72,8 +69,6 @@ function tabFacts(tab, threadId, pointerCount) {
       };
     case 'heralds':
       return { info: 'Not running yet' };
-    case 'pointers':
-      return { info: `${pointerCount} delivered in the last turns`, count: pointerCount };
     case 'feedback': {
       const open = openFeedback(threadId);
       return { info: `${feedbackIn({ threadId }).length} given · ${open} open`, count: open };
@@ -81,50 +76,6 @@ function tabFacts(tab, threadId, pointerCount) {
     default:
       return { info: '' };
   }
-}
-
-/** Warden pointers that reached this thread: one row per contributing domain per turn. */
-function pointerRows(flow) {
-  const rows = [];
-  for (const turn of flow.turns ?? []) {
-    const contributions = Array.isArray(turn.plan?.contributions) ? turn.plan.contributions : [];
-    for (const c of contributions)
-      if (c.decision === 'contribute')
-        rows.push({
-          key: `${turn.turnId}:${c.domain}`,
-          turnId: turn.turnId,
-          domain: c.domain,
-          input: turn.input?.preview ?? '',
-          snippets: Array.isArray(c.snippets)
-            ? c.snippets.filter((s) => typeof s === 'string')
-            : [],
-          reason: c.reason ?? null,
-        });
-  }
-  return rows.reverse();
-}
-
-function PointersTab({ rows }) {
-  if (!rows.length)
-    return html`<div class="rp-empty">
-      No Warden has pointed at anything on this thread’s recent turns. When one does, its pointer
-      (the rule or doc, and where it’s written) is listed here with the turn it came in.
-    </div>`;
-  return html`<ul class="rp-list">
-    ${rows.map(
-      (r) => html`<li key=${r.key} class="rp-pointer">
-        <div class="rp-pointer-head">
-          <span class="rp-pointer-domain">† ${r.domain}</span>
-          <button class="rp-link" onClick=${() => {
-            focusTurnId.value = r.turnId;
-          }} title="Show the turn">turn ›</button>
-        </div>
-        ${r.snippets.map((s, i) => html`<div key=${i} class="rp-pointer-text">${s}</div>`)}
-        ${!r.snippets.length && r.reason ? html`<div class="rp-pointer-text">${r.reason}</div>` : null}
-        ${r.input ? html`<div class="rp-pointer-input" title="The message it answered">${r.input}</div>` : null}
-      </li>`,
-    )}
-  </ul>`;
 }
 
 /** Change the thread's model or effort (applies on its next turn: its idle session relaunches). */
@@ -173,6 +124,14 @@ function ContextTab() {
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>
+    <section class="rp-section">
+      <h3 class="rp-section-title">Linked work</h3>
+      ${
+        (threadData.value?.meta?.context?.references ?? []).length
+          ? html`<div class="rp-refs"><${ReferenceChips} meta=${threadData.value?.meta || {}} /></div>`
+          : html`<div class="rp-dim">No linked tickets or pull requests.</div>`
+      }
+    </section>
     <${TokenBar} />
     <${ContextStats} />
     <${ThreadDetail} />
@@ -209,12 +168,11 @@ function HeraldsTab() {
   </div>`;
 }
 
-function TabBody({ tab, threadId, pointers }) {
+function TabBody({ tab, threadId }) {
   if (tab === 'context') return html`<${ContextTab} />`;
   if (tab === 'participants') return html`<${ParticipantsPanel} />`;
   if (tab === 'permissions') return html`<${PermissionsTab} />`;
   if (tab === 'heralds') return html`<${HeraldsTab} />`;
-  if (tab === 'pointers') return html`<${PointersTab} rows=${pointers} />`;
   return html`<${ThreadFeedback} threadId=${threadId} />`;
 }
 
@@ -231,8 +189,6 @@ export function RightPanel({ onSpanSelect }) {
   const tab = rightTab.value;
   // The board takes the width: the panel folds while it is open.
   const open = detailDrawerOpen.value && !boardOpen.value;
-  const flow = useFlowStream(threadId, open && tab === 'pointers');
-  const pointers = pointerRows(flow);
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
 
   if (!open)
@@ -242,7 +198,7 @@ export function RightPanel({ onSpanSelect }) {
         detailDrawerOpen.value = true;
       }}>‹</button>
       ${RIGHT_TABS.map((t) => {
-        const count = threadId ? tabFacts(t, threadId, pointers.length).count : 0;
+        const count = threadId ? tabFacts(t, threadId).count : 0;
         return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
           rightTab.value = t;
           boardOpen.value = false;
@@ -276,7 +232,7 @@ export function RightPanel({ onSpanSelect }) {
       <div class="rp-frame"><div class="rp-empty">Open a thread to see its context, participants, permissions and feedback.</div></div>
     </div>`;
 
-  const facts = tabFacts(tab, threadId, pointers.length);
+  const facts = tabFacts(tab, threadId);
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
       <div class="rp-band-row">
@@ -289,9 +245,9 @@ export function RightPanel({ onSpanSelect }) {
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t, i) => {
-          const count = tabFacts(t, threadId, pointers.length).count;
+          const count = tabFacts(t, threadId).count;
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i === 5 ? 0 : i + 5})`}
+            class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
             onClick=${() => {
               rightTab.value = t;
             }}>${TAB_LABELS[t]}${count ? html`<span class="rp-count">${count}</span>` : null}</button>`;
@@ -299,7 +255,7 @@ export function RightPanel({ onSpanSelect }) {
       </nav>
     </header>
     <div class="rp-frame" role="tabpanel">
-      <${TabBody} tab=${tab} threadId=${threadId} pointers=${pointers} />
+      <${TabBody} tab=${tab} threadId=${threadId} />
     </div>
   </div>`;
 }

@@ -83,18 +83,11 @@ export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
-/** The right panel's tab: context | participants | permissions | heralds | pointers | feedback. */
-export const RIGHT_TABS = [
-  'context',
-  'participants',
-  'permissions',
-  'heralds',
-  'pointers',
-  'feedback',
-];
+/** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
+export const RIGHT_TABS = ['context', 'participants', 'permissions', 'heralds', 'feedback'];
 export const rightTab = signal('context');
-/** The left rail: 'active' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
-export const railView = signal('active');
+/** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
+export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
 
@@ -475,7 +468,7 @@ function settleInitialScope() {
 
 /** On the Active rail the scope follows the open thread: its project, or Global. */
 function followActiveProject() {
-  if (railView.peek() !== 'active') return;
+  if (railView.peek() !== 'open') return;
   const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
   if (listed) activeProjectId.value = listed.meta?.projectId ?? null;
 }
@@ -587,7 +580,7 @@ function connectStreams() {
   effect(() => {
     const projectId = activeProjectId.value;
     const next =
-      railView.value === 'active' || boardOpen.value
+      railView.value === 'open' || boardOpen.value
         ? 'threads:all'
         : projectId
           ? `threads:${projectId}`
@@ -1902,7 +1895,7 @@ function writeHash() {
   if (!detailDrawerOpen.value) params.set('detail', '0');
   if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
   // A project in the hash opens the Projects rail unless the rail is named.
-  if (railView.value !== 'active' || activeProjectId.value) params.set('rail', railView.value);
+  if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
   const hash = params.toString();
   // Replace silently — no history entry per state change
@@ -1921,8 +1914,7 @@ function restoreFromHash() {
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   // A link to a project (and no rail named) opens the Projects rail on it.
-  railView.value =
-    h.rail === 'projects' || (h.rail !== 'active' && h.project) ? 'projects' : 'active';
+  railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
 }
 
 // ---------------------------------------------------------------------------
