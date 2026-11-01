@@ -151,6 +151,7 @@ async function host(
             view: lens.view ?? 'own',
             delivery: lens.delivery ?? 'note',
             outbound: lens.outbound ?? 'review',
+            floor: lens.floor ?? { mayTake: false },
           },
         },
       ],
@@ -1038,4 +1039,24 @@ test('people talking while agents are silent spend no agent turns: the depth bou
   );
   for (let i = 0; i < 8; i++) expect((await h.post(a, `point ${i}`)).ok).toBe(true);
   expect(h.conversations.view('main').paused).toBeNull();
+});
+
+test('a member whose grant allows it takes the conch; without floor.mayTake, take is refused', async () => {
+  const h = await host({ floor: 'shared' });
+  const junior = await h.member('Junior');
+  const senior = await h.member('Senior', { floor: { mayTake: true } });
+  expect(
+    (await h.route('/api/threads/main/conversation/conch', { to: junior.signetId })).status,
+  ).toBe(200);
+  // The junior holds the conch but may not take it; taking is the senior's right, not a pass.
+  await h.route('/api/threads/main/conversation/conch', { to: null });
+  expect(await h.floor(junior, { action: 'take' })).toMatchObject({
+    ok: false,
+    refusal: 'floor_denied',
+  });
+  expect((await h.floor(senior, { action: 'take' })).result).toMatchObject({
+    holder: { kind: 'signet', id: senior.signetId },
+  });
+  expect((await h.post(senior, 'I will drive for a bit')).ok).toBe(true);
+  expect(await h.post(junior, 'ok')).toMatchObject({ ok: false, refusal: 'floor_denied' });
 });

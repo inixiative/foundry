@@ -426,6 +426,16 @@ export class ConversationService implements ConversationWrapper {
           this.save(thread, record);
           return null;
         }
+        // A member whose grant says floor.mayTake takes the conch without being given it (§4.9).
+        if (action.action === 'take') {
+          if (!frame.lens.floor.mayTake) {
+            if (lapsed) this.save(thread, record);
+            return 'floor_denied' as const;
+          }
+          this.moveConch(record, settings, me, me);
+          this.save(thread, record);
+          return null;
+        }
         if (!conch || !sameMember(conch.to, me)) {
           if (lapsed) this.save(thread, record);
           return 'floor_denied' as const;
