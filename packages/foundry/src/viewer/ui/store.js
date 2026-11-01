@@ -1915,6 +1915,30 @@ function writeHash() {
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
+  // Remembered across reloads and bare visits, so the workspace comes back as it was left.
+  try {
+    localStorage.setItem(WORKSPACE_MEMORY_KEY, hash);
+  } catch {
+    // Storage can be unavailable (private mode, quota); the hash still carries the state.
+  }
+}
+
+const WORKSPACE_MEMORY_KEY = 'foundry.workspace';
+
+/** A bare visit takes the remembered workspace; a first visit ever opens on Open with the right panel folded. */
+function adoptRememberedWorkspace() {
+  if (location.hash.length > 1) return;
+  let remembered = null;
+  try {
+    remembered = localStorage.getItem(WORKSPACE_MEMORY_KEY);
+  } catch {
+    remembered = null;
+  }
+  if (remembered === null) {
+    detailDrawerOpen.value = false;
+    return;
+  }
+  if (remembered) history.replaceState(null, '', `#${remembered}`);
 }
 
 function restoreFromHash() {
@@ -1937,7 +1961,8 @@ function restoreFromHash() {
 // ---------------------------------------------------------------------------
 
 export function init() {
-  // Restore view state from URL hash before loading data
+  // Restore view state from URL hash (or the remembered workspace) before loading data
+  adoptRememberedWorkspace();
   restoreFromHash();
 
   connectStreams();
