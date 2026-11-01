@@ -1,0 +1,19 @@
+/* Board additions (board.js): the quiet toggle and its column. */
+.board-quiet-toggle {
+  align-self: flex-start;
+  border: 1px solid hsl(var(--border));
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.board-quiet-toggle[aria-pressed="true"] {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted));
+}
+.board-column--quiet .board-column-swatch {
+  background: hsl(var(--muted-foreground));
+}

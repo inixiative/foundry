@@ -155,10 +155,16 @@ function Incoming() {
   </section>`;
 }
 
+/** Quiet threads: paused, idle or archived. Off the board unless asked for; snoozed joins them once built. */
+const QUIET = new Set(['idle', 'archived']);
+
 export function Board() {
   const [filter, setFilter] = useState('all');
-  const threads = allThreads.value.filter(OPEN).filter((t) => matches(filter, t));
-  const placed = threads.map((t) => {
+  const [showQuiet, setShowQuiet] = useState(false);
+  const threads = allThreads.value
+    .filter((t) => showQuiet || OPEN(t))
+    .filter((t) => matches(filter, t));
+  const place = (t) => {
     const children = allThreads.value.filter((c) => subagentParentOf(c.meta) === t.threadId);
     const state = threadState(t, {
       prompts: prompts.value.filter((p) => p.threadId === t.threadId),
@@ -167,11 +173,16 @@ export function Board() {
       ),
     });
     return { thread: t, state, cat: categoryOf(state) };
-  });
+  };
+  const placed = threads.map(place);
   const forge = filter === 'forge';
-  const columns = COLUMNS.filter(
-    (c) => c.cat !== 'problem' || placed.some((p) => p.cat === 'problem'),
-  );
+  const quiet = placed.filter((p) => QUIET.has(p.cat));
+  const columns = [
+    ...COLUMNS.filter((c) => c.cat !== 'problem' || placed.some((p) => p.cat === 'problem')),
+    ...(showQuiet ? [{ cat: 'quiet', title: 'Quiet' }] : []),
+  ];
+  // Everything quiet across the board (not only this filter), placed exactly as the columns are.
+  const quietCount = allThreads.value.filter((t) => QUIET.has(place(t).cat)).length;
   const machine = settingsConfig.value?.installationName ?? 'This Foundry';
   const chip = (id, label) =>
     html`<button key=${id} class="board-filter ${filter === id ? 'is-active' : ''}" onClick=${() => setFilter(id)}>${label}</button>`;
@@ -186,11 +197,17 @@ export function Board() {
         ${chip('forge', 'Forge Master')}
         ${chip('this', machine)}
       </nav>
+      <button type="button" class="board-quiet-toggle" aria-pressed=${showQuiet} title="Paused, idle and archived threads"
+        onClick=${() => setShowQuiet(!showQuiet)}>${showQuiet ? 'Hide' : 'Show'} quiet · ${quietCount}</button>
     </header>
     <${Incoming} />
     <div class="board-columns">
       ${columns.map((col) => {
-        const cards = forge ? [] : placed.filter((p) => p.cat === col.cat);
+        const cards = forge
+          ? []
+          : col.cat === 'quiet'
+            ? quiet
+            : placed.filter((p) => p.cat === col.cat);
         const forgeHere = forge && col.cat === (selfChatSending.value ? 'working' : null);
         return html`<section key=${col.cat} class="board-column board-column--${col.cat}">
           <h3 class="board-column-head">
