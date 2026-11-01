@@ -1,8 +1,16 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeFileAtomic, writePrivateFile } from '../src/client/private-file';
+import { readPrivateJson, writeFileAtomic, writePrivateFile } from '../src/client/private-file';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -36,4 +44,13 @@ test('a failed atomic write leaves the old file and no temporary file behind', (
   expect(() => writeFileAtomic(target, 'new', 0o600)).toThrow();
   expect(statSync(target).isDirectory()).toBe(true);
   expect(readdirSync(dir)).toEqual(['target']);
+});
+
+test('a private file with a second hard link is refused, like signet refuses it', () => {
+  const dir = scratch();
+  const file = join(dir, 'launch.json');
+  writePrivateFile(file, '{"ok":true}');
+  expect(readPrivateJson(file, 'launch file')).toEqual({ ok: true });
+  linkSync(file, join(dir, 'alias.json'));
+  expect(() => readPrivateJson(file, 'launch file')).toThrow('other hard links');
 });
