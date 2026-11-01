@@ -105,12 +105,14 @@ export const MACHINE_GLYPHS = [
 ] as const;
 export type MachineGlyph = (typeof MACHINE_GLYPHS)[number];
 
-const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: string } =>
+const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: number } =>
   !!icon &&
   typeof icon === 'object' &&
   Object.keys(icon).every((k) => k === 'glyph' || k === 'color') &&
   MACHINE_GLYPHS.includes((icon as { glyph: MachineGlyph }).glyph) &&
-  /^#[0-9a-f]{6}$/i.test(String((icon as { color: unknown }).color));
+  Number.isInteger((icon as { color: unknown }).color) &&
+  (icon as { color: number }).color >= 0 &&
+  (icon as { color: number }).color <= 11;
 
 export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
@@ -169,8 +171,8 @@ export interface FoundryConfig {
 
   /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
   installationName?: string;
-  /** This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a colour. */
-  installationIcon?: { glyph: MachineGlyph; color: string };
+  /** This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a slot of the theme's categorical palette (`--layer-0` to `--layer-11`). */
+  installationIcon?: { glyph: MachineGlyph; color: number };
   /** The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view. */
   messageBox?: { separateViews?: boolean };
 

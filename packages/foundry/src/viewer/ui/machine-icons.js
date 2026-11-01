@@ -23,8 +23,10 @@ const GLYPHS = {
   hex: html`<path d="M7 1 12.5 4v6L7 13 1.5 10V4z" />`,
 };
 export const GLYPH_NAMES = Object.keys(GLYPHS);
-export const MACHINE_COLORS = ['#c8f77b', '#8fd3ff', '#f4c26b', '#f29ad8', '#b9a6ff', '#7fe0c2'];
+/** Slots of the theme's categorical palette (`--layer-N`) a machine may take. */
+export const MACHINE_COLORS = [6, 0, 2, 5, 3, 1, 7, 4];
 const DEFAULT_ICON = { glyph: 'anvil', color: MACHINE_COLORS[0] };
+const paint = (slot) => `--dc:var(--layer-${slot})`;
 
 /** This machine's profile ({ installationName, installationIcon }), once read. */
 export const machineProfile = signal(null);
@@ -44,7 +46,7 @@ export const machineIcon = (profile = machineProfile.value) =>
 
 /** A machine's icon tile. */
 export function DeviceIcon({ icon = DEFAULT_ICON, size = 18, title }) {
-  return html`<span class="dva" style=${`--dc:${icon.color};width:${size}px;height:${size}px`} title=${title}>
+  return html`<span class="dva" style=${`${paint(icon.color)};width:${size}px;height:${size}px`} title=${title}>
     <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${GLYPHS[icon.glyph] ?? GLYPHS.anvil}</svg>
   </span>`;
 }
@@ -99,8 +101,8 @@ export function MachineIconPicker() {
       ${MACHINE_COLORS.map(
         (
           color,
-        ) => html`<button key=${color} type="button" role="radio" class="mip-color" aria-checked=${current.color === color} aria-label=${color}
-          style=${`--dc:${color}`} onClick=${() => save({ ...current, color })}></button>`,
+        ) => html`<button key=${color} type="button" role="radio" class="mip-color" aria-checked=${current.color === color} aria-label=${`colour ${color}`}
+          style=${paint(color)} onClick=${() => save({ ...current, color })}></button>`,
       )}
     </div>
   </div>`;

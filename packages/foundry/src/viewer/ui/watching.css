@@ -181,7 +181,7 @@
   bottom: -3px;
 }
 .actor .dvcorner .dva {
-  background: var(--bg, #0b1014);
+  background: var(--bg);
 }
 .actor .pva + .dvcorner + b {
   margin-left: 2px;
