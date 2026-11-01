@@ -39,6 +39,7 @@ import {
   vendorName,
   watchtowerOpen,
 } from './store.js';
+import { TabIcon } from './tab-icons.js';
 import { harnessName, ReferenceChips } from './thread-labels.js';
 import { Work } from './work.js';
 
@@ -222,7 +223,7 @@ export function RightPanel({ onSpanSelect }) {
           boardOpen.value = false;
           detailDrawerOpen.value = true;
         }}>
-          <span class="rp-strip-label">${TAB_LABELS[t]}</span>
+          <${TabIcon} tab=${t} /><span class="rp-strip-label">${TAB_LABELS[t]}</span>
         </button>`;
       })}
     </div>`;
@@ -262,7 +263,7 @@ export function RightPanel({ onSpanSelect }) {
             class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
             onClick=${() => {
               rightTab.value = t;
-            }}>${TAB_LABELS[t]}</button>`;
+            }}><${TabIcon} tab=${t} />${TAB_LABELS[t]}</button>`;
         })}
       </nav>
     </header>
