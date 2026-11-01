@@ -16,7 +16,12 @@ import type {
   Thread,
   Trace,
 } from '@inixiative/foundry-core';
-import { Harness, newId } from '@inixiative/foundry-core';
+import {
+  createSerializedQueue,
+  Harness,
+  newId,
+  type SerializedQueue,
+} from '@inixiative/foundry-core';
 import type { ConversationMember } from '@inixiative/signet';
 import type { PostgresMemory } from '../adapters/postgres-memory';
 import { memberPostReception } from '../agents/chorus-reception';
@@ -30,7 +35,6 @@ import type { ConfigStore } from '../viewer/config';
 import type { ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
 import type { ViewerThreadDirectory } from '../viewer/thread-directory';
-import { createSerializedQueue, type SerializedQueue } from '../ws/serialized-queue';
 import { splitHostInstructions } from './host-instructions';
 
 /**

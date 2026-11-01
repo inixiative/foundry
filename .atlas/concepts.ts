@@ -44,7 +44,8 @@ export const CONCEPTS: ConceptRegistry = {
   'primitive:settings': {}, // the settings model, resolution, ConfigStore, settings routes
   'primitive:jobs': {}, // BullMQ queue, makeJob / makeSingletonJob, worker, handlers
   'primitive:logger': {}, // pluggable logger (consola, pino) with async scopes
-  'primitive:websockets': {}, // data streams over WebSocket: registry, delivery, serialized queue, client
+  'primitive:websockets': {}, // data streams over WebSocket: registry, delivery, client
+  'primitive:concurrency': {}, // the serialized queue: one task at a time, in order, a failure never poisons the chain
   'primitive:vcr': { docs: ['live-testing.md'] }, // cassettes: recorded HTTP, stdio and WebSocket sessions; live tier
   'primitive:secrets': {}, // credential references, private (0600) files and tokens, secret scrubbing
 

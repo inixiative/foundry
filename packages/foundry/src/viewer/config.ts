@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, watch } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import {
   computeHash,
+  createSerializedQueue,
   DECISION_MODEL,
   type Harness,
   type MemorySelectionPolicy,
@@ -1181,7 +1182,7 @@ export class ConfigStore {
   private _config: FoundryConfig;
   private _loaded = false;
   private _revision = 0;
-  private _queue: Promise<unknown> = Promise.resolve();
+  private readonly _queue = createSerializedQueue();
   private _listeners = new Set<SettingsListener>();
   private _notified: Promise<void> = Promise.resolve();
 
@@ -1409,9 +1410,7 @@ export class ConfigStore {
   }
 
   private _serialize<T>(work: () => Promise<T>): Promise<T> {
-    const next = this._queue.then(work, work);
-    this._queue = next.catch(() => {});
-    return next;
+    return this._queue.run(work);
   }
 
   private _expect(revision: number | undefined): void {

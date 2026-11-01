@@ -386,6 +386,7 @@ export { type RetryConfig, retryMiddleware } from './retry';
 export { type Route, type RouteHandler, Router, type RouterConfig } from './router';
 // Ownership scope — which thread/project owns a source read or tool call
 export { normalizeScope, type OwnershipScope } from './scope';
+export { createSerializedQueue, type SerializedQueue } from './serialized-queue';
 export {
   type DeliveredPart,
   layerPart,

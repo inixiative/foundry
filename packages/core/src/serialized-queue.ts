@@ -1,7 +1,7 @@
 /**
  * @atlas
  * @kind utils
- * @partOf primitive:websockets
+ * @partOf primitive:concurrency
  */
 // Copied from the template's packages/shared/src/utils/serializedQueue.ts.
 // Each run(fn) waits for the previous to settle before invoking fn; a failure
