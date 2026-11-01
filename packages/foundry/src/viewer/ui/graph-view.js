@@ -147,7 +147,7 @@ function GraphNode({ node, selected, onActivate, onHover, onFocusNode }) {
     <rect class="graph-node-bar" width="3" height=${node.h - 12} x="5" y="6" rx="1.5" />
     <text class="graph-node-label" x="14" y="18">${fit(node.label, node.w, 6.8)}</text>
     <text class="graph-node-sub" x="14" y="34">${fit(node.kind === 'thread' ? threadSub(node) : (node.sub ?? ''), node.w, 5.9)}</text>
-    ${layers.map((l, i) => html`<rect key=${l.id} class="graph-node-layer" x=${14 + i * 6} y=${node.h - 6} width="4" height="3" fill=${layerColor(l.id)} />`)}
+    ${layers.map((l, i) => html`<rect key=${l.id} class="graph-node-layer" x=${14 + i * 6} y=${node.h - 6} width="4" height="3" style=${`fill: ${layerColor(l.id)}`} />`)}
     ${node.prompts ? html`<g class="graph-node-badge"><circle cx=${node.w - 10} cy="10" r="7" /><text x=${node.w - 10} y="13" text-anchor="middle">${node.prompts}</text></g>` : null}
   </g>`;
 }

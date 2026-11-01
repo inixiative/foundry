@@ -132,23 +132,8 @@ export const mergedAgents = computed(() => {
 
 // Layer color cache — persistent color per layer ID
 const _layerColors = {};
-const LAYER_PALETTE = [
-  '#6c9eff',
-  '#4ade80',
-  '#f87171',
-  '#facc15',
-  '#c084fc',
-  '#fb923c',
-  '#22d3ee',
-  '#f472b6',
-  '#a3e635',
-  '#e879f9',
-  '#38bdf8',
-  '#fbbf24',
-  '#34d399',
-  '#f97316',
-  '#a78bfa',
-];
+// Categorical, not status: one hue per layer id. Values live in tokens.css (--layer-0 … --layer-11).
+const LAYER_PALETTE = Array.from({ length: 12 }, (_, i) => `var(--layer-${i})`);
 
 export function layerColor(layerId) {
   if (!_layerColors[layerId]) {

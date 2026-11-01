@@ -383,7 +383,7 @@ function SpanRow({ span, depth, onSelect }) {
   const isSelected = selectedSpanId.value === span.id;
   const hasChildren = span.children && span.children.length > 0;
   const statusColor =
-    span.status === 'ok' ? 'var(--ok)' : span.status === 'error' ? 'var(--error)' : 'var(--warn)';
+    span.status === 'ok' ? 'var(--ok)' : span.status === 'error' ? 'var(--err)' : 'var(--warn)';
 
   return html`
     <div style="padding-left: ${depth * 12}px">
