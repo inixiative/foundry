@@ -1464,8 +1464,12 @@ export class ConversationService implements ConversationWrapper {
       const me: ConversationMember = { kind: 'local', id: local.threadId };
       const raw = this.deps.store.journalEntries(host.id, { after, limit: 10_000 });
       const rows: SharedEntryRecord[] = [];
+      // A local member is the owner's own agent, so it reads as the owner does: the host agent's
+      // answers too. Everyone in the shared thread hears the whole conversation (Aron, 2026-11-01).
       for (const row of raw)
-        for (const entry of this.readable(row, { member: me, lens: local.lens }, false)) {
+        for (const entry of this.readable(row, { member: me, lens: local.lens }, true)) {
+          // An aside is person to person, never shown to an agent (signet `threadEntrySchema`).
+          if (entry.kind === 'aside') continue;
           if (entry.kind === 'post' && sameMember(entry.member, me)) continue;
           const addressed = entry.kind === 'send' && sameMember(entry.member, me);
           rows.push({
@@ -1475,12 +1479,14 @@ export class ConversationService implements ConversationWrapper {
             speaker:
               entry.kind === 'owner'
                 ? 'the owner'
-                : entry.kind === 'post' && row.source === 'phase'
-                  ? String((row.record as unknown as MemberPostRecord).displayName ?? 'a member')
-                  : addressed
-                    ? 'the host agent, to you'
-                    : `the host agent, to ${quotedName(this.memberName(host.id, entry.member))}`,
-            kind: entry.kind === 'owner' ? 'owner' : entry.kind === 'post' ? 'post' : 'send',
+                : entry.kind === 'agent'
+                  ? 'the host agent'
+                  : entry.kind === 'post' && row.source === 'phase'
+                    ? String((row.record as unknown as MemberPostRecord).displayName ?? 'a member')
+                    : addressed
+                      ? 'the host agent, to you'
+                      : `the host agent, to ${quotedName(this.memberName(host.id, entry.member))}`,
+            kind: entry.kind,
             addressed,
             text: entry.text,
           });
@@ -2395,6 +2401,7 @@ function describeControl(
 function sharedEntryText(entry: SharedEntryRecord): string {
   const where = `In the conversation ${quotedName(entry.hostName)} (entry ${entry.hostSeq})`;
   if (entry.kind === 'owner') return `${where}, the owner said:\n${entry.text}`;
+  if (entry.kind === 'agent') return `${where}, the host agent answered:\n${entry.text}`;
   if (entry.kind === 'send')
     return `${where}, ${entry.speaker}${entry.addressed ? ' (reply with post_to_conversation, inReplyTo ' + entry.hostSeq + ')' : ''}:\n${entry.text}`;
   return `${where}:\n${memberPostReception(entry.speaker, entry.text)}`;
