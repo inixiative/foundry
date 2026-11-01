@@ -67,12 +67,15 @@ function phaseServed(record: unknown): ServedModel | undefined {
 
 /**
  * A child thread's lineage (spec A): its direct parent, the tree's root, and the parent's entry that
- * spawned it (the parent's `handoff` row). A main thread has none.
+ * spawned it (the parent's `handoff` row). A fork is Archive's `fork` lineage: its source, no root,
+ * since a fork is a top-level thread of its own. A main thread has none.
  */
 function lineageOf(
   journal: LocalSessionStore,
   meta: ThreadMeta,
 ): { lineage: NonNullable<ArchiveSnapshot['lineage']> } | undefined {
+  if (meta.forkedFrom)
+    return { lineage: { kind: 'fork', parentSessionId: meta.forkedFrom.threadId } };
   if (!meta.parentThreadId) return undefined;
   const parents = new Map(journal.threads().map((t) => [t.id, t.meta.parentThreadId]));
   let root = meta.parentThreadId;
