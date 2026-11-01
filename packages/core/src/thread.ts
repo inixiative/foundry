@@ -44,6 +44,17 @@ export interface ThreadCheckout {
   readonly state: 'live' | 'released';
 }
 
+/**
+ * A thread snoozed by its person: quiet until `until` (ISO), then cleared. `condition` names what
+ * the time was resolved from (`quota-reset`: when the reached usage window resets). A snooze never
+ * changes the thread's status, so clearing it leaves the thread as it was.
+ */
+export interface ThreadSnooze {
+  readonly until: string;
+  readonly condition?: 'quota-reset';
+  readonly setAt: string;
+}
+
 /** Where a thread's work lives, as the runtime last observed it. */
 export interface ThreadContext {
   /** `owner/repo` of the worktree's origin. */
@@ -100,6 +111,9 @@ export interface ThreadMeta {
 
   /** Current status. */
   status: ThreadStatus;
+
+  /** Put out of mind until a time (or a condition, resolved to its time); status is untouched. */
+  snooze?: ThreadSnooze;
 
   /** Working directory for this thread's tool execution (worktree path). */
   cwd?: string;

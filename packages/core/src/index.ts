@@ -413,6 +413,7 @@ export {
   type ThreadName,
   type ThreadReference,
   type ThreadSetup,
+  type ThreadSnooze,
   type ThreadSpawn,
   type ThreadStatus,
   threadTitle,
