@@ -27,10 +27,12 @@ import {
   uploadImage,
 } from './image-attachments.js';
 import { failurePresentation } from './inspector-data.js';
+import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
 import { Plan } from './plan.js';
+import { settingsConfig } from './settings.js';
 import { StatusIcon } from './status-icons.js';
 import {
   activePanel,
@@ -41,6 +43,8 @@ import {
   forkThread,
   giveFeedback,
   historyPaging,
+  kingdomStatus,
+  launchLabels,
   layerColor,
   loadOlderMessages,
   loadTraceDetail,
@@ -213,8 +217,13 @@ export function ContextStats() {
 }
 
 /**
- * The centre's header band: row 1 is the thread (status, name, project, participants); row 2 is how it
- * runs (model · effort · harness, branch, worktree, references, context fill, tokens).
+ * The centre's header band, four areas:
+ *   top-left     the thread: status, name, how many people are in it
+ *   bottom-left  who runs the main thread ("Claude Code · your agent"; hover lists the thread's agents)
+ *   top-right    where it lives: project · Kingdom (the owner, when the project runs on a Kingdom
+ *                pool) · worktree · branch
+ *   bottom-right how it runs: provider · model · effort, context fill, tokens
+ * References, layers and usage detail live on the right panel's Context tab.
  */
 function ContextBar() {
   const data = threadData.value;
@@ -226,31 +235,57 @@ function ContextBar() {
   const place = threadPlace(meta);
   const launch = threadLaunch.value;
   const project = meta.projectId ? projects.value.find((p) => p.id === meta.projectId) : null;
-  const members = data.conversation?.members ?? 0;
+  const owner = meta.projectId
+    ? kingdomOwnerOf(settingsConfig.value, kingdomStatus.value, meta.projectId)
+    : null;
+  const people = 1 + (data.conversation?.members ?? 0);
+  const agents = (data.agents || []).map((a) => a.agentId || a.id).filter(Boolean);
+  const harness = harnessName(launch?.provider);
   const contextWindow =
     contextWindowOf(launch?.provider, launch?.model) ?? usage?.contextWindow ?? null;
   const fill = contextWindow
     ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
     : null;
   const used = threadUsage(usage, data.threadId);
-  const runs = [launch?.model, launch?.effort, harnessName(launch?.provider)].filter(Boolean);
+  const named = launchLabels(launch?.provider, launch?.model);
+  const runs = [named.provider, named.model, launch?.effort].filter(Boolean);
+  const where = [
+    project
+      ? { label: project.label, title: `Project: ${project.label}`, cls: 'band-where--keep' }
+      : { label: 'Global', title: 'No project', cls: 'band-where--keep' },
+    owner ? { label: owner, title: `Kingdom: ${owner}`, cls: 'band-where--keep' } : null,
+    place.worktreeShort
+      ? { label: place.worktreeShort, title: place.worktree, cls: 'band-where--first-to-go' }
+      : null,
+    place.branch
+      ? {
+          label: place.branch,
+          title: place.repository ? `branch of ${place.repository}` : 'branch',
+          cls: 'context-bar-chip--branch',
+        }
+      : null,
+  ].filter(Boolean);
 
   return html`
-    <div class="context-bar thread-band">
-      <div class="context-bar-head band-row">
+    <div class="context-bar thread-band thread-band--quad">
+      <div class="band-q band-q--tl context-bar-head">
         <${StatusIcon} state=${threadStatusOf(data.threadId, liveThreadStatus(messages.value))} />
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
-        ${project ? html`<span class="band-chip" title=${`Project: ${project.label}`}>Project: ${project.label}</span>` : html`<span class="band-chip">Global</span>`}
-        ${members ? html`<span class="band-chip band-chip--shared" title="Members in this thread">${members} ${members === 1 ? 'member' : 'members'}</span>` : null}
+        <span class="band-chip ${people > 1 ? 'band-chip--shared' : ''}" title=${people > 1 ? `You and ${people - 1} other${people > 2 ? 's' : ''}` : 'Only you'}>${people} ${people === 1 ? 'person' : 'people'}</span>
       </div>
-      <div class="band-row band-row--facts">
-        ${runs.length ? html`<span class="band-fact" title="Model · effort · harness">${runs.join(' · ')}</span>` : null}
-        ${place.branch ? html`<span class="context-bar-chip context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${place.branch}</span>` : null}
-        ${place.worktreeShort ? html`<span class="context-bar-chip context-bar-chip--dim" title=${place.worktree}>${place.worktreeShort}</span>` : null}
+      <div class="band-q band-q--tr" aria-label="Where it lives">
+        ${where.map((w) => html`<span class="band-fact band-where ${w.cls ?? ''}" title=${w.title}>${w.label}</span>`)}
         <${ReferenceChips} meta=${meta} />
-        <span class="context-bar-spacer"></span>
+      </div>
+      <div class="band-q band-q--bl">
+        <span class="band-fact band-agent" title=${agents.length ? `Agents in this thread: ${agents.join(', ')}` : 'The agent running this thread'}>
+          ${harness ?? 'Agent'} · your agent${agents.length > 1 ? html` <span class="band-more">+${agents.length - 1}</span>` : null}
+        </span>
+      </div>
+      <div class="band-q band-q--br">
+        ${runs.length ? html`<span class="band-fact" title="Provider · model · effort">${runs.join(' · ')}</span>` : null}
         ${fill !== null ? html`<span class="band-fact band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>ctx ${fill.toFixed(0)}%</span>` : null}
         ${used ? html`<span class="band-fact" title="Tokens this thread used, cache included">${fmtNum(used.total)} tok</span>` : null}
       </div>

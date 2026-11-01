@@ -113,6 +113,14 @@ export function contextWindowOf(provider, model) {
   const entry = modelRegistry.value?.providers?.find((p) => p.id === provider);
   return entry?.models?.find((m) => m.id === model)?.contextWindow ?? null;
 }
+/** Display names for a provider and model from the registry; the raw ids until it has loaded. */
+export function launchLabels(provider, model) {
+  const entry = modelRegistry.value?.providers?.find((p) => p.id === provider);
+  return {
+    provider: entry?.label ?? provider ?? null,
+    model: entry?.models?.find((m) => m.id === model)?.label ?? model ?? null,
+  };
+}
 export const compactPanel = signal('conversation');
 
 // Action prompts — pending agent→human interactions
@@ -1185,6 +1193,18 @@ export async function loadIncoming() {
   }
 }
 
+/** Paired Kingdoms as /api/kingdom/status describes them (owners, holders); null until read. */
+export const kingdomStatus = signal(null);
+
+export async function loadKingdomStatus() {
+  try {
+    const res = await authFetch('/api/kingdom/status');
+    if (res.ok) kingdomStatus.value = await res.json();
+  } catch {
+    /* silent — the daemon is restarting */
+  }
+}
+
 export async function loadProjects() {
   try {
     const res = await authFetch('/api/projects');
@@ -1921,12 +1941,14 @@ export function init() {
   loadWorktrees();
   loadTokenUsage();
   loadIncoming();
+  loadKingdomStatus();
   // Polling for state that has no data stream
   setInterval(loadTraces, 15000);
   setInterval(loadDefinitions, 30000);
   setInterval(loadProjects, 30000);
   setInterval(loadWorktrees, 30000);
   setInterval(loadIncoming, 30000);
+  setInterval(loadKingdomStatus, 60000);
   setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
 
   // A thread opened before the list arrived reads its launch settings once it is listed.
