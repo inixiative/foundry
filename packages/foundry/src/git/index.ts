@@ -11,6 +11,7 @@ export {
   getCurrentBranch,
   gitContext,
   listWorktrees,
+  recreateWorktree,
   type WorktreeMode,
   worktreeMode,
   worktreeSlot,

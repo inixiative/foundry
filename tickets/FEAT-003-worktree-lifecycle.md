@@ -1,6 +1,6 @@
 # FEAT-003: Worktree lifecycle for agent threads: template or classic mode, released on merge
 
-**Status**: 📝 Proposed (not built). Aron's 2026-11-01 answers are quoted; the details are proposed. Merge detection through PRs is blocked on Kingdom INTEG-003 (below).
+**Status**: 🚧 Partly built: the per-thread checkout record (`meta.context.checkout`: mode, path, root, slot, live / released / recreating) and recreate (`POST /api/threads/:id/worktree/recreate`, `ThreadContextTracker.recreate`). Create on agent-thread start, destroy on merge and the unsaved-work flag are not built; a recreated thread under a Kingdom pool does not pin its original login (a different login starts the session fresh from the journal). Aron's 2026-11-01 answers are quoted; the details are proposed. Merge detection through PRs is blocked on Kingdom INTEG-003 (below).
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-11-01

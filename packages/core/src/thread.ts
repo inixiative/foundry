@@ -37,11 +37,16 @@ export interface ThreadCheckout {
   readonly mode: 'template' | 'classic' | 'none';
   /** Worktree root (absent for `none`). */
   readonly path?: string;
+  /** The repository's main checkout (absent for `none`). */
+  readonly root?: string;
   /** The repository's main checkout rather than a linked worktree. */
   readonly main: boolean;
   /** Template mode: the slot the worktree holds (main checkout = 0). */
   readonly slot?: number;
-  readonly state: 'live' | 'released';
+  /** `recreating`: the mode's create is running for a released worktree. */
+  readonly state: 'live' | 'released' | 'recreating';
+  /** The last recreate failed: the command's error. */
+  readonly error?: string;
 }
 
 /**
