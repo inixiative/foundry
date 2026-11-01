@@ -37,6 +37,7 @@ import {
   executeAction,
   feedbackInboxOpen,
   forgeMasterOpen,
+  helpOpen,
   incoming,
   init,
   inspectLayer,
@@ -166,8 +167,9 @@ function Header() {
         <span class="status-sep">|</span>
         <kbd class="status-key">Ctrl+K</kbd>
         <span class="status-text dim">commands</span>
-        <kbd class="status-key">?</kbd>
-        <span class="status-text dim">help</span>
+        <button class="help-btn" aria-label="Help" title="Help (?)" onClick=${() => {
+          helpOpen.value = !helpOpen.value;
+        }}>?</button>
       </div>
     </div>
   `;
