@@ -86,7 +86,8 @@ test('Add project is a modal; a project menu renames, archives and unarchives it
   try {
     const { dir, origin, page, errors } = await open(cleanup);
     await fetch(`${origin}/api/setup/complete`, { method: 'POST' });
-    await page.goto(origin);
+    // Projects and the pinned scopes live on the rail's Projects view.
+    await page.goto(`${origin}/#rail=projects`);
 
     const add = page.getByRole('dialog', { name: 'Add project' });
     await page.getByTitle('Add project').click();

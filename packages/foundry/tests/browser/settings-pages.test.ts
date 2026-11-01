@@ -189,6 +189,8 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.goto(`${origin}/projects/${project.id}/settings/integrations`);
 
     await page.getByRole('link', { name: 'Workspace' }).click();
+    // The pinned scopes live on the rail's Projects view.
+    await page.locator('.rail-toggle-btn', { hasText: 'Projects' }).click();
     await page.locator('.proj-item', { hasText: 'Forge Master' }).click();
     await page.locator('.forge-master .settings-chat-title', { hasText: 'Forge Master' }).waitFor();
     expect(new URL(page.url()).hash).toContain('forge=1');

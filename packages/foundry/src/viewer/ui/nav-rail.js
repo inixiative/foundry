@@ -1,0 +1,69 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
+ * The left rail: Active | Projects.
+ *
+ * Active is every open thread across projects, in two fixed halves that each scroll on their own:
+ * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
+ * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
+ * status icon, the project and any counts.
+ */
+import { html } from './lib.js';
+import { ProjectSidebar } from './project-sidebar.js';
+import { activeThreadId, allThreads, projectSidebarOpen, railView, selectThread } from './store.js';
+import { ThreadNode, threadTree } from './thread-tree.js';
+
+const OPEN = (t) => !['archived', 'completed', 'done'].includes(t.meta?.status ?? 'idle');
+/** Shared: another party (a Signet member) is in the thread. */
+const isShared = (node) => (node.conversation?.members ?? 0) > 0;
+
+function RailToggle() {
+  const view = railView.value;
+  return html`<div class="rail-toggle" role="tablist" aria-label="Left rail">
+    ${[
+      ['active', 'Active'],
+      ['projects', 'Projects'],
+    ].map(
+      ([id, label]) => html`<button key=${id} role="tab" aria-selected=${view === id}
+        class="rail-toggle-btn ${view === id ? 'is-active' : ''}"
+        onClick=${() => {
+          railView.value = id;
+        }}>${label}</button>`,
+    )}
+  </div>`;
+}
+
+function Pane({ title, count, children, empty }) {
+  return html`<section class="rail-pane" aria-label=${title}>
+    <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span></h3>
+    <div class="rail-frame">${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
+  </section>`;
+}
+
+function ActiveRail() {
+  const roots = threadTree(allThreads.value.filter(OPEN));
+  const yours = roots.filter((n) => !isShared(n));
+  const shared = roots.filter(isShared);
+  const selected = activeThreadId.value;
+  const rows = (nodes) =>
+    nodes.map(
+      (n) =>
+        html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`,
+    );
+  return html`<div class="active-rail">
+    <${Pane} title="Yours" count=${yours.length} empty="No open threads of your own.">${rows(yours)}</${Pane}>
+    <${Pane} title="Shared" count=${shared.length} empty="No thread is shared with anyone.">${rows(shared)}</${Pane}>
+  </div>`;
+}
+
+export function NavRail() {
+  // Folded, the rail is today's thin strip of project dots.
+  if (!projectSidebarOpen.value) return html`<${ProjectSidebar} />`;
+  return html`<div class="nav-rail">
+    <${RailToggle} />
+    ${railView.value === 'active' ? html`<${ActiveRail} />` : html`<${ProjectSidebar} />`}
+  </div>`;
+}

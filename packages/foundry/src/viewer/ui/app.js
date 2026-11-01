@@ -16,7 +16,7 @@ import { FeedbackInbox } from './feedback.js';
 import { GlossButton, GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { html, render, useEffect, useState } from './lib.js';
-import { ProjectSidebar } from './project-sidebar.js';
+import { NavRail } from './nav-rail.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
 import { SelfChatPane } from './self-chat.js';
@@ -272,7 +272,7 @@ function App() {
       <div class=${panelClass} data-compact-panel=${compactPanel.value}>
         <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
         <div class="panel-projects" id="workspace-projects" tabIndex="0">
-          <${ProjectSidebar} />
+          <${NavRail} />
         </div>
 
         <!-- Center: Conversation / trace timeline, or the graph panel -->
