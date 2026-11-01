@@ -135,6 +135,10 @@ export async function createViewerPreview(port = 0) {
   const config = starterConfig('controlled', 'controlled');
   config.agents = defaultAgents();
   config.setupComplete = true;
+  // A real install keeps its projects in settings as well as the registry; without them every
+  // Project settings page reads "not registered".
+  for (const p of PROJECTS)
+    config.projects[p.id] = { id: p.id, path: join(root, p.id), label: p.label, tags: p.tags };
   await configStore.save(config);
   const viewer = createViewer({
     harness,

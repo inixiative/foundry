@@ -112,10 +112,12 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await nav('Layers').click();
     expect(await page.locator('.settings-empty').innerText()).toContain('unwrapped');
 
-    // An old address lands on the section that now holds it.
+    // An unknown section lands on the first one; old addresses have no aliases.
     await page.goto(`${origin}/settings/models`);
+    await page.locator('h1.settings-title', { hasText: 'Profile' }).waitFor();
+    expect(new URL(page.url()).pathname).toBe('/settings/profile');
+    await page.goto(`${origin}/settings/providers`);
     await page.locator('h1.settings-title', { hasText: 'Providers' }).waitFor();
-    expect(new URL(page.url()).pathname).toBe('/settings/providers');
 
     // One row per vendor, the five main labs first; subscription and API are modes of one row.
     const vendors = page.locator('.vendor-row');
