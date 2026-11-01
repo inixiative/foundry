@@ -123,7 +123,6 @@ for (const operation of ['create', 'fork'] as const) {
           interventions: new InterventionLog(),
           threadFactory: factory,
           projectRegistry: registry,
-          db: null,
           configStore: store,
           // Forking runs on the local session store.
           localStore: new LocalSessionStore(':memory:'),

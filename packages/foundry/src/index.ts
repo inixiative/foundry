@@ -100,22 +100,6 @@ export {
   getCurrentBranch,
   listWorktrees,
 } from './git';
-// Jobs — BullMQ background job system
-export {
-  createQueue,
-  enqueueJob,
-  initializeWorker,
-  type JobHandler,
-  JobHandlerName,
-  type JobOptions,
-  type JobPayloads,
-  type JobsQueue,
-  makeJob,
-  makeSingletonJob,
-  setQueue,
-  shutdownWorker,
-  type WorkerContext,
-} from './jobs';
 // Logger
 export { initLogger, type Logger, type LogLevel, log } from './logger';
 // MCP — mid-session bridge (FLOW.md Loop 2)

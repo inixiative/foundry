@@ -42,7 +42,6 @@ export default defineConfig({
       exclude: ['scripts/vcr/shared.ts', 'scripts/evals/cost-weights.ts'],
       kind: 'entrypoint',
     },
-    { include: `${FOUNDRY}/jobs/make*.ts`, kind: 'constructor', constructs: 'job handlers' },
     {
       include: [
         `${CORE}/{base-agent,classifier,router,executor,decider,clarifier}.ts`,
@@ -240,14 +239,6 @@ export default defineConfig({
     { include: `${FOUNDRY}/prompts/**`, partOf: 'feature:composition' },
 
     // foundry: infrastructure primitives
-    { include: `${FOUNDRY}/jobs/**`, partOf: 'primitive:jobs' },
-    { include: `${FOUNDRY}/jobs/queue.ts`, partOf: 'infrastructure:redis' },
-    {
-      include: `${FOUNDRY}/jobs/handlers/{persistTrace,cleanStaleTraces}.ts`,
-      partOf: 'primitive:traces',
-    },
-    { include: `${FOUNDRY}/jobs/handlers/persistSignal.ts`, partOf: 'primitive:signals' },
-    { include: `${FOUNDRY}/jobs/handlers/warmLayers.ts`, partOf: 'primitive:contextLayers' },
     { include: `${FOUNDRY}/logger/**`, partOf: 'primitive:logger' },
     { include: `${FOUNDRY}/ws/**`, partOf: 'primitive:websockets' },
     { include: `${FOUNDRY}/client/data-stream-client.ts`, partOf: 'primitive:websockets' },

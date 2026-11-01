@@ -4,8 +4,6 @@
  * @partOf primitive:traces
  */
 import type { Trace as FoundryTrace, Span } from '@inixiative/foundry-core';
-import type { Prisma } from '@prisma/client';
-import { toOptionalPrismaJson, toPrismaJson } from './prisma-json';
 
 export interface PersistedSpanRecord {
   id: string;
@@ -65,63 +63,4 @@ export function serializeTrace(trace: FoundryTrace): PersistedTraceRecord {
       durationMs: span.durationMs,
     })),
   };
-}
-
-export async function upsertTraceRecord(
-  tx: Prisma.TransactionClient,
-  trace: PersistedTraceRecord,
-): Promise<void> {
-  await tx.trace.upsert({
-    where: { id: trace.id },
-    create: {
-      id: trace.id,
-      messageId: trace.messageId,
-      startedAt: trace.startedAt,
-      endedAt: trace.endedAt,
-      durationMs: trace.durationMs,
-      root: toPrismaJson(trace.root),
-      summary: toOptionalPrismaJson(trace.summary),
-    },
-    update: {
-      endedAt: trace.endedAt,
-      durationMs: trace.durationMs,
-      root: toPrismaJson(trace.root),
-      summary: toOptionalPrismaJson(trace.summary),
-    },
-  });
-
-  for (const span of trace.spans) {
-    await tx.span.upsert({
-      where: { id: span.id },
-      create: {
-        id: span.id,
-        traceId: trace.id,
-        parentId: span.parentId,
-        name: span.name,
-        kind: span.kind,
-        agentId: span.agentId,
-        threadId: span.threadId,
-        status: span.status,
-        layerIds: span.layerIds ?? [],
-        contextHash: span.contextHash,
-        input: toOptionalPrismaJson(span.input),
-        output: toOptionalPrismaJson(span.output),
-        error: toOptionalPrismaJson(span.error),
-        annotations:
-          Object.keys(span.annotations).length > 0
-            ? toOptionalPrismaJson(span.annotations)
-            : undefined,
-        startedAt: span.startedAt,
-        endedAt: span.endedAt,
-        durationMs: span.durationMs,
-      },
-      update: {
-        status: span.status,
-        output: toOptionalPrismaJson(span.output),
-        error: toOptionalPrismaJson(span.error),
-        endedAt: span.endedAt,
-        durationMs: span.durationMs,
-      },
-    });
-  }
 }

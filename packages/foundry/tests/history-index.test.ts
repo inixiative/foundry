@@ -161,7 +161,6 @@ function setup(withStore = true) {
       harness,
       eventStream: new EventStream(),
       interventions: new InterventionLog(),
-      db: null,
       configStore: new ConfigStore(dir),
       localStore,
     }),

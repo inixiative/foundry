@@ -45,7 +45,6 @@ function setup() {
       interventions: new InterventionLog(),
       threadFactory: factory,
       projectRegistry: registry,
-      db: null,
       configStore: new ConfigStore('/tmp/foundry-gate-unused-config'),
     }),
   );

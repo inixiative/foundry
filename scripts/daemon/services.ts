@@ -12,7 +12,6 @@ import { $ } from 'bun';
 
 const SERVICE_BY_ENV = {
   DATABASE_URL: 'postgres',
-  REDIS_URL: 'redis',
   MUNINN_URL: 'muninndb',
 } as const;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);

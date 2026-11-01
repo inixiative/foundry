@@ -48,7 +48,6 @@ import {
   ContextStack,
   type MemoryEntry,
   type NativeBridgeSource,
-  type SignalBus,
   type ThreadSetup,
   ToolRegistry,
 } from '@inixiative/foundry-core';
@@ -74,7 +73,6 @@ import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
-import { createQueue, initializeWorker, setQueue, shutdownWorker } from './jobs';
 import type { LocalSessionStore } from './persistence/local-session-store';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -789,9 +787,7 @@ if (process.env.DATABASE_URL) {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
     pgMemory = new PostgresMemory(prisma);
-    // Wire signal persistence to postgres
-    runtimeManager.addSignalSink(pgMemory.signalWriter());
-    // Also register as a queryable tool for agents
+    // Postgres is a memory backend only: a queryable tool for agents (journal + Archive hold the record).
     const pgTool = MemoryToolAdapter.from('postgres', {
       write: (e) => pgMemory!.writeEntry(e),
       get: (id) => pgMemory!.getEntry(id).then((r) => (r ? pgEntry(r) : undefined)),
@@ -834,39 +830,6 @@ if (process.env.MUNINN_URL) {
       `MuninnDB: unavailable (${(err as Error).message}). Running without neural memory.`,
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// BullMQ job queue (optional — requires REDIS_URL)
-// ---------------------------------------------------------------------------
-
-const redisUrl = process.env.REDIS_URL;
-if (redisUrl && pgMemory) {
-  try {
-    const queue = createQueue(redisUrl);
-    setQueue(queue);
-
-    await initializeWorker({
-      queue,
-      redisUrl,
-      db: pgMemory,
-      concurrency: 10,
-      // Runtime-owned live stacks: every attached thread, dropped on dispose.
-      stacks: runtimeManager.stacks,
-    });
-
-    // Wire signal persistence through the job queue instead of direct DB writes
-    // (The direct pgMemory.signalWriter() above is kept as a fast-path fallback)
-    console.log(`Jobs: BullMQ connected (${redisUrl.replace(/\/\/.*@/, '//***@')})`);
-  } catch (err) {
-    console.warn(
-      `Jobs: BullMQ unavailable (${(err as Error).message}). Persistence via direct DB writes.`,
-    );
-  }
-} else if (redisUrl && !pgMemory) {
-  console.log('Jobs: Redis available but no database — skipping worker (no persistence target)');
-} else {
-  console.log('Jobs: No REDIS_URL — persistence via direct DB writes');
 }
 
 console.log(
@@ -921,7 +884,6 @@ const viewer = await startViewer({
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,
-  db: pgMemory,
   threadFactory: factory,
   configStore,
   actionQueue,
@@ -970,7 +932,7 @@ console.log(`Provider: ${provider.id} (${config.defaults.model})`);
 console.log(`Agents: ${[...thread.agents.keys()].join(', ')}`);
 console.log(`Layers: ${stack.layers.map((l) => l.id).join(', ')}`);
 console.log(
-  `Persistence: local SQLite${pgMemory ? ' + postgres mirror' : ''}${process.env.MUNINN_URL ? ' + muninn' : ''}`,
+  `Persistence: local SQLite${pgMemory ? ' + postgres memory' : ''}${process.env.MUNINN_URL ? ' + muninn' : ''}`,
 );
 console.log();
 
@@ -1009,7 +971,6 @@ const shutdown = async () => {
   prefilterServer?.stop();
   viewer.server.stop();
   viewer.localStore?.close();
-  await shutdownWorker();
   await viewer.analyticsStore?.flush();
   process.exit(0);
 };

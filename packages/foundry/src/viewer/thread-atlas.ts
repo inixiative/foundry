@@ -83,6 +83,20 @@ export function conceptsTouched(
   return touches.sort((a, b) => b.files - a.files || a.concept.localeCompare(b.concept));
 }
 
+/** Every concept in a project's Atlas: its file count and its doc (for Search). */
+export async function projectConcepts(root: string) {
+  if (!atlasMapped(root)) return { mapped: false as const };
+  const graph = await graphOf(root);
+  if (!graph) return { mapped: false as const, error: 'atlas graph could not be read' };
+  const concepts = Object.entries(graph.conceptToFiles ?? {}).map(([concept, files]) => ({
+    concept,
+    files: files.length,
+    doc: graph.thesaurus?.[concept]?.doc ?? null,
+    phrases: graph.thesaurus?.[concept]?.phrases ?? [],
+  }));
+  return { mapped: true as const, concepts };
+}
+
 /** The thread's concepts, and the other threads of its project that share any of them. */
 export async function threadAtlas(
   store: TurnReads,

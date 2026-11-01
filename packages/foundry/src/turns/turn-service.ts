@@ -23,12 +23,10 @@ import {
   type SerializedQueue,
 } from '@inixiative/foundry-core';
 import type { ConversationMember } from '@inixiative/signet';
-import type { PostgresMemory } from '../adapters/postgres-memory';
 import { memberPostReception } from '../agents/chorus-reception';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
-import { enqueueJob } from '../jobs/enqueue';
 import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
 import type { ConfigStore } from '../viewer/config';
@@ -50,7 +48,6 @@ import { splitHostInstructions } from './host-instructions';
 export interface TurnServiceDeps {
   harness: Harness;
   eventStream: EventStream;
-  db: PostgresMemory | null;
   threadFactory?: ThreadFactory;
   configStore: ConfigStore;
   deviceIdentityPath?: string;
@@ -281,7 +278,7 @@ export class TurnService {
       origin && !origin.wake && !origin.fork
         ? memberPostReception(origin.displayName, payload)
         : payload;
-    const { db, localStore, streams } = this.deps;
+    const { localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
     // An archived thread comes back when a message or a member's post arrives for it: its native
@@ -328,28 +325,6 @@ export class TurnService {
         body: { error: `Could not durably accept turn: ${(err as Error).message}` },
       };
     }
-
-    // Optional remote mirror; the local acceptance is already committed.
-    const userMsgId = newId('msg');
-    enqueueJob('persistMessage', {
-      id: userMsgId,
-      threadId,
-      turnId,
-      actor: 'user',
-      kind: 'text',
-      content: payload,
-      ...(userMeta ? { meta: userMeta } : {}),
-    }).catch(() => {
-      db?.writeMessage({
-        id: userMsgId,
-        threadId,
-        turnId,
-        actor: 'user',
-        kind: 'text',
-        content: payload,
-        ...(userMeta ? { meta: userMeta } : {}),
-      }).catch((err) => console.warn('[Turns] background op failed:', err.message ?? err));
-    });
 
     const buffer = streams.turns.open(turnId, threadId, harness.thread.meta.projectId);
     streams.threadsChanged(threadId);
@@ -765,40 +740,6 @@ export class TurnService {
     }
   }
 
-  private persistAgentMessage(threadId: string, turnId: string, completed: CompletedTurn) {
-    const { db } = this.deps;
-    const agentMsgId = newId('msg');
-    const message = {
-      id: agentMsgId,
-      threadId,
-      turnId,
-      actor: 'agent' as const,
-      kind: 'text' as const,
-      content: completed.content,
-      traceId: completed.traceId,
-      meta: completed.meta,
-    };
-    // Optional remote mirror follows the local response/artifact transaction.
-    enqueueJob('persistMessage', message).catch(() => {
-      db?.writeMessage(message).catch((err) =>
-        console.warn('[Turns] background op failed:', err.message ?? err),
-      );
-    });
-  }
-
-  private persistTrace(turnId: string, trace: Trace) {
-    const { db } = this.deps;
-    enqueueJob('persistTrace', {
-      traceId: trace.id,
-      messageId: turnId,
-      trace: serializeTrace(trace),
-    }).catch(() => {
-      db?.writeTrace(trace).catch((err) =>
-        console.warn('[Turns] background op failed:', err.message ?? err),
-      );
-    });
-  }
-
   // The turn is independent of any connection: with nobody watching it still runs and attempts
   // to persist its outcome. "done" means execution returned, not necessarily that its journal
   // commit succeeded.
@@ -848,8 +789,6 @@ export class TurnService {
       this.publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });
       buffer.complete(completed);
       if (completed.meta.persistence !== 'failed') {
-        this.persistAgentMessage(threadId, turnId, completed);
-        this.persistTrace(turnId, result.trace);
         if (ownerTyped)
           this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
       }
