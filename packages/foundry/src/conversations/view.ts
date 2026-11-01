@@ -49,9 +49,28 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
     };
   }
   // A send is an entry once it is readable: written released (`auto`), or released by the owner.
-  const send = (record: Pick<HeldRecord, 'kind' | 'to'>, text: string): ThreadEntry | null =>
+  const send = (
+    record: Pick<HeldRecord, 'kind' | 'to'> & {
+      commission?: { report: 'post' | 'notify'; expiresAt?: string };
+    },
+    text: string,
+  ): ThreadEntry | null =>
     record.kind === 'send' && record.to
-      ? { journalSeq: entry.seq, at, kind: 'send', member: record.to, text: clip(text) }
+      ? {
+          journalSeq: entry.seq,
+          at,
+          kind: 'send',
+          member: record.to,
+          ...(record.commission?.expiresAt
+            ? {
+                commission: {
+                  report: record.commission.report,
+                  expiresAt: record.commission.expiresAt,
+                },
+              }
+            : {}),
+          text: clip(text),
+        }
       : null;
   if (entry.phase === 'outbound-held') {
     const record = entry.record as unknown as HeldRecord;
@@ -66,7 +85,8 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
 
 /**
  * Whether a member with this lens sees an entry. `own`: its posts and the sends addressed to it.
- * `thread` (owner recipients only, which Kingdom enforces): every entry.
+ * `thread`: every entry; the wrapper narrows it further per reader (the host agent's own messages
+ * only for the owner, a `notify` report only for its author and the owner).
  */
 export function visibleTo(
   entry: ThreadEntry,

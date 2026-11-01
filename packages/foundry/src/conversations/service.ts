@@ -29,7 +29,7 @@ import {
   threadTextLimit,
 } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
-import type { LocalSessionStore } from '../persistence/local-session-store';
+import type { JournalEntry, LocalSessionStore } from '../persistence/local-session-store';
 import {
   type HeldThreadSubscription,
   UNKNOWN_HOSTED,
@@ -225,6 +225,15 @@ export class ConversationService implements ConversationWrapper {
           return { kind: 'refused' as const, refusal: 'conversation_paused' as const };
         }
         const floor = this.takeFloor(record, settings, me, input.inReplyTo);
+        // A reply naming a notify commission whose invitation is gone (expired, already used) would
+        // otherwise go public under talk; it never posts (round 5, M1).
+        if (
+          !floor.refusal &&
+          !floor.commission &&
+          input.inReplyTo &&
+          this.commissionNamed(thread.id, input.inReplyTo, me)?.report === 'notify'
+        )
+          return { kind: 'refused' as const, refusal: 'not_invited' as const };
         if (floor.refusal) {
           // A conch that lapsed at this admission is the host's now, refused or not.
           if (floor.changed) this.save(thread, record);
@@ -241,6 +250,7 @@ export class ConversationService implements ConversationWrapper {
           text: input.text,
           delivery,
           ...(settings.agents === 'silent' ? { silent: true } : {}),
+          ...(floor.commission === 'notify' ? { notify: true } : {}),
           executionId: frame.requestId,
           acceptedRevision: frame.acceptedRevision,
           ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
@@ -328,9 +338,8 @@ export class ConversationService implements ConversationWrapper {
       this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread),
     );
     const raw = this.deps.store.journalEntries(thread.id, { after, limit: RAW_READ });
-    const entries = raw
-      .map(threadEntryOf)
-      .filter((entry): entry is ThreadEntry => !!entry && visibleTo(entry, frame));
+    const owner = this.isOwnerSignet(frame.signetId);
+    const entries = raw.flatMap((row) => this.readable(row, frame, owner));
     const more = raw.length === RAW_READ;
     return threadResult(
       capView(
@@ -353,14 +362,39 @@ export class ConversationService implements ConversationWrapper {
     const journalSeq = this.deps.store.journalSeq(thread.id);
     const from = this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
+    const owner = this.isOwnerSignet(frame.signetId);
     const entries = raw
       .filter((row) => row.seq > from)
-      .map(threadEntryOf)
-      .filter((entry): entry is ThreadEntry => !!entry && visibleTo(entry, frame));
+      .flatMap((row) => this.readable(row, frame, owner));
     this.cursors.set(frame.requestId, journalSeq);
     this.seen.set(`${frame.signetId}:${thread.id}`, Date.now());
     this.deps.changed?.(thread.id);
     return threadResult(capView(entries, journalSeq, 'newest', raw.length === RAW_READ));
+  }
+
+  /**
+   * One journal row as this reader may see it (§4.9): its lens first, then the per-reader rules.
+   * The host agent's own messages are the owner's private side, so only an owner recipient (a grant
+   * with `prompt.resolve`) reads them (M8). A report against a `notify` commission reaches only its
+   * author and the owner (M1).
+   */
+  private readable(
+    row: JournalEntry,
+    reader: { signetId: string; lens: Pick<ThreadsLens, 'view'> },
+    owner: boolean,
+  ): ThreadEntry[] {
+    const entry = threadEntryOf(row);
+    if (!entry || !visibleTo(entry, reader)) return [];
+    if (entry.kind === 'agent' && !owner) return [];
+    if (
+      entry.kind === 'post' &&
+      row.source !== 'message' &&
+      (row.record as unknown as MemberPostRecord).notify &&
+      !owner &&
+      !sameMember(entry.member, { kind: 'signet', id: reader.signetId })
+    )
+      return [];
+    return [entry];
   }
 
   /** A member's view closed (left, lease lapsed, socket dropped): it stops being pushed. */
@@ -386,13 +420,14 @@ export class ConversationService implements ConversationWrapper {
     const from = Math.min(...views.map((view) => this.cursors.get(view.subscriptionId)!));
     const raw = this.deps.store.journalEntries(threadId, { after: from, limit: 10_000 });
     if (!raw.length) return;
-    for (const row of raw) {
-      const entry = threadEntryOf(row);
-      if (!entry) continue;
+    const owners = new Map(
+      views.map((view) => [view.subscriptionId, this.isOwnerSignet(view.signetId)]),
+    );
+    for (const row of raw)
       for (const view of views)
-        if (row.seq > this.cursors.get(view.subscriptionId)! && visibleTo(entry, view))
-          view.append(entry);
-    }
+        if (row.seq > this.cursors.get(view.subscriptionId)!)
+          for (const entry of this.readable(row, view, owners.get(view.subscriptionId)!))
+            view.append(entry);
     const last = raw.at(-1)!.seq;
     for (const view of views) this.cursors.set(view.subscriptionId, last);
   }
@@ -520,11 +555,12 @@ export class ConversationService implements ConversationWrapper {
    * member's outbound term, from the latest snapshot (falling back to `review`), is enforced here:
    * `auto` writes a released send; `review` writes a pending one and asks the owner. Returns at once.
    */
-  send(threadId: string, member: string, text: string): string {
+  send(threadId: string, member: string, text: string, report?: 'post' | 'notify'): string {
     const thread = this.deps.thread(threadId);
     if (!thread || this.closedReason(thread)) throw Error('This thread is not open');
     const target = this.findMember(threadId, member);
-    if (this.settings(thread, this.record(thread.id)).agents === 'silent')
+    // A commission is the one thing a silent agent may send: a person asked for the task (M7).
+    if (!report && this.settings(thread, this.record(thread.id)).agents === 'silent')
       throw Error(
         'Agents are silent in this conversation until the leader lets them draft (conversations.agents)',
       );
@@ -536,6 +572,14 @@ export class ConversationService implements ConversationWrapper {
       outbound,
       to: target.member,
       toName: target.displayName,
+      ...(report
+        ? {
+            commission:
+              outbound === 'auto'
+                ? { report, expiresAt: this.commissionExpiry(thread) }
+                : { report },
+          }
+        : {}),
     });
     return outbound === 'auto'
       ? `Sent to ${target.displayName}.`
@@ -712,9 +756,11 @@ export class ConversationService implements ConversationWrapper {
         record.invitations = record.invitations.filter((invitation) => !invitation.standing);
         record.requests = [];
       }
-      // Reply invitations belong to the mode that made them; they don't come back with it.
+      // Reply invitations belong to the mode that made them; a commission outlives a mode change (M3).
       if (floor !== 'speak-when-spoken-to')
-        record.invitations = record.invitations.filter((invitation) => invitation.standing);
+        record.invitations = record.invitations.filter(
+          (invitation) => invitation.standing || invitation.commission,
+        );
       this.save(thread, record);
     });
     this.settleHands(threadId);
@@ -915,7 +961,9 @@ export class ConversationService implements ConversationWrapper {
       unread: this.pendingNotes(threadId).length,
       paused: this.paused(threadId, record),
       held: this.heldPending(threadId).length,
-      members: this.members(threadId).length,
+      // Parties off this machine other than the owner: what makes a thread shared (D5).
+      members: this.members(threadId).filter((member) => !this.isOwnerSignet(member.member.id))
+        .length,
     };
   }
 
@@ -1007,6 +1055,25 @@ export class ConversationService implements ConversationWrapper {
 
   private save(thread: Thread, record: ConversationRecord): void {
     this.deps.store.saveConversation(thread, record);
+  }
+
+  /** A commission's report window, from now: set when the send is released, not drafted. */
+  private commissionExpiry(thread: Thread): string {
+    const hours = this.settings(thread, this.record(thread.id)).commissionHours;
+    return new Date(Date.now() + hours * 3_600_000).toISOString();
+  }
+
+  /** The commission a reply names, read from the send's own journal row (not its invitation). */
+  private commissionNamed(
+    threadId: string,
+    inReplyTo: string,
+    me: ConversationMember,
+  ): ThreadEntry['commission'] {
+    const seq = Number(inReplyTo);
+    if (!Number.isInteger(seq) || seq < 1) return undefined;
+    const [row] = this.deps.store.journalEntries(threadId, { after: seq - 1, limit: 1 });
+    const entry = row && row.seq === seq ? threadEntryOf(row) : null;
+    return entry?.kind === 'send' && sameMember(entry.member, me) ? entry.commission : undefined;
   }
 
   /** Where members' reads start (§4.9, B3). A thread read before its share was marked starts now. */
@@ -1128,7 +1195,9 @@ export class ConversationService implements ConversationWrapper {
     const before = record.invitations.length;
     record.invitations = record.invitations.filter(
       (invitation) =>
-        !invitation.standing || !invitation.expiresAt || Date.parse(invitation.expiresAt) > now,
+        !(invitation.standing || invitation.commission) ||
+        !invitation.expiresAt ||
+        Date.parse(invitation.expiresAt) > now,
     );
     return record.invitations.length !== before;
   }
@@ -1139,8 +1208,23 @@ export class ConversationService implements ConversationWrapper {
     settings: ConversationSettings,
     me: ConversationMember,
     inReplyTo: string | undefined,
-  ): { refusal?: ThreadRefusal; changed: boolean } {
+  ): { refusal?: ThreadRefusal; changed: boolean; commission?: Invitation['commission'] } {
     const changed = this.dropLapsedConch(record);
+    const now = Date.now();
+    const commission = inReplyTo
+      ? record.invitations.find(
+          (candidate) =>
+            candidate.commission &&
+            candidate.id === inReplyTo &&
+            sameMember(candidate.to, me) &&
+            (!candidate.expiresAt || Date.parse(candidate.expiresAt) > now),
+        )
+      : undefined;
+    // A commissioned report enters by its invitation in every mode, the conch included (§4.9 point 8).
+    if (commission) {
+      record.invitations = record.invitations.filter((candidate) => candidate !== commission);
+      return { changed: true, commission: commission.commission };
+    }
     if (settings.floor === 'talk') return { changed };
     if (settings.floor === 'speak-when-spoken-to') {
       const now = Date.now();
@@ -1405,16 +1489,26 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /** A released send in `speak-when-spoken-to` invites its member to reply once; its id is the send's journal seq. */
-  private invite(thread: Thread, held: HeldRecord, seq: number): void {
+  private invite(
+    thread: Thread,
+    held: HeldRecord,
+    seq: number,
+    commission = held.commission?.expiresAt
+      ? { report: held.commission.report, expiresAt: held.commission.expiresAt }
+      : undefined,
+  ): void {
     if (held.kind !== 'send' || !held.to || held.to.kind !== 'signet') return;
     const record = this.record(thread.id);
-    if (this.settings(thread, record).floor !== 'speak-when-spoken-to') return;
+    // A commission invites its report in every mode, until it expires (§4.9 point 8, M2); an
+    // ordinary send invites a reply only under speak-when-spoken-to.
+    if (!commission && this.settings(thread, record).floor !== 'speak-when-spoken-to') return;
     record.invitations.push({
       id: String(seq),
       to: held.to,
       by: OWNER_MEMBER,
       standing: false,
-      expiresAt: null,
+      expiresAt: commission?.expiresAt ?? null,
+      ...(commission ? { commission: commission.report } : {}),
     });
     this.save(thread, record);
   }
@@ -1430,7 +1524,7 @@ export class ConversationService implements ConversationWrapper {
       capability: 'conversation',
       message:
         held.kind === 'send'
-          ? `Send to ${held.toName ?? held.to?.id}:\n${held.text}`
+          ? `${held.commission ? `Ask ${held.toName ?? held.to?.id} for a task (its report ${held.commission.report === 'post' ? 'posts to the thread' : 'notifies only you'})` : `Send to ${held.toName ?? held.to?.id}`}:\n${held.text}`
           : `Post to conversation thread ${held.remoteThreadId} (access ${held.accessId}):\n${held.text}`,
       options: HELD_OPTIONS.map((option) => ({ ...option })),
       signal: controller.signal,
@@ -1442,6 +1536,7 @@ export class ConversationService implements ConversationWrapper {
           kind: held.kind,
           text: held.text,
           ...(held.to ? { to: held.to, toName: held.toName } : {}),
+          ...(held.commission ? { commission: held.commission } : {}),
           ...(held.remoteThreadId
             ? { remoteThreadId: held.remoteThreadId, accessId: held.accessId }
             : {}),
@@ -1495,6 +1590,10 @@ export class ConversationService implements ConversationWrapper {
       return;
     }
     const action = resolution.action === 'withdraw' ? 'withdrawn' : 'released';
+    const commission =
+      held.commission && action === 'released'
+        ? { report: held.commission.report, expiresAt: this.commissionExpiry(thread) }
+        : undefined;
     const phaseId = newId('phase');
     this.deps.store.transaction(() => {
       this.deps.store.appendPhase(thread, {
@@ -1506,6 +1605,7 @@ export class ConversationService implements ConversationWrapper {
           heldId: held.heldId,
           kind: held.kind,
           ...(held.to ? { to: held.to, toName: held.toName } : {}),
+          ...(commission ? { commission } : {}),
           action,
           text,
           by: resolution.by,
@@ -1513,7 +1613,7 @@ export class ConversationService implements ConversationWrapper {
         } satisfies HeldResolutionRecord as unknown as Record<string, unknown>,
       });
       if (action === 'released' && held.kind === 'send')
-        this.invite(thread, held, this.deps.store.phaseSeq(phaseId)!);
+        this.invite(thread, held, this.deps.store.phaseSeq(phaseId)!, commission);
     });
     this.deps.journalChanged?.(thread);
     if (action === 'released' && held.kind === 'post') await this.deliver(thread, held, text);

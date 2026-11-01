@@ -597,8 +597,14 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       {
         member: z.string().min(1).max(200).describe('The member: its display name or Signet id'),
         text: z.string().min(1).max(16_000),
+        report: z
+          .enum(['post', 'notify'])
+          .optional()
+          .describe(
+            "Set only when the text asks the member's agent to do a task (a commission): how its report comes back, as the owner said: 'post' into the thread or 'notify' only the owner. Leave it out for an ordinary reply. The owner sees and releases this choice.",
+          ),
       },
-      guarded<{ member: string; text: string }>(
+      guarded<{ member: string; text: string; report?: 'post' | 'notify' }>(
         'send_to_member',
         conversationCall('conversation', 'send_to_member'),
       ),

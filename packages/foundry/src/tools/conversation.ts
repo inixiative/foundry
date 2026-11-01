@@ -15,13 +15,14 @@ import { z } from 'zod';
 
 /** What the main agent's conversation tools reach: the thread's conversation wrapper. */
 export interface ConversationTools {
-  send(threadId: string, member: string, text: string): string;
+  send(threadId: string, member: string, text: string, report?: 'post' | 'notify'): string;
   passConch(threadId: string, member: string | null): string;
 }
 
 const sendInput = z.strictObject({
   member: z.string().min(1).max(200),
   text: z.string().min(1).max(threadTextLimit),
+  report: z.enum(['post', 'notify']).optional(),
 });
 const passInput = z.strictObject({ member: z.string().min(1).max(200).nullable() });
 
@@ -52,7 +53,7 @@ export class ConversationTool implements ApiTool {
       let text: string;
       if (req.url === 'send_to_member') {
         const input = sendInput.parse(req.body);
-        text = conversations.send(threadId, input.member, input.text);
+        text = conversations.send(threadId, input.member, input.text, input.report);
       } else if (req.url === 'pass_conch')
         text = conversations.passConch(threadId, passInput.parse(req.body).member);
       else throw Error('Use send_to_member or pass_conch');

@@ -174,7 +174,7 @@ Why revival matters: it is v1 outreach. "They should be able to then post to tha
 
 ### 4.3 Floor modes: one mechanism, invitations
 
-An invitation is `{id, to: ConversationMember, by, standing: boolean, expiresAt | null}`.
+An invitation is `{id, to: ConversationMember, by, standing: boolean, expiresAt | null, commission?: 'post' | 'notify'}`.
 
 | Mode | Rule |
 |---|---|
@@ -242,6 +242,7 @@ conversations: {
   maxAgentTurns: number;                                 // default 6
   conch: { holdSeconds: number; agentMayPass: boolean }; // 300, false
   agents: 'silent' | 'drafting';                         // default 'drafting' (§4.10)
+  commissionHours: number;                               // default 24: a commission's report window (§4.10)
 }
 ```
 
@@ -254,7 +255,7 @@ conversations: {
 
 **What a member reads.** The member reads the main thread's journal through its lens, and nothing else. It reads live through the Kingdom-held connection (§5.6.1): a snapshot, then appends. `thread.read {afterSeq}` is the same view as one call, and it is what the snapshot is built from. Either way:
 - `view: 'own'` (default): the member's own posts plus the `send_to_member` entries addressed to it;
-- `view: 'thread'`: the whole log. **Since 2026-11-01 any member may hold it** (Kingdom AUTH-014: sitting in is reading the whole thread). For a member who isn't the owner, the log is people's posts and released sends; the main agent's own messages are its owner's private side (§4.10). A recipient whose grant includes `prompt.resolve`, which Kingdom allows only to the host's owner, also reads the assistant messages; the filter is in `visibleTo`, never in `threadEntryOf`. Reads start no earlier than the conversation's `sharedFromSeq` unless the owner shared the history. Never tool I/O or Warden entries.
+- `view: 'thread'`: the whole log. **Since 2026-11-01 any member may hold it** (Kingdom AUTH-014: sitting in is reading the whole thread). For a member who isn't the owner, the log is people's posts and released sends; the main agent's own messages are its owner's private side (§4.10). A recipient whose grant includes `prompt.resolve`, which Kingdom allows only to the host's owner, also reads the assistant messages; the filter is the wrapper's per-reader `readable` (it knows the reader's grant), never `threadEntryOf`. Reads start no earlier than the conversation's `sharedFromSeq` unless the owner shared the history. Never tool I/O or Warden entries.
 
 The lens comes from the frame, never from the caller. A read is capped at 16,000 characters.
 
@@ -297,7 +298,7 @@ The design, its review rounds and Aron's words in full are in Oracle `docs/found
 - **Commissioned tasks.** A released `send_to_member` that asks an agent for work creates a reply invitation in every floor mode.
   - The report consumes it, even under the conch.
   - It posts into the log by default (Aron, 11-01: "If we ask you to do something, tell us when it's done... unless we say, 'Notify me when it's done'").
-  - A thread setting can make notifying the default. The caller's instruction wins over either.
+  - A thread setting to make notifying the default is not built yet; the caller's instruction (the `report` the agent passes, which its person releases) decides each one.
   - A notice goes to the caller alone.
 - **Roles change during a thread** (11-01) through the Signet revise and grant path, with no role table.
 
@@ -308,7 +309,7 @@ The design, its review rounds and Aron's words in full are in Oracle `docs/found
 - **Commission sends.** A commission carries `commission: {report, expiresAt}`. Only commissions create reply invitations outside `speak-when-spoken-to`. They survive mode changes and restarts, and they are marked on the entry.
 - **`floor.mayTake`**, a revisable lens term.
 - **The `aside` entry kind**, visible to two people and to no agent.
-- **`agents: 'silent'`**, enforced: posts become notes, and sends are refused.
+- **`agents: 'silent'`**, enforced: posts become notes, and sends are refused, a commission excepted (a person asked for it).
 
 **What this changes from 10-19:**
 - (1) the owner's own Codex may be a member, not only a subagent node (§3.2);
