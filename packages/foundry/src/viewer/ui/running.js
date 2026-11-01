@@ -10,7 +10,7 @@
  * frames don't reach Foundry yet.
  */
 
-import { html } from './lib.js';
+import { html, useEffect } from './lib.js';
 import { allThreads, railExpanded, railView, selectThread } from './store.js';
 import { threadName } from './thread-labels.js';
 
@@ -29,6 +29,18 @@ export function Running({ threadId }) {
     railView.value = 'open';
     railExpanded.value = new Set([...railExpanded.value, threadId]);
   };
+  // Running sits level with the left footer block: same height, so the two bottoms line up.
+  useEffect(() => {
+    const footer = document.querySelector('.nav-footer');
+    const panel = document.querySelector('.running');
+    if (!footer || !panel || typeof ResizeObserver === 'undefined') return;
+    const sync = () =>
+      panel.style.setProperty('--footer-h', `${footer.getBoundingClientRect().height}px`);
+    const watch = new ResizeObserver(sync);
+    watch.observe(footer);
+    sync();
+    return () => watch.disconnect();
+  }, []);
   return html`<section class="running" aria-label="Running">
     <header class="running-head"><b>Running</b><span>${subagents.length} live</span></header>
     ${subagents.map(
@@ -46,5 +58,6 @@ export function Running({ threadId }) {
       </div>`,
     )}
     <div class="running-none" title="The native session doesn't report its background shells to Foundry yet">Processes: not tracked yet.</div>
+    <div class="running-none" title="Foundry has no scheduler for threads yet">Scheduled and background jobs: not tracked yet.</div>
   </section>`;
 }
