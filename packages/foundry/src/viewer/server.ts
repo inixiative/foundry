@@ -70,6 +70,7 @@ import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
+import { expireSnoozes } from './thread-snooze';
 import {
   FoundryTunnel,
   type TunnelConfig,
@@ -587,6 +588,7 @@ export function createViewer(config: ViewerConfig) {
     projectRegistry: config.projectRegistry,
     namer,
     threadContext,
+    ...(config.tokenTracker ? { tokenTracker: config.tokenTracker } : {}),
     ...(archiveCapture ? { archiveCapture } : {}),
     deviceIdentityPath: config.deviceIdentityPath,
     localStore,
@@ -779,6 +781,11 @@ export function createViewer(config: ViewerConfig) {
       }
     },
   });
+  // A snooze whose time passed is cleared; the thread shows as it was (thread-snooze.ts).
+  const snoozeWatch = makeUnrefInterval({
+    intervalMs: 15_000,
+    tick: () => void expireSnoozes(directory.all(), threadChanged),
+  });
   const kingdomWatch = makeUnrefInterval({
     intervalMs: 15_000,
     tick: () => {
@@ -891,9 +898,11 @@ export function createViewer(config: ViewerConfig) {
     startSocket() {
       socket.startStaleSweep();
       kingdomWatch.start();
+      snoozeWatch.start();
     },
     stopSocket() {
       kingdomWatch.stop();
+      snoozeWatch.stop();
       socket.shutdown();
     },
     kingdom,

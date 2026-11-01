@@ -4,7 +4,13 @@
  * @partOf feature:viewer, primitive:settings
  */
 import { isAbsolute } from 'node:path';
-import type { EventStream, Harness, InterventionLog, StreamEvent } from '@inixiative/foundry-core';
+import type {
+  EventStream,
+  Harness,
+  InterventionLog,
+  StreamEvent,
+  TokenTracker,
+} from '@inixiative/foundry-core';
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { PostgresMemory } from '../../adapters/postgres-memory';
@@ -39,6 +45,7 @@ import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
 import { ViewerThreadDirectory } from '../thread-directory';
+import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
 import { turnTimeline } from '../turn-timeline';
 
 export interface RuntimeRoutesDeps {
@@ -58,6 +65,8 @@ export interface RuntimeRoutesDeps {
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
+  /** Usage window readings: a `quota-reset` snooze resolves to the reached window's reset. */
+  tokenTracker?: TokenTracker;
   /** This machine's Archive capture: whether a turn's thread has been captured since the turn ended. */
   archiveCapture?: ArchiveCapture;
   directory?: ViewerThreadDirectory;
@@ -898,6 +907,31 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     streams.threadsChanged(thread.id);
     if ('worktreePath' in body || 'branch' in body) void threadContext?.refresh(thread.id);
 
+    return c.json(threadToJSON(thread));
+  });
+
+  // -- Snooze: quiet until a time or a condition's time; the status is untouched (thread-snooze.ts) --
+
+  app.put('/api/threads/:id/snooze', async (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    const body = await c.req.json<SnoozeRequest>().catch(() => ({}));
+    const result = resolveSnooze(body, () => deps.tokenTracker?.windowReadings() ?? []);
+    if ('error' in result) return c.json({ error: result.error }, result.status);
+    thread.meta.snooze = result.snooze;
+    localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
+    return c.json(threadToJSON(thread));
+  });
+
+  app.delete('/api/threads/:id/snooze', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    if (thread.meta.snooze) {
+      delete thread.meta.snooze;
+      localStore?.saveThread(thread);
+      streams.threadsChanged(thread.id);
+    }
     return c.json(threadToJSON(thread));
   });
 
