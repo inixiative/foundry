@@ -58,34 +58,40 @@ function useMachine() {
 
 /** One row that opens to every subscription, grouped by the provider that sells it. */
 function Subscriptions({ accounts, registry }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState({});
   const subscriptions = (Array.isArray(accounts) ? accounts : []).filter((a) =>
     SUBSCRIPTION_SOURCES.has(a.source),
   );
+  // Only providers that have a subscription; each row opens to its subscriptions.
   const groups = capacityByProvider(subscriptions, (provider) => vendorName(provider, registry));
   if (!groups.length) return null;
-  const ready = groups.reduce((n, g) => n + g.ready, 0);
-  const total = groups.reduce((n, g) => n + g.accounts.length, 0);
   return html`<div class="nav-footer-subscriptions">
-    <button type="button" class="nav-footer-row" aria-expanded=${open} onClick=${() => setOpen(!open)}
-      title=${`${ready} of ${total} ready`}>
-      <span class="nav-footer-dot ${ready === total ? 'is-ok' : 'is-warn'}"></span>
-      <span class="nav-footer-name">Subscriptions</span>
-      <span class="nav-footer-caret">${open ? '▾' : '▸'}</span>
-    </button>
-    ${
-      open
-        ? html`<ul class="nav-footer-subs">${groups.flatMap((g) =>
-            g.accounts.map(
-              (a, i) => html`<li key=${`${g.provider}:${i}`}
-                title=${[a.issue, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
-                <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>
-                <span class="nav-footer-sub-name">${g.provider} · ${a.detail}</span>
-              </li>`,
-            ),
-          )}</ul>`
-        : null
-    }
+    <div class="nav-footer-label">Subscriptions</div>
+    ${groups.map((g) => {
+      const isOpen = !!open[g.provider];
+      const total = g.accounts.length;
+      return html`<div key=${g.provider} class="nav-footer-provider">
+        <button type="button" class="nav-footer-row" aria-expanded=${isOpen}
+          onClick=${() => setOpen({ ...open, [g.provider]: !isOpen })}
+          title=${`${g.provider}: ${g.ready} of ${total} subscription${total === 1 ? '' : 's'} ready`}>
+          <span class="nav-footer-caret">${isOpen ? '▾' : '▸'}</span>
+          <span class="nav-footer-name">${g.provider}</span>
+          <span class="nav-footer-dot ${g.ready === total ? 'is-ok' : 'is-warn'}"></span>
+          <span class="nav-footer-count">${g.ready}/${total} ready</span>
+        </button>
+        ${
+          isOpen
+            ? html`<ul class="nav-footer-subs">${g.accounts.map(
+                (a, i) => html`<li key=${`${g.provider}:${i}`}
+                  title=${[a.issue, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
+                  <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>
+                  <span class="nav-footer-sub-name">${a.detail}</span>
+                </li>`,
+              )}</ul>`
+            : null
+        }
+      </div>`;
+    })}
   </div>`;
 }
 
