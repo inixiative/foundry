@@ -8189,3 +8189,98 @@ a.thread-ref:hover {
   padding: 0 7px;
   cursor: pointer;
 }
+
+/* The rail's footer: this machine and its resources. */
+.nav-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.nav-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+.nav-footer-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.nav-footer-device {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-footer-link {
+  color: var(--text);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-footer-link:hover {
+  color: var(--accent);
+}
+.nav-footer-dim {
+  color: var(--text-dim);
+}
+.nav-footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-dimmer);
+}
+.nav-footer-dot.is-ok {
+  background: var(--ok);
+}
+.nav-footer-dot.is-warn {
+  background: var(--warn);
+}
+.nav-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 1px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.nav-footer-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-footer-count,
+.nav-footer-caret {
+  color: var(--text-dim);
+}
+.nav-footer-subs {
+  list-style: none;
+  margin: 2px 0 4px 12px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.nav-footer-subs li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
