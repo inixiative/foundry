@@ -107,11 +107,16 @@ body {
   transition: grid-template-columns 0.15s ease;
 }
 
-.panels.panels--board.panels--proj-open {
-  grid-template-columns: 260px 1fr 40px;
+/* The board is the list: no rail and no right panel (a card opens its thread). */
+.panels.panels--board,
+.panels.panels--board.panels--proj-open,
+.panels.panels--board.panels--proj-closed,
+.panels.panels--board.panels--detail-open {
+  grid-template-columns: 1fr;
 }
-.panels.panels--board.panels--proj-closed {
-  grid-template-columns: 32px 1fr 40px;
+.panels.panels--board > .panel-projects,
+.panels.panels--board > .panel-right {
+  display: none;
 }
 .panels--proj-open.panels--detail-open {
   grid-template-columns: 260px 1fr 360px;
@@ -7797,100 +7802,89 @@ a.thread-ref:hover {
 }
 
 /* ---- Thread header: four areas (left: the thread and who runs it; right: where it lives, how it runs) ---- */
-.thread-band--quad {
-  display: grid;
-  /* Left (the thread) gets 60%, right (where and how it runs) 40%; each shortens inside its own. */
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  grid-template-areas:
-    "tl tr"
-    "bl br"
-    "setup setup";
-  column-gap: 16px;
-  row-gap: 4px;
-  align-items: center;
-}
-.band-q {
+.thread-band--pills {
   display: flex;
-  flex-wrap: nowrap;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 6px;
+  min-width: 0;
+}
+.band-row {
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
-.thread-band--quad .band-q--tl {
-  flex-wrap: nowrap;
-}
-.band-q--tl,
-.band-q--tr,
-.band-q--br {
-  overflow: hidden;
-}
-.band-q--tl > :not(.context-bar-title) {
-  flex-shrink: 0;
-}
-.band-q--tl {
-  grid-area: tl;
-}
-.band-q--tr {
-  grid-area: tr;
-  justify-content: flex-end;
-}
-.band-q--bl {
-  grid-area: bl;
-}
-.band-q--br {
-  grid-area: br;
-  justify-content: flex-end;
-}
-.thread-band--quad .context-bar-setup {
-  grid-area: setup;
-}
-.band-q--tl .context-bar-title {
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+.band-row--top .context-bar-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 650;
 }
-.band-q--tr,
-.band-q--bl,
-.band-q--br {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-/* Where it lives: project · Kingdom · worktree · branch, dot-separated, the tail shortens first. */
-.band-where {
+.band-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-wrap: nowrap;
 }
-.band-where + .band-where::before {
-  content: "·";
-  margin-right: 8px;
-  color: var(--text-dimmer);
-}
-.band-where:first-child {
-  color: var(--text);
-}
-/* What gives way first when the right side is short: the worktree, then the branch. */
-.band-where--keep {
+.band-pills--right {
+  margin-left: auto;
   flex-shrink: 0;
-  max-width: 14em;
 }
-.band-where--first-to-go {
-  flex-shrink: 8;
+.band-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: hsl(var(--muted));
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
 }
-.band-more {
-  font-family: var(--mono);
+.band-pill .status-icon {
+  display: inline-flex;
+}
+.band-glyph {
   font-size: 11px;
+}
+.band-signet {
+  color: hsl(var(--app-quaternary));
+}
+.band-meter-bar {
+  display: inline-block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: hsl(var(--border));
+  overflow: hidden;
+}
+.band-meter-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-dim);
+}
+.band-mode {
   padding: 0 5px;
-  border-radius: 999px;
-  background: var(--surface2);
+}
+.thread-band--pills .context-bar-setup {
+  margin-top: 2px;
+}
+.thread-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 
-/* ---- Thread · /btw · Asides: tabs by default, side by side as columns ---- */
 .thread-views-bar {
   display: flex;
   align-items: center;
@@ -8109,4 +8103,89 @@ a.thread-ref:hover {
 }
 .about-facts a {
   color: var(--accent);
+}
+
+/* Folded deeper subagents: one line, indented like a child row. */
+.tree-more {
+  display: block;
+  margin: 0 0 2px 14px;
+  padding: 1px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.tree-more:hover {
+  color: var(--text);
+}
+
+/* The centre tabs, with the thread's views (/thread · /btw · /aside) at the row's right end. */
+.center-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.center-tab-row > .thread-views-bar {
+  margin-left: auto;
+}
+
+/* Thread rows: one line, never wrapping; the name gives way before the counts and actions. */
+.tree-node--line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  white-space: nowrap;
+}
+.tree-node--line > .tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-node--line > .row-count {
+  flex-shrink: 0;
+}
+.tree-node--line > .row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.tree-node--line .tree-caret {
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 0 3px;
+}
+
+/* The waiting stack keeps one height whichever card shows, so the transcript never jumps. */
+.prompt-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prompt-stack-card {
+  height: 132px;
+  overflow-y: auto;
+}
+.prompt-stack-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.prompt-stack-step {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 5px;
+  padding: 0 7px;
+  cursor: pointer;
 }

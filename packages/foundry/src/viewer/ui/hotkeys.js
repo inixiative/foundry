@@ -187,7 +187,7 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: actions.toggleRightPanel,
   });
-  for (const [i, key] of ['5', '6', '7', '8', '9', '0'].entries())
+  for (const [i, key] of ['5', '6', '7', '8', '9'].entries())
     bind(key, {
       description: `Right panel: ${actions.rightTabs[i]}`,
       category: 'panels',

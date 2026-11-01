@@ -24,7 +24,7 @@ function RailToggle() {
   const view = railView.value;
   return html`<div class="rail-toggle" role="tablist" aria-label="Left rail">
     ${[
-      ['active', 'Active'],
+      ['open', 'Open'],
       ['projects', 'Projects'],
     ].map(
       ([id, label]) => html`<button key=${id} role="tab" aria-selected=${view === id}
@@ -43,7 +43,7 @@ function Pane({ title, count, children, empty }) {
   </section>`;
 }
 
-function ActiveRail() {
+function OpenRail() {
   const roots = threadTree(allThreads.value.filter(OPEN));
   const yours = roots.filter((n) => !isShared(n));
   const shared = roots.filter(isShared);
@@ -64,6 +64,6 @@ export function NavRail() {
   if (!projectSidebarOpen.value) return html`<${ProjectSidebar} />`;
   return html`<div class="nav-rail">
     <${RailToggle} />
-    ${railView.value === 'active' ? html`<${ActiveRail} />` : html`<${ProjectSidebar} />`}
+    ${railView.value === 'open' ? html`<${OpenRail} />` : html`<${ProjectSidebar} />`}
   </div>`;
 }

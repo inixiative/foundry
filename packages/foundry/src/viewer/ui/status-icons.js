@@ -40,6 +40,10 @@ const CUTS = {
   dash: cut('M4.3 7h5.4', 1.9),
   pause: cut('M5.5 4.5v5M8.5 4.5v5', 1.9),
   box: cut('M3.2 5.3h7.6', 1.3) + cut('M5.8 8h2.4', 1.7),
+  // Permission modes (context, not status): an M for manual, a plan sheet, a bolt.
+  m: cut('M4.2 10V4.2L7 7.6l2.8-3.4V10', 1.6),
+  sheet: cut('M4.6 3.6h4.8M4.6 6h4.8M4.6 8.4h3', 1.4) + cut('M4.6 10.6h.01', 1.8),
+  bolt: `<path d="M7.9 2.6 4.4 7.6h2.4l-.7 3.8 3.5-5H7.2Z" fill="${KNOCK}"/>`,
 };
 
 /** The colour categories, most urgent first: that order decides which state a row shows. */
@@ -107,6 +111,30 @@ export const STATES = {
   paused: { cat: 'idle', cut: 'pause', label: 'Paused' },
   archived: { cat: 'archived', cut: 'box', label: 'Archived' },
 };
+
+/**
+ * The thread's permission mode, as the host runs it (Claude's ids; Codex maps onto them). Display
+ * only: access follows the host. Bypass is the one that's red.
+ */
+export const MODES = {
+  default: { cut: 'm', token: '--st-idle', label: 'Manual: asks before acting' },
+  plan: { cut: 'sheet', token: '--st-idle', label: 'Plan: plans before it edits' },
+  acceptEdits: { cut: 'bolt', token: '--st-idle', label: 'Auto: edits without asking' },
+  bypassPermissions: {
+    cut: 'bang',
+    token: '--st-problem',
+    label: 'Dangerous: every permission check is skipped',
+  },
+};
+
+/** The permission-mode glyph; nothing when the host hasn't said. */
+export function ModeIcon({ mode }) {
+  const m = MODES[mode];
+  if (!m) return null;
+  const svg = `<svg class="ic ic-mode" viewBox="0 0 14 14" aria-hidden="true"><path d="${TILE}" fill="var(${m.token})"/>${CUTS[m.cut]}</svg>`;
+  return html`<span class="status-icon mode-icon" role="img" aria-label=${m.label} title=${m.label}
+    data-mode=${mode} dangerouslySetInnerHTML=${{ __html: svg }}></span>`;
+}
 
 const tokenOf = (cat) => CATEGORIES.find((c) => c.id === cat)?.token ?? '--st-idle';
 

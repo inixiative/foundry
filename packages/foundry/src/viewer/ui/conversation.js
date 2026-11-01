@@ -11,7 +11,7 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
-import { HeldPromptCard } from './conversation-members.js';
+import { HeldPromptCard, useConversationView } from './conversation-members.js';
 import {
   browserStorageNotice,
   browserStorageSummary,
@@ -33,7 +33,7 @@ import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from '.
 import { LoopView } from './loop-view.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
-import { StatusIcon } from './status-icons.js';
+import { ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import {
   activePanel,
   activeThreadId,
@@ -68,7 +68,6 @@ import {
   harnessName,
   isUnnamed,
   nameSourceLabel,
-  ReferenceChips,
   threadName,
   threadPlace,
 } from './thread-labels.js';
@@ -225,18 +224,34 @@ export function ContextStats() {
   </section>`;
 }
 
+/** Kingdom's own words for what a member reads (ThreadsLensEditor). */
+const LENS_READS = {
+  own: 'Its own posts and what is sent to it',
+  thread: 'The whole thread: messages and answers, never tool calls',
+};
+
+const signetLine = (m) =>
+  [
+    m.displayName,
+    m.lens ? LENS_READS[m.lens.view] : null,
+    m.limits?.maxRequests ? `up to ${m.limits.maxRequests} requests` : null,
+    m.limits?.expiresAt ? `until ${new Date(m.limits.expiresAt).toLocaleDateString()}` : null,
+    m.listed ? null : 'no longer listed by Kingdom',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
 /**
- * The centre's header band, four areas:
- *   top-left     the thread: status, name, how many people are in it
- *   bottom-left  who runs the main thread ("Claude Code · your agent"; hover lists the thread's agents)
- *   top-right    where it lives: project · Kingdom (the owner, when the project runs on a Kingdom
- *                pool) · worktree · branch
- *   bottom-right how it runs: provider · model · effort, context fill, tokens
- * References, layers and usage detail live on the right panel's Context tab.
+ * The centre's header band, two rows of grouped pills (Aron, 2026-11-01):
+ *   row 1  the thread name                     | project · Kingdom · branch (worktree on hover)
+ *   row 2  status · your agents · people · Signets | provider · model · effort · context fill · mode
+ * What the thread is doing right now sits above the composer, not here. References, layers and
+ * token detail live on the right panel's Context tab.
  */
 function ContextBar() {
   const data = threadData.value;
   const usage = tokenUsage.value;
+  const [view] = useConversationView(data?.threadId, data?.conversation ?? null);
   if (!data) return null;
   const meta = data.meta || {};
   const title = threadName(data);
@@ -247,56 +262,74 @@ function ContextBar() {
   const owner = meta.projectId
     ? kingdomOwnerOf(settingsConfig.value, kingdomStatus.value, meta.projectId)
     : null;
-  const people = 1 + (data.conversation?.members ?? 0);
-  const agents = (data.agents || []).map((a) => a.agentId || a.id).filter(Boolean);
+  const members = view?.members ?? [];
+  const localAgents = members.filter((m) => m.member.kind === 'local');
+  const external = members.filter((m) => m.member.kind !== 'local');
+  const peopleCount = view ? external.length : (data.conversation?.members ?? 0);
+  const signets = external.filter((m) => m.member.kind === 'signet');
   const harness = harnessName(launch?.provider);
+  const agentNames = [
+    `${harness ?? 'Agent'} · your agent`,
+    ...localAgents.map((m) => m.displayName),
+  ];
+  const state = threadStatusOf(data.threadId, liveThreadStatus(messages.value));
   const contextWindow =
     contextWindowOf(launch?.provider, launch?.model) ?? usage?.contextWindow ?? null;
   const fill = contextWindow
     ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
     : null;
-  const used = threadUsage(usage, data.threadId);
   const named = launchLabels(launch?.provider, launch?.model);
   const runs = [named.provider, named.model, launch?.effort].filter(Boolean);
-  const where = [
-    project
-      ? { label: project.label, title: `Project: ${project.label}`, cls: 'band-where--keep' }
-      : { label: 'Global', title: 'No project', cls: 'band-where--keep' },
-    owner ? { label: owner, title: `Kingdom: ${owner}`, cls: 'band-where--keep' } : null,
-    place.worktreeShort
-      ? { label: place.worktreeShort, title: place.worktree, cls: 'band-where--first-to-go' }
-      : null,
-    place.branch
-      ? {
-          label: place.branch,
-          title: place.repository ? `branch of ${place.repository}` : 'branch',
-          cls: 'context-bar-chip--branch',
-        }
-      : null,
-  ].filter(Boolean);
 
   return html`
-    <div class="context-bar thread-band thread-band--quad">
-      <div class="band-q band-q--tl context-bar-head">
-        <${StatusIcon} state=${threadStatusOf(data.threadId, liveThreadStatus(messages.value))} />
+    <div class="context-bar thread-band thread-band--pills">
+      <div class="band-row band-row--top">
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
-        <span class="band-chip ${people > 1 ? 'band-chip--shared' : ''}" title=${people > 1 ? `You and ${people - 1} other${people > 2 ? 's' : ''}` : 'Only you'}>${people} ${people === 1 ? 'person' : 'people'}</span>
-      </div>
-      <div class="band-q band-q--tr" aria-label="Where it lives">
-        ${where.map((w) => html`<span class="band-fact band-where ${w.cls ?? ''}" title=${w.title}>${w.label}</span>`)}
-        <${ReferenceChips} meta=${meta} />
-      </div>
-      <div class="band-q band-q--bl">
-        <span class="band-fact band-agent" title=${agents.length ? `Agents in this thread: ${agents.join(', ')}` : 'The agent running this thread'}>
-          ${harness ?? 'Agent'} · your agent${agents.length > 1 ? html` <span class="band-more">+${agents.length - 1}</span>` : null}
+        <span class="band-pills band-pills--right" aria-label="Where it lives">
+          <span class="band-pill band-where--keep" title=${project ? `Project: ${project.label}` : 'No project'}>${project ? project.label : 'Global'}</span>
+          ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}
+          ${
+            place.branch
+              ? html`<span class="band-pill context-bar-chip--branch" title=${[place.repository ? `branch of ${place.repository}` : 'branch', place.worktree ? `worktree ${place.worktree}` : null].filter(Boolean).join(' · ')}>${place.branch}</span>`
+              : place.worktreeShort
+                ? html`<span class="band-pill" title=${place.worktree}>${place.worktreeShort}</span>`
+                : null
+          }
         </span>
       </div>
-      <div class="band-q band-q--br">
-        ${runs.length ? html`<span class="band-fact" title="Provider · model · effort">${runs.join(' · ')}</span>` : null}
-        ${fill !== null ? html`<span class="band-fact band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>ctx ${fill.toFixed(0)}%</span>` : null}
-        ${used ? html`<span class="band-fact" title="Tokens this thread used, cache included">${fmtNum(used.total)} tok</span>` : null}
+      <div class="band-row band-row--bottom">
+        <span class="band-pills">
+          <span class="band-pill band-status" data-state=${state}>
+            <${StatusIcon} state=${state} still=${true} />${STATES[state]?.label ?? state}
+          </span>
+          <span class="band-pill band-count" title=${`Your agents here: ${agentNames.join(', ')}`} aria-label=${`${agentNames.length} of your agents`}>
+            <span class="band-glyph" aria-hidden="true">🤖</span>${agentNames.length}
+          </span>
+          <span class="band-pill band-count ${peopleCount ? 'band-chip--shared' : ''}"
+            title=${peopleCount ? `Other parties here: ${external.map((m) => m.displayName).join(', ') || peopleCount}` : 'Only you'}
+            aria-label=${`${peopleCount} other ${peopleCount === 1 ? 'party' : 'parties'}`}>
+            <span class="band-glyph" aria-hidden="true">👤</span>${peopleCount}
+          </span>
+          ${
+            signets.length
+              ? html`<span class="band-pill band-signet" title=${`Signets in this thread (manage in Kingdom):\n${signets.map(signetLine).join('\n')}`}
+                  aria-label=${`${signets.length} Signet${signets.length === 1 ? '' : 's'}`}>Signet${signets.length > 1 ? html` ${signets.length}` : null}</span>`
+              : null
+          }
+        </span>
+        <span class="band-pills band-pills--right" aria-label="How it runs">
+          ${runs.length ? html`<span class="band-pill" title="Provider · model · effort">${runs.join(' · ')}</span>` : null}
+          ${
+            fill !== null
+              ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>
+                  <span class="band-meter-bar"><span style=${`width:${fill.toFixed(0)}%`}></span></span>${fill.toFixed(0)}%
+                </span>`
+              : null
+          }
+          ${launch?.permissionMode ? html`<span class="band-pill band-mode"><${ModeIcon} mode=${launch.permissionMode} /></span>` : null}
+        </span>
       </div>
       ${
         meta.setup?.status === 'starting'
@@ -311,6 +344,15 @@ function ContextBar() {
       }
     </div>
   `;
+}
+
+/** What the thread is doing right now, one line above the composer (moved out of the header). */
+function ThreadNowStrip() {
+  const list = messages.value;
+  const live = [...list].reverse().find((m) => m.actor !== 'user' && m.live);
+  const label = live ? liveWorkLabel(live) : null;
+  if (!label) return null;
+  return html`<div class="thread-now" role="status"><${StatusIcon} state=${threadStatusOf(threadData.value?.threadId, liveThreadStatus(list))} still=${true} />${label}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,13 +1104,28 @@ export function promptsForThread(pending, threadId) {
   return pending.filter((p) => p.threadId === threadId);
 }
 
+/**
+ * The open thread's waiting items as one stack above the composer: one card at a time, stepped
+ * with ‹ › (never folded away), in a fixed-height frame so the transcript doesn't jump.
+ */
 function PromptList({ threadId }) {
   const pending = promptsForThread(prompts.value, threadId);
+  const [index, setIndex] = useState(0);
   if (pending.length === 0) return null;
-
+  const at = Math.min(index, pending.length - 1);
+  const step = (d) => setIndex((at + d + pending.length) % pending.length);
   return html`
-    <div class="prompt-list">
-      ${pending.map((p) => html`<${PromptCard} key=${p.id} prompt=${p} />`)}
+    <div class="prompt-list prompt-stack" role="region" aria-label="Waiting on you">
+      ${
+        pending.length > 1
+          ? html`<div class="prompt-stack-nav">
+              <button type="button" class="prompt-stack-step" aria-label="Previous" onClick=${() => step(-1)}>‹</button>
+              <span class="prompt-stack-pos">${at + 1} of ${pending.length}</span>
+              <button type="button" class="prompt-stack-step" aria-label="Next" onClick=${() => step(1)}>›</button>
+            </div>`
+          : null
+      }
+      <div class="prompt-stack-card"><${PromptCard} key=${pending[at].id} prompt=${pending[at]} /></div>
     </div>
   `;
 }
@@ -1121,7 +1178,7 @@ const CENTER_TABS = [
 
 function CenterTabs() {
   const current = activePanel.value;
-  return html`<nav class="center-views band-tabs" role="tablist" aria-label="Center view">
+  return html`<div class="center-tab-row"><nav class="center-views band-tabs" role="tablist" aria-label="Center view">
     ${CENTER_TABS.map(
       ([id, label, key]) => html`<button key=${id} role="tab"
         class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
@@ -1130,7 +1187,9 @@ function CenterTabs() {
           activePanel.value = id;
         }}>${label}</button>`,
     )}
-  </nav>`;
+  </nav>
+  ${current === 'conversation' ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />` : null}
+  </div>`;
 }
 
 export function Conversation({ onTraceSelect, onLayerClick }) {
@@ -1199,8 +1258,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       }
       ${
         view === 'conversation'
-          ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />
-              <${AsidesSince} conversation=${threadData.value?.conversation} />`
+          ? html`<${AsidesSince} conversation=${threadData.value?.conversation} />`
           : null
       }
       <div class="thread-views ${openViews.value.length > 1 ? `thread-views--columns thread-views--${openViews.value.length}` : ''}" hidden=${view !== 'conversation'}>
@@ -1229,6 +1287,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       ${openViews.value.includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
       ${openViews.value.includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
       </div>
+      <${ThreadNowStrip} />
       <${PromptList} threadId=${threadId} />
       <${ChatInput} />
     </div>

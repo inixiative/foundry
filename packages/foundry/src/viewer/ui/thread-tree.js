@@ -171,8 +171,15 @@ function nodeState(node) {
   });
 }
 
+/** Subagents nest at most this many levels before they fold under "+N subagents". */
+const VISIBLE_DEPTH = 1;
+
+const descendants = (node) =>
+  (node.children || []).reduce((n, child) => n + 1 + descendants(child), 0);
+
 export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
-  const [expanded, setExpanded] = useState(!inactive);
+  // Two levels show (a thread and its subagents); deeper subagents fold until asked for.
+  const [expanded, setExpanded] = useState(!inactive && depth < VISIBLE_DEPTH);
   const isSelected = selectedId === thread.id;
   const children = thread.children || [];
   const activeChildren = children.filter(isActiveThread);
@@ -180,51 +187,53 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
   const hasChildren = children.length > 0;
 
   return html`
-    <div style="padding-left: ${depth * 12}px">
+    <div class="tree-level" style="padding-left: ${depth ? 8 : 0}px">
       <div
-        class="tree-node ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
+        class="tree-node tree-node--line ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
         onClick=${() => onSelect(thread.id)}
+        title=${`${thread.name} · ${projectLabel(thread.meta.projectId)}`}
       >
+        <${StatusIcon} state=${nodeState(thread)} />
+        <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
+          title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
         ${
-          hasChildren
-            ? html`
-          <span
-            class="tree-caret"
-            onClick=${(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-          >${expanded ? '▼' : '▶'}</span>
-        `
-            : html`<span class="tree-caret-spacer"></span>`
+          thread.conversation?.unread
+            ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
+            : null
         }
-        <span class="row-text" title=${thread.name}>
-          <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
-            title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
-          <span class="row-meta">
-            <${StatusIcon} state=${nodeState(thread)} />
-            <span class="row-project">${projectLabel(thread.meta.projectId)}</span>
-            ${
-              thread.conversation?.unread
-                ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
-                : null
-            }
-            ${
-              thread.conversation?.paused
-                ? html`<span class="row-count conversation-paused-badge" title="Conversation paused">paused</span>`
-                : null
-            }
-            ${(() => {
-              const count = (promptCounts.value || {})[thread.id] || 0;
-              return count > 0
-                ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
-                : null;
-            })()}
-          </span>
+        ${
+          thread.conversation?.paused
+            ? html`<span class="row-count conversation-paused-badge" title="Conversation paused">paused</span>`
+            : null
+        }
+        ${(() => {
+          const count = (promptCounts.value || {})[thread.id] || 0;
+          return count > 0
+            ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
+            : null;
+        })()}
+        <span class="row-actions">
+          ${
+            hasChildren
+              ? html`<span class="tree-caret" title=${expanded ? 'Fold subagents' : 'Show subagents'}
+                  onClick=${(e) => {
+                    e.stopPropagation();
+                    setExpanded(!expanded);
+                  }}>${expanded ? '▾' : '▸'}</span>`
+              : null
+          }
+          <${ThreadActions} thread=${thread} />
         </span>
-        <${ThreadActions} thread=${thread} />
       </div>
 
+      ${
+        !expanded && hasChildren && depth >= VISIBLE_DEPTH
+          ? html`<button class="tree-more" type="button" onClick=${(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}>+${descendants(thread)} subagent${descendants(thread) === 1 ? '' : 's'}</button>`
+          : null
+      }
       ${
         expanded && hasChildren
           ? html`
