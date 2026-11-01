@@ -153,6 +153,17 @@ test('the board: a pending approval is answered from its card, filters narrow it
     expect(await working.locator('.board-card').count()).toBe(1);
     await page.locator('.board-filter', { hasText: 'Everything' }).click();
 
+    // Quiet threads stay off the board until asked for; the toggle's count is the column's.
+    expect(await page.locator('.board-column--quiet').count()).toBe(0);
+    const toggle = page.locator('.board-quiet-toggle');
+    const counted = Number((await toggle.innerText()).match(/(\d+)$/)?.[1]);
+    await toggle.click();
+    const quiet = page.locator('.board-column--quiet');
+    await quiet.waitFor();
+    expect(await quiet.locator('.board-card').count()).toBe(counted);
+    await toggle.click();
+    expect(await page.locator('.board-column--quiet').count()).toBe(0);
+
     // One tap answers the prompt; the card leaves Needs you.
     await needs.locator('.board-card button', { hasText: 'Approve' }).click();
     expect((await answered).action).toBe('approve');
