@@ -95,6 +95,12 @@ export const rightTab = signal('context');
 export const railView = signal('active');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+
+/** The board is a workspace view: it toggles only there. */
+export function toggleBoard() {
+  if (route.peek().page !== 'workspace') return;
+  boardOpen.value = !boardOpen.value;
+}
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
 /** The model registry (GET /api/models), once read: providers and their models with context windows. */
@@ -1910,6 +1916,11 @@ export function init() {
     if (!allThreads.value.some((t) => t.threadId === id)) return;
     launchRequested = id;
     loadLaunch(id);
+  });
+
+  // Leaving the workspace leaves the board; Settings and Analytics have none.
+  effect(() => {
+    if (route.value.page !== 'workspace') boardOpen.value = false;
   });
 
   // Sync view state → URL hash on any change

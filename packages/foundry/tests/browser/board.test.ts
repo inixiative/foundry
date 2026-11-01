@@ -118,6 +118,23 @@ test('the board: a pending approval is answered from its card, filters narrow it
     // Back returns to the thread.
     await page.locator('.board .rp-back').click();
     await page.locator('.context-bar-title', { hasText: 'Rewrite the setup guide' }).waitFor();
+
+    // The board is a workspace view: Settings and Analytics have no Board button, `b` does nothing
+    // there, and leaving the workspace with the board open leaves the board. No Gloss button until a
+    // Gloss viewer exists.
+    expect(await page.locator('.gloss-launch').count()).toBe(0);
+    await page.keyboard.press('b');
+    await page.locator('.board').waitFor();
+    for (const name of ['Settings', 'Analytics']) {
+      await page.locator('.page-nav a', { hasText: name }).click();
+      await until(async () => (await page.locator('.board').count()) === 0, `${name}: no board`);
+      expect(await page.locator('.board-button').count()).toBe(0);
+      await page.keyboard.press('b');
+      expect(await page.locator('.board').count()).toBe(0);
+    }
+    await page.locator('.page-nav a', { hasText: 'Workspace' }).click();
+    await page.locator('.board-button').waitFor();
+    expect(await page.locator('.board').count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);
