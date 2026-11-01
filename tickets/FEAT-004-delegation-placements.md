@@ -20,7 +20,7 @@ So there are two things, not three placements:
 | **Subagent** | Work inside a thread's own session (Claude Agent/Task, Codex sub-agents, later `foundry_delegate`) | Nested under its thread, expanded on demand | Part of the thread's tree (`handoff` / `handoff-return` rows) |
 
 - **Aron, Archive:** "only the top level gets shown in the project archive… It'll show it has stuff underneath it." What's underneath is subagents. A spawned thread is its own top-level entry.
-- **Aron, depth:** threads can go arbitrarily deep; nesting is bookkeeping, "almost like a linked list". He also said "they're normally limited, right?", and earlier that day agreed to a fan-out limit. **Open:** whether there is an enforced limit, and its form (Oracle SUBAGENTS.md §9 Q5).
+- **Aron, depth:** threads can go arbitrarily deep; nesting is bookkeeping, "almost like a linked list". "Subagents are already normally limited" by the harness, so Foundry enforces no depth limit. Threads are flat (provenance only).
 - **Hidden work** (Aron's third kind, work he won't look in on) is a subagent, collapsed by default. **Proposed**, since this reading of his "there's only top-level" isn't confirmed.
 
 **The provenance link already exists:** `ThreadMeta.parentThreadId` and `ThreadSpawn` (`packages/core/src/thread.ts:53-65`, `via: 'foundry' | 'native-claude' | 'native-codex' | 'host-paseo' | 'host-t3'`, `toolCallId`, `handoffId`). `POST /api/threads` accepts `parentThreadId` (`viewer/routes/runtime.ts:738`). **Proposed:** for a top-level thread these fields mean provenance.
