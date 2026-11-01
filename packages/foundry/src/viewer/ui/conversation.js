@@ -31,6 +31,7 @@ import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
+import { Modal } from './modal.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
@@ -1004,8 +1005,25 @@ function PromptCard({ prompt }) {
   return html`<${ActionPromptCard} prompt=${prompt} />`;
 }
 
+/** A detail long enough to need its own window: a script, SQL, a long command. */
+const lineCount = (text) => String(text).split('\n').length;
+const isLong = (text) => lineCount(text) > 3 || String(text).length > 280;
+const previewOf = (text) => `${String(text).split('\n').slice(0, 3).join('\n')}\n…`;
+/** What an approval would run: the tool gate puts the tool's input on the prompt (a Bash command, a file's content). */
+function commandOf(prompt) {
+  const input = prompt.meta?.toolInput;
+  if (input && typeof input === 'object') {
+    for (const key of ['command', 'content', 'new_string', 'query', 'sql']) {
+      if (typeof input[key] === 'string' && input[key]) return input[key];
+    }
+  }
+  return prompt.detail ?? null;
+}
+
 function ActionPromptCard({ prompt }) {
+  const [full, setFull] = useState(false);
   const [input, setInput] = useState('');
+  const command = commandOf(prompt);
   const [resolving, setResolving] = useState(false);
 
   const urgencyClass =
@@ -1056,7 +1074,32 @@ function ActionPromptCard({ prompt }) {
           : null
       }
       <div class="prompt-card-message">${prompt.message}</div>
-      ${prompt.detail ? html`<div class="prompt-card-detail">${prompt.detail}</div>` : null}
+      ${
+        command
+          ? isLong(command)
+            ? html`<pre class="prompt-card-preview">${previewOf(command)}</pre>
+                <button type="button" class="prompt-full-link" onClick=${() => setFull(true)}>View full command · ${lineCount(command)} lines ▸</button>`
+            : html`<pre class="prompt-card-command">${command}</pre>`
+          : null
+      }
+      ${
+        full
+          ? html`<${Modal} title="Approve a command" onClose=${() => setFull(false)} class="command-modal">
+              <p class="command-modal-ask">${prompt.message}</p>
+              <pre class="command-modal-code">${command}</pre>
+              <div class="command-modal-actions">
+                <button class="prompt-btn prompt-btn-reject" disabled=${resolving} onClick=${async () => {
+                  await handleAction('reject');
+                  setFull(false);
+                }}>Reject</button>
+                <button class="prompt-btn prompt-btn-approve" disabled=${resolving} onClick=${async () => {
+                  await handleAction('approve');
+                  setFull(false);
+                }}>Approve</button>
+              </div>
+            <//>`
+          : null
+      }
 
       ${
         isInput

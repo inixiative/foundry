@@ -8656,3 +8656,59 @@ a.thread-ref:hover {
 .band-pop-row.is-primary i {
   color: hsl(var(--app-primary));
 }
+
+/* Large approvals: a 3-line preview in the stack; the whole command in its own window */
+.prompt-card-preview {
+  margin: 6px 0 0;
+  max-height: 64px;
+  overflow: hidden;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 12px / 1.5 var(--font-mono);
+  white-space: pre;
+}
+.prompt-full-link {
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: hsl(var(--app-primary));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.command-modal {
+  width: min(900px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+.command-modal-ask {
+  margin: 4px 16px 8px;
+}
+.command-modal-code {
+  margin: 0 16px;
+  flex: 1;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: 12.5px / 1.55 var(--font-mono);
+}
+.command-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 12px 16px 14px;
+}
+.prompt-card-command {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 12px / 1.5 var(--font-mono);
+  white-space: pre-wrap;
+}
