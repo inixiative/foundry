@@ -195,17 +195,6 @@ export interface FoundryConfig {
  * Provider/runtime is NOT a project concern — threads and agents choose that.
  * Projects just say "here's a directory" and optionally override agents/layers.
  */
-/**
- * Base identity prompts — composed into runtime-specific files (CLAUDE.md, .cursorrules, etc.).
- * All values are file paths relative to the project root.
- */
-export interface ProjectPrompts {
-  /** Shared base identity — all models/runtimes see this. File ref relative to project root. */
-  common: string;
-  /** Per-runtime additions (keyed by runtime ID: "claude", "cursor", "codex", "gemini"). */
-  overrides?: Record<string, string>;
-}
-
 export interface ProjectSettingsConfig {
   /** Opt-in maintenance; existing margins remain readable when disabled. */
   gloss?: { enabled: boolean; display: 'margin' | 'hover' | 'inline' };
@@ -225,12 +214,6 @@ export interface ProjectSettingsConfig {
   toolRules?: ToolRules;
   /** Project feedback settings: each field overrides the global one. */
   feedback?: FeedbackSettings;
-  /**
-   * Base identity prompts — composed into CLAUDE.md, .cursorrules, etc.
-   * This is the project's "front door" — the first thing any model reads.
-   * All values are file paths relative to project root.
-   */
-  prompts?: ProjectPrompts;
   /**
    * Project agents. Each is standalone (a full definition, replacing any global agent of the same id)
    * or `extends` a global agent. No entry: the global agent applies unchanged.

@@ -25,38 +25,17 @@ async function setup(answers: string[]) {
   return { cwd, code: await child.exited, output };
 }
 
-// Foundry name, provider (default), model (default), port, project name, description,
-// Claude/Cursor/Codex, Archive.
-const answers = (claude: string, cursor: string, codex: string) => [
-  'Scratch Foundry',
-  '',
-  '',
-  '4599',
-  'scratch',
-  'A scratch repo',
-  claude,
-  cursor,
-  codex,
-  'n',
-];
+// Foundry name, provider (default), model (default), port, Archive.
+const answers = ['Scratch Foundry', '', '', '4599', 'n'];
 
-test('piped answers each reach their question; answering no writes nothing for that runtime', async () => {
-  const { cwd, code, output } = await setup(answers('n', 'n', 'n'));
+test("piped answers each reach their question; the repo's own instruction files are never written", async () => {
+  const { cwd, code, output } = await setup(answers);
   expect(code).toBe(0);
   expect(readFileSync(join(cwd, '.env.local'), 'utf8')).toContain('VIEWER_PORT=4599');
-  expect(readFileSync(join(cwd, '.foundry/prompts/common.md'), 'utf8')).toContain('# scratch');
   expect(readFileSync(join(cwd, 'CLAUDE.md'), 'utf8')).toBe('# The repo’s own instructions\n');
-  expect(existsSync(join(cwd, '.cursorrules'))).toBe(false);
-  expect(existsSync(join(cwd, 'CODEX.md'))).toBe(false);
+  for (const file of ['.cursorrules', 'CODEX.md', 'AGENTS.md', '.foundry/prompts'])
+    expect(existsSync(join(cwd, file))).toBe(false);
   expect(output).not.toContain('Composed');
-});
-
-test('a chosen runtime is composed alone, and executors inherit the default model', async () => {
-  const { cwd, code } = await setup(answers('n', 'y', 'n'));
-  expect(code).toBe(0);
-  expect(existsSync(join(cwd, '.cursorrules'))).toBe(true);
-  expect(existsSync(join(cwd, 'CODEX.md'))).toBe(false);
-  expect(readFileSync(join(cwd, 'CLAUDE.md'), 'utf8')).toBe('# The repo’s own instructions\n');
   const settings = JSON.parse(readFileSync(join(cwd, '.foundry/settings.json'), 'utf8'));
   const executors = Object.values(settings.agents as Record<string, { kind: string }>).filter(
     (agent) => agent.kind === 'executor',
