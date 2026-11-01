@@ -90,10 +90,17 @@ export class ViewerThreadDirectory {
     } catch (error) {
       // Never leave a live thread disposed with nothing in its place: it comes back as it was.
       if (!live || !previous) throw error;
-      const restored = this.factory.create(id, previous);
-      Object.assign(restored.meta, previous);
-      if (project) project.replaceThread(restored);
-      if (!project || this.threads.has(id)) this.threads.set(id, restored);
+      try {
+        const restored = this.factory.create(id, previous);
+        Object.assign(restored.meta, previous);
+        if (project) project.replaceThread(restored);
+        if (!project || this.threads.has(id)) this.threads.set(id, restored);
+      } catch (restoring) {
+        throw Error(
+          `${(error as Error).message}; restoring the thread also failed: ${(restoring as Error).message}`,
+          { cause: error },
+        );
+      }
       throw error;
     }
     Object.assign(thread.meta, meta);

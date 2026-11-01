@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -15,7 +15,7 @@ import {
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../src/agents/project';
 import { createMainThread, ThreadFactory, WorkerRefusedError } from '../src/agents/thread-factory';
-import { LocalSessionStore, STAMP_WORKERS_SCRIPT } from '../src/persistence/local-session-store';
+import { LocalSessionStore, UNSTAMPED_RECORD } from '../src/persistence/local-session-store';
 import { InSessionWardens, inSessionThreadSetup } from '../src/providers/in-session-wardens';
 import {
   resolveSubscriptionPolicy,
@@ -377,7 +377,7 @@ test('the fixture is a valid saved configuration', () => {
   expect(config.projects.codex?.defaults?.provider).toBe('codex');
 });
 
-test('main keeps its stored worker; a stored main record without one stops startup with the stamping command', () => {
+test('main keeps its stored worker; a stored main record without one stops startup', () => {
   const dir = temporary('thread-worker-main-');
   const path = join(dir, 'sessions.sqlite');
   expect(LocalSessionStore.storedWorker(path, 'main')).toBeUndefined();
@@ -395,14 +395,18 @@ test('main keeps its stored worker; a stored main record without one stops start
   let store = new LocalSessionStore(path);
   store.saveThread(record());
   // A save never stamps an unstamped record: the live main on the current default would clobber it.
-  expect(() => store.saveThread(record('claude-code'))).toThrow(STAMP_WORKERS_SCRIPT);
+  expect(() => store.saveThread(record('claude-code'))).toThrow(UNSTAMPED_RECORD);
   store.close();
-  expect(() => LocalSessionStore.storedWorker(path, 'main')).toThrow(STAMP_WORKERS_SCRIPT);
+  expect(() => LocalSessionStore.storedWorker(path, 'main')).toThrow(UNSTAMPED_RECORD);
   rmSync(path, { force: true });
   store = new LocalSessionStore(path);
   store.saveThread(record('codex'));
   store.close();
+  // A journal closed cleanly leaves no -wal or -shm; startup still reads it.
+  for (const suffix of ['-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true });
   expect(LocalSessionStore.storedWorker(path, 'main')).toBe('codex');
+  // Reading never writes: no -wal appears.
+  expect(existsSync(`${path}-wal`) && statSync(`${path}-wal`).size > 0).toBe(false);
 });
 
 test('main on a worker it can no longer run on is refused, naming the main thread, its worker and the fix', () => {

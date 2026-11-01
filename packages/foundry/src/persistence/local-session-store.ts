@@ -183,12 +183,11 @@ function checksum(text: string): string {
 }
 class StaleKnowledge extends Error {}
 
-/** The stamping script for thread records written before FEAT-007 (a throwaway, run once). */
-export const STAMP_WORKERS_SCRIPT =
-  '/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/57d9d393-402f-4dca-919f-f5528c2155fe/scratchpad/stamp-workers.ts';
+/** A record from before FEAT-007 was stamped once by a throwaway script; a record without one now is a fault. */
+export const UNSTAMPED_RECORD = 'names no worker';
 
 const unstampedRecord = (threadId: string) =>
-  `Stored thread ${threadId} names no worker: stop Foundry and stamp its records with \`bun ${STAMP_WORKERS_SCRIPT} --foundry-dir <.foundry> --write\``;
+  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: every thread record carries the worker it runs on (FEAT-007); restore it from a backup or set its worker`;
 
 /** Local turn journal. A completed response and its artifact commit together. */
 export class LocalSessionStore {
@@ -1411,7 +1410,9 @@ export class LocalSessionStore {
    */
   static storedWorker(path: string, threadId: string): string | undefined {
     if (path === ':memory:' || !existsSync(path)) return undefined;
-    const db = new Database(path, { readonly: true });
+    // A WAL journal closed cleanly has no -shm, and a read-only open can't create one; query only.
+    const db = new Database(path, { readwrite: true, create: false });
+    db.exec('PRAGMA query_only = true');
     try {
       const table = db
         .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_threads'")
