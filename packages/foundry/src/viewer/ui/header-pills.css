@@ -1,0 +1,13 @@
+/* The thread header's agent and people pills (conversation.js ContextBar). */
+.band-pop[role="button"] {
+  cursor: pointer;
+}
+.band-pop-note {
+  display: block;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid hsl(var(--border));
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: normal;
+}

@@ -105,8 +105,11 @@ test('the thread header shows its name and grouped pills', async () => {
     expect(await agentsPop.innerText()).toMatch(/AGENT SESSIONS · 1[\s\S]*Opus 5\.5[\s\S]*primary/);
     await bottom.locator('.band-count').nth(1).hover();
     expect(await bottom.locator('.band-count').nth(1).locator('.band-popover').innerText()).toMatch(
-      /PEOPLE · 1[\s\S]*You[\s\S]*acting as/,
+      /PEOPLE · 1[\s\S]*You[\s\S]*acting as[\s\S]*trusted[\s\S]*Untrusted: everyone else/,
     );
+    // Either pill opens the right panel on Participants.
+    await bottom.locator('.band-count').nth(1).click();
+    await page.locator('.rp-tab.is-active', { hasText: 'Participants' }).waitFor();
     await bottom.locator('.band-pill', { hasText: 'high' }).first().waitFor();
     expect(await bottom.locator('.band-pills--right').innerText()).toMatch(/Opus 5\.5.*high/);
     // Nothing spills out of the band at 1280.
