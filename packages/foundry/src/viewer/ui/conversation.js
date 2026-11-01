@@ -320,7 +320,7 @@ function ContextBar() {
           }
         </span>
         <span class="band-pills band-pills--right" aria-label="How it runs">
-          ${runs.length ? html`<span class="band-pill" title="Provider · model · effort">${runs.join(' · ')}</span>` : null}
+          ${runs.length ? html`<span class="band-pill" title=${`Provider · model · effort${harness ? ` — runs through ${harness}` : ''}`}>${runs.join(' · ')}</span>` : null}
           ${
             fill !== null
               ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>

@@ -8284,3 +8284,59 @@ a.thread-ref:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.nav-footer-edit {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.nav-footer-edit:hover {
+  color: var(--text);
+}
+.nav-footer-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: hsl(var(--muted));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.vendor-add {
+  margin-top: 12px;
+}
+.vendor-add > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+/* Incoming on the board: one line until opened, so the columns start under the filters. */
+.board-incoming--line {
+  padding: 0;
+}
+.board-incoming-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.board-incoming--line .board-incoming-list {
+  margin-top: 8px;
+}

@@ -12,7 +12,15 @@
 import { capacityByProvider } from './capacity.js';
 import { html, useEffect, useState } from './lib.js';
 import { navigate, settingsPath } from './route.js';
-import { authFetch, kingdomStatus, loadKingdomStatus } from './store.js';
+import {
+  authFetch,
+  kingdomStatus,
+  loadKingdomStatus,
+  modelRegistryOnce,
+  showToast,
+  vendorName,
+} from './store.js';
+import { harnessName } from './thread-labels.js';
 
 const getJson = (url) =>
   authFetch(url)
@@ -22,29 +30,31 @@ const getJson = (url) =>
 /** Read once when the footer mounts; the footer is glanceable, not live. */
 function useMachine() {
   const [machine, setMachine] = useState({});
+  const rename = (profile) => setMachine((m) => ({ ...m, profile }));
   useEffect(() => {
     if (!kingdomStatus.value) loadKingdomStatus();
     let live = true;
     Promise.all([
-      getJson('/api/devices'),
+      getJson('/api/profile'),
       getJson('/api/tunnel'),
       getJson('/api/archives/status'),
       getJson('/api/archives/destinations'),
       getJson('/api/providers/accounts'),
-    ]).then(([devices, tunnel, archive, destinations, accounts]) => {
-      if (live) setMachine({ devices, tunnel, archive, destinations, accounts });
+      modelRegistryOnce(),
+    ]).then(([profile, tunnel, archive, destinations, accounts, registry]) => {
+      if (live) setMachine({ profile, tunnel, archive, destinations, accounts, registry });
     });
     return () => {
       live = false;
     };
   }, []);
-  return machine;
+  return { ...machine, rename };
 }
 
-function Capacity({ accounts }) {
+function Capacity({ accounts, registry }) {
   const [shown, setShown] = useState(false);
   const [open, setOpen] = useState(null);
-  const groups = capacityByProvider(accounts);
+  const groups = capacityByProvider(accounts, (provider) => vendorName(provider, registry));
   if (!groups.length) return null;
   const ready = groups.reduce((n, g) => n + g.ready, 0);
   const total = groups.reduce((n, g) => n + g.accounts.length, 0);
@@ -70,7 +80,10 @@ function Capacity({ accounts }) {
         ${
           open === g.provider
             ? html`<ul class="nav-footer-subs">${g.accounts.map(
-                (a, i) => html`<li key=${i} title=${a.issue ?? a.detail}>
+                (
+                  a,
+                  i,
+                ) => html`<li key=${i} title=${[a.issue ?? a.detail, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
                   <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>${a.detail}${a.uses?.length ? html` <span class="nav-footer-dim">· ${a.uses.join(', ')}</span>` : null}
                 </li>`,
               )}</ul>`
@@ -82,18 +95,49 @@ function Capacity({ accounts }) {
   </div>`;
 }
 
+/** This Foundry's name (Settings › Profile's "Foundry name"), editable in place. */
+function MachineName({ profile, onSaved }) {
+  const [draft, setDraft] = useState(null);
+  const name = profile?.installationName ?? 'This machine';
+  const save = async () => {
+    const next = draft?.trim();
+    if (!next || next === name) return setDraft(null);
+    try {
+      const res = await authFetch('/api/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installationName: next }),
+      });
+      if (!res.ok)
+        throw Error((await res.json().catch(() => ({}))).error || 'Could not save the name');
+      onSaved({ ...profile, installationName: next, custom: true });
+      setDraft(null);
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  };
+  if (draft !== null)
+    return html`<input class="nav-footer-name-input" aria-label="Foundry name" value=${draft}
+      onInput=${(e) => setDraft(e.target.value)}
+      onKeyDown=${(e) => {
+        if (e.key === 'Enter') save();
+        if (e.key === 'Escape') setDraft(null);
+      }} onBlur=${save} ref=${(el) => el?.focus()} />`;
+  return html`<span class="nav-footer-device" title="This Foundry's name">${name}</span>
+    <button type="button" class="nav-footer-edit" title="Rename this Foundry" onClick=${() => setDraft(name)}>Edit</button>`;
+}
+
 export function NavFooter() {
-  const { devices, tunnel, archive, destinations, accounts } = useMachine();
+  const { profile, tunnel, archive, destinations, accounts, registry, rename } = useMachine();
   const kingdoms = kingdomStatus.value?.integrations?.length ?? 0;
   const archives = (archive?.reachable ? 1 : 0) + (destinations?.libraries?.length ?? 0);
-  const deviceName = devices?.device?.name ?? 'This machine';
   const go = (section) => (e) => {
     e.preventDefault();
     navigate(settingsPath(null, section));
   };
   return html`<footer class="nav-footer">
     <div class="nav-footer-line">
-      <span class="nav-footer-device" title="This device">${deviceName}</span>
+      <${MachineName} profile=${profile} onSaved=${rename} />
       ${
         tunnel
           ? html`<a class="nav-footer-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
@@ -109,6 +153,6 @@ export function NavFooter() {
       <a class="nav-footer-link" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
         title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives ${archives}</a>
     </div>
-    <${Capacity} accounts=${accounts} />
+    <${Capacity} accounts=${accounts} registry=${registry} />
   </footer>`;
 }

@@ -31,6 +31,7 @@ import {
   showToast,
   threadData,
   threadLaunch,
+  vendorName,
 } from './store.js';
 import { harnessName, ReferenceChips } from './thread-labels.js';
 
@@ -52,7 +53,7 @@ function tabFacts(tab, threadId) {
   switch (tab) {
     case 'context':
       return {
-        info: [launch?.model, launch?.effort, harnessName(launch?.provider)]
+        info: [vendorName(launch?.provider), launch?.model, launch?.effort]
           .filter(Boolean)
           .join(' · '),
       };
@@ -117,8 +118,7 @@ function ContextTab() {
                 ${(launch.options?.efforts ?? []).map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
               </select>
             </dd>
-            <dt>Harness</dt><dd>${harnessName(launch.provider) ?? '—'}</dd>
-            <dt>Provider</dt><dd class="rp-mono">${launch.provider ?? '—'}</dd>
+            <dt>Provider</dt><dd title=${`Runs through ${harnessName(launch.provider) ?? launch.provider ?? '—'} (${launch.provider ?? '—'})`}>${vendorName(launch.provider) ?? '—'}</dd>
           </dl>
           <p class="rp-dim">A change applies on the thread’s next turn.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`

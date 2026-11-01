@@ -107,10 +107,22 @@ export function contextWindowOf(provider, model) {
   return entry?.models?.find((m) => m.id === model)?.contextWindow ?? null;
 }
 /** Display names for a provider and model from the registry; the raw ids until it has loaded. */
+/**
+ * The vendor a provider id belongs to, by its short name ("Anthropic", "OpenAI"): Claude Code and
+ * the Anthropic API are both Anthropic, Codex and the OpenAI API both OpenAI. The harness is detail.
+ */
+export function vendorName(provider, registry = modelRegistry.value) {
+  if (!provider) return null;
+  const vendor = registry?.vendors?.find((v) =>
+    Object.values(v.modes ?? {}).some((m) => m?.provider === provider),
+  );
+  return vendor ? vendor.label.replace(/\s*\(.*\)\s*$/, '') : provider;
+}
+
 export function launchLabels(provider, model) {
   const entry = modelRegistry.value?.providers?.find((p) => p.id === provider);
   return {
-    provider: entry?.label ?? provider ?? null,
+    provider: vendorName(provider) ?? entry?.label ?? null,
     model: entry?.models?.find((m) => m.id === model)?.label ?? model ?? null,
   };
 }
