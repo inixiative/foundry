@@ -3,7 +3,11 @@
  * @kind service
  * @partOf primitive:nativeSessions
  */
-import { type HarnessSession, nativeBindingMissing } from '@inixiative/agent-session';
+import {
+  type HarnessSession,
+  nativeBindingMissing,
+  type TaskLifecycle,
+} from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -123,6 +127,14 @@ interface ProviderInvocation {
   session?: HarnessSession;
 }
 
+/** A background task's lifecycle event, for the thread whose session runs it. */
+export type TaskSink = (
+  threadId: string,
+  task: TaskLifecycle,
+  at: number,
+  stop?: () => Promise<void>,
+) => void;
+
 export class SessionBackedProvider implements LLMProvider {
   readonly id: string;
   readonly nativeOwnership = 'required-prewrite' as const;
@@ -169,6 +181,18 @@ export class SessionBackedProvider implements LLMProvider {
     this._subagentSinks.add(sink);
     return () => {
       this._subagentSinks.delete(sink);
+    };
+  }
+  private _taskSinks = new Set<TaskSink>();
+
+  /**
+   * Observe the background tasks (shells, monitors) the executor's sessions run, for the thread they
+   * run under. `stop` asks the session that runs the task to stop it, when its runtime can.
+   */
+  observeTasks(sink: TaskSink): () => void {
+    this._taskSinks.add(sink);
+    return () => {
+      this._taskSinks.delete(sink);
     };
   }
   private _observerFailures = new WeakMap<NativeObservation, number>();
@@ -1132,6 +1156,21 @@ export class SessionBackedProvider implements LLMProvider {
           if (event.kind === 'thinking') {
             if (!requested.textOnly && event.admissionId && event.text)
               observations.get(event.admissionId)?.thought?.(event.text);
+            return;
+          }
+          // A background task belongs to no admission either: it goes to the task observers.
+          if (!requested.textOnly && event.kind === 'task' && event.task) {
+            const task = event.task;
+            const stop = session.stopTask
+              ? () => session.stopTask!(task.taskId, { timeoutMs: 5_000 })
+              : undefined;
+            for (const sink of this._taskSinks) {
+              try {
+                sink(threadId, task, event.timestamp, stop);
+              } catch {
+                /* an observer's failure never touches the session */
+              }
+            }
             return;
           }
           // A subagent's activity belongs to no admission (it can outlive the turn that spawned it):
