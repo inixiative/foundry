@@ -7466,3 +7466,91 @@ a.thread-ref:hover {
   color: var(--st-attention);
   font-size: 12px;
 }
+
+/* ---- Pages (Settings, Analytics, Feedback inbox): Kingdom panels and segmented tabs ---- */
+.settings-nav {
+  background: var(--bg);
+  border-right: none;
+  padding: 14px 10px 14px 14px;
+}
+.settings-scope {
+  border: none;
+  background: var(--surface2);
+  border-radius: 10px;
+}
+.settings-scope-tab {
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.settings-scope-tab.active {
+  background: var(--surface);
+  box-shadow: var(--frame-shadow);
+}
+.settings-section {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.settings-section.active {
+  background: hsl(var(--app-primary) / 0.1);
+  color: var(--text);
+}
+.settings-main {
+  margin: 10px 0;
+  background: var(--surface);
+  border-radius: 1rem;
+  box-shadow: var(--frame-shadow);
+}
+.settings-page-header {
+  font-family: var(--display);
+  letter-spacing: -0.02em;
+}
+.settings-card {
+  border: none;
+  border-radius: 0.75rem;
+  background: var(--surface2);
+  padding: 14px;
+}
+.settings-card-header {
+  color: var(--text);
+  font-family: var(--display);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.analytics-tabs {
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface2);
+  border-radius: 10px;
+}
+.analytics-tab {
+  font-size: 12.5px;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 12px;
+}
+.analytics-tab.active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--frame-shadow);
+  border: none;
+}
+.feedback-stages {
+  gap: 4px;
+  font-size: 11px;
+}
+.feedback-stage-step {
+  border: none;
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--surface2);
+}
+.feedback-stage-step.current {
+  background: hsl(var(--foreground) / 0.12);
+  color: var(--text);
+  border: none;
+}
+.feedback-stage-step[data-stage="recurred"].current {
+  background: var(--warn-dim);
+  color: var(--warn);
+}
