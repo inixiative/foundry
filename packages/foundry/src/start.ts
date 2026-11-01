@@ -924,6 +924,7 @@ const viewer = await startViewer({
   threadLaunch,
   // The executor's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: provider instanceof SessionBackedProvider ? [provider] : [],
+  taskSources: provider instanceof SessionBackedProvider ? [provider] : [],
   ...(inSession && provider instanceof SessionBackedProvider
     ? {
         threadSetup: {
