@@ -94,6 +94,16 @@ export const railView = signal('open');
 export const boardOpen = signal(false);
 /** What's typed in the open thread's message box: it goes with a waiting card's answer. */
 export const composerNote = signal('');
+/**
+ * What the next message is about (a Plan step or Loop item), set by its Comment button: the message box
+ * shows an About chip, the sent message starts "Re: <label>", and /feedback records it as the target.
+ */
+export const aboutTarget = signal(null); // { kind: 'plan-step' | 'loop-item', label, turnId? } | null
+
+export function commentOn(target) {
+  aboutTarget.value = target;
+  requestAnimationFrame(() => document.querySelector('textarea.chat-input')?.focus());
+}
 
 /** The board is a workspace view: it toggles only there. */
 export function toggleBoard() {
@@ -307,7 +317,7 @@ export function selectScope(scope) {
 }
 
 /** `/feedback <text>`: record feedback on a thread (its last turn unless one is named). Never a turn. */
-export async function giveFeedback(threadId, text, { turnId, messageId } = {}) {
+export async function giveFeedback(threadId, text, { turnId, messageId, about } = {}) {
   if (!threadId) {
     showToast('Open a thread to give feedback on it', 'warn');
     return false;
@@ -321,6 +331,7 @@ export async function giveFeedback(threadId, text, { turnId, messageId } = {}) {
         surface: 'viewer',
         ...(turnId ? { turnId } : {}),
         ...(messageId ? { messageId } : {}),
+        ...(about ? { about: { kind: about.kind, label: about.label } } : {}),
       }),
     });
     const body = await res.json().catch(() => ({}));
@@ -1495,6 +1506,7 @@ export async function loadLaunch(threadId) {
 
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
+  aboutTarget.value = null;
   const prev = activeThreadId.value;
   if (prev === threadId) return;
 

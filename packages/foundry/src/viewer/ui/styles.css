@@ -8783,3 +8783,60 @@ a.thread-ref:hover {
   font-size: 12px;
   color: hsl(var(--app-primary));
 }
+.about-row {
+  padding: 0 0 6px;
+}
+.about-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  background: hsl(var(--app-primary) / 0.14);
+  border: 1px solid hsl(var(--app-primary) / 0.45);
+}
+.about-chip button {
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+}
+.comment-btn {
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  opacity: 0;
+}
+.plan-step-row:hover .comment-btn,
+.rp-pointer-head:hover .comment-btn,
+.comment-btn:focus-visible {
+  opacity: 1;
+}
+.comment-btn:hover {
+  color: hsl(var(--app-primary));
+}
+.re-link {
+  display: block;
+  margin-bottom: 4px;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: hsl(var(--app-primary));
+  cursor: pointer;
+}
+.plan-step-row {
+  grid-template-columns: 16px auto 1fr auto auto;
+}

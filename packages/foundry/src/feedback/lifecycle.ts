@@ -5,6 +5,7 @@
  */
 import type { StoredPhase } from '../persistence/local-session-store';
 import {
+  type FeedbackAbout,
   type FeedbackApplyRecord,
   type FeedbackCaptureRecord,
   type FeedbackCategory,
@@ -52,6 +53,7 @@ export interface FeedbackItem {
   tags: string[];
   author?: { name: string; surface: string };
   messageId?: string;
+  about?: FeedbackAbout;
   inbox: FeedbackInbox;
   quote: string;
   before: string;
@@ -123,6 +125,7 @@ export class FeedbackLifecycle {
         tags: [...record.tags],
         ...(record.author ? { author: record.author } : {}),
         ...(record.messageId ? { messageId: record.messageId } : {}),
+        ...(record.about ? { about: record.about } : {}),
         inbox: 'open',
         quote: record.quote,
         before: record.before,

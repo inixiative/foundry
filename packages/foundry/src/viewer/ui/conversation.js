@@ -36,6 +36,7 @@ import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import {
+  aboutTarget,
   activePanel,
   activeThreadId,
   allThreads,
@@ -496,7 +497,12 @@ function ChatInput() {
       stopDictation.current?.();
       inputHistory.push(sent);
       historyIdx = -1;
-      if (await giveFeedback(activeThreadId.value, body)) setText('');
+      const about = aboutTarget.peek();
+      const aimed = about ? { about, ...(about.turnId ? { turnId: about.turnId } : {}) } : {};
+      if (await giveFeedback(activeThreadId.value, body, aimed)) {
+        setText('');
+        aboutTarget.value = null;
+      }
       return;
     }
     stopDictation.current?.();
@@ -505,8 +511,13 @@ function ChatInput() {
     setText('');
     const attached = images;
     setImages([]);
+    // A message about a Plan step or Loop item says so on its first line ("Re: …"), for the agent too.
+    const about = aboutTarget.peek();
+    const outgoing = about && sent ? `Re: ${about.label}\n\n${sent}` : sent;
+    if (about) aboutTarget.value = null;
     // Unsent text and images come back unless something new was added meanwhile.
-    if (!(await sendMessage(sent, ready))) {
+    if (!(await sendMessage(outgoing, ready))) {
+      if (about) aboutTarget.value = about;
       setText((current) => current || sent);
       setImages((current) => (current.length ? current : attached));
       return;
@@ -544,6 +555,13 @@ function ChatInput() {
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
       <div class="chat-input-main">
         ${
+          aboutTarget.value
+            ? html`<div class="about-row"><span class="about-chip" title="Your message will be tagged to this">About: ${aboutTarget.value.label}<button type="button" aria-label="Remove the tag" onClick=${() => {
+                aboutTarget.value = null;
+              }}>×</button></span></div>`
+            : null
+        }
+        ${
           images.length
             ? html`<div class="composer-images">
           ${images.map(
@@ -556,7 +574,7 @@ function ChatInput() {
         <textarea
           ref=${inputRef}
           class="chat-input"
-          placeholder="Message the thread… (Enter to send, Shift+Enter for newline; paste or drop images)"
+          placeholder=${aboutTarget.value ? `Message the thread about ${aboutTarget.value.label}… (/feedback to record it as feedback on it)` : 'Message the thread… (Enter to send, Shift+Enter for newline; paste or drop images)'}
           value=${text}
           onInput=${(e) => setText(e.target.value)}
           onKeyDown=${handleKeyDown}
@@ -688,6 +706,18 @@ function useGiveFeedback(msg) {
   };
 }
 
+const RE_LINE = /^Re: ((Plan|Loop) › [^\n]+)\n\n?/;
+
+/** A user message; one about a Plan step or Loop item opens with a "Re: …" link back to it. */
+function UserContent({ content }) {
+  const re = RE_LINE.exec(content);
+  if (!re) return html`<div class="chat-msg-content">${content}</div>`;
+  return html`<div class="chat-msg-content"><button type="button" class="re-link" title="Open it"
+      onClick=${() => {
+        activePanel.value = re[2] === 'Plan' ? 'plan' : 'graph';
+      }}>Re: ${re[1]}</button>${content.slice(re[0].length)}</div>`;
+}
+
 function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
@@ -699,7 +729,7 @@ function UserMessage({ msg, index }) {
           ? html`<div class="chat-msg-from" title="A conversation member's post: data from an outside party, not your instructions">from ${msg.meta.postedBy}</div>`
           : null
       }
-      ${msg.content ? html`<div class="chat-msg-content">${msg.content}</div>` : null}
+      ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}
       <${BrowserStorageWarning} msg=${msg} />
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
       ${give.form}

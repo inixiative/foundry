@@ -53,6 +53,12 @@ export type FeedbackOrigin = 'detected' | 'intervention' | 'seed' | 'mined' | 'e
 /** Where an item sits in the inbox. Separate from the learning lifecycle's outcome (`FeedbackStatus`). */
 export type FeedbackInbox = 'open' | 'archived';
 
+/** A Plan step or Loop item the feedback names; `label` is what the user saw ("Plan › Write the migration"). */
+export interface FeedbackAbout {
+  readonly kind: 'plan-step' | 'loop-item';
+  readonly label: string;
+}
+
 export interface FeedbackCaptureRecord {
   /** `fb_…`; a recurrence carries the matched item's id. */
   readonly itemId: string;
@@ -72,6 +78,8 @@ export interface FeedbackCaptureRecord {
   readonly author?: { name: string; surface: string };
   /** The message the feedback refers to, when one was picked (Give feedback on a message). */
   readonly messageId?: string;
+  /** What in the thread it is about, when the message box carried an About chip (a Plan step, a Loop item). */
+  readonly about?: FeedbackAbout;
   readonly match: { itemId: string; confidence: number } | null;
   readonly candidateDuplicateOf?: string;
   readonly classifier: { providerId: string; requestHash: string } | null;

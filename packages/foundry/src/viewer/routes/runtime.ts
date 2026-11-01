@@ -13,6 +13,7 @@ import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { type FeedbackService, localOperator } from '../../feedback/service';
+import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
@@ -420,6 +421,16 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       return c.json({ error: 'turnId must be a string' }, 400);
     if (body.messageId !== undefined && typeof body.messageId !== 'string')
       return c.json({ error: 'messageId must be a string' }, 400);
+    const about = body.about as { kind?: unknown; label?: unknown } | undefined;
+    if (
+      about !== undefined &&
+      (typeof about !== 'object' ||
+        about === null ||
+        (about.kind !== 'plan-step' && about.kind !== 'loop-item') ||
+        typeof about.label !== 'string' ||
+        !about.label.trim())
+    )
+      return c.json({ error: "about must be { kind: 'plan-step' | 'loop-item', label }" }, 400);
     if (
       body.tags !== undefined &&
       (!Array.isArray(body.tags) || body.tags.some((tag) => typeof tag !== 'string'))
@@ -430,6 +441,9 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
         text: body.text,
         ...(body.turnId !== undefined ? { turnId: body.turnId as string | null } : {}),
         ...(typeof body.messageId === 'string' ? { messageId: body.messageId } : {}),
+        ...(about
+          ? { about: { kind: about.kind as FeedbackAbout['kind'], label: about.label as string } }
+          : {}),
         ...(Array.isArray(body.tags) ? { tags: body.tags as string[] } : {}),
         author: {
           name: localOperator(),
