@@ -80,8 +80,8 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     await page.goto(`http://127.0.0.1:${server.port}/#project=p0`);
 
     const column = page.locator('.panel-projects');
-    // Pinned group first, then the projects, then the selected project's threads.
-    const pinned = column.locator('.nav-pinned .proj-item');
+    // The pinned scopes open the Projects list, above a divider and the projects; threads come below.
+    const pinned = column.locator('.proj-list .nav-pinned .proj-item');
     expect(await pinned.allInnerTexts()).toEqual([
       expect.stringContaining('Global'),
       expect.stringContaining('Forge Master'),
@@ -94,9 +94,12 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
       'Refund webhook',
     ]);
     const order = await page.evaluate(() =>
-      ['.nav-pinned', '.nav-projects', '.nav-threads'].map(
-        (sel) => document.querySelector(sel)!.getBoundingClientRect().top,
-      ),
+      [
+        '.proj-list .nav-pinned',
+        '.proj-list .proj-list-divider',
+        '.proj-list > .proj-item:not(.proj-global)',
+        '.nav-threads',
+      ].map((sel) => document.querySelector(sel)!.getBoundingClientRect().top),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
 
@@ -119,9 +122,10 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     expect(split).toBeLessThan(0.65);
     expect(await column.locator('.proj-sidebar-count').innerText()).toBe('30');
 
-    // Collapsing the project list keeps its count and hands the space to the threads.
+    // Collapsing the project list keeps its count and the pinned scopes, and hands the space to the threads.
     await column.getByRole('button', { name: /PROJECTS/ }).click();
-    expect(await column.locator('.proj-list').count()).toBe(0);
+    expect(await column.locator('.proj-list > .proj-item:not(.proj-global)').count()).toBe(0);
+    expect(await column.locator('.proj-list .nav-pinned .proj-item').count()).toBe(3);
     expect(await column.locator('.proj-sidebar-count').innerText()).toBe('30');
     await column.getByRole('button', { name: /PROJECTS/ }).click();
 

@@ -37,6 +37,7 @@ import {
   executeAction,
   feedbackInboxOpen,
   forgeMasterOpen,
+  incoming,
   init,
   inspectLayer,
   inspectTarget,
@@ -107,6 +108,16 @@ function BoardButton() {
     }}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
 }
 
+/** Requests to join waiting in Kingdom: a separate mark from the board count, since none is accepted yet. */
+function IncomingIndicator() {
+  const count = incoming.value.length;
+  if (!count) return null;
+  return html`<button class="incoming-indicator" title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
+    onClick=${() => {
+      boardOpen.value = true;
+    }}>Incoming <span class="incoming-indicator-count">${count}</span></button>`;
+}
+
 function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
@@ -119,7 +130,7 @@ function Header() {
       </div>
       <${HeaderScope} />
       <div class="header-right">
-        ${route.value.page === 'workspace' ? html`<${BoardButton} />` : null}
+        ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>

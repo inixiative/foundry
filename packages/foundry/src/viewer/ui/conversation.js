@@ -995,9 +995,18 @@ function ActionPromptCard({ prompt }) {
   `;
 }
 
-function PromptList() {
-  const pending = prompts.value;
-  if (!pending || pending.length === 0) return null;
+/**
+ * The open thread's pending prompts only. Other threads' prompts are reached from the Board and
+ * their row counts, so an Approve here can only ever act on the thread being read.
+ */
+export function promptsForThread(pending, threadId) {
+  if (!threadId || !Array.isArray(pending)) return [];
+  return pending.filter((p) => p.threadId === threadId);
+}
+
+function PromptList({ threadId }) {
+  const pending = promptsForThread(prompts.value, threadId);
+  if (pending.length === 0) return null;
 
   return html`
     <div class="prompt-list">
@@ -1152,7 +1161,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
                   onTraceClick=${handleTraceClick} />`,
         )}
       </div>
-      <${PromptList} />
+      <${PromptList} threadId=${threadId} />
       <${ChatInput} />
     </div>
   `;
