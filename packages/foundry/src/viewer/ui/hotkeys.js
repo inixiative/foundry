@@ -15,6 +15,7 @@ import {
   commandPaletteOpen,
   createThread,
   helpOpen,
+  openSearch,
 } from './store.js';
 
 // ---------------------------------------------------------------------------
@@ -103,14 +104,6 @@ function tabStops() {
   const boxes = [...document.querySelectorAll('textarea.chat-input')].filter(visible);
   const stack = [...document.querySelectorAll('.prompt-stack')].filter(visible);
   return boxes.concat(stack);
-}
-
-function focusMessageBox() {
-  const box = tabStops().find((el) => el.tagName === 'TEXTAREA');
-  if (!box) return false;
-  box.focus();
-  box.setSelectionRange(box.value.length, box.value.length);
-  return true;
 }
 
 function cycleTab(from, back) {
@@ -287,9 +280,10 @@ export function initHotkeys() {
       return;
     }
 
-    // / comes back to the message box.
-    if (e.key === '/' && !e.metaKey && !e.ctrlKey && focusMessageBox()) {
+    // / opens Search (typed into an empty message box, it opens the action palette instead).
+    if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
+      openSearch();
       return;
     }
 

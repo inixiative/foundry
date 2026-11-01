@@ -24,7 +24,7 @@ import {
 import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
-import { route } from './route.js';
+import { navigate, route } from './route.js';
 import { threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,8 @@ export const actionPaletteOpen = signal(false);
 export const composerFill = signal(null);
 /** The Watchtower fills the centre (key h); the board and it are never both open. */
 export const watchtowerOpen = signal(false);
+/** Search: a workspace view over threads, messages, docs and Atlas, PRs and tickets, people and feedback. */
+export const searchOpen = signal(false);
 /** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
 export const projectHomeOpen = signal(false);
 /** Which project page is open: its home, or its Knowledge and chorus page. */
@@ -113,6 +115,7 @@ export function openProjectBoard(projectId) {
     boardFilter.value = `project:${projectId}`;
     projectHomeOpen.value = false;
     watchtowerOpen.value = false;
+    searchOpen.value = false;
     boardOpen.value = true;
   });
 }
@@ -129,6 +132,7 @@ export function openProjectHome(projectId) {
     selectScope(projectId);
     boardOpen.value = false;
     watchtowerOpen.value = false;
+    searchOpen.value = false;
     incomingOpenId.value = null;
     projectPage.value = 'home';
     projectHomeOpen.value = true;
@@ -170,13 +174,27 @@ export function commentOn(target) {
 export function toggleBoard() {
   if (route.peek().page !== 'workspace') return;
   watchtowerOpen.value = false;
+  searchOpen.value = false;
   boardOpen.value = !boardOpen.value;
 }
 
 export function toggleWatchtower() {
   if (route.peek().page !== 'workspace') return;
   boardOpen.value = false;
+  searchOpen.value = false;
   watchtowerOpen.value = !watchtowerOpen.value;
+}
+
+/** Open Search (from the top bar or /), on the workspace. */
+export function openSearch() {
+  if (route.peek().page !== 'workspace') navigate('/');
+  batch(() => {
+    boardOpen.value = false;
+    watchtowerOpen.value = false;
+    projectHomeOpen.value = false;
+    incomingOpenId.value = null;
+    searchOpen.value = true;
+  });
 }
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
@@ -1602,6 +1620,7 @@ export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   closeTurnView();
   watchtowerOpen.value = false;
+  searchOpen.value = false;
   aboutTarget.value = null;
   incomingOpenId.value = null;
   projectHomeOpen.value = false;
@@ -2052,6 +2071,7 @@ function writeHash() {
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
   else if (watchtowerOpen.value) params.set('view', 'watch');
+  else if (searchOpen.value) params.set('view', 'search');
   if (projectHomeOpen.value && !boardOpen.value)
     params.set('home', projectPage.value === 'knowledge' ? 'knowledge' : '1');
   const hash = params.toString();
@@ -2097,6 +2117,7 @@ function restoreFromHash() {
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';
+  searchOpen.value = h.view === 'search';
   projectHomeOpen.value = h.home === '1' || h.home === 'knowledge';
   projectPage.value = h.home === 'knowledge' ? 'knowledge' : 'home';
   // A link to a project (and no rail named) opens the Projects rail on it.
@@ -2145,6 +2166,7 @@ export function init() {
     if (route.value.page !== 'workspace') {
       boardOpen.value = false;
       watchtowerOpen.value = false;
+      searchOpen.value = false;
     }
   });
 
@@ -2165,6 +2187,7 @@ export function init() {
     rightTab.value;
     railView.value;
     boardOpen.value;
+    searchOpen.value;
     projectHomeOpen.value;
     projectPage.value;
     writeHash();
