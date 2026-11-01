@@ -78,9 +78,8 @@ import {
   BtwView,
   ChannelPicker,
   composerChannel,
-  sideBySide,
-  ThreadViewTabs,
-  threadView,
+  openViews,
+  ThreadViewSegments,
 } from './thread-views.js';
 import {
   dictationSupported,
@@ -1200,12 +1199,12 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       }
       ${
         view === 'conversation'
-          ? html`<${ThreadViewTabs} conversation=${threadData.value?.conversation} />
+          ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />
               <${AsidesSince} conversation=${threadData.value?.conversation} />`
           : null
       }
-      <div class="thread-views ${sideBySide.value ? 'thread-views--columns' : ''}" hidden=${view !== 'conversation'}>
-      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!sideBySide.value && threadView.value !== 'thread'}>
+      <div class="thread-views ${openViews.value.length > 1 ? `thread-views--columns thread-views--${openViews.value.length}` : ''}" hidden=${view !== 'conversation'}>
+      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!openViews.value.includes('thread')}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />
         ${
@@ -1227,8 +1226,8 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
                   onTraceClick=${handleTraceClick} />`,
         )}
       </div>
-      ${sideBySide.value || threadView.value === 'btw' ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
-      ${sideBySide.value || threadView.value === 'asides' ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
+      ${openViews.value.includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
+      ${openViews.value.includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
       </div>
       <${PromptList} threadId=${threadId} />
       <${ChatInput} />

@@ -24,9 +24,9 @@ const { chromium } = createRequire(import.meta.url)(
 );
 
 // The Thread tab has three views: the thread, /btw (you and your agent) and asides (people only).
-// Tabs by default; "Side by side" shows them as columns and is remembered in the browser. The
+// One /thread · /btw · /aside control; two or more on sit side by side, remembered in the browser. The
 // composer says where it sends; until asides land, /btw and Aside send nothing and keep the text.
-test('Thread, /btw and Asides: tabs, side by side, and a composer that says where it sends', async () => {
+test('/thread, /btw and /aside: one control, side by side, and a composer that says where it sends', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-views-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -80,21 +80,25 @@ test('Thread, /btw and Asides: tabs, side by side, and a composer that says wher
     await page.goto(url);
     await page.locator('.context-bar-title', { hasText: 'Checkout errors since 2:02' }).waitFor();
 
-    // Tabs: one view at a time.
-    await page.locator('.thread-view-tab', { hasText: '/btw' }).click();
+    // One control, /thread · /btw · /aside: each segment shows or hides its view.
+    const seg = (name: string) => page.locator('.thread-segment', { hasText: name });
+    expect(await seg('/thread').getAttribute('aria-pressed')).toBe('true');
+    await seg('/btw').click();
     await page.locator('.side-view--btw').waitFor();
-    expect(await page.locator('.chat-messages').isHidden()).toBe(true);
-    await page.locator('.thread-view-tab', { hasText: 'Asides' }).click();
-    await page.locator('.side-view--asides').waitFor();
-    await page.locator('.thread-view-tab', { hasText: 'Thread' }).click();
-    await page.locator('.chat-messages').waitFor();
-
-    // Side by side: all three as columns, remembered across a reload.
-    await page.locator('.thread-views-side .switch').click();
-    expect(await page.locator('.thread-views--columns > *').count()).toBe(3);
+    expect(await page.locator('.thread-views--2 > *').count()).toBe(2);
+    await seg('/aside').click();
+    expect(await page.locator('.thread-views--3 > *').count()).toBe(3);
+    // Turning everything off leaves the thread.
+    await seg('/thread').click();
+    await seg('/btw').click();
+    await seg('/aside').click();
+    expect(await seg('/thread').getAttribute('aria-pressed')).toBe('true');
+    expect(await page.locator('.chat-messages').isVisible()).toBe(true);
+    // What's on is remembered across a reload.
+    await seg('/btw').click();
     await page.reload();
-    await page.locator('.thread-views--columns').waitFor();
-    expect(await page.locator('.thread-views--columns > *').count()).toBe(3);
+    await page.locator('.thread-views--2').waitFor();
+    expect(await seg('/btw').getAttribute('aria-pressed')).toBe('true');
 
     // The composer: Aside needs another person; /btw says who reads it and sends nothing yet.
     expect(await page.locator('.channel-tab', { hasText: 'Aside' }).isDisabled()).toBe(true);

@@ -6968,10 +6968,15 @@ a.thread-ref:hover {
   border-radius: 8px;
   padding: 4px 12px;
 }
+.band-tabs .center-view {
+  background: transparent;
+  color: var(--text-dim);
+}
+/* On is a solid accent fill with contrasting text; off is plain text. Several can be on at once. */
 .band-tabs .center-view--active {
-  background: var(--surface);
-  box-shadow: var(--frame-shadow);
-  color: var(--text);
+  background: hsl(var(--app-primary));
+  color: hsl(var(--app-primary-foreground));
+  font-weight: 600;
 }
 .center-frame {
   flex: 1;
@@ -7893,30 +7898,6 @@ a.thread-ref:hover {
   gap: 12px;
   padding: 0 4px 6px;
 }
-.thread-views-tabs {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 10px;
-  background: var(--surface2);
-}
-.thread-view-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.thread-view-tab.is-active {
-  background: var(--surface);
-  color: var(--text);
-}
 .thread-view-unread {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -7924,17 +7905,6 @@ a.thread-ref:hover {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
-}
-.thread-views-label {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.thread-views-side {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-dim);
 }
 .thread-views {
   flex: 1;
@@ -7951,8 +7921,20 @@ a.thread-ref:hover {
 }
 .thread-views--columns {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+}
+.thread-views--2 {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+.thread-views--3 {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+/* The /thread · /btw · /aside control is the centre's switcher (band-tabs); its segments toggle. */
+.thread-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
 }
 .side-view {
   overflow-y: auto;
@@ -8074,4 +8056,10 @@ a.thread-ref:hover {
 .chat-input-main:has(.channel-picker--aside) .chat-input {
   border-style: dashed;
   border-color: hsl(var(--app-tertiary) / 0.7);
+}
+/* A key cap inside a switcher segment keeps its neutral look when the segment is filled. */
+.band-tabs .center-view--active kbd {
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-weight: 400;
 }

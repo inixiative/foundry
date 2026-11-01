@@ -8,46 +8,50 @@
  *   Thread  the log everyone in it reads
  *   /btw    you and your own agent, privately; it never enters the thread
  *   Asides  people only, every other human in the thread, never an agent; one action promotes one
- * Tabs by default; "Side by side" shows all three as columns. The setting is remembered in this
- * browser, as dev mode and read-aloud are. The composer always says which room it sends to.
+ * One grouped control, `/thread · /btw · /aside`: each segment shows or hides its view, and two or
+ * more on sit side by side. Remembered in this browser, as dev mode and read-aloud are. The composer
+ * always says which room it sends to.
  *
  * Asides and /btw records arrive with the shared-thread data (inixiative-da's slice 2b); until the
  * conversation view carries them, those views say so in one line.
  */
 
 import { html, signal } from './lib.js';
-import { Switch } from './switch.js';
 
-const SIDE_BY_SIDE = 'foundry.thread.sideBySide';
+const OPEN_VIEWS = 'foundry.thread.views';
+const VIEW_IDS = ['thread', 'btw', 'asides'];
 
-const readFlag = (key) => {
+const readViews = () => {
   try {
-    return localStorage.getItem(key) === '1';
+    const saved = JSON.parse(localStorage.getItem(OPEN_VIEWS) ?? '[]');
+    const views = VIEW_IDS.filter((id) => Array.isArray(saved) && saved.includes(id));
+    return views.length ? views : ['thread'];
   } catch {
-    return false;
+    return ['thread'];
   }
 };
 
-/** Which view the Thread tab shows when they are tabs: 'thread' | 'btw' | 'asides'. */
-export const threadView = signal('thread');
-export const sideBySide = signal(readFlag(SIDE_BY_SIDE));
+/** The views showing, in order; more than one shows them side by side. Never empty. */
+export const openViews = signal(readViews());
 /** Where the composer sends: 'thread' | 'btw' | 'aside'. */
 export const composerChannel = signal('thread');
 
-export function setSideBySide(on) {
-  sideBySide.value = on;
+/** One segment toggles its view; turning the last one off leaves the thread. */
+export function toggleView(id) {
+  const on = openViews.value.includes(id);
+  const next = VIEW_IDS.filter((v) => (v === id ? !on : openViews.value.includes(v)));
+  openViews.value = next.length ? next : ['thread'];
   try {
-    if (on) localStorage.setItem(SIDE_BY_SIDE, '1');
-    else localStorage.removeItem(SIDE_BY_SIDE);
+    localStorage.setItem(OPEN_VIEWS, JSON.stringify(openViews.value));
   } catch {
-    /* this browser keeps no settings; the switch still works for the page */
+    /* this browser keeps no settings; the control still works for the page */
   }
 }
 
-const VIEWS = [
-  ['thread', 'Thread'],
+const SEGMENTS = [
+  ['thread', '/thread'],
   ['btw', '/btw'],
-  ['asides', 'Asides'],
+  ['asides', '/aside'],
 ];
 
 /** Counts of what is new in each view, from the conversation view when it carries them. */
@@ -58,29 +62,21 @@ function unreadOf(conversation) {
   };
 }
 
-export function ThreadViewTabs({ conversation }) {
+/**
+ * One grouped control, styled as the centre's view switcher: each segment shows or hides its view
+ * (filled when on), and two or more on sit side by side.
+ */
+export function ThreadViewSegments({ conversation }) {
   const unread = unreadOf(conversation);
   return html`<div class="thread-views-bar">
-    ${
-      sideBySide.value
-        ? html`<span class="thread-views-label">Thread · /btw · Asides</span>`
-        : html`<div class="thread-views-tabs" role="tablist" aria-label="Thread views">
-            ${VIEWS.map(
-              ([
-                id,
-                label,
-              ]) => html`<button key=${id} role="tab" aria-selected=${threadView.value === id}
-                class="thread-view-tab ${threadView.value === id ? 'is-active' : ''}"
-                onClick=${() => {
-                  threadView.value = id;
-                }}>${label}${unread[id] ? html`<span class="thread-view-unread">${unread[id]}</span>` : null}</button>`,
-            )}
-          </div>`
-    }
-    <label class="thread-views-side">
-      <${Switch} checked=${sideBySide.value} label="Side by side" onChange=${setSideBySide} />
-      Side by side
-    </label>
+    <div class="thread-segments band-tabs" role="group" aria-label="Thread views">
+      ${SEGMENTS.map(([id, label]) => {
+        const on = openViews.value.includes(id);
+        return html`<button key=${id} aria-pressed=${on}
+          class="thread-segment center-view ${on ? 'center-view--active' : ''}"
+          onClick=${() => toggleView(id)}>${label}${!on && unread[id] ? html`<span class="thread-view-unread">${unread[id]}</span>` : null}</button>`;
+      })}
+    </div>
   </div>`;
 }
 
@@ -89,7 +85,7 @@ export function AsidesSince({ conversation }) {
   const count = conversation?.asidesSinceYourPost ?? 0;
   if (!count) return null;
   return html`<button class="asides-since" onClick=${() => {
-    threadView.value = 'asides';
+    if (!openViews.value.includes('asides')) toggleView('asides');
   }}>${count} aside${count === 1 ? '' : 's'} since your last post →</button>`;
 }
 
