@@ -302,13 +302,22 @@ function ContextBar() {
           <span class="band-pill band-status" data-state=${state}>
             <${StatusIcon} state=${state} still=${true} />${STATES[state]?.label ?? state}
           </span>
-          <span class="band-pill band-count" title=${`Your agents here: ${agentNames.join(', ')}`} aria-label=${`${agentNames.length} of your agents`}>
+          <span class="band-pill band-count band-pop" tabindex="0" aria-label=${`${agentNames.length} agent session${agentNames.length === 1 ? '' : 's'}`}>
             <span class="band-glyph" aria-hidden="true">🤖</span>${agentNames.length}
+            <span class="band-popover" role="tooltip">
+              <span class="band-pop-head">Agent sessions · ${agentNames.length}</span>
+              <span class="band-pop-row is-primary"><b>${named.model ?? harness ?? 'Your agent'}</b><span>${[named.provider, launch?.effort ? `effort ${launch.effort}` : null].filter(Boolean).join(' · ') || 'your agent'}</span><i>primary</i></span>
+              ${localAgents.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>local member</span><i></i></span>`)}
+            </span>
           </span>
-          <span class="band-pill band-count ${peopleCount ? 'band-chip--shared' : ''}"
-            title=${peopleCount ? `Other parties here: ${external.map((m) => m.displayName).join(', ') || peopleCount}` : 'Only you'}
-            aria-label=${`${peopleCount} other ${peopleCount === 1 ? 'party' : 'parties'}`}>
-            <span class="band-glyph" aria-hidden="true">👤</span>${peopleCount}
+          <span class="band-pill band-count band-pop ${peopleCount ? 'band-chip--shared' : ''}" tabindex="0"
+            aria-label=${`${peopleCount + 1} ${peopleCount ? 'people' : 'person'}`}>
+            <span class="band-glyph" aria-hidden="true">👤</span>${peopleCount + 1}
+            <span class="band-popover" role="tooltip">
+              <span class="band-pop-head">People · ${peopleCount + 1}</span>
+              <span class="band-pop-row is-primary"><b>You</b><span>acting as ${owner ? `your ${owner} membership` : 'your personal account'}</span><i>you</i></span>
+              ${external.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>${m.member.kind === 'signet' ? 'joined through a Signet' : m.member.kind}</span><i>${m.trust ?? ''}</i></span>`)}
+            </span>
           </span>
           ${
             signets.length

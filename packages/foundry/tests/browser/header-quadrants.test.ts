@@ -99,11 +99,16 @@ test('the thread header shows its name and grouped pills', async () => {
     // Row 2: status, your agents, other parties; then provider · model · effort, named from the registry.
     const bottom = band.locator('.band-row--bottom');
     expect(await bottom.locator('.band-status').count()).toBe(1);
-    expect(await bottom.locator('.band-count').first().getAttribute('title')).toContain(
-      'Claude Code · your agent',
+    // Agents: a list of sessions, the primary first; people: you first.
+    await bottom.locator('.band-count').first().hover();
+    const agentsPop = bottom.locator('.band-count').first().locator('.band-popover');
+    expect(await agentsPop.innerText()).toMatch(/AGENT SESSIONS · 1[\s\S]*Opus 5\.5[\s\S]*primary/);
+    await bottom.locator('.band-count').nth(1).hover();
+    expect(await bottom.locator('.band-count').nth(1).locator('.band-popover').innerText()).toMatch(
+      /PEOPLE · 1[\s\S]*You[\s\S]*acting as/,
     );
-    await bottom.locator('.band-pill', { hasText: 'high' }).waitFor();
-    expect(await bottom.innerText()).toMatch(/Opus 5\.5.*high/);
+    await bottom.locator('.band-pill', { hasText: 'high' }).first().waitFor();
+    expect(await bottom.locator('.band-pills--right').innerText()).toMatch(/Opus 5\.5.*high/);
     // Nothing spills out of the band at 1280.
     const spill = await band.evaluate((el: Element) => el.scrollWidth - el.clientWidth);
     expect(spill).toBeLessThanOrEqual(1);
