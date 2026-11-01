@@ -1,0 +1,122 @@
+/* Plan = the what and why (plan.js): outcomes, pain, strategy, reasons, technical plan. */
+.plan-intro {
+  margin: 0 0 10px;
+  color: hsl(var(--muted-foreground));
+  font-size: 13.5px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.plan-section {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.plan-section-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.plan-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.plan-section-head small {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.plan-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plan-item {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+}
+.plan-item:first-child {
+  border-top: 0;
+}
+.plan-item b {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.plan-item small {
+  display: block;
+  font-size: 12.5px;
+  color: hsl(var(--muted-foreground));
+}
+.plan-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  border: 1px solid hsl(var(--border));
+}
+.plan-box.s-done {
+  background: hsl(205 70% 70% / 0.25);
+}
+.plan-box.s-doing {
+  background: hsl(var(--app-primary) / 0.25);
+}
+.plan-box.s-you {
+  background: hsl(38 87% 69% / 0.3);
+}
+.plan-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+  margin: 7px auto 0;
+}
+.plan-tech {
+  display: grid;
+  gap: 6px;
+}
+.plan-tech-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto minmax(160px, 1.2fr) 2fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+  font-size: 13px;
+}
+.plan-tech-row:first-child {
+  border-top: 0;
+}
+.plan-decision {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  white-space: nowrap;
+}
+.plan-decision.d-reuse {
+  color: hsl(var(--app-primary));
+  border-color: hsl(var(--app-primary) / 0.5);
+}
+.plan-decision.d-extend {
+  color: hsl(205 70% 75%);
+  border-color: hsl(205 70% 60% / 0.5);
+}
+.plan-decision.d-new {
+  color: hsl(38 87% 69%);
+  border-color: hsl(38 87% 69% / 0.5);
+}
+.plan-tech-system small {
+  display: block;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+.plan-tech-reason {
+  color: hsl(var(--muted-foreground));
+}

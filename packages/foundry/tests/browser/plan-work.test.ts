@@ -164,6 +164,15 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     const plan = page.locator('.plan');
     await plan.locator('.plan-about').waitFor();
     await plan.locator('.plan-section-head', { hasText: '1 of 2 done' }).waitFor();
+    // Plan is the what and why: five sections, and a link to the Loop for the how.
+    expect(await plan.locator('.plan-section-head h3').allInnerTexts()).toEqual([
+      'Your outcomes',
+      'Pain and friction',
+      'Strategy',
+      'Reasons',
+      'Technical plan',
+    ]);
+    await plan.getByRole('button', { name: /The Loop is how/ }).waitFor();
     const survey = plan.locator('.plan-step', { hasText: 'Survey the callers' });
     expect(await survey.getAttribute('data-state')).toBe('done');
     expect(await survey.locator('.plan-when').first().innerText()).toBe('t2');
