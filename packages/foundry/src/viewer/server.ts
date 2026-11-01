@@ -716,15 +716,12 @@ export function createViewer(config: ViewerConfig) {
   const themeDir = dirname(
     fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')),
   );
-  app.get('/ui/theme/*', (c) => {
+  app.get('/ui/theme/*', async (c) => {
     const file = resolve(themeDir, c.req.path.slice('/ui/theme/'.length));
     if (!file.startsWith(`${themeDir}${sep}`)) return c.notFound();
     const body = Bun.file(file);
-    return body
-      .exists()
-      .then((found) =>
-        found ? new Response(body, { headers: { 'Content-Type': body.type } }) : c.notFound(),
-      );
+    if (!(await body.exists())) return c.notFound();
+    return new Response(body, { headers: { 'Content-Type': body.type } });
   });
   app.get('/ui/*', serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)) }));
   app.get(
