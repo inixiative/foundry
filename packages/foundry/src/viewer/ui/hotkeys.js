@@ -177,6 +177,11 @@ export function registerDefaults(actions) {
     action: actions.toggleEvents,
   });
   bind('g', { description: 'Loop (the graph)', category: 'panels', action: actions.toggleGraph });
+  bind('b', {
+    description: 'The attention board',
+    category: 'panels',
+    action: actions.toggleBoard,
+  });
   bind(']', {
     description: 'Open / fold the right panel',
     category: 'panels',

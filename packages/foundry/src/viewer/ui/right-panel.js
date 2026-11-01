@@ -20,6 +20,7 @@ import { useFlowStream } from './graph-view.js';
 import { html } from './lib.js';
 import {
   activeThreadId,
+  boardOpen,
   detailDrawerOpen,
   dismissTraceSelection,
   focusTurnId,
@@ -196,7 +197,8 @@ function closeInspector() {
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
   const tab = rightTab.value;
-  const open = detailDrawerOpen.value;
+  // The board takes the width: the panel folds while it is open.
+  const open = detailDrawerOpen.value && !boardOpen.value;
   const flow = useFlowStream(threadId, open && tab === 'pointers');
   const pointers = pointerRows(flow);
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
@@ -204,12 +206,14 @@ export function RightPanel({ onSpanSelect }) {
   if (!open)
     return html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
       <button class="rp-strip-toggle" title="Open the right panel (])" onClick=${() => {
+        boardOpen.value = false;
         detailDrawerOpen.value = true;
       }}>‹</button>
       ${RIGHT_TABS.map((t) => {
         const count = threadId ? tabFacts(t, threadId, pointers.length).count : 0;
         return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
           rightTab.value = t;
+          boardOpen.value = false;
           detailDrawerOpen.value = true;
         }}>
           <span class="rp-strip-label">${TAB_LABELS[t]}</span>

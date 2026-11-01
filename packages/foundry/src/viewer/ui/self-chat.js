@@ -15,7 +15,7 @@ import { showToast } from './store.js';
 
 export const selfChatCollapsed = signal(false);
 export const selfChatMessages = signal([]);
-const selfChatSending = signal(false);
+export const selfChatSending = signal(false);
 
 export async function loadSelfChat() {
   try {
