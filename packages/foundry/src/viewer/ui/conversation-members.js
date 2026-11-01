@@ -14,7 +14,7 @@
 import { html, useEffect, useState } from './lib.js';
 // settings.js imports this module's settings card; the signal is read at render, so the cycle is safe.
 import { settingsConfig } from './settings.js';
-import { activeThreadId, showToast, threadData } from './store.js';
+import { activeThreadId, prompts, resolvePrompt, showToast, threadData } from './store.js';
 
 const FLOORS = [
   ['talk', 'Talk'],
@@ -108,6 +108,19 @@ function MemberRow({ member, threadId, conch }) {
     <span class="context-bar-chip ${member.outbound === 'review' ? '' : 'context-bar-chip--dim'}"
       title="Sends to this member">${member.outbound === 'review' ? 'sends reviewed' : 'sends leave at once'}</span>
     ${member.holdsConch ? html`<span class="context-bar-chip" title="Holds the conch">conch</span>` : null}
+    ${(() => {
+      // A raised hand is a Needs-you prompt; answer it here or on the board.
+      const hand = prompts.value.find(
+        (p) =>
+          p.threadId === threadId &&
+          p.meta?.conversationFloorRequest?.member?.id === member.member.id,
+      );
+      return hand
+        ? html`<span class="conversation-hand" title=${hand.message}>✋ asks for the conch</span>
+          <button class="proj-btn proj-btn-ok" onClick=${() => resolvePrompt(hand.id, 'give')}>Give it</button>
+          <button class="proj-btn" onClick=${() => resolvePrompt(hand.id, 'not-now')}>Not now</button>`
+        : null;
+    })()}
     <span class="conversation-dim">${member.present ? 'here now' : ago(member.lastSeen)}</span>
     ${
       conch && member.listed && !member.holdsConch
@@ -202,6 +215,21 @@ export function ParticipantsPanel() {
                     : 'the host'
                 }</span>
                 ${view.floor.holder ? html`<button class="proj-btn" onClick=${() => post(`${base}/conch`, { to: null })}>Take conch</button>` : null}`
+              : null
+          }
+          <label>Agents
+            <select value=${view.settings?.agents ?? ''}
+              onChange=${(e) => post(`${base}/agents`, { mode: e.target.value || null })}>
+              <option value="">Inherit</option>
+              <option value="silent">Agents: listening only</option>
+              <option value="drafting">Agents may draft</option>
+            </select>
+          </label>
+          ${
+            view.floorFrom === 'shared'
+              ? html`<span class="conversation-dim" title="A thread with a member starts from the shared defaults">shared · conch</span>
+                <button class="proj-btn" title="Members read from when the thread was shared; this lets them read what came before"
+                  onClick=${() => post(`${base}/share-history`)}>Share earlier history</button>`
               : null
           }
           ${

@@ -93,6 +93,8 @@ export const RIGHT_TABS = [
 export const rightTab = signal('context');
 /** The left rail: 'active' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
 export const railView = signal('active');
+/** The attention board fills the centre (key b). */
+export const boardOpen = signal(false);
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
 /** The model registry (GET /api/models), once read: providers and their models with context windows. */
@@ -569,7 +571,11 @@ function connectStreams() {
   effect(() => {
     const projectId = activeProjectId.value;
     const next =
-      railView.value === 'active' ? 'threads:all' : projectId ? `threads:${projectId}` : 'threads';
+      railView.value === 'active' || boardOpen.value
+        ? 'threads:all'
+        : projectId
+          ? `threads:${projectId}`
+          : 'threads';
     if (next === threadsStream) return;
     if (threadsStream) socket.close(threadsStream);
     threadsStream = next;
@@ -1852,6 +1858,7 @@ function writeHash() {
   if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
   // A project in the hash opens the Projects rail unless the rail is named.
   if (railView.value !== 'active' || activeProjectId.value) params.set('rail', railView.value);
+  if (boardOpen.value) params.set('view', 'board');
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -1867,6 +1874,7 @@ function restoreFromHash() {
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
+  boardOpen.value = h.view === 'board';
   // A link to a project (and no rail named) opens the Projects rail on it.
   railView.value =
     h.rail === 'projects' || (h.rail !== 'active' && h.project) ? 'projects' : 'active';
@@ -1918,6 +1926,7 @@ export function init() {
     detailDrawerOpen.value;
     rightTab.value;
     railView.value;
+    boardOpen.value;
     writeHash();
   });
 

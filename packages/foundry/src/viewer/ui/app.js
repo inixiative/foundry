@@ -10,6 +10,7 @@
  */
 
 import { AnalyticsPage } from './analytics.js';
+import { Board } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
@@ -23,6 +24,8 @@ import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
+  allThreads,
+  boardOpen,
   compactPanel,
   connected,
   currentTrace,
@@ -39,6 +42,7 @@ import {
   loadTraces,
   projectSidebarOpen,
   projects,
+  prompts,
   RIGHT_TABS,
   resyncStreams,
   rightTab,
@@ -48,6 +52,7 @@ import {
   toast,
   toggleGraphPanel,
 } from './store.js';
+import { categoryOf, threadState } from './thread-status.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
 // ---------------------------------------------------------------------------
@@ -85,6 +90,21 @@ function HeaderScope() {
   </div>`;
 }
 
+/** The board button, with how many threads wait on you. */
+function BoardButton() {
+  // The Needs-you column's size: threads waiting on you (a prompt, a held send, an unread post).
+  const waiting = new Set([
+    ...prompts.value.map((p) => p.threadId),
+    ...allThreads.value
+      .filter((t) => categoryOf(threadState(t, { prompts: [] })) === 'attention')
+      .map((t) => t.threadId),
+  ]).size;
+  return html`<button class="board-button ${boardOpen.value ? 'is-active' : ''}" title="The attention board (b)"
+    onClick=${() => {
+      boardOpen.value = !boardOpen.value;
+    }}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
+}
+
 function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
@@ -97,6 +117,7 @@ function Header() {
       </div>
       <${HeaderScope} />
       <div class="header-right">
+        ${route.value.page === 'workspace' ? html`<${BoardButton} />` : null}
         ${route.value.page === 'workspace' ? html`<${GlossButton} projectId=${scopeProjectId()} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
@@ -222,6 +243,9 @@ function App() {
       toggleLayers: () => {},
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
+      toggleBoard: () => {
+        boardOpen.value = !boardOpen.value;
+      },
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
@@ -250,7 +274,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value ? ' panels--board' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -284,9 +308,11 @@ function App() {
                 ? html`<${FeedbackInbox} />`
                 : html`
             ${
-              activePanel.value === 'feedback'
-                ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+              boardOpen.value
+                ? html`<${Board} />`
+                : activePanel.value === 'feedback'
+                  ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }

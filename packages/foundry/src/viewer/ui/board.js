@@ -1,0 +1,168 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
+ * The attention board: every thread on one Kanban, a column per status colour.
+ *
+ * Columns: Problems (red, only when something is) · Needs you (orange) · Working (green) · Queued
+ * (light yellow) · Done (light blue). A thread's column is its status category (thread-status.js), so
+ * the rail, the header and the board classify it once. Filters: Everything, one project, Global, Forge
+ * Master, this Foundry.
+ *
+ * A card shows what the thread is and what it asks, with one-tap answers for its pending prompt. The
+ * attention controls of the spec (dismiss, not important, wipe, combine, bring back, take over) need
+ * the attention tag on the thread; they appear when a thread carries `meta.attention`.
+ */
+import { html, useState } from './lib.js';
+import { selfChatSending } from './self-chat.js';
+import { settingsConfig } from './settings.js';
+import { STATES, StatusIcon } from './status-icons.js';
+import {
+  allThreads,
+  boardOpen,
+  createThread,
+  executeAction,
+  projects,
+  prompts,
+  resolvePrompt,
+  selectScope,
+  selectThread,
+} from './store.js';
+import { threadName } from './thread-labels.js';
+import { categoryOf, threadState } from './thread-status.js';
+
+const COLUMNS = [
+  { cat: 'problem', title: 'Problems' },
+  { cat: 'attention', title: 'Needs you' },
+  { cat: 'working', title: 'Working' },
+  { cat: 'queued', title: 'Queued' },
+  { cat: 'done', title: 'Done' },
+];
+const OPEN = (t) => !['archived', 'completed', 'done'].includes(t.meta?.status ?? 'idle');
+
+/** The board's filter: 'all', 'global', 'forge', 'this', or 'project:<id>'. */
+function matches(filter, thread) {
+  if (filter === 'all' || filter === 'this') return true;
+  if (filter === 'global') return !thread.meta?.projectId;
+  if (filter.startsWith('project:')) return thread.meta?.projectId === filter.slice(8);
+  return false;
+}
+
+function Card({ thread, state }) {
+  const pending = prompts.value.filter((p) => p.threadId === thread.threadId);
+  const ask = pending[0];
+  const project = thread.meta?.projectId
+    ? (projects.value.find((p) => p.id === thread.meta.projectId)?.label ?? thread.meta.projectId)
+    : 'Global';
+  const s = STATES[state];
+  const open = () => {
+    boardOpen.value = false;
+    selectThread(thread.threadId);
+  };
+  const choices = ask?.options?.length
+    ? ask.options
+    : ask
+      ? [
+          { id: 'approve', label: 'Approve' },
+          { id: 'reject', label: 'Reject' },
+        ]
+      : [];
+  return html`<article class="board-card" data-thread=${thread.threadId}>
+    <div class="board-card-head">
+      <${StatusIcon} state=${state} />
+      <span class="board-card-kind">${s?.kind ?? s?.label}</span>
+      <span class="board-card-project">${project}</span>
+    </div>
+    <button class="board-card-title" onClick=${open} title="Open the thread">${threadName(thread)}</button>
+    ${ask ? html`<p class="board-card-ask">${ask.message}</p>` : null}
+    ${
+      choices.length
+        ? html`<div class="board-card-actions">${choices.map(
+            (o, i) => html`<button key=${o.id} class="proj-btn ${i === 0 ? 'proj-btn-ok' : ''}"
+              onClick=${() => resolvePrompt(ask.id, o.id)}>${o.label}</button>`,
+          )}</div>`
+        : null
+    }
+    <div class="board-card-foot">
+      <button class="rp-link" onClick=${open}>Open ›</button>
+      <button class="rp-link" onClick=${() => createThread({ description: `Follow-up to: ${threadName(thread)}` })}>Another thread for this</button>
+      <button class="rp-link" onClick=${() => executeAction('thread:archive', thread.threadId)}>Close</button>
+    </div>
+  </article>`;
+}
+
+function ForgeMasterCard() {
+  const working = selfChatSending.value;
+  return html`<article class="board-card">
+    <div class="board-card-head">
+      <${StatusIcon} state=${working ? 'working' : 'idle'} />
+      <span class="board-card-kind">${working ? 'Working' : 'Idle'}</span>
+      <span class="board-card-project">this Foundry</span>
+    </div>
+    <button class="board-card-title" onClick=${() => {
+      boardOpen.value = false;
+      selectScope('forge');
+    }}>Forge Master</button>
+    <p class="board-card-ask">The thread about this Foundry and its settings.</p>
+  </article>`;
+}
+
+export function Board() {
+  const [filter, setFilter] = useState('all');
+  const threads = allThreads.value.filter(OPEN).filter((t) => matches(filter, t));
+  const placed = threads.map((t) => {
+    const children = allThreads.value.filter((c) => c.meta?.parentThreadId === t.threadId);
+    const state = threadState(t, {
+      prompts: prompts.value.filter((p) => p.threadId === t.threadId),
+      childrenWorking: children.some(
+        (c) => categoryOf(threadState(c, { prompts: [] })) === 'working',
+      ),
+    });
+    return { thread: t, state, cat: categoryOf(state) };
+  });
+  const forge = filter === 'forge';
+  const columns = COLUMNS.filter(
+    (c) => c.cat !== 'problem' || placed.some((p) => p.cat === 'problem'),
+  );
+  const machine = settingsConfig.value?.installationName ?? 'This Foundry';
+  const chip = (id, label) =>
+    html`<button key=${id} class="board-filter ${filter === id ? 'is-active' : ''}" onClick=${() => setFilter(id)}>${label}</button>`;
+
+  return html`<div class="board">
+    <header class="board-band">
+      <div class="band-row">
+        <button class="rp-back" onClick=${() => {
+          boardOpen.value = false;
+        }}>← Back to the thread (b)</button>
+      </div>
+      <h2 class="board-title">Board</h2>
+      <nav class="board-filters" aria-label="Board filter">
+        ${chip('all', 'Everything')}
+        ${projects.value.filter((p) => p.status !== 'archived').map((p) => chip(`project:${p.id}`, p.label))}
+        ${chip('global', 'Global (maybe)')}
+        ${chip('forge', 'Forge Master')}
+        ${chip('this', machine)}
+      </nav>
+    </header>
+    <div class="board-columns">
+      ${columns.map((col) => {
+        const cards = forge ? [] : placed.filter((p) => p.cat === col.cat);
+        const forgeHere = forge && col.cat === (selfChatSending.value ? 'working' : null);
+        return html`<section key=${col.cat} class="board-column board-column--${col.cat}">
+          <h3 class="board-column-head">
+            <span class="board-column-swatch"></span>${col.title}
+            <span class="rail-pane-count">${cards.length + (forgeHere ? 1 : 0)}</span>
+          </h3>
+          <div class="board-frame">
+            ${forgeHere ? html`<${ForgeMasterCard} />` : null}
+            ${cards.map((p) => html`<${Card} key=${p.thread.threadId} thread=${p.thread} state=${p.state} />`)}
+            ${!cards.length && !forgeHere ? html`<div class="rail-empty">Nothing here.</div>` : null}
+          </div>
+        </section>`;
+      })}
+    </div>
+    ${forge && !selfChatSending.value ? html`<div class="board-aside"><${ForgeMasterCard} /></div>` : null}
+  </div>`;
+}
