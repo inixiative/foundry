@@ -64,6 +64,7 @@ import {
   loadOlderMessages,
   loadTraceDetail,
   messages,
+  openTurnView,
   projects,
   prompts,
   resolvePrompt,
@@ -78,7 +79,6 @@ import {
   threadStatusOf,
   threadUsage,
   tokenUsage,
-  turnViewTarget,
   waitingFor,
 } from './store.js';
 import {
@@ -763,6 +763,12 @@ function UserContent({ content }) {
       }}>Re: ${re[1]}</button>${content.slice(re[0].length)}</div>`;
 }
 
+/** Every message: Inspect opens its turn in the turn view (the right panel, widened). */
+function InspectLink({ turnId }) {
+  return html`<button type="button" class="inspect-link" title="Open this turn in the turn view"
+    onClick=${() => openTurnView(activeThreadId.peek(), turnId)}>Inspect</button>`;
+}
+
 function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
@@ -776,7 +782,7 @@ function UserMessage({ msg, index }) {
       }
       ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}
       <${BrowserStorageWarning} msg=${msg} />
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}</div>
+      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.turnId ? html` · <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       ${give.form}
     </div>
   `;
@@ -964,7 +970,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
               msg.turnId
                 ? html`<button class="chat-fulltrace-btn" title="Open this turn as a timeline in the centre"
               onClick=${() => {
-                turnViewTarget.value = { threadId: activeThreadId.peek(), turnId: msg.turnId };
+                openTurnView(activeThreadId.peek(), msg.turnId);
               }}>full trace</button>`
                 : null
             }
@@ -1029,7 +1035,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
         traceId=${msg.traceId}
       />
 
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === 'unconfirmed' ? ' | Connection interrupted; server outcome unconfirmed' : ''}</div>
+      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === 'unconfirmed' ? ' | Connection interrupted; server outcome unconfirmed' : ''}${msg.turnId ? html` · <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       <${TurnFeedback} threadId=${activeThreadId.value} turnId=${msg.turnId} />
       ${give.form}
     </div>

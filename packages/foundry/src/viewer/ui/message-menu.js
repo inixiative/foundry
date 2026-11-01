@@ -12,7 +12,7 @@
 
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
-import { activeThreadId, forkThread, giveFeedback, revertThread, turnViewTarget } from './store.js';
+import { activeThreadId, forkThread, giveFeedback, openTurnView, revertThread } from './store.js';
 
 export function LoopBuilder({ msg, onClose }) {
   const [kind, setKind] = useState('repeat');
@@ -110,7 +110,7 @@ export function MessageMenu({ msg, index, onFeedback }) {
           ${
             turnId
               ? html`<button type="button" role="menuitem" onClick=${run(() => {
-                  turnViewTarget.value = { threadId: activeThreadId.peek(), turnId };
+                  openTurnView(activeThreadId.peek(), turnId);
                 })}>Open the turn view<i>full trace</i></button>`
               : null
           }

@@ -12,7 +12,7 @@
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
-import { authFetch, openTurnDetail, turnViewTarget } from './store.js';
+import { authFetch, closeTurnView, openTurnDetail, turnViewTarget } from './store.js';
 
 const FILTERS = [
   ['all', 'All'],
@@ -266,9 +266,7 @@ export function TurnView() {
           ? flagged(s.step)
           : s.group !== 'work',
   );
-  const close = () => {
-    turnViewTarget.value = null;
-  };
+  const close = closeTurnView;
   useEffect(() => {
     root.current?.focus();
   }, [target?.turnId]);
@@ -303,7 +301,7 @@ export function TurnView() {
 
   return html`<section class="turn-view" ref=${root} tabIndex="-1" onKeyDown=${onKeyDown} aria-label="Turn">
     <header class="tv-head">
-      <button type="button" class="proj-btn" onClick=${close} title="Back to the thread (Esc)">← Thread</button>
+      <button type="button" class="proj-btn tv-close" onClick=${close} title="Close the turn view (Esc)">✕ Close</button>
       <h2>Turn</h2>
       <span class="tv-input">${input?.text ?? ''}</span>
       <span class="tv-spacer"></span>
@@ -320,7 +318,7 @@ export function TurnView() {
             }}>${label}</button>`,
         )}
       </div>
-      <span class="tv-hint"><kbd>↑</kbd><kbd>↓</kbd> steps · <kbd>Esc</kbd> back</span>
+      <span class="tv-hint"><kbd>↑</kbd><kbd>↓</kbd> steps · <kbd>Esc</kbd> close</span>
     </div>
     ${timeline?.error ? html`<div class="tv-error">${timeline.error}</div>` : null}
     ${
