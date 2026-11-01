@@ -406,7 +406,7 @@ function stageLine(classified) {
   return classified.stages
     .map(
       (/** @type {any} */ s) =>
-        `${s.stage + 1} ${s.task} ${s.outcome ?? (s.timedOut ? 'timed out' : s.malformed ? 'malformed' : 'failed')}${s.model ? ` (${s.model})` : ''}`,
+        `Layer ${s.stage + 1} · ${s.task === 'recognise' ? 'recognise' : 'confirm and pick'}: ${s.outcome ?? (s.timedOut ? 'timed out' : s.malformed ? 'malformed' : 'failed')}${s.model ? ` (${s.model})` : ''}`,
     )
     .join(' → ');
 }

@@ -6,7 +6,7 @@
 /**
  * One turn, read top to bottom in the centre, from the journal's turn timeline
  * (`GET /api/threads/:id/turns/:turnId/timeline`): what Foundry did before the agent ran (input,
- * routing, each region's answer round by round, the sealed plan, what was delivered), the agent's
+ * routing, each region's answer layer by layer, the sealed plan, what was delivered), the agent's
  * own work (each tool call with its detail, handoffs), and what Foundry did after (guards,
  * writeback, feedback, Archive capture). Every step keeps its raw record.
  */
@@ -130,7 +130,7 @@ function ToolBody({ step }) {
   </div>`;
 }
 
-/** Each region's answer, round by round: recognise (yes / no and why), then confirm and point. */
+/** Each region's answer, layer by layer: recognise (yes / no and why), then confirm and pick. */
 function ChorusBody({ step }) {
   const order = { contribute: 0, error: 1 };
   const regions = [...step.regions].sort(
@@ -144,13 +144,13 @@ function ChorusBody({ step }) {
       (r) => html`<li key=${r.region} data-decision=${r.decision}>
         <b>${r.region}</b> <span class="tv-decision">${r.decision}</span>
         ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
-        ${r.rounds.map(
-          (round) =>
-            html`<div key=${round.round} class="tv-round">Round ${round.round} · ${round.task === 'recognise' ? 'recognise' : 'confirm and pick'}: ${round.outcome ?? (round.timedOut ? 'timed out' : round.error ? 'error' : '—')}${round.why ? ` — ${round.why}` : ''}</div>`,
+        ${r.layers.map(
+          (layer) =>
+            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.task === 'recognise' ? 'recognise' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` — ${layer.why}` : ''}</div>`,
         )}
         ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` — ${r.pointer.why}` : ''}</div>` : null}
         ${r.said.map((line, i) => html`<div key=${i} class="tv-said">${line}</div>`)}
-        ${!r.rounds.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
+        ${!r.layers.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
       </li>`,
     )}</ul>
     ${quiet.length || step.prefiltered.length ? html`<div class="tv-dim">Not asked: ${[...quiet, ...step.prefiltered.map((id) => `${id} (pre-filter)`)].join(', ')}</div>` : null}

@@ -368,7 +368,7 @@ function ProjectChorus({ projectId }) {
           ? html`<p class="settings-desc">Missing docs: ${chorus.missingDocs
               .map(
                 (m) =>
-                  `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')})`,
+                  `region ${m.region} has no ${m.doc} (layer ${m.stages.map((i) => i + 1).join(', ')})`,
               )
               .join('; ')}.</p>`
           : null
