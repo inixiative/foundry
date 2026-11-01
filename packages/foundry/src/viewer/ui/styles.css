@@ -8475,6 +8475,8 @@ a.thread-ref:hover {
 }
 .thread-action-menu button:hover {
   background: var(--surface2);
+}
+
 /* Top-bar pills (Incoming, Kingdom): one shape, solid cut-out icon */
 .top-pill {
   display: inline-flex;
