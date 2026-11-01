@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
 import {
   ContextLayer,
   ContextStack,
@@ -660,7 +661,7 @@ describe('production runtime delivery', () => {
       agents: buildAgents(config, stack, { provider }),
       runtime,
     });
-    const thread = factory.create('stalled-router', { projectId: 'P' });
+    const thread = factory.create('stalled-router', { projectId: 'P', cwd: tmpdir() });
 
     const outcome = await Promise.race([
       thread.dispatch('worker', 'Go'),

@@ -361,7 +361,7 @@ function DoneStep({
       </div>
       <p class="wizard-desc dim">
         Next: add a project to configure agents, layers, and sources.
-        Open Settings (Ctrl+S) anytime to change providers.
+        Open Settings any time with <kbd class="cmd">S</kbd> to change providers.
       </p>
     </div>
   `;

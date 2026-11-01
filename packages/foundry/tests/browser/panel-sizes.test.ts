@@ -53,6 +53,12 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
 
     await page.goto(`${origin}/#thread=main&detail=1`);
     await page.locator('textarea.chat-input').waitFor();
+    // Running sits level with the left footer block: same height, same top.
+    await page.waitForFunction(() => {
+      const f = document.querySelector('.nav-footer')?.getBoundingClientRect();
+      const r = document.querySelector('.running')?.getBoundingClientRect();
+      return !!f && !!r && Math.abs(f.height - r.height) < 1 && Math.abs(f.top - r.top) < 1;
+    });
     await page.locator('body').click({ position: { x: 800, y: 5 } });
 
     // Left: normal → strip → hidden; the column stays, at 0, and the centre doesn't move left of it.

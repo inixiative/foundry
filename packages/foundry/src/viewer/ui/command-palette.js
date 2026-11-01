@@ -186,7 +186,7 @@ const KEY_GROUPS = [
   [
     'While typing',
     [
-      ['⌥ (hold)', 'Show these shortcuts; every ⌥ shortcut works while typing'],
+      ['hold ⌥', 'Show these shortcuts; every ⌥ shortcut works while typing'],
       ['Tab · ⇧Tab', 'Next / previous message box, and the waiting stack'],
       ['⌥F · ⌥V', 'Attach a file · start voice'],
       ['⌥/ · ⌥N', 'Actions for this thread and draft · new thread'],

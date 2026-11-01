@@ -79,12 +79,3 @@
   cursor: pointer;
   white-space: nowrap;
 }
-/* Commands and keys: mono, soft blue, a light tint (AD). */
-kbd.cmd,
-.cmd {
-  font: 11px var(--font-mono, monospace);
-  color: hsl(205 70% 78%);
-  background: hsl(205 70% 60% / 0.12);
-  padding: 1px 6px;
-  border-radius: 5px;
-}

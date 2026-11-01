@@ -98,3 +98,9 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Level with the left footer block (its height, measured): the two bottoms line up. */
+.running {
+  min-height: var(--footer-h, auto);
+  box-sizing: border-box;
+}
