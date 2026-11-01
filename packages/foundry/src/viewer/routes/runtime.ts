@@ -44,8 +44,9 @@ import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
+import { docSections } from '../doc-sections';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
-import { projectConcepts, threadAtlas } from '../thread-atlas';
+import { projectConcepts, projectOverlaps, threadAtlas } from '../thread-atlas';
 import { ViewerThreadDirectory } from '../thread-directory';
 import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
 import { turnTimeline } from '../turn-timeline';
@@ -756,6 +757,26 @@ export function registerRuntimeRoutes(
       .filter((t) => !t.disposed)
       .map((t) => ({ id: t.id, name: t.meta.name?.text ?? t.meta.description ?? t.id }));
     return c.json(await threadAtlas(localStore, thread.id, project.path, siblings));
+  });
+
+  // A project's doc sections (its chorus regions' docs, split at headings), for Search.
+  app.get('/api/projects/:id/doc-sections', async (c) => {
+    const id = c.req.param('id');
+    const config = projectRegistry?.get(id);
+    if (!config) return c.json({ error: 'project not found' }, 404);
+    const settings = (await deps.configStore?.load())?.projects?.[id];
+    return c.json({ sections: docSections({ path: config.path, chorus: settings?.chorus }) });
+  });
+
+  // Threads of a project that touch the same Atlas concepts (what Heralds would raise), for Search.
+  app.get('/api/projects/:id/overlaps', async (c) => {
+    const project = projectRegistry?.all.get(c.req.param('id'));
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    if (!localStore) return c.json({ mapped: false, overlaps: [] });
+    const threads = [...project.threads.values()]
+      .filter((t) => !t.disposed)
+      .map((t) => ({ id: t.id, name: t.meta.name?.text ?? t.meta.description ?? t.id }));
+    return c.json(await projectOverlaps(localStore, project.path, threads));
   });
 
   app.get('/api/projects/:id/atlas', async (c) => {

@@ -40,6 +40,27 @@ import { authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 
 export const settingsConfig = signal(null);
+/** A setting Search jumped to ({ path, description, value, source, section, projectId }): its section shows it highlighted. */
+export const settingsHighlight = signal(null);
+
+const SOURCE_TEXT = {
+  yours: 'Set by you',
+  everyone: 'Set for everyone (the repository’s .foundry/project.json)',
+  default: 'Default',
+};
+
+function SearchedSetting({ setting }) {
+  return html`<section class="settings-card settings-searched" aria-label=${`Found: ${setting.path}`}>
+    <button type="button" class="settings-searched-close" aria-label="Dismiss" onClick=${() => {
+      settingsHighlight.value = null;
+    }}>✕</button>
+    <span class="settings-searched-label">From Search</span>
+    <h3><code>${setting.path}</code></h3>
+    <p class="settings-desc">${setting.description || 'No description in the config interface.'}</p>
+    <dl><dt>Value</dt><dd><code>${setting.value ?? '—'}</code></dd><dt>Comes from</dt><dd>${SOURCE_TEXT[setting.source]}</dd></dl>
+  </section>`;
+}
+
 const selectedFocus = signal(null); // { kind: "source"|"agent"|"layer"|"provider", id }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +724,13 @@ export function SettingsPage() {
           <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master'}</button>
         </header>
         <div class="settings-body">
+          ${
+            settingsHighlight.value &&
+            settingsHighlight.value.section === section &&
+            (settingsHighlight.value.projectId ?? null) === (projectId ?? null)
+              ? html`<${SearchedSetting} setting=${settingsHighlight.value} />`
+              : null
+          }
           ${
             projectId
               ? html`<${ProjectSection} section=${section} projectId=${projectId} project=${project} onFocusChange=${onFocusChange} />`

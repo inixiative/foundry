@@ -13,38 +13,57 @@
 import { signal } from './lib.js';
 
 /**
- * Settings sections in nav order: [id, label, group?, comingSoon?]. A group heads the sections under
- * it in the nav; a coming-soon section says so instead of showing controls.
+ * Settings sections in nav order: [id, label, group?, comingSoon?, keys?]. A group heads the sections
+ * under it in the nav; a coming-soon section says so instead of showing controls. `keys` are the
+ * top-level config keys the section shows, so Search can jump from a setting to its section.
  */
 export const FOUNDRY_SETTINGS = [
-  ['profile', 'Profile'],
-  ['messagebox', 'Message box'],
-  ['providers', 'Providers'],
-  ['kingdom', 'Kingdom', 'Integrations'],
+  ['profile', 'Profile', null, false, ['installationName', 'installationIcon']],
+  ['messagebox', 'Message box', null, false, ['messageBox']],
+  [
+    'providers',
+    'Providers',
+    null,
+    false,
+    ['vendors', 'apiTokens', 'defaults', 'subscriptionOnly', 'nativeAuthentication'],
+  ],
+  [
+    'kingdom',
+    'Kingdom',
+    'Integrations',
+    false,
+    ['kingdomIntegrations', 'kingdomAccess', 'kingdomInference', 'kingdomInferenceAssignments'],
+  ],
   ['archive', 'Archive', 'Integrations'],
   ['github', 'GitHub', 'Integrations'],
   ['linear', 'Linear', 'Integrations'],
-  ['devices', 'Devices'],
+  ['devices', 'Devices', null, false, ['tunnel']],
   ['loops', 'Loops'],
   ['skills', 'Skills'],
-  ['layers', 'Layers', 'Advanced'],
-  ['agents', 'Agents', 'Advanced'],
+  ['layers', 'Layers', 'Advanced', false, ['layers']],
+  ['agents', 'Agents', 'Advanced', false, ['agents']],
   ['activity', 'Activity', 'Advanced'],
-  ['feedback', 'Feedback', 'Advanced'],
+  ['feedback', 'Feedback', 'Advanced', false, ['feedback']],
   ['about', 'About'],
 ];
 
 export const PROJECT_SETTINGS = [
-  ['integrations', 'Integrations'],
-  ['chorus', 'Chorus'],
-  ['conversations', 'Conversations'],
+  ['integrations', 'Integrations', null, false, ['kingdomAccess']],
+  ['chorus', 'Chorus', null, false, ['chorus']],
+  ['conversations', 'Conversations', null, false, ['conversations']],
   ['archive', 'Archive'],
-  ['sources', 'Sources'],
+  ['sources', 'Sources', null, false, ['sources']],
   ['gloss', 'Gloss', null, true],
-  ['overrides', 'Overrides', null],
+  [
+    'overrides',
+    'Overrides',
+    null,
+    false,
+    ['defaults', 'toolRules', 'feedback', 'prompts', 'agents', 'layers'],
+  ],
 ];
 
-/** { page: 'workspace' | 'settings' | 'analytics', projectId: string | null, section?: string } */
+/** { page: 'workspace' | 'settings' | 'analytics' | 'search', projectId: string | null, section?: string } */
 export function parseRoute(pathname) {
   let parts;
   try {
@@ -55,6 +74,7 @@ export function parseRoute(pathname) {
   const projectId = parts[0] === 'projects' && parts[1] ? parts[1] : null;
   const rest = projectId ? parts.slice(2) : parts;
   if (rest[0] === 'analytics') return { page: 'analytics', projectId };
+  if (rest[0] === 'search' && !projectId) return { page: 'search', projectId: null };
   if (rest[0] === 'settings') {
     const sections = projectId ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
     const asked = rest[1];
@@ -62,6 +82,12 @@ export function parseRoute(pathname) {
     return { page: 'settings', projectId, section };
   }
   return { page: 'workspace', projectId: null };
+}
+
+/** The Settings section that shows a top-level config key, or null when no section does. */
+export function settingSection(scope, key) {
+  const sections = scope === 'project' ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
+  return sections.find((entry) => entry[4]?.includes(key))?.[0] ?? null;
 }
 
 export function settingsPath(projectId, section) {
@@ -77,6 +103,7 @@ export function analyticsPath(projectId) {
 function routePath(next) {
   if (next.page === 'settings') return settingsPath(next.projectId, next.section);
   if (next.page === 'analytics') return analyticsPath(next.projectId);
+  if (next.page === 'search') return '/search';
   return '/';
 }
 
@@ -92,6 +119,20 @@ export function navigate(path) {
   const url = next.page === 'workspace' ? `/${workspaceHash}` : routePath(next);
   if (url !== location.pathname + location.hash) history.pushState(null, '', url);
   route.value = next;
+}
+
+/** Where Search was opened from: Esc returns there (the workspace comes back as it was left). */
+let searchReturn = '/';
+
+/** Search is its own page (only the top bar beside it). */
+export function openSearch() {
+  if (route.value.page === 'search') return;
+  searchReturn = route.value.page === 'workspace' ? '/' : routePath(route.value);
+  navigate('/search');
+}
+
+export function closeSearch() {
+  navigate(searchReturn);
 }
 
 /** Internal links navigate in place; modified clicks still open a new tab. */

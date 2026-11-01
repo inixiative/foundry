@@ -1,0 +1,757 @@
+[
+  {
+    "path": "apiTokens",
+    "scope": "foundry",
+    "description": "Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed."
+  },
+  {
+    "path": "subscriptionOnly",
+    "scope": "foundry",
+    "description": "Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md."
+  },
+  {
+    "path": "toolRules",
+    "scope": "foundry",
+    "description": "Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts)."
+  },
+  {
+    "path": "nativeAuthentication",
+    "scope": "foundry",
+    "description": "Credential references only; do not put tokens in settings."
+  },
+  {
+    "path": "kingdomInference",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "kingdomAccess",
+    "scope": "foundry",
+    "description": "Project-scoped integration grants. Independent of inference resource selection. Restart to apply."
+  },
+  {
+    "path": "kingdomInferenceAssignments",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "nativeAuthenticationSelections",
+    "scope": "foundry",
+    "description": "Explicit thread-to-source UUID assignments, applied on Foundry startup."
+  },
+  {
+    "path": "learning",
+    "scope": "foundry",
+    "description": "Background domain review phase; does not override classifier/router or executor profiles."
+  },
+  {
+    "path": "feedback",
+    "scope": "foundry",
+    "description": "The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md)."
+  },
+  {
+    "path": "journal",
+    "scope": "foundry",
+    "description": "The local journal (docs/THREAD-TREE.md spec A)."
+  },
+  {
+    "path": "journal.rawMiddlewareDays",
+    "scope": "foundry",
+    "description": "Days a middleware call's raw rows (its full input) stay in the journal after its turn is reduced; Archive only ever gets the reduced entries. Default 30."
+  },
+  {
+    "path": "prefilter",
+    "scope": "foundry",
+    "description": "The Warden pre-filter: a local decision model skips a Warden on a confident \"not my domain\". Off by default (every Warden is asked); `{ \"enabled\": true }` opts in. See docs/subscription-decisions.md."
+  },
+  {
+    "path": "guard",
+    "scope": "foundry",
+    "description": "How often the Wardens' guard fires: `per-turn` (default), once over a turn's whole tool activity when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15)."
+  },
+  {
+    "path": "composition",
+    "scope": "foundry",
+    "description": "The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the instructions and domain knowledge of every role; see docs/usage-and-context.md."
+  },
+  {
+    "path": "defaults",
+    "scope": "foundry",
+    "description": "Global defaults — executor provider/model + classifier provider/model."
+  },
+  {
+    "path": "defaults.provider",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "defaults.model",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "defaults.nativeAuthenticationId",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "defaults.kingdomOwnerKey",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "defaults.codexEffort",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "defaults.classifierProvider",
+    "scope": "foundry",
+    "description": "Classifier/router provider. Defaults to same as executor if omitted."
+  },
+  {
+    "path": "defaults.classifierModel",
+    "scope": "foundry",
+    "description": "Classifier/router model. Defaults to same as executor if omitted."
+  },
+  {
+    "path": "vendors",
+    "scope": "foundry",
+    "description": "Vendors (keyed by vendor id: anthropic, openai, google, ...), each with an on/off switch and its subscription and API modes (models/vendors.ts)."
+  },
+  {
+    "path": "installationName",
+    "scope": "foundry",
+    "description": "This Foundry's installation name: what Kingdom pairing names it. Default \"Foundry on <host>\"."
+  },
+  {
+    "path": "installationIcon",
+    "scope": "foundry",
+    "description": "This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a slot of the theme's categorical palette (`--layer-0` to `--layer-11`)."
+  },
+  {
+    "path": "installationIcon.glyph",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "installationIcon.color",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "messageBox",
+    "scope": "foundry",
+    "description": "The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view."
+  },
+  {
+    "path": "messageBox.separateViews",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "agents",
+    "scope": "foundry",
+    "description": "Global agent templates (keyed by agent ID). Projects inherit these by id; a project override of the same id wins. A fresh install is seeded from defaultAgents(): one executor."
+  },
+  {
+    "path": "agents.*.id",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "agents.*.kind",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "agents.*.flowRole",
+    "scope": "foundry",
+    "description": "FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation."
+  },
+  {
+    "path": "agents.*.domain",
+    "scope": "foundry",
+    "description": "Domain this agent operates in (e.g., \"docs\", \"security\", \"cross-thread\")."
+  },
+  {
+    "path": "agents.*.description",
+    "scope": "foundry",
+    "description": "Human-readable description of this agent's role and responsibilities. File path relative to project root (e.g., \".foundry/agents/security-librarian.md\"). Explains: what this agent does, which layers it reads/writes, who it delegates to, why."
+  },
+  {
+    "path": "agents.*.prompt",
+    "scope": "foundry",
+    "description": "System prompt for this agent."
+  },
+  {
+    "path": "agents.*.provider",
+    "scope": "foundry",
+    "description": "LLM settings — provider/model default to global if omitted."
+  },
+  {
+    "path": "agents.*.model",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "agents.*.temperature",
+    "scope": "foundry",
+    "description": "Temperature — set per agent. Classifiers/routers want 0, creative agents want higher."
+  },
+  {
+    "path": "agents.*.visibleLayers",
+    "scope": "foundry",
+    "description": "Which layers this agent can READ (empty = all). These are the layers whose content appears in this agent's assembled context."
+  },
+  {
+    "path": "agents.*.ownedLayers",
+    "scope": "foundry",
+    "description": "Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns no configured layer: it writes only its generated thread-knowledge layer, and reads its knowledge from the composition view."
+  },
+  {
+    "path": "agents.*.domainKnowledge",
+    "scope": "foundry",
+    "description": "Warden: source ids its domain knowledge composes from, before the composition view's files (docs/usage-and-context.md, \"Composition view\"). A project extension appends its own."
+  },
+  {
+    "path": "agents.*.guardTriggers",
+    "scope": "foundry",
+    "description": "Tool names that trigger this configured Warden's post-action guard. [] disables guards."
+  },
+  {
+    "path": "agents.*.peers",
+    "scope": "foundry",
+    "description": "Peer agent IDs for delegation."
+  },
+  {
+    "path": "agents.*.maxDepth",
+    "scope": "foundry",
+    "description": "Max call-chain depth."
+  },
+  {
+    "path": "agents.*.tools",
+    "scope": "foundry",
+    "description": "Whether this agent can use tools (true) or is text-only (false). Default: true for executors, false for classifier/router."
+  },
+  {
+    "path": "agents.*.thinking",
+    "scope": "foundry",
+    "description": "Extended thinking / reasoning effort. \"none\" | \"low\" | \"medium\" | \"high\" | number (budget tokens)."
+  },
+  {
+    "path": "agents.*.permissions",
+    "scope": "foundry",
+    "description": "Permission level for code execution runtimes. Default: \"bypass\"."
+  },
+  {
+    "path": "agents.*.executionEnv",
+    "scope": "foundry",
+    "description": "Execution environment for this agent's tool calls. Default: \"bash\" (via Claude Code provider). See ExecutionEnv type for options."
+  },
+  {
+    "path": "agents.*.browser",
+    "scope": "foundry",
+    "description": "Browser-specific config. Only relevant when executionEnv includes browser access."
+  },
+  {
+    "path": "agents.*.browser.mode",
+    "scope": "foundry",
+    "description": "Browser interaction mode."
+  },
+  {
+    "path": "agents.*.browser.shareSession",
+    "scope": "foundry",
+    "description": "Whether to share authenticated browser sessions across agents."
+  },
+  {
+    "path": "agents.*.browser.allowedUrls",
+    "scope": "foundry",
+    "description": "Allowed URL patterns (glob). Empty = allow all."
+  },
+  {
+    "path": "agents.*.browser.blockedUrls",
+    "scope": "foundry",
+    "description": "Blocked URL patterns (glob). Takes precedence over allowedUrls."
+  },
+  {
+    "path": "agents.*.browser.screenshots",
+    "scope": "foundry",
+    "description": "Whether to capture screenshots for context."
+  },
+  {
+    "path": "agents.*.browser.maxNavigations",
+    "scope": "foundry",
+    "description": "Max page loads per dispatch (prevent runaway navigation)."
+  },
+  {
+    "path": "agents.*.timeout",
+    "scope": "foundry",
+    "description": "Per-call timeout in ms."
+  },
+  {
+    "path": "agents.*.cacheControl",
+    "scope": "foundry",
+    "description": "Enable prompt caching for this agent."
+  },
+  {
+    "path": "agents.*.enabled",
+    "scope": "foundry",
+    "description": "Whether this agent is active."
+  },
+  {
+    "path": "agents.*.invocation",
+    "scope": "foundry",
+    "description": "When this agent runs in the pipeline: - \"always\": runs on every request (default for classifier, router) - \"on-demand\": available but only invoked when middleware/router explicitly requests it - \"conditional\": runs when its condition matches the current classification/route context"
+  },
+  {
+    "path": "agents.*.condition",
+    "scope": "foundry",
+    "description": "Condition for \"conditional\" invocation. Ignored for other modes."
+  },
+  {
+    "path": "agents.*.condition.categories",
+    "scope": "foundry",
+    "description": "Match if classification.category is one of these."
+  },
+  {
+    "path": "agents.*.condition.tags",
+    "scope": "foundry",
+    "description": "Match if any classification tag overlaps with these."
+  },
+  {
+    "path": "agents.*.condition.routes",
+    "scope": "foundry",
+    "description": "Match if route.destination is one of these."
+  },
+  {
+    "path": "layers",
+    "scope": "foundry",
+    "description": "Global layer templates (keyed by layer ID). Projects inherit these by id; a project override of the same id wins. A fresh install has none: a thread is unwrapped until one is configured."
+  },
+  {
+    "path": "layers.*.id",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "layers.*.domain",
+    "scope": "foundry",
+    "description": "Domain knowledge ownership. An enabled domain-advising agent must explicitly own this layer to register a custom expert; passive layers do not spawn actors."
+  },
+  {
+    "path": "layers.*.description",
+    "scope": "foundry",
+    "description": "Human-readable description of this layer's job in the system. File path relative to project root (e.g., \".foundry/layers/conventions.md\"). Explains: what knowledge domain it covers, when it's relevant, who writes to it, what the warmed content looks like."
+  },
+  {
+    "path": "layers.*.contentShape",
+    "scope": "foundry",
+    "description": "What shape the warmed content takes — helps humans and agents understand what's inside. E.g., \"JSON array of convention objects\", \"Markdown documentation index\", \"Compact thread-state JSON\"."
+  },
+  {
+    "path": "layers.*.prompt",
+    "scope": "foundry",
+    "description": "Instruction prompt for this layer."
+  },
+  {
+    "path": "layers.*.segment",
+    "scope": "foundry",
+    "description": "Semantic segment of the layer's CONTENT in the reading view. Optional: a configured layer without it keeps the legacy id-based classification. Only \"domain-knowledge\" (configured/published cache) or \"thread-knowledge\" (generated, thread-private) are accepted; the prompt is always an instruction."
+  },
+  {
+    "path": "layers.*.sourceIds",
+    "scope": "foundry",
+    "description": "Data source IDs that feed this layer."
+  },
+  {
+    "path": "layers.*.staleness",
+    "scope": "foundry",
+    "description": "Staleness threshold in ms (0 = never stale)."
+  },
+  {
+    "path": "layers.*.writers",
+    "scope": "foundry",
+    "description": "Agent IDs that can write to this layer. Undefined = any agent."
+  },
+  {
+    "path": "layers.*.enabled",
+    "scope": "foundry",
+    "description": "Whether this layer definition is enabled."
+  },
+  {
+    "path": "layers.*.activation",
+    "scope": "foundry",
+    "description": "When instances of this layer are included in context assembly: - \"always\": included on every request (default for system, conventions) - \"on-demand\": only included when explicitly requested via route.contextSlice or middleware - \"conditional\": included when its condition matches classification/route context"
+  },
+  {
+    "path": "layers.*.condition",
+    "scope": "foundry",
+    "description": "Condition for \"conditional\" activation. Ignored for other modes."
+  },
+  {
+    "path": "layers.*.condition.categories",
+    "scope": "foundry",
+    "description": "Match if classification.category is one of these."
+  },
+  {
+    "path": "layers.*.condition.tags",
+    "scope": "foundry",
+    "description": "Match if any classification tag overlaps with these."
+  },
+  {
+    "path": "layers.*.condition.routes",
+    "scope": "foundry",
+    "description": "Match if route.destination is one of these."
+  },
+  {
+    "path": "sources",
+    "scope": "foundry",
+    "description": "Global data source templates (keyed by source ID). On a fresh install this is empty — sources are project-scoped."
+  },
+  {
+    "path": "sources.*.id",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "sources.*.type",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "sources.*.slot",
+    "scope": "foundry",
+    "description": "Instruction sources only (`uri` is unused): which of the main role's slots the source returns. Default \"instructions\". Who it is for is `composition.roles.main.audience`."
+  },
+  {
+    "path": "sources.*.archive",
+    "scope": "foundry",
+    "description": "Searches the local Archive for this project; `uri` is unused."
+  },
+  {
+    "path": "sources.*.archive.projectId",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "sources.*.archive.budget",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "sources.*.label",
+    "scope": "foundry",
+    "description": ""
+  },
+  {
+    "path": "sources.*.uri",
+    "scope": "foundry",
+    "description": "Connection string, file path, URL — depends on type."
+  },
+  {
+    "path": "sources.*.enabled",
+    "scope": "foundry",
+    "description": "Whether this source is enabled."
+  },
+  {
+    "path": "sources.*.scope",
+    "scope": "foundry",
+    "description": "Memory-backed (\"file\") sources only. Widest visibility this source exposes to a thread: \"thread\" (default) = the thread's own captures plus project/global publications; \"project\" = publications only; \"global\" = globally published knowledge, identical for every project."
+  },
+  {
+    "path": "sources.*.includeUnowned",
+    "scope": "foundry",
+    "description": "Memory-backed sources only. Also expose unowned legacy records written before ownership existed. Off by default: legacy records are preserved on disk but never become shared knowledge implicitly."
+  },
+  {
+    "path": "sources.*.selection",
+    "scope": "foundry",
+    "description": "Memory-backed sources only. Bounded automatic selection is on by default: pinned kinds always, records relevant to the current message, a few recent captures, and an explicit account of what was left out. Override fields of the policy here, or set `false` to inject the full formatted log."
+  },
+  {
+    "path": "tunnel",
+    "scope": "foundry",
+    "description": "Tunnel configuration — expose the viewer over a public URL."
+  },
+  {
+    "path": "tunnel.enabled",
+    "scope": "foundry",
+    "description": "Whether the tunnel runs. Absent means automatic: off until it can work (a paired Kingdom authorizes this Foundry), then on at startup. Starting or stopping it in Settings records the choice here."
+  },
+  {
+    "path": "tunnel.provider",
+    "scope": "foundry",
+    "description": "Tunnel provider. Default: \"localtunnel\"."
+  },
+  {
+    "path": "tunnel.subdomain",
+    "scope": "foundry",
+    "description": "Subdomain hint (localtunnel only, not guaranteed)."
+  },
+  {
+    "path": "kingdomIntegrations",
+    "scope": "foundry",
+    "description": "Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files."
+  },
+  {
+    "path": "setupComplete",
+    "scope": "foundry",
+    "description": "Whether the initial setup wizard has been completed."
+  },
+  {
+    "path": "gloss",
+    "scope": "project",
+    "description": "Opt-in maintenance; existing margins remain readable when disabled."
+  },
+  {
+    "path": "gloss.enabled",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "gloss.display",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "id",
+    "scope": "project",
+    "description": "Auto-generated UUID. Never manually specified."
+  },
+  {
+    "path": "path",
+    "scope": "project",
+    "description": "Path to project root directory. The only truly required field."
+  },
+  {
+    "path": "label",
+    "scope": "project",
+    "description": "Display label. Defaults to id."
+  },
+  {
+    "path": "tags",
+    "scope": "project",
+    "description": "Categorization tags. Auto-detected if omitted."
+  },
+  {
+    "path": "description",
+    "scope": "project",
+    "description": "Optional description."
+  },
+  {
+    "path": "defaults",
+    "scope": "project",
+    "description": "Override global defaults for this project. Omitted fields inherit from global."
+  },
+  {
+    "path": "toolRules",
+    "scope": "project",
+    "description": "Project tool rules: a capability here overrides the global one; protected paths add up."
+  },
+  {
+    "path": "feedback",
+    "scope": "project",
+    "description": "Project feedback settings: each field overrides the global one."
+  },
+  {
+    "path": "agents",
+    "scope": "project",
+    "description": "Project agents. Each is standalone (a full definition, replacing any global agent of the same id) or `extends` a global agent. No entry: the global agent applies unchanged."
+  },
+  {
+    "path": "layers",
+    "scope": "project",
+    "description": "Project-specific layer overrides (merged over global layers). Scalar fields override directly. List fields use explicit patch objects: { replace } or { append/remove }."
+  },
+  {
+    "path": "layers.*.sourceIds",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "layers.*.writers",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "layers.*.condition",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources",
+    "scope": "project",
+    "description": "Project-specific sources (merged over global sources)."
+  },
+  {
+    "path": "sources.*.id",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources.*.type",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources.*.slot",
+    "scope": "project",
+    "description": "Instruction sources only (`uri` is unused): which of the main role's slots the source returns. Default \"instructions\". Who it is for is `composition.roles.main.audience`."
+  },
+  {
+    "path": "sources.*.archive",
+    "scope": "project",
+    "description": "Searches the local Archive for this project; `uri` is unused."
+  },
+  {
+    "path": "sources.*.archive.projectId",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources.*.archive.budget",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources.*.label",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "sources.*.uri",
+    "scope": "project",
+    "description": "Connection string, file path, URL — depends on type."
+  },
+  {
+    "path": "sources.*.enabled",
+    "scope": "project",
+    "description": "Whether this source is enabled."
+  },
+  {
+    "path": "sources.*.scope",
+    "scope": "project",
+    "description": "Memory-backed (\"file\") sources only. Widest visibility this source exposes to a thread: \"thread\" (default) = the thread's own captures plus project/global publications; \"project\" = publications only; \"global\" = globally published knowledge, identical for every project."
+  },
+  {
+    "path": "sources.*.includeUnowned",
+    "scope": "project",
+    "description": "Memory-backed sources only. Also expose unowned legacy records written before ownership existed. Off by default: legacy records are preserved on disk but never become shared knowledge implicitly."
+  },
+  {
+    "path": "sources.*.selection",
+    "scope": "project",
+    "description": "Memory-backed sources only. Bounded automatic selection is on by default: pinned kinds always, records relevant to the current message, a few recent captures, and an explicit account of what was left out. Override fields of the policy here, or set `false` to inject the full formatted log."
+  },
+  {
+    "path": "enabled",
+    "scope": "project",
+    "description": "Whether this project is enabled. Default: true."
+  },
+  {
+    "path": "status",
+    "scope": "project",
+    "description": "`archived`: hidden from the viewer's project list until unarchived; its settings and threads are kept and it still runs. Absent: live, its runtime status (active or idle) derived from its threads."
+  },
+  {
+    "path": "chorus",
+    "scope": "project",
+    "description": "This project's chorus: the region Wardens its threads run. Merged over the repository's own `<project>/.foundry/project.json` `chorus`, these settings winning. Region Wardens run only when `enabled` is true; absent, the project has no chorus and regions present are reported as off. In a resolved project view this is normalized (`enabled` effective, `layers` absolute); see docs/usage-and-context.md, \"Chorus\"."
+  },
+  {
+    "path": "chorus.enabled",
+    "scope": "project",
+    "description": "Run this project's region Wardens. Off by default."
+  },
+  {
+    "path": "chorus.regions",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "chorus.layers",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "chorus.consumed",
+    "scope": "project",
+    "description": "The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default."
+  },
+  {
+    "path": "chorus.consumed.enabled",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "chorus.consumed.tools",
+    "scope": "project",
+    "description": "Globs on a tool's name; a matching call's output is the work item. Default `DEFAULT_CONSUMED_TOOLS`."
+  },
+  {
+    "path": "chorus.consumed.paths",
+    "scope": "project",
+    "description": "Globs on a read file's path, relative to the project; the file is the work item. Default `DEFAULT_CONSUMED_PATHS`."
+  },
+  {
+    "path": "chorus.consumed.maxChars",
+    "scope": "project",
+    "description": "The work item is clipped to this many characters, with a marker. Default 12,000."
+  },
+  {
+    "path": "chorus.reception",
+    "scope": "project",
+    "description": "The reception charter (`CHORUS_RECEPTION`): how the main thread reads a chime, held once as a standing layer. On with the chorus (itself opt-in); `false` leaves it out, e.g. for a baseline."
+  },
+  {
+    "path": "chorus.wardens",
+    "scope": "project",
+    "description": "How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, one stage, today's Warden. The machine's list replaces the repository's whole."
+  },
+  {
+    "path": "chorus.wardens.stages",
+    "scope": "project",
+    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`."
+  },
+  {
+    "path": "chorus.heralds",
+    "scope": "project",
+    "description": "How Herald regions would classify: the socket only. Heralds are not built; their regions do not run."
+  },
+  {
+    "path": "chorus.heralds.stages",
+    "scope": "project",
+    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`."
+  },
+  {
+    "path": "conversations",
+    "scope": "project",
+    "description": "This project's agent conversations (docs/reference/CONVERSATIONS.md §4.6): floor mode, depth bound and conch, over the repository's `conversations`, each thread's own overrides last."
+  },
+  {
+    "path": "capacity",
+    "scope": "project",
+    "description": "Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool."
+  },
+  {
+    "path": "kingdomCapacity",
+    "scope": "project",
+    "description": "Required when `capacity` is `kingdom`."
+  },
+  {
+    "path": "kingdomCapacity.kingdom",
+    "scope": "project",
+    "description": "Paired Kingdom id or API origin (`bun run kingdom status`)."
+  },
+  {
+    "path": "kingdomCapacity.signetId",
+    "scope": "project",
+    "description": ""
+  },
+  {
+    "path": "kingdomCapacity.projectId",
+    "scope": "project",
+    "description": ""
+  }
+]

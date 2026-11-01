@@ -23,7 +23,15 @@ import { NavRail } from './nav-rail.js';
 import { panelColumns, RestoreTab } from './panel-sizes.js';
 import { ProjectHome } from './project-home.js';
 import { RightPanel } from './right-panel.js';
-import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
+import {
+  analyticsPath,
+  closeSearch,
+  navigate,
+  onLink,
+  openSearch,
+  route,
+  settingsPath,
+} from './route.js';
 import { SearchPage } from './search.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
@@ -50,7 +58,6 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
-  openSearch,
   projectHomeOpen,
   projectPage,
   projectSidebarOpen,
@@ -60,7 +67,6 @@ import {
   resyncStreams,
   rightTab,
   scopeProjectId,
-  searchOpen,
   selectedEvent,
   selectedSpanId,
   toast,
@@ -91,7 +97,7 @@ function PageNav() {
 
 /** Search, beside the pages: icon-only on narrow screens; / opens it too. */
 function SearchButton() {
-  const open = searchOpen.value && route.value.page === 'workspace';
+  const open = route.value.page === 'search';
   return html`<button type="button" class="search-button ${open ? 'is-active' : ''}" title="Search everything (/)" aria-label="Search"
     onClick=${openSearch}>⌕<span class="search-button-label"> Search</span><kbd>/</kbd></button>`;
 }
@@ -296,8 +302,8 @@ function App() {
         /* TODO: expand selected */
       },
       escape: () => {
-        if (searchOpen.value) {
-          searchOpen.value = false;
+        if (route.value.page === 'search') {
+          closeSearch();
           return;
         }
         if (projectHomeOpen.value && projectPage.value === 'knowledge') {
@@ -360,7 +366,7 @@ function App() {
     return html`
       <div class="app">
         <${Header} />
-        ${page === 'settings' ? html`<${SettingsPage} />` : html`<${AnalyticsPage} />`}
+        ${page === 'settings' ? html`<${SettingsPage} />` : page === 'search' ? html`<${SearchPage} />` : html`<${AnalyticsPage} />`}
         <${CommandPalette} />
         <${HelpOverlay} />
         <${Wizard} />
@@ -393,19 +399,17 @@ function App() {
             ${
               incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
                 ? html`<${RequestView} />`
-                : searchOpen.value
-                  ? html`<${SearchPage} />`
-                  : watchtowerOpen.value
-                    ? html`<${Watchtower} />`
-                    : boardOpen.value
-                      ? html`<${Board} />`
-                      : projectHomeOpen.value
-                        ? projectPage.value === 'knowledge' && activeProjectId.value
-                          ? html`<${KnowledgePage} key=${activeProjectId.value} />`
-                          : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
-                        : activePanel.value === 'feedback'
-                          ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                          : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+                : watchtowerOpen.value
+                  ? html`<${Watchtower} />`
+                  : boardOpen.value
+                    ? html`<${Board} />`
+                    : projectHomeOpen.value
+                      ? projectPage.value === 'knowledge' && activeProjectId.value
+                        ? html`<${KnowledgePage} key=${activeProjectId.value} />`
+                        : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                      : activePanel.value === 'feedback'
+                        ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                        : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }
