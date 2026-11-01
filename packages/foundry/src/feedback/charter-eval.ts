@@ -123,6 +123,18 @@ export interface CharterEvalOptions {
   readonly onDebug?: (row: WardenDebug) => void;
   /** Which cells take debug readings (the Warden asked: a group recogniser, else the region); all when omitted. */
   readonly debugCell?: (probeId: string, domain: string) => boolean;
+  /**
+   * A test of the later stages with stage 1 held fixed (`--carry <run dir>`): each cell's row from an
+   * earlier run of the same stage 1. A cell whose earlier stage 1 escalated runs from stage 2, carrying
+   * that reading as live would; any other cell keeps its earlier row, unasked. Ungrouped Wardens only.
+   */
+  readonly carry?: (
+    probeId: string,
+    domain: string,
+    trigger: WardenProbeTrigger,
+  ) => WardenProbeAnswer | undefined;
+  /** With `carry`: hand stage 2 stage 1's why (live does). Default true. */
+  readonly carryWhy?: boolean;
 }
 
 /** One stage's debug readings for one cell (`debug.jsonl`). */
@@ -386,6 +398,40 @@ async function ask(
     return { result: guard as AdviseResult | GuardResult, classified: guard.classified, debugMs };
   };
   const group = warden.members;
+  if (options.carry) {
+    if (group) throw Error(`--carry runs ungrouped Wardens only (${warden.domain} is a group)`);
+    const earlier = options.carry(probe.id, warden.domain, trigger);
+    const first = earlier?.stages?.[0];
+    if (!earlier || !first)
+      return [row(warden.domain, { noComment: false, error: 'no earlier stage 1 to carry' })];
+    // A recognise stage's why is its line for this region; a point stage's is the stage's own.
+    const why = first.why ?? first.regions?.find((r) => r.regionId === warden.domain)?.why;
+    const outcome = first.outcome;
+    if (
+      first.error ||
+      first.timedOut ||
+      outcome === undefined ||
+      outcome === 'no' ||
+      !(stages[0]!.escalate ?? []).includes(outcome)
+    )
+      return [earlier];
+    const later = await run(warden, undefined, {
+      stage: 0,
+      outcome,
+      ...(options.carryWhy !== false && why ? { why } : {}),
+      ...(first.model ? { model: first.model } : {}),
+    });
+    return [
+      row(
+        warden.domain,
+        {
+          ...rowOf(later.result, later.classified),
+          stages: [first, ...(later.classified?.stages ?? [])],
+        },
+        later.debugMs,
+      ),
+    ];
+  }
   if (!group) {
     const { result, classified, debugMs } = await run(warden);
     return [row(warden.domain, rowOf(result, staged ? classified : undefined), debugMs)];

@@ -15,6 +15,7 @@
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
  *     [--experiment <design.md>] [--subagents <processes>] [--stop-at-points <n>] [--stop-seven-day <percent>]
+ *     [--carry <earlier run dir> [--carry-why on|off]]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -163,6 +164,8 @@ const { values } = parseArgs({
     model: { type: 'string' },
     effort: { type: 'string' },
     experiment: { type: 'string' },
+    carry: { type: 'string' },
+    'carry-why': { type: 'string' },
   },
   strict: true,
 });
@@ -564,6 +567,27 @@ if (values.rejudge) {
   process.exit(0);
 }
 
+/**
+ * --carry <run dir>: test the later stages with stage 1 held fixed. Each cell's stage 1 is the earlier
+ * run's (same stage 1 config); only cells it escalated are asked, from stage 2, carrying its reading.
+ * --carry-why off leaves stage 1's why out of what stage 2 is handed (live hands it on).
+ */
+if (values['carry-why'] !== undefined && !['on', 'off'].includes(values['carry-why']))
+  throw Error('--carry-why is on or off');
+if (values['carry-why'] !== undefined && !values.carry) throw Error('--carry-why needs --carry');
+if (values.carry && stages.length < 2)
+  throw Error('--carry needs a run config with two or more stages');
+const carried = values.carry
+  ? new Map(
+      readFileSync(join(resolve(values.carry), 'answers.jsonl'), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as WardenProbeAnswer)
+        .map((a) => [`${a.probeId}|${a.domain}|${a.trigger ?? 'agent-action'}`, a] as const),
+    )
+  : undefined;
+if (carried) console.error(`carrying stage 1 from ${values.carry}: ${carried.size} rows`);
+
 const concurrency = Number(values.concurrency ?? 16);
 // An eval run, not work: Archive and the repeat report leave its sessions out.
 const state = privateDirectory(join(homedir(), '.foundry', 'evals'));
@@ -753,6 +777,13 @@ try {
     ...(judges ? { judge: judges.provider } : {}),
     concurrency,
     triggers,
+    ...(carried
+      ? {
+          carry: (probeId: string, domain: string, trigger: WardenProbeTrigger) =>
+            carried.get(`${probeId}|${domain}|${trigger}`),
+          carryWhy: values['carry-why'] !== 'off',
+        }
+      : {}),
     done: (probeId, trigger) => !!stopped || finished.has(turnKey(probeId, trigger)),
     beforeTurn: quotaGate,
     onTurn: (turn) => appendFileSync(turnsFile, `${JSON.stringify(turn)}\n`),
@@ -841,6 +872,9 @@ try {
         effort: wardenEffort ?? 'low',
         thinkingTokens: process.env.MAX_THINKING_TOKENS,
         classify,
+        ...(values.carry
+          ? { carry: resolve(values.carry), carryWhy: values['carry-why'] !== 'off' }
+          : {}),
         budget: budgetOverride,
         inputCap,
         roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],
