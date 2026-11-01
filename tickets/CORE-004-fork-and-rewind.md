@@ -10,10 +10,10 @@
 
 ## Overview
 
-The live fork and revert routes return 501 (`packages/foundry/src/viewer/routes/runtime.ts`, with `localStore` the default). agent-session already has the native pieces:
+The live fork and revert routes return 501 (`packages/foundry/src/viewer/routes/runtime.ts:851,891` at main `467c8d5`, with `localStore` the default). agent-session already has the native pieces:
 - **Claude fork:** `HarnessSession.fork()` (`--fork-session`).
 - **Claude conversation rewind:** `rewind_conversation`, used today only for decision side sessions (`src/claude-subagents.ts:812`).
-- **Claude file rewind:** the CLI has a `rewind_files` control and SDK file checkpointing (`enableFileCheckpointing` / `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`, found in the 2.1.316 binary). agent-session doesn't use it yet.
+- **Claude file rewind:** the CLI's `rewind_files` control request (2.1.316 binary): `{subtype: 'rewind_files', user_message_id, dry_run?}`, returning `canRewind`, `filesChanged`, `insertions`, `deletions`. It fails with "File rewinding is not enabled." unless the session was launched with `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING` (what the SDK's `enableFileCheckpointing` sets). It fails with "No file checkpoint found for this message." for a message with no checkpoint. It is rejected in cloud-hosted sessions, and the SDK forbids it with `sessionStore`. agent-session doesn't use it yet.
 - **Codex:** fork is wired only in primed sessions (`thread/fork`, `src/codex-primed.ts`); 0.155 refuses `thread/rollback`.
 
 **Decided (Aron, 2026-11-01): agreed with the proposal.**
@@ -30,16 +30,19 @@ Aron: "even if we do mostly on the native version, we still need some level of h
 | State | On fork (the new thread, cut at turn N) | On rewind (to turn N) |
 |---|---|---|
 | **Injection ledger**: what the native session has been given (`providers/session-delivery.ts`, the Librarian's ledger) | copied as it stood at N | cut back to N. **Without this, Foundry won't resend context that the rewind removed** |
-| **Warden thread knowledge** (`session_knowledge`, per revision) | copied at the revision current at N | reset to the revision at N |
+| **Warden thread knowledge** (`session_knowledge`) | rebuilt at N | rebuilt at N |
 | **Delivered-pointer ledger** (proposed, FEAT-004) | copied at N | cut to N |
-| **Journal** | new thread with provenance (`parentThreadId`, forked-at turn); the source is untouched | a rewind marker row; rows after N stay, marked superseded, never deleted |
+| **Journal** (append-only, ANATOMY.md) | new thread with provenance (`parentThreadId`; the forked-at turn is `parentTurnId`); the source is untouched | an appended rewind marker; rows after N are *read* as superseded from the marker, never updated or deleted |
 | **Queued turns** | not copied | kept, re-sent on top of N |
-| **Archive** | the fork is its own top-level thread with provenance (FEAT-004) | the marker rides in the snapshot |
+| **Archive** | capture sends Archive's existing `lineage.kind: 'fork'` (`archive/src/index.ts:50`), not `subagent` (`archives/capture.ts:71-95` today maps every `parentThreadId` to `subagent`) | the marker rides in the snapshot |
+
+**Thread knowledge has no history to roll back to.** `session_knowledge` is one upserted snapshot per thread (`local-session-store.ts:651`, `ON CONFLICT(thread_id) DO UPDATE`), and the store refuses a revision that moves backwards (`:632-637`). So "rebuilt at N" means one of two things. Either replay the thread's `session_learning` rows up to N (`:375`), or keep per-revision snapshots. Either way the backwards-revision invariant changes for a rewind: a rewind starts a new revision line rather than lowering the number. Decide this before building.
 
 ## Files
 
 **Recommendation: roll back files natively on Claude, and say what wasn't restored.**
-- Claude's file checkpointing records edits made through its own file tools (Write, Edit). It does not see changes made by shell commands (`rm`, `mv`, `sed`, codegen, `bun install`), by other processes, or by another thread in the same worktree. After a rewind, Foundry lists the files the turns after N touched through the shell, from the journal's tool calls, as "not restored".
+- **Foundry must record each turn's CLI user-message uuid**, because `rewind_files` takes it. Before rewinding, a `dry_run` shows the files that will change, and the thread shows that list.
+- Per the Claude Code checkpointing docs (not verified in the binary), checkpoints record edits made through Claude's own file tools (Write, Edit). They don't see changes made by shell commands (`rm`, `mv`, `sed`, codegen, `bun install`), by other processes, or by another thread in the same worktree. **Hazard:** in a shared worktree, a file rewind can also overwrite another thread's later edits to the same file, not just miss them. Refuse a file rewind when another live thread shares the worktree, or show the overlap first. After a rewind, Foundry lists the files the turns after N touched through the shell, from the journal's tool calls, as "not restored".
 - Checkpointing must be on at launch, so a thread launched without it can't rewind files.
 - **On Codex,** there's no native file rollback: conversation only, and the thread says so.
 - **No Foundry-built git checkpoints.** File checkpoints are the host's (the 10-11 decision), and T3 already has them.
@@ -53,7 +56,8 @@ Aron: "even if we do mostly on the native version, we still need some level of h
 | File rewind | the Claude `rewind_files` control + file checkpointing; add to agent-session next to rewind |
 | Portable fallback | `turns/journal-history.ts` (seeding a fresh session from the journal) |
 | Injection ledger | `providers/session-delivery.ts` |
-| Thread knowledge | `session_knowledge` (keyed by thread, per revision) |
+| Thread knowledge | `session_knowledge` (one snapshot per thread) and `session_learning` (its rows), `local-session-store.ts` |
+| Archive fork lineage | Archive `lineage.kind: 'fork'`; `archives/capture.ts` `lineageOf` |
 | ACP | `session/fork` (UNSTABLE in the SDK); the host's rewind UI where offered |
 
 ## Acceptance
@@ -62,7 +66,8 @@ Aron: "even if we do mostly on the native version, we still need some level of h
 - [ ] Rewinding to N: the next turn re-sends every layer delivered after N. A test fails if the ledger isn't cut.
 - [ ] Rewinding with file checkpointing on restores Write/Edit changes, and lists shell-touched files as not restored.
 - [ ] On Codex, fork uses the portable form, and rewind is refused with the reason.
-- [ ] Journal rows after N are kept and marked superseded.
+- [ ] Journal rows after N are kept, and readers treat them as superseded because of the appended marker.
+- [ ] A fork archives with `lineage.kind: 'fork'`.
 
 ## Related
 

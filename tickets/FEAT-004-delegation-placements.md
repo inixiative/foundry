@@ -20,10 +20,14 @@ So there are two things, not three placements:
 | **Subagent** | Work inside a thread's own session (Claude Agent/Task, Codex sub-agents, later `foundry_delegate`) | Nested under its thread, expanded on demand | Part of the thread's tree (`handoff` / `handoff-return` rows) |
 
 - **Aron, Archive:** "only the top level gets shown in the project archive… It'll show it has stuff underneath it." What's underneath is subagents. A spawned thread is its own top-level entry.
-- **Aron, depth:** threads can go arbitrarily deep; nesting is bookkeeping, "almost like a linked list". There is no depth or fan-out limit.
+- **Aron, depth:** threads can go arbitrarily deep; nesting is bookkeeping, "almost like a linked list". He also said "they're normally limited, right?", and earlier that day agreed to a fan-out limit. **Open:** whether there is an enforced limit, and its form (Oracle SUBAGENTS.md §9 Q5).
 - **Hidden work** (Aron's third kind, work he won't look in on) is a subagent, collapsed by default. **Proposed**, since this reading of his "there's only top-level" isn't confirmed.
 
-**The provenance link already exists:** `ThreadMeta.parentThreadId` and `ThreadSpawn` (`packages/core/src/thread.ts:53-65`, `via: 'host-t3' | 'host-paseo'`, `toolCallId`, `handoffId`). `POST /api/threads` accepts `parentThreadId` (`viewer/routes/runtime.ts:738`). **Proposed:** for a top-level thread these fields mean provenance. The viewer's tree no longer nests by them, and nests only subagents (`spawn.via` `native-*` or `foundry`). No new field.
+**The provenance link already exists:** `ThreadMeta.parentThreadId` and `ThreadSpawn` (`packages/core/src/thread.ts:53-65`, `via: 'foundry' | 'native-claude' | 'native-codex' | 'host-paseo' | 'host-t3'`, `toolCallId`, `handoffId`). `POST /api/threads` accepts `parentThreadId` (`viewer/routes/runtime.ts:738`). **Proposed:** for a top-level thread these fields mean provenance.
+- **One new `via` value, `launch`**, for a thread an agent launched top-level with no host. `'foundry'` stays for `foundry_delegate` subagents, so the two are never confused. Nothing sets `'foundry'` today.
+- **The viewer** (`thread-tree.js:147-158`, which nests by `parentThreadId` alone today) nests only subagents: `via` `native-*` or `foundry`.
+- **Archive capture** (`archives/capture.ts:71-95`, `lineageOf`) turns any `parentThreadId` into `lineage.kind: 'subagent'` with a `rootSessionId`, and Archive groups by root (`archive/src/parts.ts:95`). For a top-level thread it must send provenance only, with no subagent lineage and no root grouping. That is a capture change, and it may need an Archive lineage kind (Archive has `subagent | fork | part`, `archive/src/index.ts:50`).
+- The `ThreadMeta` doc comments ("Parent thread when this thread is a subagent") are updated to say this.
 
 ## Access
 
@@ -32,7 +36,7 @@ So there are two things, not three placements:
 2. **Granted by the instructions:** the spawner's instructions name specific access, and the thread gets exactly that.
 3. **Carried over:** the instructions say to carry over the spawner's access, and the thread gets the spawner's.
 
-There is no automatic ceiling, because access comes from the person. **Proposed:** the choice and what was granted are recorded on the spawn, so the Context tab shows where each grant came from. In a host, the host's own mode rules still apply: T3 refuses a launch broader than the caller's modes.
+**Open:** whether a grant may exceed the spawner's own access. Earlier on 11-01 Aron agreed to a ceiling, and these three modes don't withdraw it. **Proposed:** the choice and what was granted are recorded on the spawn, so the Context tab shows where each grant came from. In a host, the host's own mode rules still apply: T3 refuses a launch broader than the caller's modes.
 
 ## Inside a host
 
@@ -60,7 +64,8 @@ There is no automatic ceiling, because access comes from the person. **Proposed:
 
 | Concern | Primitive |
 |---|---|
-| Provenance | `ThreadMeta.parentThreadId`, `ThreadSpawn` (`packages/core/src/thread.ts:53-65`); `POST /api/threads` (`viewer/routes/runtime.ts:738`) |
+| Provenance | `ThreadMeta.parentThreadId`, `ThreadSpawn` (`packages/core/src/thread.ts:53-65`); `POST /api/threads` (`viewer/routes/runtime.ts:738`); new `via: 'launch'` |
+| Archive | `archives/capture.ts` `lineageOf` (changed: provenance, not `subagent` lineage, for top-level threads) |
 | Subagent nesting | `turns/subagents.ts`; the viewer thread tree (`thread-tree.js`) |
 | Handoff brief | the chorus's `subagent-spawn` trigger |
 | Host tools in the harness | `packages/acp/src/agent.ts:776`; `native-launch.ts:189`, `:220` (Codex) |
@@ -73,6 +78,7 @@ There is no automatic ceiling, because access comes from the person. **Proposed:
 
 - [ ] A thread an agent spawns is top-level in the sidebar, the attention board and the project Archive, with "spawned from" in its Context tab.
 - [ ] The viewer nests only subagents.
+- [ ] Archive capture of a spawned top-level thread carries provenance and no `subagent` lineage, so it is its own top-level Archive entry.
 - [ ] A spawn with no access instructions starts fresh and asks. One with named access gets exactly that. One told to carry over gets the spawner's grants. Each case is recorded on the spawn.
 - [ ] In T3, the launch creates a T3 sidebar thread running Foundry in the FEAT-003 worktree, linked to its source by the worktree path.
 - [ ] In Paseo, the same through `create_workspace` and `create_agent`, once its display is checked.
