@@ -414,6 +414,7 @@ export {
   type DispatchOptions,
   type FanResult,
   Thread,
+  type ThreadCheckout,
   type ThreadConfig,
   type ThreadContext,
   type ThreadMeta,

@@ -28,6 +28,22 @@ export interface ThreadReference {
   readonly url?: string;
 }
 
+/**
+ * A thread's worktree record. `mode` is how its repository makes worktrees (`template`: slots via
+ * `worktree:create`; `classic`: plain git; `none`: the thread works outside any git checkout).
+ * `released` means the recorded checkout no longer exists on disk; the rest is what it was.
+ */
+export interface ThreadCheckout {
+  readonly mode: 'template' | 'classic' | 'none';
+  /** Worktree root (absent for `none`). */
+  readonly path?: string;
+  /** The repository's main checkout rather than a linked worktree. */
+  readonly main: boolean;
+  /** Template mode: the slot the worktree holds (main checkout = 0). */
+  readonly slot?: number;
+  readonly state: 'live' | 'released';
+}
+
 /** Where a thread's work lives, as the runtime last observed it. */
 export interface ThreadContext {
   /** `owner/repo` of the worktree's origin. */
@@ -36,6 +52,8 @@ export interface ThreadContext {
   readonly branch?: string;
   /** Worktree root containing the thread's cwd. */
   readonly worktree?: string;
+  /** The thread's checkout as a worktree record (FEAT-003): mode, slot and whether it still exists. */
+  readonly checkout?: ThreadCheckout;
   readonly references: readonly ThreadReference[];
   readonly updatedAt: number;
 }

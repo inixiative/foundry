@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ArchiveSnapshot, archiveSnapshotSchema } from '@inixiative/archive';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { snapshotReferences, ThreadContextTracker } from '../src/archives/thread-context';
-import { gitContext } from '../src/git';
+import { checkoutPlace, gitContext } from '../src/git';
 
 const snapshot = (sessionId: string, texts: string[]): ArchiveSnapshot =>
   archiveSnapshotSchema.parse({
@@ -115,6 +115,72 @@ test('gitContext reads the origin, checked-out branch and worktree root of a rea
       worktree: root,
     });
     expect(await gitContext(join(root, 'missing'))).toEqual({});
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a thread's checkout record: template mode and slot from the repository, released once its worktree is gone", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'thread-checkout-')));
+  try {
+    const main = join(root, 'main');
+    mkdirSync(main);
+    const git = (...args: string[]) =>
+      Bun.spawnSync(['git', '-C', main, ...args], { stderr: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    writeFileSync(
+      join(main, 'package.json'),
+      JSON.stringify({ scripts: { 'worktree:create': './scripts/worktree/create.sh' } }),
+    );
+    git('add', '.');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init');
+    const linked = join(main, '.worktrees', 'feat-x');
+    git('worktree', 'add', '-q', '-b', 'feat/x', linked);
+    writeFileSync(join(linked, '.env.local'), 'API_PORT=8400\nWORKTREE_SLOT="3"\n');
+
+    const thread = new Thread('t', new ContextStack(), { description: '', cwd: linked });
+    const onMain = new Thread('m', new ContextStack(), { description: '', cwd: main });
+    const outside = new Thread('o', new ContextStack(), { description: '', cwd: root });
+    const threads = new Map([thread, onMain, outside].map((t) => [t.id, t]));
+    const tracker = new ThreadContextTracker({
+      thread: (id) => threads.get(id),
+      changed: () => {},
+    });
+
+    await Promise.all([tracker.refresh('t'), tracker.refresh('m'), tracker.refresh('o')]);
+    expect(thread.meta.context?.checkout).toEqual({
+      mode: 'template',
+      path: linked,
+      main: false,
+      slot: 3,
+      state: 'live',
+    });
+    expect(onMain.meta.context?.checkout).toEqual({
+      mode: 'template',
+      path: main,
+      main: true,
+      slot: 0,
+      state: 'live',
+    });
+    expect(outside.meta.context?.checkout).toEqual({ mode: 'none', main: false, state: 'live' });
+
+    git('worktree', 'remove', '--force', linked);
+    await tracker.refresh('t');
+    expect(thread.meta.context).toMatchObject({
+      branch: 'feat/x',
+      worktree: linked,
+      checkout: { mode: 'template', path: linked, slot: 3, state: 'released' },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a repository without worktree:create is classic mode, with no slot', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'thread-classic-')));
+  try {
+    Bun.spawnSync(['git', '-C', root, 'init', '-q', '-b', 'main']);
+    expect(await checkoutPlace(root)).toEqual({ mode: 'classic', path: root, main: true });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

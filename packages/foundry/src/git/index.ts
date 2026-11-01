@@ -1,6 +1,8 @@
 export {
   type BranchCommit,
   branchCommits,
+  type CheckoutPlace,
+  checkoutPlace,
   containingPath,
   diffStat,
   findByBranch,
@@ -9,4 +11,7 @@ export {
   getCurrentBranch,
   gitContext,
   listWorktrees,
+  type WorktreeMode,
+  worktreeMode,
+  worktreeSlot,
 } from './worktree';
