@@ -10,7 +10,7 @@ import type { StoredLearning, StoredPhase, TurnDetail } from '../persistence/loc
 
 /**
  * One turn as the ordered steps Foundry already recorded (the turn view): the input, routing, each
- * chorus round per region, the sealed plan, what reached the session (and what it already held),
+ * chorus layer per region, the sealed plan, what reached the session (and what it already held),
  * every tool call with its input and output, handoffs, the post-turn guard per region, writeback,
  * feedback and Archive capture. A projection of the journal only: nothing here is computed that the
  * turn did not record, and nothing here changes what a later turn receives. `saidBefore` on a chime
@@ -27,9 +27,9 @@ const num = (value: unknown) => (typeof value === 'number' ? value : null);
 const strings = (value: unknown) =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
-export interface ChorusRound {
-  /** 1-based: round 1 recognises (Haiku), round 2 confirms and points (Sonnet), as configured. */
-  readonly round: number;
+export interface ChorusLayer {
+  /** 1-based: layer 1 recognises (Haiku), layer 2 confirms and points (Sonnet), as configured. */
+  readonly layer: number;
   readonly task: ClassifyStageTrace['task'];
   readonly outcome: ClassifyStageTrace['outcome'] | null;
   readonly why: string | null;
@@ -49,8 +49,8 @@ export interface ChorusRegion {
   /** What it said (empty for NO_COMMENT). */
   readonly said: readonly string[];
   readonly pointer: WardenPointer | null;
-  /** A Warden with configured stages: each round it ran. A single-stage Warden has none; `decision` is its answer. */
-  readonly rounds: readonly ChorusRound[];
+  /** A Warden with configured stages: each layer it ran. A single-stage Warden has none; `decision` is its answer. */
+  readonly layers: readonly ChorusLayer[];
   readonly served: { model: string; effort?: string } | null;
 }
 
@@ -128,7 +128,7 @@ export type TimelineStep =
         status: string;
         findings: number;
         notes: string[];
-        rounds: ChorusRound[];
+        layers: ChorusLayer[];
       }[];
       notes: { severity: string; description: string; location?: string }[];
       failed: string[];
@@ -170,10 +170,10 @@ export interface TurnTimelineSources {
   readonly archive?: ArchiveCaptureState | null;
 }
 
-function rounds(classified: unknown): ChorusRound[] {
+function chorusLayers(classified: unknown): ChorusLayer[] {
   if (!isObject(classified) || !Array.isArray(classified.stages)) return [];
   return (classified.stages as ClassifyStageTrace[]).map((stage) => ({
-    round: stage.stage + 1,
+    layer: stage.stage + 1,
     task: stage.task,
     outcome: stage.outcome ?? null,
     why: stage.why ?? null,
@@ -210,7 +210,7 @@ function chorusRegion(participant: Record<string, unknown>): ChorusRegion {
     reason: str(participant.reason) ?? null,
     said,
     pointer: pointer?.relevant ? pointer : null,
-    rounds: rounds(participant.classified),
+    layers: chorusLayers(participant.classified),
     served: served(participant.request),
   };
 }
@@ -251,7 +251,7 @@ function toolSteps(detail: TurnDetail): TimelineStep[] {
   return [...native, ...foundry];
 }
 
-/** The guard over the turn: its outcome row, with each region's rounds from its request rows' outcomes. */
+/** The guard over the turn: its outcome row, with each region's layers from its request rows' outcomes. */
 function guardStep(row: StoredPhase): TimelineStep {
   const r = row.record;
   const outcomes = Array.isArray(r.outcomes) ? r.outcomes.filter(isObject) : [];
@@ -264,7 +264,7 @@ function guardStep(row: StoredPhase): TimelineStep {
       status: str(o.status) ?? 'unknown',
       findings: num(o.findings) ?? 0,
       notes: strings(o.notes),
-      rounds: rounds(o.classified),
+      layers: chorusLayers(o.classified),
     })),
     notes: (Array.isArray(r.notes) ? r.notes.filter(isObject) : []).map((n) => ({
       severity: str(n.severity) ?? 'advisory',
