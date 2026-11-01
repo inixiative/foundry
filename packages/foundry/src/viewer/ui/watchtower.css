@@ -1,0 +1,162 @@
+/* Watchtower (watchtower.js): work by lifecycle stage. */
+.watchtower {
+  height: 100%;
+  overflow: auto;
+  padding: 16px 20px 40px;
+}
+.wt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wt-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.wt-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px dashed hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+.wt-meta,
+.wt-note {
+  color: hsl(var(--muted-foreground));
+  font-size: 12.5px;
+}
+.wt-note {
+  margin: 6px 0 12px;
+  max-width: 110ch;
+}
+.wt-filters {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.wt-filters > .filter-chips {
+  flex: 1;
+  min-width: 320px;
+}
+.wt-scope {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: hsl(var(--muted));
+}
+.wt-scope button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.wt-scope button[aria-selected="true"] {
+  background: hsl(var(--card));
+}
+.wt-grid {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+  min-width: 1200px;
+}
+.wt-th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+  padding: 4px 2px;
+}
+.wt-th.is-blocked {
+  color: hsl(7 100% 74%);
+}
+.wt-lane {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 4px;
+  border-top: 1px solid hsl(var(--border));
+}
+.wt-cell {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid hsl(var(--border));
+  min-height: 40px;
+}
+.wt-card {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: hsl(var(--card));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.wt-card:hover {
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.wt-card b {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wt-card.is-mine {
+  box-shadow: inset 3px 0 0 hsl(var(--app-primary));
+}
+.wt-card.is-blocked {
+  border-color: hsl(7 100% 74% / 0.6);
+}
+.wt-sources,
+.wt-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+}
+.wt-src {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: hsl(var(--muted));
+}
+.wt-who span {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+}
+.wt-who span.wt-you {
+  border-color: hsl(205 70% 70% / 0.6);
+  color: hsl(205 70% 75%);
+}
+.wt-who span.wt-you.is-here {
+  border-color: hsl(var(--app-primary) / 0.6);
+  color: hsl(var(--app-primary));
+}
+.watchtower-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.watchtower-button.is-active {
+  background: hsl(var(--app-primary) / 0.4);
+  color: var(--text);
+}

@@ -35,6 +35,7 @@ import {
   threadData,
   threadLaunch,
   vendorName,
+  watchtowerOpen,
 } from './store.js';
 import { harnessName, ReferenceChips } from './thread-labels.js';
 import { Work } from './work.js';
@@ -197,8 +198,8 @@ function closeInspector() {
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
   const tab = rightTab.value;
-  // The board takes the width: the panel folds while it is open.
-  const open = detailDrawerOpen.value && !boardOpen.value;
+  // The board and the Watchtower take the width: the panel folds while either is open.
+  const open = detailDrawerOpen.value && !boardOpen.value && !watchtowerOpen.value;
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
 
   if (!open)
