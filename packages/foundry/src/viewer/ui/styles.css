@@ -7789,6 +7789,8 @@ a.thread-ref:hover {
   box-shadow:
     inset 0 0 0 1px hsl(var(--app-quaternary) / 0.4),
     0 12px 32px hsl(0 0% 0% / 0.45);
+}
+
 /* ---- Thread header: four areas (left: the thread and who runs it; right: where it lives, how it runs) ---- */
 .thread-band--quad {
   display: grid;
