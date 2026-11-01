@@ -15,8 +15,16 @@
  * model or provider moves it, the structure does not need to change.
  */
 
-/** Safety-net deadline for every pre-message decision (classify, route, Cartographer, advice). */
-export const DECISION_DEADLINE_MS = 10_000;
+/**
+ * Safety-net deadline for every pre-message decision (classify, route, Cartographer, advice).
+ * Aron, 2026-11-01: "really extend the timeout limit, and then we can figure out how to make
+ * things faster". At 10 s a 70-Warden chorus on 16 concurrent calls timed out on 11 of 70
+ * (template replay, 2026-11-01), so the deadline was cutting answers, not catching hangs.
+ */
+export const DECISION_DEADLINE_MS = 60_000;
+
+/** Upper bound a subscription policy may set for one decision's `callTimeoutMs`. */
+export const DECISION_CALL_TIMEOUT_MAX_MS = 120_000;
 
 export const DECISION_LATENCY_BUDGET = {
   /** The whole pre-message phase costs at most this many decision round-trips (controlled test). */

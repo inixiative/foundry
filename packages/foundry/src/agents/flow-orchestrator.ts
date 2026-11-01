@@ -54,6 +54,7 @@ import {
   type SignalBus,
 } from '@inixiative/foundry-core';
 import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
+import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -413,9 +414,9 @@ export interface FlowTimingConfig {
    * Default: every domain at once, so advice costs one decision's latency.
    */
   maxAdviseParallel?: number;
-  /** Deadline per domain assessment. A late answer is recorded as a timeout. Default: 10 000 ms. */
+  /** Deadline per domain assessment. A late answer is recorded as a timeout. Default: `DECISION_DEADLINE_MS`. */
   adviseTimeoutMs?: number;
-  /** Deadline for routing. A late route is recorded as a timeout. Default: 10 000 ms. */
+  /** Deadline for routing. A late route is recorded as a timeout. Default: `DECISION_DEADLINE_MS`. */
   routingTimeoutMs?: number;
   /**
    * Deadline for the whole pre-message flow. Started participants past it are
@@ -520,8 +521,16 @@ export class FlowOrchestrator {
       config.maxAdviseParallel,
       Number.MAX_SAFE_INTEGER,
     );
-    this._adviseTimeoutMs = positiveFiniteMs('adviseTimeoutMs', config.adviseTimeoutMs, 10_000)!;
-    this._routingTimeoutMs = positiveFiniteMs('routingTimeoutMs', config.routingTimeoutMs, 10_000)!;
+    this._adviseTimeoutMs = positiveFiniteMs(
+      'adviseTimeoutMs',
+      config.adviseTimeoutMs,
+      DECISION_DEADLINE_MS,
+    )!;
+    this._routingTimeoutMs = positiveFiniteMs(
+      'routingTimeoutMs',
+      config.routingTimeoutMs,
+      DECISION_DEADLINE_MS,
+    )!;
     this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
     this._contributionBudget = positiveBudget('contributionBudget', config.contributionBudget);
     this._prefilter = config.prefilter;

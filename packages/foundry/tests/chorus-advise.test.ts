@@ -153,7 +153,7 @@ test('one message through a live-built thread: the chimes on the message, the re
   // Every composed region has its decision and exact input; the orchestrator's live defaults ran.
   expect(advice.composed).toEqual(['concurrency-locks', 'lens-model']);
   expect(advice.decisions.every((d) => d.request.status === 'supplied')).toBe(true);
-  expect(advice.timing).toMatchObject({ adviseTimeoutMs: 10_000, contributionBudget: null });
+  expect(advice.timing).toMatchObject({ adviseTimeoutMs: 60_000, contributionBudget: null });
   expect(advice.primed).toBeUndefined();
   // The route and advice phase records, as the daemon journals them.
   expect(journal.map((r) => r.phase)).toEqual(['route', 'advice']);

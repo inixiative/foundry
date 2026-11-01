@@ -27,7 +27,7 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.maxQueuedPerThread` | `256` | Waiting decisions per logical thread: deep enough that a burst of guards never refuses admission. |
 | `subscriptionOnly.effort` | `low` | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`; Haiku 5.5 accepts `low` to `high`). The model default, `medium`, adds latency per decision. |
 | `subscriptionOnly.hedgeAfterMs` | `4000` for Codex | A decision still running after this long starts the same input on a second branch; the first to finish wins (500 to 30000). |
-| `subscriptionOnly.callTimeoutMs` | `30000` | Per-decision deadline including queue and preflight time (100 to 30000). |
+| `subscriptionOnly.callTimeoutMs` | `60000` | Per-decision deadline including queue and preflight time (100 to 120000). |
 
 Explicit profile sources are credential references in `nativeAuthentication`, never tokens:
 
@@ -130,7 +130,7 @@ Speed comes from how each decision runs:
 - Contexts that change are decided inline, and priming never sits on the critical path.
 - A decision still running after `hedgeAfterMs` is hedged.
 
-Every decision, including classification and routing, has a 10 s deadline (`DECISION_DEADLINE_MS`). It is a safety net, not the normal path: a late answer is recorded as a timeout, the call is cancelled, and a classifier or router falls back to keywords.
+Every decision, including classification and routing, has a 60 s deadline (`DECISION_DEADLINE_MS`; a Warden's advice and routing default to it too). It is a safety net, not the normal path. It was 10 s until 2026-11-01, when a 70-Warden chorus on 16 concurrent calls timed out on 11 of 70 Wardens in a live template replay: the deadline was cutting real answers, not catching hangs (Aron: "really extend the timeout limit, and then we can figure out how to make things faster"). On a timeout: a late answer is recorded as a timeout, the call is cancelled, and a classifier or router falls back to keywords.
 
 Claude Haiku 5.5 at low effort, measured live on 2026-10-11 through the primed host (eight roles at once on one Claude login): a warm decision takes 1.1–4.3 s (median about 1.7 s); a cold role (status check, priming and a first fork) takes 5–7 s. One warm decision alone takes about 1.1 s.
 

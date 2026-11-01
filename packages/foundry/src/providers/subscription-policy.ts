@@ -22,6 +22,7 @@ import {
   type ProjectAgentSettings,
 } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
+import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_DEADLINE_MS } from './decision-budget';
 import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 
@@ -44,7 +45,7 @@ export const subscriptionSettingsSchema = z
     maxQueued: z.number().int().min(1).max(1_024).optional(),
     maxQueuedPerThread: z.number().int().min(1).max(1_024).optional(),
     maxConcurrent: z.number().int().min(1).max(32).optional(),
-    callTimeoutMs: z.number().int().min(100).max(30_000).optional(),
+    callTimeoutMs: z.number().int().min(100).max(DECISION_CALL_TIMEOUT_MAX_MS).optional(),
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
     hedgeAfterMs: z.number().int().min(500).max(30_000).optional(),
   })
@@ -119,7 +120,7 @@ export const SUBSCRIPTION_DEFAULTS = {
   maxQueued: 512,
   maxQueuedPerThread: 256,
   maxConcurrent: { claude: 16, codex: 16 },
-  callTimeoutMs: 30_000,
+  callTimeoutMs: DECISION_DEADLINE_MS,
   effort: 'low',
   /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */
   hedgeAfterMs: 4_000,

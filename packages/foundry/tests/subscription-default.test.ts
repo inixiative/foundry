@@ -84,7 +84,7 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     maxQueued: 512,
     maxQueuedPerThread: 256,
     maxConcurrent: 16,
-    callTimeoutMs: 30000,
+    callTimeoutMs: 60000,
     effort: 'low',
     wardens: 'primed',
   });

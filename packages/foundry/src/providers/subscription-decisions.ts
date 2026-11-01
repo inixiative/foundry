@@ -15,6 +15,7 @@ import {
   type OwnedAdmissionInspection,
   sameNativeOwner,
 } from '@inixiative/foundry-core';
+import { DECISION_CALL_TIMEOUT_MAX_MS } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { InSessionWardens } from './in-session-wardens';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
@@ -153,7 +154,7 @@ export function buildSubscriptionDecisions(
         config.maxQueuedPerThread > config.maxQueued)) ||
     !Number.isSafeInteger(config.callTimeoutMs) ||
     config.callTimeoutMs < 100 ||
-    config.callTimeoutMs > 30_000 ||
+    config.callTimeoutMs > DECISION_CALL_TIMEOUT_MAX_MS ||
     (config.maxConcurrent !== undefined &&
       (!Number.isSafeInteger(config.maxConcurrent) ||
         config.maxConcurrent < 1 ||

@@ -268,7 +268,7 @@ New for evidence: the `acp:<client>` thread tag travels with the thread into Arc
 
 ### 5.4 Latency
 
-Warm decisions take 1.1–4.3 s, median ~1.7 s; a cold role 5–7 s; a 10 s safety deadline per decision (`docs/subscription-decisions.md:120-122`). The ACP path adds no budget of its own: the "Foundry: context" item opens the moment the turn is accepted, the structural gate makes no model call (target < 100 ms), and guards and learning stay off the critical path.
+Warm decisions take 1.1–4.3 s, median ~1.7 s; a cold role 5–7 s; a 60 s safety deadline per decision (`docs/subscription-decisions.md`, `DECISION_DEADLINE_MS`). The ACP path adds no budget of its own: the "Foundry: context" item opens the moment the turn is accepted, the structural gate makes no model call (target < 100 ms), and guards and learning stay off the critical path.
 
 ---
 

@@ -27,7 +27,7 @@ import {
   type NativeEvidence,
 } from '@inixiative/foundry-core';
 import { stampFoundryRun } from '../archives/run-stamp';
-import { DECISION_INPUT_CAP } from './decision-budget';
+import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_INPUT_CAP } from './decision-budget';
 import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
 import type { InSessionWardens } from './in-session-wardens';
 import { NativeAuthentication } from './native-authentication';
@@ -208,7 +208,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     config.maxConcurrent > 32 ||
     !Number.isSafeInteger(config.callTimeoutMs) ||
     config.callTimeoutMs < 100 ||
-    config.callTimeoutMs > 30_000
+    config.callTimeoutMs > DECISION_CALL_TIMEOUT_MAX_MS
   )
     throw Error('Invalid primed decision configuration');
   assertPrivateProfile(config.directory);
