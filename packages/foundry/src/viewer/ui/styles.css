@@ -7789,4 +7789,96 @@ a.thread-ref:hover {
   box-shadow:
     inset 0 0 0 1px hsl(var(--app-quaternary) / 0.4),
     0 12px 32px hsl(0 0% 0% / 0.45);
+/* ---- Thread header: four areas (left: the thread and who runs it; right: where it lives, how it runs) ---- */
+.thread-band--quad {
+  display: grid;
+  /* Left (the thread) gets 60%, right (where and how it runs) 40%; each shortens inside its own. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-areas:
+    "tl tr"
+    "bl br"
+    "setup setup";
+  column-gap: 16px;
+  row-gap: 4px;
+  align-items: center;
+}
+.band-q {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.thread-band--quad .band-q--tl {
+  flex-wrap: nowrap;
+}
+.band-q--tl,
+.band-q--tr,
+.band-q--br {
+  overflow: hidden;
+}
+.band-q--tl > :not(.context-bar-title) {
+  flex-shrink: 0;
+}
+.band-q--tl {
+  grid-area: tl;
+}
+.band-q--tr {
+  grid-area: tr;
+  justify-content: flex-end;
+}
+.band-q--bl {
+  grid-area: bl;
+}
+.band-q--br {
+  grid-area: br;
+  justify-content: flex-end;
+}
+.thread-band--quad .context-bar-setup {
+  grid-area: setup;
+}
+.band-q--tl .context-bar-title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.band-q--tr,
+.band-q--bl,
+.band-q--br {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+/* Where it lives: project · Kingdom · worktree · branch, dot-separated, the tail shortens first. */
+.band-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.band-where + .band-where::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--text-dimmer);
+}
+.band-where:first-child {
+  color: var(--text);
+}
+/* What gives way first when the right side is short: the worktree, then the branch. */
+.band-where--keep {
+  flex-shrink: 0;
+  max-width: 14em;
+}
+.band-where--first-to-go {
+  flex-shrink: 8;
+}
+.band-more {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface2);
 }
