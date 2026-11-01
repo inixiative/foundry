@@ -135,7 +135,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | `NO_COMMENT` | The default answer: exactly that string. It adds nothing to the thread and is journalled as `no-comment`, so silence is measurable. | every phase protocol | live |
 | `excluded` / `not-admitted` | A Warden the queue never ran in time (advice / guard); the turn goes on without it. | | live |
 | pre-filter | A local model scores, per Warden, whether a moment is in its domain and skips only confident noes; fails open and journals every skip. Superseded as policy by "ask every region, every time"; the code stays. | `prefilter`, `pf/providers/warden-prefilter.ts`, `prefilter-model.ts` | off |
-| Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | `pf/agents/herald.ts` (class, nothing constructs it) | proposed |
+| Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | none (the unwired `agents/herald.ts` was deleted 2026-11-01) | proposed |
 
 ## The decision runtime
 

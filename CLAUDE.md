@@ -47,7 +47,7 @@ Read `docs/FLOW.md` for the full architecture. These are the named agents:
 |------|-------|-------------|
 | Context routing | **Cartographer** | Reads the topology map, routes context slices. Sees everything, modifies nothing. |
 | Domain advising | **Wardens** (formerly called Domain Librarians) | A project's region Wardens, one per concept region. Advise mode: "does this moment touch something in my region, and where is it written?" |
-| Domain advising (cross-thread) | **Herald** | Designed to watch all threads for convergence, divergence, resource conflicts. **Not wired**: `agents/herald.ts` exists but no runtime constructs it. |
+| Live data (cross-thread) | **Heralds** | Live data about what other threads and teammates are doing (Aron 2026-10-17); region `role: herald` is the socket. **Not built** (AGENT-001); the earlier unwired `agents/herald.ts` was deleted 2026-11-01. |
 | Execution | **Artificer** (the native session under the harness) | The real work. Full tool access, capable model. |
 | Correctness checking | **Wardens** (guard mode) | Same agents as advising, different mode. "Did this action violate anything in my domain?" |
 | Signal reconciliation | **Librarian** | Sole writer to thread-state. Classifies signals, reconciles, feeds writeback. |

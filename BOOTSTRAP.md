@@ -225,11 +225,7 @@ Operator corrects a classification/route/output
   → Formal doc compiles into conventions/learnings layer
 ```
 
-**Setup:** Wire the signal bus into CorpusCompiler at startup:
-
-```typescript
-corpus.ingestFromSignalBus(signals);
-```
+Nothing wires this loop today (AGENT-002).
 
 ### Loop 2: Review → Refinement (per-dispatch)
 
@@ -275,12 +271,7 @@ Herald snapshots all threads every 5s
   → Cross-pollination: learnings from thread A appear in thread B
 ```
 
-**Setup:** Herald is already built. Start it:
-
-```typescript
-const herald = new Herald(threadRegistry, signals);
-herald.start(); // 5s default interval
-```
+Not built (AGENT-001).
 
 ### Loop 5: Corpus Tier Promotion (manual + automatic)
 
@@ -307,7 +298,7 @@ When a thread is created for a project, hydrate these layers:
 | `project-context` | README.md, package.json, key config files | FileMemory or inline |
 | `domain` | docs/ directory, API specs, schema files | FileMemory or HTTP |
 | `conventions` | .foundry/memory (conventions kind) | FileMemory |
-| `learnings` | Compiled corpus (active formal docs) | CorpusCompiler.loadIntoStack() |
+| `learnings` | Compiled corpus (active formal docs) | not built (AGENT-002) |
 
 ### Thread Hydration (per-dispatch)
 
