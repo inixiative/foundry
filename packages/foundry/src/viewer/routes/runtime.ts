@@ -11,7 +11,7 @@ import type {
   StreamEvent,
   TokenTracker,
 } from '@inixiative/foundry-core';
-import { MODEL_REGISTRY, newId, Thread, threadTitle, } from '@inixiative/foundry-core';
+import { MODEL_REGISTRY, newId, Thread, threadTitle } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';

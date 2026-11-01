@@ -73,12 +73,7 @@ import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
-import {
-  FoundryTunnel,
-  type TunnelConfig,
-  type TunnelHolder,
-  tunnelAuth,
-} from './tunnel';
+import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
 
 export interface ViewerConfig {
   harness: Harness;
