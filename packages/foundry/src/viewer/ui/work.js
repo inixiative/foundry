@@ -127,6 +127,10 @@ export function Work() {
   const manageUrl = kingdomManageUrl(conversation);
 
   return html`<div class="rp-stack work">
+    <section class="rp-section coming-soon-card">
+      <h3 class="rp-section-title">Diff viewer <span class="coming-soon">Coming soon</span></h3>
+      <p class="rp-dim">Each hunk tagged by its Atlas concept, the gloss inline, and the Warden pointers and guards that touched it. Until then, diffs open on GitHub (Compare, below).</p>
+    </section>
     <${Section} title="File changes" count=${files.size || null}>
       ${
         files.size

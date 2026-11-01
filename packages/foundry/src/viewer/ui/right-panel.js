@@ -12,6 +12,7 @@
  * with a way back to the tabs. Collapsed, it is a strip of the tabs with their counts.
  */
 import { AccessSettings } from './access-settings.js';
+import { AtlasTouches, SharedConcepts } from './atlas-panels.js';
 import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
@@ -41,7 +42,7 @@ import {
   watchtowerOpen,
 } from './store.js';
 import { TabIcon } from './tab-icons.js';
-import { harnessName, ReferenceChips } from './thread-labels.js';
+import { harnessName, projectLabel, ReferenceChips } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
@@ -146,6 +147,7 @@ function ContextTab() {
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>
+    <${AtlasTouches} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />
     <section class="rp-section">
       <h3 class="rp-section-title">Linked work</h3>
       ${
@@ -183,10 +185,17 @@ function PermissionsTab() {
 }
 
 function HeraldsTab() {
-  return html`<div class="rp-empty">
-    Heralds aren’t running yet. When they are, this tab shows how this thread looks to them:
-    teammates’ threads touching the same files, related threads, past work it repeats, and who
-    else is watching.
+  return html`<div class="rp-stack">
+    <div class="rp-empty">
+      Heralds aren’t running yet. When they are, this tab shows how this thread looks to them:
+      teammates’ threads touching the same files, related threads, past work it repeats, and who
+      else is watching.
+    </div>
+    <section class="rp-section">
+      <h3 class="rp-section-title">Shared Atlas concepts</h3>
+      <p class="rp-dim">Other threads in this project touching the same concepts (this machine’s threads, until Heralds bring teammates’).</p>
+      <${SharedConcepts} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />
+    </section>
   </div>`;
 }
 
