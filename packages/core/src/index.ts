@@ -412,6 +412,8 @@ export {
   type ThreadFork,
   type ThreadMeta,
   type ThreadName,
+  type ThreadPlan,
+  type ThreadPlanItem,
   type ThreadReference,
   type ThreadSetup,
   type ThreadSnooze,

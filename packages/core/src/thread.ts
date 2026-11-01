@@ -49,6 +49,35 @@ export interface ThreadCheckout {
   readonly error?: string;
 }
 
+/** One item of a plan section: a short line, and its detail when the line is not enough. */
+export interface ThreadPlanItem {
+  readonly text: string;
+  readonly detail?: string;
+}
+
+/**
+ * The thread's plan, written by its agent through Foundry's `set_plan` tool. Outcomes are what the
+ * person gets (`you`: waits on the person); pains what hurts today; strategy how the work goes;
+ * reasons why this way. Each technical row names, per concern (auth, permissions, db access,
+ * requests, locks, jobs, events, errors…), the existing system it uses and where, or why none fits.
+ */
+export interface ThreadPlan {
+  readonly outcomes: readonly (ThreadPlanItem & {
+    readonly status: 'todo' | 'doing' | 'done' | 'you';
+  })[];
+  readonly pains: readonly ThreadPlanItem[];
+  readonly strategy: readonly ThreadPlanItem[];
+  readonly reasons: readonly ThreadPlanItem[];
+  readonly technical: readonly {
+    readonly concern: string;
+    readonly decision: 'reuse' | 'extend' | 'new' | 'combine' | 'refactor' | 'migrate' | 'none';
+    readonly system: string;
+    readonly path?: string;
+    readonly reason: string;
+  }[];
+  readonly updatedAt: number;
+}
+
 /**
  * A thread snoozed by its person: quiet until `until` (ISO), then cleared. `condition` names what
  * the time was resolved from (`quota-reset`: when the reached usage window resets). A snooze never
@@ -130,6 +159,9 @@ export interface ThreadMeta {
 
   /** Current status. */
   status: ThreadStatus;
+
+  /** The agent's plan for the thread's work (`set_plan`, the Plan view): what, why, and how. */
+  plan?: ThreadPlan;
 
   /** Put out of mind until a time (or a condition, resolved to its time); status is untouched. */
   snooze?: ThreadSnooze;
