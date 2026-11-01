@@ -144,8 +144,13 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     );
     const centered = await page.evaluate(() => {
       const header = document.querySelector('.header')!.getBoundingClientRect();
-      const board = document.querySelector('.header-center .board-button')!.getBoundingClientRect();
-      return Math.abs(board.left + board.width / 2 - (header.left + header.width / 2));
+      // The centre group (Board · Watchtower) is centred as one, as in the mockup.
+      const parts = [...document.querySelectorAll('.header-center > *')].map((el) =>
+        el.getBoundingClientRect(),
+      );
+      const left = Math.min(...parts.map((r) => r.left));
+      const right = Math.max(...parts.map((r) => r.right));
+      return Math.abs((left + right) / 2 - (header.left + header.width / 2));
     });
     expect(centered).toBeLessThan(2);
 
