@@ -6,12 +6,13 @@
 // Copied from the template's apps/api/src/ws/handler.ts and adapted: the viewer
 // authorizes the connection before upgrade (request-auth), so there is no
 // authenticate/logout frame; subscribe/unsubscribe become data-stream open/close.
+
+import { createSerializedQueue } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
 import { log } from '../logger';
 import { sendTo } from './delivery';
 import { cleanupStaleConnections, drainConnections, updateLastPing } from './lifecycle';
 import { addConnection, createRegistry, removeConnection, type WSRegistry } from './registry';
-import { createSerializedQueue } from './serialized-queue';
 import { createDataStreams, type DataStreams } from './streams';
 import type { StreamFamily, WSData, WSMessage, WSSocket } from './types';
 import { makeUnrefInterval } from './unref-interval';

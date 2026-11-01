@@ -1,10 +1,10 @@
 import './isolate-archive';
+import { createSerializedQueue } from '@inixiative/foundry-core';
 import { createViewerStreams } from '../../src/viewer/data-streams';
 import type { RuntimeRoutesDeps } from '../../src/viewer/routes/runtime';
 import type { createViewer } from '../../src/viewer/server';
 import { ViewerThreadDirectory } from '../../src/viewer/thread-directory';
 import { createWebSocketServer, type WebSocketServer } from '../../src/ws/handler';
-import { createSerializedQueue } from '../../src/ws/serialized-queue';
 import type { WSData, WSSocket } from '../../src/ws/types';
 
 // A real recorder shaped like a ServerWebSocket (copied from the template's

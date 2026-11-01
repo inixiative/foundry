@@ -14,6 +14,7 @@ import {
 import { stampedRun } from '@inixiative/archive/exemption';
 import {
   configuredModel,
+  createSerializedQueue,
   type EventStream,
   type NativeEvidence,
   type ServedModel,
@@ -272,7 +273,8 @@ export class ArchiveCapture {
   private readonly unsubscribe: () => void;
   private readonly retry: ReturnType<typeof setInterval>;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private flushing: Promise<void> = Promise.resolve();
+  /** Flushes and renewals run one at a time, in order. */
+  private readonly chain = createSerializedQueue();
   /** Stands in for the Archive's source id while it is unreachable; such snapshots are never written. */
   private readonly unsentSourceId = crypto.randomUUID();
   private closed = false;
@@ -316,9 +318,7 @@ export class ArchiveCapture {
     this.timer = undefined;
     const threads = [...this.pending];
     this.pending.clear();
-    const run = this.flushing.then(() => this.write(threads));
-    this.flushing = run.catch(() => {});
-    return run;
+    return this.chain.run(() => this.write(threads));
   }
   private async write(threads: string[]) {
     if (this.closed) return;
@@ -366,7 +366,7 @@ export class ArchiveCapture {
    * after (and undoes) the fulfilment of a turn that closed meanwhile.
    */
   renew(): Promise<void> {
-    const run = this.flushing.then(async () => {
+    return this.chain.run(async () => {
       const writer = this.writer();
       if (!writer || this.closed) return;
       await this.claim(
@@ -376,8 +376,6 @@ export class ArchiveCapture {
           .flatMap((threadId) => nativeSessions(this.journal, threadId)),
       );
     });
-    this.flushing = run.catch(() => {});
-    return run;
   }
   /** Claims are a courtesy to the collector: a refused claim never stops Foundry writing its journal. */
   private async claim(writer: ArchiveWriter, sessions: NativeSession[]) {

@@ -5,8 +5,9 @@
  */
 // Copied from the template's apps/api/src/ws/types.ts and adapted: no identity
 // (the viewer authorizes the whole connection at upgrade), channels become data streams.
+
+import type { SerializedQueue } from '@inixiative/foundry-core';
 import type { ServerWebSocket } from 'bun';
-import type { SerializedQueue } from './serialized-queue';
 
 export type WSData = {
   connectionId: string; // unique per connection (multiple tabs = multiple ids)
