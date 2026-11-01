@@ -175,7 +175,7 @@ function VendorRow({ vendor, settings, providersById, accountsById, apiTokens, c
   const [open, setOpen] = useState(false);
   const enabled = settings?.enabled === true;
   const modes = Object.entries(vendor.modes);
-  return html`<section class="settings-card vendor-row ${enabled ? '' : 'vendor-off'}" data-vendor=${vendor.id}>
+  return html`<section class="settings-card vendor-row ${enabled ? '' : 'vendor-off'}" data-vendor=${vendor.id} data-setting=${`vendors.${vendor.id}`}>
     <div class="vendor-head">
       <${Switch} checked=${enabled} label=${`${vendor.label} on`}
         onChange=${(on) => saveVendor(vendor.id, { enabled: on })} />
@@ -239,7 +239,7 @@ function SelectionCard({ current, providersById }) {
     const model = provider?.models.find((m) => m.id === choice.model);
     return `${model?.label ?? choice.model} · ${provider?.label ?? choice.provider}`;
   };
-  return html`<section class="settings-card model-selection">
+  return html`<section class="settings-card model-selection" data-setting="defaults">
     <div class="model-selection-row">
       <span class="settings-label">Default model</span>
       <span class="model-selection-value" data-choice="default">${name(current.default)}</span>

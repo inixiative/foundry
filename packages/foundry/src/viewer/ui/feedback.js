@@ -432,7 +432,7 @@ export function FeedbackSettings({ feedback, onSaved }) {
       setBusy(false);
     }
   };
-  return html`<section class="settings-card">
+  return html`<section class="settings-card" data-setting="feedback">
     <div class="settings-card-header"><span class="settings-card-title">Feedback</span></div>
     <p class="settings-desc">Give feedback with <code>${FEEDBACK_COMMAND}</code> in a thread's composer, or from a message's ⋯ menu. It is recorded as you said it, on that thread and turn, and collects in the pinned Feedback inbox.</p>
     <div class="dev-mode-switch">

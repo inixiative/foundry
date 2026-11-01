@@ -10,6 +10,7 @@
 
 import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
+import { DeviceBadge } from './machine-icons.js';
 import { RenameModal } from './modal.js';
 import {
   isSnoozed,
@@ -234,6 +235,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
         <div class="tree-row tree-row--meta">
           <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${harnessName(thread.meta.worker) ?? thread.meta.worker}` : ''}</span>
           <${StatusIcon} state=${nodeState(thread)} />
+          <${DeviceBadge} thread=${thread} />
           ${isDangerous(thread.permissionMode) ? html`<span class="row-dangerous" title="Dangerous: every permission check is skipped">Dangerous</span>` : null}
           ${
             thread.conversation?.unread

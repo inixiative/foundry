@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -22,6 +23,7 @@ import {
   shareUserSetup,
   subscriptionSettingsGuard,
 } from '../src/providers/harness-settings';
+import { FOUNDRY_PLUGIN_DIR, withFoundrySkills } from '../src/providers/native-launch';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
 import { recordedCodexStatus, settleRecordings } from './helpers/vcr';
@@ -355,11 +357,21 @@ test('a Codex home gets the user’s skills, rules and prompts by link', () => {
   const root = scratch();
   const user = join(root, 'codex');
   const home = join(root, 'home');
-  mkdirSync(join(user, 'skills'), { recursive: true });
+  mkdirSync(join(user, 'skills', 'review'), { recursive: true });
   mkdirSync(join(user, 'rules'));
   mkdirSync(home, { mode: 0o700 });
   shareCodexUserSetup(home, user);
-  expect(readlinkSync(join(home, 'skills'))).toBe(join(user, 'skills'));
+  // Skills: a folder of links, the user's own beside Foundry's.
+  expect(lstatSync(join(home, 'skills')).isSymbolicLink()).toBe(false);
+  expect(readlinkSync(join(home, 'skills', 'review'))).toBe(join(user, 'skills', 'review'));
+  expect(readlinkSync(join(home, 'skills', 'foundry-plan'))).toBe(
+    join(FOUNDRY_PLUGIN_DIR, 'skills', 'plan'),
+  );
+  // A skill the user removed goes; an earlier whole-folder link is replaced, never followed.
+  rmSync(join(user, 'skills', 'review'), { recursive: true });
+  shareCodexUserSetup(home, user);
+  expect(() => lstatSync(join(home, 'skills', 'review'))).toThrow();
+  expect(existsSync(join(user, 'skills'))).toBe(true);
   expect(readlinkSync(join(home, 'rules'))).toBe(join(user, 'rules'));
   expect(() => lstatSync(join(home, 'prompts'))).toThrow();
   // Never the user's AGENTS.md, memories or sessions.
@@ -400,7 +412,23 @@ test('a Codex main thread on the subscription runs on its own home with the user
   expect(userConfig).toContain('cli_auth_credentials_store = "file"');
   expect(userConfig).toContain('mcp_servers');
   expect(userConfig).not.toContain('evil');
-  expect(readlinkSync(join(userHome, 'skills'))).toBe(join(realpathSync(profile), 'skills'));
+  expect(readlinkSync(join(userHome, 'skills', 'foundry-plan'))).toBe(
+    join(FOUNDRY_PLUGIN_DIR, 'skills', 'plan'),
+  );
   expect(readFileSync(join(plainHome, 'config.toml'), 'utf8')).not.toContain('mcp_servers');
   expect(() => lstatSync(join(plainHome, 'skills'))).toThrow();
+});
+
+test("a main thread's Claude loads Foundry's skills as a session plugin, once, from the package", () => {
+  const argv = withFoundrySkills(['claude', '-p']);
+  expect(argv).toEqual(['claude', '-p', '--plugin-dir', FOUNDRY_PLUGIN_DIR]);
+  expect(withFoundrySkills(argv)).toEqual(argv);
+  for (const skill of ['plan', 'threads', 'conversations', 'context', 'running']) {
+    const text = readFileSync(join(FOUNDRY_PLUGIN_DIR, 'skills', skill, 'SKILL.md'), 'utf8');
+    expect(text).toMatch(new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---\\n`));
+  }
+  expect(
+    JSON.parse(readFileSync(join(FOUNDRY_PLUGIN_DIR, '.claude-plugin', 'plugin.json'), 'utf8'))
+      .name,
+  ).toBe('foundry');
 });

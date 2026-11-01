@@ -123,9 +123,11 @@ export interface FoundryConfig {
   toolRules?: ToolRules;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
+  /** Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection). */
   kingdomInference?: KingdomInferenceSource[];
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
   kingdomAccess?: KingdomAccessSource[];
+  /** Which Kingdom owner's pool (and spread or selection) a given thread draws its login from, by thread id. */
   kingdomInferenceAssignments?: Record<string, KingdomInferenceAssignment>;
   /** Explicit thread-to-source UUID assignments, applied on Foundry startup. */
   nativeAuthenticationSelections?: Record<string, string>;
@@ -152,10 +154,15 @@ export interface FoundryConfig {
   composition?: CompositionSettings;
   /** Global defaults — executor provider/model + classifier provider/model. */
   defaults: {
+    /** The provider new threads run on (e.g. `claude-code`, `codex`). */
     provider: string;
+    /** The model new threads run on. */
     model: string;
+    /** Which local login (a native authentication source) threads use by default. */
     nativeAuthenticationId?: string;
+    /** Which Kingdom owner's subscription pool threads use by default. */
     kingdomOwnerKey?: string;
+    /** Reasoning effort for Codex threads; omitted, Codex's own default. */
     codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;
@@ -172,9 +179,17 @@ export interface FoundryConfig {
   /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
   installationName?: string;
   /** This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a slot of the theme's categorical palette (`--layer-0` to `--layer-11`). */
-  installationIcon?: { glyph: MachineGlyph; color: number };
+  installationIcon?: {
+    /** The icon's shape (anvil, bolt, leaf, moon, peak, wave, star, hex). */
+    glyph: MachineGlyph;
+    /** The icon's colour: a slot of the theme's categorical palette, 0 to 11. */
+    color: number;
+  };
   /** The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view. */
-  messageBox?: { separateViews?: boolean };
+  messageBox?: {
+    /** Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label. */
+    separateViews?: boolean;
+  };
 
   /**
    * Global agent templates (keyed by agent ID).
@@ -221,7 +236,12 @@ export interface FoundryConfig {
  */
 export interface ProjectSettingsConfig {
   /** Opt-in maintenance; existing margins remain readable when disabled. */
-  gloss?: { enabled: boolean; display: 'margin' | 'hover' | 'inline' };
+  gloss?: {
+    /** Keep this project's gloss (margin commentary beside the code) maintained. */
+    enabled: boolean;
+    /** How gloss shows beside the code: in the margin, on hover, or inline. */
+    display: 'margin' | 'hover' | 'inline';
+  };
   /** Auto-generated UUID. Never manually specified. */
   id: string;
   /** Path to project root directory. The only truly required field. */
@@ -297,7 +317,9 @@ export interface ChorusLayerSettings {
 export interface ChorusSettings {
   /** Run this project's region Wardens. Off by default. */
   enabled?: boolean;
+  /** The one regions directory the chorus reads (absolute or relative to the project; default `.foundry/regions`). */
   regions?: string;
+  /** Several regions directories in order, a later layer's region replacing an earlier one (e.g. template base, then this project). */
   layers?: ChorusLayerSettings[];
   /** The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default. */
   consumed?: ConsumedSettings;
@@ -331,6 +353,7 @@ export type StageSettings = { [K in keyof StageConfig]?: StageConfig[K] };
  * `enabled`; each key the machine's settings give wins over the repository's.
  */
 export interface ConsumedSettings {
+  /** Ask the Wardens when a thread takes in a work item (a ticket, spec or issue it read). Off by default. */
   enabled?: boolean;
   /** Globs on a tool's name; a matching call's output is the work item. Default `DEFAULT_CONSUMED_TOOLS`. */
   tools?: string[];
@@ -345,7 +368,9 @@ export interface ConsumedSettings {
 export interface ProjectKingdomCapacity {
   /** Paired Kingdom id or API origin (`bun run kingdom status`). */
   kingdom: string;
+  /** The Kingdom Signet that grants this project its subscription pool (`subscription.use`). */
   signetId: string;
+  /** The Kingdom project this Foundry project's usage is recorded against. */
   projectId?: string;
 }
 
@@ -416,7 +441,9 @@ export const AGENT_KINDS = [
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
 export interface AgentSettingsConfig {
+  /** The agent's id: its key in `agents`, and how projects extend or override it. */
   id: string;
+  /** What the agent does in a turn (executor, classifier, router…). */
   kind: AgentKind;
   /** FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation. */
   flowRole?: string;
@@ -432,6 +459,7 @@ export interface AgentSettingsConfig {
   prompt: string;
   /** LLM settings — provider/model default to global if omitted. */
   provider?: string;
+  /** The model this agent runs on; omitted, the global default model. */
   model?: string;
   /** Temperature — set per agent. Classifiers/routers want 0, creative agents want higher. */
   temperature?: number;
@@ -545,6 +573,7 @@ export const isAgentExtension = (agent: ProjectAgentSettings): agent is AgentExt
  * - Executor (Claude Code): READS assembled context from all active layers
  */
 export interface LayerSettingsConfig {
+  /** The layer's id: its key in `layers`, and how projects and agents refer to it. */
   id: string;
   /** Domain knowledge ownership. An enabled domain-advising agent must explicitly
    * own this layer to register a custom expert; passive layers do not spawn actors. */
@@ -591,8 +620,11 @@ export interface LayerSettingsConfig {
 
 export interface LayerSettingsOverride
   extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
+  /** Change the layer's data sources for this project: replace the list, or append and remove ids. */
   sourceIds?: ListPatch<string>;
+  /** Change which agents may write the layer in this project: replace, or append and remove ids. */
   writers?: ListPatch<string>;
+  /** Change or clear (null) when a conditional layer is included in this project. */
   condition?: InvocationConditionOverride | null;
 }
 
@@ -616,7 +648,9 @@ export interface InvocationConditionOverride {
 }
 
 export interface DataSourceConfig {
+  /** The source's id: its key in `sources`, and how layers name it in `sourceIds`. */
   id: string;
+  /** Where the content comes from: a file, database, URL, markdown, inline text, the Archive, or instruction files. */
   type:
     | 'file'
     | 'sqlite'
@@ -635,9 +669,12 @@ export interface DataSourceConfig {
   slot?: CompositionSlot;
   /** Searches the local Archive for this project; `uri` is unused. */
   archive?: {
+    /** The Archive project whose captured sessions are searched. */
     projectId: string;
+    /** Most tokens of matching session text taken per search (128 to 16,000; default 2,048). */
     budget?: number;
   };
+  /** The source's display name in Settings and the layer view. */
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;

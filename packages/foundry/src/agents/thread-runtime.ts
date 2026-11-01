@@ -55,6 +55,9 @@ import {
   CHORUS_RECEPTION,
   CHORUS_RECEPTION_LAYER,
   CHORUS_RECEPTION_VERSION,
+  FOUNDRY_TOOLS_LAYER,
+  FOUNDRY_TOOLS_NOTE,
+  FOUNDRY_TOOLS_NOTE_VERSION,
 } from './chorus-reception';
 import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
@@ -1183,6 +1186,21 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       });
       reception.set(CHORUS_RECEPTION, 'foundry');
       stack.addLayer(reception);
+    }
+
+    // A wrapped thread holds Foundry's tools note once, as a standing layer: when to call set_plan and
+    // the other Foundry tools. An unwrapped thread gets nothing standing (a fresh install), only the skills.
+    if (
+      wrapsThread(deps.config, this.domainLibrarians.size, stack) &&
+      !stack.getLayer(FOUNDRY_TOOLS_LAYER)
+    ) {
+      const note = new ContextLayer({
+        id: FOUNDRY_TOOLS_LAYER,
+        owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
+        sources: [inlineSource(FOUNDRY_TOOLS_NOTE_VERSION, FOUNDRY_TOOLS_NOTE)],
+      });
+      note.set(FOUNDRY_TOOLS_NOTE, 'foundry');
+      stack.addLayer(note);
     }
 
     // A conversation thread holds its roster the same way: a standing layer, read through the

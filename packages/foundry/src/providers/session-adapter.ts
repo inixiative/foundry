@@ -50,6 +50,7 @@ import {
   appServerBridgeConfiguration,
   appServerClientMcpConfiguration,
   withClientMcpServers,
+  withFoundrySkills,
   withIsolatedFixture,
   withNativeBridge,
 } from './native-launch';
@@ -665,8 +666,9 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
               },
             )
           : (() => {
+              const base = launch?.argv ?? cmd;
               const client = withClientMcpServers(
-                launch?.argv ?? cmd,
+                mainThread ? withFoundrySkills(base) : base,
                 opts.tools === false ? [] : (opts.mcpServers ?? []),
               );
               try {

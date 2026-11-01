@@ -39,7 +39,7 @@ export function LayersSection() {
   const active = instances.filter((l) => ACTIVE_LAYER_STATES.has(l.state));
   const inactive = instances.filter((l) => !ACTIVE_LAYER_STATES.has(l.state));
   const row = (l, { dim = false, defined = false } = {}) => html`
-    <button type="button" key=${l.id} class="layer-item ${dim ? 'dimmed' : ''} ${selected === l.id ? 'selected' : ''}"
+    <button type="button" key=${l.id} class="layer-item ${dim ? 'dimmed' : ''} ${selected === l.id ? 'selected' : ''}" data-setting=${`layers.${l.id}`}
       onClick=${() => setSelected(l.id)}>
       ${
         defined
@@ -82,7 +82,7 @@ export function AgentsSection() {
     <div class="agent-list runtime-list">
       ${instances.map(
         (a) => html`
-        <button type="button" key=${a.id} class="agent-item ${selected === a.agentId ? 'selected' : ''}" onClick=${() => setSelected(a.agentId)}>
+        <button type="button" key=${a.id} class="agent-item ${selected === a.agentId ? 'selected' : ''}" data-setting=${`agents.${a.agentId}`} onClick=${() => setSelected(a.agentId)}>
           <span class="agent-icon">◆</span>
           <span class="agent-name">${a.agentId}</span>
         </button>
