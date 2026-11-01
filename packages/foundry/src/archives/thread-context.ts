@@ -3,10 +3,17 @@
  * @kind service
  * @partOf integration:archive
  */
+
+import { existsSync } from 'node:fs';
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { archiveReferences, provenanceReferences } from '@inixiative/archive/tags';
-import type { Thread, ThreadContext, ThreadReference } from '@inixiative/foundry-core';
-import { gitContext } from '../git';
+import type {
+  Thread,
+  ThreadCheckout,
+  ThreadContext,
+  ThreadReference,
+} from '@inixiative/foundry-core';
+import { checkoutPlace, gitContext } from '../git';
 
 const PER_KIND = 3;
 
@@ -37,6 +44,7 @@ export function snapshotReferences(snapshot: ArchiveSnapshot): ThreadReference[]
 }
 
 type Git = typeof gitContext;
+type Place = typeof checkoutPlace;
 type Pending = { again: boolean };
 
 /**
@@ -55,6 +63,7 @@ export class ThreadContextTracker {
       thread(id: string): Thread | undefined;
       changed(thread: Thread): void;
       git?: Git;
+      place?: Place;
     },
   ) {}
 
@@ -88,16 +97,39 @@ export class ThreadContextTracker {
   private async derive(threadId: string): Promise<void> {
     const thread = this.options.thread(threadId);
     if (!thread || thread.disposed) return;
-    const git: Awaited<ReturnType<Git>> = thread.meta.cwd
-      ? await (this.options.git ?? gitContext)(thread.meta.cwd).catch(() => ({}))
-      : {};
+    const cwd = thread.meta.cwd;
+    const prior = thread.meta.context;
+    // A recorded checkout that is gone from disk was released: keep where it was, mark it released.
+    if (cwd && !existsSync(cwd) && prior?.checkout && prior.checkout.mode !== 'none') {
+      const { updatedAt: _updatedAt, ...kept } = prior;
+      const next = {
+        ...kept,
+        checkout: { ...prior.checkout, state: 'released' } satisfies ThreadCheckout,
+        references: this.references.get(threadId) ?? prior.references,
+      };
+      return this.publish(thread, next);
+    }
+    const [git, place]: [Awaited<ReturnType<Git>>, Awaited<ReturnType<Place>>] = cwd
+      ? await Promise.all([
+          (this.options.git ?? gitContext)(cwd).catch(() => ({})),
+          (this.options.place ?? checkoutPlace)(cwd).catch(() => undefined),
+        ])
+      : [{}, undefined];
     const repository = provenanceReferences({ repository: git.remote })[0]?.ref;
+    const checkout: ThreadCheckout = place
+      ? { ...place, state: 'live' }
+      : { mode: 'none', main: false, state: 'live' };
     const next = {
       ...(repository ? { repository } : {}),
       ...(git.branch ? { branch: git.branch } : {}),
       ...(git.worktree ? { worktree: git.worktree } : {}),
-      references: this.references.get(threadId) ?? thread.meta.context?.references ?? [],
+      checkout,
+      references: this.references.get(threadId) ?? prior?.references ?? [],
     };
+    return this.publish(thread, next);
+  }
+
+  private publish(thread: Thread, next: Omit<ThreadContext, 'updatedAt'>): void {
     const current = JSON.stringify({
       ...(thread.meta.context ?? { references: [] }),
       updatedAt: undefined,

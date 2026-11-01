@@ -3,8 +3,8 @@
  * @kind helper
  * @partOf infrastructure:git
  */
-import { existsSync, realpathSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Git worktree utilities — read-only detection of existing worktrees
@@ -158,6 +158,66 @@ export async function gitContext(
     ...(branch ? { branch } : {}),
     ...(worktree ? { worktree } : {}),
   };
+}
+
+/**
+ * How a project makes worktrees (FEAT-003): `template` when its main checkout's `package.json` has a
+ * `worktree:create` script (slots: databases, ports, buckets), else `classic` (plain `git worktree`).
+ */
+export type WorktreeMode = 'template' | 'classic';
+
+/** The worktree mode of the repository whose main checkout is `mainRoot`. */
+export function worktreeMode(mainRoot: string): WorktreeMode {
+  try {
+    const pkg = JSON.parse(readFileSync(join(mainRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, unknown>;
+    };
+    return typeof pkg.scripts?.['worktree:create'] === 'string' ? 'template' : 'classic';
+  } catch {
+    return 'classic';
+  }
+}
+
+/**
+ * The template slot a worktree holds: `WORKTREE_SLOT` in its `.env.local`, else `.env.test`, read
+ * the way template's `worktree:list` reads it. Only that one key is read.
+ */
+export function worktreeSlot(worktreeRoot: string): number | undefined {
+  for (const file of ['.env.local', '.env.test']) {
+    let text: string;
+    try {
+      text = readFileSync(join(worktreeRoot, file), 'utf8');
+    } catch {
+      continue;
+    }
+    const value = text.match(
+      /^\s*(?:export\s+)?WORKTREE_SLOT\s*=\s*["']?(\d+)["']?\s*(?:#.*)?$/m,
+    )?.[1];
+    if (value !== undefined) return Number(value);
+  }
+  return undefined;
+}
+
+/** Where a checkout sits among its repository's worktrees, and how that repository makes them. */
+export interface CheckoutPlace {
+  mode: WorktreeMode;
+  /** Root of the worktree containing the directory. */
+  path: string;
+  /** The repository's main checkout (the original clone), not a linked worktree. */
+  main: boolean;
+  /** Template mode: the slot it holds (the main checkout is slot 0). */
+  slot?: number;
+}
+
+/** The checkout containing `cwd`: its worktree root, whether it is the main one, mode and slot. */
+export async function checkoutPlace(cwd: string): Promise<CheckoutPlace | undefined> {
+  const worktrees = await listWorktrees(cwd);
+  const own = findByPath(worktrees, cwd);
+  const mainRoot = worktrees.find((w) => w.isMain)?.path;
+  if (!own || !mainRoot) return undefined;
+  const mode = worktreeMode(mainRoot);
+  const slot = mode === 'template' ? (own.isMain ? 0 : worktreeSlot(own.path)) : undefined;
+  return { mode, path: own.path, main: own.isMain, ...(slot === undefined ? {} : { slot }) };
 }
 
 export interface BranchCommit {
