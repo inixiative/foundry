@@ -35,6 +35,7 @@ import { readOperationSchema } from '../providers/kingdom-access-client';
 import { ConversationTool } from '../tools/conversation';
 import { KingdomAccessTool } from '../tools/kingdom-access';
 import { KingdomPostTool } from '../tools/kingdom-post';
+import { type PlanPatch, planPatchSchema, ThreadPlanTool } from '../tools/thread-plan';
 import {
   type AuthorityRefusal,
   bindLiveAuthority,
@@ -572,6 +573,24 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
         },
         (args) => args.action === 'read',
       ),
+    );
+
+  // -----------------------------------------------------------------------
+  // set_plan — the thread's own plan, for the Plan view (tools/thread-plan.ts)
+  // -----------------------------------------------------------------------
+  if (config.tools?.get('plan') instanceof ThreadPlanTool)
+    server.tool(
+      'set_plan',
+      "Record this thread's plan so the person sees it in the Plan view, and keep it current as the work moves. Give any sections; each one given replaces that section. outcomes: what the person gets, each with its status (todo, doing, done, you = waits on the person). pains: what hurts today. strategy: how the work goes. reasons: why this way. technical: one row per concern the work touches (auth, permissions, db access, requests, locks, jobs, events, errors, ...): the existing system it uses and where it lives (reuse, extend, combine, refactor, migrate), or decision 'new' with why none fits and what would have made the closest one fit, or 'none' when the concern needs nothing. Lines are short; put more in detail.",
+      planPatchSchema.shape,
+      guarded<PlanPatch>('set_plan', async (args) => {
+        const result = await config.tools!.dispatch(
+          'plan_request',
+          { url: 'set_plan', method: 'POST', body: args },
+          { scope: authority.scope() },
+        );
+        return { status: result.ok ? 'ok' : 'error', text: result.summary };
+      }),
     );
 
   // -----------------------------------------------------------------------

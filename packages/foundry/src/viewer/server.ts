@@ -12,6 +12,7 @@ import type {
   InterventionLog,
   LLMProvider,
   Thread,
+  ThreadPlan,
   ThreadSetup,
   TokenTracker,
   ToolRegistry,
@@ -42,6 +43,7 @@ import {
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
+import { applyPlanPatch, type PlanPatch, type ThreadPlans } from '../tools/thread-plan';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
 import {
@@ -860,6 +862,17 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     conversations,
+    /** The plan tool's reach: a thread's plan, recorded on its meta, persisted and published. */
+    plans: {
+      setPlan(threadId: string, patch: PlanPatch): ThreadPlan {
+        const thread = directory.get(threadId);
+        if (!thread || thread.disposed) throw Error('This thread is not live here');
+        const plan = applyPlanPatch(thread.meta.plan, patch);
+        thread.meta.plan = plan;
+        threadChanged(thread);
+        return plan;
+      },
+    } satisfies ThreadPlans,
     startSocket() {
       socket.startStaleSweep();
       kingdomWatch.start();
@@ -966,6 +979,7 @@ export async function startViewer(config: ViewerConfig) {
     localStore,
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,
+    plans: viewer.plans,
   };
 }
 
