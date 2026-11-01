@@ -19,12 +19,14 @@ import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { RequestView } from './incoming.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
+import { ProjectHome } from './project-home.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
+  activeProjectId,
   allThreads,
   boardOpen,
   CENTER_PANELS,
@@ -45,6 +47,7 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  projectHomeOpen,
   projectSidebarOpen,
   projects,
   prompts,
@@ -354,9 +357,11 @@ function App() {
                 ? html`<${RequestView} />`
                 : boardOpen.value
                   ? html`<${Board} />`
-                  : activePanel.value === 'feedback'
-                    ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                    : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+                  : projectHomeOpen.value
+                    ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                    : activePanel.value === 'feedback'
+                      ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                      : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }

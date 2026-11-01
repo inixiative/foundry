@@ -9002,3 +9002,106 @@ a.thread-ref:hover {
   padding: 0;
   color: hsl(var(--muted-foreground, 0 0% 65%));
 }
+.project-home {
+  height: 100%;
+  overflow: auto;
+  padding: 22px 26px;
+}
+.ph-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.ph-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.ph-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.ph-box {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ph-box h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: hsl(var(--muted-foreground));
+}
+.ph-threads {
+  grid-row: span 3;
+}
+.ph-row {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ph-row:hover {
+  background: hsl(var(--muted) / 0.6);
+}
+.ph-row-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ph-row-state {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.ph-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+}
+.ph-meta {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+.ph-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ph-line > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(var(--app-primary));
+  flex: none;
+}
+.ph-line.is-warn > i {
+  background: hsl(38 87% 69%);
+}
+.ph-actions {
+  margin-top: 6px;
+}
+.ph-link {
+  align-self: flex-start;
+  text-decoration: none;
+}

@@ -21,6 +21,7 @@ import {
   createProject,
   feedbackInboxOpen,
   forgeMasterOpen,
+  openProjectHome,
   projectSidebarOpen,
   projects,
   selectScope,
@@ -308,7 +309,7 @@ export function ProjectSidebar() {
   const inbox = feedbackInboxOpen.value;
   const pinned = forge || inbox;
   const openFeedback = feedbackIn().filter((item) => item.inbox === 'open').length;
-  const handleSelect = (id) => selectScope(id);
+  const handleSelect = (id) => openProjectHome(id);
 
   return html`
     <div class="proj-sidebar nav-column">
@@ -331,7 +332,7 @@ export function ProjectSidebar() {
           <div class="proj-defaults nav-pinned" role="group" aria-label="Pinned scopes">
             <div
               class="proj-item proj-global ${!active && !pinned ? 'proj-active' : ''}"
-              onClick=${() => selectScope(null)}
+              onClick=${() => openProjectHome(null)}
             >
               <span class="proj-runtime-icon">*</span>
               <div class="proj-item-body">

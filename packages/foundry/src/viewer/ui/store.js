@@ -92,6 +92,18 @@ export const rightTab = signal('context');
 export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+/** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
+export const projectHomeOpen = signal(false);
+
+/** Open a project's home page (null = Global, threads outside any project). */
+export function openProjectHome(projectId) {
+  batch(() => {
+    selectScope(projectId);
+    boardOpen.value = false;
+    incomingOpenId.value = null;
+    projectHomeOpen.value = true;
+  });
+}
 /** What's typed in the open thread's message box: it goes with a waiting card's answer. */
 export const composerNote = signal('');
 /**
@@ -313,6 +325,7 @@ export function selectScope(scope) {
     feedbackInboxOpen.value = scope === 'feedback';
     if (scope !== 'forge' && scope !== 'feedback') activeProjectId.value = scope;
     if (scope === 'forge' || scope === 'feedback') compactPanel.value = 'conversation';
+    if (scope === 'forge' || scope === 'feedback') projectHomeOpen.value = false;
   });
 }
 
@@ -470,7 +483,7 @@ function applyThreadsFrame(frame) {
   if (payload.removed) {
     allThreads.value = allThreads.value.filter((thread) => thread.threadId !== payload.removed);
     if (activeThreadId.value === payload.removed)
-      selectThread(allThreads.value[0]?.threadId ?? null);
+      selectThreadQuietly(allThreads.value[0]?.threadId ?? null);
     return;
   }
   const list = allThreads.value;
@@ -509,7 +522,7 @@ function adoptThreadList(threads) {
   allThreads.value = threads;
   followActiveProject();
   if (!threads.some((thread) => thread.threadId === activeThreadId.value))
-    selectThread(threads[0]?.threadId ?? null);
+    selectThreadQuietly(threads[0]?.threadId ?? null);
   const active = activeThreadId.value;
   threadData.value = active ? (threads.find((thread) => thread.threadId === active) ?? null) : null;
   // Always load messages for the active thread if we don't have them yet
@@ -1506,10 +1519,18 @@ export async function loadLaunch(threadId) {
   }
 }
 
+/** A thread the list chose (not the user): an open project home stays open. */
+function selectThreadQuietly(threadId) {
+  const home = projectHomeOpen.peek();
+  selectThread(threadId);
+  projectHomeOpen.value = home;
+}
+
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   aboutTarget.value = null;
   incomingOpenId.value = null;
+  projectHomeOpen.value = false;
   const prev = activeThreadId.value;
   if (prev === threadId) return;
 
@@ -1918,6 +1939,7 @@ const VIEW_KEYS = [
   'rtab',
   'rail',
   'view',
+  'home',
 ];
 
 function readHash() {
@@ -1940,6 +1962,7 @@ function writeHash() {
   // A project in the hash opens the Projects rail unless the rail is named.
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
+  if (projectHomeOpen.value && !boardOpen.value) params.set('home', '1');
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -1980,6 +2003,7 @@ function restoreFromHash() {
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
+  projectHomeOpen.value = h.home === '1';
   // A link to a project (and no rail named) opens the Projects rail on it.
   railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
 }
@@ -2041,6 +2065,7 @@ export function init() {
     rightTab.value;
     railView.value;
     boardOpen.value;
+    projectHomeOpen.value;
     writeHash();
   });
 
