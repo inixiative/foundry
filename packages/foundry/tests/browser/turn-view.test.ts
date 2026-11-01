@@ -40,7 +40,8 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     await page.goto(`http://127.0.0.1:${server.port}/#project=P&thread=a`);
     await page.locator('.chat-fulltrace-btn').first().click();
     const view = page.locator('.turn-view');
-    await view.waitFor();
+    // The turn arrives over the flow stream after the view opens.
+    await view.locator('.tv-group').first().waitFor();
     const groups = await view.locator('.tv-group h3').allTextContents();
     expect(groups[0]).toBe('Foundry, before');
     expect(groups).toContain("The agent's work");
