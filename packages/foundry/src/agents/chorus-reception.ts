@@ -55,7 +55,7 @@ export function memberPostReception(displayName: string, text: string): string {
  */
 export const FOUNDRY_TOOLS_NOTE = `# Foundry's tools in this thread
 
-This thread runs in Foundry. Its tools (on the \`foundry\` MCP server; the \`foundry:*\` skills say how):
+This thread runs in Foundry. Its tools are on the \`foundry\` MCP server (\`mcp__foundry__<name>\` in Claude Code; when a tool's schema is deferred, load it with ToolSearch, e.g. \`select:mcp__foundry__set_plan\`); the \`foundry:*\` skills say how:
 
 - **set_plan**: before starting work that will edit files, once you understand the ask, record the plan (outcomes with status, strategy, reasons, and one technical row per concern naming the existing system you use, or why none fits). Update it when an outcome, the strategy or a technical decision changes, and make the statuses true before you hand back. Skip it for questions and one-line fixes.
 - **fork_thread**: only when the person asks for the work in its own thread. **foundry_threads**: before work that could collide with another thread.
