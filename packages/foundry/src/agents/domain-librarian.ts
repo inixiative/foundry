@@ -27,6 +27,7 @@ import {
   computeHash,
   type LLMMessage,
   type LLMProvider,
+  newId,
   type OmittedSource,
   type ParticipantRequest,
   type ServedModel,
@@ -1900,7 +1901,7 @@ export class DomainLibrarian {
       // A guard's advisory finding is audit evidence, not a human correction: it must never be pinned.
       const kind = finding.severity === 'critical' ? 'security_concern' : 'guard_finding';
       await this._signals.emit({
-        id: `${this.domain}-guard-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: newId(`${this.domain}-guard`),
         kind,
         source: `${this.domain}-librarian`,
         content: {

@@ -10,6 +10,7 @@ import type {
   MemoryEntry,
   Signal,
 } from '@inixiative/foundry-core';
+import { newId } from '@inixiative/foundry-core';
 
 /**
  * MuninnDB adapter — cognitive database with neural memory primitives.
@@ -257,7 +258,7 @@ export class MuninnMemory {
 
   private _activationToEntry(result: MuninnActivationResult): MemoryEntry {
     return {
-      id: result.id ?? `activation-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: result.id ?? newId('activation'),
       kind: result.concept ?? 'memory',
       content: result.content,
       timestamp: Date.now(),

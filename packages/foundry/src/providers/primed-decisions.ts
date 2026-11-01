@@ -3,7 +3,6 @@
  * @kind provider
  * @partOf primitive:decisions
  */
-import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
@@ -25,6 +24,7 @@ import {
   type LLMMessage,
   type LLMProvider,
   type NativeEvidence,
+  sha256Hex,
 } from '@inixiative/foundry-core';
 import { stampFoundryRun } from '../archives/run-stamp';
 import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_INPUT_CAP } from './decision-budget';
@@ -60,7 +60,7 @@ export const PRIMED_DECISION_CONTEXT =
   'Use only the supplied instructions and context and return the requested decision JSON, without an implementation report.';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const hash = sha256Hex;
 
 export interface PrimedDecisionHostConfig {
   source: NativeProfileSource;

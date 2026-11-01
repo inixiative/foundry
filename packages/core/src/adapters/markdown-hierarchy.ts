@@ -3,9 +3,9 @@
  * @kind adapter
  * @partOf feature:composition
  */
-import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { sha256Hex } from '../context-layer';
 import {
   fenceSegments,
   INSTRUCTION_FILE_LIMIT,
@@ -690,7 +690,7 @@ export async function discoverHierarchy(
   return { files, duplicates, refused, probes: [...probes] };
 }
 
-const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+const digest = sha256Hex;
 
 /**
  * Blank lines, trailing whitespace, line endings and runs of spaces inside a line do not make two

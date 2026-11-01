@@ -3,7 +3,6 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
-import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +14,7 @@ import {
 } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
 import {
@@ -157,7 +157,7 @@ export function assertCodexLaunchArguments(argv: readonly string[]) {
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const hash = sha256Hex;
 const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 /** A private home reads credentials from its linked auth.json; Codex's keyring entry is keyed by the home's path. */
 const PRIVATE_HOME_CONFIG = 'cli_auth_credentials_store = "file"\n';

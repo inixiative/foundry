@@ -359,6 +359,11 @@ export function computeHash(content: string): string {
   return Bun.hash(content).toString(16).slice(0, 16);
 }
 
+/** SHA-256 as hex: for content addresses and digests that are persisted or compared across processes (computeHash is a fast in-memory cache key, not this). */
+export function sha256Hex(content: string | Uint8Array): string {
+  return new Bun.CryptoHasher('sha256').update(content).digest('hex');
+}
+
 export class ContextLayer {
   readonly id: string;
   readonly owner?: OwnershipScope;

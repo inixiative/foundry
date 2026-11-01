@@ -3,6 +3,7 @@
  * @kind service
  * @partOf primitive:signals
  */
+import { newId } from './id';
 // ---------------------------------------------------------------------------
 // ActionPrompt — blocking agent→human interaction primitive
 // ---------------------------------------------------------------------------
@@ -136,7 +137,7 @@ export class ActionQueue {
    * Returns the resolution (human choice, policy decision, or timeout).
    */
   async prompt(opts: PromptOpts): Promise<ActionResolution> {
-    const id = `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = newId('prompt');
 
     const prompt: ActionPrompt = {
       id,
