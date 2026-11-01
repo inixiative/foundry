@@ -24,6 +24,7 @@ import { settingsConfig } from './settings.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
   allThreads,
+  boardFilter,
   boardOpen,
   createThread,
   executeAction,
@@ -159,7 +160,10 @@ function Incoming() {
 const QUIET = new Set(['idle', 'archived']);
 
 export function Board() {
-  const [filter, setFilter] = useState('all');
+  const filter = boardFilter.value;
+  const setFilter = (value) => {
+    boardFilter.value = value;
+  };
   const [showQuiet, setShowQuiet] = useState(false);
   const threads = allThreads.value
     .filter((t) => showQuiet || OPEN(t))
