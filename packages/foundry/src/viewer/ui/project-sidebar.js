@@ -15,6 +15,7 @@
 import { feedbackIn } from './feedback.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
+import { SizeControls } from './panel-sizes.js';
 import {
   activeProjectId,
   authFetch,
@@ -260,12 +261,13 @@ function ProjectItem({ project, isActive, onSelect, onRename }) {
 // Collapsed strip — just icons
 // ---------------------------------------------------------------------------
 
-function CollapsedStrip({ onExpand }) {
+function CollapsedStrip() {
   const items = projects.value.filter((p) => p.status !== 'archived');
   const active = activeProjectId.value;
 
   return html`
-    <div class="proj-collapsed" onClick=${onExpand} title="Expand projects">
+    <div class="proj-collapsed">
+      <div class="proj-collapsed-controls"><${SizeControls} side="left" /></div>
       <div class="proj-collapsed-icon">P</div>
       <div class="proj-collapsed-dots">
         ${items.map(
@@ -300,9 +302,7 @@ export function ProjectSidebar() {
   const items = showArchived ? all : all.filter((p) => p.status !== 'archived' || p.id === active);
 
   if (!isOpen) {
-    return html`<${CollapsedStrip} onExpand=${() => {
-      projectSidebarOpen.value = true;
-    }} />`;
+    return html`<${CollapsedStrip} />`;
   }
 
   const forge = forgeMasterOpen.value;
@@ -322,10 +322,6 @@ export function ProjectSidebar() {
             <span class="proj-sidebar-count">${items.length}</span>
           </button>
           <button class="sidebar-add-btn" onClick=${() => setAdding(true)} title="Add project">+</button>
-          <button class="proj-collapse-btn" onClick=${() => {
-            projectSidebarOpen.value = false;
-          }}
-            title="Collapse">\u2039</button>
         </div>
 
         <div class="proj-list">

@@ -1,0 +1,74 @@
+/* Panel sizes in steps (panel-sizes.js). */
+.size-controls {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.size-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.size-btn:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.restore-tab {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 60;
+  width: 14px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.restore-tab--left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+.restore-tab--right {
+  right: 0;
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+.restore-tab:hover {
+  color: hsl(var(--foreground));
+}
+/* A hidden side keeps its column at 0 width; nothing inside shows. */
+.panel-hidden {
+  overflow: hidden;
+  visibility: hidden;
+}
+.rail-head-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rail-head-row .rail-toggle {
+  flex: 1;
+}
+.proj-collapsed-controls {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+.rp-strip-controls {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 6px;
+}

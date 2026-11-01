@@ -168,7 +168,8 @@ const KEY_GROUPS = [
     [
       ['T · B', 'Threads · Board'],
       ['1 · 2 · 3', 'Thread · Plan · Loop'],
-      ['[ · ]', 'Open / fold the left list · the right panel'],
+      ['[ · {', 'Left list smaller · larger'],
+      ['] · }', 'Right panel smaller · larger'],
       ['⌥← · ⌥→', 'Previous · next card in the waiting stack'],
     ],
   ],

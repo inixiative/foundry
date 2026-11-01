@@ -17,6 +17,7 @@ import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { html } from './lib.js';
+import { SizeControls } from './panel-sizes.js';
 import { Running } from './running.js';
 import { STEER_NOT_BUILT } from './steering.js';
 import {
@@ -28,8 +29,8 @@ import {
   inspectTarget,
   launchLabels,
   RIGHT_TABS,
+  rightSize,
   rightTab,
-  rightWide,
   selectedEvent,
   selectedSpanId,
   showToast,
@@ -211,11 +212,10 @@ export function RightPanel({ onSpanSelect }) {
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
 
   if (!open)
-    return html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
-      <button class="rp-strip-toggle" title="Open the right panel (])" onClick=${() => {
-        boardOpen.value = false;
-        detailDrawerOpen.value = true;
-      }}>‹</button>
+    return rightSize.value === 'hidden' && !boardOpen.value && !watchtowerOpen.value
+      ? html`<div class="panel-hidden" aria-hidden="true"></div>`
+      : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
+      <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
       ${RIGHT_TABS.map((t) => {
         return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
           rightTab.value = t;
@@ -234,9 +234,7 @@ export function RightPanel({ onSpanSelect }) {
           <button class="rp-back" onClick=${closeInspector}>← ${TAB_LABELS[tab]}</button>
           <span class="rp-eyebrow">Inspector</span>
           ${target.kind === 'trace' || target.kind === 'span' ? html`<button class="rp-back back-btn" onClick=${() => dismissTraceSelection()}>Clear</button>` : null}
-          <button class="rp-collapse" title="Collapse (])" onClick=${() => {
-            detailDrawerOpen.value = false;
-          }}>›</button>
+          <${SizeControls} side="right" />
         </div>
         <h2 class="rp-title">${target.title}</h2>
       </header>
@@ -254,17 +252,9 @@ export function RightPanel({ onSpanSelect }) {
     <header class="rp-band">
       <div class="rp-band-row">
         <span class="rp-eyebrow">This thread</span>
-        <button class="rp-collapse" title="Collapse (])" onClick=${() => {
-          detailDrawerOpen.value = false;
-        }}>›</button>
+        <${SizeControls} side="right" />
       </div>
-      <h2 class="rp-title">${TAB_LABELS[tab]}${
-        tab === 'work'
-          ? html`<button class="rp-wide" aria-pressed=${rightWide.value} title="Widen the panel for diffs and file lists" onClick=${() => {
-              rightWide.value = !rightWide.value;
-            }}>${rightWide.value ? '⇥ Narrow' : '⇤ Wide'}</button>`
-          : null
-      }</h2>
+      <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t, i) => {

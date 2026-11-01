@@ -19,6 +19,7 @@ import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { RequestView } from './incoming.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
+import { panelColumns, RestoreTab } from './panel-sizes.js';
 import { ProjectHome } from './project-home.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
@@ -54,7 +55,6 @@ import {
   RIGHT_TABS,
   resyncStreams,
   rightTab,
-  rightWide,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -336,7 +336,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${detailOpen && rightWide.value && rightTab.value === 'work' ? ' panels--right-wide' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -355,7 +355,10 @@ function App() {
       <${Header} />
       <${PanelNavigation} />
 
-      <div class=${panelClass} data-compact-panel=${compactPanel.value}>
+      <div class=${panelClass} data-compact-panel=${compactPanel.value}
+        style=${boardOpen.value || watchtowerOpen.value ? '' : `grid-template-columns: ${panelColumns({ forge: forge || inbox })}`}>
+        <${RestoreTab} side="left" />
+        <${RestoreTab} side="right" />
         <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
         <div class="panel-projects" id="workspace-projects" tabIndex="0">
           <${NavRail} />

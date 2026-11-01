@@ -86,7 +86,9 @@ export const inspectTarget = signal(null);
 /** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
 export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'heralds', 'feedback'];
 /** The right panel widened (for Work's diffs and file lists). */
-export const rightWide = signal(false);
+/** The side panels' size levels (panel-sizes.js steps and renders them). */
+export const leftSize = signal('normal'); // hidden · strip · normal · wide
+export const rightSize = signal('normal'); // hidden · icons · normal · wide · wider
 export const rightTab = signal('context');
 /** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
 export const railView = signal('open');
@@ -1987,6 +1989,8 @@ const VIEW_KEYS = [
   'rtab',
   'rail',
   'view',
+  'lsize',
+  'rsize',
   'home',
 ];
 
@@ -2006,6 +2010,8 @@ function writeHash() {
   if (activePanel.value !== 'conversation') params.set('panel', activePanel.value);
   if (!projectSidebarOpen.value) params.set('sidebar', '0');
   if (!detailDrawerOpen.value) params.set('detail', '0');
+  if (!['normal', 'strip'].includes(leftSize.value)) params.set('lsize', leftSize.value);
+  if (!['normal', 'icons'].includes(rightSize.value)) params.set('rsize', rightSize.value);
   if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
   // A project in the hash opens the Projects rail unless the rail is named.
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
@@ -2050,6 +2056,8 @@ function restoreFromHash() {
   if (h.panel && CENTER_PANELS.includes(h.panel)) activePanel.value = h.panel;
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
+  if (['hidden', 'wide'].includes(h.lsize)) leftSize.value = h.lsize;
+  if (['hidden', 'wide', 'wider'].includes(h.rsize)) rightSize.value = h.rsize;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';
@@ -2115,6 +2123,8 @@ export function init() {
     activePanel.value;
     projectSidebarOpen.value;
     detailDrawerOpen.value;
+    leftSize.value;
+    rightSize.value;
     rightTab.value;
     railView.value;
     boardOpen.value;
