@@ -105,3 +105,33 @@ describe('usage attribution', () => {
     ).toEqual({ delta: { seven_day: 1 }, reset: ['five_hour'] });
   });
 });
+
+describe('pricing', () => {
+  test('current Claude models are priced, through the Claude Code login too, cache reads and writes included', () => {
+    const tracker = new TokenTracker();
+    const haiku = tracker.record({
+      provider: 'claude-code',
+      model: 'claude-haiku-5-5',
+      agentId: 'warden',
+      tokens: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 },
+    });
+    expect(haiku.costKnown).toBe(true);
+    // $0.10 in + $0.50 out + $0.01 cache read + $0.125 cache write
+    expect(haiku.cost).toBeCloseTo(0.735, 6);
+    const opus = tracker.record({
+      provider: 'anthropic',
+      model: 'claude-opus-5-5',
+      agentId: 'main',
+      tokens: { input: 0, output: 0, cacheRead: 1_000_000 },
+    });
+    expect(opus.cost).toBeCloseTo(0.2, 6);
+    expect(
+      tracker.record({
+        provider: 'x',
+        model: 'unpriced',
+        agentId: 'a',
+        tokens: { input: 1, output: 1 },
+      }).costKnown,
+    ).toBe(false);
+  });
+});

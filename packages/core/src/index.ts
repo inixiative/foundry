@@ -439,6 +439,7 @@ export {
   DEFAULT_COST_TABLE,
   estimateTokens,
   type ModelPricing,
+  modelPricing,
   TokenTracker,
   type TokenUsage,
   type UsageAttribution,
