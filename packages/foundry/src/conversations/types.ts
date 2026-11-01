@@ -185,7 +185,8 @@ export interface SharedEntryRecord {
   hostSeq: number;
   /** Who said it, as the member reads it ("the owner", a member's name, "the host agent"). */
   speaker: string;
-  kind: 'owner' | 'post' | 'send';
+  /** `agent`: the host agent's own answer, which the owner's agents hear (Aron, 2026-11-01). */
+  kind: 'owner' | 'agent' | 'post' | 'send';
   /** A send addressed to this member: something it was asked. */
   addressed: boolean;
   text: string;
