@@ -12,7 +12,7 @@ Open http://localhost:4500, or point an ACP host at `foundry-acp` ([setup](docs/
 
 For source-bound Claude Code and Codex credentials, see [native runtime authentication](docs/native-authentication.md).
 
-Foundry runs on your machine. It reaches Kingdom for identity, integrations and Signets, captures sessions into the local Archive, and runs native sessions through agent-session ([session archives](docs/session-archives.md), [Kingdom access](docs/kingdom-access.md), [subscription-only setup](docs/subscription-decisions.md)).
+Foundry runs on your machine. It reaches Kingdom for identity, integrations and Signets, captures sessions into the local Archive, and runs native sessions through agent-session ([anatomy](docs/ANATOMY.md), [session archives](docs/session-archives.md), [Kingdom access](docs/kingdom-access.md), [subscription-only setup](docs/subscription-decisions.md)).
 
 ## What this is
 
@@ -110,6 +110,8 @@ bun run test:db        # Postgres tests (localhost:5932, the compose Postgres)
 ```
 
 ## Key concepts
+
+Every part of Foundry, its name, where it lives and whether it is on: [the anatomy sheet](docs/ANATOMY.md).
 
 ### Context layers
 
