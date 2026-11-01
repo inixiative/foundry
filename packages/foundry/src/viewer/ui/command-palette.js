@@ -11,7 +11,7 @@
 import { allBindings } from './hotkeys.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
-import { StatusLegend } from './status-icons.js';
+import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
 import {
   commandPaletteOpen,
   createThread,
@@ -152,7 +152,22 @@ export function CommandPalette() {
   `;
 }
 
+/** What you can type in a message box, besides plain text. */
+const COMPOSER_COMMANDS = [
+  ['/btw', 'Ask your own agent privately; it never enters the thread'],
+  ['/aside', 'Say something to the people here only; no agents'],
+  [
+    '/feedback',
+    'Record a correction; with an About chip it attaches to that Plan step or Loop node',
+  ],
+];
+
+/**
+ * Help: one centred window, two tabs. "Keys & commands" is how you act (the hotkey registry plus the
+ * message-box commands); "Statuses & icons" is the map key (status colours and states, permission modes).
+ */
 export function HelpOverlay() {
+  const [tab, setTab] = useState('keys');
   const isOpen = helpOpen.value;
   if (!isOpen) return null;
 
@@ -160,31 +175,56 @@ export function HelpOverlay() {
   const close = () => {
     helpOpen.value = false;
   };
+  const modes = ['default', 'plan', 'acceptEdits'];
 
   return html`
     <div class="overlay-backdrop" onClick=${close}>
-      <div class="help-overlay" onClick=${(e) => e.stopPropagation()}>
-        <div class="help-title">Keyboard Shortcuts</div>
-        ${Object.entries(groups).map(
-          ([category, bindings]) => html`
-          <div key=${category} class="help-group">
-            <div class="help-category">${category}</div>
-            ${bindings.map(
-              (b) => html`
-              <div key=${b.key} class="help-row">
-                <kbd class="help-key">${b.key}</kbd>
-                <span class="help-desc">${b.description}</span>
+      <div class="help-overlay help-modal" role="dialog" aria-modal="true" aria-label="Help" onClick=${(e) => e.stopPropagation()}>
+        <div class="help-head">
+          <div class="help-tabs band-tabs" role="tablist">
+            <button role="tab" aria-selected=${tab === 'keys'} class="center-view ${tab === 'keys' ? 'center-view--active' : ''}" onClick=${() => setTab('keys')}>Keys & commands</button>
+            <button role="tab" aria-selected=${tab === 'status'} class="center-view ${tab === 'status' ? 'center-view--active' : ''}" onClick=${() => setTab('status')}>Statuses & icons</button>
+          </div>
+          <button class="help-close" aria-label="Close" onClick=${close}>✕</button>
+        </div>
+        <div class="help-body">
+          ${
+            tab === 'keys'
+              ? html`
+            ${Object.entries(groups).map(
+              ([category, bindings]) => html`
+              <div key=${category} class="help-group">
+                <div class="help-category">${category}</div>
+                ${bindings.map(
+                  (b) => html`
+                  <div key=${b.key} class="help-row">
+                    <kbd class="help-key">${b.key}</kbd>
+                    <span class="help-desc">${b.description}</span>
+                  </div>
+                `,
+                )}
               </div>
             `,
             )}
-          </div>
-        `,
-        )}
-        <div class="help-group">
-          <div class="help-category">Status</div>
-          <${StatusLegend} />
+            <div class="help-group">
+              <div class="help-category">In a message box</div>
+              ${COMPOSER_COMMANDS.map(
+                ([cmd, what]) =>
+                  html`<div key=${cmd} class="help-row"><kbd class="help-key">${cmd}</kbd><span class="help-desc">${what}</span></div>`,
+              )}
+            </div>`
+              : html`
+            <div class="help-group">
+              <div class="help-category">Status · colour is the category, the symbol is the state</div>
+              <${StatusLegend} />
+            </div>
+            <div class="help-group">
+              <div class="help-category">Permission mode</div>
+              ${modes.map((m) => html`<div key=${m} class="help-row"><${ModeIcon} mode=${m} /><span class="help-desc"><b>${MODES[m].word}</b> · ${MODES[m].label.split(': ')[1]}</span></div>`)}
+              <div class="help-row"><span class="mode-dangerous-chip">Dangerous</span><span class="help-desc">A separate switch on top of the mode: the host skips every permission check</span></div>
+            </div>`
+          }
         </div>
-        <div class="help-footer">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>
       </div>
     </div>
   `;
