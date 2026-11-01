@@ -39,7 +39,6 @@ import {
   openTurnDetail,
   promptCounts,
   selectThread,
-  toggleGraphPanel,
 } from './store.js';
 
 export const graphTab = signal('threads'); // "threads" | "turn" | "loop"
@@ -539,7 +538,6 @@ export function GraphPanel({ onLayerClick }) {
         )}
       </div>
       ${tab !== 'threads' && visible && threadId ? html`<span class="graph-live" title=${`flow:${threadId} is open`}><span class="status-dot on"></span>live</span>` : null}
-      <button class="graph-tab graph-close" onClick=${toggleGraphPanel} title="Back to chat (g)">chat</button>
     </div>
     <div class="graph-body">
       ${

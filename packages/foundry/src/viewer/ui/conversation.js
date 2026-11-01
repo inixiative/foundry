@@ -33,7 +33,7 @@ import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from '.
 import { LoopView } from './loop-view.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
-import { ModeIcon, STATES, StatusIcon } from './status-icons.js';
+import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import {
   activePanel,
   activeThreadId,
@@ -320,7 +320,18 @@ function ContextBar() {
                 </span>`
               : null
           }
-          ${launch?.permissionMode ? html`<span class="band-pill band-mode"><${ModeIcon} mode=${launch.permissionMode} /></span>` : null}
+          ${
+            MODES[launch?.permissionMode]
+              ? html`<span class="band-pill band-mode" title=${MODES[launch.permissionMode].label}>
+                  <${ModeIcon} mode=${launch.permissionMode} />${MODES[launch.permissionMode].word}
+                </span>`
+              : null
+          }
+          ${
+            isDangerous(launch?.permissionMode)
+              ? html`<span class="band-pill band-dangerous" title="Dangerous: every permission check is skipped, overriding the mode's asks">Dangerous</span>`
+              : null
+          }
         </span>
       </div>
       ${

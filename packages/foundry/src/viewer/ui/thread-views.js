@@ -52,27 +52,18 @@ const SEGMENTS = [
   ['asides', '/aside'],
 ];
 
-/** Counts of what is new in each view, from the conversation view when it carries them. */
-function unreadOf(conversation) {
-  return {
-    btw: conversation?.btwUnread ?? 0,
-    asides: conversation?.asideUnread ?? 0,
-  };
-}
-
 /**
  * One grouped control, styled as the centre's view switcher: each segment shows or hides its view
  * (filled when on), and two or more on sit side by side.
  */
 export function ThreadViewSegments({ conversation }) {
-  const unread = unreadOf(conversation);
   return html`<div class="thread-views-bar">
     <div class="thread-segments band-tabs" role="group" aria-label="Thread views">
       ${SEGMENTS.map(([id, label]) => {
         const on = openViews.value.includes(id);
         return html`<button key=${id} aria-pressed=${on}
           class="thread-segment center-view ${on ? 'center-view--active' : ''}"
-          onClick=${() => toggleView(id)}>${label}${!on && unread[id] ? html`<span class="thread-view-unread">${unread[id]}</span>` : null}</button>`;
+          onClick=${() => toggleView(id)}>${label}</button>`;
       })}
     </div>
   </div>`;

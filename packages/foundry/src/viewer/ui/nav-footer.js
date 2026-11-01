@@ -4,10 +4,10 @@
  * @partOf feature:viewer
  */
 /**
- * The rail's footer: this machine and its resources (Aron, 2026-11-01). This device and its tunnel;
- * how many Kingdoms and Archives it reaches, each linking to its settings; and capacity, totalled
- * per provider and expandable to that provider's subscriptions. Threads, Wardens and Forge Master
- * live elsewhere.
+ * The rail's footer: this machine and its resources (Aron, 2026-11-01). The machine's name (this
+ * Foundry's name, editable in place) and its tunnel; Kingdoms and Archives as two equal pills, each
+ * linking to its settings; one Subscriptions row that opens to each subscription. Threads, Wardens
+ * and Forge Master live elsewhere.
  */
 import { capacityByProvider } from './capacity.js';
 import { html, useEffect, useState } from './lib.js';
@@ -26,6 +26,9 @@ const getJson = (url) =>
   authFetch(url)
     .then((res) => (res.ok ? res.json() : null))
     .catch(() => null);
+
+/** A subscription is a login (a native harness sign-in, a profile, or a Kingdom pool), not an API key. */
+const SUBSCRIPTION_SOURCES = new Set(['login', 'profile', 'kingdom', 'gateway']);
 
 /** Read once when the footer mounts; the footer is glanceable, not live. */
 function useMachine() {
@@ -51,51 +54,40 @@ function useMachine() {
   return { ...machine, rename };
 }
 
-function Capacity({ accounts, registry }) {
-  const [shown, setShown] = useState(false);
-  const [open, setOpen] = useState(null);
-  const groups = capacityByProvider(accounts, (provider) => vendorName(provider, registry));
+/** One row that opens to every subscription, grouped by the provider that sells it. */
+function Subscriptions({ accounts, registry }) {
+  const [open, setOpen] = useState(false);
+  const subscriptions = (Array.isArray(accounts) ? accounts : []).filter((a) =>
+    SUBSCRIPTION_SOURCES.has(a.source),
+  );
+  const groups = capacityByProvider(subscriptions, (provider) => vendorName(provider, registry));
   if (!groups.length) return null;
   const ready = groups.reduce((n, g) => n + g.ready, 0);
   const total = groups.reduce((n, g) => n + g.accounts.length, 0);
-  return html`<div class="nav-footer-capacity" aria-label="Capacity">
-    <button type="button" class="nav-footer-row" aria-expanded=${shown} onClick=${() => setShown(!shown)}>
+  return html`<div class="nav-footer-subscriptions">
+    <button type="button" class="nav-footer-row" aria-expanded=${open} onClick=${() => setOpen(!open)}
+      title=${`${ready} of ${total} ready`}>
       <span class="nav-footer-dot ${ready === total ? 'is-ok' : 'is-warn'}"></span>
-      <span class="nav-footer-name">Capacity</span>
-      <span class="nav-footer-count">${groups.length} provider${groups.length === 1 ? '' : 's'} · ${ready}/${total} ready</span>
-      <span class="nav-footer-caret">${shown ? '▾' : '▸'}</span>
+      <span class="nav-footer-name">Subscriptions</span>
+      <span class="nav-footer-caret">${open ? '▾' : '▸'}</span>
     </button>
     ${
-      !shown
-        ? null
-        : groups.map(
-            (g) => html`<div key=${g.provider} class="nav-footer-provider">
-        <button type="button" class="nav-footer-row" aria-expanded=${open === g.provider}
-          onClick=${() => setOpen(open === g.provider ? null : g.provider)}>
-          <span class="nav-footer-dot ${g.ready === g.accounts.length ? 'is-ok' : 'is-warn'}"></span>
-          <span class="nav-footer-name">${g.provider}</span>
-          <span class="nav-footer-count">${g.ready}/${g.accounts.length} ready</span>
-          <span class="nav-footer-caret">${open === g.provider ? '▾' : '▸'}</span>
-        </button>
-        ${
-          open === g.provider
-            ? html`<ul class="nav-footer-subs">${g.accounts.map(
-                (
-                  a,
-                  i,
-                ) => html`<li key=${i} title=${[a.issue ?? a.detail, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
-                  <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>${a.detail}${a.uses?.length ? html` <span class="nav-footer-dim">· ${a.uses.join(', ')}</span>` : null}
-                </li>`,
-              )}</ul>`
-            : null
-        }
-      </div>`,
-          )
+      open
+        ? html`<ul class="nav-footer-subs">${groups.flatMap((g) =>
+            g.accounts.map(
+              (a, i) => html`<li key=${`${g.provider}:${i}`}
+                title=${[a.issue, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
+                <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>
+                <span class="nav-footer-sub-name">${g.provider} · ${a.detail}</span>
+              </li>`,
+            ),
+          )}</ul>`
+        : null
     }
   </div>`;
 }
 
-/** This Foundry's name (Settings › Profile's "Foundry name"), editable in place. */
+/** The machine's name (this Foundry's name in Settings › Profile): Edit on hover, ✓ saves, ✕ cancels. */
 function MachineName({ profile, onSaved }) {
   const [draft, setDraft] = useState(null);
   const name = profile?.installationName ?? 'This machine';
@@ -117,14 +109,18 @@ function MachineName({ profile, onSaved }) {
     }
   };
   if (draft !== null)
-    return html`<input class="nav-footer-name-input" aria-label="Foundry name" value=${draft}
-      onInput=${(e) => setDraft(e.target.value)}
-      onKeyDown=${(e) => {
-        if (e.key === 'Enter') save();
-        if (e.key === 'Escape') setDraft(null);
-      }} onBlur=${save} ref=${(el) => el?.focus()} />`;
-  return html`<span class="nav-footer-device" title="This Foundry's name">${name}</span>
-    <button type="button" class="nav-footer-edit" title="Rename this Foundry" onClick=${() => setDraft(name)}>Edit</button>`;
+    return html`<span class="nav-footer-name-edit">
+      <input class="nav-footer-name-input" aria-label="Machine name" value=${draft}
+        onInput=${(e) => setDraft(e.target.value)}
+        onKeyDown=${(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') setDraft(null);
+        }} ref=${(el) => el?.focus()} />
+      <button type="button" class="nav-footer-icon-btn" aria-label="Save name" onClick=${save}>✓</button>
+      <button type="button" class="nav-footer-icon-btn" aria-label="Cancel" onClick=${() => setDraft(null)}>✕</button>
+    </span>`;
+  return html`<span class="nav-footer-device" title="This machine's name">${name}</span>
+    <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>`;
 }
 
 export function NavFooter() {
@@ -136,7 +132,7 @@ export function NavFooter() {
     navigate(settingsPath(null, section));
   };
   return html`<footer class="nav-footer">
-    <div class="nav-footer-line">
+    <div class="nav-footer-line nav-footer-machine">
       <${MachineName} profile=${profile} onSaved=${rename} />
       ${
         tunnel
@@ -147,12 +143,11 @@ export function NavFooter() {
           : null
       }
     </div>
-    <div class="nav-footer-line">
-      <a class="nav-footer-link" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms ${kingdoms}</a>
-      <span class="nav-footer-dim">·</span>
-      <a class="nav-footer-link" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
+    <div class="nav-footer-pills">
+      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms ${kingdoms}</a>
+      <a class="nav-footer-pill" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
         title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives ${archives}</a>
     </div>
-    <${Capacity} accounts=${accounts} registry=${registry} />
+    <${Subscriptions} accounts=${accounts} registry=${registry} />
   </footer>`;
 }
