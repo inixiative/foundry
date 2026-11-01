@@ -9,7 +9,7 @@ test('a background Bash call is a running shell; BashOutput adds output and stat
     callId: 'c1',
     observedAt: 1,
     toolInput: {
-      command: 'PORT=3502 bun run dev',
+      command: 'PORT=3502 bun server.ts',
       description: 'API server',
       run_in_background: true,
     },
