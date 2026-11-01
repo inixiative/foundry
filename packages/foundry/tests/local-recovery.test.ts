@@ -64,7 +64,6 @@ function setup() {
       harness,
       eventStream,
       interventions: new InterventionLog(),
-      db: null,
       configStore: new ConfigStore(dir),
       localStore,
     });

@@ -353,7 +353,6 @@ test("the no-factory route fallback binds the new thread's memory to its own sco
         eventStream: new EventStream(),
         interventions: new InterventionLog(),
         projectRegistry: registry,
-        db: null,
         configStore: new ConfigStore('/tmp/foundry-ownership-unused-config'),
       }),
     );
@@ -437,7 +436,6 @@ test("a viewer correction lands on the bus of the thread it was made in, not mai
         eventStream: new EventStream(),
         interventions,
         projectRegistry: registry,
-        db: null,
         configStore: new ConfigStore('/tmp/foundry-ownership-unused-config'),
       }),
     );

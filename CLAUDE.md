@@ -145,8 +145,7 @@ A thread is a tree (docs/THREAD-TREE.md spec A).
 - **Runtime**: Bun
 - **Language**: TypeScript (strict)
 - **Testing**: `bun test` (bun's built-in test runner)
-- **Jobs**: BullMQ (Redis-backed background jobs)
-- **Database**: PostgreSQL via Prisma (`prisma/schema.prisma`) for persistent memory/traces; SQLite for the local session store
+- **Database**: SQLite for the local journal (`.foundry/sessions.sqlite`), the record of every turn; PostgreSQL via Prisma (`prisma/schema.prisma`, `entries` only) as an optional memory backend for the `postgres` memory tool. Nothing mirrors the journal into Postgres (Aron 2026-11-01).
 - **Providers**: native Claude Code and Codex sessions via `@inixiative/agent-session` (subscription, the default); with `apiTokens: true`, Anthropic, OpenAI, Gemini, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
 - **MCP**: Model Context Protocol server for the mid-session bridge
 - **ACP**: foundry-acp, the Agent Client Protocol agent hosts talk to

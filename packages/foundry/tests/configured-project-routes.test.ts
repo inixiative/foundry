@@ -122,7 +122,6 @@ for (const operation of ['create', 'fork'] as const) {
           interventions: new InterventionLog(),
           threadFactory: factory,
           projectRegistry: registry,
-          db: null,
           configStore: store,
         }),
       );

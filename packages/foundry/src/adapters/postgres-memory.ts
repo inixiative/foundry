@@ -3,17 +3,9 @@
  * @kind adapter
  * @partOf infrastructure:prisma, primitive:memory
  */
-import type {
-  ContextRef,
-  ContextSource,
-  HydrationAdapter,
-  Intervention,
-  Signal,
-  Trace as TraceObj,
-} from '@inixiative/foundry-core';
+import type { ContextRef, ContextSource, HydrationAdapter } from '@inixiative/foundry-core';
 import type { PrismaClient } from '@prisma/client';
-import { toOptionalPrismaJson, toPrismaJson } from '../persistence/prisma-json';
-import { serializeTrace, upsertTraceRecord } from '../persistence/trace-record';
+import { toOptionalPrismaJson } from '../persistence/prisma-json';
 
 interface SearchEntryRow {
   id: string;
@@ -28,8 +20,8 @@ interface SearchEntryRow {
 /**
  * PostgreSQL-backed memory system via Prisma.
  *
- * Handles entries, traces, signals, interventions, and conversation messages.
- * Uses pgvector for semantic search when embeddings are provided.
+ * A memory backend: entries an agent writes and reads through the `postgres` memory tool. The
+ * journal (SQLite) and the Archive hold the record of turns; nothing here mirrors them.
  *
  * Requires:
  *   bun add prisma @prisma/client
@@ -111,123 +103,6 @@ export class PostgresMemory {
     }
   }
 
-  // -- Traces --
-
-  async writeTrace(trace: TraceObj): Promise<void> {
-    const serialized = serializeTrace(trace);
-    await this.prisma.$transaction((tx) => upsertTraceRecord(tx, serialized));
-  }
-
-  async getTrace(id: string) {
-    return this.prisma.trace.findUnique({
-      where: { id },
-      include: { spans: true, interventions: true },
-    });
-  }
-
-  async getTraceByMessage(messageId: string) {
-    return this.prisma.trace.findFirst({
-      where: { messageId },
-      include: { spans: true, interventions: true },
-    });
-  }
-
-  async recentTraces(limit: number = 50) {
-    return this.prisma.trace.findMany({
-      orderBy: { id: 'desc' },
-      take: limit,
-      include: { spans: true },
-    });
-  }
-
-  /** Query spans across all traces — e.g. find all error spans, all classify spans, etc. */
-  async querySpans(filter: { kind?: string; agentId?: string; status?: string; limit?: number }) {
-    return this.prisma.span.findMany({
-      where: {
-        kind: filter.kind,
-        agentId: filter.agentId,
-        status: filter.status,
-      },
-      orderBy: { startedAt: 'desc' },
-      take: filter.limit ?? 100,
-    });
-  }
-
-  // -- Signals --
-
-  async writeSignal(signal: Signal): Promise<void> {
-    await this.prisma.signal.create({
-      data: {
-        id: signal.id,
-        kind: signal.kind,
-        source: signal.source,
-        content: toPrismaJson(signal.content),
-        confidence: signal.confidence,
-        refs: toOptionalPrismaJson(signal.refs),
-      },
-    });
-  }
-
-  async recentSignals(limit: number = 50, kind?: string) {
-    return this.prisma.signal.findMany({
-      where: kind ? { kind } : undefined,
-      orderBy: { timestamp: 'desc' },
-      take: limit,
-    });
-  }
-
-  // -- Interventions --
-
-  async writeIntervention(intervention: Intervention): Promise<void> {
-    await this.prisma.intervention.create({
-      data: {
-        id: intervention.id,
-        traceId: intervention.traceId,
-        spanId: intervention.spanId,
-        actual: toOptionalPrismaJson(intervention.actual),
-        correction: toPrismaJson(intervention.correction),
-        reason: intervention.reason,
-        operator: intervention.operator,
-      },
-    });
-  }
-
-  // -- Messages (conversation history) --
-
-  async writeMessage(msg: {
-    id: string;
-    threadId: string;
-    actor: 'user' | 'agent' | 'system';
-    /** Sub-classification. Defaults to "text". */
-    kind?: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'error' | 'routing';
-    /** Correlates every row produced within a single turn. */
-    turnId?: string;
-    content: string;
-    traceId?: string;
-    meta?: Record<string, unknown>;
-  }): Promise<void> {
-    await this.prisma.message.create({
-      data: {
-        id: msg.id,
-        threadId: msg.threadId,
-        turnId: msg.turnId,
-        actor: msg.actor,
-        kind: msg.kind ?? 'text',
-        content: msg.content,
-        traceId: msg.traceId,
-        meta: toOptionalPrismaJson(msg.meta),
-      },
-    });
-  }
-
-  async threadMessages(threadId: string, limit: number = 100) {
-    return this.prisma.message.findMany({
-      where: { threadId },
-      orderBy: { id: 'asc' },
-      take: limit,
-    });
-  }
-
   // -- Adapter interfaces --
 
   /** ContextSource that loads entries of a kind as context. */
@@ -265,20 +140,6 @@ export class PostgresMemory {
         }
         return results;
       },
-    };
-  }
-
-  /** Signal writer — persists every signal to Postgres. */
-  signalWriter() {
-    return async (signal: Signal): Promise<void> => {
-      await this.writeSignal(signal);
-    };
-  }
-
-  /** Trace writer — persists completed traces to Postgres. */
-  traceWriter() {
-    return async (trace: TraceObj): Promise<void> => {
-      await this.writeTrace(trace);
     };
   }
 }

@@ -211,7 +211,6 @@ test('the message route names the thread from its first message as it is sent, a
       harness,
       eventStream: new EventStream(),
       interventions: new InterventionLog(),
-      db: null,
       configStore: new ConfigStore('/tmp/unused-naming-config'),
       namer: routed,
     }),
