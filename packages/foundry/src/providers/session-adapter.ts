@@ -643,7 +643,10 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       );
     let ownedExit: Promise<number> | undefined;
     // A main thread is the user's own Claude: their settings, commands, skills and hooks load.
-    const mainThread = opts.tools !== false && !fixture && !opts.threadId.includes(':aux:');
+    // Not with in-session Wardens: they run as subagents in this process, and the user's hooks,
+    // denies and env (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) would reach every Warden call.
+    const mainThread =
+      opts.tools !== false && !fixture && !opts.threadId.includes(':aux:') && !this._inSession;
     const sources = mainThread ? this._harnessSettings?.(opts.cwd) : undefined;
     const trackedSpawn: NonNullable<ClaudeCodeSessionConfig['spawn']> = (cmd, options) => {
       const launch = auth?.launch(

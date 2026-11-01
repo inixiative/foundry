@@ -9,6 +9,7 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
@@ -54,18 +55,54 @@ export function harnessSettingSources(
 /** Settings keys that hand Claude a credential other than the subscription login. */
 const CREDENTIAL_SETTINGS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport'] as const;
 
-/** Blanked whatever the files say: a file may change between Foundry's read and Claude's. */
+/**
+ * Blanked whatever the files say: every provider switch and every credential, endpoint or
+ * identity variable Claude 2.1.316 reads (from the binary). Claude re-reads settings during a
+ * session, so a key added after launch is still covered.
+ */
 const ALWAYS_BLANK_ENV = [
+  'ANTHROPIC_API_HOST',
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_AWS_API_KEY',
+  'ANTHROPIC_AWS_AUTH',
+  'ANTHROPIC_AWS_BASE_URL',
+  'ANTHROPIC_AWS_WORKSPACE_ID',
   'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
+  'ANTHROPIC_CONFIG_DIR',
+  'ANTHROPIC_CUSTOM_HEADERS',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
+  'ANTHROPIC_FOUNDRY_BASE_URL',
+  'ANTHROPIC_FOUNDRY_RESOURCE',
+  'ANTHROPIC_GOOGLE_CLOUD_AUTH',
+  'ANTHROPIC_GOOGLE_CLOUD_BASE_URL',
+  'ANTHROPIC_GOOGLE_CLOUD_PROJECT',
+  'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID',
+  'ANTHROPIC_IDENTITY_TOKEN',
+  'ANTHROPIC_IDENTITY_TOKEN_FILE',
+  'ANTHROPIC_PROFILE',
+  'ANTHROPIC_UNIX_SOCKET',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
+  'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
   'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_GATEWAY',
+  'CLAUDE_CODE_USE_MANTLE',
   'CLAUDE_CODE_USE_VERTEX',
 ] as const;
 
-/** Env a settings file may set that changes who is billed or where the login's token is sent. */
+/**
+ * Also blanked when a loaded file sets them: keys a later Claude may add, cloud credentials, and
+ * proxy and CA settings. Proxy and CA are blanked only when a file sets them, so a proxy the user
+ * runs Foundry behind still works; Node reads a CA only at start, so one added later can't apply.
+ */
 const CREDENTIAL_ENV =
-  /^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_API_KEY|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_APPLICATION_CREDENTIALS$|CLOUD_ML_|VERTEX_|NODE_EXTRA_CA_CERTS$|NODE_TLS_REJECT_UNAUTHORIZED$)/;
+  /^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_API_KEY|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_APPLICATION_CREDENTIALS$|CLOUD_ML_|VERTEX_|NODE_EXTRA_CA_CERTS$|NODE_TLS_REJECT_UNAUTHORIZED$|SSL_CERT_FILE$|HTTPS?_PROXY$|https?_proxy$)/;
 
 /** The settings files Claude reads for these sources. Managed settings are the machine admin's. */
 export function claudeSettingsFiles(
@@ -120,14 +157,17 @@ export function subscriptionSettingsGuard(files: readonly string[]): string {
   });
 }
 
-/** The user's own command, skill, agent and plugin folders, reached from a Foundry-owned home. */
-const USER_FOLDERS = ['commands', 'skills', 'agents', 'plugins'] as const;
+/** The user's own folders, reached from a Foundry-owned home. */
+const USER_FOLDERS = ['commands', 'skills', 'agents', 'plugins', 'output-styles'] as const;
 
 /**
  * A Kingdom pool login runs on a Foundry-owned CLAUDE_CONFIG_DIR, so `user` would read an empty
  * home. Give it the user's own setup: their settings.json as a private copy (the profile check
  * refuses a linked settings file; the guard blanks its credentials) and their folders by link.
+ * Claude makes its own `plugins/` in a fresh home; a real folder found there is moved aside, kept,
+ * not deleted. Links are swapped by rename, so another thread on the login never sees a gap.
  * Nothing that holds the user's login (`.credentials.json`, the keychain entry) is reachable.
+ * User-scope MCP servers (`~/.claude.json`) are not shared.
  */
 export function shareUserSetup(home: string, userDirectory: string): void {
   const settings = join(userDirectory, 'settings.json');
@@ -157,11 +197,16 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     } catch {
       /* Missing. */
     }
-    if (current && !current.isSymbolicLink())
-      throw Error(`${link} is not Foundry's link to the user's ${name}`);
     const wanted = existsSync(target);
-    if (current && wanted && readlinkSync(link) === target) continue;
-    if (current) unlinkSync(link);
-    if (wanted) symlinkSync(target, link);
+    if (current?.isSymbolicLink() && wanted && readlinkSync(link) === target) continue;
+    if (current && !current.isSymbolicLink())
+      renameSync(link, `${link}.before-foundry-${Date.now()}`);
+    if (!wanted) {
+      if (current?.isSymbolicLink()) unlinkSync(link);
+      continue;
+    }
+    const temporary = join(home, `.${name}-${crypto.randomUUID()}`);
+    symlinkSync(target, temporary);
+    renameSync(temporary, link);
   }
 }
