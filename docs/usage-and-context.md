@@ -310,11 +310,18 @@ with no subscription policy is the user's own Claude, which loads everything.
   plain one decision sessions use (`codex-home-user`, or `<login>/codex-user` on a
   Kingdom pool), so the user's setup never reaches a decision. Its `config.toml` is
   Foundry's login line plus an allowlist of the user's `config.toml` (MCP servers,
-  plugins, marketplaces, features, skills, tools, hooks, notify, shell policy and
-  display settings), re-written from the parsed table. Never their model,
-  provider, profiles, base URLs, login settings, project trust or memories: an
+  plugins, marketplaces, skills, tools, hooks, notify, shell policy and display
+  settings), re-written from the parsed table; a value that can't be written back
+  unchanged (a TOML date) drops its key. Never their model, provider, profiles,
+  base URLs, login settings, project trust, memories or `features` (flags there
+  turn on memories, faster paid tiers, other identities and auth storage): an
   allowlist over the parsed table can't be bypassed by quoting or dotted keys, as
-  a denylist could. Their `skills`, `rules` and `prompts` folders are linked.
+  a denylist could. MCP servers lose any `CODEX_*`, `OPENAI_*` or `ANTHROPIC_*`
+  env from the user's config, which would point their tools at the user's own
+  login during a pool run. Their `skills`, `rules` and `prompts` folders are
+  linked; the plugin cache is the home's own. A thread whose home changes (the
+  switch flipped, the project registered) can't resume there: Codex reports no
+  rollout, and the thread starts a fresh session seeded from its journal.
   A project's own `.codex/config.toml` is not loaded (its trust table isn't
   copied), because it could set the provider. A Codex `rules` allow skips only
   Codex's own ask; Codex already refuses to start under Foundry structural rules.

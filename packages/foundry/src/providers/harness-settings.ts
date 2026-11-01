@@ -228,17 +228,17 @@ function linkUserFolders(home: string, userDirectory: string, names: readonly st
 
 /**
  * The parts of a user's Codex `config.toml` a Foundry main thread takes (CORE-003), by allowlist:
- * their MCP servers, plugins and marketplaces, feature flags, skills, tools, hooks, notify and
- * shell policy. Never their model, provider, profiles, base URLs, login settings, project trust
- * or memories, so nothing in it can move the thread off the subscription login, and AGENTS.md and
- * memories stay with Foundry's composition. A denylist could be bypassed by quoting or dotted
- * keys; an allowlist over the parsed table cannot.
+ * their MCP servers, plugins and marketplaces, skills, tools, hooks, notify, shell policy and
+ * display settings. Never their model, provider, profiles, base URLs, login settings, project
+ * trust or memories, so nothing in it can move the thread off the subscription login, and
+ * AGENTS.md and memories stay with Foundry's composition. Not `features` either: flags there turn
+ * on memories, faster paid tiers, other identities and auth storage (codex 0.162.1). A denylist
+ * could be bypassed by quoting or dotted keys; an allowlist over the parsed table cannot.
  */
 const CODEX_USER_KEYS = [
   'mcp_servers',
   'plugins',
   'marketplaces',
-  'features',
   'skills',
   'tools',
   'hooks',
@@ -252,6 +252,30 @@ const CODEX_USER_KEYS = [
   'file_opener',
 ] as const;
 
+/**
+ * Env an MCP server must not get from the user's config: it would point the server at the user's
+ * own Codex home and login (the ChatGPT app's `node_repl` sets `CODEX_HOME=~/.codex`), so a pool
+ * run's tools would bill the user's personal login.
+ */
+const MCP_LOGIN_ENV = /^(CODEX_|OPENAI_|ANTHROPIC_|CLAUDE_CONFIG_DIR$|CLAUDE_CODE_OAUTH_TOKEN$)/;
+
+function withoutLoginEnv(servers: unknown): unknown {
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return servers;
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => {
+      const env = (server as { env?: unknown } | null)?.env;
+      if (!env || typeof env !== 'object' || Array.isArray(env)) return [name, server];
+      return [
+        name,
+        {
+          ...(server as Record<string, unknown>),
+          env: Object.fromEntries(Object.entries(env).filter(([key]) => !MCP_LOGIN_ENV.test(key))),
+        },
+      ];
+    }),
+  );
+}
+
 /** Codex folders shared from the user's home: their skills, execpolicy rules and prompts. */
 const CODEX_USER_FOLDERS = ['skills', 'rules', 'prompts'] as const;
 
@@ -259,8 +283,12 @@ const tomlKey = (key: string) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stri
 
 function tomlValue(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return 'nan';
+    if (!Number.isFinite(value)) return value > 0 ? 'inf' : '-inf';
+    return String(value);
+  }
+  if (typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) return `[${value.map(tomlValue).join(', ')}]`;
   if (value && typeof value === 'object')
     return `{ ${Object.entries(value)
@@ -269,7 +297,21 @@ function tomlValue(value: unknown): string {
   throw Error('Unsupported value in Codex config.toml');
 }
 
-/** The allowlisted part of the user's Codex config.toml, as TOML lines; empty when there is none. */
+/** One `key = value` line, kept only when it reads back as the same value (a TOML date doesn't). */
+function tomlLine(key: string, value: unknown): string | undefined {
+  try {
+    const line = `${key} = ${tomlValue(value)}\n`;
+    const back = (Bun.TOML.parse(line) as Record<string, unknown>)[key];
+    return Bun.deepEquals(back, value) ? line : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The allowlisted part of the user's Codex config.toml, as TOML lines; empty when there is none.
+ * A key whose value can't be written back unchanged is left out, never written altered.
+ */
 export function codexUserConfig(userDirectory: string): string {
   let parsed: Record<string, unknown>;
   try {
@@ -281,7 +323,8 @@ export function codexUserConfig(userDirectory: string): string {
     return ''; // Missing or unreadable: Codex would refuse it in the user's own home too.
   }
   return CODEX_USER_KEYS.filter((key) => key in parsed)
-    .map((key) => `${key} = ${tomlValue(parsed[key])}\n`)
+    .map((key) => tomlLine(key, key === 'mcp_servers' ? withoutLoginEnv(parsed[key]) : parsed[key]))
+    .filter((line): line is string => line !== undefined)
     .join('');
 }
 

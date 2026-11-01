@@ -260,7 +260,8 @@ test('a Codex main thread takes only the allowlisted part of the user’s config
   );
   const text = codexUserConfig(root);
   const parsed = Bun.TOML.parse(text) as Record<string, unknown>;
-  expect(Object.keys(parsed).sort()).toEqual(['features', 'mcp_servers', 'notify', 'plugins']);
+  // `features` stays out: flags there turn on memories, paid tiers and other identities.
+  expect(Object.keys(parsed).sort()).toEqual(['mcp_servers', 'notify', 'plugins']);
   expect(parsed.mcp_servers).toEqual({
     repl: {
       command: '/bin/repl',
@@ -276,6 +277,52 @@ test('a Codex main thread takes only the allowlisted part of the user’s config
   expect(codexUserConfig(join(root, 'missing'))).toBe('');
   writeFileSync(join(root, 'config.toml'), 'not = = toml');
   expect(codexUserConfig(root)).toBe('');
+});
+
+test('a Codex MCP server never gets the user’s own Codex home or login from their config', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[mcp_servers.node_repl]',
+      'command = "/bin/repl"',
+      '[mcp_servers.node_repl.env]',
+      'CODEX_HOME = "/Users/me/.codex"',
+      'CODEX_CLI_PATH = "/bin/codex"',
+      'OPENAI_API_KEY = "sk-paid"',
+      'BROWSER_USE_TINYSKY_ENABLED = "1"',
+    ].join('\n'),
+  );
+  const parsed = Bun.TOML.parse(codexUserConfig(root)) as {
+    mcp_servers: { node_repl: { env: Record<string, string> } };
+  };
+  expect(parsed.mcp_servers.node_repl.env).toEqual({ BROWSER_USE_TINYSKY_ENABLED: '1' });
+});
+
+test('a Codex config value that can’t be written back unchanged is left out, not altered', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[tools]',
+      'limit = inf',
+      'floor = -inf',
+      'odd = nan',
+      '[hooks]',
+      'when = 1979-05-27T07:32:00Z',
+      '[skills]',
+      'enabled = true',
+    ].join('\n'),
+  );
+  const text = codexUserConfig(root);
+  const parsed = Bun.TOML.parse(text) as Record<string, Record<string, unknown>>;
+  expect(parsed.tools!.limit).toBe(Number.POSITIVE_INFINITY);
+  expect(parsed.tools!.floor).toBe(Number.NEGATIVE_INFINITY);
+  expect(Number.isNaN(parsed.tools!.odd)).toBe(true);
+  expect(parsed.skills).toEqual({ enabled: true });
+  // Bun reads a TOML date as a Temporal value that can't be written back, so `hooks` is
+  // dropped whole rather than rewritten.
+  expect(parsed.hooks).toBeUndefined();
 });
 
 test('a Codex home gets the user’s skills, rules and prompts by link', () => {
