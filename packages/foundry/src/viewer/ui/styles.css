@@ -8192,37 +8192,6 @@ a.thread-ref:hover {
   margin-left: auto;
 }
 
-/* Thread rows: one line, never wrapping; the name gives way before the counts and actions. */
-.tree-node--line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 28px;
-  white-space: nowrap;
-}
-.tree-node--line > .tree-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tree-node--line > .row-count {
-  flex-shrink: 0;
-}
-.tree-node--line > .row-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-.tree-node--line .tree-caret {
-  cursor: pointer;
-  color: var(--text-dim);
-  padding: 0 3px;
-}
-
 /* The waiting stack keeps one height whichever card shows, so the transcript never jumps. */
 .prompt-stack {
   display: flex;
@@ -8399,4 +8368,50 @@ a.thread-ref:hover {
 }
 .board-incoming--line .board-incoming-list {
   margin-top: 8px;
+}
+
+/* Thread rows: two lines. Row 1 the name (ellipsis) and ⋯, the one action; row 2 project · status ·
+   counts, with the subagent caret at its right end. Neither row wraps. */
+.tree-node.tree-node--two {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  text-align: left;
+  gap: 1px;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 6px;
+}
+.tree-node--two .thread-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tree-row--name > .tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.tree-row--meta {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.tree-row--meta > .row-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-row--meta > .tree-caret {
+  margin-left: auto;
+  cursor: pointer;
+  padding: 0 3px;
 }

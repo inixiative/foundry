@@ -189,30 +189,34 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
   return html`
     <div class="tree-level" style="padding-left: ${depth ? 8 : 0}px">
       <div
-        class="tree-node tree-node--line ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
+        class="tree-node tree-node--two ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
         onClick=${() => onSelect(thread.id)}
         title=${`${thread.name} · ${projectLabel(thread.meta.projectId)}`}
       >
-        <${StatusIcon} state=${nodeState(thread)} />
-        <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
-          title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
-        ${
-          thread.conversation?.unread
-            ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
-            : null
-        }
-        ${
-          thread.conversation?.paused
-            ? html`<span class="row-count conversation-paused-badge" title="Conversation paused">paused</span>`
-            : null
-        }
-        ${(() => {
-          const count = (promptCounts.value || {})[thread.id] || 0;
-          return count > 0
-            ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
-            : null;
-        })()}
-        <span class="row-actions">
+        <div class="tree-row tree-row--name">
+          <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
+            title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
+          <${ThreadActions} thread=${thread} />
+        </div>
+        <div class="tree-row tree-row--meta">
+          <span class="row-project">${projectLabel(thread.meta.projectId)}</span>
+          <${StatusIcon} state=${nodeState(thread)} />
+          ${
+            thread.conversation?.unread
+              ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
+              : null
+          }
+          ${
+            thread.conversation?.paused
+              ? html`<span class="row-count conversation-paused-badge" title="Conversation paused">paused</span>`
+              : null
+          }
+          ${(() => {
+            const count = (promptCounts.value || {})[thread.id] || 0;
+            return count > 0
+              ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
+              : null;
+          })()}
           ${
             hasChildren
               ? html`<span class="tree-caret" title=${expanded ? 'Fold subagents' : 'Show subagents'}
@@ -222,8 +226,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
                   }}>${expanded ? '▾' : '▸'}</span>`
               : null
           }
-          <${ThreadActions} thread=${thread} />
-        </span>
+        </div>
       </div>
 
       ${

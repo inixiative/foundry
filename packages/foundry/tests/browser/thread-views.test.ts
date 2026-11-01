@@ -100,19 +100,8 @@ test('/thread, /btw and /aside: one control, side by side, and a composer that s
     await page.locator('.thread-views--2').waitFor();
     expect(await seg('/btw').getAttribute('aria-pressed')).toBe('true');
 
-    // The composer: Aside needs another person; /btw says who reads it and sends nothing yet.
-    expect(await page.locator('.channel-tab', { hasText: 'Aside' }).isDisabled()).toBe(true);
-    expect(await page.locator('.channel-sending').innerText()).toBe('Sending to the thread');
-    await page.locator('.channel-tab', { hasText: '/btw' }).click();
-    expect(await page.locator('.channel-sending').innerText()).toContain(
-      'your own agent, privately',
-    );
-    await page.locator('textarea.chat-input').fill('Is the retry limit 3 or 5?');
-    await page.locator('textarea.chat-input').press('Enter');
-    await page.locator('.toast', { hasText: 'nothing was sent' }).waitFor();
-    expect(await page.locator('textarea.chat-input').inputValue()).toBe(
-      'Is the retry limit 3 or 5?',
-    );
+    // The views toggle chooses what shows; the composer has no channel picker of its own.
+    expect(await page.locator('.channel-tab, .channel-sending').count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);

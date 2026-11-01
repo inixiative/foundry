@@ -71,15 +71,7 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
-import {
-  AsidesSince,
-  AsidesView,
-  BtwView,
-  ChannelPicker,
-  composerChannel,
-  openViews,
-  ThreadViewSegments,
-} from './thread-views.js';
+import { AsidesSince, AsidesView, BtwView, openViews, ThreadViewSegments } from './thread-views.js';
 import {
   dictationSupported,
   speakReplies,
@@ -460,13 +452,6 @@ function ChatInput() {
   const handleSubmit = async () => {
     const sent = text.trim();
     if (!sendable) return;
-    // /btw and asides need the shared-thread data (inixiative-da's slice 2b); until then nothing is
-    // sent and the text stays in the box.
-    if (composerChannel.value !== 'thread')
-      return showToast(
-        `${composerChannel.value === 'btw' ? '/btw' : 'Asides'} arrive with shared-thread asides; nothing was sent.`,
-        'warn',
-      );
     // `/feedback <text>` records feedback on this thread's last turn; it is never sent to the model.
     const feedback = /^\/feedback(?:\s+([\s\S]*))?$/.exec(sent);
     if (feedback) {
@@ -523,7 +508,6 @@ function ChatInput() {
     <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}"
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
       <div class="chat-input-main">
-        <${ChannelPicker} people=${1 + (threadData.value?.conversation?.members ?? 0)} />
         ${
           images.length
             ? html`<div class="composer-images">
@@ -537,13 +521,7 @@ function ChatInput() {
         <textarea
           ref=${inputRef}
           class="chat-input"
-          placeholder=${
-            composerChannel.value === 'btw'
-              ? 'Ask your agent privately…'
-              : composerChannel.value === 'aside'
-                ? 'An aside to the people here…'
-                : 'Send a message... (Enter to send, Shift+Enter for newline; paste or drop images)'
-          }
+          placeholder="Message the thread… (Enter to send, Shift+Enter for newline; paste or drop images)"
           value=${text}
           onInput=${(e) => setText(e.target.value)}
           onKeyDown=${handleKeyDown}
