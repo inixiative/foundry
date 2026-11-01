@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { providerBaseUrl, providerEnabled } from '../src/models/vendors';
 import {
   ConfigRevisionError,
   ConfigStore,
   defaultConfig,
   type FoundryConfig,
+  foundryConfigDir,
 } from '../src/viewer/config';
 
 function buildConfig(): FoundryConfig {
@@ -349,4 +350,10 @@ describe('ConfigStore persistence', () => {
     expect(store.config.defaults.model).toBe('external');
     expect(store.revision).toBe(revision + 1);
   });
+});
+
+test('the configuration directory is FOUNDRY_CONFIG_DIR, else .foundry under the working directory, always absolute', () => {
+  expect(foundryConfigDir({})).toBe(resolve('.foundry'));
+  expect(foundryConfigDir({ FOUNDRY_CONFIG_DIR: '/tmp/elsewhere' })).toBe('/tmp/elsewhere');
+  expect(foundryConfigDir({ FOUNDRY_CONFIG_DIR: 'relative/dir' })).toBe(resolve('relative/dir'));
 });

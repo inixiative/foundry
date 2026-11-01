@@ -6,7 +6,7 @@
 import { hostname } from 'node:os';
 import { parseArgs } from 'node:util';
 import { createTerminalPrompts } from '../setup/prompts';
-import { ConfigStore } from '../viewer/config';
+import { ConfigStore, foundryConfigDir } from '../viewer/config';
 import {
   kingdomIntegrationId,
   listedSignets,
@@ -175,7 +175,7 @@ async function main() {
     if (!v.help) process.exitCode = 1;
     return;
   }
-  const configDir = v['config-dir'] ?? process.env.FOUNDRY_CONFIG_DIR ?? '.foundry';
+  const configDir = v['config-dir'] ?? foundryConfigDir();
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (command === 'login') {
     const runtime = positionals[1];

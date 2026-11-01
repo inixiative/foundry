@@ -37,11 +37,12 @@ import {
   configFromSaved,
   defaultAgents,
   type FoundryConfig,
+  foundryConfigDir,
   type ProjectPrompts,
   starterConfig,
 } from './viewer/config';
 
-const FOUNDRY_DIR = '.foundry';
+const FOUNDRY_DIR = foundryConfigDir();
 const CONFIG_PATH = `${FOUNDRY_DIR}/settings.json`;
 
 const prompts = createTerminalPrompts();
