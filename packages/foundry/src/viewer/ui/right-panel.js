@@ -18,6 +18,7 @@ import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { html } from './lib.js';
 import { Running } from './running.js';
+import { STEER_NOT_BUILT } from './steering.js';
 import {
   activeThreadId,
   authFetch,
@@ -130,7 +131,14 @@ function ContextTab() {
             </dd>
             <dt>Provider</dt><dd title=${harnessName(launch.provider) ? `Runs through ${harnessName(launch.provider)}` : ''}>${vendorName(launch.provider) ?? '—'}</dd>
           </dl>
-          <p class="rp-dim">A change applies on the thread’s next turn.</p>`
+          <p class="rp-dim">A change applies on the thread’s next turn.</p>
+          <label class="steer-setting" title=${STEER_NOT_BUILT}>When you send during a turn
+            <select class="rp-select" disabled>
+              <option>Steer it in (project default)</option>
+              <option>Queue it</option>
+            </select>
+          </label>
+          <p class="rp-dim">${STEER_NOT_BUILT}: every message queues for now. The setting will inherit project, then device.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>

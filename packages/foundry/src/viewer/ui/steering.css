@@ -1,0 +1,52 @@
+/* Queued messages above the composer and the send hints (steering.js). */
+.queued-rows {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 6px;
+}
+.queued-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px dashed hsl(50 80% 70% / 0.5);
+  background: hsl(50 80% 70% / 0.06);
+  font-size: 12.5px;
+}
+.queued-label {
+  font: 600 10.5px var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(50 80% 72%);
+}
+.queued-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.queued-row button {
+  border: 1px solid hsl(var(--border));
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.queued-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.steer-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+.steer-setting select {
+  width: auto;
+}
