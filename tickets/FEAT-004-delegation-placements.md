@@ -36,7 +36,7 @@ So there are two things, not three placements:
 2. **Granted by the instructions:** the spawner's instructions name specific access, and the thread gets exactly that.
 3. **Carried over:** the instructions say to carry over the spawner's access, and the thread gets the spawner's.
 
-**Open:** whether a grant may exceed the spawner's own access. Earlier on 11-01 Aron agreed to a ceiling, and these three modes don't withdraw it. **Proposed:** the choice and what was granted are recorded on the spawn, so the Context tab shows where each grant came from. In a host, the host's own mode rules still apply: T3 refuses a launch broader than the caller's modes.
+**Aron (11-01): "each thread just spawns w/ the access agreed to or default."** No ceiling tied to the spawner. The grant is whatever was agreed for the thread, or the default. **Proposed:** the choice and what was granted are recorded on the spawn, so the Context tab shows where each grant came from. In a host, the host's own mode rules still apply: T3 refuses a launch broader than the caller's modes.
 
 ## Inside a host
 
