@@ -1,0 +1,33 @@
+/* Right-panel tab icons (tab-icons.js). */
+.rp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tab-icon {
+  flex: none;
+  opacity: 0.85;
+}
+.rp-strip-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  margin: 2px auto;
+  padding: 0;
+  border-radius: 7px;
+}
+.rp-strip-tab .tab-icon {
+  width: 16px;
+  height: 16px;
+}
+/* The strip shows the icon; its label stays for screen readers and search. */
+.rp-strip-tab .rp-strip-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
