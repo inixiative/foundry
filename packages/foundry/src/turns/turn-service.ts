@@ -774,6 +774,12 @@ export class TurnService {
       state.phase = 'running';
       // Foundry names an unnamed thread from the first message that names work, as it is sent.
       if (ownerTyped) this.deps.namer?.messageSent(thread, payload);
+      // The next task starts: the last one's done state (a merge, a milestone) is over.
+      if (ownerTyped && thread.meta.done) {
+        delete thread.meta.done;
+        this.deps.localStore?.saveThread(thread);
+        this.deps.streams.threadsChanged(threadId);
+      }
       const result = await harness.send(
         { id: turnId, payload },
         {

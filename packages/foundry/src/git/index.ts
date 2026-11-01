@@ -12,6 +12,8 @@ export {
   gitContext,
   listWorktrees,
   recreateWorktree,
+  releaseWorktree,
+  squashMergedInto,
   type WorktreeMode,
   worktreeMode,
   worktreeSlot,

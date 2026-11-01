@@ -71,6 +71,17 @@ import {
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
+export type ThreadOnMerge = 'done' | 'auto-archive';
+const THREAD_ON_MERGE: readonly ThreadOnMerge[] = ['done', 'auto-archive'];
+
+/** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
+export function threadOnMerge(config: FoundryConfig, projectId?: string): ThreadOnMerge {
+  return (
+    (projectId ? config.projects?.[projectId]?.threadOnMerge : undefined) ??
+    config.threadOnMerge ??
+    'done'
+  );
+}
 
 import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
@@ -147,6 +158,12 @@ export interface FoundryConfig {
    * when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15).
    */
   guard?: GuardMode;
+  /**
+   * What a thread becomes when its branch merges (Aron, 2026-11-01): `done` (default; the thread
+   * shows done and can take another task) or `auto-archive` (archived, its worktree released per
+   * FEAT-003). A project's `threadOnMerge` overrides it.
+   */
+  threadOnMerge?: ThreadOnMerge;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -235,6 +252,8 @@ export interface FoundryConfig {
  * Projects just say "here's a directory" and optionally override agents/layers.
  */
 export interface ProjectSettingsConfig {
+  /** This project's `threadOnMerge`, over the Foundry-wide one. */
+  threadOnMerge?: ThreadOnMerge;
   /** Opt-in maintenance; existing margins remain readable when disabled. */
   gloss?: {
     /** Keep this project's gloss (margin commentary beside the code) maintained. */
@@ -1113,6 +1132,14 @@ export function validateConfig(config: FoundryConfig): void {
     );
   if (config.guard !== undefined && !GUARD_MODES.includes(config.guard))
     throw Error(`guard must be one of ${GUARD_MODES.map((m) => `"${m}"`).join(', ')}`);
+  for (const [where, value] of [
+    ['threadOnMerge', config.threadOnMerge],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.threadOnMerge`, project?.threadOnMerge] as const,
+    ),
+  ] as const)
+    if (value !== undefined && !THREAD_ON_MERGE.includes(value))
+      throw Error(`${where} must be one of "done", "auto-archive"`);
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     for (const key of ['wardens', 'regions'] as const)
@@ -1372,6 +1399,11 @@ export class ConfigStore {
         if (patch.installationIcon === null) delete next.installationIcon;
         else if (patch.installationIcon !== undefined)
           next.installationIcon = patch.installationIcon as FoundryConfig['installationIcon'];
+      } else if (section === 'threads') {
+        // What a thread becomes when its branch merges; null returns to the default (done).
+        if (patch.threadOnMerge === null) delete next.threadOnMerge;
+        else if (patch.threadOnMerge !== undefined)
+          next.threadOnMerge = patch.threadOnMerge as ThreadOnMerge;
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {
