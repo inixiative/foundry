@@ -310,7 +310,7 @@ function ContextBar() {
       <div class="band-row band-row--top">
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
-        ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}
+        ${titleSource === 'foundry' ? html`<span class="context-bar-name-source" title="Named by Foundry from your message; set a name in the thread details to override">auto</span>` : null}
         <span class="band-pills band-pills--right" aria-label="Where it lives">
           <span class="band-pill band-where--keep" title=${project ? `Project: ${project.label}` : 'No project'}>${project ? project.label : 'Global'}</span>
           ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}

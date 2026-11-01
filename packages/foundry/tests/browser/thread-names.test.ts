@@ -107,7 +107,7 @@ test('thread names: the agent name shows until a person names the thread; branch
     });
     expect(sent.status).toBe(200);
     await until(
-      () => !!thread.meta.agentName && !!thread.meta.context?.references.length,
+      () => !!thread.meta.foundryName && !!thread.meta.context?.references.length,
       'agent name and linked work',
     );
     expect(decisions).toBe(1);
@@ -146,7 +146,9 @@ test('thread names: the agent name shows until a person names the thread; branch
     if (!(await page.locator('.thread-name-editor').count()))
       await page.locator('.panel-collapse-strip').click();
     const editor = page.locator('.thread-name-editor');
-    expect(await editor.locator('.thread-name-source').innerText()).toBe('named by agent');
+    expect(await editor.locator('.thread-name-source').innerText()).toBe(
+      'named by Foundry from your message',
+    );
     await editor.locator('.thread-name-input').fill('Aron: names + context');
     await editor.getByRole('button', { name: 'Save' }).click();
     await header.locator('.context-bar-title', { hasText: 'Aron: names + context' }).waitFor();
