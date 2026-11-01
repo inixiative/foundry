@@ -40,7 +40,7 @@ import {
   separateViews,
 } from './message-box.js';
 import { MessageMenu } from './message-menu.js';
-import { Modal } from './modal.js';
+import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
@@ -67,6 +67,8 @@ import {
   openTurnView,
   projects,
   prompts,
+  recreateWorktree,
+  renameThread,
   resolvePrompt,
   rightTab,
   selectedSpanId,
@@ -267,6 +269,7 @@ function ContextBar() {
   const data = threadData.value;
   const usage = tokenUsage.value;
   const [view] = useConversationView(data?.threadId, data?.conversation ?? null);
+  const [renaming, setRenaming] = useState(false);
   if (!data) return null;
   const meta = data.meta || {};
   const title = threadName(data);
@@ -310,7 +313,13 @@ function ContextBar() {
       <div class="band-row band-row--top">
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
-        ${titleSource === 'foundry' ? html`<span class="context-bar-name-source" title="Named by Foundry from your message; set a name in the thread details to override">auto</span>` : null}
+        ${titleSource === 'foundry' ? html`<button type="button" class="context-bar-name-source" title=${`${nameSourceLabel.foundry} · rename`} onClick=${() => setRenaming(true)}>auto · rename</button>` : null}
+        ${
+          renaming
+            ? html`<${RenameModal} title="Rename thread" label="Thread name" value=${title}
+                onClose=${() => setRenaming(false)} onSave=${(next) => renameThread(data.threadId, next)} />`
+            : null
+        }
         <span class="band-pills band-pills--right" aria-label="Where it lives">
           <span class="band-pill band-where--keep" title=${project ? `Project: ${project.label}` : 'No project'}>${project ? project.label : 'Global'}</span>
           ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}
@@ -321,7 +330,7 @@ function ContextBar() {
           }
           ${
             data.meta?.context?.checkout
-              ? html`<${WorktreePill} checkout=${data.meta.context.checkout} />`
+              ? html`<${WorktreePill} checkout=${data.meta.context.checkout} onRecreate=${() => recreateWorktree(data.threadId)} />`
               : place.worktreeShort
                 ? html`<span class="band-pill worktree-pill" title=${`${place.worktree}\nFrom the thread's working folder (no worktree record yet)`}>${FolderIcon()}${place.worktreeShort}</span>`
                 : null

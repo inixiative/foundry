@@ -14,7 +14,7 @@ import { html, useEffect, useRef, useState } from './lib.js';
 import { composerDestination, separateViews } from './message-box.js';
 import { LoopBuilder } from './message-menu.js';
 import { settingsConfig } from './settings.js';
-import { snooze, tomorrowMorning } from './snooze.js';
+import { snooze, snoozeUntilQuotaReset, tomorrowMorning } from './snooze.js';
 import {
   actionPaletteOpen,
   activeThreadId,
@@ -99,6 +99,11 @@ export function paletteActions() {
           id: 'snooze-tomorrow',
           name: 'Snooze until tomorrow',
           run: ({ threadId }) => snooze(threadId, tomorrowMorning()),
+        },
+        {
+          id: 'snooze-quota',
+          name: 'Snooze until the quota resets',
+          run: ({ threadId }) => snoozeUntilQuotaReset(threadId),
         },
         {
           id: 'handoff',
