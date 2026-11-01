@@ -11,11 +11,11 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../agents/project';
-import { ConfigStore } from '../viewer/config';
+import { ConfigStore, foundryConfigDir } from '../viewer/config';
 import { startViewer } from '../viewer/server';
 
 // The archive console uses the normal viewer and journal without starting model workers.
-const configDir = process.env.FOUNDRY_CONFIG_DIR ?? '.foundry';
+const configDir = foundryConfigDir();
 const configStore = new ConfigStore(configDir);
 const config = await configStore.load();
 const projects = new ProjectRegistry();

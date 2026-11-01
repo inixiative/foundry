@@ -4,7 +4,7 @@
  * @kind entrypoint
  * @partOf feature:daemon, feature:flow
  */
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
@@ -110,6 +110,7 @@ import {
   createProject,
   defaultAgents,
   type FoundryConfig,
+  foundryConfigDir,
   starterConfig,
 } from './viewer/config';
 import { resolveProjectView } from './viewer/config-resolve';
@@ -119,7 +120,7 @@ import { startViewer } from './viewer/server';
 // Load config (auto-bootstrap on first run)
 // ---------------------------------------------------------------------------
 
-const FOUNDRY_DIR = '.foundry';
+const FOUNDRY_DIR = foundryConfigDir();
 const selfTestRequested = startupSelfTestEnabled(process.env.FOUNDRY_STARTUP_SELF_TEST);
 
 const configStore = new ConfigStore(FOUNDRY_DIR);
@@ -324,7 +325,7 @@ function projectCapacityAuthentication(
     local,
     usesKingdom: (threadId) => projectOf(threadId)?.capacity === 'kingdom',
     kingdom: new KingdomSubscriptionAuthentication({
-      directory: `${process.cwd()}/.foundry/kingdom/subscriptions`,
+      directory: join(FOUNDRY_DIR, 'kingdom', 'subscriptions'),
       capacity: async (threadId) => {
         const capacity = projectOf(threadId)?.kingdomCapacity;
         if (!capacity) throw Error('This project has no Kingdom capacity configured');
@@ -346,16 +347,13 @@ function createProvider(config: FoundryConfig): {
   sessionAdapter?: SessionAdapter;
 } {
   const providerId = config.defaults.provider;
-  const sessionStore = FileExternalSessionStore.forProject(process.cwd());
+  const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.json'));
   const authentication = subscription
-    ? new SubscriptionAuthentication(
-        `${process.cwd()}/.foundry/runtime-profiles`,
-        subscription.worker,
-      )
+    ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), subscription.worker)
     : config.defaults.kingdomOwnerKey ||
         Object.keys(config.kingdomInferenceAssignments ?? {}).length
       ? new KingdomAuthentication({
-          directory: `${process.cwd()}/.foundry/kingdom`,
+          directory: join(FOUNDRY_DIR, 'kingdom'),
           sources: config.kingdomInference ?? [],
           defaultOwnerKey: config.defaults.kingdomOwnerKey,
           assignments: config.kingdomInferenceAssignments,
@@ -363,7 +361,7 @@ function createProvider(config: FoundryConfig): {
       : config.defaults.nativeAuthenticationId ||
           Object.keys(config.nativeAuthenticationSelections ?? {}).length
         ? new NativeAuthentication({
-            directory: `${process.cwd()}/.foundry/runtime-profiles`,
+            directory: join(FOUNDRY_DIR, 'runtime-profiles'),
             sources: config.nativeAuthentication ?? [],
             defaultSourceId: config.defaults.nativeAuthenticationId,
           })

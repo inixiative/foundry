@@ -8,7 +8,7 @@ import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { localArchive } from '@inixiative/archive/remote';
 import { inspectReadiness } from './readiness';
-import { ConfigStore } from './viewer/config';
+import { ConfigStore, foundryConfigDir } from './viewer/config';
 
 /** Inspect existing settings without starting servers, agents or authentication flows. */
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
     return;
   }
   if (args.length > 1 || args[0]?.startsWith('--')) throw Error('Invalid arguments');
-  const directory = resolve(args[0] ?? '.foundry');
+  const directory = args[0] ? resolve(args[0]) : foundryConfigDir();
   if (!(await stat(resolve(directory, 'settings.json'))).isFile()) throw Error('Missing settings');
   const store = new ConfigStore(directory);
   const config = await store.load();

@@ -773,6 +773,14 @@ export function configFromSaved(raw: unknown): FoundryConfig {
   };
 }
 
+/**
+ * This Foundry's configuration directory, absolute: `FOUNDRY_CONFIG_DIR`, else `.foundry` under the
+ * working directory. The daemon, setup, doctor and the CLIs all resolve it here, so a pairing or a
+ * login written by a CLI lands where the daemon reads it.
+ */
+export const foundryConfigDir = (environment: Record<string, string | undefined> = process.env) =>
+  resolve(environment.FOUNDRY_CONFIG_DIR ?? '.foundry');
+
 // ---------------------------------------------------------------------------
 // ConfigStore — persists settings to disk
 // ---------------------------------------------------------------------------
@@ -1015,7 +1023,7 @@ export function validateConfig(config: FoundryConfig): void {
     if (!['claude-code', 'codex'].includes(config.defaults.provider))
       throw Error('Kingdom bindings require a native runtime provider');
     new KingdomAuthentication({
-      directory: join(process.cwd(), '.foundry', 'kingdom'),
+      directory: join(foundryConfigDir(), 'kingdom'),
       sources: config.kingdomInference ?? [],
       defaultOwnerKey: config.defaults.kingdomOwnerKey,
       assignments: config.kingdomInferenceAssignments,
@@ -1027,7 +1035,7 @@ export function validateConfig(config: FoundryConfig): void {
     config.nativeAuthenticationSelections
   ) {
     const authentication = new NativeAuthentication({
-      directory: join(process.cwd(), '.foundry', 'runtime-profiles'),
+      directory: join(foundryConfigDir(), 'runtime-profiles'),
       sources: config.nativeAuthentication ?? [],
       defaultSourceId: config.defaults.nativeAuthenticationId,
     });
