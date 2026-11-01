@@ -79,6 +79,8 @@ The FlowOrchestrator tracks what context a session already has via the Librarian
 3. **Post-action** (Session -> Foundry): tool calls observed on the native event stream; the structural tool gate (`turns/tool-gate.ts`) answers permission requests before a call runs
 4. **Feedback** (Foundry -> Session): guard findings become signals and reach the session on a later turn at best. No push path is built.
 
+Agents learn Foundry's own tools two ways (Aron, 2026-11-01: "should be told how to call foundry tool calls and often when"). The **how** is Foundry's skills, `packages/foundry/src/plugin/skills/{plan,threads,conversations,context,running}`: a Claude main thread loads them as a session plugin (`--plugin-dir`, `withFoundrySkills`), a Codex main thread on a Foundry-owned `CODEX_HOME` finds them as `foundry-<name>` beside the user's own skills; nothing is written into the repo or the user's home, and the user's skills and commands still load (CORE-003). The **when** is a standing layer on every wrapped thread, `foundry-tools` (`FOUNDRY_TOOLS_NOTE`), because a skill alone was never chosen in three live runs. Inventory: `set_plan`, `fork_thread`, `foundry_threads`, `foundry_query`, `foundry_conventions`, `foundry_memory`, `foundry_device`, `foundry_access`, `foundry_signal` (refused on the native grant), and the conversation tools (`send_to_member`, `post_to_conversation`, `pass_conch`, `set_voice`, `set_floor`, `give_conch`, `kingdom_post`); the person's `/feedback`, `/correction`, `/btw`, `/aside` are Foundry's commands, handled before the agent.
+
 There is no `.foundry-context.md` and no Claude Code hook: middleware runs in Foundry's own harness, never in vendor hooks.
 
 ## Model Routing
