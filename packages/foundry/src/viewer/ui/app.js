@@ -115,7 +115,11 @@ function IncomingIndicator() {
   const requests = incoming.value;
   if (!requests.length) return null;
   const count = requests.length;
-  return html`<div class="incoming-anchor" ref=${ref}>
+  // Esc is handled on the anchor too: focus is on its button after the click, so the first key
+  // works even before the document listener above is attached.
+  return html`<div class="incoming-anchor" ref=${ref} onKeyDown=${(e) => {
+    if (e.key === 'Escape') setOpen(false);
+  }}>
     <button class="incoming-indicator" aria-expanded=${open} aria-haspopup="dialog"
       title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
       onClick=${() => setOpen(!open)}>Incoming <span class="incoming-indicator-count">${count}</span></button>
