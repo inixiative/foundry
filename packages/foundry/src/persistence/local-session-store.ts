@@ -2413,6 +2413,8 @@ export const JOURNAL_ORDERED_PHASES = [
   // What a local member heard in a conversation it is in: part of its own conversation, so a
   // fresh or forked session is seeded with it (`turns/journal-history.ts`).
   'shared-entry',
+  // A person-to-person aside: in every person's view of the log, never an agent's (M6).
+  'aside',
 ] as const;
 
 /** One entry of a main thread's journal in order: a message, or an ordered phase row. */

@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { floorModeSchema } from '@inixiative/signet';
+import { floorModeSchema, threadTextLimit } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { REPOSITORY_SETTINGS_FILE } from '../../agents/region-roster';
@@ -17,6 +17,7 @@ import {
 } from '../../conversations/settings';
 import {
   type ConversationSettingsInput,
+  OWNER_MEMBER,
   validateConversationSettings,
 } from '../../conversations/types';
 import type { KingdomHolders } from '../../providers/kingdom-holder';
@@ -35,6 +36,11 @@ const conchBody = z.strictObject({
 const localBody = z.strictObject({
   threadId: z.string().min(1).max(128),
   displayName: z.string().min(1).max(200).optional(),
+});
+const asideBody = z.strictObject({
+  text: z.string().min(1).max(threadTextLimit),
+  /** The viewer's own id for it, so a retried send is recorded once. */
+  postId: z.string().min(1).max(128).optional(),
 });
 const voiceBody = z.strictObject({
   agent: z.string().min(1).max(200),
@@ -139,6 +145,31 @@ export function registerConversationRoutes(
       conversations.leaveLocal(c.req.param('threadId'), c.req.param('memberThreadId')),
     );
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
+  });
+
+  // The owner's aside (M6): to every person in the thread, never an agent, until he promotes it.
+  app.post('/api/threads/:threadId/conversation/asides', async (c) => {
+    const parsed = asideBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'text is required' }, 400);
+    const result = await guard(() =>
+      conversations.aside(
+        c.req.param('threadId'),
+        { member: OWNER_MEMBER, displayName: 'the owner' },
+        parsed.data.text,
+        ...(parsed.data.postId ? [parsed.data.postId] : []),
+      ),
+    );
+    return result.ok ? c.json(result.body) : c.json({ error: result.error }, 409);
+  });
+
+  // Promote an aside to the log, once: his own becomes his message, a member's its post.
+  app.post('/api/threads/:threadId/conversation/asides/:asideId/promote', async (c) => {
+    const result = await guard(() =>
+      conversations.promoteAside(c.req.param('threadId'), c.req.param('asideId')),
+    );
+    return result.ok
+      ? c.json({ ok: true, said: result.body })
+      : c.json({ error: result.error }, 409);
   });
 
   // An agent's voice (§4.11 point 1): `host` or a local member; null resets it to the default.

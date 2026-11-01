@@ -14,6 +14,7 @@ import { memberPostReception } from '../agents/chorus-reception';
 import type { JournalEntry } from '../persistence/local-session-store';
 import { quotedName } from './roster';
 import type {
+  AsideRecord,
   HeldRecord,
   HeldResolutionRecord,
   MemberPostRecord,
@@ -22,8 +23,9 @@ import type {
 
 /**
  * The read-off point (docs/reference/CONVERSATIONS.md §4.7): a member reads a lens over the main
- * thread's journal and nothing else. These functions are that lens. Only four things can ever be an
- * entry: what the owner typed, the main agent's answers, members' posts and released sends. Tool
+ * thread's journal and nothing else. These functions are that lens. Only five things can ever be an
+ * entry: what the owner typed, the main agent's answers, members' posts, released sends and asides
+ * (people only: every agent path skips them). Tool
  * calls, Warden rows, composed context and held sends are not entries, so no view can show them.
  */
 
@@ -45,6 +47,16 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
     };
   }
   const at = new Date(entry.storedAt).toISOString();
+  if (entry.phase === 'aside') {
+    const aside = entry.record as unknown as AsideRecord;
+    return {
+      journalSeq: entry.seq,
+      at,
+      kind: 'aside',
+      member: aside.member,
+      text: clip(aside.text),
+    };
+  }
   if (entry.phase === 'member-post') {
     const post = entry.record as unknown as MemberPostRecord;
     return {
@@ -100,6 +112,8 @@ export function visibleTo(
   view: { member: ConversationMember; lens: Pick<ThreadsLens, 'view'> },
 ): boolean {
   if (view.lens.view === 'thread') return true;
+  // An aside goes to every person in the thread, whatever they sit in on (no DMs, Aron 11-01).
+  if (entry.kind === 'aside') return true;
   return (entry.kind === 'post' || entry.kind === 'send') && sameMember(entry.member, view.member);
 }
 
