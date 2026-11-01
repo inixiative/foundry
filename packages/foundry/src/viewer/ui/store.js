@@ -92,6 +92,8 @@ export const rightTab = signal('context');
 export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+/** What's typed in the open thread's message box: it goes with a waiting card's answer. */
+export const composerNote = signal('');
 
 /** The board is a workspace view: it toggles only there. */
 export function toggleBoard() {
@@ -1063,15 +1065,26 @@ async function _loadTurnDetail(threadId, turnId, traceId, requestId) {
   }
 }
 
+const REJECTING = new Set(['rejected', 'reject', 'not-now', 'dismiss', 'withdraw']);
+
 export async function resolvePrompt(promptId, action, input) {
+  // Text in the message box goes with the answer: a rejected approval carries it in its message to
+  // the agent; any other answer posts it to the thread right after, through the normal send.
+  const note = composerNote.peek().trim();
+  const prompt = prompts.peek().find((p) => p.id === promptId);
   try {
     const res = await fetch(`/api/prompts/${encodeURIComponent(promptId)}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, input }),
+      body: JSON.stringify({ action, input, ...(note ? { note } : {}) }),
     });
     if (res.ok) {
-      showToast(`Prompt resolved: ${action}`, 'ok');
+      if (note) {
+        composerNote.value = '';
+        const carried = REJECTING.has(action) && prompt?.kind === 'approval';
+        if (!carried) await sendMessage(note);
+        showToast(`${action} · your note went with it`, 'ok');
+      } else showToast(`Prompt resolved: ${action}`, 'ok');
       return true;
     }
     const err = await res.json();

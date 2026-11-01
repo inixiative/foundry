@@ -807,9 +807,11 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
         },
         409,
       );
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 4000) : '';
     const ok = actionQueue.resolve(id, body.action, {
       by: 'human',
       input: typeof body.input === 'string' ? body.input : undefined,
+      ...(note ? { note } : {}),
     });
     if (!ok || !prompt) return c.json({ error: 'Prompt not found or already resolved.' }, 404);
     // "Always": the same answer for this kind of call in this thread from now on (a thread-scoped
@@ -826,7 +828,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       );
     }
 
-    return c.json({ ok: true, promptId: id, action: body.action });
+    return c.json({ ok: true, promptId: id, action: body.action, ...(note ? { note } : {}) });
   });
 
   // -- Tunnel management --

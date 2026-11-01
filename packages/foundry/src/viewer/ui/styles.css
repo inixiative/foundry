@@ -8778,3 +8778,8 @@ a.thread-ref:hover {
   outline: 2px solid hsl(var(--app-primary) / 0.6);
   outline-offset: -2px;
 }
+.composer-note-hint {
+  padding: 4px 10px 0;
+  font-size: 12px;
+  color: hsl(var(--app-primary));
+}

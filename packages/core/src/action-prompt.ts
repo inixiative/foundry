@@ -35,6 +35,8 @@ export interface ActionResolution {
   readonly by: 'human' | 'policy' | 'timeout';
   readonly action: string; // "approved", "rejected", or an option ID
   readonly input?: string; // for "input" kind prompts
+  /** Context the user typed in the message box and sent with this answer. */
+  readonly note?: string;
   readonly timestamp: number;
 }
 
@@ -202,7 +204,7 @@ export class ActionQueue {
   resolve(
     promptId: string,
     action: string,
-    opts?: { by?: 'human' | 'policy'; input?: string },
+    opts?: { by?: 'human' | 'policy'; input?: string; note?: string },
   ): boolean {
     const prompt = this._prompts.get(promptId);
     if (!prompt || prompt.status !== 'pending') return false;
@@ -211,6 +213,7 @@ export class ActionQueue {
       by: opts?.by ?? 'human',
       action,
       input: opts?.input,
+      ...(opts?.note ? { note: opts.note } : {}),
       timestamp: Date.now(),
     };
 
