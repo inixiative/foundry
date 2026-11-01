@@ -48,16 +48,6 @@ export type InstructionHarness = 'claude' | 'codex';
 /** The default ladder's nodes. */
 export type InstructionLevel = 'managed' | 'global' | 'org' | 'project' | 'local' | 'memory';
 
-/** Each default level's corpus tier: personal files stay personal_private, committed ones are team, files above the repo are org. */
-export const INSTRUCTION_LEVEL_TIER: Readonly<Record<InstructionLevel, CorpusTier>> = {
-  managed: 'org',
-  global: 'personal_private',
-  org: 'org',
-  project: 'team',
-  local: 'personal_private',
-  memory: 'personal_private',
-};
-
 const LEVEL_LABEL: Readonly<Record<InstructionLevel, string>> = {
   managed: 'managed policy instructions for every user on this machine',
   global: "user's private global instructions for all projects",

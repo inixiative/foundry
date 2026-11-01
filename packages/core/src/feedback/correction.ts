@@ -236,6 +236,13 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '[REDACTED:jwt]'],
   [/\b[a-z]+_(?:live|test|prod|runtime)_[A-Za-z0-9]{16,}/g, '[REDACTED:token]'],
   [/\b(?:npm_|glpat-|hf_)[A-Za-z0-9_-]{20,}/g, '[REDACTED:token]'],
+  // Kingdom's run, refresh and Signet access tokens: the prefix and exactly 43 base64url characters.
+  [/\bkingdom_(?:run_|refresh_)?[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, '[REDACTED:kingdom-token]'],
+  // API tokens Kingdom, template and Tribe issue: `<environment>_<owner model>_<48 hex>`.
+  [
+    /\b(?:local|pr|staging|prod|test)_(?:user|org|orgUser|space|spaceUser|integration)_[0-9a-f]{48}\b/g,
+    '[REDACTED:api-token]',
+  ],
   [/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, '[REDACTED:slack-webhook]'],
   [/\bASIA[A-Z0-9]{16}/g, '[REDACTED:aws-key]'],
   [/\b(Bearer|Basic|DPoP)\s+[A-Za-z0-9._~+/=-]{16,}/g, '$1 [REDACTED:credential]'],

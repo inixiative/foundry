@@ -90,6 +90,3 @@ export function httpCassettes(vcr: VCR, method: string): typeof fetch {
   };
   return Object.assign(recordedFetch, { preconnect: fetch.preconnect }) as typeof fetch;
 }
-
-/** For callers that only need the origin out of a recording. */
-export const scrubOrigin = (url: string) => scrubText(new URL(url).origin);
