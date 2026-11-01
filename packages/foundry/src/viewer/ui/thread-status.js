@@ -18,6 +18,7 @@
  *   prompts                  pending ActionQueue prompts for this thread
  *   childrenWorking          true when a child thread (subagent) is working
  */
+import { isSnoozed } from './snooze.js';
 import { STATES } from './status-icons.js';
 
 /** A thread whose stored status is one of these is closed (archived, completed or done). The one list. */
@@ -52,6 +53,8 @@ export function threadState(thread, context = {}) {
   if (prompts.length) return promptState(prompts[0]);
   if ((conversation.held ?? 0) > 0) return 'held';
   if ((conversation.unread ?? 0) > 0) return 'request';
+  // A snooze quiets the calm states; a problem or a request for you still shows.
+  if (isSnoozed(thread?.threadId ?? thread?.id)) return 'snoozed';
   if (meta.setup?.status === 'starting') return 'starting';
   if (turn === 'running' || meta.status === 'active') return 'working';
   if (context.childrenWorking) return 'subagents';

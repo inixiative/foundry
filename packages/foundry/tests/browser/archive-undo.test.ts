@@ -16,6 +16,14 @@ import { startViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Archiving a thread from a list offers Undo for 20 s (approvals never do).
+const until = async (check: () => Promise<boolean>, what: string) => {
+  for (let i = 0; i < 60; i++) {
+    if (await check()) return;
+    await Bun.sleep(100);
+  }
+  throw new Error(`timed out: ${what}`);
+};
+
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
@@ -54,6 +62,17 @@ test('archiving a thread from its menu shows a toast with Undo that outlasts an 
     await page.goto(`${origin}/#thread=main`);
     const row = page.locator('.tree-row', { hasText: 'Tidy the docs' }).first();
     await row.waitFor();
+    // Snooze: the row turns to the neutral snoozed state, and the menu offers to wake it.
+    const node = page.locator('.tree-node', { hasText: 'Tidy the docs' }).first();
+    await row.hover();
+    await row.locator('.thread-actions button').first().click();
+    await page.getByRole('menuitem', { name: '1 hour' }).click();
+    await node.locator('[data-state="snoozed"]').waitFor();
+    await row.hover();
+    await row.locator('.thread-actions button').first().click();
+    await page.getByRole('menuitem', { name: /^Wake it/ }).click();
+    await until(async () => (await node.locator('[data-state="snoozed"]').count()) === 0, 'woken');
+
     await row.hover();
     await row.locator('.thread-actions button').first().click();
     await page.getByRole('menuitem', { name: 'Archive' }).click();
