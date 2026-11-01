@@ -404,7 +404,7 @@ export interface ThreadRuntimeDeps {
   sessionAdapter?: SessionAdapter;
   /**
    * The conversation wrapper (docs/reference/CONVERSATIONS.md §4.1): a conversation thread is always
-   * wrapped, and the member notes admitted since the owner last spoke ride the owner's next turn.
+   * wrapped, and the member notes admitted since the owner last spoke ride the agent's next turn, whoever opened it.
    */
   conversations?: ConversationWrapper;
   log?: (line: string) => void;
@@ -1295,7 +1295,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         warn(
           `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
         );
-      // Member posts delivered as notes ride the owner's turn, labelled, after the fresh advice.
+      // Member posts delivered as notes ride the agent's turn, labelled, after the fresh advice.
       const memberNotes = deps.conversations?.deliverNotes(thread.id, identity?.messageId) ?? [];
       if (memberNotes.length) flow.queueNotes(memberNotes);
       await refreshRoster();

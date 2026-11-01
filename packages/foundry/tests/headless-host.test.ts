@@ -161,6 +161,14 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
   kingdom.host(member);
   const requestId = crypto.randomUUID();
   await until(async () => (await inspect()).members.some((m) => m.listed), 'member listed');
+  // A shared thread defaults to the conch (Aron, 2026-11-01); this note is about the talk path.
+  await request({
+    type: 'http',
+    requestId: crypto.randomUUID(),
+    method: 'POST',
+    path: '/api/threads/main/conversation/floor',
+    body: { mode: 'talk' },
+  });
   kingdom.threadFrame({
     type: 'thread.request',
     requestId,

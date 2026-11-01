@@ -98,6 +98,11 @@ class Refusal extends Error {
   }
 }
 
+const FLOOR_REQUEST_OPTIONS = [
+  { id: 'give', label: 'Give it' },
+  { id: 'not-now', label: 'Not now' },
+] as const;
+
 const HELD_OPTIONS = [
   { id: 'release', label: 'Release' },
   { id: 'edit', label: 'Edit, then release' },
@@ -142,6 +147,8 @@ export class ConversationService implements ConversationWrapper {
   /** The newest revision a frame from each member carried (frames are newer than snapshots, §4.5). */
   private readonly accepted = new Map<string, number>();
   private readonly open = new Map<string, OpenHeld>();
+  /** A raised hand's open prompt, by `<threadId>:<member kind>:<member id>` (§4.8). */
+  private readonly hands = new Map<string, OpenHeld>();
   /** Which Signets the previous snapshot listed (null until one listed them). */
   private listed: Set<string> | null = null;
   private readonly unsubscribe: (() => void) | undefined;
@@ -157,6 +164,8 @@ export class ConversationService implements ConversationWrapper {
     this.unsubscribe?.();
     for (const open of this.open.values()) open.controller.abort();
     this.open.clear();
+    for (const open of this.hands.values()) open.controller.abort();
+    this.hands.clear();
   }
 
   // -----------------------------------------------------------------------
@@ -206,7 +215,9 @@ export class ConversationService implements ConversationWrapper {
         // A post that wakes the agent is two agent turns: the member's, and the agent's answer. A
         // post that would go past the bound is refused, and the conversation pauses.
         const depth = this.depth(thread.id, record);
-        const cost = lens.delivery === 'turn' ? 2 : 1;
+        // Silent agents hear everything and are woken by nothing: a post is a note (§4.9, M7).
+        const delivery = settings.agents === 'silent' ? 'note' : lens.delivery;
+        const cost = delivery === 'turn' ? 2 : 1;
         if (depth + cost > settings.maxAgentTurns) {
           // At the bound the conversation pauses; a `turn` post with one turn left is refused
           // alone, so a note may still take that turn.
@@ -219,14 +230,17 @@ export class ConversationService implements ConversationWrapper {
           if (floor.changed) this.save(thread, record);
           return { kind: 'refused' as const, refusal: floor.refusal };
         }
+        if (record.sharedFromSeq === undefined && !this.isOwnerSignet(signetId))
+          record.sharedFromSeq = this.deps.store.journalSeq(thread.id);
         const phaseId = newId('phase');
-        const turnId = lens.delivery === 'turn' ? newId('turn') : undefined;
+        const turnId = delivery === 'turn' ? newId('turn') : undefined;
         const post: MemberPostRecord = {
           postId: input.postId,
           signetId,
           displayName: frame.member.displayName,
           text: input.text,
-          delivery: lens.delivery,
+          delivery,
+          ...(settings.agents === 'silent' ? { silent: true } : {}),
           executionId: frame.requestId,
           acceptedRevision: frame.acceptedRevision,
           ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
@@ -309,7 +323,10 @@ export class ConversationService implements ConversationWrapper {
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
     this.seen.set(`${frame.signetId}:${thread.id}`, Date.now());
-    const after = frame.input.afterSeq ?? 0;
+    const after = Math.max(
+      frame.input.afterSeq ?? 0,
+      this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread),
+    );
     const raw = this.deps.store.journalEntries(thread.id, { after, limit: RAW_READ });
     const entries = raw
       .map(threadEntryOf)
@@ -334,8 +351,10 @@ export class ConversationService implements ConversationWrapper {
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
     const journalSeq = this.deps.store.journalSeq(thread.id);
+    const from = this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
     const entries = raw
+      .filter((row) => row.seq > from)
       .map(threadEntryOf)
       .filter((entry): entry is ThreadEntry => !!entry && visibleTo(entry, frame));
     this.cursors.set(frame.requestId, journalSeq);
@@ -429,6 +448,9 @@ export class ConversationService implements ConversationWrapper {
       if (error instanceof Refusal) return threadRefused(error.refusal, error.message);
       throw error;
     }
+    if (!outcome && action.action === 'request' && this.floorState(thread).mode === 'conch')
+      this.raiseHand(thread, { member: me, displayName: frame.member.displayName });
+    this.settleHands(thread.id);
     this.deps.changed?.(thread.id);
     if (outcome) return threadRefused(outcome);
     return threadResult(this.floorState(thread));
@@ -448,7 +470,15 @@ export class ConversationService implements ConversationWrapper {
     const held = (prompt.meta?.conversationHeld as { heldId?: string } | undefined)?.heldId;
     try {
       if (held) this.submitHeld(held, answer.action, answer.input, 'remote');
-      else if (typeof prompt.meta?.toolName === 'string') {
+      else if (prompt.meta?.conversationFloorRequest) {
+        if (!FLOOR_REQUEST_OPTIONS.some((option) => option.id === answer.action))
+          return threadRefused(
+            'invalid_request',
+            `${answer.action} is not an answer this prompt offers`,
+          );
+        if (!queue.resolve(promptId, answer.action, { by: 'human' }))
+          return threadRefused('invalid_request', 'The prompt was already answered');
+      } else if (typeof prompt.meta?.toolName === 'string') {
         const allowed =
           prompt.kind === 'approval'
             ? ['approved', 'rejected']
@@ -463,7 +493,7 @@ export class ConversationService implements ConversationWrapper {
       } else
         return threadRefused(
           'invalid_request',
-          'Only a tool-call ask or a held send can be answered remotely',
+          'Only a tool-call ask, a held send or a raised hand can be answered remotely',
         );
     } catch (error) {
       return threadRefused('invalid_request', (error as Error).message);
@@ -484,6 +514,10 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(threadId);
     if (!thread || this.closedReason(thread)) throw Error('This thread is not open');
     const target = this.findMember(threadId, member);
+    if (this.settings(thread, this.record(thread.id)).agents === 'silent')
+      throw Error(
+        'Agents are silent in this conversation until the leader lets them draft (conversations.agents)',
+      );
     const body = boundedText(text);
     const outbound = this.outbound(target.member.id, threadId);
     this.hold(thread, {
@@ -524,6 +558,10 @@ export class ConversationService implements ConversationWrapper {
   ): string {
     const thread = this.deps.thread(threadId);
     if (!thread || this.closedReason(thread)) throw Error('This thread is not open');
+    if (this.settings(thread, this.record(thread.id)).agents === 'silent')
+      throw Error(
+        'Agents are silent in this conversation until the leader lets them draft (conversations.agents)',
+      );
     this.hold(thread, {
       kind: 'post',
       text: boundedText(post.text),
@@ -561,7 +599,91 @@ export class ConversationService implements ConversationWrapper {
       this.raise(thread, record);
       raised++;
     }
+    for (const threadId of this.deps.store.conversationThreads()) {
+      const thread = this.deps.thread(threadId);
+      if (!thread || this.floorState(thread).mode !== 'conch') continue;
+      for (const request of this.record(threadId).requests) {
+        if (this.hands.has(handKey(threadId, request.member))) continue;
+        this.raiseHand(thread, request);
+        raised++;
+      }
+    }
     return raised;
+  }
+
+  /**
+   * A raised hand is attention (§4.8): a Needs-you prompt beside the request the record keeps.
+   * "Give it" runs the owner's own pass; "Not now" drops the request. Raised again at startup.
+   */
+  private raiseHand(
+    thread: Thread,
+    request: { member: ConversationMember; displayName: string },
+  ): void {
+    const queue = this.deps.queue;
+    const key = handKey(thread.id, request.member);
+    if (!queue || this.hands.has(key)) return;
+    const controller = new AbortController();
+    const ask = queue.prompt({
+      kind: 'choice',
+      threadId: thread.id,
+      agentId: 'conversation',
+      capability: 'conversation',
+      message: `${request.displayName} asks for the conch.`,
+      options: FLOOR_REQUEST_OPTIONS.map((option) => ({ ...option })),
+      signal: controller.signal,
+      meta: { structural: true, conversationFloorRequest: { member: request.member } },
+    });
+    const promptId = queue
+      .pending()
+      .find(
+        (prompt) =>
+          prompt.threadId === thread.id &&
+          sameMember(
+            (prompt.meta?.conversationFloorRequest as { member?: ConversationMember } | undefined)
+              ?.member ?? null,
+            request.member,
+          ),
+      )?.id;
+    if (!promptId) return;
+    const open: OpenHeld = { promptId, controller };
+    this.hands.set(key, open);
+    void ask
+      .then((resolution) => {
+        if (resolution.by !== 'human') return;
+        if (resolution.action === 'give') this.giveConch(thread.id, request.member);
+        else if (resolution.action === 'not-now') this.dropRequest(thread.id, request.member);
+      })
+      .catch((error: unknown) =>
+        this.deps.log?.(`[Conversations] raised hand not settled: ${(error as Error).message}`),
+      )
+      .finally(() => {
+        if (this.hands.get(key) === open) this.hands.delete(key);
+      });
+  }
+
+  /** Withdraw the prompts of hands the record no longer holds (the conch moved, the mode changed). */
+  private settleHands(threadId: string): void {
+    const thread = this.deps.thread(threadId);
+    const requests =
+      thread && this.floorState(thread).mode === 'conch' ? this.record(threadId).requests : [];
+    for (const [key, open] of this.hands)
+      if (
+        key.startsWith(`${threadId}:`) &&
+        !requests.some((request) => handKey(threadId, request.member) === key)
+      ) {
+        this.hands.delete(key);
+        open.controller.abort();
+      }
+  }
+
+  private dropRequest(threadId: string, member: ConversationMember): void {
+    const thread = this.requireThread(threadId);
+    this.deps.store.transaction(() => {
+      const record = this.record(thread.id);
+      record.requests = record.requests.filter((request) => !sameMember(request.member, member));
+      this.save(thread, record);
+    });
+    this.deps.changed?.(threadId);
   }
 
   // -----------------------------------------------------------------------
@@ -585,6 +707,7 @@ export class ConversationService implements ConversationWrapper {
         record.invitations = record.invitations.filter((invitation) => invitation.standing);
       this.save(thread, record);
     });
+    this.settleHands(threadId);
     this.deps.changed?.(threadId);
   }
 
@@ -601,6 +724,7 @@ export class ConversationService implements ConversationWrapper {
       this.moveConch(record, settings, to?.kind === 'signet' ? to : null, OWNER_MEMBER);
       this.save(thread, record);
     });
+    this.settleHands(threadId);
     this.deps.changed?.(threadId);
   }
 
@@ -620,6 +744,32 @@ export class ConversationService implements ConversationWrapper {
   pauseByOwner(threadId: string): void {
     const thread = this.requireThread(threadId);
     this.deps.store.transaction(() => this.pause(thread, this.record(thread.id), 'owner'));
+    this.deps.changed?.(threadId);
+  }
+
+  /**
+   * The leader's marker (§4.9): `silent` keeps agents listening, `drafting` lets them propose; null
+   * goes back to the cascade.
+   */
+  setAgents(threadId: string, mode: ConversationSettings['agents'] | null): void {
+    const thread = this.requireThread(threadId);
+    this.deps.store.transaction(() => {
+      const record = this.record(thread.id);
+      if (mode) record.settings.agents = mode;
+      else delete record.settings.agents;
+      this.save(thread, record);
+    });
+    this.deps.changed?.(threadId);
+  }
+
+  /** The owner shares what was said before the share: members read the whole journal (§4.9, B3). */
+  shareHistory(threadId: string): void {
+    const thread = this.requireThread(threadId);
+    this.deps.store.transaction(() => {
+      const record = this.record(thread.id);
+      record.sharedFromSeq = 0;
+      this.save(thread, record);
+    });
     this.deps.changed?.(threadId);
   }
 
@@ -694,16 +844,18 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * The member notes that ride an owner's turn (§4.2, §4.5): every note not yet delivered or
+   * The member notes that ride the agent's next turn, whoever opened it (§4.2, §4.5, §4.10): every note not yet delivered or
    * withdrawn, written before this turn's message, labelled. Each one is marked delivered to this
-   * turn (`member-post-delivered`), so a note whose owner turn never ran (stopped while queued,
+   * turn (`member-post-delivered`), so a note whose turn never ran (stopped while queued,
    * dropped at a restart) rides the next one instead of reading as consumed.
    */
   deliverNotes(threadId: string, turnId: string | undefined): PromptBlock[] {
     if (!turnId || !this.wraps(threadId)) return [];
     const store = this.deps.store;
+    // Every turn of the agent takes the notes in, not only the owner's (review round 4, B1): a
+    // turn a member opened, or one after "agents may draft now", is where the agent speaks.
     const seq = store.turnMessageSeq(turnId);
-    if (seq === undefined || store.lastOwnerSeq(threadId, seq) !== seq) return [];
+    if (seq === undefined) return [];
     const thread = this.deps.thread(threadId);
     if (!thread) return [];
     const notes = this.pendingNotes(threadId, seq);
@@ -807,12 +959,14 @@ export class ConversationService implements ConversationWrapper {
    */
   hostedChanged(hosted: readonly HostedSignet[], dropped: ReadonlySet<string>): void {
     if (dropped.has(UNKNOWN_HOSTED)) return;
+    this.markShared(hosted);
     const now = new Set(hosted.map((signet) => signet.signetId));
     const before = this.listed;
     this.listed = new Set([...now, ...[...dropped].filter((id) => before?.has(id))]);
     if (before)
       for (const signetId of before)
         if (!now.has(signetId) && !dropped.has(signetId)) void this.cancelMember(signetId);
+    this.reconcileShares();
     for (const threadId of this.deps.store.conversationThreads()) this.deps.changed?.(threadId);
   }
 
@@ -845,11 +999,82 @@ export class ConversationService implements ConversationWrapper {
     this.deps.store.saveConversation(thread, record);
   }
 
+  /** Where members' reads start (§4.9, B3). A thread read before its share was marked starts now. */
+  private sharedFrom(thread: Thread): number {
+    const record = this.record(thread.id);
+    if (record.sharedFromSeq !== undefined) return record.sharedFromSeq;
+    record.sharedFromSeq = this.deps.store.journalSeq(thread.id);
+    this.save(thread, record);
+    return record.sharedFromSeq;
+  }
+
+  /**
+   * The host's own owner reaching his thread from another machine (a grant with `prompt.resolve`,
+   * which Kingdom allows only to the owner) is not another party: it doesn't share the thread, and
+   * his remote view isn't cut at the share.
+   */
+  private isOwnerSignet(signetId: string): boolean {
+    const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
+    return !!signet && ownsThreads(signet);
+  }
+
+  /** Shared: a listed grant from someone other than the owner selects the thread (§4.8, §4.9). */
+  private isShared(threadId: string): boolean {
+    return this.deps
+      .hosted()
+      .some((signet) => !ownsThreads(signet) && this.grantOn(signet, threadId) !== undefined);
+  }
+
+  /**
+   * After a snapshot: an unshared thread drops its share mark and the conch state the shared
+   * default left (a cascade change no owner action settles), and hands follow the floor: withdrawn
+   * when it isn't the conch, raised again (a restart's snapshot) when it is.
+   */
+  private reconcileShares(): void {
+    for (const threadId of this.deps.store.conversationThreads()) {
+      const thread = this.deps.thread(threadId);
+      if (!thread) continue;
+      const record = this.record(threadId);
+      let changed = false;
+      if (!this.isShared(threadId) && record.sharedFromSeq !== undefined) {
+        delete record.sharedFromSeq;
+        changed = true;
+      }
+      const conch = this.floorState(thread).mode === 'conch';
+      if (!conch && (record.requests.length || record.invitations.some((i) => i.standing))) {
+        record.requests = [];
+        record.invitations = record.invitations.filter((invitation) => !invitation.standing);
+        changed = true;
+      }
+      if (changed) this.save(thread, record);
+      this.settleHands(threadId);
+      if (conch)
+        for (const request of record.requests)
+          if (!this.hands.has(handKey(threadId, request.member))) this.raiseHand(thread, request);
+    }
+  }
+
+  /** Mark the share on every thread a listed grant selects by id: members read from here on. */
+  private markShared(hosted: readonly HostedSignet[]): void {
+    for (const signet of hosted) {
+      if (ownsThreads(signet)) continue;
+      for (const grant of signet.resources) {
+        if (grant.kind !== threadsResourceKind || !('threads' in grant.lens)) continue;
+        if (grant.lens.threads.form !== 'ids') continue;
+        for (const threadId of grant.lens.threads.ids) {
+          const thread = this.deps.thread(threadId);
+          if (thread && this.record(threadId).sharedFromSeq === undefined) this.sharedFrom(thread);
+        }
+      }
+    }
+  }
+
   private resolved(thread: Thread, record: ConversationRecord) {
     const projectId = thread.meta.projectId;
     return resolveConversationSettings(
       projectId ? this.deps.project(projectId) : undefined,
       record.settings,
+      this.isShared(thread.id),
     );
   }
 
@@ -880,8 +1105,9 @@ export class ConversationService implements ConversationWrapper {
    */
   private depth(threadId: string, record: ConversationRecord): number {
     const from = Math.max(this.deps.store.lastOwnerSeq(threadId), record.resumedAtSeq ?? 0);
+    // People talking while the agents listen spend no agent turns (§4.9: silent until a marker).
     return this.posts(threadId, from).reduce(
-      (count, { post }) => count + (post.delivery === 'turn' ? 2 : 1),
+      (count, { post }) => count + (post.silent ? 0 : post.delivery === 'turn' ? 2 : 1),
       0,
     );
   }
@@ -1001,8 +1227,13 @@ export class ConversationService implements ConversationWrapper {
     return this.grantOn(signet, threadId)?.outbound ?? 'review';
   }
 
+  /** A member the conch can pass to: one whose grant selects the thread now, not a past poster. */
   private isMember(threadId: string, signetId: string): boolean {
-    return this.members(threadId).some((member) => member.member.id === signetId);
+    return this.deps
+      .hosted()
+      .some(
+        (signet) => signet.signetId === signetId && this.grantOn(signet, threadId) !== undefined,
+      );
   }
 
   /** Members of a thread: Signets whose grant selects it, and anyone who has posted to it. */
@@ -1103,7 +1334,7 @@ export class ConversationService implements ConversationWrapper {
     );
   }
 
-  /** Notes neither delivered to an owner turn nor withdrawn, written before journal seq `before`. */
+  /** Notes neither delivered to a turn nor withdrawn, written before journal seq `before`. */
   private pendingNotes(threadId: string, before = Number.POSITIVE_INFINITY) {
     const settled = new Set([
       ...this.marked(threadId, 'member-post-withdrawn'),
@@ -1313,6 +1544,19 @@ export class ConversationService implements ConversationWrapper {
         ...this.marked(threadId, 'member-post-withdrawn'),
         ...this.marked(threadId, 'member-post-delivered'),
       ]);
+      const record = this.record(threadId);
+      const gone = { kind: 'signet' as const, id: signetId };
+      if (
+        record.requests.some((request) => sameMember(request.member, gone)) ||
+        record.invitations.some((invitation) => sameMember(invitation.to, gone))
+      ) {
+        record.requests = record.requests.filter((request) => !sameMember(request.member, gone));
+        record.invitations = record.invitations.filter(
+          (invitation) => !sameMember(invitation.to, gone),
+        );
+        this.save(thread, record);
+        this.settleHands(threadId);
+      }
       for (const { post } of this.posts(threadId)) {
         if (post.signetId !== signetId) continue;
         if (post.turnId) {
@@ -1336,6 +1580,14 @@ export class ConversationService implements ConversationWrapper {
 const RAW_READ = 5_000;
 
 /** A member post's identity: its own id is the member's, so it is unique only per Signet. */
+const ownsThreads = (signet: HostedSignet) =>
+  signet.resources.some(
+    (grant) => grant.kind === threadsResourceKind && grant.operations.includes('prompt.resolve'),
+  );
+
+const handKey = (threadId: string, member: ConversationMember) =>
+  `${threadId}:${member.kind}:${member.id}`;
+
 const postKey = (post: { signetId?: unknown; postId?: unknown }) =>
   `${String(post.signetId)}:${String(post.postId)}`;
 
